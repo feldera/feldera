@@ -136,7 +136,7 @@ mod tests {
         #[case] extra: &str,
         #[case] expected_zset: OrdZSet<Q14Output>,
     ) {
-        let input_vecs = vec![vec![Tup2(
+        let input_vecs = vec![vec![Tup2::new(
             Event::Bid(Bid {
                 price,
                 date_time,

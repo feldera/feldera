@@ -1120,7 +1120,7 @@ mod test {
             .unwrap();
 
             for batch in batches {
-                let mut tuples = batch.into_iter().map(|((k, v), r)| Tup2(k, Tup2(v, r))).collect::<Vec<_>>();
+                let mut tuples = batch.into_iter().map(|((k, v), r)| Tup2::new(k, Tup2::new(v, r))).collect::<Vec<_>>();
                 input_handle.append(&mut tuples);
                 dbsp.step().unwrap();
             }

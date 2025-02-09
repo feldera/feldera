@@ -382,20 +382,26 @@ mod test {
         .unwrap();
 
         let inputs = vec![
-            vec![Tup2(1, 1), Tup2(2, 1), Tup2(3, 1), Tup2(4, 1), Tup2(5, 1)],
             vec![
-                Tup2(1, -1),
-                Tup2(2, -1),
-                Tup2(3, -1),
-                Tup2(4, -1),
-                Tup2(5, -1),
+                Tup2::new(1, 1),
+                Tup2::new(2, 1),
+                Tup2::new(3, 1),
+                Tup2::new(4, 1),
+                Tup2::new(5, 1),
+            ],
+            vec![
+                Tup2::new(1, -1),
+                Tup2::new(2, -1),
+                Tup2::new(3, -1),
+                Tup2::new(4, -1),
+                Tup2::new(5, -1),
             ],
         ];
 
         for mut input_vec in inputs {
             let input_tuples = input_vec
                 .iter()
-                .map(|Tup2(k, w)| Tup2(Tup2(*k, ()), *w))
+                .map(|t| Tup2::new(Tup2::new(*t.fst(), ()), *t.snd()))
                 .collect::<Vec<_>>();
 
             let expected_output = OrdZSet::from_tuples((), input_tuples);
@@ -421,20 +427,26 @@ mod test {
         .unwrap();
 
         let inputs = vec![
-            vec![Tup2(1, 1), Tup2(2, 1), Tup2(3, 1), Tup2(4, 1), Tup2(5, 1)],
             vec![
-                Tup2(1, -1),
-                Tup2(2, -1),
-                Tup2(3, -1),
-                Tup2(4, -1),
-                Tup2(5, -1),
+                Tup2::new(1, 1),
+                Tup2::new(2, 1),
+                Tup2::new(3, 1),
+                Tup2::new(4, 1),
+                Tup2::new(5, 1),
+            ],
+            vec![
+                Tup2::new(1, -1),
+                Tup2::new(2, -1),
+                Tup2::new(3, -1),
+                Tup2::new(4, -1),
+                Tup2::new(5, -1),
             ],
         ];
 
         for mut input_vec in inputs {
             let input_tuples = input_vec
                 .iter()
-                .map(|Tup2(k, w)| Tup2(Tup2(*k, ()), *w))
+                .map(|t| Tup2::new(Tup2::new(*t.fst(), ()), *t.snd()))
                 .collect::<Vec<_>>();
 
             let expected_output = OrdZSet::from_tuples((), input_tuples);

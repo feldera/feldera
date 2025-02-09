@@ -50,7 +50,7 @@ const TUMBLE_SECONDS: u64 = 10;
 pub fn q8(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q8Stream {
     // People indexed by the date they entered the system.
     let people_by_time = input.flat_map_index(|event| match event {
-        Event::Person(p) => Some((p.date_time, Tup2(p.id, p.name.clone()))),
+        Event::Person(p) => Some((p.date_time, Tup2::new(p.id, p.name.clone()))),
         _ => None,
     });
 
@@ -82,13 +82,14 @@ pub fn q8(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q8Stream {
     let windowed_auctions = auctions_by_time.window((true, false), &window_bounds);
 
     let people_by_id = windowed_people
-        .map_index(|(date_time, Tup2(id, name))| (*id, Tup2(name.clone(), *date_time)));
+        .map_index(|(date_time, t)| (*t.fst(), Tup2::new(t.snd().clone(), *date_time)));
 
     // Re-calculate the window start-time to include in the output.
     people_by_id.join(
         &windowed_auctions.map_index(|(_date_time, seller)| (*seller, ())),
-        |&p_id, Tup2(p_name, p_date_time), ()| {
-            Tup3(
+        |&p_id, t, ()| {
+            let (p_name, p_date_time) = t.into();
+            Tup3::new(
                 p_id,
                 p_name.clone(),
                 *p_date_time - (*p_date_time % (TUMBLE_SECONDS * 1000)),
@@ -125,8 +126,8 @@ mod tests {
             (4, 21_000),
             (99, 32_000)]],
         vec![zset! {
-            Tup3(2, String::from("Lily Potter"), 10_000) => 1,
-            Tup3(3, String::from("Harry Potter"), 10_000) => 1,
+            Tup3::new(2, String::from("Lily Potter"), 10_000) => 1,
+            Tup3::new(3, String::from("Harry Potter"), 10_000) => 1,
         }],
     )]
     // In this case, both persons 1 and 2 are added in the 10-20 window,
@@ -151,12 +152,12 @@ mod tests {
             vec![(101, 42_000)]
         ],
         vec![zset! {}, zset! {
-            Tup3(1, String::from("James Potter"), 10_000) => 1,
-            Tup3(2, String::from("Lily Potter"), 10_000) => 1,
+            Tup3::new(1, String::from("James Potter"), 10_000) => 1,
+            Tup3::new(2, String::from("Lily Potter"), 10_000) => 1,
         }, zset! {
-            Tup3(1, String::from("James Potter"), 10_000) => -1,
-            Tup3(2, String::from("Lily Potter"), 10_000) => -1,
-            Tup3(3, String::from("Harry Potter"), 20_000) => 1,
+            Tup3::new(1, String::from("James Potter"), 10_000) => -1,
+            Tup3::new(2, String::from("Lily Potter"), 10_000) => -1,
+            Tup3::new(3, String::from("Harry Potter"), 20_000) => 1,
         }]
     )]
     fn test_q8(
@@ -179,7 +180,7 @@ mod tests {
                 p_batch
                     .into_iter()
                     .map(|(id, name, date_time)| {
-                        Tup2(
+                        Tup2::new(
                             Event::Person(Person {
                                 id,
                                 name,
@@ -190,7 +191,7 @@ mod tests {
                         )
                     })
                     .chain(a_batch.into_iter().map(|(seller, date_time)| {
-                        Tup2(
+                        Tup2::new(
                             Event::Auction(Auction {
                                 seller,
                                 date_time,

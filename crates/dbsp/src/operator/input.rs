@@ -68,7 +68,8 @@ where
     }
 
     pub fn push(&self, k: K, mut w: ZWeight) {
-        self.handle.dyn_push(Tup2(k, ()).erase_mut(), w.erase_mut())
+        self.handle
+            .dyn_push(Tup2::new(k, ()).erase_mut(), w.erase_mut())
     }
 
     pub fn append(&self, vals: &mut Vec<Tup2<K, ZWeight>>) {
@@ -102,7 +103,8 @@ where
     }
 
     pub fn push(&self, mut k: K, (v, w): (V, ZWeight)) {
-        self.handle.dyn_push(k.erase_mut(), Tup2(v, w).erase_mut())
+        self.handle
+            .dyn_push(k.erase_mut(), Tup2::new(v, w).erase_mut())
     }
 
     pub fn append(&self, vals: &mut Vec<Tup2<K, Tup2<V, ZWeight>>>) {

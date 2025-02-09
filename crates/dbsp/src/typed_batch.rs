@@ -363,7 +363,11 @@ where
             time,
             tuples
                 .into_iter()
-                .map(|Tup2(k, r)| Tup2(Tup2(k, ()), r))
+                //.map(|Tup2(k, r)| Tup2(Tup2(k, ()), r))
+                .map(|t| {
+                    let (k, r) = t.into();
+                    Tup2::new(Tup2::new(k, ()), r)
+                })
                 .collect::<Vec<_>>(),
         )
     }

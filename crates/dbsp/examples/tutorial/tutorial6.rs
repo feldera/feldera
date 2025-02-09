@@ -48,26 +48,34 @@ fn build_circuit(
     let monthly_totals = subset
         .map_index(|r| {
             (
-                Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+                Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
         .aggregate_linear(|v| *v as i64);
     let moving_averages = monthly_totals
-        .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+        .map_index(|(t, v)| {
+            (
+                *t.get_1() as u32 * 12 + (*t.get_2() as u32 - 1),
+                Tup2::new(t.get_0().clone(), *v),
+            )
+        })
         .partitioned_rolling_average(
-            |Tup2(l, v)| (l.clone(), *v),
+            |t| (t.fst().clone(), *t.snd()),
             RelRange::new(RelOffset::Before(2), RelOffset::Before(0)),
         )
-        .map_index(|(l, Tup2(date, avg))| {
+        .map_index(|(l, t)| {
             (
-                Tup3(l.clone(), (date / 12) as i32, (date % 12 + 1) as u8),
-                avg.unwrap(),
+                Tup3::new(l.clone(), (*t.fst() / 12) as i32, (*t.fst() % 12 + 1) as u8),
+                t.snd().unwrap(),
             )
         });
 
-    let joined = monthly_totals.join_index(&moving_averages, |Tup3(l, y, m), cur, avg| {
-        Some((Tup3(l.clone(), *y, *m), Tup2(*cur, *avg)))
+    let joined = monthly_totals.join_index(&moving_averages, |t, cur, avg| {
+        Some((
+            Tup3::new(t.get_0().clone(), *t.get_1(), *t.get_2()),
+            Tup2::new(*cur, *avg),
+        ))
     });
     Ok((input_handle, joined.output()))
 }
@@ -81,17 +89,21 @@ fn main() -> Result<()> {
     );
     let mut input_records = Reader::from_path(path)?
         .deserialize()
-        .map(|result| result.map(|record| Tup2(record, 1)))
+        .map(|result| result.map(|record| Tup2::new(record, 1)))
         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
     input_handle.append(&mut input_records);
 
     circuit.step()?;
 
-    output_handle
-        .consolidate()
-        .iter()
-        .for_each(|(Tup3(l, y, m), Tup2(cur, avg), w)| {
-            println!("{l:16} {y}-{m:02} {cur:10} {avg:10}: {w:+}")
-        });
+    output_handle.consolidate().iter().for_each(|(t3, t2, w)| {
+        println!(
+            "{:16} {}-{:02} {:10} {:10}: {w:+}",
+            t3.get_0(),
+            t3.get_1(),
+            t3.get_2(),
+            t2.fst(),
+            t2.snd()
+        );
+    });
     Ok(())
 }

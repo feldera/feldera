@@ -3715,6 +3715,7 @@ dependencies = [
  "fastbloom",
  "fdlimit",
  "feldera-ijson",
+ "feldera-macros",
  "feldera-size-of",
  "feldera-types",
  "feldera_rust_decimal",
@@ -4772,6 +4773,16 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "feldera-macros"
+version = "0.36.0"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
 ]
 
 [[package]]

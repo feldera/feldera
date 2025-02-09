@@ -68,8 +68,6 @@ pub use ord::{
     VecKeyBatchFactories, VecValBatch, VecValBatchFactories, VecWSet, VecWSetFactories,
 };
 
-use rkyv::{archived_root, de::deserializers::SharedDeserializeMap, Deserialize};
-
 use crate::{
     algebra::MonoidValue,
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
@@ -79,6 +77,7 @@ use crate::{
 };
 pub use cursor::Cursor;
 pub use layers::Trie;
+use rkyv::{archived_root, de::deserializers::SharedDeserializeMap, Deserialize};
 
 /// Trait for data stored in batches.
 ///

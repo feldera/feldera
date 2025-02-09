@@ -267,7 +267,7 @@
 //!    );
 //!    let mut input_records = Reader::from_path(path)?
 //!        .deserialize()
-//!        .map(|result| result.map(|record| Tup2(record, 1)))
+//!        .map(|result| result.map(|record| Tup2::new(record, 1)))
 //!        .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //!    input_handle.append(&mut input_records);
 //!
@@ -373,7 +373,7 @@
 //! #     );
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
-//! #         .map(|result| result.map(|record| Tup2(record, 1)))
+//! #         .map(|result| result.map(|record| Tup2::new(record, 1)))
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
@@ -460,7 +460,7 @@
 //! #     );
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
-//! #         .map(|result| result.map(|record| Tup2(record, 1)))
+//! #         .map(|result| result.map(|record| Tup2::new(record, 1)))
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
@@ -537,7 +537,7 @@
 //! #     );
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
-//! #         .map(|result| result.map(|record| Tup2(record, 1)))
+//! #         .map(|result| result.map(|record| Tup2::new(record, 1)))
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
@@ -617,7 +617,7 @@
 //! #     );
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
-//! #         .map(|result| result.map(|record| Tup2(record, 1)))
+//! #         .map(|result| result.map(|record| Tup2::new(record, 1)))
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
@@ -672,7 +672,7 @@
 //!     let monthly_totals = subset
 //!         .map_index(|r| {
 //!             (
-//!                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//!                 Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
 //!                 r.daily_vaccinations.unwrap_or(0),
 //!             )
 //!         })
@@ -742,7 +742,7 @@
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
@@ -760,7 +760,7 @@
 //! #     );
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
-//! #         .map(|result| result.map(|record| Tup2(record, 1)))
+//! #         .map(|result| result.map(|record| Tup2::new(record, 1)))
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
@@ -770,7 +770,7 @@
 //!     output_handle
 //!         .consolidate()
 //!         .iter()
-//!         .for_each(|(Tup3(l, y, m), sum, w)| println!("{l:16} {y}-{m:02} {sum:10}: {w:+}"));
+//!         .for_each(|(t, sum, w)| println!("{:16} {}-{:02} {sum:10}: {w:+}", t.get_0(), t.get_1(), t.get_2()));
 //!
 //!     Ok(())
 //! }
@@ -809,7 +809,10 @@
 //!
 //! ```ignore
 //!     let moving_averages = monthly_totals
-//!         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+//!         .map_index(|(t, v)| {
+//!             let (l, y, m) = t;
+//!             (*y as u32 * 12 + (*m as u32 - 1), Tup2::new(l.clone(), *v))
+//!     })
 //! ```
 //!
 //! Once we've done that, computing the moving average is easy.  Here's how we
@@ -818,7 +821,7 @@
 //!
 //! ```ignore
 //!         .partitioned_rolling_average(
-//!             |Tup2(l, v)| (l.clone(), *v),
+//!             |t| (t.fst().clone(), *t.snd()),
 //!             RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
 //! ```
 //!
@@ -843,7 +846,7 @@
 //! to strip off the `Option`:
 //!
 //! ```ignore
-//!         .map_index(|(l, Tup2(date, avg))| (Tup3(l.clone(), date / 12, date % 12 + 1), avg.unwrap()));
+//!         .map_index(|(l, t)| (Tup3::new(l.clone(), *t.fst() / 12, *t.fst() % 12 + 1), t.snd().unwrap()));
 //! ```
 //!
 //! If we adjust the `build_circuit` return type and return value, like shown
@@ -899,18 +902,21 @@
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let moving_averages = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+//! #         .map_index(|(t, v)| {
+//! #             let (l, y, m) = t.into();
+//! #             (*y as u32 * 12 + (*m as u32 - 1), Tup2::new(l.clone(), *v))
+//! #         })
 //! #         .partitioned_rolling_average(
-//! #               |Tup2(l, v)| (l.clone(), *v),
+//! #               |t| (t.fst().clone(), *t.snd()),
 //! #               RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
-//! #         .map_index(|(l, Tup2(date, avg))| {
-//! #             (Tup3(l.clone(), date / 12, date % 12 + 1), avg.unwrap())
+//! #         .map_index(|(l, t)| {
+//! #             (Tup3::new(l.clone(), *t.fst() / 12, *t.fst() % 12 + 1), t.snd().unwrap())
 //! #         });
 //!     // ...
 //!     Ok((input_handle, moving_averages.output()))
@@ -925,7 +931,7 @@
 //! #     );
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
-//! #         .map(|result| result.map(|record| Tup2(record, 1)))
+//! #         .map(|result| result.map(|record| Tup2::new(record, 1)))
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
@@ -934,7 +940,10 @@
 //! #     output_handle
 //! #         .consolidate()
 //! #         .iter()
-//! #         .for_each(|(Tup3(l, y, m), sum, w)| println!("{l:16} {y}-{m:02} {sum:10}: {w:+}"));
+//! #         .for_each(|(t, sum, w)| {
+//! #             let (l, y, m) = t.into();
+//! #             println!("{l:16} {y}-{m:02} {sum:10}: {w:+}")
+//! #         });
 //! #
 //! #     Ok(())
 //! # }
@@ -1061,18 +1070,19 @@
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let moving_averages = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+//! #         .map_index(|(t, v)| (*t.get_1() as u32 * 12 + (*t.get_2() as u32 - 1), Tup2::new(l.clone(), *v)))
 //! #         .partitioned_rolling_average(
-//! #               |Tup2(l, v)| (l.clone(), *v),
+//! #               |t| (t.fst().clone(), *t.snd()),
 //! #               RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
-//! #         .map_index(|(l, Tup2(date, avg))| {
+//! #         .map_index(|(l, t)| {
 //! #             (
-//! #                 Tup3(l.clone(), (date / 12) as i32, (date % 12 + 1) as u8),
-//! #                 avg.unwrap(),
+//! #                 Tup3::new(l.clone(), (*t.fst() / 12) as i32, (*t.fst() % 12 + 1) as u8),
+//! #                 t.snd().unwrap(),
 //! #             )
 //! #         });
-//! #     let joined = monthly_totals.join_index(&moving_averages, |Tup3(l, y, m), cur, avg| {
-//! #         Some((Tup3(l.clone(), *y, *m), Tup2(*cur, *avg)))
+//! #     let joined = monthly_totals.join_index(&moving_averages, |t, cur, avg| {
+//! #         let (l, y, m) = t.into();
+//! #         Some((Tup3::new(l.clone(), *y, *m), Tup2::new(*cur, *avg)))
 //! #     });
 //!     Ok((input_handle, joined.output()))
 //! }
@@ -1095,7 +1105,9 @@
 //!     output_handle
 //!         .consolidate()
 //!         .iter()
-//!         .for_each(|(Tup3(l, y, m), Tup2(cur, avg), w)| {
+//!         .for_each(|(t3, t2, w)| {
+//!             let (l, y, m) = t.into();
+//!             let (cur, avg) = t2.into();
 //!             println!("{l:16} {y}-{m:02} {cur:10} {avg:10}: {w:+}")
 //!         });
 //!     Ok(())
@@ -1169,7 +1181,8 @@
 //!
 //! ```ignore
 //!     let most_vax = monthly_totals
-//!         .map_index(|(Tup3(l, y, m), sum)| {
+//!         .map_index(|(t, sum)| {
+//!             let (l, y, m) = t.into();
 //!             (
 //!                 l.clone(),
 //!                 VaxMonthly {
@@ -1256,13 +1269,14 @@
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
 //! #         .aggregate_linear(|v| *v as isize);
 //! #     let most_vax = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), sum)| {
+//! #         .map_index(|(t, sum)| {
+//! #             let (l, y, m) = t.into();
 //! #             (
 //! #                 l.clone(),
 //! #                 VaxMonthly {
@@ -1286,7 +1300,7 @@
 //! #     );
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
-//! #         .map(|result| result.map(|record| Tup2(record, 1)))
+//! #         .map(|result| result.map(|record| Tup2::new(record, 1)))
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
@@ -1392,28 +1406,29 @@
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let running_monthly_totals = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+//! #         .map_index(|(t, v)| (*t.get_1() as u32 * 12 + (*t.get_2() as u32 - 1), Tup2::new(t.get_0().clone(), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
-//! #             |Tup2(l, v)| (l.clone(), *v),
+//! #             |t| (t.fst().clone(), *t.snd()),
 //! #             |vaxxed| *vaxxed,
 //! #             |total| total,
 //! #             RelRange::new(RelOffset::Before(u32::MAX), RelOffset::Before(0)),
 //! #         );
 //! #     let vax_rates = running_monthly_totals
-//! #         .map_index(|(l, Tup2(date, total))| {
+//! #         .map_index(|(l, t)| {
 //! #             (
 //! #                 l.clone(),
-//! #                 Tup3((date / 12) as i32, (date % 12 + 1) as u8, total.unwrap()),
+//! #                 Tup3::new((*t.fst() / 12) as i32, (*t.fst() % 12 + 1) as u8, t.snd().unwrap()),
 //! #             )
 //! #         })
-//! #         .join_index(&pop_stream, |l, Tup3(y, m, total), pop| {
-//! #             Some((Tup3(l.clone(), *y, *m), Tup2(*total, *pop)))
+//! #         .join_index(&pop_stream, |l, t, pop| {
+//! #             let (y, m, total) = t.into();
+//! #             Some((Tup3::new(l.clone(), *y, *m), Tup2::new(*total, *pop)))
 //! #         });
 //!     // ...
 //!     Ok((vax_handle, pop_handle, vax_rates.output()))
@@ -1428,15 +1443,15 @@
 //! #     );
 //! #     let mut vax_records = Reader::from_path(path)?
 //! #         .deserialize()
-//! #         .map(|result| result.map(|record| Tup2(record, 1)))
+//! #         .map(|result| result.map(|record| Tup2::new(record, 1)))
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     vax_handle.append(&mut vax_records);
 //! #
 //! #     let mut pop_records = vec![
-//! #         Tup2("England".into(), Tup2(56286961u64, 1i64)),
-//! #         Tup2("Northern Ireland".into(), Tup2(1893667, 1)),
-//! #         Tup2("Scotland".into(), Tup2(5463300, 1)),
-//! #         Tup2("Wales".into(), Tup2(3152879, 1)),
+//! #         Tup2::new("England".into(), Tup2::new(56286961u64, 1i64)),
+//! #         Tup2::new("Northern Ireland".into(), Tup2::new(1893667, 1)),
+//! #         Tup2::new("Scotland".into(), Tup2::new(5463300, 1)),
+//! #         Tup2::new("Wales".into(), Tup2::new(3152879, 1)),
 //! #     ];
 //! #     pop_handle.append(&mut pop_records);
 //! #
@@ -1445,7 +1460,9 @@
 //! #     output_handle
 //! #         .consolidate()
 //! #         .iter()
-//! #         .for_each(|(Tup3(l, y, m), Tup2(vaxxes, pop), w)| {
+//! #         .for_each(|(t3, t2, w)| {
+//! #             let (l, y, m) = t3.into();
+//! #             let (vaxxes, pop) = t2.into();
 //! #             let rate = vaxxes as f64 / pop as f64 * 100.0;
 //! #             println!("{l:16} {y}-{m:02}: {vaxxes:9} {pop:8} {rate:6.2}% {w:+}",)
 //! #         });
@@ -1508,28 +1525,29 @@
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let running_monthly_totals = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+//! #         .map_index(|(t, v)| (*t.get_1() as u32 * 12 + (*t.get_2() as u32 - 1), Tup2::new(t.get_0().clone(), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
-//! #             |Tup2(l, v)| (l.clone(), *v),
+//! #             |t| (t.fst().clone(), *t.snd()),
 //! #             |vaxxed| *vaxxed,
 //! #             |total| total,
 //! #             RelRange::new(RelOffset::Before(u32::MAX), RelOffset::Before(0)),
 //! #         );
 //! #     let vax_rates = running_monthly_totals
-//! #         .map_index(|(l, Tup2(date, total))| {
+//! #         .map_index(|(l, t)| {
 //! #             (
 //! #                 l.clone(),
-//! #                 Tup3((date / 12) as i32, (date % 12 + 1) as u8, total.unwrap()),
+//! #                 Tup3::new((*t.fst() / 12) as i32, (*t.fst() % 12 + 1) as u8, t.snd().unwrap()),
 //! #             )
 //! #         })
-//! #         .join_index(&pop_stream, |l, Tup3(y, m, total), pop| {
-//! #             Some((Tup3(l.clone(), *y, *m), Tup2(*total, *pop)))
+//! #         .join_index(&pop_stream, |l, t3, pop| {
+//! #             let (y, m, total) = t3.into();
+//! #             Some((Tup3::new(l.clone(), *y, *m), Tup2::new(*total, *pop)))
 //! #         });
 //! #     Ok((vax_handle, pop_handle, vax_rates.output()))
 //! # }
@@ -1543,16 +1561,16 @@
 //! #     );
 //! #     let mut vax_records = Reader::from_path(path)?
 //! #         .deserialize()
-//! #         .map(|result| result.map(|record| Tup2(record, 1)))
+//! #         .map(|result| result.map(|record| Tup2::new(record, 1)))
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     vax_handle.append(&mut vax_records);
 //!
 //!     // ...
 //!     let mut pop_records = vec![
-//!         Tup2("England".into(), Tup2(56286961u64, 1i64)),
-//!         Tup2("Northern Ireland".into(), Tup2(1893667, 1)),
-//!         Tup2("Scotland".into(), Tup2(5463300, 1)),
-//!         Tup2("Wales".into(), Tup2(3152879, 1)),
+//!         Tup2::new("England".into(), Tup2::new(56286961u64, 1i64)),
+//!         Tup2::new("Northern Ireland".into(), Tup2::new(1893667, 1)),
+//!         Tup2::new("Scotland".into(), Tup2::new(5463300, 1)),
+//!         Tup2::new("Wales".into(), Tup2::new(3152879, 1)),
 //!     ];
 //!     pop_handle.append(&mut pop_records);
 //!     // ...
@@ -1562,7 +1580,9 @@
 //! #     output_handle
 //! #         .consolidate()
 //! #         .iter()
-//! #         .for_each(|(Tup3(l, y, m), Tup2(vaxxes, pop), w)| {
+//! #         .for_each(|(t3, t2, w)| {
+//! #             let (l, y, m) = t3.into();
+//! #             let (vaxxes, pop) = t2.into();
 //! #             let rate = vaxxes as f64 / pop as f64 * 100.0;
 //! #             println!("{l:16} {y}-{m:02}: {vaxxes:9} {pop:8} {rate:6.2}% {w:+}",)
 //! #         });
@@ -1627,28 +1647,29 @@
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //!     let running_monthly_totals = monthly_totals
-//!         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+//!         .map_index(|(t, v)| (*t.get_1() as u32 * 12 + (*t.get_2() as u32 - 1), Tup2::new(t.get_0().clone(), *v)))
 //!         .partitioned_rolling_aggregate_linear(
-//!             |Tup2(l, v)| (l.clone(), *v),
+//!             |t| (t.fst().clone(), *t.snd()),
 //!             |vaxxed| *vaxxed,
 //!             |total| total,
 //!             RelRange::new(RelOffset::Before(u32::MAX), RelOffset::Before(0)),
 //!         );
 //!     let vax_rates = running_monthly_totals
-//!         .map_index(|(l, Tup2(date, total))| {
+//!         .map_index(|(l, t)| {
 //!             (
 //!                 l.clone(),
-//!                 Tup3((date / 12) as i32, (date % 12 + 1) as u8, total.unwrap()),
+//!                 Tup3::new((*t.fst() / 12) as i32, (*t.fst() % 12 + 1) as u8, t.snd().unwrap()),
 //!             )
 //!         })
-//!         .join_index(&pop_stream, |l, Tup3(y, m, total), pop| {
-//!             Some((Tup3(l.clone(), *y, *m), Tup2(*total, *pop)))
+//!         .join_index(&pop_stream, |l, t, pop| {
+//!             let (y, m, total) = t.into();
+//!             Some((Tup3::new(l.clone(), *y, *m), Tup2::new(*total, *pop)))
 //!         });
 //! #     Ok((vax_handle, pop_handle, vax_rates.output()))
 //! # }
@@ -1708,28 +1729,29 @@
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let running_monthly_totals = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+//! #         .map_index(|(t, v)| (*t.get_1() as u32 * 12 + (*t.get_2() as u32 - 1), Tup2::new(t.get_0().clone(), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
-//! #             |Tup2(l, v)| (l.clone(), *v),
+//! #             |t| (t.fst().clone(), *t.snd()),
 //! #             |vaxxed| *vaxxed,
 //! #             |total| total,
 //! #             RelRange::new(RelOffset::Before(u32::MAX), RelOffset::Before(0)),
 //! #         );
 //! #     let vax_rates = running_monthly_totals
-//! #         .map_index(|(l, Tup2(date, total))| {
+//! #         .map_index(|(l, t)| {
 //! #             (
 //! #                 l.clone(),
-//! #                 Tup3((date / 12) as i32, (date % 12 + 1) as u8, total.unwrap()),
+//! #                 Tup3::new((*t.fst() / 12) as i32, (*t.fst() % 12 + 1) as u8, t.snd().unwrap()),
 //! #             )
 //! #         })
-//! #         .join_index(&pop_stream, |l, Tup3(y, m, total), pop| {
-//! #             Some((Tup3(l.clone(), *y, *m), Tup2(*total, *pop)))
+//! #         .join_index(&pop_stream, |l, t, pop| {
+//! #             let (y, m, total) = t.into();
+//! #             Some((Tup3::new(l.clone(), *y, *m), Tup2::new(*total, *pop)))
 //! #         });
 //! #     Ok((vax_handle, pop_handle, vax_rates.output()))
 //! # }
@@ -1743,15 +1765,15 @@
 //! #     );
 //! #     let mut vax_records = Reader::from_path(path)?
 //! #         .deserialize()
-//! #         .map(|result| result.map(|record| Tup2(record, 1)))
+//! #         .map(|result| result.map(|record| Tup2::new(record, 1)))
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     vax_handle.append(&mut vax_records);
 //! #
 //! #     let mut pop_records = vec![
-//! #         Tup2("England".into(), Tup2(56286961u64, 1i64)),
-//! #         Tup2("Northern Ireland".into(), Tup2(1893667, 1)),
-//! #         Tup2("Scotland".into(), Tup2(5463300, 1)),
-//! #         Tup2("Wales".into(), Tup2(3152879, 1)),
+//! #         Tup2::new("England".into(), Tup2::new(56286961u64, 1i64)),
+//! #         Tup2::new("Northern Ireland".into(), Tup2::new(1893667, 1)),
+//! #         Tup2::new("Scotland".into(), Tup2::new(5463300, 1)),
+//! #         Tup2::new("Wales".into(), Tup2::new(3152879, 1)),
 //! #     ];
 //! #     pop_handle.append(&mut pop_records);
 //! #
@@ -1760,7 +1782,9 @@
 //!     output_handle
 //!         .consolidate()
 //!         .iter()
-//!         .for_each(|(Tup3(l, y, m), Tup2(vaxxes, pop), w)| {
+//!         .for_each(|(t3, t2, w)| {
+//!             let (l, y, m) = t3.into();
+//!             let (vaxxes, pop) = t2.into();
 //!             let rate = vaxxes as f64 / pop as f64 * 100.0;
 //!             println!("{l:16} {y}-{m:02}: {vaxxes:9} {pop:8} {rate:6.2}% {w:+}",)
 //!         });
@@ -1869,13 +1893,14 @@
 //! #     let monthly_totals = subset
 //! #         .map_index(|r| {
 //! #             (
-//! #                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+//! #                 Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let most_vax = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), sum)| {
+//! #         .map_index(|(t, sum)| {
+//! #             let (l, y, m) = t.into();
 //! #             (
 //! #                 l.clone(),
 //! #                 VaxMonthly {
@@ -1904,7 +1929,7 @@
 //!             let Some(record) = input_records.next() else {
 //!                 break;
 //!             };
-//!             batch.push(Tup2(record?, 1));
+//!             batch.push(Tup2::new(record?, 1));
 //!         }
 //!         if batch.is_empty() {
 //!             break;

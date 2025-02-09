@@ -164,15 +164,15 @@ mod test {
             // Graph edges
             let edges = circuit.add_source(Generator::new(move || {
                 zset! {
-                    Tup2(0, 3) => 1,
-                    Tup2(1, 2) => 1,
-                    Tup2(2, 1) => 1,
-                    Tup2(3, 1) => 1,
-                    Tup2(3, 4) => 1,
-                    Tup2(4, 5) => 1,
-                    Tup2(4, 6) => 1,
-                    Tup2(5, 6) => 1,
-                    Tup2(5, 1) => 1,
+                    Tup2::new(0, 3) => 1,
+                    Tup2::new(1, 2) => 1,
+                    Tup2::new(2, 1) => 1,
+                    Tup2::new(3, 1) => 1,
+                    Tup2::new(3, 4) => 1,
+                    Tup2::new(4, 5) => 1,
+                    Tup2::new(4, 6) => 1,
+                    Tup2::new(5, 6) => 1,
+                    Tup2::new(5, 1) => 1,
                 }
             }));
 
@@ -188,7 +188,7 @@ mod test {
                     let init2 = init2.delta0(child).integrate();
 
                     let edges_indexed: Stream<_, OrdIndexedZSet<u64, u64>> =
-                        edges.map_index(|Tup2(k, v)| (*k, *v));
+                        edges.map_index(|t| (*t.fst(), *t.snd()));
 
                     // Builds a subcircuit that computes nodes reachable from `init`:
                     //

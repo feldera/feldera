@@ -40,7 +40,7 @@ pub fn q22(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q22Stream {
                 split.next().unwrap_or_default(),
             );
 
-            Some(Tup7(
+            Some(Tup7::new(
                 b.auction,
                 b.bidder,
                 b.price,
@@ -74,8 +74,8 @@ mod tests {
             }),
         ]],
         vec![zset!{
-            Tup7(1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
-            Tup7(1, 1, 99, String::from("https://example.com/dir1/dir2/dir3/dir4/dir5"), String::from("dir1"), String::from("dir2"), String::from("dir3")) => 1,
+            Tup7::new(1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
+            Tup7::new(1, 1, 99, String::from("https://example.com/dir1/dir2/dir3/dir4/dir5"), String::from("dir1"), String::from("dir2"), String::from("dir3")) => 1,
         }],
     )]
     #[case::bids_mixed_with_non_urls(
@@ -94,15 +94,15 @@ mod tests {
             }),
         ]],
         vec![zset!{
-            Tup7(1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
-            Tup7(1, 1, 99, String::from("Google"), String::from(""), String::from(""), String::from("")) => 1,
-            Tup7(1, 1, 99, String::from("https:badly.formed/dir1/dir2/dir3"), String::from("dir3"), String::from(""), String::from("")) => 1,
+            Tup7::new(1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
+            Tup7::new(1, 1, 99, String::from("Google"), String::from(""), String::from(""), String::from("")) => 1,
+            Tup7::new(1, 1, 99, String::from("https:badly.formed/dir1/dir2/dir3"), String::from("dir3"), String::from(""), String::from("")) => 1,
         }],
     )]
     fn test_q22(#[case] input_event_batches: Vec<Vec<Event>>, #[case] expected_zsets: Vec<Q22Set>) {
         let input_vecs = input_event_batches
             .into_iter()
-            .map(|batch| batch.into_iter().map(|e| Tup2(e, 1)).collect());
+            .map(|batch| batch.into_iter().map(|e| Tup2::new(e, 1)).collect());
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();

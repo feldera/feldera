@@ -369,9 +369,12 @@ mod tests {
         #[case] input_bid_batches: Vec<Vec<Bid>>,
         #[case] expected_zsets: Vec<OrdZSet<Bid>>,
     ) {
-        let input_vecs = input_bid_batches
-            .into_iter()
-            .map(|batch| batch.into_iter().map(|b| Tup2(Event::Bid(b), 1)).collect());
+        let input_vecs = input_bid_batches.into_iter().map(|batch| {
+            batch
+                .into_iter()
+                .map(|b| Tup2::new(Event::Bid(b), 1))
+                .collect()
+        });
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();

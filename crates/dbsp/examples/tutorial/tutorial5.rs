@@ -48,19 +48,27 @@ fn build_circuit(
     let monthly_totals = subset
         .map_index(|r| {
             (
-                Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+                Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
         .aggregate_linear(|v| *v as i64);
     let moving_averages = monthly_totals
-        .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+        .map_index(|(t, v)| {
+            (
+                *t.get_1() as u32 * 12 + (*t.get_2() as u32 - 1),
+                Tup2::new(t.get_0().clone(), *v),
+            )
+        })
         .partitioned_rolling_average(
-            |Tup2(l, v)| (l.clone(), *v),
+            |t| (t.fst().clone(), *t.snd()),
             RelRange::new(RelOffset::Before(2), RelOffset::Before(0)),
         )
-        .map_index(|(l, Tup2(date, avg))| {
-            (Tup3(l.clone(), date / 12, date % 12 + 1), avg.unwrap())
+        .map_index(|(l, t)| {
+            (
+                Tup3::new(l.clone(), *t.fst() / 12, *t.fst() % 12 + 1),
+                t.snd().unwrap(),
+            )
         });
     Ok((input_handle, moving_averages.output()))
 }
@@ -74,16 +82,20 @@ fn main() -> Result<()> {
     );
     let mut input_records = Reader::from_path(path)?
         .deserialize()
-        .map(|result| result.map(|record| Tup2(record, 1)))
+        .map(|result| result.map(|record| Tup2::new(record, 1)))
         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
     input_handle.append(&mut input_records);
 
     circuit.step()?;
 
-    output_handle
-        .consolidate()
-        .iter()
-        .for_each(|(Tup3(l, y, m), sum, w)| println!("{l:16} {y}-{m:02} {sum:10}: {w:+}"));
+    output_handle.consolidate().iter().for_each(|(t, sum, w)| {
+        println!(
+            "{:16} {}-{:02} {sum:10}: {w:+}",
+            t.get_0(),
+            t.get_1(),
+            t.get_2()
+        )
+    });
 
     Ok(())
 }

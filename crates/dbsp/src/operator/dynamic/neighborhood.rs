@@ -639,7 +639,7 @@ mod test {
                         (
                             (
                                 Box::new(i as i64 - (start - from)).erase_box(),
-                                Box::new(Tup2(
+                                Box::new(Tup2::new(
                                     k.downcast_checked::<K>().clone(),
                                     v.downcast_checked::<V>().clone(),
                                 ))
@@ -718,14 +718,14 @@ mod test {
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
-            &[((-1, Tup2(9, 0), ()), 1)]
+            &[((-1, Tup2::new(9, 0), ()), 1)]
         );
 
         descr_handle.set_for_all(Some(TypedBox::new(NeighborhoodDescr::new(None, 10, 3, 5))));
         dbsp.step().unwrap();
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
-            &[((0, Tup2(9, 0), ()), 1)]
+            &[((0, Tup2::new(9, 0), ()), 1)]
         );
 
         descr_handle.set_for_all(Some(TypedBox::new(NeighborhoodDescr::new(
@@ -740,7 +740,10 @@ mod test {
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
-            &[((-2, Tup2(9, 0), ()), 1), ((-1, Tup2(9, 1), ()), 1)]
+            &[
+                ((-2, Tup2::new(9, 0), ()), 1),
+                ((-1, Tup2::new(9, 1), ()), 1)
+            ]
         );
 
         descr_handle.set_for_all(Some(TypedBox::new(NeighborhoodDescr::new(
@@ -756,9 +759,9 @@ mod test {
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, Tup2(8, 1), ()), 1),
-                ((-2, Tup2(9, 0), ()), 1),
-                ((-1, Tup2(9, 1), ()), 1)
+                ((-3, Tup2::new(8, 1), ()), 1),
+                ((-2, Tup2::new(9, 0), ()), 1),
+                ((-1, Tup2::new(9, 1), ()), 1)
             ]
         );
 
@@ -775,9 +778,9 @@ mod test {
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, Tup2(8, 1), ()), 1),
-                ((-2, Tup2(9, 0), ()), 1),
-                ((-1, Tup2(9, 1), ()), 1)
+                ((-3, Tup2::new(8, 1), ()), 1),
+                ((-2, Tup2::new(9, 0), ()), 1),
+                ((-1, Tup2::new(9, 1), ()), 1)
             ]
         );
 
@@ -794,10 +797,10 @@ mod test {
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, Tup2(8, 1), ()), 1),
-                ((-2, Tup2(9, 0), ()), 1),
-                ((-1, Tup2(9, 1), ()), 1),
-                ((0, Tup2(10, 10), ()), 1)
+                ((-3, Tup2::new(8, 1), ()), 1),
+                ((-2, Tup2::new(9, 0), ()), 1),
+                ((-1, Tup2::new(9, 1), ()), 1),
+                ((0, Tup2::new(10, 10), ()), 1)
             ]
         );
 
@@ -815,12 +818,12 @@ mod test {
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, Tup2(8, 1), ()), 1),
-                ((-2, Tup2(9, 0), ()), 1),
-                ((-1, Tup2(9, 1), ()), 1),
-                ((0, Tup2(10, 10), ()), 1),
-                ((1, Tup2(10, 11), ()), 1),
-                ((2, Tup2(12, 0), ()), 1)
+                ((-3, Tup2::new(8, 1), ()), 1),
+                ((-2, Tup2::new(9, 0), ()), 1),
+                ((-1, Tup2::new(9, 1), ()), 1),
+                ((0, Tup2::new(10, 10), ()), 1),
+                ((1, Tup2::new(10, 11), ()), 1),
+                ((2, Tup2::new(12, 0), ()), 1)
             ]
         );
 
@@ -837,11 +840,11 @@ mod test {
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, Tup2(8, 1), ()), 1),
-                ((-2, Tup2(9, 0), ()), 1),
-                ((-1, Tup2(9, 1), ()), 1),
-                ((0, Tup2(10, 11), ()), 1),
-                ((1, Tup2(12, 0), ()), 1)
+                ((-3, Tup2::new(8, 1), ()), 1),
+                ((-2, Tup2::new(9, 0), ()), 1),
+                ((-1, Tup2::new(9, 1), ()), 1),
+                ((0, Tup2::new(10, 11), ()), 1),
+                ((1, Tup2::new(12, 0), ()), 1)
             ]
         );
 
@@ -862,15 +865,15 @@ mod test {
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, Tup2(8, 1), ()), 1),
-                ((-2, Tup2(9, 0), ()), 1),
-                ((-1, Tup2(9, 1), ()), 1),
-                ((0, Tup2(10, 11), ()), 1),
-                ((1, Tup2(12, 0), ()), 1),
-                ((2, Tup2(13, 0), ()), 1),
-                ((3, Tup2(14, 0), ()), 1),
-                ((4, Tup2(14, 1), ()), 1),
-                ((5, Tup2(14, 2), ()), 1)
+                ((-3, Tup2::new(8, 1), ()), 1),
+                ((-2, Tup2::new(9, 0), ()), 1),
+                ((-1, Tup2::new(9, 1), ()), 1),
+                ((0, Tup2::new(10, 11), ()), 1),
+                ((1, Tup2::new(12, 0), ()), 1),
+                ((2, Tup2::new(13, 0), ()), 1),
+                ((3, Tup2::new(14, 0), ()), 1),
+                ((4, Tup2::new(14, 1), ()), 1),
+                ((5, Tup2::new(14, 2), ()), 1)
             ]
         );
 
@@ -881,12 +884,12 @@ mod test {
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((0, Tup2(7, 1), ()), 1),
-                ((1, Tup2(8, 1), ()), 1),
-                ((2, Tup2(9, 0), ()), 1),
-                ((3, Tup2(9, 1), ()), 1),
-                ((4, Tup2(10, 11), ()), 1),
-                ((5, Tup2(12, 0), ()), 1),
+                ((0, Tup2::new(7, 1), ()), 1),
+                ((1, Tup2::new(8, 1), ()), 1),
+                ((2, Tup2::new(9, 0), ()), 1),
+                ((3, Tup2::new(9, 1), ()), 1),
+                ((4, Tup2::new(10, 11), ()), 1),
+                ((5, Tup2::new(12, 0), ()), 1),
             ]
         );
     }

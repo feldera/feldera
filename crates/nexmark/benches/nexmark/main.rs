@@ -120,7 +120,7 @@ fn spawn_source_producer(
                 let mut events: Vec<Tup2<Event, ZWeight>> = Vec::with_capacity(batch_size);
                 let mut batch_count = 0;
                 for event in &mut source {
-                    events.push(Tup2(event, 1));
+                    events.push(Tup2::new(event, 1));
                     batch_count += 1;
                     if batch_count == batch_size {
                         break;

@@ -1020,7 +1020,7 @@ pub mod test {
                             Box::new(|| zset! {})
                         }
                     })))
-                    .map_index(|Tup2(k, v)| (*k, *v));
+                    .map_index(|t| (*t.fst(), *t.snd()));
 
                 // Weighted sum aggregate.
                 let sum = <Fold<i64, i64, DefaultSemigroup<_>, _, _>>::new(
@@ -1157,7 +1157,7 @@ pub mod test {
     pub fn test_zset() -> impl Strategy<Value = TestZSet> {
         collection::vec(
             (
-                (0..NUM_KEYS, -MAX_VAL..MAX_VAL).prop_map(|(x, y)| Tup2(x, y)),
+                (0..NUM_KEYS, -MAX_VAL..MAX_VAL).prop_map(|(x, y)| Tup2::new(x, y)),
                 -1..=1i64,
             ),
             0..MAX_TUPLES,
@@ -1167,7 +1167,7 @@ pub mod test {
                 (),
                 tuples
                     .into_iter()
-                    .map(|(k, w)| Tup2(Tup2(k, ()), w))
+                    .map(|(k, w)| Tup2::new(Tup2::new(k, ()), w))
                     .collect(),
             )
         })
@@ -1267,7 +1267,10 @@ pub mod test {
         })
         .unwrap();
 
-        input_handle.append(&mut vec![Tup2(1u64, Tup2(1u64, 1)), Tup2(1, Tup2(2, 2))]);
+        input_handle.append(&mut vec![
+            Tup2::new(1u64, Tup2::new(1u64, 1)),
+            Tup2::new(1, Tup2::new(2, 2)),
+        ]);
         dbsp.step().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
@@ -1287,9 +1290,9 @@ pub mod test {
         );
 
         input_handle.append(&mut vec![
-            Tup2(2, Tup2(2, 1)),
-            Tup2(2, Tup2(4, 1)),
-            Tup2(1, Tup2(2, -1)),
+            Tup2::new(2, Tup2::new(2, 1)),
+            Tup2::new(2, Tup2::new(4, 1)),
+            Tup2::new(1, Tup2::new(2, -1)),
         ]);
         dbsp.step().unwrap();
         assert_eq!(
@@ -1309,7 +1312,10 @@ pub mod test {
             &indexed_zset! {2 => {6 => 1}, 1 => {5 => -1, 3 => 1}}
         );
 
-        input_handle.append(&mut vec![Tup2(1, Tup2(3, 1)), Tup2(1, Tup2(2, -1))]);
+        input_handle.append(&mut vec![
+            Tup2::new(1, Tup2::new(3, 1)),
+            Tup2::new(1, Tup2::new(2, -1)),
+        ]);
         dbsp.step().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
@@ -1356,12 +1362,13 @@ pub mod test {
         fn agg_func(x: &Option<i32>) -> Tup3<i32, i32, i32> {
             let v = x.unwrap_or_default();
 
-            Tup3(1, if x.is_some() { 1 } else { 0 }, v)
+            Tup3::new(1, if x.is_some() { 1 } else { 0 }, v)
         }
 
         // Postprocessing: sum of non-null elements or NULL if
         // all elements are NULL.
-        fn postprocess_func(Tup3(_count, non_nulls, sum): Tup3<i32, i32, i32>) -> Option<i32> {
+        fn postprocess_func(t: Tup3<i32, i32, i32>) -> Option<i32> {
+            let (_count, non_nulls, sum) = t.into();
             if non_nulls > 0 {
                 Some(sum)
             } else {
@@ -1374,7 +1381,7 @@ pub mod test {
                 let (input, input_handle) = circuit.add_input_zset::<Tup2<i32, Option<i32>>>();
                 let (waterline, waterline_handle) = circuit.add_input_stream::<i32>();
 
-                let indexed_input = input.map_index(|Tup2(k, v)| (*k, *v));
+                let indexed_input = input.map_index(|t| (*t.fst(), *t.snd()));
 
                 let sum = indexed_input.aggregate_linear_postprocess(agg_func, postprocess_func);
                 let sum_retain = indexed_input.aggregate_linear_postprocess_retain_keys(
@@ -1403,7 +1410,7 @@ pub mod test {
             .unwrap();
 
         // A single NULL element -> aggregate is NULL
-        input_handle.append(&mut vec![Tup2(Tup2(1i32, None), 2)]);
+        input_handle.append(&mut vec![Tup2::new(Tup2::new(1i32, None), 2)]);
         dbsp.step().unwrap();
         assert_eq!(
             output_handle.consolidate(),
@@ -1411,7 +1418,7 @@ pub mod test {
         );
 
         // +5 -> aggregate = 5
-        input_handle.append(&mut vec![Tup2(Tup2(1i32, Some(5)), 1)]);
+        input_handle.append(&mut vec![Tup2::new(Tup2::new(1i32, Some(5)), 1)]);
         dbsp.step().unwrap();
         assert_eq!(
             output_handle.consolidate(),
@@ -1419,7 +1426,7 @@ pub mod test {
         );
 
         // +3 * 2 -> aggrregate = 11
-        input_handle.append(&mut vec![Tup2(Tup2(1i32, Some(3)), 2)]);
+        input_handle.append(&mut vec![Tup2::new(Tup2::new(1i32, Some(3)), 2)]);
         dbsp.step().unwrap();
         assert_eq!(
             output_handle.consolidate(),
@@ -1427,7 +1434,7 @@ pub mod test {
         );
 
         // + (-11) -> aggregate = 0
-        input_handle.append(&mut vec![Tup2(Tup2(1i32, Some(-11)), 1)]);
+        input_handle.append(&mut vec![Tup2::new(Tup2::new(1i32, Some(-11)), 1)]);
         dbsp.step().unwrap();
         assert_eq!(
             output_handle.consolidate(),
@@ -1436,9 +1443,9 @@ pub mod test {
 
         // Remove all non-NULL eleements -> aggregate = NULL
         input_handle.append(&mut vec![
-            Tup2(Tup2(1i32, Some(-11)), -1),
-            Tup2(Tup2(1i32, Some(5)), -1),
-            Tup2(Tup2(1i32, Some(3)), -2),
+            Tup2::new(Tup2::new(1i32, Some(-11)), -1),
+            Tup2::new(Tup2::new(1i32, Some(5)), -1),
+            Tup2::new(Tup2::new(1i32, Some(3)), -2),
         ]);
         dbsp.step().unwrap();
         assert_eq!(
@@ -1447,7 +1454,7 @@ pub mod test {
         );
 
         // Remove the remaining NULL -> the whole group disappears.
-        input_handle.append(&mut vec![Tup2(Tup2(1i32, None), -2)]);
+        input_handle.append(&mut vec![Tup2::new(Tup2::new(1i32, None), -2)]);
         dbsp.step().unwrap();
         assert_eq!(output_handle.consolidate(), indexed_zset! {});
     }
@@ -1460,16 +1467,17 @@ pub mod test {
         // 2. Number of non-null elements
         // 3. Sum of non-null elements
         // Note we only compute 1 to make sure that the aggregate is not
-        // zero unless the group is actualy empty.
+        // zero unless the group is actually empty.
         fn agg_func(x: &Option<i8>) -> Tup3<i8, i8, i8> {
             let v = x.unwrap_or_default();
 
-            Tup3(1, if x.is_some() { 1 } else { 0 }, v)
+            Tup3::new(1, if x.is_some() { 1 } else { 0 }, v)
         }
 
         // Postprocessing: sum of non-null elements or NULL if
         // all elements are NULL.
-        fn postprocess_func(Tup3(_count, non_nulls, sum): Tup3<i8, i8, i8>) -> Option<i8> {
+        fn postprocess_func(t: Tup3<i8, i8, i8>) -> Option<i8> {
+            let (_count, non_nulls, sum) = t.into();
             if non_nulls > 0 {
                 Some(sum)
             } else {
@@ -1480,7 +1488,7 @@ pub mod test {
         let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(4, |circuit| {
             let (input, input_handle) = circuit.add_input_zset::<Tup2<i8, Option<i8>>>();
 
-            let indexed_input = input.map_index(|Tup2(k, v)| (*k, *v));
+            let indexed_input = input.map_index(|t| (*t.fst(), *t.snd()));
 
             let sum = indexed_input.aggregate_linear_postprocess(agg_func, postprocess_func);
 
@@ -1498,7 +1506,7 @@ pub mod test {
         .unwrap();
 
         // A single NULL element -> aggregate is NULL
-        input_handle.append(&mut vec![Tup2(Tup2(1i8, None), 2)]);
+        input_handle.append(&mut vec![Tup2::new(Tup2::new(1i8, None), 2)]);
         dbsp.step().unwrap();
         assert_eq!(
             output_handle.consolidate(),
@@ -1506,7 +1514,7 @@ pub mod test {
         );
 
         // +5 -> aggregate = 5
-        input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(5)), 1)]);
+        input_handle.append(&mut vec![Tup2::new(Tup2::new(1i8, Some(5)), 1)]);
         dbsp.step().unwrap();
         assert_eq!(
             output_handle.consolidate(),
@@ -1514,7 +1522,7 @@ pub mod test {
         );
 
         // +3 * 2 -> aggrregate = 11
-        input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(3)), 2)]);
+        input_handle.append(&mut vec![Tup2::new(Tup2::new(1i8, Some(3)), 2)]);
         dbsp.step().unwrap();
         assert_eq!(
             output_handle.consolidate(),
@@ -1522,7 +1530,7 @@ pub mod test {
         );
 
         // + (-11) -> aggregate = 0
-        input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(-11)), 1)]);
+        input_handle.append(&mut vec![Tup2::new(Tup2::new(1i8, Some(-11)), 1)]);
         dbsp.step().unwrap();
         assert_eq!(
             output_handle.consolidate(),
@@ -1531,9 +1539,9 @@ pub mod test {
 
         // Remove all non-NULL eleements -> aggregate = NULL
         input_handle.append(&mut vec![
-            Tup2(Tup2(1i8, Some(-11)), -1),
-            Tup2(Tup2(1i8, Some(5)), -1),
-            Tup2(Tup2(1i8, Some(3)), -2),
+            Tup2::new(Tup2::new(1i8, Some(-11)), -1),
+            Tup2::new(Tup2::new(1i8, Some(5)), -1),
+            Tup2::new(Tup2::new(1i8, Some(3)), -2),
         ]);
         dbsp.step().unwrap();
         assert_eq!(
@@ -1542,7 +1550,7 @@ pub mod test {
         );
 
         // Remove the remaining NULL -> the whole group disappears.
-        input_handle.append(&mut vec![Tup2(Tup2(1i8, None), -2)]);
+        input_handle.append(&mut vec![Tup2::new(Tup2::new(1i8, None), -2)]);
         dbsp.step().unwrap();
         assert_eq!(output_handle.consolidate(), indexed_zset! {});
     }

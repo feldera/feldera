@@ -47,7 +47,7 @@ fn main() -> Result<()> {
     );
     let mut input_records = Reader::from_path(path)?
         .deserialize()
-        .map(|result| result.map(|record| Tup2(record, 1)))
+        .map(|result| result.map(|record| Tup2::new(record, 1)))
         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
     input_handle.append(&mut input_records);
 

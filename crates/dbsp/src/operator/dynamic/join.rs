@@ -1320,47 +1320,47 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             let mut input1 = vec![
                 zset! {
-                    Tup2(1, "a".to_string()) => 1i64,
-                    Tup2(1, "b".to_string()) => 2,
-                    Tup2(2, "c".to_string()) => 3,
-                    Tup2(2, "d".to_string()) => 4,
-                    Tup2(3, "e".to_string()) => 5,
-                    Tup2(3, "f".to_string()) => -2,
+                    Tup2::new(1, "a".to_string()) => 1i64,
+                    Tup2::new(1, "b".to_string()) => 2,
+                    Tup2::new(2, "c".to_string()) => 3,
+                    Tup2::new(2, "d".to_string()) => 4,
+                    Tup2::new(3, "e".to_string()) => 5,
+                    Tup2::new(3, "f".to_string()) => -2,
                 },
-                zset! {Tup2(1, "a".to_string()) => 1},
-                zset! {Tup2(1, "a".to_string()) => 1},
-                zset! {Tup2(4, "n".to_string()) => 2},
-                zset! {Tup2(1, "a".to_string()) => 0},
+                zset! {Tup2::new(1, "a".to_string()) => 1},
+                zset! {Tup2::new(1, "a".to_string()) => 1},
+                zset! {Tup2::new(4, "n".to_string()) => 2},
+                zset! {Tup2::new(1, "a".to_string()) => 0},
             ]
             .into_iter();
             let mut input2 = vec![
                 zset! {
-                    Tup2(2, "g".to_string()) => 3i64,
-                    Tup2(2, "h".to_string()) => 4,
-                    Tup2(3, "i".to_string()) => 5,
-                    Tup2(3, "j".to_string()) => -2,
-                    Tup2(4, "k".to_string()) => 5,
-                    Tup2(4, "l".to_string()) => -2,
+                    Tup2::new(2, "g".to_string()) => 3i64,
+                    Tup2::new(2, "h".to_string()) => 4,
+                    Tup2::new(3, "i".to_string()) => 5,
+                    Tup2::new(3, "j".to_string()) => -2,
+                    Tup2::new(4, "k".to_string()) => 5,
+                    Tup2::new(4, "l".to_string()) => -2,
                 },
-                zset! {Tup2(1, "b".to_string()) => 1},
-                zset! {Tup2(4, "m".to_string()) => 1},
+                zset! {Tup2::new(1, "b".to_string()) => 1},
+                zset! {Tup2::new(4, "m".to_string()) => 1},
                 zset! {},
                 zset! {},
             ]
             .into_iter();
             let mut outputs = vec![
                 zset! {
-                    Tup2(2, "c g".to_string()) => 9i64,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
+                    Tup2::new(2, "c g".to_string()) => 9i64,
+                    Tup2::new(2, "c h".to_string()) => 12,
+                    Tup2::new(2, "d g".to_string()) => 12,
+                    Tup2::new(2, "d h".to_string()) => 16,
+                    Tup2::new(3, "e i".to_string()) => 25,
+                    Tup2::new(3, "e j".to_string()) => -10,
+                    Tup2::new(3, "f i".to_string()) => -10,
+                    Tup2::new(3, "f j".to_string()) => 4
                 },
                 zset! {
-                    Tup2(1, "a b".to_string()) => 1,
+                    Tup2::new(1, "a b".to_string()) => 1,
                 },
                 zset! {},
                 zset! {},
@@ -1369,48 +1369,48 @@ mod test {
             .into_iter();
             let inc_outputs_vec = vec![
                 zset! {
-                    Tup2(2, "c g".to_string()) => 9,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
+                    Tup2::new(2, "c g".to_string()) => 9,
+                    Tup2::new(2, "c h".to_string()) => 12,
+                    Tup2::new(2, "d g".to_string()) => 12,
+                    Tup2::new(2, "d h".to_string()) => 16,
+                    Tup2::new(3, "e i".to_string()) => 25,
+                    Tup2::new(3, "e j".to_string()) => -10,
+                    Tup2::new(3, "f i".to_string()) => -10,
+                    Tup2::new(3, "f j".to_string()) => 4
                 },
                 zset! {
-                    Tup2(1, "a b".to_string()) => 2,
-                    Tup2(1, "b b".to_string()) => 2,
+                    Tup2::new(1, "a b".to_string()) => 2,
+                    Tup2::new(1, "b b".to_string()) => 2,
                 },
                 zset! {
-                    Tup2(1, "a b".to_string()) => 1,
+                    Tup2::new(1, "a b".to_string()) => 1,
                 },
                 zset! {
-                    Tup2(4, "n k".to_string()) => 10,
-                    Tup2(4, "n l".to_string()) => -4,
-                    Tup2(4, "n m".to_string()) => 2,
+                    Tup2::new(4, "n k".to_string()) => 10,
+                    Tup2::new(4, "n l".to_string()) => -4,
+                    Tup2::new(4, "n m".to_string()) => 2,
                 },
                 zset! {},
             ];
             let inc_filtered_outputs_vec = vec![
                 zset! {
-                    Tup2(2, "c g".to_string()) => 9,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
+                    Tup2::new(2, "c g".to_string()) => 9,
+                    Tup2::new(2, "c h".to_string()) => 12,
+                    Tup2::new(2, "d g".to_string()) => 12,
+                    Tup2::new(2, "d h".to_string()) => 16,
+                    Tup2::new(3, "e i".to_string()) => 25,
+                    Tup2::new(3, "e j".to_string()) => -10,
+                    Tup2::new(3, "f i".to_string()) => -10,
+                    Tup2::new(3, "f j".to_string()) => 4
                 },
                 zset! {
-                    Tup2(1, "b b".to_string()) => 2,
+                    Tup2::new(1, "b b".to_string()) => 2,
                 },
                 zset! {},
                 zset! {
-                    Tup2(4, "n k".to_string()) => 10,
-                    Tup2(4, "n l".to_string()) => -4,
-                    Tup2(4, "n m".to_string()) => 2,
+                    Tup2::new(4, "n k".to_string()) => 10,
+                    Tup2::new(4, "n l".to_string()) => -4,
+                    Tup2::new(4, "n m".to_string()) => 2,
                 },
                 zset! {},
             ];
@@ -1427,7 +1427,7 @@ mod test {
                         <OrdZSet<_>>::empty()
                     }
                 }))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
+                .map_index(|t: &Tup2<u64, String>| (*t.fst(), t.snd().clone()));
             let index2: Stream<_, OrdIndexedZSet<u64, String>> = circuit
                 .add_source(Generator::new(move || {
                     if Runtime::worker_index() == 0 {
@@ -1436,10 +1436,10 @@ mod test {
                         <OrdZSet<_>>::empty()
                     }
                 }))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
+                .map_index(|t: &Tup2<u64, String>| (*t.fst(), t.snd().clone()));
             index1
                 .stream_join(&index2, |&k: &u64, s1, s2| {
-                    Tup2(k, format!("{} {}", s1, s2))
+                    Tup2::new(k, format!("{} {}", s1, s2))
                 })
                 .gather(0)
                 .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
@@ -1458,7 +1458,7 @@ mod test {
 
             index1
                 .join(&index2, |&k: &u64, s1, s2| {
-                    Tup2(k, format!("{} {}", s1, s2))
+                    Tup2::new(k, format!("{} {}", s1, s2))
                 })
                 .gather(0)
                 .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
@@ -1472,7 +1472,7 @@ mod test {
                     if s1.as_str() == "a" {
                         None
                     } else {
-                        Some(Tup2(k, format!("{} {}", s1, s2)))
+                        Some(Tup2::new(k, format!("{} {}", s1, s2)))
                     }
                 })
                 .gather(0)
@@ -1516,31 +1516,31 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges: vec::IntoIter<OrdZSet<Tup2<u64, u64>>> = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(2, 3) => 1},
-                zset! { Tup2(1, 3) => 1},
-                zset! { Tup2(3, 1) => 1},
-                zset! { Tup2(3, 1) => -1},
-                zset! { Tup2(1, 2) => -1},
-                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
-                zset! {Tup2 (2, 3) => -1, Tup2(3, 2) => 1 },
+                zset! { Tup2::new(1, 2) => 1 },
+                zset! { Tup2::new(2, 3) => 1},
+                zset! { Tup2::new(1, 3) => 1},
+                zset! { Tup2::new(3, 1) => 1},
+                zset! { Tup2::new(3, 1) => -1},
+                zset! { Tup2::new(1, 2) => -1},
+                zset! { Tup2::new(2, 4) => 1, Tup2::new(4, 1) => 1 },
+                zset! {Tup2::new (2, 3) => -1, Tup2::new(3, 2) => 1 },
             ]
             .into_iter();
 
             // Expected content of the reachability relation.
             let mut outputs: vec::IntoIter<OrdZSet<Tup2<u64, u64>>> = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
-                              Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
-                              Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
-                              Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
-                              Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
+                zset! { Tup2::new(1, 2) => 1 },
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 1) => 1, Tup2::new(2, 2) => 1, Tup2::new(3, 3) => 1, Tup2::new(1, 2) => 1, Tup2::new(1, 3) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 1) => 1, Tup2::new(3, 1) => 1, Tup2::new(3, 2) => 1},
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 3) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 4) => 1, Tup2::new(2, 1) => 1, Tup2::new(4, 1) => 1, Tup2::new(4, 3) => 1 },
+                zset! { Tup2::new(1, 1) => 1, Tup2::new(2, 2) => 1, Tup2::new(3, 3) => 1, Tup2::new(4, 4) => 1,
+                              Tup2::new(1, 2) => 1, Tup2::new(1, 3) => 1, Tup2::new(1, 4) => 1,
+                              Tup2::new(2, 1) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 4) => 1,
+                              Tup2::new(3, 1) => 1, Tup2::new(3, 2) => 1, Tup2::new(3, 4) => 1,
+                              Tup2::new(4, 1) => 1, Tup2::new(4, 2) => 1, Tup2::new(4, 3) => 1 },
             ]
             .into_iter();
 
@@ -1568,12 +1568,12 @@ mod test {
                 let edges = edges.delta0(child);
 
                 let paths_inverted: Stream<_, OrdZSet<Tup2<u64, u64>>> = paths_delayed
-                    .map(|&Tup2(x, y)| Tup2(y, x));
+                    .map(|&t| Tup2::new(*t.snd(), *t.fst()));
 
-                let paths_inverted_indexed = paths_inverted.map_index(|Tup2(k,v)| (*k, *v));
-                let edges_indexed = edges.map_index(|Tup2(k, v)| (*k, *v));
+                let paths_inverted_indexed = paths_inverted.map_index(|t| (*t.fst(), *t.snd()));
+                let edges_indexed = edges.map_index(|t| (*t.fst(), *t.snd()));
 
-                Ok(edges.plus(&paths_inverted_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
+                Ok(edges.plus(&paths_inverted_indexed.join(&edges_indexed, |_via, from, to| Tup2::new(*from, *to))))
             })
             .unwrap();
 
@@ -1844,10 +1844,10 @@ mod test {
         .unwrap();
 
         input1.append(&mut vec![
-            Tup2(1, Tup2(0, 1)),
-            Tup2(1, Tup2(1, 2)),
-            Tup2(2, Tup2(0, 1)),
-            Tup2(2, Tup2(1, 1)),
+            Tup2::new(1, Tup2::new(0, 1)),
+            Tup2::new(1, Tup2::new(1, 2)),
+            Tup2::new(2, Tup2::new(0, 1)),
+            Tup2::new(2, Tup2::new(1, 1)),
         ]);
         circuit.step().unwrap();
         assert_eq!(
@@ -1855,19 +1855,22 @@ mod test {
             &indexed_zset! { 1 => { 0 => 1, 1 => 2}, 2 => { 0 => 1, 1 => 1 } }
         );
 
-        input1.append(&mut vec![Tup2(3, Tup2(1, 1))]);
+        input1.append(&mut vec![Tup2::new(3, Tup2::new(1, 1))]);
         circuit.step().unwrap();
         assert_eq!(&*output.lock().unwrap(), &indexed_zset! { 3 => { 1 => 1 } });
 
-        input2.append(&mut vec![Tup2(1, Tup2(1, 3))]);
+        input2.append(&mut vec![Tup2::new(1, Tup2::new(1, 3))]);
         circuit.step().unwrap();
         assert_eq!(
             &*output.lock().unwrap(),
             &indexed_zset! { 1 => { 0 => -1, 1 => -2 } }
         );
 
-        input2.append(&mut vec![Tup2(2, Tup2(5, 1))]);
-        input1.append(&mut vec![Tup2(2, Tup2(2, 1)), Tup2(4, Tup2(1, 1))]);
+        input2.append(&mut vec![Tup2::new(2, Tup2::new(5, 1))]);
+        input1.append(&mut vec![
+            Tup2::new(2, Tup2::new(2, 1)),
+            Tup2::new(4, Tup2::new(1, 1)),
+        ]);
         circuit.step().unwrap();
         assert_eq!(
             &*output.lock().unwrap(),
@@ -1876,7 +1879,7 @@ mod test {
 
         // Issue https://github.com/feldera/feldera/issues/3365. Multiple values per key in the right-hand input shouldn't
         // produce outputs with negative weights.
-        input2.append(&mut vec![Tup2(2, Tup2(6, 1))]);
+        input2.append(&mut vec![Tup2::new(2, Tup2::new(6, 1))]);
         circuit.step().unwrap();
         assert_eq!(&*output.lock().unwrap(), &indexed_zset! {});
 

@@ -560,7 +560,7 @@ mod test {
                     (),
                     batch
                         .iter()
-                        .map(|Tup2(x, w)| Tup2(x.clone(), *w))
+                        .map(|t| Tup2::new(t.fst().clone(), *t.snd()))
                         .collect::<Vec<_>>(),
                 );
                 Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>
@@ -580,7 +580,7 @@ mod test {
                     (),
                     batch
                         .iter()
-                        .map(|Tup2(x, w)| Tup2(x.clone(), *w))
+                        .map(|t| Tup2::new(t.fst().clone(), *t.snd()))
                         .collect::<Vec<_>>(),
                 );
                 let mut deletes = zset
@@ -668,7 +668,7 @@ mod test {
     fn test_data() -> Vec<Vec<Tup2<TestStruct, i64>>> {
         vec![
             vec![
-                Tup2(
+                Tup2::new(
                     TestStruct {
                         id: 0,
                         b: true,
@@ -677,7 +677,7 @@ mod test {
                     },
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     TestStruct {
                         id: 1,
                         b: false,
@@ -688,7 +688,7 @@ mod test {
                 ),
             ],
             vec![
-                Tup2(
+                Tup2::new(
                     TestStruct {
                         id: 2,
                         b: true,
@@ -697,7 +697,7 @@ mod test {
                     },
                     -2,
                 ),
-                Tup2(
+                Tup2::new(
                     TestStruct {
                         id: 3,
                         b: false,
@@ -708,7 +708,7 @@ mod test {
                 ),
             ],
             vec![
-                Tup2(
+                Tup2::new(
                     TestStruct {
                         id: 4,
                         b: true,
@@ -717,7 +717,7 @@ mod test {
                     },
                     -1,
                 ),
-                Tup2(
+                Tup2::new(
                     TestStruct {
                         id: 5,
                         b: false,

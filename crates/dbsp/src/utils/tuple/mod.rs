@@ -5,26 +5,23 @@
 // This was introduced to resolve issues with auto-derived rkyv trait
 // implementations.
 
+use crate::DBData;
 use feldera_types::deserialize_without_context;
-
-pub mod gen;
 
 // Make sure to also call `dbsp_adapters::deserialize_without_context!`
 // and `sltsqlvalue::to_sql_row_impl!` for each new tuple type.
 // Also the compiler currently generates Tup11..Tup* if necessary,
 // so if e.g., we add Tup11 here the compiler needs to be adjusted too.
-crate::declare_tuples! {
-    Tup1<T1>,
-    Tup2<T1, T2>,
-    Tup3<T1, T2, T3>,
-    Tup4<T1, T2, T3, T4>,
-    Tup5<T1, T2, T3, T4, T5>,
-    Tup6<T1, T2, T3, T4, T5, T6>,
-    Tup7<T1, T2, T3, T4, T5, T6, T7>,
-    Tup8<T1, T2, T3, T4, T5, T6, T7, T8>,
-    Tup9<T1, T2, T3, T4, T5, T6, T7, T8, T9>,
-    Tup10<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>,
-}
+feldera_macros::declare_tuple! { Tup1<T1> }
+feldera_macros::declare_tuple! { Tup2<T1, T2> }
+feldera_macros::declare_tuple! { Tup3<T1, T2, T3> }
+feldera_macros::declare_tuple! { Tup4<T1, T2, T3, T4> }
+feldera_macros::declare_tuple! { Tup5<T1, T2, T3, T4, T5> }
+feldera_macros::declare_tuple! { Tup6<T1, T2, T3, T4, T5, T6> }
+feldera_macros::declare_tuple! { Tup7<T1, T2, T3, T4, T5, T6, T7> }
+feldera_macros::declare_tuple! { Tup8<T1, T2, T3, T4, T5, T6, T7, T8> }
+feldera_macros::declare_tuple! { Tup9<T1, T2, T3, T4, T5, T6, T7, T8, T9> }
+feldera_macros::declare_tuple! { Tup10<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> }
 
 deserialize_without_context!(Tup1, T1);
 deserialize_without_context!(Tup2, T1, T2);
@@ -122,10 +119,63 @@ impl Into<()> for Tup0 {
 }
 
 impl core::fmt::Debug for Tup0 {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::result::Result<(), core::fmt::Error> {
-        // For some reason Rust does not print anything when the tuple is empty
-        f.debug_tuple("()").finish()
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_tuple("Tup0()").finish()
     }
 }
 
 impl Copy for Tup0 {}
+
+impl<T1, T2> Tup2<T1, T2> {
+    #[inline]
+    pub fn as_mut(&mut self) -> (&mut T1, &mut T2) {
+        (&mut self.0, &mut self.1)
+    }
+
+    #[inline]
+    pub fn fst(&self) -> &T1 {
+        &self.0
+    }
+
+    #[inline]
+    pub fn fst_mut(&mut self) -> &mut T1 {
+        &mut self.0
+    }
+
+    #[inline]
+    pub fn snd(&self) -> &T2 {
+        &self.1
+    }
+
+    #[inline]
+    pub fn snd_mut(&mut self) -> &mut T2 {
+        &mut self.1
+    }
+}
+
+impl<T1: DBData, T2: DBData> ArchivedTup2<T1, T2> {
+    #[inline]
+    pub fn as_mut(&mut self) -> (&mut T1::Repr, &mut T2::Repr) {
+        (&mut self.0, &mut self.1)
+    }
+
+    #[inline]
+    pub fn fst(&self) -> &T1::Repr {
+        &self.0
+    }
+
+    #[inline]
+    pub fn fst_mut(&mut self) -> &mut T1::Repr {
+        &mut self.0
+    }
+
+    #[inline]
+    pub fn snd(&self) -> &T2::Repr {
+        &self.1
+    }
+
+    #[inline]
+    pub fn snd_mut(&mut self) -> &mut T2::Repr {
+        &mut self.1
+    }
+}
