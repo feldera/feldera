@@ -192,7 +192,7 @@ impl PosixWriter {
         &self.drop.path
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     fn flush(&mut self) -> Result<(), IoError> {
         use nix::sys::uio::pwritev;
         use std::io::IoSlice;
@@ -208,7 +208,7 @@ impl PosixWriter {
         Ok(())
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(target_family = "unix"))]
     fn flush(&mut self) -> Result<(), IoError> {
         use std::os::unix::fs::FileExt;
         if !self.buffers.is_empty() {
