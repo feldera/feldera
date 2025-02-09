@@ -3,7 +3,7 @@
 //! [`Reader`] is the top-level interface for reading layer files.
 
 use super::format::{Compression, FileTrailer};
-use super::{AnyFactories, BloomFilterState, Factories, BLOOM_FILTER_FALSE_POSITIVE_RATE};
+use super::{AnyFactories, BloomFilterState, Factories, BLOOM_FILTER_FALSE_POSITIVE_RATE, DbspBloomFilter, DbspBloomFilterHasher};
 use crate::storage::buffer_cache::{CacheAccess, CacheEntry};
 use crate::storage::{
     backend::StorageError,
@@ -126,7 +126,8 @@ pub enum CorruptionError {
     ),
 
     /// Array overflows block bounds.
-    #[error("{count}-element array of {each}-byte elements starting at offset {offset} within block overflows {block_size}-byte block")]
+    #[error("{count}-element array of {each}-byte elements starting at offset {offset} within block overflows {block_size}-byte block"
+    )]
     InvalidArray {
         /// Block size.
         block_size: usize,
@@ -139,7 +140,8 @@ pub enum CorruptionError {
     },
 
     /// Strides overflow block bounds.
-    #[error("{count} strides of {stride} bytes each starting at offset {start} overflows {block_size}-byte block")]
+    #[error("{count} strides of {stride} bytes each starting at offset {start} overflows {block_size}-byte block"
+    )]
     InvalidStride {
         /// Block size.
         block_size: usize,
@@ -224,7 +226,8 @@ pub enum CorruptionError {
 
     /// Invalid child in index block.  At least one of `child_offset` or
     /// `child_size` is invalid.
-    #[error("Index block ({location}) has child {index} with invalid offset {child_offset} or size {child_size}.")]
+    #[error("Index block ({location}) has child {index} with invalid offset {child_offset} or size {child_size}."
+    )]
     InvalidChild {
         /// Block location.
         location: BlockLocation,
@@ -237,7 +240,8 @@ pub enum CorruptionError {
     },
 
     /// Invalid node pointer in file trailer block.
-    #[error("File trailer column specification has invalid node offset {node_offset} or size {node_size}.")]
+    #[error("File trailer column specification has invalid node offset {node_offset} or size {node_size}."
+    )]
     InvalidColumnRoot {
         /// Block offset in bytes.
         node_offset: u64,
@@ -263,7 +267,8 @@ pub enum CorruptionError {
     BadBlockType(BlockLocation),
 
     /// Bad compressed length.
-    #[error("Compressed block ({location}) claims compressed length {compressed_len} but at most {max_compressed_len} would fit.")]
+    #[error("Compressed block ({location}) claims compressed length {compressed_len} but at most {max_compressed_len} would fit."
+    )]
     BadCompressedLen {
         /// Block location.
         location: BlockLocation,
@@ -274,7 +279,8 @@ pub enum CorruptionError {
     },
 
     /// Unexpected decompressed length.
-    #[error("Compressed block ({location}) decompressed to {length} bytes instead of the expected {expected_length} bytes")]
+    #[error("Compressed block ({location}) decompressed to {length} bytes instead of the expected {expected_length} bytes"
+    )]
     UnexpectedDecompressionLength {
         /// Block location.
         location: BlockLocation,
@@ -324,7 +330,7 @@ impl VarintReader {
                 count,
                 each: varint.len(),
             }
-            .into()),
+                .into()),
         }
     }
     fn new_opt(
@@ -373,7 +379,7 @@ impl StrideReader {
             stride,
             count,
         }
-        .into())
+            .into())
     }
     fn get(&self, index: usize) -> usize {
         debug_assert!(index < self.count);
@@ -505,7 +511,7 @@ where
                 rows: entry.rows(),
                 expected_rows: node.rows.clone(),
             }
-            .into());
+                .into());
         }
 
         Ok(entry)
@@ -530,7 +536,7 @@ where
                 start,
                 end,
             }
-            .into())
+                .into())
         }
     }
     unsafe fn archived_item(
@@ -747,7 +753,7 @@ where
                     prev,
                     next,
                 }
-                .into());
+                    .into());
             }
         }
 
@@ -816,7 +822,7 @@ where
                 n_rows,
                 expected_rows,
             }
-            .into());
+                .into());
         }
 
         Ok(entry)
@@ -1120,7 +1126,7 @@ impl ImmutableFileRef {
                     compressed_len,
                     max_compressed_len: raw.len() - 4,
                 }
-                .into());
+                    .into());
             };
             match compression {
                 Compression::Snappy => {
@@ -1137,7 +1143,7 @@ impl ImmutableFileRef {
                                 length: n,
                                 expected_length: decompressed_len,
                             }
-                            .into())
+                                .into())
                         }
                         Err(error) => {
                             return Err(CorruptionError::Snappy { location, error }.into())
@@ -1158,7 +1164,7 @@ impl ImmutableFileRef {
                 checksum,
                 computed_checksum,
             }
-            .into());
+                .into());
         }
         Ok(raw)
     }
@@ -1206,7 +1212,7 @@ where
 #[derive(Debug)]
 pub struct Reader<T> {
     file: ImmutableFileRef,
-    bloom_filter: BloomFilter,
+    bloom_filter: DbspBloomFilter,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1224,7 +1230,7 @@ where
         path: PathBuf,
         cache: fn() -> Arc<BufferCache>,
         file_handle: Arc<dyn FileReader>,
-        bloom_filter: BloomFilter,
+        bloom_filter: DbspBloomFilter,
     ) -> Result<Self, Error> {
         let file_size = file_handle.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
@@ -1243,7 +1249,7 @@ where
                 version: file_trailer.version,
                 expected_version: VERSION_NUMBER,
             }
-            .into());
+                .into());
         }
 
         assert_eq!(factories.len(), file_trailer.columns.len());
@@ -1272,7 +1278,7 @@ where
                     prev_n_rows,
                     this_n_rows,
                 }
-                .into());
+                    .into());
             }
         }
 
@@ -1302,13 +1308,13 @@ where
         let bloom_filter = match bf_file {
             Ok(mut bf_file) => {
                 let bloom_storage: BloomFilterState = BloomFilterState::read(&mut bf_file)?;
-                let bloom_filter: BloomFilter = bloom_storage.try_into()?;
+                let bloom_filter: DbspBloomFilter = bloom_storage.try_into()?;
                 bloom_filter
             }
             Err(e) if e.kind() == ErrorKind::NotFound => {
                 // If the bloom filter file does not exist because we're not writing them atm,
                 // we create an empty bloom filter.
-                BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE).expected_items(0)
+                BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE).hasher(DbspBloomFilterHasher::default()).expected_items(0)
             }
             Err(e) => return Err(e.into()),
         };
@@ -1975,7 +1981,7 @@ where
             depth: indexes.len(),
             max_depth: MAX_DEPTH,
         }
-        .into());
+            .into());
     }
 
     indexes.push(index_block);
@@ -2256,7 +2262,7 @@ where
                 Some(i) => {
                     let min_row = index.get_row_bound(i * 2);
                     let max_row = index.get_row_bound(i * 2 + 1);
-                    write!(f, "\n[child {i} of {n}: rows {min_row}..={max_row}]",)?;
+                    write!(f, "\n[child {i} of {n}: rows {min_row}..={max_row}]", )?;
                 }
                 None => {
                     // This should not be possible because it indicates an

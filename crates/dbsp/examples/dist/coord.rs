@@ -67,7 +67,7 @@ async fn main() -> AnyResult<()> {
             let Some(record) = input_records.next() else {
                 break;
             };
-            batches[next_client.next().unwrap()].push(Tup2(record?, 1));
+            batches[next_client.next().unwrap()].push(Tup2::new(record?, 1));
             n += 1;
         }
         if n == 0 {

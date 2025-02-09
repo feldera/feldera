@@ -75,9 +75,9 @@ where
     Trait2: DataTrait + ?Sized,
 {
     fn dedup_by_key_keep_last(&mut self) {
-        self.dedup_by(|Tup2(k1, v1), Tup2(k2, v2)| {
-            if k1 == k2 {
-                swap(v1, v2);
+        self.dedup_by(|t1, t2| {
+            if t1.fst() == t2.fst() {
+                swap(t1.snd_mut(), t2.snd_mut());
                 true
             } else {
                 false
@@ -86,14 +86,12 @@ where
     }
 
     fn sort_by_key(&mut self) {
-        stable_sort_by(self.as_mut_slice(), |Tup2(k1, _v1), Tup2(k2, _v2)| {
-            k1.cmp(k2)
-        });
+        stable_sort_by(self.as_mut_slice(), |t1, t2| t1.fst().cmp(t2.fst()));
     }
 
     fn push_refs(&mut self, item: (&Trait1, &Trait2)) {
         unsafe {
-            self.push(Tup2(
+            self.push(Tup2::new(
                 item.0.downcast::<T1>().clone(),
                 item.1.downcast::<T2>().clone(),
             ))

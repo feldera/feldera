@@ -23,7 +23,7 @@ mod tests {
         fn input_vecs() -> Vec<Vec<Tup2<Event, ZWeight>>> {
             vec![
                 vec![
-                    Tup2(
+                    Tup2::new(
                         Event::Auction(Auction {
                             id: 1,
                             seller: 99,
@@ -32,7 +32,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             auction: 1,
                             date_time: 1_000,
@@ -41,7 +41,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             auction: 1,
                             date_time: 2_000,
@@ -52,7 +52,7 @@ mod tests {
                     ),
                 ],
                 vec![
-                    Tup2(
+                    Tup2::new(
                         Event::Auction(Auction {
                             id: 2,
                             seller: 99,
@@ -61,7 +61,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             auction: 2,
                             date_time: 1_000,
@@ -70,7 +70,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             auction: 2,
                             date_time: 2_000,

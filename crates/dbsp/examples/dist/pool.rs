@@ -50,19 +50,19 @@ fn build_circuit(
     let monthly_totals = subset
         .map_index(|r| {
             (
-                Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+                Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
         .aggregate_linear(|v| *v as i64);
     let most_vax = monthly_totals
-        .map_index(|(Tup3(l, y, m), sum)| {
+        .map_index(|(t, sum)| {
             (
-                l.clone(),
+                t.get_0().clone(),
                 VaxMonthly {
                     count: *sum as u64,
-                    year: *y,
-                    month: *m,
+                    year: *t.get_1(),
+                    month: *t.get_2(),
                 },
             )
         })

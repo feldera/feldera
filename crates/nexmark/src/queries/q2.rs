@@ -25,7 +25,7 @@ pub fn q2(
 ) -> Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>> {
     input.flat_map(|event| match event {
         Event::Bid(b) => match b.auction % AUCTION_ID_MODULO == 0 {
-            true => Some(Tup2(b.auction, b.price)),
+            true => Some(Tup2::new(b.auction, b.price)),
             false => None,
         },
         _ => None,
@@ -45,7 +45,7 @@ mod tests {
     fn test_q2() {
         let input_vecs: Vec<Vec<Tup2<Event, ZWeight>>> = vec![
             vec![
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         auction: 1,
                         price: 80,
@@ -53,7 +53,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         auction: AUCTION_ID_MODULO,
                         price: 111,
@@ -61,7 +61,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         auction: AUCTION_ID_MODULO + 1,
                         price: 100,
@@ -71,7 +71,7 @@ mod tests {
                 ),
             ],
             vec![
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         auction: 3 * AUCTION_ID_MODULO + 25,
                         price: 80,
@@ -79,7 +79,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         auction: 4 * AUCTION_ID_MODULO,
                         price: 222,
@@ -96,8 +96,11 @@ mod tests {
             let output = q2(circuit, stream);
 
             let mut expected_output = vec![
-                OrdZSet::from_keys((), vec![Tup2(Tup2(AUCTION_ID_MODULO, 111), 1)]),
-                OrdZSet::from_keys((), vec![Tup2(Tup2(4 * AUCTION_ID_MODULO, 222), 1)]),
+                OrdZSet::from_keys((), vec![Tup2::new(Tup2::new(AUCTION_ID_MODULO, 111), 1)]),
+                OrdZSet::from_keys(
+                    (),
+                    vec![Tup2::new(Tup2::new(4 * AUCTION_ID_MODULO, 222), 1)],
+                ),
             ]
             .into_iter();
 

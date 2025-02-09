@@ -62,15 +62,20 @@ fn circuit0() -> Result<()> {
         Runtime::init_circuit(CircuitConfig::with_workers(WORKERS), |circuit| {
             let (stream0, handle0) = circuit.add_input_zset::<Tup3<String, String, usize>>();
 
-            let stream1 = stream0.map(move |Tup3(json, field, idx)| {
+            let stream1 = stream0.map(move |t| {
+                let (json, field, idx) = t.into();
                 Tup3::new(parse_json(json.clone()), field.to_owned(), *idx)
             });
 
-            let stream2 = stream1.map(move |Tup3(json, field, idx)| {
+            let stream2 = stream1.map(move |t| {
+                let (json, field, idx) = t.into();
                 Tup2::new(json_index(json.clone(), *idx), field.to_owned())
             });
 
-            let stream3 = stream2.map(move |Tup2(json, field)| json_field(json.clone(), field));
+            let stream3 = stream2.map(move |t| {
+                let (json, field) = t.into();
+                json_field(json.clone(), field)
+            });
 
             let stream4 = stream3.map(move |json| to_string(json.clone()));
 
@@ -134,7 +139,8 @@ fn circuit1() -> Result<()> {
                 circuit.add_input_zset::<Tup4<String, String, String, usize>>();
 
             // parse string to json
-            let stream1 = stream0.map(move |Tup4(json, field1, field2, idx)| {
+            let stream1 = stream0.map(move |t| {
+                let (json, field1, field2, idx) = t.into();
                 Tup4::new(
                     parse_json(json.clone()),
                     field1.clone(),
@@ -144,23 +150,25 @@ fn circuit1() -> Result<()> {
             });
 
             // get the songs field
-            let stream2 = stream1.map(move |Tup4(json, field1, field2, idx)| {
+            let stream2 = stream1.map(move |t| {
+                let (json, field1, field2, idx) = t.into();
                 Tup3::new(json_field(json.clone(), field1), field2.clone(), *idx)
             });
 
             // convert JSON array literals to JSON ARRAY (Vec<Json>)
-            let stream3 = stream2.map(move |Tup3(json, field, idx)| {
+            let stream3 = stream2.map(move |t| {
+                let (json, field, idx) = t.into();
                 Tup3::new(as_array(json.clone()), field.clone(), *idx)
             });
 
             // extract a field from an all JSON ARRAYs
-            let stream4 = stream3.map(move |Tup3(json_vec, field, idx)| {
+            let stream4 = stream3.map(move |t| {
+                let (json_vec, field, idx) = t.into();
                 Tup2::new(map(json_vec, |x| json_field(x.clone(), field)), *idx)
             });
 
             // index the JSON array literal
-            let stream5 = stream4
-                .map(move |Tup2(json_vec, idx)| map(json_vec, |x| json_index(x.clone(), *idx)));
+            let stream5 = stream4.map(move |t| map(t.fst(), |x| json_index(x.clone(), *t.snd())));
 
             // convert JSON to string
             let stream6 = stream5.map(move |json_vec| map(json_vec, |x| to_string(x.clone())));

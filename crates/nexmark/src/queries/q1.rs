@@ -51,7 +51,7 @@ mod tests {
         fn input_vecs() -> Vec<Vec<Tup2<Event, ZWeight>>> {
             vec![
                 vec![
-                    Tup2(
+                    Tup2::new(
                         Event::Auction(Auction {
                             id: 1,
                             seller: 99,
@@ -60,7 +60,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             auction: 1,
                             date_time: 1_000,
@@ -69,7 +69,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             auction: 1,
                             date_time: 2_000,
@@ -80,7 +80,7 @@ mod tests {
                     ),
                 ],
                 vec![
-                    Tup2(
+                    Tup2::new(
                         Event::Auction(Auction {
                             id: 2,
                             seller: 99,
@@ -89,7 +89,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             auction: 2,
                             date_time: 1_000,
@@ -98,7 +98,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             auction: 2,
                             date_time: 2_000,
@@ -119,15 +119,18 @@ mod tests {
             let mut expected_output = input_vecs().into_iter().map(|v| {
                 let expected_v = v
                     .into_iter()
-                    .map(|Tup2(e, w)| match e {
-                        Event::Bid(b) => Tup2(
-                            Event::Bid(Bid {
-                                price: b.price * 89 / 100,
-                                ..b
-                            }),
-                            w,
-                        ),
-                        _ => Tup2(e, w),
+                    .map(|t| {
+                        let (e, w) = t.into();
+                        match e {
+                            Event::Bid(b) => Tup2::new(
+                                Event::Bid(Bid {
+                                    price: b.price * 89 / 100,
+                                    ..b
+                                }),
+                                w,
+                            ),
+                            _ => Tup2::new(e, w),
+                        }
                     })
                     .collect();
                 OrdZSet::from_keys((), expected_v)

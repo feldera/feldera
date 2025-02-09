@@ -124,7 +124,7 @@ impl TestBatch<DynData, DynData, (), DynZWeight> {
                 result.push((
                     (
                         cursor.key().downcast_checked::<K>().clone(),
-                        Tup2(v, old_v),
+                        Tup2::new(v, old_v),
                         (),
                     ),
                     1,
@@ -170,7 +170,7 @@ impl TestBatch<DynData, DynData, (), DynZWeight> {
                 result.push((
                     (
                         cursor.key().downcast_checked::<K>().clone(),
-                        Tup2(v, old_v),
+                        Tup2::new(v, old_v),
                         (),
                     ),
                     1,
@@ -219,12 +219,12 @@ fn topk_custom_ord_test_circuit(
             left: &Tup3<String, i32, i32>,
             right: &Tup3<String, i32, i32>,
         ) -> std::cmp::Ordering {
-            let ord = left.1.cmp(&right.1);
+            let ord = left.get_1().cmp(right.get_1());
 
             if ord == Ordering::Equal {
-                let ord = right.2.cmp(&left.2);
+                let ord = right.get_2().cmp(left.get_2());
                 if ord == Ordering::Equal {
-                    left.0.cmp(&right.0)
+                    left.get_0().cmp(right.get_0())
                 } else {
                     ord
                 }
@@ -242,8 +242,8 @@ fn topk_custom_ord_test_circuit(
     let topk_rank_handle = input_stream
         .topk_rank_custom_order::<AscDesc, _, _, _>(
             5,
-            |Tup3(_, x1, y1), Tup3(_, x2, y2)| x1 == x2 && y1 == y2,
-            |rank, Tup3(s, x, y)| Tup4(rank, s.clone(), *x, *y),
+            |t1, t2| *t1.get_1() == *t2.get_1() && *t1.get_2() == *t2.get_2(),
+            |rank, t| Tup4::new(rank, t.get_0().clone(), *t.get_1(), *t.get_2()),
         )
         .integrate()
         .output();
@@ -251,15 +251,16 @@ fn topk_custom_ord_test_circuit(
     let topk_dense_rank_handle = input_stream
         .topk_dense_rank_custom_order::<AscDesc, _, _, _>(
             5,
-            |Tup3(_, x1, y1), Tup3(_, x2, y2)| x1 == x2 && y1 == y2,
-            |rank, Tup3(s, x, y)| Tup4(rank, s.clone(), *x, *y),
+            |t1, t2| *t1.get_1() == *t2.get_1() && *t1.get_2() == *t2.get_2(),
+            |rank, t| Tup4::new(rank, t.get_0().clone(), *t.get_1(), *t.get_2()),
         )
         .integrate()
         .output();
 
     let topk_row_number_handle = input_stream
-        .topk_row_number_custom_order::<AscDesc, _, _>(5, |rank, Tup3(s, x, y)| {
-            Tup4(rank, s.clone(), *x, *y)
+        .topk_row_number_custom_order::<AscDesc, _, _>(5, |rank, t| {
+            let (s, x, y) = t.into();
+            Tup4::new(rank, s.clone(), *x, *y)
         })
         .integrate()
         .output();
@@ -329,10 +330,10 @@ fn lag_custom_order_test_circuit(
 
     impl CmpFunc<Tup2<i32, String>> for AscDesc {
         fn cmp(left: &Tup2<i32, String>, right: &Tup2<i32, String>) -> std::cmp::Ordering {
-            let ord = left.0.cmp(&right.0);
+            let ord = left.fst().cmp(right.fst());
 
             if ord == Ordering::Equal {
-                right.1.cmp(&left.1)
+                right.snd().cmp(&left.snd())
             } else {
                 ord
             }
@@ -345,7 +346,7 @@ fn lag_custom_order_test_circuit(
         .lag_custom_order::<_, _, _, AscDesc, _>(
             3,
             |v| v.cloned(),
-            |v, vl| Tup3(v.0, v.1.clone(), vl.clone()),
+            |v, vl| Tup3::new(*v.fst(), v.snd().clone(), vl.clone()),
         )
         .integrate()
         .output();
@@ -448,132 +449,132 @@ fn test_topk_custom_ord() {
 
     let trace = vec![
         vec![
-            (1, Tup3("foo".to_string(), 10, 100), 1),
-            (1, Tup3("foo".to_string(), 9, 99), 1),
-            (1, Tup3("foo".to_string(), 8, 98), 1),
-            (1, Tup3("foo".to_string(), 10, 90), 1),
-            (1, Tup3("foo".to_string(), 9, 98), 1),
-            (1, Tup3("foo".to_string(), 8, 97), 1),
+            (1, Tup3::new("foo".to_string(), 10, 100), 1),
+            (1, Tup3::new("foo".to_string(), 9, 99), 1),
+            (1, Tup3::new("foo".to_string(), 8, 98), 1),
+            (1, Tup3::new("foo".to_string(), 10, 90), 1),
+            (1, Tup3::new("foo".to_string(), 9, 98), 1),
+            (1, Tup3::new("foo".to_string(), 8, 97), 1),
         ],
         vec![
-            (1, Tup3("foo".to_string(), 10, 80), 1),
-            (1, Tup3("foo".to_string(), 9, 97), 1),
-            (1, Tup3("foo".to_string(), 8, 96), 1),
-            (1, Tup3("foo".to_string(), 10, 79), 1),
-            (1, Tup3("foo".to_string(), 9, 96), 1),
-            (1, Tup3("foo".to_string(), 8, 95), 1),
+            (1, Tup3::new("foo".to_string(), 10, 80), 1),
+            (1, Tup3::new("foo".to_string(), 9, 97), 1),
+            (1, Tup3::new("foo".to_string(), 8, 96), 1),
+            (1, Tup3::new("foo".to_string(), 10, 79), 1),
+            (1, Tup3::new("foo".to_string(), 9, 96), 1),
+            (1, Tup3::new("foo".to_string(), 8, 95), 1),
         ],
         vec![
-            (1, Tup3("foo".to_string(), 9, 99), -1),
-            (1, Tup3("foo".to_string(), 8, 98), -1),
-            (1, Tup3("foo".to_string(), 9, 98), -1),
-            (1, Tup3("foo".to_string(), 8, 97), -1),
+            (1, Tup3::new("foo".to_string(), 9, 99), -1),
+            (1, Tup3::new("foo".to_string(), 8, 98), -1),
+            (1, Tup3::new("foo".to_string(), 9, 98), -1),
+            (1, Tup3::new("foo".to_string(), 8, 97), -1),
         ],
         // Two values with the same rank
-        vec![(1, Tup3("bar".to_string(), 8, 96), 1)],
-        vec![(1, Tup3("foo".to_string(), 7, 96), 1)],
+        vec![(1, Tup3::new("bar".to_string(), 8, 96), 1)],
+        vec![(1, Tup3::new("foo".to_string(), 7, 96), 1)],
         // >5 elements with the same rank.
         vec![
-            (1, Tup3("baz".to_string(), 8, 96), 1),
-            (1, Tup3("buzz".to_string(), 8, 96), 1),
-            (1, Tup3("foobar".to_string(), 8, 96), 1),
-            (1, Tup3("fubar".to_string(), 8, 96), 1),
+            (1, Tup3::new("baz".to_string(), 8, 96), 1),
+            (1, Tup3::new("buzz".to_string(), 8, 96), 1),
+            (1, Tup3::new("foobar".to_string(), 8, 96), 1),
+            (1, Tup3::new("fubar".to_string(), 8, 96), 1),
         ],
         // non-unit weights
         vec![
-            (1, Tup3("foo".to_string(), 7, 96), 1),
-            (1, Tup3("baz".to_string(), 8, 96), 1),
+            (1, Tup3::new("foo".to_string(), 7, 96), 1),
+            (1, Tup3::new("baz".to_string(), 8, 96), 1),
         ],
     ];
     let mut expected_output = vec![indexed_zset! {
-        1 => {Tup3("foo".to_string(), 8, 98) => 1, Tup3("foo".to_string(), 8, 97) => 1, Tup3("foo".to_string(), 9, 99) => 1, Tup3("foo".to_string(), 9, 98) => 1, Tup3("foo".to_string(), 10, 100) => 1},
+        1 => {Tup3::new("foo".to_string(), 8, 98) => 1, Tup3::new("foo".to_string(), 8, 97) => 1, Tup3::new("foo".to_string(), 9, 99) => 1, Tup3::new("foo".to_string(), 9, 98) => 1, Tup3::new("foo".to_string(), 10, 100) => 1},
     },
     indexed_zset! {
-        1 => {Tup3("foo".to_string(), 8, 98) => 1, Tup3("foo".to_string(), 8, 97) => 1, Tup3("foo".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 95) => 1, Tup3("foo".to_string(), 9, 99) => 1},
+        1 => {Tup3::new("foo".to_string(), 8, 98) => 1, Tup3::new("foo".to_string(), 8, 97) => 1, Tup3::new("foo".to_string(), 8, 96) => 1, Tup3::new("foo".to_string(), 8, 95) => 1, Tup3::new("foo".to_string(), 9, 99) => 1},
     },
     indexed_zset! {
-        1 => {Tup3("foo".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 95) => 1, Tup3("foo".to_string(), 9, 97) => 1, Tup3("foo".to_string(), 9, 96) => 1, Tup3("foo".to_string(), 10, 100) => 1},
+        1 => {Tup3::new("foo".to_string(), 8, 96) => 1, Tup3::new("foo".to_string(), 8, 95) => 1, Tup3::new("foo".to_string(), 9, 97) => 1, Tup3::new("foo".to_string(), 9, 96) => 1, Tup3::new("foo".to_string(), 10, 100) => 1},
     },
     indexed_zset! {
-        1 => {Tup3("bar".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 95) => 1, Tup3("foo".to_string(), 9, 97) => 1, Tup3("foo".to_string(), 9, 96) => 1}
+        1 => {Tup3::new("bar".to_string(), 8, 96) => 1, Tup3::new("foo".to_string(), 8, 96) => 1, Tup3::new("foo".to_string(), 8, 95) => 1, Tup3::new("foo".to_string(), 9, 97) => 1, Tup3::new("foo".to_string(), 9, 96) => 1}
     },
     indexed_zset! {
-        1 => {Tup3("foo".to_string(), 7, 96) => 1, Tup3("bar".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 95) => 1, Tup3("foo".to_string(), 9, 97) => 1},
+        1 => {Tup3::new("foo".to_string(), 7, 96) => 1, Tup3::new("bar".to_string(), 8, 96) => 1, Tup3::new("foo".to_string(), 8, 96) => 1, Tup3::new("foo".to_string(), 8, 95) => 1, Tup3::new("foo".to_string(), 9, 97) => 1},
     },
     indexed_zset! {
-        1 => {Tup3("foo".to_string(), 7, 96) => 1, Tup3("bar".to_string(), 8, 96) => 1, Tup3("baz".to_string(), 8, 96) => 1, Tup3("buzz".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 96) => 1},
+        1 => {Tup3::new("foo".to_string(), 7, 96) => 1, Tup3::new("bar".to_string(), 8, 96) => 1, Tup3::new("baz".to_string(), 8, 96) => 1, Tup3::new("buzz".to_string(), 8, 96) => 1, Tup3::new("foo".to_string(), 8, 96) => 1},
     },
     indexed_zset! {
-        1 => {Tup3("foo".to_string(), 7, 96) => 2, Tup3("bar".to_string(), 8, 96) => 1, Tup3("baz".to_string(), 8, 96) => 2, Tup3("buzz".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 96) => 1},
+        1 => {Tup3::new("foo".to_string(), 7, 96) => 2, Tup3::new("bar".to_string(), 8, 96) => 1, Tup3::new("baz".to_string(), 8, 96) => 2, Tup3::new("buzz".to_string(), 8, 96) => 1, Tup3::new("foo".to_string(), 8, 96) => 1},
     }]
     .into_iter();
 
     let mut expected_ranked_output = vec![indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 8, 98) => 1, Tup4(2, "foo".to_string(), 8, 97) => 1, Tup4(3, "foo".to_string(), 9, 99) => 1, Tup4(4, "foo".to_string(), 9, 98) => 1, Tup4(5, "foo".to_string(), 10, 100) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 8, 98) => 1, Tup4::new(2, "foo".to_string(), 8, 97) => 1, Tup4::new(3, "foo".to_string(), 9, 99) => 1, Tup4::new(4, "foo".to_string(), 9, 98) => 1, Tup4::new(5, "foo".to_string(), 10, 100) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 8, 98) => 1, Tup4(2, "foo".to_string(), 8, 97) => 1, Tup4(3, "foo".to_string(), 8, 96) => 1, Tup4(4, "foo".to_string(), 8, 95) => 1, Tup4(5, "foo".to_string(), 9, 99) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 8, 98) => 1, Tup4::new(2, "foo".to_string(), 8, 97) => 1, Tup4::new(3, "foo".to_string(), 8, 96) => 1, Tup4::new(4, "foo".to_string(), 8, 95) => 1, Tup4::new(5, "foo".to_string(), 9, 99) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 95) => 1, Tup4(3, "foo".to_string(), 9, 97) => 1, Tup4(4, "foo".to_string(), 9, 96) => 1, Tup4(5, "foo".to_string(), 10, 100) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 8, 96) => 1, Tup4::new(2, "foo".to_string(), 8, 95) => 1, Tup4::new(3, "foo".to_string(), 9, 97) => 1, Tup4::new(4, "foo".to_string(), 9, 96) => 1, Tup4::new(5, "foo".to_string(), 10, 100) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "bar".to_string(), 8, 96) => 1, Tup4(1, "foo".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 95) => 1, Tup4(4, "foo".to_string(), 9, 97) => 1, Tup4(5, "foo".to_string(), 9, 96) => 1},
+        1 => {Tup4::new(1, "bar".to_string(), 8, 96) => 1, Tup4::new(1, "foo".to_string(), 8, 96) => 1, Tup4::new(3, "foo".to_string(), 8, 95) => 1, Tup4::new(4, "foo".to_string(), 9, 97) => 1, Tup4::new(5, "foo".to_string(), 9, 96) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "bar".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 96) => 1, Tup4(4, "foo".to_string(), 8, 95) => 1, Tup4(5, "foo".to_string(), 9, 97) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 7, 96) => 1, Tup4::new(2, "bar".to_string(), 8, 96) => 1, Tup4::new(2, "foo".to_string(), 8, 96) => 1, Tup4::new(4, "foo".to_string(), 8, 95) => 1, Tup4::new(5, "foo".to_string(), 9, 97) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "bar".to_string(), 8, 96) => 1, Tup4(2, "baz".to_string(), 8, 96) => 1, Tup4(2, "buzz".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 96) => 1, Tup4(2, "foobar".to_string(), 8, 96) => 1, Tup4(2, "fubar".to_string(), 8, 96) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 7, 96) => 1, Tup4::new(2, "bar".to_string(), 8, 96) => 1, Tup4::new(2, "baz".to_string(), 8, 96) => 1, Tup4::new(2, "buzz".to_string(), 8, 96) => 1, Tup4::new(2, "foo".to_string(), 8, 96) => 1, Tup4::new(2, "foobar".to_string(), 8, 96) => 1, Tup4::new(2, "fubar".to_string(), 8, 96) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 7, 96) => 2, Tup4(3, "bar".to_string(), 8, 96) => 1, Tup4(3, "baz".to_string(), 8, 96) => 2, Tup4(3, "buzz".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 96) => 1, Tup4(3, "foobar".to_string(), 8, 96) => 1, Tup4(3, "fubar".to_string(), 8, 96) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 7, 96) => 2, Tup4::new(3, "bar".to_string(), 8, 96) => 1, Tup4::new(3, "baz".to_string(), 8, 96) => 2, Tup4::new(3, "buzz".to_string(), 8, 96) => 1, Tup4::new(3, "foo".to_string(), 8, 96) => 1, Tup4::new(3, "foobar".to_string(), 8, 96) => 1, Tup4::new(3, "fubar".to_string(), 8, 96) => 1},
     }]
     .into_iter();
 
     let mut expected_dense_ranked_output = vec![indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 8, 98) => 1, Tup4(2, "foo".to_string(), 8, 97) => 1, Tup4(3, "foo".to_string(), 9, 99) => 1, Tup4(4, "foo".to_string(), 9, 98) => 1, Tup4(5, "foo".to_string(), 10, 100) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 8, 98) => 1, Tup4::new(2, "foo".to_string(), 8, 97) => 1, Tup4::new(3, "foo".to_string(), 9, 99) => 1, Tup4::new(4, "foo".to_string(), 9, 98) => 1, Tup4::new(5, "foo".to_string(), 10, 100) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 8, 98) => 1, Tup4(2, "foo".to_string(), 8, 97) => 1, Tup4(3, "foo".to_string(), 8, 96) => 1, Tup4(4, "foo".to_string(), 8, 95) => 1, Tup4(5, "foo".to_string(), 9, 99) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 8, 98) => 1, Tup4::new(2, "foo".to_string(), 8, 97) => 1, Tup4::new(3, "foo".to_string(), 8, 96) => 1, Tup4::new(4, "foo".to_string(), 8, 95) => 1, Tup4::new(5, "foo".to_string(), 9, 99) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 95) => 1, Tup4(3, "foo".to_string(), 9, 97) => 1, Tup4(4, "foo".to_string(), 9, 96) => 1, Tup4(5, "foo".to_string(), 10, 100) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 8, 96) => 1, Tup4::new(2, "foo".to_string(), 8, 95) => 1, Tup4::new(3, "foo".to_string(), 9, 97) => 1, Tup4::new(4, "foo".to_string(), 9, 96) => 1, Tup4::new(5, "foo".to_string(), 10, 100) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "bar".to_string(), 8, 96) => 1, Tup4(1, "foo".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 95) => 1, Tup4(3, "foo".to_string(), 9, 97) => 1, Tup4(4, "foo".to_string(), 9, 96) => 1, Tup4(5, "foo".to_string(), 10, 100) => 1},
+        1 => {Tup4::new(1, "bar".to_string(), 8, 96) => 1, Tup4::new(1, "foo".to_string(), 8, 96) => 1, Tup4::new(2, "foo".to_string(), 8, 95) => 1, Tup4::new(3, "foo".to_string(), 9, 97) => 1, Tup4::new(4, "foo".to_string(), 9, 96) => 1, Tup4::new(5, "foo".to_string(), 10, 100) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "bar".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 95) => 1, Tup4(4, "foo".to_string(), 9, 97) => 1, Tup4(5, "foo".to_string(), 9, 96) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 7, 96) => 1, Tup4::new(2, "bar".to_string(), 8, 96) => 1, Tup4::new(2, "foo".to_string(), 8, 96) => 1, Tup4::new(3, "foo".to_string(), 8, 95) => 1, Tup4::new(4, "foo".to_string(), 9, 97) => 1, Tup4::new(5, "foo".to_string(), 9, 96) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "bar".to_string(), 8, 96) => 1, Tup4(2, "baz".to_string(), 8, 96) => 1, Tup4(2, "buzz".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 96) => 1, Tup4(2, "foobar".to_string(), 8, 96) => 1, Tup4(2, "fubar".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 95) => 1, Tup4(4, "foo".to_string(), 9, 97) => 1, Tup4(5, "foo".to_string(), 9, 96) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 7, 96) => 1, Tup4::new(2, "bar".to_string(), 8, 96) => 1, Tup4::new(2, "baz".to_string(), 8, 96) => 1, Tup4::new(2, "buzz".to_string(), 8, 96) => 1, Tup4::new(2, "foo".to_string(), 8, 96) => 1, Tup4::new(2, "foobar".to_string(), 8, 96) => 1, Tup4::new(2, "fubar".to_string(), 8, 96) => 1, Tup4::new(3, "foo".to_string(), 8, 95) => 1, Tup4::new(4, "foo".to_string(), 9, 97) => 1, Tup4::new(5, "foo".to_string(), 9, 96) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 7, 96) => 2, Tup4(2, "bar".to_string(), 8, 96) => 1, Tup4(2, "baz".to_string(), 8, 96) => 2, Tup4(2, "buzz".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 96) => 1, Tup4(2, "foobar".to_string(), 8, 96) => 1, Tup4(2, "fubar".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 95) => 1, Tup4(4, "foo".to_string(), 9, 97) => 1, Tup4(5, "foo".to_string(), 9, 96) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 7, 96) => 2, Tup4::new(2, "bar".to_string(), 8, 96) => 1, Tup4::new(2, "baz".to_string(), 8, 96) => 2, Tup4::new(2, "buzz".to_string(), 8, 96) => 1, Tup4::new(2, "foo".to_string(), 8, 96) => 1, Tup4::new(2, "foobar".to_string(), 8, 96) => 1, Tup4::new(2, "fubar".to_string(), 8, 96) => 1, Tup4::new(3, "foo".to_string(), 8, 95) => 1, Tup4::new(4, "foo".to_string(), 9, 97) => 1, Tup4::new(5, "foo".to_string(), 9, 96) => 1},
     }]
     .into_iter();
 
     let mut expected_row_number_output = vec![indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 8, 98) => 1, Tup4(2, "foo".to_string(), 8, 97) => 1, Tup4(3, "foo".to_string(), 9, 99) => 1, Tup4(4, "foo".to_string(), 9, 98) => 1, Tup4(5, "foo".to_string(), 10, 100) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 8, 98) => 1, Tup4::new(2, "foo".to_string(), 8, 97) => 1, Tup4::new(3, "foo".to_string(), 9, 99) => 1, Tup4::new(4, "foo".to_string(), 9, 98) => 1, Tup4::new(5, "foo".to_string(), 10, 100) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 8, 98) => 1, Tup4(2, "foo".to_string(), 8, 97) => 1, Tup4(3, "foo".to_string(), 8, 96) => 1, Tup4(4, "foo".to_string(), 8, 95) => 1, Tup4(5, "foo".to_string(), 9, 99) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 8, 98) => 1, Tup4::new(2, "foo".to_string(), 8, 97) => 1, Tup4::new(3, "foo".to_string(), 8, 96) => 1, Tup4::new(4, "foo".to_string(), 8, 95) => 1, Tup4::new(5, "foo".to_string(), 9, 99) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 95) => 1, Tup4(3, "foo".to_string(), 9, 97) => 1, Tup4(4, "foo".to_string(), 9, 96) => 1, Tup4(5, "foo".to_string(), 10, 100) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 8, 96) => 1, Tup4::new(2, "foo".to_string(), 8, 95) => 1, Tup4::new(3, "foo".to_string(), 9, 97) => 1, Tup4::new(4, "foo".to_string(), 9, 96) => 1, Tup4::new(5, "foo".to_string(), 10, 100) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "bar".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 95) => 1, Tup4(4, "foo".to_string(), 9, 97) => 1, Tup4(5, "foo".to_string(), 9, 96) => 1},
+        1 => {Tup4::new(1, "bar".to_string(), 8, 96) => 1, Tup4::new(2, "foo".to_string(), 8, 96) => 1, Tup4::new(3, "foo".to_string(), 8, 95) => 1, Tup4::new(4, "foo".to_string(), 9, 97) => 1, Tup4::new(5, "foo".to_string(), 9, 96) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "bar".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 96) => 1, Tup4(4, "foo".to_string(), 8, 95) => 1, Tup4(5, "foo".to_string(), 9, 97) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 7, 96) => 1, Tup4::new(2, "bar".to_string(), 8, 96) => 1, Tup4::new(3, "foo".to_string(), 8, 96) => 1, Tup4::new(4, "foo".to_string(), 8, 95) => 1, Tup4::new(5, "foo".to_string(), 9, 97) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "bar".to_string(), 8, 96) => 1, Tup4(3, "baz".to_string(), 8, 96) => 1, Tup4(4, "buzz".to_string(), 8, 96) => 1, Tup4(5, "foo".to_string(), 8, 96) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 7, 96) => 1, Tup4::new(2, "bar".to_string(), 8, 96) => 1, Tup4::new(3, "baz".to_string(), 8, 96) => 1, Tup4::new(4, "buzz".to_string(), 8, 96) => 1, Tup4::new(5, "foo".to_string(), 8, 96) => 1},
     },
     indexed_zset! {
-        1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "foo".to_string(), 7, 96) => 1, Tup4(3, "bar".to_string(), 8, 96) => 1, Tup4(4, "baz".to_string(), 8, 96) => 1, Tup4(5, "baz".to_string(), 8, 96) => 1},
+        1 => {Tup4::new(1, "foo".to_string(), 7, 96) => 1, Tup4::new(2, "foo".to_string(), 7, 96) => 1, Tup4::new(3, "bar".to_string(), 8, 96) => 1, Tup4::new(4, "baz".to_string(), 8, 96) => 1, Tup4::new(5, "baz".to_string(), 8, 96) => 1},
     }]
     .into_iter();
 
@@ -614,78 +615,78 @@ fn test_lag_custom_ord() {
 
     let trace = vec![
         vec![
-            (1, Tup2(1, "f".to_string()), 1),
-            (1, Tup2(1, "e".to_string()), 1),
-            (1, Tup2(1, "d".to_string()), 1),
-            (1, Tup2(1, "c".to_string()), 1),
-            (1, Tup2(1, "b".to_string()), 1),
-            (1, Tup2(1, "a".to_string()), 1),
-            (1, Tup2(2, "d".to_string()), 1),
-            (1, Tup2(2, "c".to_string()), 1),
-            (1, Tup2(2, "b".to_string()), 1),
-            (1, Tup2(2, "a".to_string()), 1),
+            (1, Tup2::new(1, "f".to_string()), 1),
+            (1, Tup2::new(1, "e".to_string()), 1),
+            (1, Tup2::new(1, "d".to_string()), 1),
+            (1, Tup2::new(1, "c".to_string()), 1),
+            (1, Tup2::new(1, "b".to_string()), 1),
+            (1, Tup2::new(1, "a".to_string()), 1),
+            (1, Tup2::new(2, "d".to_string()), 1),
+            (1, Tup2::new(2, "c".to_string()), 1),
+            (1, Tup2::new(2, "b".to_string()), 1),
+            (1, Tup2::new(2, "a".to_string()), 1),
         ],
         vec![
-            (1, Tup2(2, "e".to_string()), 1),
-            (1, Tup2(2, "d".to_string()), 1),
-            (1, Tup2(3, "d".to_string()), 1),
-            (1, Tup2(3, "c".to_string()), 1),
-            (1, Tup2(3, "b".to_string()), 1),
-            (1, Tup2(3, "a".to_string()), 1),
+            (1, Tup2::new(2, "e".to_string()), 1),
+            (1, Tup2::new(2, "d".to_string()), 1),
+            (1, Tup2::new(3, "d".to_string()), 1),
+            (1, Tup2::new(3, "c".to_string()), 1),
+            (1, Tup2::new(3, "b".to_string()), 1),
+            (1, Tup2::new(3, "a".to_string()), 1),
         ],
         vec![
-            (1, Tup2(1, "f".to_string()), -1),
-            (1, Tup2(1, "d".to_string()), -1),
-            (1, Tup2(1, "b".to_string()), -1),
-            (1, Tup2(2, "d".to_string()), -1),
-            (1, Tup2(2, "b".to_string()), -1),
+            (1, Tup2::new(1, "f".to_string()), -1),
+            (1, Tup2::new(1, "d".to_string()), -1),
+            (1, Tup2::new(1, "b".to_string()), -1),
+            (1, Tup2::new(2, "d".to_string()), -1),
+            (1, Tup2::new(2, "b".to_string()), -1),
         ],
     ];
     let expected_output: Vec<OrdIndexedZSet<i32, Tup3<i32, String, Option<Tup2<i32, String>>>>> = vec![
         indexed_zset! {
-            1i32 => { Tup3(1i32, "f".to_string(), None) => 1
-                    , Tup3(1i32, "e".to_string(), None) => 1
-                    , Tup3(1i32, "d".to_string(), None) => 1
-                    , Tup3(1i32, "c".to_string(), Some(Tup2(1, "f".to_string()))) => 1
-                    , Tup3(1i32, "b".to_string(), Some(Tup2(1, "e".to_string()))) => 1
-                    , Tup3(1i32, "a".to_string(), Some(Tup2(1, "d".to_string()))) => 1
-                    , Tup3(2i32, "d".to_string(), Some(Tup2(1, "c".to_string()))) => 1
-                    , Tup3(2i32, "c".to_string(), Some(Tup2(1, "b".to_string()))) => 1
-                    , Tup3(2i32, "b".to_string(), Some(Tup2(1, "a".to_string()))) => 1
-                    , Tup3(2i32, "a".to_string(), Some(Tup2(2, "d".to_string()))) => 1
+            1i32 => { Tup3::new(1i32, "f".to_string(), None) => 1
+                    , Tup3::new(1i32, "e".to_string(), None) => 1
+                    , Tup3::new(1i32, "d".to_string(), None) => 1
+                    , Tup3::new(1i32, "c".to_string(), Some(Tup2::new(1, "f".to_string()))) => 1
+                    , Tup3::new(1i32, "b".to_string(), Some(Tup2::new(1, "e".to_string()))) => 1
+                    , Tup3::new(1i32, "a".to_string(), Some(Tup2::new(1, "d".to_string()))) => 1
+                    , Tup3::new(2i32, "d".to_string(), Some(Tup2::new(1, "c".to_string()))) => 1
+                    , Tup3::new(2i32, "c".to_string(), Some(Tup2::new(1, "b".to_string()))) => 1
+                    , Tup3::new(2i32, "b".to_string(), Some(Tup2::new(1, "a".to_string()))) => 1
+                    , Tup3::new(2i32, "a".to_string(), Some(Tup2::new(2, "d".to_string()))) => 1
             }
         },
         indexed_zset! {
-            1i32 => { Tup3(1i32, "f".to_string(), None) => 1
-                , Tup3(1i32, "e".to_string(), None) => 1
-                , Tup3(1i32, "d".to_string(), None) => 1
-                , Tup3(1i32, "c".to_string(), Some(Tup2(1, "f".to_string()))) => 1
-                , Tup3(1i32, "b".to_string(), Some(Tup2(1, "e".to_string()))) => 1
-                , Tup3(1i32, "a".to_string(), Some(Tup2(1, "d".to_string()))) => 1
-                , Tup3(2i32, "e".to_string(), Some(Tup2(1, "c".to_string()))) => 1
-                , Tup3(2i32, "d".to_string(), Some(Tup2(1, "b".to_string()))) => 1
-                , Tup3(2i32, "d".to_string(), Some(Tup2(1, "a".to_string()))) => 1
-                , Tup3(2i32, "c".to_string(), Some(Tup2(2, "e".to_string()))) => 1
-                , Tup3(2i32, "b".to_string(), Some(Tup2(2, "d".to_string()))) => 1
-                , Tup3(2i32, "a".to_string(), Some(Tup2(2, "d".to_string()))) => 1
-                , Tup3(3i32, "d".to_string(), Some(Tup2(2, "c".to_string()))) => 1
-                , Tup3(3i32, "c".to_string(), Some(Tup2(2, "b".to_string()))) => 1
-                , Tup3(3i32, "b".to_string(), Some(Tup2(2, "a".to_string()))) => 1
-                , Tup3(3i32, "a".to_string(), Some(Tup2(3, "d".to_string()))) => 1
+            1i32 => { Tup3::new(1i32, "f".to_string(), None) => 1
+                , Tup3::new(1i32, "e".to_string(), None) => 1
+                , Tup3::new(1i32, "d".to_string(), None) => 1
+                , Tup3::new(1i32, "c".to_string(), Some(Tup2::new(1, "f".to_string()))) => 1
+                , Tup3::new(1i32, "b".to_string(), Some(Tup2::new(1, "e".to_string()))) => 1
+                , Tup3::new(1i32, "a".to_string(), Some(Tup2::new(1, "d".to_string()))) => 1
+                , Tup3::new(2i32, "e".to_string(), Some(Tup2::new(1, "c".to_string()))) => 1
+                , Tup3::new(2i32, "d".to_string(), Some(Tup2::new(1, "b".to_string()))) => 1
+                , Tup3::new(2i32, "d".to_string(), Some(Tup2::new(1, "a".to_string()))) => 1
+                , Tup3::new(2i32, "c".to_string(), Some(Tup2::new(2, "e".to_string()))) => 1
+                , Tup3::new(2i32, "b".to_string(), Some(Tup2::new(2, "d".to_string()))) => 1
+                , Tup3::new(2i32, "a".to_string(), Some(Tup2::new(2, "d".to_string()))) => 1
+                , Tup3::new(3i32, "d".to_string(), Some(Tup2::new(2, "c".to_string()))) => 1
+                , Tup3::new(3i32, "c".to_string(), Some(Tup2::new(2, "b".to_string()))) => 1
+                , Tup3::new(3i32, "b".to_string(), Some(Tup2::new(2, "a".to_string()))) => 1
+                , Tup3::new(3i32, "a".to_string(), Some(Tup2::new(3, "d".to_string()))) => 1
             }
         },
         indexed_zset! {
-            1i32 => { Tup3(1i32, "e".to_string(), None) => 1
-                , Tup3(1i32, "c".to_string(), None) => 1
-                , Tup3(1i32, "a".to_string(), None) => 1
-                , Tup3(2i32, "e".to_string(), Some(Tup2(1, "e".to_string()))) => 1
-                , Tup3(2i32, "d".to_string(), Some(Tup2(1, "c".to_string()))) => 1
-                , Tup3(2i32, "c".to_string(), Some(Tup2(1, "a".to_string()))) => 1
-                , Tup3(2i32, "a".to_string(), Some(Tup2(2, "e".to_string()))) => 1
-                , Tup3(3i32, "d".to_string(), Some(Tup2(2, "d".to_string()))) => 1
-                , Tup3(3i32, "c".to_string(), Some(Tup2(2, "c".to_string()))) => 1
-                , Tup3(3i32, "b".to_string(), Some(Tup2(2, "a".to_string()))) => 1
-                , Tup3(3i32, "a".to_string(), Some(Tup2(3, "d".to_string()))) => 1
+            1i32 => { Tup3::new(1i32, "e".to_string(), None) => 1
+                , Tup3::new(1i32, "c".to_string(), None) => 1
+                , Tup3::new(1i32, "a".to_string(), None) => 1
+                , Tup3::new(2i32, "e".to_string(), Some(Tup2::new(1, "e".to_string()))) => 1
+                , Tup3::new(2i32, "d".to_string(), Some(Tup2::new(1, "c".to_string()))) => 1
+                , Tup3::new(2i32, "c".to_string(), Some(Tup2::new(1, "a".to_string()))) => 1
+                , Tup3::new(2i32, "a".to_string(), Some(Tup2::new(2, "e".to_string()))) => 1
+                , Tup3::new(3i32, "d".to_string(), Some(Tup2::new(2, "d".to_string()))) => 1
+                , Tup3::new(3i32, "c".to_string(), Some(Tup2::new(2, "c".to_string()))) => 1
+                , Tup3::new(3i32, "b".to_string(), Some(Tup2::new(2, "a".to_string()))) => 1
+                , Tup3::new(3i32, "a".to_string(), Some(Tup2::new(3, "d".to_string()))) => 1
             }
         },
     ];

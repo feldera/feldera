@@ -724,19 +724,20 @@ mod test {
             let (transactions, transactions_handle) = circuit.add_input_zset::<Transaction>();
             let (users, users_handle) = circuit.add_input_zset::<User>();
 
-            let transactions = transactions.map_index(|transaction| (transaction.1, *transaction));
-            let users = users.map_index(|user| (user.1, user.clone()));
+            let transactions =
+                transactions.map_index(|transaction| (*transaction.get_1(), *transaction));
+            let users = users.map_index(|user| (*user.get_1(), user.clone()));
 
             let join = |_key: &CCNum, transaction: &Transaction, user: Option<&User>| {
-                Tup4(
-                    transaction.0,
-                    transaction.1,
-                    transaction.2,
-                    user.map(|u| u.2.clone()),
+                Tup4::new(
+                    *transaction.get_0(),
+                    *transaction.get_1(),
+                    *transaction.get_2(),
+                    user.map(|u| u.get_2().clone()),
                 )
             };
-            let ts_func1 = |transaction: &Transaction| transaction.0;
-            let ts_func2 = |user: &User| user.0;
+            let ts_func1 = |transaction: &Transaction| *transaction.get_0();
+            let ts_func2 = |user: &User| *user.get_0();
 
             let result = transactions.asof_join(&users, join, ts_func1, ts_func2);
 
@@ -767,49 +768,49 @@ mod test {
         // Step 1. Add some transactions without users.
         transactions.append(&mut vec![
             // CCNum = 1
-            Tup2(Tup3(100, 1, F32::new(10.0)), 1),
-            Tup2(Tup3(200, 1, F32::new(10.0)), 1),
-            Tup2(Tup3(300, 1, F32::new(10.0)), 1),
+            Tup2::new(Tup3::new(100, 1, F32::new(10.0)), 1),
+            Tup2::new(Tup3::new(200, 1, F32::new(10.0)), 1),
+            Tup2::new(Tup3::new(300, 1, F32::new(10.0)), 1),
             // CCNum = 2
-            Tup2(Tup3(100, 2, F32::new(20.0)), 1),
+            Tup2::new(Tup3::new(100, 2, F32::new(20.0)), 1),
             // CCNum = 3
-            Tup2(Tup3(100, 3, F32::new(30.0)), 1),
+            Tup2::new(Tup3::new(100, 3, F32::new(30.0)), 1),
         ]);
         dbsp.step().unwrap();
 
         assert_eq!(
             result.consolidate(),
             zset! {
-               Tup4(100, 1, F32::new(10.0), None) => 1,
-               Tup4(200, 1, F32::new(10.0), None) => 1,
-               Tup4(300, 1, F32::new(10.0), None) => 1,
-               Tup4(100, 2, F32::new(20.0), None) => 1,
-               Tup4(100, 3, F32::new(30.0), None) => 1,
+               Tup4::new(100, 1, F32::new(10.0), None) => 1,
+               Tup4::new(200, 1, F32::new(10.0), None) => 1,
+               Tup4::new(300, 1, F32::new(10.0), None) => 1,
+               Tup4::new(100, 2, F32::new(20.0), None) => 1,
+               Tup4::new(100, 3, F32::new(30.0), None) => 1,
             }
         );
 
         // Step 2. Add matching users.
         users.append(&mut vec![
             // CCNum = 1
-            Tup2(Tup3(50, 1, "A50".to_string()), 1),
+            Tup2::new(Tup3::new(50, 1, "A50".to_string()), 1),
             // CCNum = 2
-            Tup2(Tup3(100, 2, "B100".to_string()), 1),
+            Tup2::new(Tup3::new(100, 2, "B100".to_string()), 1),
             // CCNum = 3
-            Tup2(Tup3(110, 3, "C110".to_string()), 1),
+            Tup2::new(Tup3::new(110, 3, "C110".to_string()), 1),
         ]);
         dbsp.step().unwrap();
 
         assert_eq!(
             result.consolidate(),
             zset! {
-                Tup4(100, 1, F32::new(10.0), None) => -1,
-                Tup4(200, 1, F32::new(10.0), None) => -1,
-                Tup4(300, 1, F32::new(10.0), None) => -1,
-                Tup4(100, 2, F32::new(20.0), None) => -1,
-                Tup4(100, 1, F32::new(10.0), Some("A50".to_string())) => 1,
-                Tup4(200, 1, F32::new(10.0), Some("A50".to_string())) => 1,
-                Tup4(300, 1, F32::new(10.0), Some("A50".to_string())) => 1,
-                Tup4(100, 2, F32::new(20.0), Some("B100".to_string())) => 1,
+                Tup4::new(100, 1, F32::new(10.0), None) => -1,
+                Tup4::new(200, 1, F32::new(10.0), None) => -1,
+                Tup4::new(300, 1, F32::new(10.0), None) => -1,
+                Tup4::new(100, 2, F32::new(20.0), None) => -1,
+                Tup4::new(100, 1, F32::new(10.0), Some("A50".to_string())) => 1,
+                Tup4::new(200, 1, F32::new(10.0), Some("A50".to_string())) => 1,
+                Tup4::new(300, 1, F32::new(10.0), Some("A50".to_string())) => 1,
+                Tup4::new(100, 2, F32::new(20.0), Some("B100".to_string())) => 1,
             }
         );
 
@@ -819,37 +820,37 @@ mod test {
         // - Add an older version of user 3.
         users.append(&mut vec![
             // CCNum = 1
-            Tup2(Tup3(60, 1, "A60".to_string()), 1),
-            Tup2(Tup3(120, 2, "B120".to_string()), 1),
-            Tup2(Tup3(50, 3, "C50".to_string()), 1),
+            Tup2::new(Tup3::new(60, 1, "A60".to_string()), 1),
+            Tup2::new(Tup3::new(120, 2, "B120".to_string()), 1),
+            Tup2::new(Tup3::new(50, 3, "C50".to_string()), 1),
         ]);
 
-        transactions.append(&mut vec![Tup2(Tup3(200, 3, F32::new(30.0)), 1)]);
+        transactions.append(&mut vec![Tup2::new(Tup3::new(200, 3, F32::new(30.0)), 1)]);
 
         dbsp.step().unwrap();
 
         assert_eq!(
             result.consolidate(),
             zset! {
-                Tup4(100, 1, F32::new(10.0), Some("A50".to_string())) => -1,
-                Tup4(100, 1, F32::new(10.0), Some("A60".to_string())) => 1,
-                Tup4(200, 1, F32::new(10.0), Some("A50".to_string())) => -1,
-                Tup4(200, 1, F32::new(10.0), Some("A60".to_string())) => 1,
-                Tup4(300, 1, F32::new(10.0), Some("A50".to_string())) => -1,
-                Tup4(300, 1, F32::new(10.0), Some("A60".to_string())) => 1,
-                Tup4(100, 3, F32::new(30.0), None) => -1,
-                Tup4(100, 3, F32::new(30.0), Some("C50".to_string())) => 1,
-                Tup4(200, 3, F32::new(30.0), Some("C110".to_string())) => 1,
+                Tup4::new(100, 1, F32::new(10.0), Some("A50".to_string())) => -1,
+                Tup4::new(100, 1, F32::new(10.0), Some("A60".to_string())) => 1,
+                Tup4::new(200, 1, F32::new(10.0), Some("A50".to_string())) => -1,
+                Tup4::new(200, 1, F32::new(10.0), Some("A60".to_string())) => 1,
+                Tup4::new(300, 1, F32::new(10.0), Some("A50".to_string())) => -1,
+                Tup4::new(300, 1, F32::new(10.0), Some("A60".to_string())) => 1,
+                Tup4::new(100, 3, F32::new(30.0), None) => -1,
+                Tup4::new(100, 3, F32::new(30.0), Some("C50".to_string())) => 1,
+                Tup4::new(200, 3, F32::new(30.0), Some("C110".to_string())) => 1,
             }
         );
 
         // Step 4. Add users with old timestamps.
         users.append(&mut vec![
             // CCNum = 1
-            Tup2(Tup3(10, 1, "A10".to_string()), 1),
-            Tup2(Tup3(10, 2, "B10".to_string()), 1),
-            Tup2(Tup3(10, 3, "C10".to_string()), 1),
-            Tup2(Tup3(110, 3, "C105".to_string()), 1),
+            Tup2::new(Tup3::new(10, 1, "A10".to_string()), 1),
+            Tup2::new(Tup3::new(10, 2, "B10".to_string()), 1),
+            Tup2::new(Tup3::new(10, 3, "C10".to_string()), 1),
+            Tup2::new(Tup3::new(110, 3, "C105".to_string()), 1),
         ]);
 
         dbsp.step().unwrap();
@@ -859,32 +860,32 @@ mod test {
         // Step 5. Add multiple transactions per timestamp.
         transactions.append(&mut vec![
             // CCNum = 1
-            Tup2(Tup3(100, 1, F32::new(100.0)), 1),
-            Tup2(Tup3(200, 1, F32::new(100.0)), 1),
-            Tup2(Tup3(300, 1, F32::new(100.0)), 1),
+            Tup2::new(Tup3::new(100, 1, F32::new(100.0)), 1),
+            Tup2::new(Tup3::new(200, 1, F32::new(100.0)), 1),
+            Tup2::new(Tup3::new(300, 1, F32::new(100.0)), 1),
             // CCNum = 2
-            Tup2(Tup3(100, 2, F32::new(200.0)), 1),
+            Tup2::new(Tup3::new(100, 2, F32::new(200.0)), 1),
             // CCNum = 3
-            Tup2(Tup3(100, 3, F32::new(300.0)), 1),
+            Tup2::new(Tup3::new(100, 3, F32::new(300.0)), 1),
         ]);
         dbsp.step().unwrap();
 
         assert_eq!(
             result.consolidate(),
             zset! {
-                Tup4(100, 1, F32::new(100.0), Some("A60".to_string())) => 1,
-                Tup4(200, 1, F32::new(100.0), Some("A60".to_string())) => 1,
-                Tup4(300, 1, F32::new(100.0), Some("A60".to_string())) => 1,
-                Tup4(100, 2, F32::new(200.0), Some("B100".to_string())) => 1,
-                Tup4(100, 3, F32::new(300.0), Some("C50".to_string())) => 1,
+                Tup4::new(100, 1, F32::new(100.0), Some("A60".to_string())) => 1,
+                Tup4::new(200, 1, F32::new(100.0), Some("A60".to_string())) => 1,
+                Tup4::new(300, 1, F32::new(100.0), Some("A60".to_string())) => 1,
+                Tup4::new(100, 2, F32::new(200.0), Some("B100".to_string())) => 1,
+                Tup4::new(100, 3, F32::new(300.0), Some("C50".to_string())) => 1,
             }
         );
 
         // Step 6. Delete users.
         users.append(&mut vec![
-            Tup2(Tup3(10, 1, "A10".to_string()), -1),
-            Tup2(Tup3(10, 2, "B10".to_string()), -1),
-            Tup2(Tup3(10, 3, "C10".to_string()), -1),
+            Tup2::new(Tup3::new(10, 1, "A10".to_string()), -1),
+            Tup2::new(Tup3::new(10, 2, "B10".to_string()), -1),
+            Tup2::new(Tup3::new(10, 3, "C10".to_string()), -1),
         ]);
 
         dbsp.step().unwrap();
@@ -894,15 +895,15 @@ mod test {
         // Step 7. Delete more users.
         users.append(&mut vec![
             // CCNum = 1
-            // Tup2(Tup3(50, 1, "A50".to_string()), 1),
-            Tup2(Tup3(60, 1, "A60".to_string()), -1),
+            // Tup2::new(Tup3::new(50, 1, "A50".to_string()), 1),
+            Tup2::new(Tup3::new(60, 1, "A60".to_string()), -1),
             // CCNum = 2
-            // Tup2(Tup3(100, 2, "B100".to_string()), 1),
-            Tup2(Tup3(120, 2, "B120".to_string()), -1),
+            // Tup2::new(Tup3::new(100, 2, "B100".to_string()), 1),
+            Tup2::new(Tup3::new(120, 2, "B120".to_string()), -1),
             // CCNum = 3
-            // Tup2(Tup3(50, 3, "C50".to_string()), 1),
-            // Tup2(Tup3(110, 3, "C105".to_string()), 1),
-            Tup2(Tup3(110, 3, "C110".to_string()), -1),
+            // Tup2::new(Tup3::new(50, 3, "C50".to_string()), 1),
+            // Tup2::new(Tup3::new(110, 3, "C105".to_string()), 1),
+            Tup2::new(Tup3::new(110, 3, "C110".to_string()), -1),
         ]);
 
         dbsp.step().unwrap();
@@ -910,20 +911,20 @@ mod test {
         assert_eq!(
             result.consolidate(),
             zset! {
-                Tup4(100, 1, F32::new(100.0), Some("A60".to_string())) => -1,
-                Tup4(200, 1, F32::new(100.0), Some("A60".to_string())) => -1,
-                Tup4(300, 1, F32::new(100.0), Some("A60".to_string())) => -1,
-                Tup4(100, 1, F32::new(10.0), Some("A60".to_string())) => -1,
-                Tup4(200, 1, F32::new(10.0), Some("A60".to_string())) => -1,
-                Tup4(300, 1, F32::new(10.0), Some("A60".to_string())) => -1,
-                Tup4(100, 1, F32::new(100.0), Some("A50".to_string())) => 1,
-                Tup4(200, 1, F32::new(100.0), Some("A50".to_string())) => 1,
-                Tup4(300, 1, F32::new(100.0), Some("A50".to_string())) => 1,
-                Tup4(100, 1, F32::new(10.0), Some("A50".to_string())) => 1,
-                Tup4(200, 1, F32::new(10.0), Some("A50".to_string())) => 1,
-                Tup4(300, 1, F32::new(10.0), Some("A50".to_string())) => 1,
-                Tup4(200, 3, F32::new(30.0), Some("C110".to_string())) => -1,
-                Tup4(200, 3, F32::new(30.0), Some("C105".to_string())) => 1,
+                Tup4::new(100, 1, F32::new(100.0), Some("A60".to_string())) => -1,
+                Tup4::new(200, 1, F32::new(100.0), Some("A60".to_string())) => -1,
+                Tup4::new(300, 1, F32::new(100.0), Some("A60".to_string())) => -1,
+                Tup4::new(100, 1, F32::new(10.0), Some("A60".to_string())) => -1,
+                Tup4::new(200, 1, F32::new(10.0), Some("A60".to_string())) => -1,
+                Tup4::new(300, 1, F32::new(10.0), Some("A60".to_string())) => -1,
+                Tup4::new(100, 1, F32::new(100.0), Some("A50".to_string())) => 1,
+                Tup4::new(200, 1, F32::new(100.0), Some("A50".to_string())) => 1,
+                Tup4::new(300, 1, F32::new(100.0), Some("A50".to_string())) => 1,
+                Tup4::new(100, 1, F32::new(10.0), Some("A50".to_string())) => 1,
+                Tup4::new(200, 1, F32::new(10.0), Some("A50".to_string())) => 1,
+                Tup4::new(300, 1, F32::new(10.0), Some("A50".to_string())) => 1,
+                Tup4::new(200, 3, F32::new(30.0), Some("C110".to_string())) => -1,
+                Tup4::new(200, 3, F32::new(30.0), Some("C105".to_string())) => 1,
             }
         );
     }
@@ -933,18 +934,18 @@ mod test {
         let (mut dbsp, (transactions, users, _result)) = test_circuit();
 
         users.append(&mut vec![
-            Tup2(Tup3(37, 0, "L".to_string()), 1),
-            Tup2(Tup3(0, 0, "A".to_string()), 1),
+            Tup2::new(Tup3::new(37, 0, "L".to_string()), 1),
+            Tup2::new(Tup3::new(0, 0, "A".to_string()), 1),
         ]);
         dbsp.step().unwrap();
 
-        transactions.append(&mut vec![Tup2(Tup3(37, 0, F32::new(0.0)), 1)]);
+        transactions.append(&mut vec![Tup2::new(Tup3::new(37, 0, F32::new(0.0)), 1)]);
         dbsp.step().unwrap();
 
-        users.append(&mut vec![Tup2(Tup3(37, 0, "L".to_string()), -1)]);
+        users.append(&mut vec![Tup2::new(Tup3::new(37, 0, "L".to_string()), -1)]);
         dbsp.step().unwrap();
 
-        users.append(&mut vec![Tup2(Tup3(0, 0, "A".to_string()), -1)]);
+        users.append(&mut vec![Tup2::new(Tup3::new(0, 0, "A".to_string()), -1)]);
         dbsp.step().unwrap();
     }
 
@@ -983,7 +984,7 @@ mod test {
                     }
                 })
                 .unwrap_or_else(|| (join(k, v1, None), *w1));
-            result.push(Tup2(ov, ow));
+            result.push(Tup2::new(ov, ow));
         }
 
         OrdZSet::from_keys((), result)
@@ -996,7 +997,7 @@ mod test {
             amt in 0..100i32,
             w in 1..=2 as ZWeight)
             -> Tup2<Transaction, ZWeight> {
-            Tup2(Tup3(time, cc_num, F32::new(amt as f32)), w)
+            Tup2::new(Tup3::new(time, cc_num, F32::new(amt as f32)), w)
         }
     }
 
@@ -1007,7 +1008,7 @@ mod test {
             name in "[A-Z][a-z]{5}",
             w in 1..=2 as ZWeight)
             -> Tup2<User, ZWeight> {
-            Tup2(Tup3(time, cc_num, name), w)
+            Tup2::new(Tup3::new(time, cc_num, name), w)
         }
     }
 
@@ -1035,11 +1036,13 @@ mod test {
 
             let mut deletions = inputs.clone();
             for (ts, us) in deletions.iter_mut() {
-                for Tup2(_t, w) in ts.iter_mut(){
-                    *w = -*w;
+                for t in ts.iter_mut() {
+                    let w = *t.snd();
+                    *t.snd_mut() = -w;
                 }
-                for Tup2(_u, w) in us.iter_mut() {
-                     *w = -*w;
+                for t in us.iter_mut() {
+                    let w = *t.snd();
+                     *t.snd_mut() = -w;
                 }
             }
 

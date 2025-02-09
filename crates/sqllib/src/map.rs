@@ -109,9 +109,8 @@ where
     if weight < 0 {
         panic!("Negative weight {:?}", weight);
     }
-    let k = value.0;
-    let v = value.1;
-    insert_or_keep_largest(accumulator, &k, &v);
+    let (k, v) = &value.into();
+    insert_or_keep_largest(accumulator, k, v);
 }
 
 #[doc(hidden)]

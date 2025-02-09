@@ -245,8 +245,8 @@ mod tests {
             .filter(|n| n % num_workers == worker_index)
             .flat_map(|n| {
                 vec![
-                    Tup2(Tup2(n as u64, n as u64), 1i64),
-                    Tup2(Tup2(n as u64, 1000 * n as u64), 1),
+                    Tup2::new(Tup2::new(n as u64, n as u64), 1i64),
+                    Tup2::new(Tup2::new(n as u64, 1000 * n as u64), 1),
                 ]
             })
             .collect();

@@ -272,7 +272,7 @@ fn iceberg_localfs_input_test(
         data.clone()
             .into_iter()
             .filter(filter)
-            .map(|x| dbsp::utils::Tup2(dbsp::utils::Tup2(x, ()), 1))
+            .map(|x| dbsp::utils::Tup2::new(dbsp::utils::Tup2::new(x, ()), 1))
             .collect(),
     );
     let zset = file_to_zset::<IcebergTestStruct>(

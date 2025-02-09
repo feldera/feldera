@@ -28,7 +28,7 @@ where
     bids_by_bidder_window
         .weighted_count()
         .map(|(&(bidder, starttime, endtime), &count)| {
-            Tup4(bidder, count as u64, starttime, endtime)
+            Tup4::new(bidder, count as u64, starttime, endtime)
         })
 }
 
@@ -79,24 +79,24 @@ mod tests {
         vec![vec![(1, 1), (1, 2), (1, 99), (1, 25)], vec![(1, 16), (1, 2)]],
         vec![3_000, 4_000, 5_000, 6_000, 7_000, 8_000],
         vec![
-            zset! {Tup4(1, 4, 0, 10_000) => 1},
-            zset! { Tup4(1, 4, 0, 10_000) => -1, Tup4(1, 6, 0, 10_000) => 1},
+            zset! {Tup4::new(1, 4, 0, 10_000) => 1},
+            zset! { Tup4::new(1, 4, 0, 10_000) => -1, Tup4::new(1, 6, 0, 10_000) => 1},
         ],
     )]
     #[case::one_bidder_multiple_windows(
         vec![vec![(1, 99), (1, 63), (1, 2), (1, 45)], vec![(1, 29), (1, 21)]],
         vec![3_000, 4_000, 5_000, 6_000, 11_000, 12_000],
         vec![
-            zset! {Tup4(1, 4, 0, 10_000) => 1},
-            zset! {Tup4(1, 2, 10_000, 20_000) => 1},
+            zset! {Tup4::new(1, 4, 0, 10_000) => 1},
+            zset! {Tup4::new(1, 2, 10_000, 20_000) => 1},
         ],
     )]
     #[case::multiple_bidders_multiple_windows(
         vec![vec![(1, 12), (1, 102), (1, 22), (1, 79), (2, 16), (2, 81)], vec![(1, 49), (1, 77)]],
         vec![3_000, 4_000, 5_000, 6_000, 7_000, 8_000, 11_000, 12_000],
         vec![
-            zset! {Tup4(1, 4, 0, 10_000) => 1, Tup4(2, 2, 0, 10_000) => 1},
-            zset! {Tup4(1, 2, 10_000, 20_000) => 1},
+            zset! {Tup4::new(1, 4, 0, 10_000) => 1, Tup4::new(2, 2, 0, 10_000) => 1},
+            zset! {Tup4::new(1, 2, 10_000, 20_000) => 1},
         ],
     )]
     fn test_q12(
@@ -108,7 +108,7 @@ mod tests {
             batch
                 .into_iter()
                 .map(|(bidder, auction)| {
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             bidder,
                             auction,

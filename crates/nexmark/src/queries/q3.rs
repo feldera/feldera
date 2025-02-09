@@ -44,24 +44,25 @@ pub fn q3(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q3Stream {
     // Select people from states of interest and index them by person id.
     let person_by_id = input.flat_map_index(|event| match event {
         Event::Person(p) => match STATES_OF_INTEREST.contains(&p.state.as_str()) {
-            true => Some((p.id, Tup3(p.name.clone(), p.city.clone(), p.state.clone()))),
+            true => Some((
+                p.id,
+                Tup3::new(p.name.clone(), p.city.clone(), p.state.clone()),
+            )),
             false => None,
         },
         _ => None,
     });
 
     // In the future, it won't be necessary to specify type arguments to join.
-    auction_by_seller.join(
-        &person_by_id,
-        |_seller, &auction_id, Tup3(name, city, state)| {
-            Tup4(
-                name.to_string(),
-                city.to_string(),
-                state.to_string(),
-                auction_id,
-            )
-        },
-    )
+    auction_by_seller.join(&person_by_id, |_seller, &auction_id, t| {
+        let (name, city, state) = t.into();
+        Tup4::new(
+            name.to_string(),
+            city.to_string(),
+            state.to_string(),
+            auction_id,
+        )
+    })
 }
 
 #[cfg(test)]
@@ -77,7 +78,7 @@ mod tests {
     fn test_q3_people() {
         let input_vecs: Vec<Vec<Tup2<Event, ZWeight>>> = vec![
             vec![
-                Tup2(
+                Tup2::new(
                     Event::Person(Person {
                         id: 1,
                         name: String::from("NL Seller"),
@@ -86,7 +87,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Person(Person {
                         id: 2,
                         name: String::from("CA Seller"),
@@ -95,7 +96,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Person(Person {
                         id: 3,
                         name: String::from("ID Seller"),
@@ -104,7 +105,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Auction(Auction {
                         id: 999,
                         seller: 2,
@@ -113,7 +114,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Auction(Auction {
                         id: 452,
                         seller: 3,
@@ -125,7 +126,7 @@ mod tests {
             ],
             vec![
                 // This person is selling in OR, but a different category.
-                Tup2(
+                Tup2::new(
                     Event::Person(Person {
                         id: 4,
                         name: String::from("OR Seller"),
@@ -134,7 +135,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Auction(Auction {
                         id: 999,
                         seller: 4,
@@ -144,7 +145,7 @@ mod tests {
                     1,
                 ),
                 // This person is selling in OR in the category of interest.
-                Tup2(
+                Tup2::new(
                     Event::Person(Person {
                         id: 5,
                         name: String::from("OR Seller"),
@@ -153,7 +154,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Auction(Auction {
                         id: 333,
                         seller: 5,
@@ -174,8 +175,8 @@ mod tests {
                 OrdZSet::from_keys(
                     (),
                     vec![
-                        Tup2(
-                            Tup4(
+                        Tup2::new(
+                            Tup4::new(
                                 String::from("CA Seller"),
                                 String::from("Phoenix"),
                                 String::from("CA"),
@@ -183,8 +184,8 @@ mod tests {
                             ),
                             1,
                         ),
-                        Tup2(
-                            Tup4(
+                        Tup2::new(
+                            Tup4::new(
                                 String::from("ID Seller"),
                                 String::from("Phoenix"),
                                 String::from("ID"),
@@ -196,8 +197,8 @@ mod tests {
                 ),
                 OrdZSet::from_keys(
                     (),
-                    vec![Tup2(
-                        Tup4(
+                    vec![Tup2::new(
+                        Tup4::new(
                             String::from("OR Seller"),
                             String::from("Phoenix"),
                             String::from("OR"),

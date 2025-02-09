@@ -48,7 +48,7 @@ pub fn q7(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q7Stream {
         input.flat_map_index(|event| match event {
             Event::Bid(b) => Some((
                 b.date_time,
-                Tup4(b.auction, b.bidder, b.price, b.extra.clone()),
+                Tup4::new(b.auction, b.bidder, b.price, b.extra.clone()),
             )),
             _ => None,
         });
@@ -74,17 +74,17 @@ pub fn q7(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q7Stream {
 
     // Only consider bids within the current window.
     let windowed_bids = bids_by_time.window((true, false), &window_bounds);
-    let bids_by_price =
-        windowed_bids.map_index(|(date_time, Tup4(auction, bidder, price, extra))| {
-            (
-                *price,
-                Tup5(*auction, *bidder, *price, *date_time, extra.clone()),
-            )
-        });
+    let bids_by_price = windowed_bids.map_index(|(date_time, t4)| {
+        let (auction, bidder, price, extra) = t4.into();
+        (
+            *price,
+            Tup5::new(*auction, *bidder, *price, *date_time, extra.clone()),
+        )
+    });
 
     // Find the maximum bid across all bids.
     windowed_bids
-        .map_index(|(_date_time, Tup4(_auction, _bidder, price, _extra))| ((), *price))
+        .map_index(|(_date_time, t4)| ((), *t4.get_2()))
         .aggregate(Max)
         .map_index(|((), price)| (*price, ()))
         // Find _all_ bids with computed max price.
@@ -108,7 +108,7 @@ mod tests {
     // and the tumbled window is from 10_000 - 20_000.
     #[case::latest_bid_determines_window(
         vec![vec![(9_000, 1_000_000), (11_000, 50), (14_000, 90), (16_000, 70), (21_000, 1_000_000), (32_000, 1_000_000)]],
-        vec![zset! {Tup5(1, 1, 90, 14_000, String::new()) => 1}],
+        vec![zset! {Tup5::new(1, 1, 90, 14_000, String::new()) => 1}],
     )]
     // The window is rounded to the 10 second boundary
     #[case::window_boundary_below(
@@ -117,11 +117,11 @@ mod tests {
     )]
     #[case::window_boundary_lower(
         vec![vec![(10_000, 50), (32_000, 1_000_000)]],
-        vec![zset! {Tup5(1, 1, 50, 10_000, String::new()) => 1}],
+        vec![zset! {Tup5::new(1, 1, 50, 10_000, String::new()) => 1}],
     )]
     #[case::window_boundary_upper(
         vec![vec![(19_999, 50), (32_000, 1_000_000)]],
-        vec![zset! {Tup5(1, 1, 50, 19_999, String::new()) => 1}],
+        vec![zset! {Tup5::new(1, 1, 50, 19_999, String::new()) => 1}],
     )]
     #[case::window_boundary_above(
         vec![vec![(20_000, 50), (32_000, 1_000_000)]],
@@ -130,19 +130,19 @@ mod tests {
     #[case::tumble_into_new_window(
         vec![vec![(9_000, 1_000_000), (11_000, 50), (14_000, 90), (16_000, 70), (21_000, 1_000_000)], vec![(32_000, 10)], vec![(42_000, 10)]],
         vec![
-            zset! {Tup5(1, 1, 1_000_000, 9_000, String::new()) => 1},
+            zset! {Tup5::new(1, 1, 1_000_000, 9_000, String::new()) => 1},
             zset! {
-                Tup5(1, 1, 1_000_000, 9_000, String::new()) => -1,
-                Tup5(1, 1, 90, 14_000, String::new()) => 1,
+                Tup5::new(1, 1, 1_000_000, 9_000, String::new()) => -1,
+                Tup5::new(1, 1, 90, 14_000, String::new()) => 1,
             },
             zset! {
-                Tup5(1, 1, 90, 14_000, String::new()) => -1,
-                Tup5(1, 1, 1_000_000, 21_000, String::new()) => 1,
+                Tup5::new(1, 1, 90, 14_000, String::new()) => -1,
+                Tup5::new(1, 1, 1_000_000, 21_000, String::new()) => 1,
             }],
     )]
     #[case::multiple_max_bids(
         vec![vec![(11_000, 90), (14_000, 90), (16_000, 90), (21_000, 1_000_000), (32_000, 1_000_000)]],
-        vec![zset! {Tup5(1, 1, 90, 11_000, String::new()) => 1, Tup5(1, 1, 90, 14_000, String::new()) => 1, Tup5(1, 1, 90, 16_000, String::new()) => 1}],
+        vec![zset! {Tup5::new(1, 1, 90, 11_000, String::new()) => 1, Tup5::new(1, 1, 90, 14_000, String::new()) => 1, Tup5::new(1, 1, 90, 16_000, String::new()) => 1}],
     )]
     fn test_q7(
         #[case] input_batches: Vec<Vec<(u64, u64)>>,
@@ -152,7 +152,7 @@ mod tests {
             batch
                 .into_iter()
                 .map(|(date_time, price)| {
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             date_time,
                             price,

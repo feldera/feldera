@@ -48,40 +48,41 @@ where
     Trait2: DataTrait + ?Sized,
 {
     fn fst(&self) -> &Trait1 {
-        self.0.erase()
+        self.fst().erase()
     }
 
     fn fst_mut(&mut self) -> &mut Trait1 {
-        self.0.erase_mut()
+        self.fst_mut().erase_mut()
     }
 
     fn snd(&self) -> &Trait2 {
-        self.1.erase()
+        self.snd().erase()
     }
 
     fn snd_mut(&mut self) -> &mut Trait2 {
-        self.1.erase_mut()
+        self.snd_mut().erase_mut()
     }
 
     fn split(&self) -> (&Trait1, &Trait2) {
-        (self.0.erase(), self.1.erase())
+        (self.fst().erase(), self.snd().erase())
     }
 
     fn split_mut(&mut self) -> (&mut Trait1, &mut Trait2) {
-        (self.0.erase_mut(), self.1.erase_mut())
+        let (fst, snd) = self.as_mut();
+        (fst.erase_mut(), snd.erase_mut())
     }
 
     fn from_refs(&mut self, fst: &Trait1, snd: &Trait2) {
         unsafe {
-            self.0 = fst.downcast::<T1>().clone();
-            self.1 = snd.downcast::<T2>().clone();
+            *self.fst_mut() = fst.downcast::<T1>().clone();
+            *self.snd_mut() = snd.downcast::<T2>().clone();
         }
     }
 
     fn from_vals(&mut self, fst: &mut Trait1, snd: &mut Trait2) {
         unsafe {
-            self.0 = take(fst.downcast_mut::<T1>());
-            self.1 = take(snd.downcast_mut::<T2>());
+            *self.fst_mut() = take(fst.downcast_mut::<T1>());
+            *self.snd_mut() = take(snd.downcast_mut::<T2>());
         }
     }
 }
@@ -100,17 +101,17 @@ where
     Trait2: DataTrait + ?Sized,
 {
     fn fst(&self) -> &Trait1::Archived {
-        <T1 as Erase<Trait1>>::erase_archived(&self.0)
+        <T1 as Erase<Trait1>>::erase_archived(self.fst())
     }
 
     fn snd(&self) -> &Trait2::Archived {
-        <T2 as Erase<Trait2>>::erase_archived(&self.1)
+        <T2 as Erase<Trait2>>::erase_archived(self.snd())
     }
 
     fn split(&self) -> (&Trait1::Archived, &Trait2::Archived) {
         (
-            <T1 as Erase<Trait1>>::erase_archived(&self.0),
-            <T2 as Erase<Trait2>>::erase_archived(&self.1),
+            <T1 as Erase<Trait1>>::erase_archived(self.fst()),
+            <T2 as Erase<Trait2>>::erase_archived(self.snd()),
         )
     }
 }

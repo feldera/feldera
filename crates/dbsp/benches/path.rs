@@ -67,8 +67,11 @@ fn main() {
                 for layer in 0..5 {
                     for from in 0..LAYER {
                         for to in 0..LAYER {
-                            tuples.push(Tup2(
-                                Tup2(Tup2(from + (LAYER * layer), to + LAYER * (layer + 1)), ()),
+                            tuples.push(Tup2::new(
+                                Tup2::new(
+                                    Tup2::new(from + (LAYER * layer), to + LAYER * (layer + 1)),
+                                    (),
+                                ),
                                 1,
                             ));
                         }
@@ -101,14 +104,14 @@ fn main() {
                     // ```
                     let edges = edges.delta0(child);
 
-                    let paths_inverted = paths.map(|&Tup2(x, y)| Tup2(y, x));
+                    let paths_inverted = paths.map(|&t| Tup2::new(*t.snd(), *t.fst()));
 
-                    let paths_inverted_indexed = paths_inverted.map_index(|Tup2(k, v)| (*k, *v));
-                    let edges_indexed = edges.map_index(|Tup2(k, v)| (*k, *v));
+                    let paths_inverted_indexed = paths_inverted.map_index(|t| (*t.fst(), *t.snd()));
+                    let edges_indexed = edges.map_index(|t| (*t.fst(), *t.snd()));
 
                     Ok(edges.plus(
                         &paths_inverted_indexed
-                            .join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                            .join(&edges_indexed, |_via, from, to| Tup2::new(*from, *to)),
                     ))
                 })
                 .unwrap();

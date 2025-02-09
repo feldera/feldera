@@ -219,7 +219,7 @@ pub fn generate_test_batches_with_weights(
 ) -> impl Strategy<Value = Vec<Vec<Tup2<TestStruct, i64>>>> {
     collection::vec(
         collection::vec(
-            (any::<TestStruct>(), -2i64..=2i64).prop_map(|(x, y)| Tup2(x, y)),
+            (any::<TestStruct>(), -2i64..=2i64).prop_map(|(x, y)| Tup2::new(x, y)),
             0..=max_records,
         ),
         0..=max_batches,
@@ -232,7 +232,7 @@ pub fn generate_test_batches_with_weights(
                 batch
                     .into_iter()
                     .map(|mut val| {
-                        val.0.id = index;
+                        val.fst_mut().id = index;
                         index += 1;
                         val
                     })

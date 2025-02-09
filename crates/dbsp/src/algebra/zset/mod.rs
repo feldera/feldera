@@ -275,10 +275,10 @@ mod test {
     #[test]
     fn test_indexed_zset_iterator() {
         let tuples: Vec<Tup2<Tup2<i64, String>, ZWeight>> = vec![
-            Tup2(Tup2(1, "a".to_string()), 1),
-            Tup2(Tup2(1, "b".to_string()), 2),
-            Tup2(Tup2(1, "c".to_string()), -1),
-            Tup2(Tup2(2, "d".to_string()), 1),
+            Tup2::new(Tup2::new(1, "a".to_string()), 1),
+            Tup2::new(Tup2::new(1, "b".to_string()), 2),
+            Tup2::new(Tup2::new(1, "c".to_string()), -1),
+            Tup2::new(Tup2::new(2, "d".to_string()), 1),
         ]
         .into_iter()
         .collect();
@@ -288,7 +288,7 @@ mod test {
         assert_eq!(
             indexed_zset
                 .iter()
-                .map(|(k, v, w)| Tup2(Tup2(k, v), w))
+                .map(|(k, v, w)| Tup2::new(Tup2::new(k, v), w))
                 .collect::<Vec<_>>(),
             tuples
         );

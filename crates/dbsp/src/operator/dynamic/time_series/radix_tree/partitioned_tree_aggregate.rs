@@ -560,7 +560,7 @@ mod test {
     ) {
         input.dyn_push(
             partition.clone().erase_mut(),
-            Tup2(Tup2(key, upd.0), upd.1).erase_mut(),
+            Tup2::new(Tup2::new(key, upd.0), upd.1).erase_mut(),
         );
 
         match contents

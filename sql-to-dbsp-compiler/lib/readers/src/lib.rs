@@ -38,28 +38,24 @@ where
         .from_reader(file);
     let vec = csv_reader
         .deserialize()
-        .map(|x| Tup2(x.unwrap(), Weight::one()))
+        .map(|x| Tup2::new(x.unwrap(), Weight::one()))
         .collect();
     WSet::<T>::from_keys((), vec)
 }
 
-#[cfg(test)]
-dbsp::declare_tuples! {
-    Tuple3<T0, T1, T2>,
-}
-
 #[test]
 fn csv_test() {
-    let src = read_csv::<Tuple3<bool, Option<String>, Option<u32>>>("src/test.csv");
+    use dbsp::utils::Tup3;
+    let src = read_csv::<Tup3<bool, Option<String>, Option<u32>>>("src/test.csv");
     assert_eq!(
         zset!(
-            Tuple3::new(true, Some(String::from("Mihai")),Some(0)) => 1,
-            Tuple3::new(false, Some(String::from("Leonid")),Some(1)) => 1,
-            Tuple3::new(true, Some(String::from("Chase")),Some(2)) => 1,
-            Tuple3::new(false, Some(String::from("Gerd")),Some(3)) => 1,
-            Tuple3::new(true, None, None) => 1,
-            Tuple3::new(false, Some(String::from("Nina")),None) => 1,
-            Tuple3::new(true, None, Some(6)) => 1,
+            Tup3::new(true, Some(String::from("Mihai")),Some(0)) => 1,
+            Tup3::new(false, Some(String::from("Leonid")),Some(1)) => 1,
+            Tup3::new(true, Some(String::from("Chase")),Some(2)) => 1,
+            Tup3::new(false, Some(String::from("Gerd")),Some(3)) => 1,
+            Tup3::new(true, None, None) => 1,
+            Tup3::new(false, Some(String::from("Nina")),None) => 1,
+            Tup3::new(true, None, Some(6)) => 1,
         ),
         src
     );

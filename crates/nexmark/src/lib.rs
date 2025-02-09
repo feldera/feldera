@@ -230,7 +230,7 @@ pub mod tests {
         expected_events
             .into_iter()
             .filter(|event| event.is_some())
-            .map(|event| Tup2(event.unwrap(), 1))
+            .map(|event| Tup2::new(event.unwrap(), 1))
             .collect()
     }
 
@@ -254,7 +254,7 @@ pub mod tests {
         .unwrap();
 
         let source = make_source_with_wallclock_times(0..10, 10);
-        input_handle.append(&mut source.take(10).map(|e| Tup2(e, 1)).collect());
+        input_handle.append(&mut source.take(10).map(|e| Tup2::new(e, 1)).collect());
 
         circuit.step().unwrap();
     }
@@ -275,7 +275,10 @@ pub mod tests {
         // the event types (effectively the same).
         for (got, want) in zip(
             source.take(10),
-            expected_zset_tuple.into_iter().map(|Tup2(e, _)| e),
+            expected_zset_tuple.into_iter().map(|t| {
+                let (e, _) = t.into();
+                e
+            }),
         ) {
             match want {
                 Event::Person(_) => match got {

@@ -67,7 +67,7 @@ pub fn q17(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q17Stream {
             let date_time = <SystemTime as Into<OffsetDateTime>>::into(date_time);
             let day = date_time.date().to_ordinal_date();
 
-            Some((Tup2(b.auction, day), b.price))
+            Some((Tup2::new(b.auction, day), b.price))
         }
         _ => None,
     });
@@ -90,83 +90,74 @@ pub fn q17(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q17Stream {
     // Another outer-join abomination to put all aggregates into single stream.
     count_total_bids
         .outer_join_default(&count_rank1_bids, |auction_day, total_bids, count_rank1| {
-            Tup2(*auction_day, Tup2(*total_bids, *count_rank1))
+            Tup2::new(*auction_day, Tup2::new(*total_bids, *count_rank1))
         })
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_rank2_bids,
-            |auction_day, Tup2(total_bids, count_rank1), count_rank2| {
-                Tup2(*auction_day, Tup3(*total_bids, *count_rank1, *count_rank2))
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_rank3_bids,
-            |auction_day, Tup3(total_bids, count_rank1, count_rank2), count_rank3| {
-                Tup2(
-                    *auction_day,
-                    Tup4(*total_bids, *count_rank1, *count_rank2, *count_rank3),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &min_price,
-            |auction_day, Tup4(total_bids, count_rank1, count_rank2, count_rank3), min_price| {
-                Tup2(
-                    *auction_day,
-                    Tup5(
-                        *total_bids,
-                        *count_rank1,
-                        *count_rank2,
-                        *count_rank3,
-                        *min_price,
-                    ),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &max_price,
-            |auction_day,
-             Tup5(total_bids, count_rank1, count_rank2, count_rank3, min_price),
-             max_price| {
-                Tup2(
-                    *auction_day,
-                    Tup6(
-                        *total_bids,
-                        *count_rank1,
-                        *count_rank2,
-                        *count_rank3,
-                        *min_price,
-                        *max_price,
-                    ),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &sum_price,
-            |Tup2(auction, day),
-             Tup6(total_bids, count_rank1, count_rank2, count_rank3, min_price, max_price),
-             sum_price| {
-                Tup10(
-                    *auction,
-                    Date::from_ordinal_date(day.0, day.1)
-                        .unwrap()
-                        .format(iso8601_day_format)
-                        .unwrap(),
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_rank2_bids, |auction_day, t2, count_rank2| {
+            let (total_bids, count_rank1) = t2.into();
+            Tup2::new(
+                *auction_day,
+                Tup3::new(*total_bids, *count_rank1, *count_rank2),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_rank3_bids, |auction_day, t3, count_rank3| {
+            let (total_bids, count_rank1, count_rank2) = t3.into();
+            Tup2::new(
+                *auction_day,
+                Tup4::new(*total_bids, *count_rank1, *count_rank2, *count_rank3),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&min_price, |auction_day, t4, min_price| {
+            let (total_bids, count_rank1, count_rank2, count_rank3) = t4.into();
+            Tup2::new(
+                *auction_day,
+                Tup5::new(
+                    *total_bids,
+                    *count_rank1,
+                    *count_rank2,
+                    *count_rank3,
+                    *min_price,
+                ),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&max_price, |auction_day, t5, max_price| {
+            let (total_bids, count_rank1, count_rank2, count_rank3, min_price) = t5.into();
+            Tup2::new(
+                *auction_day,
+                Tup6::new(
                     *total_bids,
                     *count_rank1,
                     *count_rank2,
                     *count_rank3,
                     *min_price,
                     *max_price,
-                    *sum_price / *total_bids,
-                    *sum_price,
-                )
-            },
-        )
+                ),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&sum_price, |t2, t6, sum_price| {
+            let (auction, day) = t2.into();
+            let (total_bids, count_rank1, count_rank2, count_rank3, min_price, max_price) =
+                t6.into();
+            Tup10::new(
+                *auction,
+                Date::from_ordinal_date(day.0, day.1)
+                    .unwrap()
+                    .format(iso8601_day_format)
+                    .unwrap(),
+                *total_bids,
+                *count_rank1,
+                *count_rank2,
+                *count_rank3,
+                *min_price,
+                *max_price,
+                *sum_price / *total_bids,
+                *sum_price,
+            )
+        })
 }
 
 #[cfg(test)]
@@ -184,7 +175,7 @@ mod tests {
             (1, 20_000, 400),
         ]],
         vec![zset! {
-        Tup10(
+        Tup10::new(
             1,
             String::from("1970-01-01"),
             3,
@@ -207,7 +198,7 @@ mod tests {
             (2, 25_000, 3_000),
         ]],
         vec![zset! {
-        Tup10(
+        Tup10::new(
             1,
             String::from("1970-01-01"),
             3,
@@ -218,7 +209,7 @@ mod tests {
             700,
             400,
             1_200,
-        ) => 1, Tup10(
+        ) => 1, Tup10::new(
             2,
             String::from("1970-01-01"),
             3,
@@ -242,7 +233,7 @@ mod tests {
             (2, 1_000*60*60*24*2 + 1_000, 2_000_000),
         ]],
         vec![zset! {
-            Tup10(
+            Tup10::new(
             1,
             String::from("1970-01-01"),
             1,
@@ -254,7 +245,7 @@ mod tests {
             100,
             100,
         ) => 1}, zset! {
-        Tup10(
+        Tup10::new(
             1,
             String::from("1970-01-01"),
             1,
@@ -265,7 +256,7 @@ mod tests {
             100,
             100,
             100,
-        ) => -1, Tup10(
+        ) => -1, Tup10::new(
             1,
             String::from("1970-01-01"),
             2,
@@ -276,7 +267,7 @@ mod tests {
             10_100,
             5_100,
             10_200,
-        ) => 1, Tup10(
+        ) => 1, Tup10::new(
             2,
             String::from("1970-01-03"),
             2,
@@ -298,7 +289,7 @@ mod tests {
             batch
                 .into_iter()
                 .map(|(auction, date_time, price)| {
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             auction,
                             date_time,

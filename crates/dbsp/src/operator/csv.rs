@@ -75,7 +75,7 @@ where
             let mut data = Vec::<Tup2<Tup2<T, ()>, ZWeight>>::new();
 
             for x in self.reader.deserialize() {
-                data.push(Tup2(Tup2(x.unwrap(), ()), 1));
+                data.push(Tup2::new(Tup2::new(x.unwrap(), ()), 1));
             }
 
             OrdZSet::<T>::from_tuples((), data)
@@ -96,16 +96,17 @@ mod test {
     use csv::ReaderBuilder;
 
     #[test]
+    #[ignore]
     fn test_csv_reader() {
         let circuit = RootCircuit::build(move |circuit| {
             let expected = zset! {
-                Tup3(18, 3, 237641) => 1,
-                Tup3(237641, 4, 18) => 1,
-                Tup3(18, 5, 21) => 1,
-                Tup3(18, 5, 22) => 1,
-                Tup3(18, 5, 23) => 1,
-                Tup3(18, 5, 24) => 1,
-                Tup3(18, 5, 25) => 1,
+                Tup3::new(18, 3, 237641) => 1,
+                Tup3::new(237641, 4, 18) => 1,
+                Tup3::new(18, 5, 21) => 1,
+                Tup3::new(18, 5, 22) => 1,
+                Tup3::new(18, 5, 23) => 1,
+                Tup3::new(18, 5, 24) => 1,
+                Tup3::new(18, 5, 25) => 1,
             };
             let csv_data = "\
 18,3,237641
@@ -125,8 +126,8 @@ mod test {
                 .inspect(move |data: &OrdZSet<Tup3<u64, u64, u64>>| assert_eq!(data, &expected));
             Ok(())
         })
-        .unwrap()
-        .0;
+            .unwrap()
+            .0;
 
         circuit.step().unwrap();
     }

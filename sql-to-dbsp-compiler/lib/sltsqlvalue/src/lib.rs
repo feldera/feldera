@@ -270,7 +270,7 @@ macro_rules! to_sql_row_impl {
             {
                 fn to_row(&self) -> SqlRow  {
                     let mut result = SqlRow::new();
-                    let $tuple_name($($element),*) = self;
+                    let ($($element),*,) = self.into();
                     $(result.push(SltSqlValue::from($element.clone()));)*
                     result
                 }

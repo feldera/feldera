@@ -723,15 +723,16 @@ pub struct PairSemigroup<T, R, TS, RS>(PhantomData<(T, R, TS, RS)>);
 #[doc(hidden)]
 impl<T, R, TS, RS> Semigroup<Tup2<T, R>> for PairSemigroup<T, R, TS, RS>
 where
-    TS: Semigroup<T>,
-    RS: Semigroup<R>,
+    T: DBData,
+    R: DBData,
+    TS: Semigroup<T> + DBData,
+    RS: Semigroup<R> + DBData,
 {
     #[doc(hidden)]
     fn combine(left: &Tup2<T, R>, right: &Tup2<T, R>) -> Tup2<T, R> {
-        Tup2::new(
-            TS::combine(&left.0, &right.0),
-            RS::combine(&left.1, &right.1),
-        )
+        let (l0, l1) = left.into();
+        let (r0, r1) = right.into();
+        Tup2::new(TS::combine(l0, r0), RS::combine(l1, r1))
     }
 }
 
@@ -742,16 +743,21 @@ pub struct TripleSemigroup<T, R, V, TS, RS, VS>(PhantomData<(T, R, V, TS, RS, VS
 #[doc(hidden)]
 impl<T, R, V, TS, RS, VS> Semigroup<Tup3<T, R, V>> for TripleSemigroup<T, R, V, TS, RS, VS>
 where
+    T: DBData,
+    R: DBData,
+    V: DBData,
     TS: Semigroup<T>,
     RS: Semigroup<R>,
     VS: Semigroup<V>,
 {
     #[doc(hidden)]
     fn combine(left: &Tup3<T, R, V>, right: &Tup3<T, R, V>) -> Tup3<T, R, V> {
+        let (l0, l1, l2) = left.into();
+        let (r0, r1, r2) = right.into();
         Tup3::new(
-            TS::combine(&left.0, &right.0),
-            RS::combine(&left.1, &right.1),
-            VS::combine(&left.2, &right.2),
+            TS::combine(l0, r0),
+            RS::combine(l1, r1),
+            VS::combine(l2, r2),
         )
     }
 }

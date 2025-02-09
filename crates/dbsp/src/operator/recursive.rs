@@ -160,11 +160,11 @@ where
     ///     // Graph topology.
     ///     let mut edges = vec![
     ///         // Start with four nodes connected in a cycle.
-    ///         zset_set! { Tup2(1, 2), Tup2(2, 3), Tup2(3, 4), Tup2(4, 1) },
+    ///         zset_set! { Tup2::new(1, 2), Tup2::new(2, 3), Tup2::new(3, 4), Tup2::new(4, 1) },
     ///         // Add an edge.
-    ///         zset_set! { Tup2(4, 5) },
+    ///         zset_set! { Tup2::new(4, 5) },
     ///         // Remove an edge, breaking the cycle.
-    ///         zset! { Tup2(1, 2) => -1 },
+    ///         zset! { Tup2::new(1, 2) => -1 },
     ///     ]
     ///     .into_iter();
     ///
@@ -174,9 +174,9 @@ where
     ///     // Initial labeling of the graph.
     ///     let mut init_labels = vec![
     ///         // Start with a single label on node 1.
-    ///         zset_set! { Tup2(1, "l1".to_string()) },
+    ///         zset_set! { Tup2::new(1, "l1".to_string()) },
     ///         // Add a label to node 2.
-    ///         zset_set! { Tup2(2, "l2".to_string()) },
+    ///         zset_set! { Tup2::new(2, "l2".to_string()) },
     ///         zset! { },
     ///     ]
     ///     .into_iter();
@@ -186,9 +186,9 @@ where
     ///
     ///     // Expected _changes_ to the output graph labeling after each clock cycle.
     ///     let mut expected_outputs = vec![
-    ///         zset! { Tup2(1, "l1".to_string()) => 1, Tup2(2, "l1".to_string()) => 1, Tup2(3, "l1".to_string()) => 1, Tup2(4, "l1".to_string()) => 1 },
-    ///         zset! { Tup2(1, "l2".to_string()) => 1, Tup2(2, "l2".to_string()) => 1, Tup2(3, "l2".to_string()) => 1, Tup2(4, "l2".to_string()) => 1, Tup2(5, "l1".to_string()) => 1, Tup2(5, "l2".to_string()) => 1 },
-    ///         zset! { Tup2(2, "l1".to_string()) => -1, Tup2(3, "l1".to_string()) => -1, Tup2(4, "l1".to_string()) => -1, Tup2(5, "l1".to_string()) => -1 },
+    ///         zset! { Tup2::new(1, "l1".to_string()) => 1, Tup2::new(2, "l1".to_string()) => 1, Tup2::new(3, "l1".to_string()) => 1, Tup2::new(4, "l1".to_string()) => 1 },
+    ///         zset! { Tup2::new(1, "l2".to_string()) => 1, Tup2::new(2, "l2".to_string()) => 1, Tup2::new(3, "l2".to_string()) => 1, Tup2::new(4, "l2".to_string()) => 1, Tup2::new(5, "l1".to_string()) => 1, Tup2::new(5, "l2".to_string()) => 1 },
+    ///         zset! { Tup2::new(2, "l1".to_string()) => -1, Tup2::new(3, "l1".to_string()) => -1, Tup2::new(4, "l1".to_string()) => -1, Tup2::new(5, "l1".to_string()) => -1 },
     ///     ]
     ///     .into_iter();
     ///
@@ -199,10 +199,10 @@ where
     ///
     ///         // Given an edge `from -> to` where the `from` node is labeled with `l`,
     ///         // propagate `l` to node `to`.
-    ///         let result = labels.map_index(|Tup2(x,y)| (x.clone(), y.clone()))
+    ///         let result = labels.map_index(|t| (t.fst().clone(), t.snd().clone()))
     ///               .join(
-    ///                   &edges.map_index(|Tup2(x,y)| (x.clone(), y.clone())),
-    ///                   |_from, l, to| Tup2(*to, l.clone()),
+    ///                   &edges.map_index(|t| (t.fst().clone(), t.snd().clone())),
+    ///                   |_from, l, to| Tup2::new(*to, l.clone()),
     ///               )
     ///               .plus(&init_labels);
     ///         Ok(result)

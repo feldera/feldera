@@ -24,7 +24,7 @@ prop_compose! {
 
 prop_compose! {
     /// Generate a random batch of data
-    fn batch()(batch in vec(tuple().prop_map(|((k,v), w)| Tup2(Tup2(k, v), w)), 0..5_000)) -> LeanVec<Tup2<Tup2<usize, usize>, isize>> {
+    fn batch()(batch in vec(tuple().prop_map(|((k,v), w)| Tup2::new(Tup2::new(k, v), w)), 0..5_000)) -> LeanVec<Tup2<Tup2<usize, usize>, isize>> {
         LeanVec::from(batch)
     }
 }
@@ -64,7 +64,8 @@ prop_compose! {
 
 fn batch_data(batch: &[Tup2<Tup2<usize, usize>, isize>]) -> BTreeMap<Tup2<usize, usize>, i64> {
     let mut values = BTreeMap::new();
-    for &Tup2(tuple, diff) in batch {
+    for &t in batch {
+        let (tuple, diff) = t.into();
         values
             .entry(tuple)
             .and_modify(|acc| *acc += diff as i64)
@@ -101,9 +102,9 @@ proptest! {
         let output = batch_data(batch.as_slice());
 
         // Ensure the batch is sorted
-        prop_assert!(batch.is_sorted_by(|Tup2(a, _), Tup2(b, _)| a.cmp(b)));
+        prop_assert!(batch.is_sorted_by(|ta, tb| ta.fst().cmp(tb.fst())));
         // Ensure no diff values are zero
-        prop_assert!(batch.as_slice().iter().all(|&Tup2(_, diff)| diff != 0));
+        prop_assert!(batch.as_slice().iter().all(|&t| *t.snd() != 0));
         // Ensure the aggregated data is the same
         prop_assert_eq!(expected, output);
     }
@@ -114,22 +115,22 @@ proptest! {
 
         let mut vec = batch.clone();
         consolidate(&mut vec);
-        prop_assert!(vec.as_slice().iter().all(|&Tup2(_, diff)| diff != 0));
-        prop_assert!(vec.is_sorted_by(|Tup2(a, _), Tup2(b, _)| a.cmp(b)));
+        prop_assert!(vec.as_slice().iter().all(|t| *t.snd() != 0));
+        prop_assert!(vec.is_sorted_by(|ta, tb| ta.fst().cmp(tb.fst())));
         prop_assert_eq!(&expected, &batch_data(vec.as_slice()));
 
         let mut vec_offset = batch.clone();
         consolidate_from(&mut vec_offset, 0);
-        prop_assert!(vec_offset.as_slice().iter().all(|&Tup2(_, diff)| diff != 0));
-        prop_assert!(vec_offset.is_sorted_by(|Tup2(a, _), Tup2(b, _)| a.cmp(b)));
+        prop_assert!(vec_offset.as_slice().iter().all(|t| *t.snd() != 0));
+        prop_assert!(vec_offset.is_sorted_by(|ta, tb| ta.fst().cmp(tb.fst())));
         prop_assert_eq!(&expected, &batch_data(vec.as_slice()));
         prop_assert_eq!(&vec, &vec_offset);
 
         let mut slice = batch;
         let len = consolidate_slice(slice.as_mut_slice());
         slice.truncate(len);
-        prop_assert!(slice.as_slice().iter().all(|&Tup2(_, diff)| diff != 0));
-        prop_assert!(slice.is_sorted_by(|Tup2(a, _), Tup2(b, _)| a.cmp(b)));
+        prop_assert!(slice.as_slice().iter().all(|t| *t.snd() != 0));
+        prop_assert!(slice.is_sorted_by(|ta, tb| ta.fst().cmp(tb.fst())));
         prop_assert_eq!(&expected, &batch_data(slice.as_slice()));
         prop_assert_eq!(&vec, &slice);
     }
@@ -141,7 +142,7 @@ proptest! {
         let mut consolidated = batch.clone();
         consolidate(&mut consolidated);
 
-        let (mut keys, mut diffs): (Vec<_>, Vec<_>) = batch.as_slice().iter().cloned().map(|Tup2(x,y)| (x,y)).unzip();
+        let (mut keys, mut diffs): (Vec<_>, Vec<_>) = batch.as_slice().iter().cloned().map(|t| (*t.fst(), *t.snd())).unzip();
         let len = consolidate_paired_slices(&mut keys, &mut diffs);
         keys.truncate(len);
         diffs.truncate(len);
@@ -150,7 +151,7 @@ proptest! {
         prop_assert!(keys.is_sorted_by(|a, b| a.partial_cmp(b)));
         prop_assert_eq!(expected, paired_batch_data(&keys, &diffs));
 
-        let (consolidated_keys, consolidated_diffs): (Vec<_>, Vec<_>) = consolidated.as_slice().iter().cloned().map(|Tup2(x,y)| (x,y)).unzip();
+        let (consolidated_keys, consolidated_diffs): (Vec<_>, Vec<_>) = consolidated.as_slice().iter().cloned().map(|t| (*t.fst(),*t.snd())).unzip();
         prop_assert_eq!(consolidated_keys, keys);
         prop_assert_eq!(consolidated_diffs, diffs);
     }
@@ -162,14 +163,14 @@ proptest! {
         let mut consolidated = batch.clone();
         consolidate(&mut consolidated);
 
-        let (mut keys, mut diffs): (Vec<_>, Vec<_>) = batch.as_slice().iter().cloned().map(|Tup2(x,y)| (x,y)).unzip();
+        let (mut keys, mut diffs): (Vec<_>, Vec<_>) = batch.as_slice().iter().cloned().map(|t| (*t.fst(),*t.snd())).unzip();
         consolidate_payload_from(&mut keys, &mut diffs, 0);
 
         prop_assert!(diffs.iter().all(|&diff| diff != 0));
         prop_assert!(keys.is_sorted_by(|a, b| a.partial_cmp(b)));
         prop_assert_eq!(expected, paired_batch_data(&keys, &diffs));
 
-        let (consolidated_keys, consolidated_diffs): (Vec<_>, Vec<_>) = consolidated.as_slice().iter().cloned().map(|Tup2(x,y)| (x,y)).unzip();
+        let (consolidated_keys, consolidated_diffs): (Vec<_>, Vec<_>) = consolidated.as_slice().iter().cloned().map(|t| (*t.fst(),*t.snd())).unzip();
         prop_assert_eq!(consolidated_keys, keys);
         prop_assert_eq!(consolidated_diffs, diffs);
     }

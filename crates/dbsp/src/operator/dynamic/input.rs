@@ -1028,7 +1028,7 @@ mod test {
                 let mut result = Vec::new();
 
                 while cursor.key_valid() {
-                    result.push(Tup2(
+                    result.push(Tup2::new(
                         *cursor.key().downcast_checked::<u64>(),
                         *cursor.weight().downcast_checked::<ZWeight>(),
                     ));
@@ -1157,7 +1157,8 @@ mod test {
         }
 
         for vec in input_vecs().into_iter() {
-            for Tup2(k, w) in vec.into_iter() {
+            for t in vec.into_iter() {
+                let (k, w) = t.into();
                 input_handle.push(k, w);
             }
             input_handle.push(5, 1);
@@ -1182,7 +1183,8 @@ mod test {
         }
 
         for vec in input_vecs().into_iter() {
-            for Tup2(k, w) in vec.into_iter() {
+            for t in vec.into_iter() {
+                let (k, w) = t.into();
                 input_handle.push(k, w);
             }
             input_handle.push(5, 1);
@@ -1226,9 +1228,9 @@ mod test {
 
                 while cursor.key_valid() {
                     while cursor.val_valid() {
-                        result.push(Tup2(
+                        result.push(Tup2::new(
                             *cursor.key().downcast_checked::<u64>(),
-                            Tup2(
+                            Tup2::new(
                                 *cursor.val().downcast_checked::<u64>(),
                                 *cursor.weight().downcast_checked::<ZWeight>(),
                             ),
@@ -1268,8 +1270,10 @@ mod test {
         }
 
         for vec in input_indexed_vecs().into_iter() {
-            for Tup2(k, v) in vec.into_iter() {
-                input_handle.push(k, (v.0, v.1));
+            for t in vec.into_iter() {
+                let (k, v) = t.into();
+                let (v0, v1) = v.into();
+                input_handle.push(k, (v0, v1));
             }
             input_handle.push(5, (7, 1));
             input_handle.push(5, (7, -1));
@@ -1287,8 +1291,10 @@ mod test {
         }
 
         for vec in input_indexed_vecs().into_iter() {
-            for Tup2(k, v) in vec.into_iter() {
-                input_handle.push(k, (v.0, v.1));
+            for t in vec.into_iter() {
+                let (k, v) = t.into();
+                let (v0, v1) = v.into();
+                input_handle.push(k, (v0, v1));
             }
             dbsp.step().unwrap();
         }
@@ -1308,14 +1314,24 @@ mod test {
 
     fn input_set_updates() -> Vec<Vec<Tup2<u64, bool>>> {
         vec![
-            vec![Tup2(1, true), Tup2(2, true), Tup2(3, false)],
-            vec![Tup2(1, false), Tup2(2, true), Tup2(3, true), Tup2(4, true)],
-            vec![Tup2(2, false), Tup2(2, true), Tup2(3, true), Tup2(4, false)],
-            vec![Tup2(2, true), Tup2(2, false)],
-            vec![Tup2(100, true)],
-            vec![Tup2(95, true)],
+            vec![Tup2::new(1, true), Tup2::new(2, true), Tup2::new(3, false)],
+            vec![
+                Tup2::new(1, false),
+                Tup2::new(2, true),
+                Tup2::new(3, true),
+                Tup2::new(4, true),
+            ],
+            vec![
+                Tup2::new(2, false),
+                Tup2::new(2, true),
+                Tup2::new(3, true),
+                Tup2::new(4, false),
+            ],
+            vec![Tup2::new(2, true), Tup2::new(2, false)],
+            vec![Tup2::new(100, true)],
+            vec![Tup2::new(95, true)],
             // below watermark
-            vec![Tup2(80, true)],
+            vec![Tup2::new(80, true)],
         ]
     }
 
@@ -1362,7 +1378,8 @@ mod test {
             RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
 
         for vec in input_set_updates().into_iter() {
-            for Tup2(k, b) in vec.into_iter() {
+            for t in vec.into_iter() {
+                let (k, b) = t.into();
                 input_handle.push(k, b);
             }
             circuit.step().unwrap();
@@ -1384,7 +1401,8 @@ mod test {
             Runtime::init_circuit(workers, |circuit| set_test_circuit(circuit)).unwrap();
 
         for vec in input_set_updates().into_iter() {
-            for Tup2(k, b) in vec.into_iter() {
+            for t in vec.into_iter() {
+                let (k, b) = t.into();
                 input_handle.push(k, b);
             }
             dbsp.step().unwrap();
@@ -1406,36 +1424,36 @@ mod test {
     fn input_map_updates1() -> Vec<Vec<Tup2<u64, Update<u64, i64>>>> {
         vec![
             vec![
-                Tup2(1, Update::Insert(1)),
-                Tup2(1, Update::Insert(2)),
-                Tup2(2, Update::Delete),
-                Tup2(3, Update::Insert(3)),
+                Tup2::new(1, Update::Insert(1)),
+                Tup2::new(1, Update::Insert(2)),
+                Tup2::new(2, Update::Delete),
+                Tup2::new(3, Update::Insert(3)),
             ],
             vec![
-                Tup2(1, Update::Insert(1)),
-                Tup2(1, Update::Delete),
-                Tup2(2, Update::Insert(2)),
-                Tup2(3, Update::Insert(4)),
-                Tup2(4, Update::Insert(4)),
-                Tup2(4, Update::Delete),
-                Tup2(4, Update::Insert(5)),
+                Tup2::new(1, Update::Insert(1)),
+                Tup2::new(1, Update::Delete),
+                Tup2::new(2, Update::Insert(2)),
+                Tup2::new(3, Update::Insert(4)),
+                Tup2::new(4, Update::Insert(4)),
+                Tup2::new(4, Update::Delete),
+                Tup2::new(4, Update::Insert(5)),
             ],
             vec![
-                Tup2(1, Update::Insert(5)),
-                Tup2(1, Update::Insert(6)),
-                Tup2(3, Update::Delete),
-                Tup2(4, Update::Insert(6)),
+                Tup2::new(1, Update::Insert(5)),
+                Tup2::new(1, Update::Insert(6)),
+                Tup2::new(3, Update::Delete),
+                Tup2::new(4, Update::Insert(6)),
             ],
             // bump watermark
-            vec![Tup2(1, Update::Insert(100))],
+            vec![Tup2::new(1, Update::Insert(100))],
             // below watermark
-            vec![Tup2(1, Update::Insert(80))],
-            vec![Tup2(1, Update::Insert(91))],
+            vec![Tup2::new(1, Update::Insert(80))],
+            vec![Tup2::new(1, Update::Insert(91))],
             // bump watermark more
-            vec![Tup2(5, Update::Insert(200))],
+            vec![Tup2::new(5, Update::Insert(200))],
             // below watermark
-            vec![Tup2(5, Update::Insert(91))],
-            vec![Tup2(5, Update::Insert(191))],
+            vec![Tup2::new(5, Update::Insert(91))],
+            vec![Tup2::new(5, Update::Insert(191))],
         ]
     }
 
@@ -1456,56 +1474,59 @@ mod test {
         vec![
             vec![
                 // Insert and instantly update: values add up.
-                Tup2(1, Update::Insert(1)),
-                Tup2(1, Update::Update(1)),
+                Tup2::new(1, Update::Insert(1)),
+                Tup2::new(1, Update::Update(1)),
                 // Insert and intantly overwrite: the last value is used.
-                Tup2(2, Update::Insert(1)),
-                Tup2(2, Update::Insert(1)),
+                Tup2::new(2, Update::Insert(1)),
+                Tup2::new(2, Update::Insert(1)),
                 // Insert and instantly delete.
-                Tup2(3, Update::Insert(1)),
-                Tup2(3, Update::Delete),
+                Tup2::new(3, Update::Insert(1)),
+                Tup2::new(3, Update::Delete),
                 // Delete non-existing value - ignored.
-                Tup2(4, Update::Delete),
+                Tup2::new(4, Update::Delete),
             ],
             vec![
                 // Two more updates added to existing value.
-                Tup2(1, Update::Update(1)),
-                Tup2(1, Update::Update(1)),
+                Tup2::new(1, Update::Update(1)),
+                Tup2::new(1, Update::Update(1)),
                 // Delete and then try to update the value. The update is ignored.
-                Tup2(2, Update::Delete),
-                Tup2(2, Update::Update(1)),
+                Tup2::new(2, Update::Delete),
+                Tup2::new(2, Update::Update(1)),
                 // Update missing value and then insert. The update is ignored.
-                Tup2(3, Update::Update(1)),
-                Tup2(3, Update::Insert(5)),
+                Tup2::new(3, Update::Update(1)),
+                Tup2::new(3, Update::Insert(5)),
             ],
             vec![
                 // Updates followed by a delete.
-                Tup2(1, Update::Update(2)),
-                Tup2(1, Update::Update(3)),
-                Tup2(1, Update::Delete),
+                Tup2::new(1, Update::Update(2)),
+                Tup2::new(1, Update::Update(3)),
+                Tup2::new(1, Update::Delete),
                 // Insert -> update -> delete.
-                Tup2(2, Update::Insert(3)),
-                Tup2(2, Update::Update(4)),
-                Tup2(2, Update::Delete),
+                Tup2::new(2, Update::Insert(3)),
+                Tup2::new(2, Update::Update(4)),
+                Tup2::new(2, Update::Delete),
                 // Insert the same value - noop.
-                Tup2(3, Update::Insert(5)),
+                Tup2::new(3, Update::Insert(5)),
             ],
-            vec![Tup2(1, Update::Insert(1)), Tup2(2, Update::Insert(5))],
+            vec![
+                Tup2::new(1, Update::Insert(1)),
+                Tup2::new(2, Update::Insert(5)),
+            ],
             // Push waterline to 15.
-            vec![Tup2(3, Update::Update(10))],
+            vec![Tup2::new(3, Update::Update(10))],
             vec![
                 // Attempt to update value below waterline - ignored
-                Tup2(1, Update::Update(10)),
+                Tup2::new(1, Update::Update(10)),
                 // Update value above waterline - accepted.
-                Tup2(2, Update::Update(10)),
+                Tup2::new(2, Update::Update(10)),
             ],
             vec![
                 // Attempt to delete value below waterline - ignored
-                Tup2(1, Update::Delete),
+                Tup2::new(1, Update::Delete),
                 // Overwrite value above waterline with a value below - ignored
-                Tup2(2, Update::Insert(4)),
+                Tup2::new(2, Update::Insert(4)),
                 // Attempt to create new value below waterline - ignored
-                Tup2(4, Update::Insert(1)),
+                Tup2::new(4, Update::Insert(1)),
             ],
             vec![
                 // Attempt to insert new value overwriting value below waterline.
@@ -1516,13 +1537,13 @@ mod test {
                 // - If it has, then the insertion succeeds.
                 //
                 // - If it hasn't, then the insertion is ignored.
-                //Tup2(1, Update::Insert(20)),
+                //Tup2::new(1, Update::Insert(20)),
                 // Overwrite value above waterline with a new value above waterline - accepted
-                Tup2(2, Update::Insert(10)),
+                Tup2::new(2, Update::Insert(10)),
                 // Create new value above waterline - accepted, try to overwrite it with a value
                 // below waterline - ignored.
-                Tup2(4, Update::Insert(15)),
-                Tup2(4, Update::Insert(4)),
+                Tup2::new(4, Update::Insert(15)),
+                Tup2::new(4, Update::Insert(4)),
             ],
             vec![
                 // Attempt to update value below waterline.
@@ -1535,7 +1556,7 @@ mod test {
                 // - If it hasn't, then the update is ignored because the
                 //   previous value was below waterline, even though the new value
                 //   is above it.
-                //Tup2(1, Update::Update(20)),
+                //Tup2::new(1, Update::Update(20)),
             ],
         ]
     }
@@ -1592,7 +1613,8 @@ mod test {
                 .unwrap();
 
         for vec in input_map_updates1().into_iter() {
-            for Tup2(k, v) in vec.into_iter() {
+            for t in vec.into_iter() {
+                let (k, v) = t.into();
                 input_handle.push(k, v);
             }
             circuit.step().unwrap();
@@ -1624,7 +1646,8 @@ mod test {
         .unwrap();
 
         for vec in inputs().into_iter() {
-            for Tup2(k, v) in vec.into_iter() {
+            for t in vec.into_iter() {
+                let (k, v) = t.into();
                 input_handle.push(k, v);
             }
             dbsp.step().unwrap();

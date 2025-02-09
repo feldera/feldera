@@ -188,31 +188,31 @@ mod test {
         let root = RootCircuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(2, 3) => 1},
-                zset! { Tup2(1, 3) => 1},
-                zset! { Tup2(3, 1) => 1},
-                zset! { Tup2(3, 1) => -1},
-                zset! { Tup2(1, 2) => -1},
-                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
-                zset! { Tup2(2, 3) => -1, Tup2(3, 2) => 1 },
+                zset! { Tup2::new(1, 2) => 1 },
+                zset! { Tup2::new(2, 3) => 1},
+                zset! { Tup2::new(1, 3) => 1},
+                zset! { Tup2::new(3, 1) => 1},
+                zset! { Tup2::new(3, 1) => -1},
+                zset! { Tup2::new(1, 2) => -1},
+                zset! { Tup2::new(2, 4) => 1, Tup2::new(4, 1) => 1 },
+                zset! { Tup2::new(2, 3) => -1, Tup2::new(3, 2) => 1 },
             ]
             .into_iter();
 
             // Expected content of the reachability relation.
             let mut outputs = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
-                        Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
-                        Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
-                        Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
-                        Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
+                zset! { Tup2::new(1, 2) => 1 },
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 1) => 1, Tup2::new(2, 2) => 1, Tup2::new(3, 3) => 1, Tup2::new(1, 2) => 1, Tup2::new(1, 3) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 1) => 1, Tup2::new(3, 1) => 1, Tup2::new(3, 2) => 1},
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 3) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 4) => 1, Tup2::new(2, 1) => 1, Tup2::new(4, 1) => 1, Tup2::new(4, 3) => 1 },
+                zset! { Tup2::new(1, 1) => 1, Tup2::new(2, 2) => 1, Tup2::new(3, 3) => 1, Tup2::new(4, 4) => 1,
+                        Tup2::new(1, 2) => 1, Tup2::new(1, 3) => 1, Tup2::new(1, 4) => 1,
+                        Tup2::new(2, 1) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 4) => 1,
+                        Tup2::new(3, 1) => 1, Tup2::new(3, 2) => 1, Tup2::new(3, 4) => 1,
+                        Tup2::new(4, 1) => 1, Tup2::new(4, 2) => 1, Tup2::new(4, 3) => 1 },
             ]
             .into_iter();
 
@@ -222,10 +222,10 @@ mod test {
             let paths = circuit.recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
                 let edges = edges.delta0(child);
 
-                let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
-                let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+                let paths_indexed = paths.map_index(|t| (*t.snd(), *t.fst()));
+                let edges_indexed = edges.map_index(|&t| (*t.fst(), *t.snd()));
 
-                Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
+                Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2::new(*from, *to))))
             })
             .unwrap();
 
@@ -250,31 +250,31 @@ mod test {
         let root = RootCircuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(2, 3) => 1},
-                zset! { Tup2(1, 3) => 1},
-                zset! { Tup2(3, 1) => 1},
-                zset! { Tup2(3, 1) => -1},
-                zset! { Tup2(1, 2) => -1},
-                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
-                zset! { Tup2(2, 3) => -1, Tup2(3, 2) => 1 },
+                zset! { Tup2::new(1, 2) => 1 },
+                zset! { Tup2::new(2, 3) => 1},
+                zset! { Tup2::new(1, 3) => 1},
+                zset! { Tup2::new(3, 1) => 1},
+                zset! { Tup2::new(3, 1) => -1},
+                zset! { Tup2::new(1, 2) => -1},
+                zset! { Tup2::new(2, 4) => 1, Tup2::new(4, 1) => 1 },
+                zset! { Tup2::new(2, 3) => -1, Tup2::new(3, 2) => 1 },
             ]
             .into_iter();
 
             // Expected content of the reachability relation.
             let output_vec = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
-                              Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
-                              Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
-                              Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
-                              Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
+                zset! { Tup2::new(1, 2) => 1 },
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 1) => 1, Tup2::new(2, 2) => 1, Tup2::new(3, 3) => 1, Tup2::new(1, 2) => 1, Tup2::new(1, 3) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 1) => 1, Tup2::new(3, 1) => 1, Tup2::new(3, 2) => 1},
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 3) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 4) => 1, Tup2::new(2, 1) => 1, Tup2::new(4, 1) => 1, Tup2::new(4, 3) => 1 },
+                zset! { Tup2::new(1, 1) => 1, Tup2::new(2, 2) => 1, Tup2::new(3, 3) => 1, Tup2::new(4, 4) => 1,
+                              Tup2::new(1, 2) => 1, Tup2::new(1, 3) => 1, Tup2::new(1, 4) => 1,
+                              Tup2::new(2, 1) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 4) => 1,
+                              Tup2::new(3, 1) => 1, Tup2::new(3, 2) => 1, Tup2::new(3, 4) => 1,
+                              Tup2::new(4, 1) => 1, Tup2::new(4, 2) => 1, Tup2::new(4, 3) => 1 },
             ];
 
             let mut outputs = output_vec.clone().into_iter();
@@ -287,14 +287,14 @@ mod test {
                 circuit.recursive(|child, (paths, reverse_paths): (Edges<_>, Edges<_>)| {
                 let edges = edges.delta0(child);
 
-                let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
-                let reverse_paths_indexed = reverse_paths.map_index(|&Tup2(x, y)| (y, x));
-                let edges_indexed = edges.map_index(|Tup2(x,y)| (*x, *y));
-                let reverse_edges = edges.map(|&Tup2(x, y)| Tup2(y, x));
-                let reverse_edges_indexed = reverse_edges.map_index(|Tup2(x,y)| (*x, *y));
+                let paths_indexed = paths.map_index(|&t| (*t.snd(), *t.fst()));
+                let reverse_paths_indexed = reverse_paths.map_index(|&t| (*t.snd(), *t.fst()));
+                let edges_indexed = edges.map_index(|t| (*t.fst(), *t.snd()));
+                let reverse_edges = edges.map(|&t| Tup2::new(*t.snd(), *t.fst()));
+                let reverse_edges_indexed = reverse_edges.map_index(|t| (*t.fst(), *t.snd()));
 
-                Ok((edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))),
-                    reverse_edges.plus(&reverse_paths_indexed.join(&reverse_edges_indexed, |_via, from, to| Tup2(*from, *to)))
+                Ok((edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2::new(*from, *to))),
+                    reverse_edges.plus(&reverse_paths_indexed.join(&reverse_edges_indexed, |_via, from, to| Tup2::new(*from, *to)))
                 ))
             })
             .unwrap();
@@ -303,7 +303,7 @@ mod test {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
 
-            reverse_paths.map(|Tup2(x, y)| Tup2(*y, *x)).integrate().stream_distinct().inspect(move |ps: &OrdZSet<_>| {
+            reverse_paths.map(|t| Tup2::new(*t.snd(), *t.fst())).integrate().stream_distinct().inspect(move |ps: &OrdZSet<_>| {
                 assert_eq!(*ps, outputs2.next().unwrap());
             });
             Ok(())

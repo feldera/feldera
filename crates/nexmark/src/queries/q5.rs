@@ -119,7 +119,7 @@ pub fn q5(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q5Stream {
     let auction_by_count = auction_counts.map_index(|(auction, count)| (*count, *auction));
 
     max_auction_count.join(&auction_by_count, |max_count, &(), &auction| {
-        Tup2(auction, *max_count as u64)
+        Tup2::new(auction, *max_count as u64)
     })
 }
 
@@ -139,24 +139,24 @@ mod tests {
     #[case::latest_bid_determines_window(
         vec![vec![2_001, 4_000, 11_000]],
         vec![vec![20_000]],
-        vec![zset! { Tup2(1, 1) => 1}] )]
+        vec![zset! { Tup2::new(1, 1) => 1}] )]
     // Auction 2's single bid is at 19_000 which leaves the rounded window at
     // 4_000-14_000, capturing 2 bids from auction 1 only (4_000 and 11_000).
     #[case::windows_rounded_to_2_s_boundary(
         vec![vec![2_001, 4_000, 11_000, 15_000]],
         vec![vec![19_000]],
-        vec![zset! { Tup2(1, 2) => 1}] )]
+        vec![zset! { Tup2::new(1, 2) => 1}] )]
     // Both auctions have the maximum two bids in the window (0 - 2000)
     #[case::multiple_auctions_have_same_hotness(
         vec![vec![2_000, 3_999, 8_000]],
         vec![vec![2_000, 3_999]],
-        vec![zset! { Tup2(1, 2) => 1, Tup2(2, 2) => 1}])]
+        vec![zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 2) => 1}])]
     // A second batch arrives changing the window to 6_000-16_000, switching
     // the hottest auction from 1 to 2.
     #[case::batch_2_updates_hotness_to_new_window(
         vec![vec![2_000, 4_000, 6_000], vec![20_000]],
         vec![vec![2_000, 4_000, 8_000, 12_000], vec![]],
-        vec![zset! {Tup2(1, 3) => 1}, zset! {Tup2(2, 2) => 1, Tup2(1, 3) => -1}])]
+        vec![zset! {Tup2::new(1, 3) => 1}, zset! {Tup2::new(2, 2) => 1, Tup2::new(1, 3) => -1}])]
     fn test_q5(
         #[case] auction1_batches: Vec<Vec<u64>>,
         #[case] auction2_batches: Vec<Vec<u64>>,
@@ -177,7 +177,7 @@ mod tests {
                     a1_batch
                         .into_iter()
                         .map(|date_time| {
-                            Tup2(
+                            Tup2::new(
                                 Event::Bid(Bid {
                                     auction: 1,
                                     date_time,
@@ -187,7 +187,7 @@ mod tests {
                             )
                         })
                         .chain(a2_batch.into_iter().map(|date_time| {
-                            Tup2(
+                            Tup2::new(
                                 Event::Bid(Bid {
                                     auction: 2,
                                     date_time,

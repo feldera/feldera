@@ -88,7 +88,7 @@ use rkyv::{
 };
 use std::cell::RefCell;
 use std::fmt::Debug;
-use std::{any::Any, sync::Arc};
+use std::{any::Any, sync::Arc, hash::BuildHasher};
 
 pub mod format;
 mod item;
@@ -105,6 +105,124 @@ pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 const BLOOM_FILTER_SEED: u128 = 42;
 const BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.001;
 
+use siphasher::sip::SipHasher13;
+use std::hash::Hasher;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct CloneBuildHasher<H: Hasher + Clone> {
+    hasher: H,
+}
+
+impl<H: Hasher + Clone> CloneBuildHasher<H> {
+    #[allow(dead_code)]
+    fn new(hasher: H) -> Self {
+        Self { hasher }
+    }
+}
+
+impl<H: Hasher + Clone> BuildHasher for CloneBuildHasher<H> {
+    type Hasher = H;
+    #[inline]
+    fn build_hasher(&self) -> Self::Hasher {
+        self.hasher.clone()
+    }
+}
+
+/// The default hasher for `BloomFilter`.
+///
+/// `DefaultHasher` has a faster `build_hasher` than `std::collections::hash_map::RandomState` or `SipHasher13`.
+/// This is important because `build_hasher` is called once for every actual hash.
+pub type DbspBloomFilterHasher = CloneBuildHasher<RandomDefaultHasher>;
+
+impl DbspBloomFilterHasher {
+    pub fn seeded(seed: &[u8; 16]) -> Self {
+        Self {
+            hasher: RandomDefaultHasher::seeded(seed),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RandomDefaultHasher(SipHasher13);
+
+impl RandomDefaultHasher {
+    #[inline]
+    pub fn seeded(seed: &[u8; 16]) -> Self {
+        Self(SipHasher13::new_with_key(seed))
+    }
+}
+
+impl Default for RandomDefaultHasher {
+    #[inline]
+    fn default() -> Self {
+        let mut seed = [0u8; 16];
+        Self::seeded(&seed)
+    }
+}
+
+impl Hasher for RandomDefaultHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0.finish()
+    }
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        self.0.write(bytes)
+    }
+    #[inline]
+    fn write_u8(&mut self, i: u8) {
+        self.0.write_u8(i)
+    }
+    #[inline]
+    fn write_u16(&mut self, i: u16) {
+        self.0.write_u16(i)
+    }
+    #[inline]
+    fn write_u32(&mut self, i: u32) {
+        self.0.write_u32(i)
+    }
+    #[inline]
+    fn write_u64(&mut self, i: u64) {
+        self.0.write_u64(i)
+    }
+    #[inline]
+    fn write_u128(&mut self, i: u128) {
+        self.0.write_u128(i)
+    }
+    #[inline]
+    fn write_usize(&mut self, i: usize) {
+        self.0.write_usize(i)
+    }
+    #[inline]
+    fn write_i8(&mut self, i: i8) {
+        self.0.write_i8(i)
+    }
+    #[inline]
+    fn write_i16(&mut self, i: i16) {
+        self.0.write_i16(i)
+    }
+    #[inline]
+    fn write_i32(&mut self, i: i32) {
+        self.0.write_i32(i)
+    }
+    #[inline]
+    fn write_i64(&mut self, i: i64) {
+        self.0.write_i64(i)
+    }
+    #[inline]
+    fn write_i128(&mut self, i: i128) {
+        self.0.write_i128(i)
+    }
+    #[inline]
+    fn write_isize(&mut self, i: isize) {
+        self.0.write_isize(i)
+    }
+}
+
+type DbspBloomFilter = BloomFilter<512, DbspBloomFilterHasher>;
+
 /// Format to store a bloom filter in a file.
 #[binrw]
 #[brw(little)]
@@ -117,8 +235,8 @@ struct BloomFilterState {
     data: Vec<u64>,
 }
 
-impl From<&BloomFilter> for BloomFilterState {
-    fn from(bloom_filter: &BloomFilter) -> Self {
+impl From<&DbspBloomFilter> for BloomFilterState {
+    fn from(bloom_filter: &DbspBloomFilter) -> Self {
         let bytes: &[u8] = cast_slice(bloom_filter.as_slice());
         let crc = crc32c(bytes);
         let crc = crc32c_append(
@@ -134,10 +252,10 @@ impl From<&BloomFilter> for BloomFilterState {
     }
 }
 
-impl TryInto<BloomFilter> for BloomFilterState {
+impl TryInto<DbspBloomFilter> for BloomFilterState {
     type Error = std::io::Error;
 
-    fn try_into(self) -> Result<BloomFilter, Self::Error> {
+    fn try_into(self) -> Result<DbspBloomFilter, Self::Error> {
         let bytes: &[u8] = cast_slice(self.data.as_slice());
         let crc = crc32c(bytes);
         let crc = crc32c_append(
@@ -153,7 +271,7 @@ impl TryInto<BloomFilter> for BloomFilterState {
         }
 
         Ok(BloomFilter::from_vec(self.data)
-            .seed(&BLOOM_FILTER_SEED)
+            .hasher(DbspBloomFilterHasher::default())
             .hashes(self.num_hashes))
     }
 }

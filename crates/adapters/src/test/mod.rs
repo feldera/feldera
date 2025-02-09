@@ -293,8 +293,8 @@ where
         records
             .into_iter()
             .map(|update| match update {
-                MockUpdate::Insert(x) => Tup2(Tup2(x, ()), 1),
-                MockUpdate::Delete(x) => Tup2(Tup2(x, ()), -1),
+                MockUpdate::Insert(x) => Tup2::new(Tup2::new(x, ()), 1),
+                MockUpdate::Delete(x) => Tup2::new(Tup2::new(x, ()), -1),
                 MockUpdate::Update(_) => panic!("Unexpected MockUpdate::Update"),
             })
             .collect::<Vec<_>>(),

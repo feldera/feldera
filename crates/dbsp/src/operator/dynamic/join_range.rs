@@ -270,63 +270,63 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             let mut input1 = vec![
                 zset! {
-                    Tup2(1, 'a') => 1,
-                    Tup2(1, 'b') => 2,
-                    Tup2(2, 'c') => 3,
-                    Tup2(2, 'd') => 4,
-                    Tup2(3, 'e') => 5,
-                    Tup2(3, 'f') => -2,
+                    Tup2::new(1, 'a') => 1,
+                    Tup2::new(1, 'b') => 2,
+                    Tup2::new(2, 'c') => 3,
+                    Tup2::new(2, 'd') => 4,
+                    Tup2::new(3, 'e') => 5,
+                    Tup2::new(3, 'f') => -2,
                 },
-                zset! {Tup2(1, 'a') => 1},
-                zset! {Tup2(1, 'a') => 1},
-                zset! {Tup2(4, 'n') => 2},
-                zset! {Tup2(1, 'a') => 0},
+                zset! {Tup2::new(1, 'a') => 1},
+                zset! {Tup2::new(1, 'a') => 1},
+                zset! {Tup2::new(4, 'n') => 2},
+                zset! {Tup2::new(1, 'a') => 0},
             ]
             .into_iter();
             let mut input2 = vec![
                 zset! {
-                    Tup2(2, 'g') => 3,
-                    Tup2(2, 'h') => 4,
-                    Tup2(3, 'i') => 5,
-                    Tup2(3, 'j') => -2,
-                    Tup2(4, 'k') => 5,
-                    Tup2(4, 'l') => -2,
+                    Tup2::new(2, 'g') => 3,
+                    Tup2::new(2, 'h') => 4,
+                    Tup2::new(3, 'i') => 5,
+                    Tup2::new(3, 'j') => -2,
+                    Tup2::new(4, 'k') => 5,
+                    Tup2::new(4, 'l') => -2,
                 },
-                zset! {Tup2(1, 'b') => 1},
-                zset! {Tup2(4, 'm') => 1},
+                zset! {Tup2::new(1, 'b') => 1},
+                zset! {Tup2::new(4, 'm') => 1},
                 zset! {},
                 zset! {},
             ]
             .into_iter();
             let mut outputs = vec![
                 zset! {
-                    Tup2(Tup2(1, 'a'), Tup2(2, 'g')) => 3,
-                    Tup2(Tup2(1, 'a'), Tup2(2, 'h')) => 4,
-                    Tup2(Tup2(1, 'b'), Tup2(2, 'g')) => 6,
-                    Tup2(Tup2(1, 'b'), Tup2(2, 'h')) => 8,
-                    Tup2(Tup2(2, 'c'), Tup2(2, 'g')) => 9,
-                    Tup2(Tup2(2, 'c'), Tup2(2, 'h')) => 12,
-                    Tup2(Tup2(2, 'c'), Tup2(3, 'i')) => 15,
-                    Tup2(Tup2(2, 'c'), Tup2(3, 'j')) => -6,
-                    Tup2(Tup2(2, 'd'), Tup2(2, 'g')) => 12,
-                    Tup2(Tup2(2, 'd'), Tup2(2, 'h')) => 16,
-                    Tup2(Tup2(2, 'd'), Tup2(3, 'i')) => 20,
-                    Tup2(Tup2(2, 'd'), Tup2(3, 'j')) => -8,
-                    Tup2(Tup2(3, 'e'), Tup2(2, 'g')) => 15,
-                    Tup2(Tup2(3, 'e'), Tup2(2, 'h')) => 20,
-                    Tup2(Tup2(3, 'e'), Tup2(3, 'i')) => 25,
-                    Tup2(Tup2(3, 'e'), Tup2(3, 'j')) => -10,
-                    Tup2(Tup2(3, 'e'), Tup2(4, 'k')) => 25,
-                    Tup2(Tup2(3, 'e'), Tup2(4, 'l')) => -10,
-                    Tup2(Tup2(3, 'f'), Tup2(2, 'g')) => -6,
-                    Tup2(Tup2(3, 'f'), Tup2(2, 'h')) => -8,
-                    Tup2(Tup2(3, 'f'), Tup2(3, 'i')) => -10,
-                    Tup2(Tup2(3, 'f'), Tup2(3, 'j')) => 4,
-                    Tup2(Tup2(3, 'f'), Tup2(4, 'k')) => -10,
-                    Tup2(Tup2(3, 'f'), Tup2(4, 'l')) => 4,
+                    Tup2::new(Tup2::new(1, 'a'), Tup2::new(2, 'g')) => 3,
+                    Tup2::new(Tup2::new(1, 'a'), Tup2::new(2, 'h')) => 4,
+                    Tup2::new(Tup2::new(1, 'b'), Tup2::new(2, 'g')) => 6,
+                    Tup2::new(Tup2::new(1, 'b'), Tup2::new(2, 'h')) => 8,
+                    Tup2::new(Tup2::new(2, 'c'), Tup2::new(2, 'g')) => 9,
+                    Tup2::new(Tup2::new(2, 'c'), Tup2::new(2, 'h')) => 12,
+                    Tup2::new(Tup2::new(2, 'c'), Tup2::new(3, 'i')) => 15,
+                    Tup2::new(Tup2::new(2, 'c'), Tup2::new(3, 'j')) => -6,
+                    Tup2::new(Tup2::new(2, 'd'), Tup2::new(2, 'g')) => 12,
+                    Tup2::new(Tup2::new(2, 'd'), Tup2::new(2, 'h')) => 16,
+                    Tup2::new(Tup2::new(2, 'd'), Tup2::new(3, 'i')) => 20,
+                    Tup2::new(Tup2::new(2, 'd'), Tup2::new(3, 'j')) => -8,
+                    Tup2::new(Tup2::new(3, 'e'), Tup2::new(2, 'g')) => 15,
+                    Tup2::new(Tup2::new(3, 'e'), Tup2::new(2, 'h')) => 20,
+                    Tup2::new(Tup2::new(3, 'e'), Tup2::new(3, 'i')) => 25,
+                    Tup2::new(Tup2::new(3, 'e'), Tup2::new(3, 'j')) => -10,
+                    Tup2::new(Tup2::new(3, 'e'), Tup2::new(4, 'k')) => 25,
+                    Tup2::new(Tup2::new(3, 'e'), Tup2::new(4, 'l')) => -10,
+                    Tup2::new(Tup2::new(3, 'f'), Tup2::new(2, 'g')) => -6,
+                    Tup2::new(Tup2::new(3, 'f'), Tup2::new(2, 'h')) => -8,
+                    Tup2::new(Tup2::new(3, 'f'), Tup2::new(3, 'i')) => -10,
+                    Tup2::new(Tup2::new(3, 'f'), Tup2::new(3, 'j')) => 4,
+                    Tup2::new(Tup2::new(3, 'f'), Tup2::new(4, 'k')) => -10,
+                    Tup2::new(Tup2::new(3, 'f'), Tup2::new(4, 'l')) => 4,
                 },
                 zset! {
-                    Tup2(Tup2(1, 'a'), Tup2(1, 'b')) => 1,
+                    Tup2::new(Tup2::new(1, 'a'), Tup2::new(1, 'b')) => 1,
                 },
                 zset! {},
                 zset! {},
@@ -336,23 +336,23 @@ mod test {
 
             let index1 = circuit
                 .add_source(Generator::new(move || input1.next().unwrap()))
-                .map_index(|Tup2(k, v)| (*k, *v));
+                .map_index(|t| (*t.fst(), *t.snd()));
             let index2 = circuit
                 .add_source(Generator::new(move || input2.next().unwrap()))
-                .map_index(|Tup2(k, v)| (*k, *v));
+                .map_index(|t| (*t.fst(), *t.snd()));
             let output1 = index1.stream_join_range(
                 &index2,
                 |&k| (k - 1, k + 2),
-                |&k1, &v1, &k2, &v2| Some(Tup2(Tup2(k1, v1), Tup2(k2, v2))),
+                |&k1, &v1, &k2, &v2| Some(Tup2::new(Tup2::new(k1, v1), Tup2::new(k2, v2))),
             );
             output1.inspect(move |fm| assert_eq!(fm, &outputs.next().unwrap()));
             let output2 = index1.stream_join_range_index(
                 &index2,
                 |&k| (k - 1, k + 2),
-                |&k1, &v1, &k2, &v2| Some((Tup2(k1, v1), Tup2(k2, v2))),
+                |&k1, &v1, &k2, &v2| Some((Tup2::new(k1, v1), Tup2::new(k2, v2))),
             );
             output1
-                .map_index(|Tup2(k, v)| (*k, *v))
+                .map_index(|t| (*t.fst(), *t.snd()))
                 .apply2(&output2, |o1, o2| assert_eq!(o1, o2));
             Ok(())
         })

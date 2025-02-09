@@ -81,6 +81,8 @@ fastbloom = "0.8.0"
 bytemuck = "1.21.0"
 core_affinity = "0.8.1"
 indexmap = "2.7.1"
+feldera-macros= { path = "../feldera-macros", version = "0.36.0" }
+siphasher = "1"
 
 [dependencies.time]
 version = "0.3.20"

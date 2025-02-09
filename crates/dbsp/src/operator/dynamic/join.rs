@@ -45,13 +45,13 @@ use super::{MonoIndexedZSet, MonoZSet};
 circuit_cache_key!(AntijoinId<C, D>((StreamId, StreamId) => Stream<C, D>));
 
 pub trait TraceJoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized>:
-    FnMut(&K, &V1, &V2, &mut dyn FnMut(&mut OK, &mut OV))
+FnMut(&K, &V1, &V2, &mut dyn FnMut(&mut OK, &mut OV))
 {
     fn fork(&self) -> TraceJoinFunc<K, V1, V2, OK, OV>;
 }
 
 impl<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized, F>
-    TraceJoinFuncTrait<K, V1, V2, OK, OV> for F
+TraceJoinFuncTrait<K, V1, V2, OK, OV> for F
 where
     F: FnMut(&K, &V1, &V2, &mut dyn FnMut(&mut OK, &mut OV)) + Clone + 'static,
 {
@@ -80,7 +80,7 @@ impl<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized> TraceJoinFuncs<K
     }
 }
 pub trait JoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, O: ?Sized>:
-    Fn(&K, &V1, &V2, &mut O)
+Fn(&K, &V1, &V2, &mut O)
 {
     fn fork(&self) -> JoinFunc<K, V1, V2, O>;
 }
@@ -110,7 +110,7 @@ where
 impl<I1, I2, O> StreamJoinFactories<I1, I2, O>
 where
     I1: IndexedZSetReader,
-    I2: IndexedZSetReader<Key = I1::Key>,
+    I2: IndexedZSetReader<Key=I1::Key>,
     O: ZSet,
 {
     pub fn new<KType, V1Type, V2Type, VType>() -> Self
@@ -149,7 +149,7 @@ where
 impl<I1, I2, T, O> JoinFactories<I1, I2, T, O>
 where
     I1: IndexedZSetReader,
-    I2: IndexedZSetReader<Key = I1::Key>,
+    I2: IndexedZSetReader<Key=I1::Key>,
     O: IndexedZSet,
     T: Timestamp,
 {
@@ -168,9 +168,9 @@ where
             right_trace_factories: BatchReaderFactories::new::<KType, V2Type, ZWeight>(),
             output_factories: BatchReaderFactories::new::<OKType, OVType, ZWeight>(),
             timed_item_factory:
-                WithFactory::<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>::FACTORY,
+            WithFactory::<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>::FACTORY,
             timed_items_factory:
-                WithFactory::<LeanVec<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>>::FACTORY,
+            WithFactory::<LeanVec<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>>::FACTORY,
         }
     }
 }
@@ -208,7 +208,7 @@ where
 impl<I1, I2, T> AntijoinFactories<I1, I2, T>
 where
     I1: IndexedZSet,
-    I2: ZSet<Key = I1::Key>,
+    I2: ZSet<Key=I1::Key>,
     T: Timestamp,
 {
     pub fn new<KType, V1Type>() -> Self
@@ -256,7 +256,7 @@ where
 impl<I1, I2, T, O> OuterJoinFactories<I1, I2, T, O>
 where
     I1: IndexedZSet,
-    I2: IndexedZSet<Key = I1::Key>,
+    I2: IndexedZSet<Key=I1::Key>,
     T: Timestamp,
     O: DataTrait + ?Sized,
 {
@@ -312,7 +312,7 @@ where
     ) -> Stream<C, OrdZSet<V>>
     where
         I1: IndexedZSet,
-        I2: IndexedZSet<Key = I1::Key>,
+        I2: IndexedZSet<Key=I1::Key>,
         V: DataTrait + ?Sized,
     {
         self.dyn_stream_join_generic(factories, other, join)
@@ -328,7 +328,7 @@ where
     ) -> Stream<C, Z>
     where
         I1: IndexedZSet,
-        I2: IndexedZSet<Key = I1::Key>,
+        I2: IndexedZSet<Key=I1::Key>,
         Z: ZSet,
     {
         self.circuit().add_binary_operator(
@@ -348,7 +348,7 @@ where
     ) -> Stream<C, Z>
     where
         I1: IndexedZSet,
-        I2: IndexedZSet<Key = I1::Key>,
+        I2: IndexedZSet<Key=I1::Key>,
         Z: ZSet,
     {
         self.circuit().add_binary_operator(
@@ -367,7 +367,7 @@ where
     ) -> Stream<C, Z>
     where
         I1: IndexedZSetReader + Clone,
-        I2: IndexedZSetReader<Key = I1::Key> + Clone,
+        I2: IndexedZSetReader<Key=I1::Key> + Clone,
         Z: ZSet,
     {
         self.circuit()
@@ -402,7 +402,7 @@ impl<I1> Stream<RootCircuit, I1> {
     ) -> Stream<RootCircuit, Z>
     where
         I1: IndexedZSet,
-        I2: IndexedZSet<Key = I1::Key>,
+        I2: IndexedZSet<Key=I1::Key>,
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet,
     {
@@ -514,7 +514,7 @@ where
         join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, V, DynUnit>,
     ) -> Stream<C, OrdZSet<V>>
     where
-        I2: IndexedZSet<Key = I1::Key>,
+        I2: IndexedZSet<Key=I1::Key>,
         V: DataTrait + ?Sized,
     {
         self.dyn_join_generic(factories, other, join_funcs)
@@ -529,7 +529,7 @@ where
         join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, K, V>,
     ) -> Stream<C, OrdIndexedZSet<K, V>>
     where
-        I2: IndexedZSet<Key = I1::Key>,
+        I2: IndexedZSet<Key=I1::Key>,
         K: DataTrait + ?Sized,
         V: DataTrait + ?Sized,
     {
@@ -545,7 +545,7 @@ where
         join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
     ) -> Stream<C, Z>
     where
-        I2: IndexedZSet<Key = I1::Key>,
+        I2: IndexedZSet<Key=I1::Key>,
         Z: IndexedZSet,
     {
         // TODO: I think this is correct, but we need a proper proof.
@@ -634,7 +634,7 @@ where
         other: &Stream<C, I2>,
     ) -> Stream<C, I1>
     where
-        I2: IndexedZSet<Key = I1::Key> + DynFilterMap + Send,
+        I2: IndexedZSet<Key=I1::Key> + DynFilterMap + Send,
         Box<I1::Key>: Clone,
         Box<I1::Val>: Clone,
     {
@@ -712,7 +712,7 @@ where
     ) -> Stream<C, OrdZSet<O>>
     where
         Z: DynFilterMap + Send,
-        Z2: IndexedZSet<Key = Z::Key> + Send,
+        Z2: IndexedZSet<Key=Z::Key> + Send,
         Z2: DynFilterMap,
         O: DataTrait + ?Sized,
         Box<Z::Key>: Clone,
@@ -750,11 +750,11 @@ where
     ) -> Stream<C, OrdZSet<O>>
     where
         Z: for<'a> DynFilterMap<
-                DynItemRef<'a> = (&'a <Z as BatchReader>::Key, &'a <Z as BatchReader>::Val),
-            > + Send,
-        Z2: IndexedZSet<Key = Z::Key> + Send,
+            DynItemRef<'a>=(&'a <Z as BatchReader>::Key, &'a <Z as BatchReader>::Val),
+        > + Send,
+        Z2: IndexedZSet<Key=Z::Key> + Send,
         Z2: for<'a> DynFilterMap<
-            DynItemRef<'a> = (&'a <Z2 as BatchReader>::Key, &'a <Z2 as BatchReader>::Val),
+            DynItemRef<'a>=(&'a <Z2 as BatchReader>::Key, &'a <Z2 as BatchReader>::Val),
         >,
         O: DataTrait + ?Sized,
         Box<Z::Key>: Clone,
@@ -841,7 +841,7 @@ where
 impl<I1, I2, Z> BinaryOperator<I1, I2, Z> for Join<I1, I2, Z>
 where
     I1: IndexedZSetReader,
-    I2: IndexedZSetReader<Key = I1::Key>,
+    I2: IndexedZSetReader<Key=I1::Key>,
     Z: ZSet,
 {
     #[trace]
@@ -947,7 +947,7 @@ where
 impl<I1, I2, Z> BinaryOperator<I1, I2, Z> for MonotonicJoin<I1, I2, Z>
 where
     I1: IndexedZSetReader,
-    I2: IndexedZSetReader<Key = I1::Key>,
+    I2: IndexedZSetReader<Key=I1::Key>,
     Z: ZSet,
 {
     #[trace]
@@ -1098,7 +1098,7 @@ where
     I: IndexedZSet,
     T: ZBatchReader,
     Z: IndexedZSet,
-    Clk: WithClock<Time = T::Time> + 'static,
+    Clk: WithClock<Time=T::Time> + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("JoinTrace")
@@ -1212,7 +1212,7 @@ where
                             "allocated" => MetaItem::bytes(size.total_bytes()),
                             "used" => MetaItem::bytes(size.used_bytes()),
                         }
-                        .into(),
+                            .into(),
                     )
                 })
                 .collect(),
@@ -1255,18 +1255,18 @@ where
         self.empty_input
             && self.empty_output
             && self
-                .output_batchers
-                .keys()
-                .all(|time| !time.less_equal(&epoch_end))
+            .output_batchers
+            .keys()
+            .all(|time| !time.less_equal(&epoch_end))
     }
 }
 
 impl<I, T, Z, Clk> BinaryOperator<I, T, Z> for JoinTrace<I, T, Z, Clk>
 where
     I: IndexedZSet,
-    T: ZBatchReader<Key = I::Key>,
+    T: ZBatchReader<Key=I::Key>,
     Z: IndexedZSet,
-    Clk: WithClock<Time = T::Time> + 'static,
+    Clk: WithClock<Time=T::Time> + 'static,
 {
     #[trace]
     async fn eval(&mut self, index: &I, trace: &T) -> Z {
@@ -1390,97 +1390,97 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             let mut input1 = vec![
                 zset! {
-                    Tup2(1, "a".to_string()) => 1i64,
-                    Tup2(1, "b".to_string()) => 2,
-                    Tup2(2, "c".to_string()) => 3,
-                    Tup2(2, "d".to_string()) => 4,
-                    Tup2(3, "e".to_string()) => 5,
-                    Tup2(3, "f".to_string()) => -2,
+                    Tup2::new(1, "a".to_string()) => 1i64,
+                    Tup2::new(1, "b".to_string()) => 2,
+                    Tup2::new(2, "c".to_string()) => 3,
+                    Tup2::new(2, "d".to_string()) => 4,
+                    Tup2::new(3, "e".to_string()) => 5,
+                    Tup2::new(3, "f".to_string()) => -2,
                 },
-                zset! {Tup2(1, "a".to_string()) => 1},
-                zset! {Tup2(1, "a".to_string()) => 1},
-                zset! {Tup2(4, "n".to_string()) => 2},
-                zset! {Tup2(1, "a".to_string()) => 0},
+                zset! {Tup2::new(1, "a".to_string()) => 1},
+                zset! {Tup2::new(1, "a".to_string()) => 1},
+                zset! {Tup2::new(4, "n".to_string()) => 2},
+                zset! {Tup2::new(1, "a".to_string()) => 0},
             ]
-            .into_iter();
+                .into_iter();
             let mut input2 = vec![
                 zset! {
-                    Tup2(2, "g".to_string()) => 3i64,
-                    Tup2(2, "h".to_string()) => 4,
-                    Tup2(3, "i".to_string()) => 5,
-                    Tup2(3, "j".to_string()) => -2,
-                    Tup2(4, "k".to_string()) => 5,
-                    Tup2(4, "l".to_string()) => -2,
+                    Tup2::new(2, "g".to_string()) => 3i64,
+                    Tup2::new(2, "h".to_string()) => 4,
+                    Tup2::new(3, "i".to_string()) => 5,
+                    Tup2::new(3, "j".to_string()) => -2,
+                    Tup2::new(4, "k".to_string()) => 5,
+                    Tup2::new(4, "l".to_string()) => -2,
                 },
-                zset! {Tup2(1, "b".to_string()) => 1},
-                zset! {Tup2(4, "m".to_string()) => 1},
+                zset! {Tup2::new(1, "b".to_string()) => 1},
+                zset! {Tup2::new(4, "m".to_string()) => 1},
                 zset! {},
                 zset! {},
             ]
-            .into_iter();
+                .into_iter();
             let mut outputs = vec![
                 zset! {
-                    Tup2(2, "c g".to_string()) => 9i64,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
+                    Tup2::new(2, "c g".to_string()) => 9i64,
+                    Tup2::new(2, "c h".to_string()) => 12,
+                    Tup2::new(2, "d g".to_string()) => 12,
+                    Tup2::new(2, "d h".to_string()) => 16,
+                    Tup2::new(3, "e i".to_string()) => 25,
+                    Tup2::new(3, "e j".to_string()) => -10,
+                    Tup2::new(3, "f i".to_string()) => -10,
+                    Tup2::new(3, "f j".to_string()) => 4
                 },
                 zset! {
-                    Tup2(1, "a b".to_string()) => 1,
+                    Tup2::new(1, "a b".to_string()) => 1,
                 },
                 zset! {},
                 zset! {},
                 zset! {},
             ]
-            .into_iter();
+                .into_iter();
             let inc_outputs_vec = vec![
                 zset! {
-                    Tup2(2, "c g".to_string()) => 9,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
+                    Tup2::new(2, "c g".to_string()) => 9,
+                    Tup2::new(2, "c h".to_string()) => 12,
+                    Tup2::new(2, "d g".to_string()) => 12,
+                    Tup2::new(2, "d h".to_string()) => 16,
+                    Tup2::new(3, "e i".to_string()) => 25,
+                    Tup2::new(3, "e j".to_string()) => -10,
+                    Tup2::new(3, "f i".to_string()) => -10,
+                    Tup2::new(3, "f j".to_string()) => 4
                 },
                 zset! {
-                    Tup2(1, "a b".to_string()) => 2,
-                    Tup2(1, "b b".to_string()) => 2,
+                    Tup2::new(1, "a b".to_string()) => 2,
+                    Tup2::new(1, "b b".to_string()) => 2,
                 },
                 zset! {
-                    Tup2(1, "a b".to_string()) => 1,
+                    Tup2::new(1, "a b".to_string()) => 1,
                 },
                 zset! {
-                    Tup2(4, "n k".to_string()) => 10,
-                    Tup2(4, "n l".to_string()) => -4,
-                    Tup2(4, "n m".to_string()) => 2,
+                    Tup2::new(4, "n k".to_string()) => 10,
+                    Tup2::new(4, "n l".to_string()) => -4,
+                    Tup2::new(4, "n m".to_string()) => 2,
                 },
                 zset! {},
             ];
             let inc_filtered_outputs_vec = vec![
                 zset! {
-                    Tup2(2, "c g".to_string()) => 9,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
+                    Tup2::new(2, "c g".to_string()) => 9,
+                    Tup2::new(2, "c h".to_string()) => 12,
+                    Tup2::new(2, "d g".to_string()) => 12,
+                    Tup2::new(2, "d h".to_string()) => 16,
+                    Tup2::new(3, "e i".to_string()) => 25,
+                    Tup2::new(3, "e j".to_string()) => -10,
+                    Tup2::new(3, "f i".to_string()) => -10,
+                    Tup2::new(3, "f j".to_string()) => 4
                 },
                 zset! {
-                    Tup2(1, "b b".to_string()) => 2,
+                    Tup2::new(1, "b b".to_string()) => 2,
                 },
                 zset! {},
                 zset! {
-                    Tup2(4, "n k".to_string()) => 10,
-                    Tup2(4, "n l".to_string()) => -4,
-                    Tup2(4, "n m".to_string()) => 2,
+                    Tup2::new(4, "n k".to_string()) => 10,
+                    Tup2::new(4, "n l".to_string()) => -4,
+                    Tup2::new(4, "n m".to_string()) => 2,
                 },
                 zset! {},
             ];
@@ -1497,7 +1497,7 @@ mod test {
                         <OrdZSet<_>>::empty()
                     }
                 }))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
+                .map_index(|t: &Tup2<u64, String>| (*t.fst(), t.snd().clone()));
             let index2: Stream<_, OrdIndexedZSet<u64, String>> = circuit
                 .add_source(Generator::new(move || {
                     if Runtime::worker_index() == 0 {
@@ -1506,10 +1506,10 @@ mod test {
                         <OrdZSet<_>>::empty()
                     }
                 }))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
+                .map_index(|t: &Tup2<u64, String>| (*t.fst(), t.snd().clone()));
             index1
                 .stream_join(&index2, |&k: &u64, s1, s2| {
-                    Tup2(k, format!("{} {}", s1, s2))
+                    Tup2::new(k, format!("{} {}", s1, s2))
                 })
                 .gather(0)
                 .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
@@ -1528,7 +1528,7 @@ mod test {
 
             index1
                 .join(&index2, |&k: &u64, s1, s2| {
-                    Tup2(k, format!("{} {}", s1, s2))
+                    Tup2::new(k, format!("{} {}", s1, s2))
                 })
                 .gather(0)
                 .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
@@ -1542,7 +1542,7 @@ mod test {
                     if s1.as_str() == "a" {
                         None
                     } else {
-                        Some(Tup2(k, format!("{} {}", s1, s2)))
+                        Some(Tup2::new(k, format!("{} {}", s1, s2)))
                     }
                 })
                 .gather(0)
@@ -1554,8 +1554,8 @@ mod test {
 
             Ok(())
         })
-        .unwrap()
-        .0;
+            .unwrap()
+            .0;
 
         for _ in 0..5 {
             circuit.step().unwrap();
@@ -1566,7 +1566,7 @@ mod test {
         let hruntime = Runtime::run(workers, || {
             join_test();
         })
-        .expect("failed to run test");
+            .expect("failed to run test");
 
         hruntime.join().unwrap();
     }
@@ -1586,33 +1586,33 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges: vec::IntoIter<OrdZSet<Tup2<u64, u64>>> = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(2, 3) => 1},
-                zset! { Tup2(1, 3) => 1},
-                zset! { Tup2(3, 1) => 1},
-                zset! { Tup2(3, 1) => -1},
-                zset! { Tup2(1, 2) => -1},
-                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
-                zset! {Tup2 (2, 3) => -1, Tup2(3, 2) => 1 },
+                zset! { Tup2::new(1, 2) => 1 },
+                zset! { Tup2::new(2, 3) => 1},
+                zset! { Tup2::new(1, 3) => 1},
+                zset! { Tup2::new(3, 1) => 1},
+                zset! { Tup2::new(3, 1) => -1},
+                zset! { Tup2::new(1, 2) => -1},
+                zset! { Tup2::new(2, 4) => 1, Tup2::new(4, 1) => 1 },
+                zset! {Tup2::new (2, 3) => -1, Tup2::new(3, 2) => 1 },
             ]
-            .into_iter();
+                .into_iter();
 
             // Expected content of the reachability relation.
             let mut outputs: vec::IntoIter<OrdZSet<Tup2<u64, u64>>> = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
-                              Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
-                              Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
-                              Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
-                              Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
+                zset! { Tup2::new(1, 2) => 1 },
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 1) => 1, Tup2::new(2, 2) => 1, Tup2::new(3, 3) => 1, Tup2::new(1, 2) => 1, Tup2::new(1, 3) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 1) => 1, Tup2::new(3, 1) => 1, Tup2::new(3, 2) => 1},
+                zset! { Tup2::new(1, 2) => 1, Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(2, 3) => 1, Tup2::new(1, 3) => 1 },
+                zset! { Tup2::new(1, 3) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 4) => 1, Tup2::new(2, 1) => 1, Tup2::new(4, 1) => 1, Tup2::new(4, 3) => 1 },
+                zset! { Tup2::new(1, 1) => 1, Tup2::new(2, 2) => 1, Tup2::new(3, 3) => 1, Tup2::new(4, 4) => 1,
+                              Tup2::new(1, 2) => 1, Tup2::new(1, 3) => 1, Tup2::new(1, 4) => 1,
+                              Tup2::new(2, 1) => 1, Tup2::new(2, 3) => 1, Tup2::new(2, 4) => 1,
+                              Tup2::new(3, 1) => 1, Tup2::new(3, 2) => 1, Tup2::new(3, 4) => 1,
+                              Tup2::new(4, 1) => 1, Tup2::new(4, 2) => 1, Tup2::new(4, 3) => 1 },
             ]
-            .into_iter();
+                .into_iter();
 
             let edges: Stream<_, OrdZSet<Tup2<u64, u64>>> =
                 circuit
@@ -1638,21 +1638,21 @@ mod test {
                 let edges = edges.delta0(child);
 
                 let paths_inverted: Stream<_, OrdZSet<Tup2<u64, u64>>> = paths_delayed
-                    .map(|&Tup2(x, y)| Tup2(y, x));
+                    .map(|&t| Tup2::new(*t.snd(), *t.fst()));
 
-                let paths_inverted_indexed = paths_inverted.map_index(|Tup2(k,v)| (*k, *v));
-                let edges_indexed = edges.map_index(|Tup2(k, v)| (*k, *v));
+                let paths_inverted_indexed = paths_inverted.map_index(|t| (*t.fst(), *t.snd()));
+                let edges_indexed = edges.map_index(|t| (*t.fst(), *t.snd()));
 
-                Ok(edges.plus(&paths_inverted_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
+                Ok(edges.plus(&paths_inverted_indexed.join(&edges_indexed, |_via, from, to| Tup2::new(*from, *to))))
             })
-            .unwrap();
+                .unwrap();
 
             paths.integrate().stream_distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
             Ok(())
         })
-        .unwrap().0;
+            .unwrap().0;
 
         for _ in 0..8 {
             //eprintln!("{}", i);
@@ -1676,7 +1676,7 @@ mod test {
 
             Ok((input_handle1, input_handle2))
         })
-        .unwrap();
+            .unwrap();
 
         input1.append(&mut vec![
             Tup2(1, Tup2(0, 1)),
@@ -1833,7 +1833,7 @@ mod propagate_test {
                 zset! { Edge(1, 4) => 1 },
                 zset! { Edge(9, 7) => 1 },
             ]
-            .into_iter();
+                .into_iter();
 
             let mut labels: vec::IntoIter<OrdZSet<Label>> = vec![
                 zset! { Label(1, 0) => 1 },
@@ -1845,7 +1845,7 @@ mod propagate_test {
                 zset! { Label(4, 1) => -1 },
                 zset! { },
             ]
-            .into_iter();
+                .into_iter();
 
             let mut outputs: vec::IntoIter<OrdZSet<Label>> = vec![
                 zset! { Label(1, 0) => 1, Label(2, 0) => 1, Label(3, 0) => 1, Label(4, 0) => 2 },
@@ -1857,7 +1857,7 @@ mod propagate_test {
                 zset! { Label(4, 1) => -1, Label(4, 2) => 1, Label(5, 1) => -1, Label(5, 2) => 1, Label(6, 1) => -1, Label(6, 2) => 1, Label(7, 1) => -2, Label(7, 2) => 2, Label(10, 1) => -2, Label(10, 2) => 2 },
                 zset! { Label(7, 2) => 1, Label(7, 3) => 1, Label(10, 2) => 1, Label(10, 3) => 1 },
             ]
-            .into_iter();
+                .into_iter();
 
             let edges: Stream<_, OrdZSet<Edge>> =
                 circuit
@@ -1872,7 +1872,7 @@ mod propagate_test {
             });
             Ok(())
         })
-        .unwrap().0;
+            .unwrap().0;
 
         for _ in 0..8 {
             //eprintln!("{}", i);
@@ -1893,7 +1893,7 @@ mod propagate_test {
                 zset! { Edge(1, 4) => 1 },
                 zset! { Edge(9, 7) => 1 },
             ]
-            .into_iter();
+                .into_iter();
 
             let mut labels: vec::IntoIter<OrdZSet<Label>> = vec![
                 zset! { Label(1, 0) => 1 },
@@ -1905,21 +1905,21 @@ mod propagate_test {
                 zset! { Label(4, 1) => -1 },
                 zset! { },
             ]
-            .into_iter();
+                .into_iter();
 
             let mut outputs: vec::IntoIter<OrdZSet<Label>> = vec![
-                zset!{ Label(1,0) => 2, Label(2,0) => 3, Label(3,0) => 3, Label(4,0) => 8 },
-                zset!{ Label(4,1) => 2 },
-                zset!{ Label(5,0) => 10, Label(5,1) => 3, Label(6,0) => 10, Label(6,1) => 3, Label(7,0) => 24, Label(7,1) => 8 },
-                zset!{ Label(1,0) => -2, Label(1,2) => 2, Label(2,0) => -3, Label(2,2) => 3, Label(3,0) => -3, Label(3,2) => 3,
+                zset! { Label(1,0) => 2, Label(2,0) => 3, Label(3,0) => 3, Label(4,0) => 8 },
+                zset! { Label(4,1) => 2 },
+                zset! { Label(5,0) => 10, Label(5,1) => 3, Label(6,0) => 10, Label(6,1) => 3, Label(7,0) => 24, Label(7,1) => 8 },
+                zset! { Label(1,0) => -2, Label(1,2) => 2, Label(2,0) => -3, Label(2,2) => 3, Label(3,0) => -3, Label(3,2) => 3,
                        Label(4,0) => -8, Label(4,2) => 8, Label(5,0) => -10, Label(5,2) => 10, Label(6,0) => -10, Label(6,2) => 10,
                        Label(7,0) => -24, Label(7,2) => 24, Label(8,2) => 4, Label(9,2) => 5 },
-                zset!{ Label(4,2) => -4, Label(5,2) => -5, Label(6,2) => -5, Label(7,2) => -12, Label(10,1) => 10, Label(10,2) => 14 },
-                zset!{ Label(4,2) => -4, Label(5,2) => -5, Label(6,2) => -5, Label(7,2) => -12, Label(8,3) => 2,
+                zset! { Label(4,2) => -4, Label(5,2) => -5, Label(6,2) => -5, Label(7,2) => -12, Label(10,1) => 10, Label(10,2) => 14 },
+                zset! { Label(4,2) => -4, Label(5,2) => -5, Label(6,2) => -5, Label(7,2) => -12, Label(8,3) => 2,
                        Label(9,3) => 3, Label(10,2) => -14 },
-                zset!{ Label(4,1) => -2, Label(4,2) => 3, Label(5,1) => -3, Label(5,2) => 4, Label(6,1) => -3, Label(6,2) => 4,
+                zset! { Label(4,1) => -2, Label(4,2) => 3, Label(5,1) => -3, Label(5,2) => 4, Label(6,1) => -3, Label(6,2) => 4,
                        Label(7,1) => -8, Label(7,2) => 10, Label(10,1) => -10, Label(10,2) => 12 },
-                zset!{ Label(7,2) => 6, Label(7,3) => 4, Label(10,2) => 7, Label(10,3) => 5 },
+                zset! { Label(7,2) => 6, Label(7,3) => 4, Label(10,2) => 7, Label(10,3) => 5 },
             ].into_iter();
 
             let edges: Stream<_, OrdZSet<Edge>> =
@@ -1931,7 +1931,6 @@ mod propagate_test {
                     .add_source(Generator::new(move || labels.next().unwrap()));
 
             let result = circuit.iterate(|child| {
-
                 let counter = std::cell::RefCell::new(0);
                 let edges = edges.delta0(child);
                 let labels = labels.delta0(child);
@@ -1953,7 +1952,7 @@ mod propagate_test {
                 },
                     // FIXME: make sure the `export` API works on typed streams correctly,
                     // so that the `inner`/`typed` calls below are not needed.
-                result.integrate_trace().inner().export().typed::<Spine<FallbackZSet<Label>>>()))
+                    result.integrate_trace().inner().export().typed::<Spine<FallbackZSet<Label>>>()))
             }).unwrap();
 
             result.consolidate().inspect(move |res: &FallbackZSet<Label>| {
@@ -1961,7 +1960,7 @@ mod propagate_test {
             });
             Ok(())
         })
-        .unwrap().0;
+            .unwrap().0;
 
         for _ in 0..8 {
             //eprintln!("{}", i);

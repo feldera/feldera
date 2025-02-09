@@ -61,10 +61,10 @@ pub fn personal_network(
             people
                 .iter()
                 .filter(|&b| (a < b))
-                .map(|b| (Tup2(a.clone(), b.clone()), ()))
+                .map(|b| (Tup2::new(a.clone(), b.clone()), ()))
                 .collect::<Vec<_>>()
         })
-        .map(|(Tup2(a, b), ())| Tup2(a.clone(), b.clone()));
+        .map(|(t, ())| Tup2::new(t.fst().clone(), t.snd().clone()));
 
     // expected.minus(&joined).gather(0).inspect(|errors| {
     //     let mut cursor = errors.cursor();

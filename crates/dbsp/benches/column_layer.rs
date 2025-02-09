@@ -34,7 +34,7 @@ where
 
     for _ in 0..length {
         let (k, w) = rng.gen();
-        data.push(Tup2(k, w));
+        data.push(Tup2::new(k, w));
     }
     consolidate(&mut data);
 
@@ -42,7 +42,8 @@ where
 
     let mut builder = <L::TupleBuilder>::with_capacity(factories, length);
 
-    for Tup2(mut k, mut r) in data.into_iter() {
+    for t in data.into_iter() {
+        let (mut k, mut r) = t.into();
         builder.push_tuple((k.erase_mut(), r.erase_mut()))
     }
 
@@ -65,10 +66,10 @@ where
 
     for _ in 0..length / 2 {
         let (k, w) = rng.gen();
-        left.push(Tup2(k, w));
+        left.push(Tup2::new(k, w));
 
         let (k, w) = rng.gen();
-        right.push(Tup2(k, w));
+        right.push(Tup2::new(k, w));
     }
 
     consolidate(&mut left);
@@ -82,11 +83,13 @@ where
         <L::TupleBuilder>::with_capacity(factories, length / 2),
     );
 
-    for Tup2(mut k, mut r) in left.into_iter() {
+    for t in left.into_iter() {
+        let (mut k, mut r) = t.into();
         left_builder.push_tuple((k.erase_mut(), r.erase_mut()))
     }
 
-    for Tup2(mut k, mut r) in right.into_iter() {
+    for t in right.into_iter() {
+        let (mut k, mut r) = t.into();
         right_builder.push_tuple((k.erase_mut(), r.erase_mut()))
     }
 
