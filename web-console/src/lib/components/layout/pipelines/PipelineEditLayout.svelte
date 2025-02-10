@@ -43,6 +43,7 @@
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
 
   let {
     preloaded,
@@ -88,7 +89,7 @@
     programErrorsPerFile(
       extractProgramErrors(programErrorReport(pipeline.current))({
         name: pipeline.current.name,
-        status: pipeline.current.programStatus
+        status: pipeline.current.status
       })
     )
   )
@@ -180,9 +181,7 @@ example = "1.0"`
   const drawer = useDrawer('right')
   const pipelineList = usePipelineList(preloaded)
 
-  let showPipelinesPanel = useLocalStorage('layout/pipelines/pipelinesPanel/show', false)
-  let showMonitoringPanel = useLocalStorage('layout/pipelines/monitoringPanel', true)
-  let separateAdHocTab = useLocalStorage('layout/pipelines/separateAdHoc', false)
+  let { showPipelinesPanel, showMonitoringPanel, separateAdHocTab } = useLayoutSettings()
   let downstreamChanged = $state(false)
   let isDraggingPipelineListResizer = $state(false)
   let saveFile = $state(() => {})
