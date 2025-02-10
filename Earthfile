@@ -296,7 +296,7 @@ test-python:
             sleep 5 && \
             PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/main.py && \
             if [ $all = "1" ]; then \
-                cd tests && python -m pytest . --timeout=300; \
+                cd tests && python3 -m pytest . --timeout=300; \
             else \
                 echo "Skipping pytest as --all argument is not set to 1"; \
             fi
