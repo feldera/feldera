@@ -17,7 +17,7 @@
 </script>
 
 {#if global}
-  <div class="flex h-full flex-col gap-4 overflow-y-auto overflow-x-clip scrollbar sm:py-4">
+  <div class="flex h-full flex-col gap-4 overflow-y-auto overflow-x-clip scrollbar">
     <div class="flex w-full flex-col-reverse gap-4 lg:flex-row">
       <div class="bg-white-dark mb-auto mr-auto flex flex-col rounded px-4 py-2">
         <div class="-mx-4 border-b-2 pb-2 text-center">Total records</div>
@@ -121,5 +121,5 @@
     {/if}
   </div>
 {:else}
-  <span class="flex text-surface-600-400 sm:pt-4">Pipeline is not running</span>
+  <span class="flex text-surface-600-400">Pipeline is not running</span>
 {/if}
