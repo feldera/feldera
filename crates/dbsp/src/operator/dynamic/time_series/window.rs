@@ -11,8 +11,11 @@ use crate::{
         ClonableTrait, DataTrait, DynData, WeightTrait,
     },
     operator::dynamic::{trace::TraceBound, MonoIndexedZSet},
-    storage::{file::to_bytes, write_commit_metadata},
-    trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, Serializer, SpineSnapshot},
+    storage::{
+        file::{to_bytes, with_serializer},
+        write_commit_metadata,
+    },
+    trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, SpineSnapshot},
     Error, RootCircuit,
 };
 use minitrace::trace;
@@ -76,14 +79,9 @@ impl<B: IndexedZSet, T: ZBatchReader> From<&Window<B, T>> for CommittedWindow {
         // Transform the window bounds into a serialized form and store it as a byte vector.
         // This is necessary because the key type is not sized.
         let window = value.window.as_ref().map(|(a, b)| {
-            let mut sa = Serializer::default();
-            let mut sb = Serializer::default();
-            a.serialize(&mut sa).unwrap();
-            b.serialize(&mut sb).unwrap();
-            (
-                sa.into_serializer().into_inner().to_vec(),
-                sb.into_serializer().into_inner().to_vec(),
-            )
+            let sa = with_serializer(Default::default(), |s| a.serialize(s).unwrap()).0;
+            let sb = with_serializer(Default::default(), |s| b.serialize(s).unwrap()).0;
+            (sa.into_vec(), sb.into_vec())
         });
 
         CommittedWindow { window }

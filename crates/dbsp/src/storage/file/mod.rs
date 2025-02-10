@@ -70,6 +70,7 @@
 // Warn about missing docs, but not for item declared with `#[cfg(test)]`.
 #![cfg_attr(not(test), warn(missing_docs))]
 
+use crate::dynamic::ArchivedDBData;
 use crate::storage::buffer_cache::{FBuf, FBufSerializer};
 use binrw::binrw;
 use bytemuck::cast_slice;
@@ -85,6 +86,7 @@ use rkyv::{
     },
     Archive, Archived, Deserialize, Fallible, Serialize,
 };
+use std::cell::RefCell;
 use std::fmt::Debug;
 use std::{any::Any, sync::Arc};
 
@@ -287,14 +289,35 @@ where
 }
 
 /// The particular [`rkyv::ser::Serializer`] that we use.
-pub type Serializer = CompositeSerializer<
-    FBufSerializer<FBuf>,
-    FallbackScratch<HeapScratch<1024>, AllocScratch>,
-    SharedSerializeMap,
->;
+pub type Serializer = CompositeSerializer<FBufSerializer<FBuf>, DbspScratch, SharedSerializeMap>;
+
+/// The particular [`rkyv::ser::ScratchSpace`] that we use.
+pub type DbspScratch = FallbackScratch<HeapScratch<65536>, AllocScratch>;
 
 /// The particular [`rkyv`] deserializer that we use.
 pub type Deserializer = SharedDeserializeMap;
+
+/// Creates an instance of [Serializer] that will serialize to `serializer` and
+/// passes it to `f`. Returns a tuple of the `FBuf` from the [Serializer] and
+/// the return value of `f`.
+///
+/// This is useful because it reuses the scratch space from one serializer to
+/// the next, which is valuable because it saves an allocation and free per
+/// serialization.
+pub fn with_serializer<F, R>(serializer: FBufSerializer<FBuf>, f: F) -> (FBuf, R)
+where
+    F: FnOnce(&mut Serializer) -> R,
+{
+    thread_local! {
+        static SCRATCH: RefCell<Option<DbspScratch>> = RefCell::new(Some(Default::default()));
+    }
+
+    let mut serializer = Serializer::new(serializer, SCRATCH.take().unwrap(), Default::default());
+    let result = f(&mut serializer);
+    let (serializer, scratch, _shared) = serializer.into_components();
+    SCRATCH.replace(Some(scratch));
+    (serializer.into_inner(), result)
+}
 
 /// Serializes the given value and returns the resulting bytes.
 ///
@@ -304,9 +327,26 @@ pub fn to_bytes<T>(value: &T) -> Result<FBuf, <Serializer as Fallible>::Error>
 where
     T: Serialize<Serializer>,
 {
-    let mut serializer = Serializer::default();
-    serializer.serialize_value(value)?;
-    Ok(serializer.into_serializer().into_inner())
+    let (bytes, result) = with_serializer(FBufSerializer::default(), |serializer| {
+        serializer.serialize_value(value)
+    });
+    result?;
+    Ok(bytes)
+}
+
+/// Serializes the given value and returns the resulting bytes.
+///
+/// This is like [`rkyv::to_bytes`], but that function only works with one
+/// particular serializer whereas this function works with our [`Serializer`].
+pub fn to_bytes_dyn<T>(value: &T) -> Result<FBuf, <Serializer as Fallible>::Error>
+where
+    T: ArchivedDBData,
+{
+    let (bytes, result) = with_serializer(FBufSerializer::default(), |serializer| {
+        serializer.serialize_value(value)
+    });
+    result?;
+    Ok(bytes)
 }
 
 #[cfg(test)]

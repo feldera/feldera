@@ -7,9 +7,12 @@
 use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
     buffer_cache::{FBuf, FBufSerializer, LimitExceeded},
-    file::format::{
-        BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen, IndexBlockHeader,
-        NodeType, Varint, VERSION_NUMBER,
+    file::{
+        format::{
+            BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen,
+            IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
+        },
+        with_serializer,
     },
 };
 use binrw::{
@@ -37,9 +40,7 @@ use crate::{
 
 use super::cache::{FileCache, FileCacheEntry};
 use super::format::Compression;
-use super::{
-    reader::Reader, AnyFactories, Factories, Serializer, BLOOM_FILTER_FALSE_POSITIVE_RATE,
-};
+use super::{reader::Reader, AnyFactories, Factories, BLOOM_FILTER_FALSE_POSITIVE_RATE};
 
 struct VarintWriter {
     varint: Varint,
@@ -690,13 +691,10 @@ where
 {
     let old_len = dst.len();
 
-    let mut serializer = Serializer::new(
-        FBufSerializer::new(take(dst), limit),
-        Default::default(),
-        Default::default(),
-    );
-    let result = value.serialize(&mut serializer);
-    *dst = serializer.into_serializer().into_inner();
+    let result;
+    (*dst, result) = with_serializer(FBufSerializer::new(take(dst), limit), |serializer| {
+        value.serialize(serializer)
+    });
     let offset = result.map_err(|_| LimitExceeded)?;
 
     if dst.len() == old_len {
