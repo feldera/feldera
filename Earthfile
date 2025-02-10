@@ -295,8 +295,8 @@ test-python:
             (./pipeline-manager --bind-address=0.0.0.0 --compiler-working-directory=/working-dir/compiler --runner-working-directory=/working-dir/local-runner --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=unoptimized &) && \
             sleep 5 && \
             PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/main.py && \
-            if [ $ALL = "1" ]; then \
-                cd tests && python -m pytest . ; \
+            if [ $all = "1" ]; then \
+                cd tests && python -m pytest . --timeout=300; \
             else \
                 echo "Skipping pytest as --all argument is not set to 1"; \
             fi

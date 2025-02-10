@@ -193,16 +193,16 @@ pub fn t2t(i: Option<Time>) -> Result<Option<Time>, Box<dyn std::error::Error>> 
 pub fn nt2nt(i: Time) -> Result<Time, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn arr2arr(i: Option<Vec<Option<i32>>>) -> Result<Option<Vec<Option<i32>>>, Box<dyn std::error::Error>> {
+pub fn arr2arr(i: Option<Array<Option<i32>>>) -> Result<Option<Array<Option<i32>>>, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn narr2narr(i: Vec<Option<i32>>) -> Result<Vec<Option<i32>>, Box<dyn std::error::Error>> {
+pub fn narr2narr(i: Array<Option<i32>>) -> Result<Array<Option<i32>>, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn map2map(i: Option<BTreeMap<String, Option<String>>>) -> Result<Option<BTreeMap<String, Option<String>>>, Box<dyn std::error::Error>> {
+pub fn map2map(i: Option<Map<SqlString, Option<SqlString>>>) -> Result<Option<Map<SqlString, Option<SqlString>>>, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn nmap2nmap(i: BTreeMap<String, Option<String>>) -> Result<BTreeMap<String, Option<String>>, Box<dyn std::error::Error>> {
+pub fn nmap2nmap(i: Map<SqlString, Option<SqlString>>) -> Result<Map<SqlString, Option<SqlString>>, Box<dyn std::error::Error>> {
     Ok(i)
 }
 pub fn var2var(i: Option<Variant>) -> Result<Option<Variant>, Box<dyn std::error::Error>> {
@@ -217,10 +217,10 @@ pub fn dec2dec(i: Option<Decimal>) -> Result<Option<Decimal>, Box<dyn std::error
 pub fn ndec2ndec(i: Decimal) -> Result<Decimal, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn str2str(i: Option<String>) -> Result<Option<String>, Box<dyn std::error::Error>> {
+pub fn str2str(i: Option<SqlString>) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn nstr2nstr(i: String) -> Result<String, Box<dyn std::error::Error>> {
+pub fn nstr2nstr(i: SqlString) -> Result<SqlString, Box<dyn std::error::Error>> {
     Ok(i)
 }
 // pub fn struct2struct(i: Option<struct_1>) -> Result<Option<struct_2>, Box<dyn std::error::Error>> {
