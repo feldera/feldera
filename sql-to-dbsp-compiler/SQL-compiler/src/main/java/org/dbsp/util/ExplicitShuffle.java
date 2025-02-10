@@ -40,6 +40,24 @@ public class ExplicitShuffle implements Shuffle {
         return this.indexes.contains(index);
     }
 
+    @Override
+    public Shuffle invert() {
+        // This implementation is correct only if the shuffle is a permutation,
+        // something we don't check.
+        assert this.inputLength == this.indexes.size();
+        List<Integer> inverse = Linq.fill(this.inputLength, 0);
+        for (int i = 0; i < this.inputLength; i++)
+            inverse.set(this.indexes.get(i), i);
+        return new ExplicitShuffle(this.inputLength, inverse);
+    }
+
+    @Override
+    public boolean isIdentityPermutation() {
+        for (int i = 0; i < this.inputLength; i++)
+            if (this.indexes.get(i) != i) return false;
+        return true;
+    }
+
     public static <T> Shuffle computePermutation(List<T> input, List<T> output) {
         List<Integer> shuffle = new ArrayList<>();
         for (T in : input) {
