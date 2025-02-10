@@ -3,11 +3,13 @@ use super::{
 };
 use crate::{ensure_default_crypto_provider, format::StreamSplitter, InputBuffer, Parser};
 use actix::System;
+use actix_web::http::StatusCode;
 use actix_web::{
     dev::{Decompress, Payload},
     http::header::{ByteRangeSpec, ContentRangeSpec, Range as ActixRange, CONTENT_RANGE},
 };
 use anyhow::{anyhow, bail, Result as AnyResult};
+use awc::error::HeaderValue;
 use awc::{http::header::HeaderMap, Client, ClientResponse, Connector};
 use bytes::Bytes;
 use feldera_adapterlib::transport::InputCommandReceiver;
@@ -30,7 +32,7 @@ use tokio::{
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     time::{sleep_until, Instant},
 };
-use tracing::info_span;
+use tracing::{info, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
 pub(crate) struct UrlInputEndpoint {
@@ -77,33 +79,55 @@ struct UrlStream<'a> {
     ofs: u64,
 }
 
-/// Returns the starting offset into the URL content that the server is sending
-/// in `response`.
+/// Starting offset of the response sent by the server, determined based on
+/// the status code and the `Content-Range` HTTP header that could be present.
+/// The offset is the first byte position.
 ///
-/// The server tells us the range of the URL content it's sending us.  If it
-/// doesn't say anything (which is valid even if we asked for a range), then it
-/// is starting at the beginning.
-fn get_response_starting_offset(headers: &HeaderMap) -> AnyResult<u64> {
-    if let Some(range) = headers.get(CONTENT_RANGE) {
-        match ContentRangeSpec::from_str(range.to_str()?)? {
-            ContentRangeSpec::Bytes {
-                range: Some((start, _)),
-                ..
-            } => Ok(start),
-            ContentRangeSpec::Bytes { range: None, .. } => {
-                // Weird flex, bro.
-                Ok(0)
-            }
-            other => Err(anyhow!(
-                "expected byte range in HTTP response, instead received {other}"
-            ))?,
+/// - If its status code is 2xx, it will return zero offset.
+///   An error will be returned if it still has a `Content-Range` header
+///   because the header only has a meaning for status code 206 and 416:
+///   https://datatracker.ietf.org/doc/html/rfc9110#name-content-range
+///
+/// - If its status code is 206 PARTIAL CONTENT, the first byte position of
+///   the single `Content-Range` will be returned. An error will be returned
+///   if no range is returned, the range is not a byte range, the range is
+///   unsatisfiable, or more than one range is returned.
+fn get_response_starting_offset(status: StatusCode, headers: &HeaderMap) -> AnyResult<u64> {
+    if status != StatusCode::PARTIAL_CONTENT {
+        if headers.get(CONTENT_RANGE).is_some() {
+            bail!("HTTP response contains the Content-Range header but its status code ({}) is not 206 Partial Content", status);
         }
-    } else {
         Ok(0)
+    } else {
+        let content_range_values: Vec<&HeaderValue> = headers.get_all(CONTENT_RANGE).collect();
+        match content_range_values[..] {
+            [] => {
+                bail!("HTTP response is 206 Partial Content but has no Content-Range header");
+            }
+            [range] => match ContentRangeSpec::from_str(range.to_str()?)? {
+                ContentRangeSpec::Bytes {
+                    range: Some((start, _)),
+                    ..
+                } => Ok(start),
+                ContentRangeSpec::Bytes { range: None, .. } => {
+                    bail!("HTTP response is 206 Partial Content but has a Content-Range which indicates it is unsatisfiable");
+                }
+                other => {
+                    bail!("expected byte range in HTTP response Content-Range header, instead received: {other}");
+                }
+            },
+            _ => {
+                bail!("HTTP response should have only a single Content-Range header, but {} are present", content_range_values.len());
+            }
+        }
     }
 }
 
 impl<'a> UrlStream<'a> {
+    /// HTTP request timeout to receive the initial response (e.g., status code).
+    /// This does not include the time to receive the content itself following it.
+    const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
     pub fn new(path: &'a str) -> Self {
         Self {
             client: Client::builder().connector(Connector::new()).finish(),
@@ -125,32 +149,48 @@ impl<'a> UrlStream<'a> {
 
             if self.response.is_none() {
                 let mut request = self.client.get(self.path);
+
+                // Attempt to request data only from the offset we left off previously by inserting
+                // a `Range` header. This is only an attempt, as the server can decide to ignore it.
                 if self.ofs > 0 {
-                    // Try to resume at the point where we left off.
                     request = request
                         .insert_header(ActixRange::Bytes(vec![ByteRangeSpec::From(self.ofs)]));
                 }
 
-                let response = request.send().await.map_err(
-                    // `awc` intentionally uses errors that aren't `Sync`, but
-                    // `anyhow::Error` requires `Sync`.  Transform the error so we can
-                    // return it.
-                    |error| anyhow!("{error}"),
-                )?;
-                if !response.status().is_success() {
+                let response = request
+                    .timeout(Self::HTTP_REQUEST_TIMEOUT)
+                    .send()
+                    .await
+                    .map_err(
+                        // `awc` intentionally uses errors that aren't `Sync`, but
+                        // `anyhow::Error` requires `Sync`.  Transform the error so we can
+                        // return it.
+                        |error| anyhow!("{error}"),
+                    )?;
+                let status = response.status();
+                info!("HTTP response status code: {}", status);
+
+                // All 2xx status codes are considered valid, including ones that don't provide content.
+                // Note that redirection (3xx) is not followed and will also result in an error.
+                if !status.is_success() {
                     bail!(
-                        "received unexpected HTTP status code ({})",
-                        response.status()
+                        "HTTP status code of response ({}) is not success (2xx)",
+                        status
                     );
                 }
-                self.next_read_ofs = get_response_starting_offset(response.headers())?;
+
+                // It is possible that the server returns an earlier offset (generally, 0),
+                // especially when it does not support a partial response. However, it is
+                // not acceptable if it returns a later offset.
+                self.next_read_ofs = get_response_starting_offset(status, response.headers())?;
                 if self.next_read_ofs > self.ofs {
                     Err(anyhow!(
-                        "HTTP server skipped past data we need, by starting at {} instead of {}",
+                        "HTTP response skipped past data we need, by starting at {} instead of {}",
                         self.next_read_ofs,
                         self.ofs
                     ))?
                 }
+
                 self.response = Some(response);
             };
 
