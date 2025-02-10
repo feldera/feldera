@@ -21,7 +21,7 @@ use crc32c::crc32c;
 use dyn_clone::clone_box;
 use fastbloom::BloomFilter;
 use snap::raw::{max_compress_len, Encoder};
-use std::sync::Arc;
+use std::{cell::RefCell, sync::Arc};
 use std::{
     marker::PhantomData,
     mem::{replace, take},
@@ -921,7 +921,6 @@ struct BlockWriter {
     cache: Arc<FileCache>,
     file_handle: Option<Box<dyn FileWriter>>,
     encoder: Encoder,
-    bounce: Vec<u8>,
     offset: u64,
 }
 
@@ -931,7 +930,6 @@ impl BlockWriter {
             cache,
             file_handle: Some(file_handle),
             encoder: Encoder::new(),
-            bounce: Vec::new(),
             offset: 0,
         }
     }
@@ -952,29 +950,39 @@ impl BlockWriter {
             let checksum = crc32c(&block[4..]).to_le_bytes();
             block[..4].copy_from_slice(checksum.as_slice());
 
-            // Compress the data into a bounce buffer.
-            let compressed_len = match compression {
-                Compression::Snappy => {
-                    let max_len = max_compress_len(block.len());
-                    if max_len > self.bounce.len() {
-                        self.bounce.resize(max_len, 0);
-                    }
-                    self.encoder
-                        .compress(block.as_slice(), self.bounce.as_mut_slice())
-                        .unwrap()
-                }
-            };
-
-            // Construct compressed buffer as:
+            // Use a thread-local bounce buffer to create an appropriately sized
+            // compressed buffer.
             //
-            // - `compressed_len` as a 32-bit little-endian integer
-            // - compressed data (`compressed_len` bytes)
-            // - padding to `padded_len`, which is a multiple of 512 bytes
-            let padded_len = (compressed_len + 4).next_multiple_of(512);
-            let mut compressed = FBuf::with_capacity(padded_len);
-            compressed.extend_from_slice((compressed_len as u32).to_le_bytes().as_slice());
-            compressed.extend_from_slice(&self.bounce[..compressed_len]);
-            compressed.resize(padded_len, 0);
+            // We could avoid a copy here, at a memory cost, by allocating a
+            // maximum-size compressed buffer and compressing directly into
+            // that.
+            thread_local! { static BOUNCE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) }};
+            let (padded_len, compressed) = BOUNCE.with_borrow_mut(|bounce| {
+                // Compress the data into a bounce buffer.
+                let compressed_len = match compression {
+                    Compression::Snappy => {
+                        let max_len = max_compress_len(block.len());
+                        if max_len > bounce.len() {
+                            bounce.resize(max_len, 0);
+                        }
+                        self.encoder
+                            .compress(block.as_slice(), bounce.as_mut_slice())
+                            .unwrap()
+                    }
+                };
+
+                // Construct compressed buffer as:
+                //
+                // - `compressed_len` as a 32-bit little-endian integer
+                // - compressed data (`compressed_len` bytes)
+                // - padding to `padded_len`, which is a multiple of 512 bytes
+                let padded_len = (compressed_len + 4).next_multiple_of(512);
+                let mut compressed = FBuf::with_capacity(padded_len);
+                compressed.extend_from_slice((compressed_len as u32).to_le_bytes().as_slice());
+                compressed.extend_from_slice(&bounce[..compressed_len]);
+                compressed.resize(padded_len, 0);
+                (padded_len, compressed)
+            });
 
             // Write the compressed data (and discard it).
             let location = BlockLocation::new(self.offset, padded_len).unwrap();
