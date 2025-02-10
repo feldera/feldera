@@ -204,7 +204,6 @@ where
 
 struct ColumnWriter {
     parameters: Arc<Parameters>,
-    column_index: usize,
     rows: Range<u64>,
     data_block: DataBlockBuilder,
     index_blocks: Vec<IndexBlockBuilder>,
@@ -212,10 +211,9 @@ struct ColumnWriter {
 }
 
 impl ColumnWriter {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, column_index: usize) -> Self {
+    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>) -> Self {
         ColumnWriter {
             parameters: parameters.clone(),
-            column_index,
             rows: 0..0,
             data_block: DataBlockBuilder::new(factories, parameters),
             index_blocks: Vec::new(),
@@ -238,7 +236,7 @@ impl ColumnWriter {
     {
         // Flush data.
         if !self.data_block.is_empty() {
-            let data_block = self.data_block.take().build::<K, A>();
+            let data_block = self.data_block.build::<K, A>();
             self.write_data_block(block_writer, data_block)?;
         }
 
@@ -255,7 +253,7 @@ impl ColumnWriter {
                     n_rows: entry.row_total,
                 });
             } else if !self.index_blocks[level].is_empty() {
-                let index_block = self.index_blocks[level].take().build();
+                let index_block = self.index_blocks[level].build();
                 self.write_index_block::<K>(block_writer, index_block, level)?;
             }
             level += 1;
@@ -274,7 +272,6 @@ impl ColumnWriter {
             self.index_blocks.push(IndexBlockBuilder::new(
                 &self.factories,
                 &self.parameters,
-                self.column_index,
                 if level == 0 {
                     NodeType::Data
                 } else {
@@ -360,6 +357,9 @@ impl StrideBuilder {
     fn new() -> Self {
         Self::NoValues
     }
+    fn clear(&mut self) {
+        *self = Self::NoValues;
+    }
     fn push(&mut self, value: usize) {
         *self = match *self {
             StrideBuilder::NoValues => StrideBuilder::OneValue { first: value },
@@ -422,11 +422,16 @@ impl DataBlockBuilder {
             factories: factories.clone(),
         }
     }
+    fn clear(&mut self) {
+        self.raw.clear();
+        self.raw.resize(DataBlockHeader::LEN, 0);
+        self.row_groups.clear();
+        self.value_offsets.clear();
+        self.value_offset_stride.clear();
+        self.size_target = None;
+    }
     fn is_empty(&self) -> bool {
         self.value_offsets.is_empty()
-    }
-    fn take(&mut self) -> DataBlockBuilder {
-        replace(self, Self::new(&self.factories, &self.parameters))
     }
     fn try_add_item<K, A>(
         &mut self,
@@ -492,7 +497,7 @@ impl DataBlockBuilder {
         if self.try_add_item(item, row_group).is_ok() {
             None
         } else {
-            let retval = self.take().build::<K, A>();
+            let retval = self.build::<K, A>();
             assert!(self.try_add_item(item, row_group).is_ok());
             Some(retval)
         }
@@ -528,7 +533,7 @@ impl DataBlockBuilder {
             len,
         }
     }
-    fn build<K, A>(mut self) -> DataBlock<K>
+    fn build<K, A>(&mut self) -> DataBlock<K>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
@@ -582,11 +587,15 @@ impl DataBlockBuilder {
         let max_offset = *self.value_offsets.last().unwrap();
         rkyv_deserialize_key::<K, A>(item_factory, &self.raw, max_offset, max.as_mut());
 
-        DataBlock {
-            raw: self.raw,
+        let capacity = self.raw.capacity();
+        let raw = replace(&mut self.raw, FBuf::with_capacity(capacity));
+        let data_block = DataBlock {
+            raw,
             min_max: (min, max),
             n_values,
-        }
+        };
+        self.clear();
+        data_block
     }
 }
 
@@ -602,6 +611,9 @@ struct ContiguousRanges(Vec<u64>);
 impl ContiguousRanges {
     fn with_capacity(capacity: usize) -> Self {
         Self(Vec::with_capacity(capacity.saturating_add(1)))
+    }
+    fn clear(&mut self) {
+        self.0.clear();
     }
     fn push(&mut self, range: &Range<u64>) {
         match self.0.last() {
@@ -628,7 +640,6 @@ impl ContiguousRanges {
 
 struct IndexBlockBuilder {
     parameters: Arc<Parameters>,
-    column_index: usize,
     raw: FBuf,
     entries: Vec<IndexEntry>,
     child_type: NodeType,
@@ -698,18 +709,12 @@ where
 }
 
 impl IndexBlockBuilder {
-    fn new(
-        factories: &AnyFactories,
-        parameters: &Arc<Parameters>,
-        column_index: usize,
-        child_type: NodeType,
-    ) -> Self {
+    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, child_type: NodeType) -> Self {
         let mut raw = FBuf::with_capacity(parameters.min_index_block);
         raw.resize(IndexBlockHeader::LEN, 0);
 
         Self {
             parameters: parameters.clone(),
-            column_index,
             raw,
             entries: Vec::with_capacity(parameters.min_branch),
             child_type,
@@ -718,19 +723,15 @@ impl IndexBlockBuilder {
             max_child_size: 0,
         }
     }
+    fn clear(&mut self) {
+        self.raw.clear();
+        self.raw.resize(IndexBlockHeader::LEN, 0);
+        self.entries.clear();
+        self.size_target = None;
+        self.max_child_size = 0;
+    }
     fn is_empty(&self) -> bool {
         self.entries.is_empty()
-    }
-    fn take(&mut self) -> IndexBlockBuilder {
-        replace(
-            self,
-            Self::new(
-                &self.factories,
-                &self.parameters,
-                self.column_index,
-                self.child_type,
-            ),
-        )
     }
     fn inner_try_add_entry<K>(
         &mut self,
@@ -803,7 +804,7 @@ impl IndexBlockBuilder {
         if f(self).is_ok() {
             None
         } else {
-            let retval = self.take().build();
+            let retval = self.build();
             assert!(f(self).is_ok());
             Some(retval)
         }
@@ -851,7 +852,7 @@ impl IndexBlockBuilder {
             len,
         }
     }
-    fn build<K>(mut self) -> IndexBlock<K>
+    fn build<K>(&mut self) -> IndexBlock<K>
     where
         K: DataTrait + ?Sized,
     {
@@ -909,11 +910,15 @@ impl IndexBlockBuilder {
         let entry_n = self.entries.last().unwrap();
         rkyv_deserialize(&self.raw, entry_n.max_offset, max.as_mut());
 
-        IndexBlock {
-            raw: self.raw,
+        let capacity = self.raw.capacity();
+        let raw = replace(&mut self.raw, FBuf::with_capacity(capacity));
+        let index_block = IndexBlock {
+            raw,
             min_max: (min, max),
             n_rows: entry_n.row_total,
-        }
+        };
+        self.clear();
+        index_block
     }
 }
 
@@ -1049,8 +1054,7 @@ impl Writer {
         let parameters = Arc::new(parameters);
         let cws = factories
             .iter()
-            .enumerate()
-            .map(|(column, factories)| ColumnWriter::new(factories, &parameters, column))
+            .map(|factories| ColumnWriter::new(factories, &parameters))
             .collect();
         let finished_columns = Vec::with_capacity(n_columns);
         let worker = format!("w{}-", Runtime::worker_index());
