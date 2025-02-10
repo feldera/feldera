@@ -163,7 +163,7 @@ class TstAccumulator:
             data = table.get_data()
             pipeline.input_json(table.name, data, update_format="insert_delete")
 
-        pipeline.wait_for_completion(shutdown=False)
+        pipeline.wait_for_completion(shutdown=False, timeout_s=3600)
         for view in self.views:
             view.validate(pipeline)
 
