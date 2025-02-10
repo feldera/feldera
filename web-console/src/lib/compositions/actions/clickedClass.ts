@@ -7,7 +7,7 @@ export function clickedClass(
   let baseClasses = base?.split(' ') ?? []
   let successClasses = clicked?.split(' ') ?? []
   let timeoutMs = timeout
-  let _timeout: NodeJS.Timeout | undefined
+  let _timeout: Timer | undefined
   element.classList.add(...baseClasses)
   const handleClick = () => {
     element.classList.remove(...baseClasses)
