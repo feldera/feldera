@@ -112,7 +112,7 @@ const toExtendedPipeline = ({
   programUdfToml: pipeline.udf_toml ?? '',
   programConfig: pipeline.program_config,
   programInfo: pipeline.program_info,
-  programStatus: program_status,
+  programStatus: program_status as ProgramStatus,
   programStatusSince: pipeline.program_status_since,
   programVersion: pipeline.program_version,
   runtimeConfig: pipeline.runtime_config,
@@ -249,7 +249,7 @@ export const getPipelineStats = async (pipeline_name: string) => {
 }
 
 const consolidatePipelineStatus = (
-  programStatus: _ProgramStatus,
+  programStatus: ProgramStatus,
   pipelineStatus: _PipelineStatus,
   desiredStatus: _PipelineStatus,
   pipelineError: ErrorResponse | null | undefined
