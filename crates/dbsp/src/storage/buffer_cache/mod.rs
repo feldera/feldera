@@ -9,4 +9,4 @@ pub use cache::{
     AtomicCacheCounts, AtomicCacheStats, BufferCache, CacheAccess, CacheCounts, CacheEntry,
     CacheStats,
 };
-pub use fbuf::{FBuf, FBufSerializer};
+pub use fbuf::{FBuf, FBufSerializer, LimitExceeded};

@@ -6,7 +6,7 @@
 //! `pub`.
 use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
-    buffer_cache::{FBuf, FBufSerializer},
+    buffer_cache::{FBuf, FBufSerializer, LimitExceeded},
     file::format::{
         BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen, IndexBlockHeader,
         NodeType, Varint, VERSION_NUMBER,
@@ -428,24 +428,30 @@ impl DataBlockBuilder {
     fn take(&mut self) -> DataBlockBuilder {
         replace(self, Self::new(&self.factories, &self.parameters))
     }
-    fn try_add_item<K, A>(&mut self, item: (&K, &A), row_group: &Option<Range<u64>>) -> bool
+    fn try_add_item<K, A>(
+        &mut self,
+        item: (&K, &A),
+        row_group: &Option<Range<u64>>,
+    ) -> Result<(), LimitExceeded>
     where
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
         if self.value_offsets.len() >= self.parameters.max_branch() {
-            return false;
+            return Err(LimitExceeded);
         }
 
         let old_len = self.raw.len();
         let old_stride = self.value_offset_stride;
 
-        let mut offset = 0;
+        let mut result = Ok(0);
         self.factories
             .item_factory()
             .with(item.0, item.1, &mut |item| {
-                offset = rkyv_serialize(&mut self.raw, item);
+                result =
+                    rkyv_serialize(&mut self.raw, item, self.size_target.unwrap_or(usize::MAX));
             });
+        let offset = result.inspect_err(|_| self.raw.resize(old_len, 0))?;
 
         self.value_offsets.push(offset);
         self.value_offset_stride.push(offset);
@@ -461,7 +467,7 @@ impl DataBlockBuilder {
                 if row_group.is_some() {
                     self.row_groups.pop();
                 }
-                return false;
+                return Err(LimitExceeded);
             }
         } else if self.value_offsets.len() >= self.parameters.min_branch {
             self.size_target = Some(
@@ -472,7 +478,7 @@ impl DataBlockBuilder {
             );
         }
 
-        true
+        Ok(())
     }
     fn add_item<K, A>(
         &mut self,
@@ -483,11 +489,11 @@ impl DataBlockBuilder {
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
-        if self.try_add_item(item, row_group) {
+        if self.try_add_item(item, row_group).is_ok() {
             None
         } else {
             let retval = self.take().build::<K, A>();
-            assert!(self.try_add_item(item, row_group));
+            assert!(self.try_add_item(item, row_group).is_ok());
             Some(retval)
         }
     }
@@ -667,19 +673,20 @@ fn rkyv_deserialize_key<K, A>(
     )
 }
 
-fn rkyv_serialize<T>(dst: &mut FBuf, value: &T) -> usize
+fn rkyv_serialize<T>(dst: &mut FBuf, value: &T, limit: usize) -> Result<usize, LimitExceeded>
 where
     T: SerializeDyn + ?Sized,
 {
     let old_len = dst.len();
 
     let mut serializer = Serializer::new(
-        FBufSerializer::new(take(dst)),
+        FBufSerializer::new(take(dst), limit),
         Default::default(),
         Default::default(),
     );
-    let offset = value.serialize(&mut serializer).unwrap();
+    let result = value.serialize(&mut serializer);
     *dst = serializer.into_serializer().into_inner();
+    let offset = result.map_err(|_| LimitExceeded)?;
 
     if dst.len() == old_len {
         // Ensure that a value takes up at least one byte.  Otherwise, we'll
@@ -687,7 +694,7 @@ where
         // a block works with our other assumptions.
         dst.push(0);
     }
-    offset
+    Ok(offset)
 }
 
 impl IndexBlockBuilder {
@@ -725,25 +732,22 @@ impl IndexBlockBuilder {
             ),
         )
     }
-    fn try_add_entry<K>(
+    fn inner_try_add_entry<K>(
         &mut self,
         child: BlockLocation,
         min_max: &(Box<K>, Box<K>),
         n_rows: u64,
-    ) -> bool
+    ) -> Result<(), LimitExceeded>
     where
         K: DataTrait + ?Sized,
     {
         if self.entries.len() >= self.parameters.max_branch() {
-            return false;
+            return Err(LimitExceeded);
         }
-        let saved_len = self.raw.len();
-
-        let saved_max_child_size = self.max_child_size;
         self.max_child_size = self.max_child_size.max(child.size);
-
-        let min_offset = rkyv_serialize(&mut self.raw, min_max.0.as_ref());
-        let max_offset = rkyv_serialize(&mut self.raw, min_max.1.as_ref());
+        let limit = self.size_target.unwrap_or(usize::MAX);
+        let min_offset = rkyv_serialize(&mut self.raw, min_max.0.as_ref(), limit)?;
+        let max_offset = rkyv_serialize(&mut self.raw, min_max.1.as_ref(), limit)?;
         self.entries.push(IndexEntry {
             child,
             min_offset,
@@ -753,10 +757,7 @@ impl IndexBlockBuilder {
 
         if let Some(size_target) = self.size_target {
             if self.specs().len > size_target {
-                self.max_child_size = saved_max_child_size;
-                self.raw.resize(saved_len, 0);
-                self.entries.pop();
-                return false;
+                return Err(LimitExceeded);
             }
         } else if self.entries.len() >= self.parameters.min_branch {
             self.size_target = Some(
@@ -766,8 +767,28 @@ impl IndexBlockBuilder {
                     .max(self.parameters.min_index_block),
             );
         }
-
-        true
+        Ok(())
+    }
+    fn try_add_entry<K>(
+        &mut self,
+        child: BlockLocation,
+        min_max: &(Box<K>, Box<K>),
+        n_rows: u64,
+    ) -> Result<(), LimitExceeded>
+    where
+        K: DataTrait + ?Sized,
+    {
+        let saved_len = self.raw.len();
+        let saved_max_child_size = self.max_child_size;
+        let n_entries = self.entries.len();
+        self.inner_try_add_entry(child, min_max, n_rows)
+            .inspect_err(|_| {
+                self.max_child_size = saved_max_child_size;
+                self.raw.resize(saved_len, 0);
+                if self.entries.len() > n_entries {
+                    self.entries.pop();
+                }
+            })
     }
     fn add_entry<K>(
         &mut self,
@@ -779,11 +800,11 @@ impl IndexBlockBuilder {
         K: DataTrait + ?Sized,
     {
         let f = |t: &mut Self| t.try_add_entry(child, min_max, n_rows);
-        if f(self) {
+        if f(self).is_ok() {
             None
         } else {
             let retval = self.take().build();
-            assert!(f(self));
+            assert!(f(self).is_ok());
             Some(retval)
         }
     }

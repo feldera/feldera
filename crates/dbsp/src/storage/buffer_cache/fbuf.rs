@@ -30,7 +30,7 @@ use rkyv::{
     vec::ArchivedVec,
     Archive, Archived, Serialize,
 };
-use rkyv::{vec::VecResolver, ArchiveUnsized, Fallible, Infallible, RelPtr};
+use rkyv::{vec::VecResolver, ArchiveUnsized, Fallible, RelPtr};
 
 /// A custom buffer type that works with our read/write APIs and the
 /// buffer-cache.
@@ -761,13 +761,17 @@ impl Unpin for FBuf {}
 #[derive(Debug)]
 pub struct FBufSerializer<A> {
     inner: A,
+    limit: usize,
 }
+
+#[derive(Debug)]
+pub struct LimitExceeded;
 
 impl<A: Borrow<FBuf>> FBufSerializer<A> {
     /// Creates a new `FBufSerializer` by wrapping a `Borrow<FBuf>`.
     #[inline]
-    pub fn new(inner: A) -> Self {
-        Self { inner }
+    pub fn new(inner: A, limit: usize) -> Self {
+        Self { inner, limit }
     }
 
     /// Consumes the serializer and returns the underlying type.
@@ -782,12 +786,13 @@ impl<A: Default> Default for FBufSerializer<A> {
     fn default() -> Self {
         Self {
             inner: A::default(),
+            limit: usize::MAX,
         }
     }
 }
 
 impl<A> Fallible for FBufSerializer<A> {
-    type Error = Infallible;
+    type Error = LimitExceeded;
 }
 
 impl<A: Borrow<FBuf> + BorrowMut<FBuf>> Serializer for FBufSerializer<A> {
@@ -798,8 +803,13 @@ impl<A: Borrow<FBuf> + BorrowMut<FBuf>> Serializer for FBufSerializer<A> {
 
     #[inline]
     fn write(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
-        self.inner.borrow_mut().extend_from_slice(bytes);
-        Ok(())
+        let vec = self.inner.borrow_mut();
+        if vec.len() + bytes.len() > self.limit {
+            Err(LimitExceeded)
+        } else {
+            vec.extend_from_slice(bytes);
+            Ok(())
+        }
     }
 
     #[inline]
@@ -812,6 +822,9 @@ impl<A: Borrow<FBuf> + BorrowMut<FBuf>> Serializer for FBufSerializer<A> {
         debug_assert_eq!(pos & (mem::align_of::<T::Archived>() - 1), 0);
         let vec = self.inner.borrow_mut();
         let additional = mem::size_of::<T::Archived>();
+        if vec.len() + additional > self.limit {
+            return Err(LimitExceeded);
+        }
         vec.reserve(additional);
         vec.set_len(vec.len() + additional);
 
@@ -833,6 +846,9 @@ impl<A: Borrow<FBuf> + BorrowMut<FBuf>> Serializer for FBufSerializer<A> {
         debug_assert_eq!(from & (mem::align_of::<RelPtr<T::Archived>>() - 1), 0);
         let vec = self.inner.borrow_mut();
         let additional = mem::size_of::<RelPtr<T::Archived>>();
+        if vec.len() + additional > self.limit {
+            return Err(LimitExceeded);
+        }
         vec.reserve(additional);
         vec.set_len(vec.len() + additional);
 
