@@ -8,16 +8,6 @@ export default defineConfig(async () => {
     plugins: [sveltekit(), svg()],
     build: {
       minify: 'esbuild'
-    },
-    css: {
-      preprocessorOptions: {
-        scss: {
-          api: 'modern-compiler'
-        },
-        sass: {
-          api: 'modern-compiler'
-        }
-      }
     }
   } satisfies UserConfig
 })
