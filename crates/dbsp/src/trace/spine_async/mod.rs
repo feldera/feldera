@@ -151,18 +151,15 @@ where
 
     /// Returns this slot's contribution to the merger's priority.
     ///
-    /// Ordinarily this is the number of batches in the slot, but a slot with 1
-    /// batch has a score of 0 because no merges are possible. Otherwise we can
-    /// end up giving a spine with 3 batches each in a different slot a higher
-    /// priority (which can't do any merging) a higher priority than a spine
-    /// with 2 batches in a single slot (which can).
+    /// We return the number of batches that we can eliminate by fully
+    /// merging. It's important not to return a nonzero value if no merging is
+    /// possible, that is, if there is only only one batch then we must return
+    /// 0.  Otherwise, we can end up giving a spine with 3 batches across 3
+    /// slots (which can't do any merging) a higher priority than a spine with 2
+    /// batches in a single slot (which can), and in a case like that we will
+    /// never do any work.
     fn score(&self) -> usize {
-        let n = self.n_batches();
-        if n == 1 {
-            0
-        } else {
-            n
-        }
+        self.n_batches().saturating_sub(1)
     }
 }
 
