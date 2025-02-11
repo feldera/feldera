@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.apache.calcite.rel.RelNode;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
@@ -11,11 +12,15 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 
 import javax.annotation.Nullable;
+import java.util.List;
 
 /** Base class for source operators which represent tables. */
 public abstract class DBSPSourceTableOperator
         extends DBSPSourceBaseOperator
         implements IHasColumnsMetadata {
+    /** List of RelNodes that refer to this table.  This is only mutated while the first graph is constructed,
+     * and immutable afterward. */
+    public final List<RelNode> referredFrom;
     /** Original output row type, as a struct (not a tuple), i.e., with named columns. */
     public final DBSPTypeStruct originalRowType;
     public final CalciteObject sourceName;
@@ -37,11 +42,18 @@ public abstract class DBSPSourceTableOperator
     protected DBSPSourceTableOperator(
             CalciteObject node, String operation, CalciteObject sourceName,
             DBSPType outputType, DBSPTypeStruct originalRowType, boolean isMultiset,
-            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
+            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment,
+            List<RelNode> referredFrom) {
         super(node, operation, outputType, isMultiset, name, comment);
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;
         this.metadata = metadata;
+        this.referredFrom = referredFrom;
+    }
+
+    /** Mark the fact that a RelNode refers to this table */
+    public void refer(RelNode node) {
+        this.referredFrom.add(node);
     }
 
     @Override

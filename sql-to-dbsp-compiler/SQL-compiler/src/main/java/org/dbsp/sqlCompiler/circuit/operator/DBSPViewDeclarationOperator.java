@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
 
 /** Operator used in the creation of recursive circuits.
@@ -27,7 +28,8 @@ public final class DBSPViewDeclarationOperator
             CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, ProgramIdentifier name) {
-        super(node, "Z", sourceName, outputType, originalRowType, true, metadata, name, null);
+        super(node, "Z", sourceName, outputType, originalRowType, true,
+                metadata, name, null, new ArrayList<>());
         assert metadata.getColumnCount() == originalRowType.fields.size();
         assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();
     }

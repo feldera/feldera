@@ -266,7 +266,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
 
         if (result.sameCircuit(operator))
             result = operator;
-        // Must inset operator before the integrators before in topological order.
+        // Must insert operator before the integrators in topological order.
         this.map(operator, result);
 
         for (int i = 0; i < operator.outputCount(); i++) {

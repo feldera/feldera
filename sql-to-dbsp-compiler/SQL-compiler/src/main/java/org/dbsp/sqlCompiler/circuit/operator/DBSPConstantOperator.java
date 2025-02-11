@@ -42,7 +42,7 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
                                 boolean incremental, boolean isMultiset) {
         // Notice that we use the 'this.function' field to represent
         // the constant value.  Constants are not ClosureExpressions.
-        super(node, "", value, value.getType(), isMultiset);
+        super(node, "constant", value, value.getType(), isMultiset);
         this.incremental = incremental;
     }
 

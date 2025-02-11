@@ -1,10 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteObject;
 
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.IHasSourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -26,6 +26,11 @@ public class CalciteObject implements ICastable, IHasSourcePositionRange {
     @Override
     public String toString() {
         return "";
+    }
+
+    @Nullable
+    public String asJson() {
+        return null;
     }
 
     public String toInternalString() {
@@ -52,12 +57,12 @@ public class CalciteObject implements ICastable, IHasSourcePositionRange {
         return new CalciteRelDataType(type);
     }
 
-    public static CalciteObject create(SqlOperator operator) {
-        return new CalciteSqlOperator(operator);
-    }
-
     public static CalciteObject create(@Nullable RelNode context, RexNode node) {
         return new CalciteRexNode(context, node);
+    }
+
+    public static CalciteObject create(@Nullable RelNode context, AggregateCall node) {
+        return new CalciteAggregateNode(context, node);
     }
 
     public static CalciteObject create(SqlParserPos pos) { return new CalciteSqlParserPos(pos); }

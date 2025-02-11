@@ -97,6 +97,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
@@ -120,7 +121,6 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -996,6 +996,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Multiple queries can share an input.
             // Or the input may have been created by a CREATE TABLE statement.
             Utilities.putNew(this.nodeOperator, scan, source);
+            source.to(DBSPSourceTableOperator.class).refer(scan);
         } else {
             // Try a view if no table with this name exists.
             source = this.getCircuit().getView(tableName);
@@ -1020,7 +1021,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 source = new DBSPSourceMultisetOperator(
                         node, CalciteObject.EMPTY,
                         this.makeZSet(rowType), originalRowType,
-                        tableMeta, tableName, null);
+                        tableMeta, tableName, null, new ArrayList<>());
                 this.addOperator(source);
                 Utilities.putNew(this.nodeOperator, scan, source);
             }
@@ -3205,9 +3206,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CreateViewStatement previousView = this.currentView;
         this.currentView = view;
         RelNode rel = view.getRelNode();
-        Logger.INSTANCE.belowLevel(this, 2)
-                .appendSupplier(() -> SqlToRelCompiler.getPlan(rel, false))
-                .newline();
         this.go(rel);
         DBSPSimpleOperator op = this.getOperator(rel);
         if (view.emitFinalColumn(this.compiler) >= 0 && this.options.languageOptions.optimizationLevel < 2) {
@@ -3268,22 +3266,21 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 columnMetadata, view.getViewKind(), emitFinalIndex,
                 // The view is a system view if it's not visible
                 declare != null, !currentView.isVisible(), view.getProperties());
+        CalciteObject node = CalciteObject.create(root.rel);
         if (view.getViewKind() != SqlCreateView.ViewKind.LOCAL) {
             this.metadata.addView(view);
             // Create two operators chained, a ViewOperator and a SinkOperator.
-            DBSPViewOperator vo = new DBSPViewOperator(
-                    view.getCalciteObject(), view.relationName, view.getStatement(),
+            DBSPViewOperator vo = new DBSPViewOperator(node, view.relationName, view.getStatement(),
                     struct, meta, op.outputPort());
             this.addOperator(vo);
-            o = new DBSPSinkOperator(
-                    view.getCalciteObject(), view.relationName,
+            o = new DBSPSinkOperator(node, view.relationName,
                     view.getStatement(), struct, meta, vo.outputPort());
         } else {
             // We may already have a node for this output
             DBSPSimpleOperator previous = this.getCircuit().getView(view.relationName);
             if (previous != null)
                 return previous;
-            o = new DBSPViewOperator(view.getCalciteObject(), view.relationName,
+            o = new DBSPViewOperator(node, view.relationName,
                     view.getStatement(), struct, meta, op.outputPort());
         }
         this.addOperator(o);
@@ -3308,9 +3305,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPZSetExpression result;
         if (modify.rel instanceof LogicalTableScan scan) {
             // Support for INSERT INTO table (SELECT * FROM otherTable)
-            RelOptTable table = scan.getTable();
-            assert table != null;
-            ProgramIdentifier sourceTable = Utilities.toIdentifier(table.getQualifiedName());
+            RelOptTable relTbl = scan.getTable();
+            assert relTbl != null;
+            ProgramIdentifier sourceTable = Utilities.toIdentifier(relTbl.getQualifiedName());
             result = this.tableContents.getTableContents(sourceTable);
         } else if (modify.rel instanceof LogicalValues) {
             this.go(modify.rel);
@@ -3440,7 +3437,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 tableName, metadata, create.foreignKeys, materialized, appendOnly);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
-                tableMeta, tableName, def.getStatement());
+                tableMeta, tableName, def.getStatement(), new ArrayList<>());
         this.addOperator(result);
         this.metadata.addTable(create);
         return result;

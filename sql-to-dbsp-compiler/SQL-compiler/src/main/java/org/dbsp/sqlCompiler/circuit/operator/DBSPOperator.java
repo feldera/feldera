@@ -148,6 +148,13 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
 
     public abstract DBSPType streamType(int outputNumber);
 
+    public String getCompactName() {
+        String name = CompactName.getCompactName(this);
+        if (name == null)
+            name = Long.toString(this.getId());
+        return name;
+    }
+
     public OutputPort getOutput(int outputNo) {
         return new OutputPort(this, outputNo);
     }

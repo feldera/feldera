@@ -10,7 +10,7 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParserPos;
 
 public class CalciteRelNode extends CalciteObject {
-    final RelNode relNode;
+    public final RelNode relNode;
     public static final SqlDialect DIALECT = SqlDialect.DatabaseProduct.UNKNOWN.getDialect();
     static final RelToSqlConverter CONVERTER = new RelToSqlConverter(DIALECT);
 
@@ -32,6 +32,11 @@ public class CalciteRelNode extends CalciteObject {
             // Sometimes Calcite crashes when converting rel to SQL
             return this.relNode.toString();
         }
+    }
+
+    @Override
+    public String asJson() {
+        return Integer.toString(this.relNode.getId());
     }
 
     @Override

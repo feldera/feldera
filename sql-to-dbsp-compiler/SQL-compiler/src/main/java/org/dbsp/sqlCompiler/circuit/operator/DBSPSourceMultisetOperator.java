@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.apache.calcite.rel.RelNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
@@ -30,8 +31,9 @@ public final class DBSPSourceMultisetOperator
     public DBSPSourceMultisetOperator(
             CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
-            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
-        super(node, "multiset", sourceName, outputType, originalRowType, true, metadata, name, comment);
+            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment, List<RelNode> referredFrom) {
+        super(node, "multiset", sourceName, outputType, originalRowType, true,
+                metadata, name, comment, referredFrom);
         assert metadata.getColumnCount() == originalRowType.fields.size();
         assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();
     }
@@ -49,7 +51,7 @@ public final class DBSPSourceMultisetOperator
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceMultisetOperator(this.getNode(), this.sourceName,
                 outputType.to(DBSPTypeZSet.class), this.originalRowType,
-                this.metadata, this.tableName, this.comment).copyAnnotations(this);
+                this.metadata, this.tableName, this.comment, this.referredFrom).copyAnnotations(this);
     }
 
     @Override
@@ -58,7 +60,7 @@ public final class DBSPSourceMultisetOperator
         if (force)
             return new DBSPSourceMultisetOperator(
                     this.getNode(), this.sourceName, this.getOutputZSetType(), this.originalRowType,
-                    this.metadata, this.tableName, this.comment).copyAnnotations(this);
+                    this.metadata, this.tableName, this.comment, this.referredFrom).copyAnnotations(this);
         return this;
     }
 

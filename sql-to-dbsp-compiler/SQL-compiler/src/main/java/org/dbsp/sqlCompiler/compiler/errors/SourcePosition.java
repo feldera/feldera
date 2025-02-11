@@ -19,4 +19,19 @@ public class SourcePosition {
     public String toString() {
         return this.line + ":" + this.column;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+
+        SourcePosition that = (SourcePosition) o;
+        return line == that.line && column == that.column;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = line;
+        result = 31 * result + column;
+        return result;
+    }
 }

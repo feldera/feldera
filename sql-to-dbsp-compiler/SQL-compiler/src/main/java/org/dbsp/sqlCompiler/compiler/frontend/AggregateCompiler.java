@@ -89,6 +89,7 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.SEMIGROUP;
 
 /** Compiles SQL aggregate functions. */
 public class AggregateCompiler implements ICompilerComponent {
+    public final CalciteObject node;
     public final DBSPCompiler compiler;
     /** Type of result expected. */
     public final DBSPType resultType;
@@ -119,6 +120,7 @@ public class AggregateCompiler implements ICompilerComponent {
             ImmutableBitSet groups,
             boolean linearAllowed) {
         this.aggregateNode = node;
+        this.node = CalciteObject.create(node, call);
         this.linearAllowed = linearAllowed;
         this.call = call;
         this.groups = groups;
@@ -174,7 +176,6 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processBitOp(SqlBitOpAggFunction function) {
-        CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
@@ -204,7 +205,6 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processGrouping(SqlAbstractGroupFunction function) {
-        CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = this.nullableResultType.to(IsNumericType.class).getZero();
         if (this.filterArgument() != null) {
             throw new UnimplementedException("GROUPING with FILTER not implemented", node);
@@ -232,7 +232,6 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processCount(SqlCountAggFunction function) {
-        CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = this.resultType.to(IsNumericType.class).getZero();
         DBSPExpression one = this.resultType.to(DBSPTypeInteger.class).getOne();
         if (this.linearAllowed) {
@@ -293,7 +292,6 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processArrayAgg(SqlBasicAggFunction function) {
-        CalciteObject node = CalciteObject.create(function);
         SqlKind kind = function.getKind();
         assert kind == SqlKind.ARRAY_AGG;
 
@@ -346,7 +344,6 @@ public class AggregateCompiler implements ICompilerComponent {
             this.processArrayAgg(function);
             return;
         }
-        CalciteObject node = CalciteObject.create(function);
         DBSPTupleExpression tuple = Objects.requireNonNull(this.aggArgument).to(DBSPTupleExpression.class);
         assert tuple.fields != null && tuple.fields.length == 2: "Expected 2 arguments for " + kind;
         DBSPOpcode compareOpcode = switch (kind) {
@@ -422,7 +419,6 @@ public class AggregateCompiler implements ICompilerComponent {
 
     void processMinMax(SqlMinMaxAggFunction function) {
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
-        CalciteObject node = CalciteObject.create(function);
         DBSPOpcode call;
         boolean isMin = true;
         String semigroupName = switch (function.getKind()) {
@@ -455,7 +451,6 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processSum(SqlSumAggFunction function) {
-        CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
 
         if (this.linearAllowed) {
@@ -512,7 +507,6 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processSumZero(SqlSumEmptyIsZeroAggFunction function) {
-        CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = this.resultType.to(IsNumericType.class).getZero();
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
@@ -557,7 +551,6 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processSingle(SqlSingleValueAggFunction function) {
-        CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         if (this.filterArgument >= 0) {
@@ -577,7 +570,6 @@ public class AggregateCompiler implements ICompilerComponent {
 
     AggregateBase doAverage(SqlAvgAggFunction function) {
         assert function.getKind() == SqlKind.AVG;
-        CalciteObject node = CalciteObject.create(function);
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
 
         if (this.linearAllowed) {
@@ -671,7 +663,6 @@ public class AggregateCompiler implements ICompilerComponent {
     NonLinearAggregate doStddev(SqlAvgAggFunction function) {
         assert function.getKind() == SqlKind.STDDEV_POP || function.getKind() == SqlKind.STDDEV_SAMP;
         boolean isSamp = function.getKind() == SqlKind.STDDEV_SAMP;
-        CalciteObject node = CalciteObject.create(function);
         DBSPType aggregatedValueType = this.getAggregatedValueType();
         // TODO: linear implementation
         DBSPType intermediateResultType = aggregatedValueType.withMayBeNull(true);
@@ -765,7 +756,6 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processAvg(SqlAvgAggFunction function) {
-        CalciteObject node = CalciteObject.create(function);
         AggregateBase implementation = switch (function.getKind()) {
             case AVG -> this.doAverage(function);
             case STDDEV_POP, STDDEV_SAMP -> this.doStddev(function);
@@ -787,7 +777,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 this.process(this.aggFunction, SqlAbstractGroupFunction.class, this::processGrouping);
         if (!success || this.result == null)
             throw new UnimplementedException("Aggregate function " + this.aggFunction + " not yet implemented", 172,
-                    CalciteObject.create(this.aggFunction));
+                    CalciteObject.create(this.aggregateNode, this.call));
         return this.result;
     }
 

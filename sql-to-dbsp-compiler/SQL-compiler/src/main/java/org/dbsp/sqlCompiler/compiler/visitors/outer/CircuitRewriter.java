@@ -73,7 +73,7 @@ import java.util.List;
 import java.util.function.Predicate;
 
 /** Applies a function (this.transform) to every function within an operator,
- * and to every type within the operator. */
+ * and to every type within the operator.  All work is done in postorder operator methods. */
 public class CircuitRewriter extends CircuitCloneVisitor {
     public final IRTransform transform;
     /** Only optimize functions for nodes where this predicate returns 'true'.
@@ -162,7 +162,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !outputType.sameType(operator.outputType)) {
             result = new DBSPSourceMultisetOperator(operator.getNode(), operator.sourceName,
                     outputType.to(DBSPTypeZSet.class), originalRowType,
-                    operator.metadata, operator.getTableName(), operator.comment)
+                    operator.metadata, operator.getTableName(), operator.comment, operator.referredFrom)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -177,7 +177,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !outputType.sameType(operator.outputType)) {
             result = new DBSPSourceMapOperator(operator.getNode(), operator.sourceName,
                     operator.keyFields, outputType.to(DBSPTypeIndexedZSet.class), originalRowType,
-                    operator.metadata, operator.getTableName(), operator.comment)
+                    operator.metadata, operator.getTableName(), operator.comment, operator.referredFrom)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

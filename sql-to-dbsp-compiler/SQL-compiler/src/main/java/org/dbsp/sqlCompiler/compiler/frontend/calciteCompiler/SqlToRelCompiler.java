@@ -510,9 +510,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         return false;
     }
 
-    public static String getPlan(RelNode rel, boolean json) {
+    public static String getPlan(RelNode rel) {
         return RelOptUtil.dumpPlan("[Logical plan]", rel,
-                json ? SqlExplainFormat.JSON : SqlExplainFormat.TEXT,
+                SqlExplainFormat.TEXT,
                 SqlExplainLevel.NON_COST_ATTRIBUTES);
     }
 
@@ -591,7 +591,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         Logger.INSTANCE.belowLevel(this, level)
                 .append("Before optimizer")
                 .increase()
-                .appendSupplier(() -> getPlan(finalRel, false))
+                .appendSupplier(() -> getPlan(finalRel))
                 .decrease()
                 .newline();
 
@@ -604,7 +604,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         Logger.INSTANCE.belowLevel(this, level)
                 .append("After optimizer ")
                 .increase()
-                .appendSupplier(() -> getPlan(finalRel1, false))
+                .appendSupplier(() -> getPlan(finalRel1))
                 .decrease()
                 .newline();
         return rel;

@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -159,10 +160,9 @@ public abstract class DBSPNode
 
     @Override
     public String toString() {
-        StringBuilder builder = new StringBuilder();
-        IndentStream stream = new IndentStream(builder);
+        IndentStream stream = new IndentStreamBuilder();
         this.toString(stream);
-        return builder.toString();
+        return stream.toString();
     }
 
     public SourcePositionRange getSourcePosition() {
