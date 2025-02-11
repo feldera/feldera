@@ -112,6 +112,7 @@ class View(SqlObject):
             expected = self.get_data()
 
             tc = unittest.TestCase()
+            tc.maxDiff = None
             tc.assertCountEqual(
                 data, expected, f"\nASSERTION ERROR: failed view: {self.name}"
             )
