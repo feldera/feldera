@@ -15,6 +15,16 @@ from tests.arithmetic_tests.test_time import *  # noqa: F403
 from tests.arithmetic_tests.test_timestamp import *  # noqa: F403
 
 
+# Column naming conventions for the views:
+# ytm = YEAR to MONTH, ytm_str = YEAR to MONTH converted to string
+# dth = DAY TO HOUR, dth_str = DAY TO HOUR converted to string
+# dtm = DAY TO MINUTE, dtm_str = DAY TO MINUTE converted to string
+# dts = DAY to SECOND, dts_str = DAY to SECOND converted to string
+# htm = HOUR to MINUTE, htm_str = HOUR to MINUTE converted to string
+# hts = HOUR to SECOND, hts_str = HOUR to SECOND converted to string
+# mts = MINUTE to SECOND, mts_str = MINUTE to SECOND converted to string
+
+
 def register_tests_in_module(module, ta: TstAccumulator):
     """Registers all the tests in the specified module.
     Tests are classes that start with arithtst_.
