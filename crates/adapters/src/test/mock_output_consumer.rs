@@ -4,7 +4,15 @@ use crate::{transport::Step, OutputConsumer};
 use std::sync::{Arc, Mutex};
 
 pub struct MockOutputConsumer {
-    pub data: Arc<Mutex<Vec<(Option<Vec<u8>>, Option<Vec<u8>>)>>>,
+    pub data: Arc<
+        Mutex<
+            Vec<(
+                Option<Vec<u8>>,
+                Option<Vec<u8>>,
+                Vec<(String, Option<Vec<u8>>)>,
+            )>,
+        >,
+    >,
     max_buffer_size_bytes: usize,
 }
 
@@ -19,7 +27,13 @@ impl MockOutputConsumer {
         Self::with_max_buffer_size_bytes(usize::MAX)
     }
 
-    pub fn state(&self) -> Vec<(Option<Vec<u8>>, Option<Vec<u8>>)> {
+    pub fn state(
+        &self,
+    ) -> Vec<(
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+        Vec<(String, Option<Vec<u8>>)>,
+    )> {
         self.data.lock().unwrap().clone()
     }
 
@@ -30,7 +44,17 @@ impl MockOutputConsumer {
         }
     }
 
-    pub fn with_buffer(data: Arc<Mutex<Vec<(Option<Vec<u8>>, Option<Vec<u8>>)>>>) -> Self {
+    pub fn with_buffer(
+        data: Arc<
+            Mutex<
+                Vec<(
+                    Option<Vec<u8>>,
+                    Option<Vec<u8>>,
+                    Vec<(String, Option<Vec<u8>>)>,
+                )>,
+            >,
+        >,
+    ) -> Self {
         Self {
             data,
             max_buffer_size_bytes: usize::MAX,
@@ -48,14 +72,24 @@ impl OutputConsumer for MockOutputConsumer {
         self.data
             .lock()
             .unwrap()
-            .push((None, Some(buffer.to_vec())))
+            .push((None, Some(buffer.to_vec()), vec![]))
     }
-    fn push_key(&mut self, key: &[u8], val: Option<&[u8]>, _num_records: usize) {
+    fn push_key(
+        &mut self,
+        key: Option<&[u8]>,
+        val: Option<&[u8]>,
+        headers: &[(&str, Option<&[u8]>)],
+        _num_records: usize,
+    ) {
         // println!("push_key {:?} , {:?}", key, val);
-        self.data
-            .lock()
-            .unwrap()
-            .push((Some(key.to_vec()), val.map(|v| v.to_vec())))
+        self.data.lock().unwrap().push((
+            key.map(|k| k.to_vec()),
+            val.map(|v| v.to_vec()),
+            headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.map(|bytes| bytes.to_vec())))
+                .collect::<Vec<_>>(),
+        ))
     }
     fn batch_end(&mut self) {}
 }

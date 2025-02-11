@@ -177,7 +177,7 @@ fn parquet_output() {
             .lock()
             .unwrap()
             .iter()
-            .filter_map(|(_k, v)| v.clone())
+            .filter_map(|(_k, v, _headers)| v.clone())
             .flatten()
             .collect(),
     );
@@ -186,7 +186,7 @@ fn parquet_output() {
         .lock()
         .unwrap()
         .iter()
-        .filter_map(|(_k, v)| v.clone())
+        .filter_map(|(_k, v, _headers)| v.clone())
         .flatten()
         .collect::<Vec<_>>();
 

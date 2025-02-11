@@ -249,7 +249,12 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         Ok(())
     }
 
-    fn push_key(&mut self, _key: &[u8], _val: Option<&[u8]>) -> AnyResult<()> {
+    fn push_key(
+        &mut self,
+        _key: Option<&[u8]>,
+        _val: Option<&[u8]>,
+        _headers: &[(&str, Option<&[u8]>)],
+    ) -> AnyResult<()> {
         todo!()
     }
 

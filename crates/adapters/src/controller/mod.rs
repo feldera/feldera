@@ -2511,10 +2511,17 @@ impl OutputConsumer for OutputProbe {
         }
     }
 
-    fn push_key(&mut self, key: &[u8], val: Option<&[u8]>, num_records: usize) {
-        let num_bytes = key.len() + val.map(|v| v.len()).unwrap_or_default();
+    fn push_key(
+        &mut self,
+        key: Option<&[u8]>,
+        val: Option<&[u8]>,
+        headers: &[(&str, Option<&[u8]>)],
+        num_records: usize,
+    ) {
+        let num_bytes =
+            key.map(|k| k.len()).unwrap_or_default() + val.map(|v| v.len()).unwrap_or_default();
 
-        match self.endpoint.push_key(key, val) {
+        match self.endpoint.push_key(key, val, headers) {
             Ok(()) => {
                 self.controller
                     .status

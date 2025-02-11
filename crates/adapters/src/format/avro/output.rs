@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use tracing::{debug, error};
+use tracing::debug;
 
 // TODOs:
 // - Add options to specify schema by id or subject name and retrieve it from the registry.
@@ -82,7 +82,6 @@ impl OutputFormat for AvroOutputFormat {
 }
 
 pub(crate) struct AvroEncoder {
-    endpoint_name: String,
     /// Consumer to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
     pub(crate) value_schema: AvroSchema,
@@ -91,8 +90,6 @@ pub(crate) struct AvroEncoder {
     /// Buffer to store serialized avro records, reused across `encode` invocations.
     value_buffer: Vec<u8>,
     key_buffer: Vec<u8>,
-    /// Count of skipped deletes, used to rate-limit error messages.
-    skipped_deletes: usize,
     /// `True` if the serialized result should not include the schema ID.
     skip_schema_id: bool,
     update_format: AvroUpdateFormat,
@@ -296,13 +293,11 @@ impl AvroEncoder {
         }
 
         Ok(Self {
-            endpoint_name: endpoint_name.to_string(),
             output_consumer,
             value_schema,
             key_schema,
             value_buffer,
             key_buffer,
-            skipped_deletes: 0,
             skip_schema_id: config.skip_schema_id,
             update_format: config.update_format,
         })
@@ -345,21 +340,6 @@ impl Encoder for AvroEncoder {
             }
             let mut w = cursor.weight();
 
-            if w < 0 && !self.update_format.supports_deletes() {
-                // Log the first delete, and then each 10,000's delete.
-                if self.skipped_deletes % 10_000 == 0 {
-                    error!(
-                        "avro encoder {}: received a 'delete' record, but the '{}' format does not support deletes; record will be dropped (total number of dropped deletes: {})",
-                        self.endpoint_name,
-                        self.update_format,
-                        self.skipped_deletes + 1,
-                    );
-                }
-                self.skipped_deletes += 1;
-                cursor.step_key();
-                continue;
-            }
-
             if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
                 bail!(
                         "Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'."
@@ -368,7 +348,7 @@ impl Encoder for AvroEncoder {
 
             while w != 0 {
                 // TODO: resolve schema
-                let avro_value = if w > 0 {
+                let avro_value = if w > 0 || self.update_format == AvroUpdateFormat::Raw {
                     cursor
                         .key_to_avro(&self.value_schema, &HashMap::new())
                         .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?
@@ -390,6 +370,8 @@ impl Encoder for AvroEncoder {
 
                 match self.update_format {
                     AvroUpdateFormat::Raw => {
+                        let op = if w > 0 { b"insert" } else { b"delete" };
+
                         Self::serialize_avro_value(
                             self.skip_schema_id,
                             avro_value,
@@ -397,7 +379,12 @@ impl Encoder for AvroEncoder {
                             &mut self.value_buffer,
                         )?;
 
-                        self.output_consumer.push_buffer(&self.value_buffer, 1);
+                        self.output_consumer.push_key(
+                            None,
+                            Some(&self.value_buffer),
+                            &[("op", Some(op))],
+                            1,
+                        );
                     }
                     AvroUpdateFormat::ConfluentJdbc if w > 0 => {
                         Self::serialize_avro_value(
@@ -415,8 +402,9 @@ impl Encoder for AvroEncoder {
                         )?;
 
                         self.output_consumer.push_key(
-                            &self.key_buffer,
+                            Some(&self.key_buffer),
                             Some(&self.value_buffer),
+                            &[],
                             1,
                         );
                     }
@@ -428,7 +416,8 @@ impl Encoder for AvroEncoder {
                             &mut self.key_buffer,
                         )?;
 
-                        self.output_consumer.push_key(&self.key_buffer, None, 1);
+                        self.output_consumer
+                            .push_key(Some(&self.key_buffer), None, &[], 1);
                     }
                     AvroUpdateFormat::Debezium => unreachable!(),
                 }
