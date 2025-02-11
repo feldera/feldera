@@ -385,8 +385,12 @@ impl Encoder for JsonEncoder {
                     //     buffer.len() /*std::str::from_utf8(&buffer).unwrap()*/
                     // );
                     if !key_buffer.is_empty() {
-                        self.output_consumer
-                            .push_key(&key_buffer, Some(&buffer), num_records);
+                        self.output_consumer.push_key(
+                            Some(&key_buffer),
+                            Some(&buffer),
+                            &[],
+                            num_records,
+                        );
                     } else {
                         self.output_consumer.push_buffer(&buffer, num_records);
                     }
@@ -405,7 +409,7 @@ impl Encoder for JsonEncoder {
             }
             if !key_buffer.is_empty() {
                 self.output_consumer
-                    .push_key(&key_buffer, Some(&buffer), num_records);
+                    .push_key(Some(&key_buffer), Some(&buffer), &[], num_records);
             } else {
                 self.output_consumer.push_buffer(&buffer, num_records);
             }
@@ -634,7 +638,7 @@ mod test {
                     .lock()
                     .unwrap()
                     .iter()
-                    .filter_map(|(_k, v)| v.clone())
+                    .filter_map(|(_k, v, _headers)| v.clone())
                     .flatten()
                     .collect::<Vec<_>>()
             )
@@ -645,7 +649,7 @@ mod test {
             .lock()
             .unwrap()
             .iter()
-            .filter_map(|(_k, v)| v.clone())
+            .filter_map(|(_k, v, _headers)| v.clone())
             .flatten()
             .collect::<Vec<_>>();
         let deserializer = serde_json::Deserializer::from_slice(&consumer_data);
@@ -793,7 +797,7 @@ mod test {
             .lock()
             .unwrap()
             .iter()
-            .map(|(k, v)| {
+            .map(|(k, v, _headers)| {
                 (
                     k.clone()
                         .map(|k| (serde_json::from_slice::<serde_json::Value>(&k).unwrap())),

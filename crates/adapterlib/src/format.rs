@@ -208,8 +208,18 @@ pub trait OutputConsumer: Send {
     fn max_buffer_size_bytes(&self) -> usize;
 
     fn batch_start(&mut self, step: Step);
+
+    /// See OutputEndpoint::push_buffer.
     fn push_buffer(&mut self, buffer: &[u8], num_records: usize);
-    fn push_key(&mut self, key: &[u8], val: Option<&[u8]>, num_records: usize);
+
+    /// See OutputEndpoint::push_key.
+    fn push_key(
+        &mut self,
+        key: Option<&[u8]>,
+        val: Option<&[u8]>,
+        headers: &[(&str, Option<&[u8]>)],
+        num_records: usize,
+    );
     fn batch_end(&mut self);
 }
 

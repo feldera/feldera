@@ -5,7 +5,7 @@ use crate::transport::secret_resolver::resolve_secret;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use feldera_types::transport::kafka::KafkaOutputConfig;
-use rdkafka::message::OwnedHeaders;
+use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::{
     config::FromClientConfigAndContext,
     error::KafkaError,
@@ -184,15 +184,30 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         kafka_send(&self.kafka_producer, &self.config.topic, record)
     }
 
-    fn push_key(&mut self, key: &[u8], val: Option<&[u8]>) -> AnyResult<()> {
+    fn push_key(
+        &mut self,
+        key: Option<&[u8]>,
+        val: Option<&[u8]>,
+        headers: &[(&str, Option<&[u8]>)],
+    ) -> AnyResult<()> {
         let _guard = span(&self.config);
-        let mut record = <BaseRecord<[u8], [u8], ()>>::to(&self.config.topic).key(key);
+        let mut record = <BaseRecord<[u8], [u8], ()>>::to(&self.config.topic);
+
+        if let Some(key) = key {
+            record = record.key(key);
+        }
 
         if let Some(val) = val {
             record = record.payload(val);
         }
 
-        record = record.headers(self.headers.clone());
+        let mut all_headers = self.headers.clone();
+
+        for (key, value) in headers {
+            all_headers = all_headers.insert(Header { key, value: *value });
+        }
+
+        record = record.headers(all_headers);
         kafka_send(&self.kafka_producer, &self.config.topic, record)
     }
 

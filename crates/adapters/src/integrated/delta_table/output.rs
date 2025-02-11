@@ -410,7 +410,13 @@ impl OutputConsumer for DeltaTableWriter {
         unreachable!()
     }
 
-    fn push_key(&mut self, _key: &[u8], _val: Option<&[u8]>, _num_records: usize) {
+    fn push_key(
+        &mut self,
+        _key: Option<&[u8]>,
+        _val: Option<&[u8]>,
+        _headers: &[(&str, Option<&[u8]>)],
+        _num_records: usize,
+    ) {
         unreachable!()
     }
 
@@ -508,7 +514,12 @@ impl OutputEndpoint for DeltaTableWriter {
         unreachable!()
     }
 
-    fn push_key(&mut self, _key: &[u8], _val: Option<&[u8]>) -> AnyResult<()> {
+    fn push_key(
+        &mut self,
+        _key: Option<&[u8]>,
+        _val: Option<&[u8]>,
+        _headers: &[(&str, Option<&[u8]>)],
+    ) -> AnyResult<()> {
         unreachable!()
     }
 

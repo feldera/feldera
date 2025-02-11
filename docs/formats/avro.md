@@ -6,8 +6,9 @@ See [top-level connector documentation](/connectors/) for general information
 about configuring input and output connectors.
 :::
 
-Feldera supports sending and receiving data in the Avro format. While Avro-encoded messages are commonly
-transmitted over Kafka, any other supported [transport](/connectors/) can be used.
+Feldera supports sending and receiving data in the Avro format. We currently only support
+the Avro format in conjunction with Kafka [source](/connectors/sources/kafka) and
+[sink](/connectors/sinks/kafka) transport connectors.
 Avro is a strongly-typed format that requires a shared **schema** between the sender and receiver for successful
 data encoding and decoding.
 
@@ -23,9 +24,12 @@ include only schema identifiers:
 We support several Avro-based formats:
 
 * **Raw** - every message contains a single Avro-encoded record that represents a row in a SQL
-  table or view. This format does not carry any additional metadata that can be used to distinguish
-  inserts and deletes.  It is therefore only suitable for representing inserts and upserts, but not
-  deletions.
+  table or view.
+  * **Raw input**: An input connector configured with the raw Avro format treats all
+    incoming messages as inserts.
+  * **Raw output**: An output connector configured with the Raw Avro format includes an operation type
+   (`"op"`) as a header in each output Kafka message: `"op": "insert"` represents an insertion and
+   `"op": "delete"` representa a deletion.
 
 * **Debezium** (input only) - used to synchronize a Feldera table with an external database using
   [Debezium](https://debezium.io/).  See [Debezium source connector documentation](/connectors/sources/debezium)

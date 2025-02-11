@@ -609,14 +609,7 @@ where
         encoder.consumer().batch_end();
     }
 
-    let expected_output = OrdZSet::from_keys(
-        (),
-        batches
-            .concat()
-            .into_iter()
-            .filter(|Tup2(_, w)| *w > 0)
-            .collect(),
-    );
+    let expected_output = OrdZSet::from_keys((), batches.concat().into_iter().collect());
 
     let actual_output = OrdZSet::from_keys(
         (),
@@ -624,10 +617,15 @@ where
             .lock()
             .unwrap()
             .iter()
-            .map(|(_k, v)| {
+            .map(|(_k, v, headers)| {
                 let val = from_avro_datum(&schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
                 let value = from_avro_value::<T>(&val).unwrap();
-                Tup2(value, 1)
+                let w = if headers[0] == ("op".to_string(), Some(b"insert".to_vec())) {
+                    1
+                } else {
+                    -1
+                };
+                Tup2(value, w)
             })
             .collect(),
     );
@@ -695,7 +693,7 @@ fn test_confluent_avro_output<K, V, KF>(
         .lock()
         .unwrap()
         .iter()
-        .map(|(k, v)| {
+        .map(|(k, v, _headers)| {
             if let Some(v) = v {
                 let val = from_avro_datum(&schema, &mut &v[5..], None).unwrap();
                 let value = from_avro_value::<V>(&val).unwrap();
