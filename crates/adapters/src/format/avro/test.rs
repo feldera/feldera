@@ -395,6 +395,15 @@ fn test_extra_columns() {
                         "type": "map",
                         "values": "long"
                     }
+            },
+            {
+                "name": "dec",
+                "type": {
+                    "type": "bytes",
+                    "logicalType": "decimal",
+                    "precision": 10,
+                    "scale": 3
+                }
             }
         ]
     }"#;
@@ -462,7 +471,17 @@ fn test_non_null_to_nullable() {
                         "type": "map",
                         "values": "long"
                     }, "null"]
+            },
+            {
+                "name": "dec",
+                "type": {
+                    "type": "bytes",
+                    "logicalType": "decimal",
+                    "precision": 10,
+                    "scale": 3
+                }
             }
+
         ]
     }"#;
 
@@ -528,6 +547,15 @@ fn test_ms_time() {
                         "type": "map",
                         "values": "long"
                     }
+            },
+            {
+                "name": "dec",
+                "type": {
+                    "type": "bytes",
+                    "logicalType": "decimal",
+                    "precision": 10,
+                    "scale": 3
+                }
             }
         ]
     }"#;
@@ -626,7 +654,7 @@ where
             .iter()
             .map(|(_k, v)| {
                 let val = from_avro_datum(&schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
-                let value = from_avro_value::<T>(&val).unwrap();
+                let value = from_avro_value::<T>(&val, &schema).unwrap();
                 Tup2(value, 1)
             })
             .collect(),
@@ -698,12 +726,12 @@ fn test_confluent_avro_output<K, V, KF>(
         .map(|(k, v)| {
             if let Some(v) = v {
                 let val = from_avro_datum(&schema, &mut &v[5..], None).unwrap();
-                let value = from_avro_value::<V>(&val).unwrap();
+                let value = from_avro_value::<V>(&val, &schema).unwrap();
                 (Some(Tup2(value, 1)), None)
             } else {
                 let val =
                     from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-                let value = from_avro_value::<K>(&val).unwrap();
+                let value = from_avro_value::<K>(&val, &key_schema).unwrap();
                 (None, Some(Tup2(value, -1)))
             }
         })
