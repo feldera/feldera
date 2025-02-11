@@ -1,5 +1,9 @@
 use size_of::SizeOf;
-use std::{fmt::Debug, ops::DerefMut};
+use std::{
+    fmt::Debug,
+    hash::{Hash, Hasher},
+    ops::DerefMut,
+};
 
 use crate::{
     declare_trait_object, declare_typed_trait_object,
@@ -21,6 +25,8 @@ pub trait Data:
     /// Compute a hash of the object using default hasher and seed.
     fn default_hash(&self) -> u64;
 
+    fn dyn_hash(&self, hasher: &mut dyn Hasher);
+
     /// Cast any type that implements this trait to `&dyn Data`.
     ///
     /// This method will not be needed once trait downcasting has been stabilized.
@@ -33,10 +39,10 @@ pub trait Data:
 }
 
 /// The base trait for trait objects that DBSP can compute on.
-pub trait DataTrait: Data + DowncastTrait + ClonableTrait + ArchiveTrait + Eq + Ord {}
+pub trait DataTrait: Data + Hash + DowncastTrait + ClonableTrait + ArchiveTrait + Eq + Ord {}
 
 impl<Trait: ?Sized> DataTrait for Trait where
-    Trait: Data + DowncastTrait + ClonableTrait + ArchiveTrait + Eq + Ord
+    Trait: Data + Hash + DowncastTrait + ClonableTrait + ArchiveTrait + Eq + Ord
 {
 }
 
@@ -66,6 +72,10 @@ impl NumEntries for DynData {
 impl<T: DBData> Data for T {
     fn default_hash(&self) -> u64 {
         default_hash(self)
+    }
+
+    fn dyn_hash(&self, mut hasher: &mut dyn Hasher) {
+        self.hash(&mut hasher)
     }
 
     fn as_data(&self) -> &DynData {

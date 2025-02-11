@@ -34,6 +34,16 @@ macro_rules! declare_trait_object_with_archived {
         {
         }
 
+        impl<$($generic),*> std::hash::Hash for $type_alias<$($generic),*>
+        where
+            $($bound)*
+        {
+            fn hash<H>(&self, state: &mut H)
+            where H: std::hash::Hasher {
+                self.dyn_hash(state)
+            }
+        }
+
         impl<$($generic),*> Clone for Box<$type_alias<$($generic),*>>
         where
             $($bound)*
