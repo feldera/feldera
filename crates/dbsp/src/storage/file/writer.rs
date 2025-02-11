@@ -1082,9 +1082,12 @@ impl Writer {
             None
         };
 
-        // Add `key` to bloom filter.
-        self.bloom_filter
-            .insert(&item.0.default_hash().to_le_bytes());
+        if column == 0 {
+            // Add `key` to bloom filter.
+            self.bloom_filter
+                .insert(&item.0.default_hash().to_le_bytes());
+        }
+
         // Add `value` to row group for column.
         self.cws[column].rows.end += 1;
         self.cws[column].add_item(&mut self.writer, item, &row_group)
