@@ -32,6 +32,9 @@ mod data;
 #[cfg(feature = "with-kafka")]
 pub mod kafka;
 
+#[cfg(feature = "with-redis")]
+pub mod redis;
+
 pub mod http;
 
 mod mock_dezset;

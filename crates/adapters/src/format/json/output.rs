@@ -9,7 +9,7 @@ use crate::{
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_types::config::ConnectorConfig;
+use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
 use feldera_types::program_schema::{canonical_identifier, Relation};
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -56,26 +56,33 @@ impl OutputFormat for JsonOutputFormat {
         value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
-        let mut config = JsonEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
-            .map_err(|e| {
-                ControllerError::encoder_config_parse_error(
-                    endpoint_name,
-                    &e,
-                    &serde_yaml::to_string(config).unwrap_or_default(),
-                )
-            })?;
+        let mut json_config = JsonEncoderConfig::deserialize(
+            &config.format.as_ref().unwrap().config,
+        )
+        .map_err(|e| {
+            ControllerError::encoder_config_parse_error(
+                endpoint_name,
+                &e,
+                &serde_yaml::to_string(config).unwrap_or_default(),
+            )
+        })?;
 
-        validate(&config, endpoint_name, key_schema, value_schema)?;
+        if matches!(&config.transport, TransportConfig::RedisOutput(_)) {
+            json_config.update_format = JsonUpdateFormat::Redis;
+        };
+
+        validate(&json_config, endpoint_name, key_schema, value_schema)?;
 
         // Snowflake and Debezium require one record per message.
         if matches!(
-            config.update_format,
-            JsonUpdateFormat::Snowflake | JsonUpdateFormat::Debezium
+            json_config.update_format,
+            JsonUpdateFormat::Snowflake | JsonUpdateFormat::Debezium |
+            JsonUpdateFormat::Redis
         ) {
-            config.buffer_size_records = 1;
+            json_config.buffer_size_records = 1;
         }
 
-        Ok(Box::new(JsonEncoder::new(consumer, config, value_schema)))
+        Ok(Box::new(JsonEncoder::new(consumer, json_config, value_schema)))
     }
 }
 
@@ -96,6 +103,7 @@ fn validate(
         config.update_format,
         JsonUpdateFormat::InsertDelete
             | JsonUpdateFormat::Snowflake
+            | JsonUpdateFormat::Redis
             | JsonUpdateFormat::Debezium { .. }
     ) {
         return Err(ControllerError::output_format_not_supported(
@@ -108,10 +116,13 @@ fn validate(
     }
 
     if let Some(key_fields) = &config.key_fields {
-        if config.update_format != JsonUpdateFormat::Debezium {
+        if !matches!(
+            config.update_format,
+            JsonUpdateFormat::Debezium | JsonUpdateFormat::Redis
+        ) {
             return Err(ControllerError::invalid_encoder_configuration(
                 endpoint_name,
-                "'key_fields' property is only supported for the 'debezium' update format",
+                "'key_fields' property is only supported for the 'debezium' or 'redis' update format",
             ));
         }
         if key_fields.is_empty() {
@@ -150,6 +161,8 @@ struct JsonEncoder {
     /// Primary key fields.  When specified, only
     /// these fields must be included in the message key.
     key_fields: Option<HashSet<String>>,
+    ordered_key_fields: Option<Vec<String>>,
+    key_separator: Option<String>,
 }
 
 impl JsonEncoder {
@@ -171,10 +184,14 @@ impl JsonEncoder {
         let value_schema_str = build_value_schema(&config, schema);
         let key_schema_str = build_key_schema(&config, schema);
 
-        let key_fields = config
+        let canonical_key_fields = config
             .key_fields
             .as_ref()
-            .map(|fields| HashSet::from_iter(fields.iter().map(|f| canonical_identifier(f))));
+            .map(|fields| fields.iter().map(|f| canonical_identifier(f)));
+
+        let key_fields = canonical_key_fields.clone().map(HashSet::from_iter);
+        let ordered_key_fields = canonical_key_fields.map(|f| f.collect());
+        let key_separator = std::mem::take(&mut config.key_separator);
 
         Self {
             output_consumer,
@@ -189,6 +206,8 @@ impl JsonEncoder {
             stream_id: StdRng::from_entropy().gen_range(0..i64::MAX) as u64,
             seq_number: 0,
             key_fields,
+            ordered_key_fields,
+            key_separator,
         }
     }
 }
@@ -213,6 +232,8 @@ impl Encoder for JsonEncoder {
         let mut cursor = CursorWithPolarity::new(
             batch.cursor(RecordFormat::Json(self.config.json_flavor.clone().unwrap()))?,
         );
+
+        let mut redis_deletion = false;
 
         while cursor.key_valid() {
             if !cursor.val_valid() {
@@ -274,6 +295,40 @@ impl Encoder for JsonEncoder {
                             r#""__action":"{action}","__stream_id":{},"__seq_number":{}}}"#,
                             self.stream_id, self.seq_number
                         )?;
+                    }
+                    JsonUpdateFormat::Redis => {
+                        let Some(key_fields) = &self.key_fields else {
+                            unreachable!("key field cannot be empty in redis output config");
+                        };
+
+                        let Some(ordered_key_fields) = &self.ordered_key_fields else {
+                            unreachable!("key field cannot be empty in redis output config");
+                        };
+
+                        // Encode the key.
+                        let mut buf = Vec::new();
+
+                        cursor.serialize_key_fields(key_fields, &mut buf)?;
+                        let json: serde_json::Value = serde_json::from_slice(&buf)?;
+                        let keys: Vec<String> = ordered_key_fields
+                            .iter()
+                            .map(|k| {
+                                let x = json.get(k).expect("unreachable");
+                                if x.is_string() {
+                                    // we don't want the quotes if it is a string
+                                    x.as_str().expect("unreachable").to_owned()
+                                } else {
+                                    x.to_string()
+                                }
+                            })
+                            .collect();
+                        let sep = self.key_separator.as_deref().unwrap_or(":");
+                        let mut temp = keys.join(sep).into_bytes();
+                        key_buffer = std::mem::take(&mut temp);
+
+                        redis_deletion = w <= 0;
+
+                        cursor.serialize_key(&mut buffer)?;
                     }
                     JsonUpdateFormat::Debezium => {
                         // Crate a Debezium-compliant Kafka message.  The key of the messages
@@ -396,7 +451,7 @@ impl Encoder for JsonEncoder {
                     if !key_buffer.is_empty() {
                         self.output_consumer.push_key(
                             Some(&key_buffer),
-                            Some(&buffer),
+                            if redis_deletion { None } else { Some(&buffer) },
                             &[],
                             num_records,
                         );
@@ -417,13 +472,20 @@ impl Encoder for JsonEncoder {
                 buffer.extend_from_slice(b"]\n");
             }
             if !key_buffer.is_empty() {
-                self.output_consumer
-                    .push_key(Some(&key_buffer), Some(&buffer), &[], num_records);
+                self.output_consumer.push_key(
+                    Some(&key_buffer),
+                    if redis_deletion { None } else { Some(&buffer) },
+                    &[],
+                    num_records,
+                );
             } else {
                 self.output_consumer.push_buffer(&buffer, num_records);
             }
 
             buffer.clear();
+            if matches!(self.config.update_format, JsonUpdateFormat::Redis) {
+                key_buffer.clear();
+            }
         }
 
         self.buffer = buffer;
@@ -552,6 +614,7 @@ mod test {
             buffer_size_records: 3,
             array,
             key_fields: None,
+            key_separator: None,
         };
 
         let consumer = MockOutputConsumer::new();
@@ -751,6 +814,7 @@ mod test {
             buffer_size_records: 3,
             array: false,
             key_fields: None,
+            key_separator: None,
         };
 
         let consumer = MockOutputConsumer::with_max_buffer_size_bytes(32);
@@ -781,6 +845,7 @@ mod test {
             buffer_size_records: 1,
             array: false,
             key_fields: Some(vec!["id".to_string(), "s".to_string()]),
+            key_separator: None,
         };
 
         let consumer = MockOutputConsumer::new();
@@ -840,6 +905,61 @@ mod test {
         ];
 
         assert_eq!(actual_output, expected_output)
+    }
+
+    #[test]
+    fn test_redis() {
+        let config = JsonEncoderConfig {
+            update_format: JsonUpdateFormat::Redis,
+            json_flavor: None,
+            buffer_size_records: 1,
+            array: false,
+            key_fields: Some(vec!["id".to_owned(), "s".to_owned()]),
+            key_separator: None,
+        };
+
+        let consumer = MockOutputConsumer::new();
+        let consumer_data = consumer.data.clone();
+
+        let mut encoder = JsonEncoder::new(
+            Box::new(consumer),
+            config,
+            &Relation::new(
+                "TestStruct".into(),
+                TestStruct::schema(),
+                false,
+                BTreeMap::new(),
+            ),
+        );
+
+        let zset = OrdZSet::from_keys((), test_data()[0].clone());
+
+        encoder
+            .encode(&SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatchReader)
+            .unwrap();
+
+        let actual_output = consumer_data
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(k, v, _headers)| {
+                (
+                    String::from_utf8(k.clone().unwrap()).unwrap(),
+                    v.as_ref()
+                        .map(|v| serde_json::from_slice::<serde_json::Value>(v).unwrap()),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let expected_output = vec![
+            ("1:bar".to_owned(), None),
+            (
+                "0:foo".to_owned(),
+                Some(json!({"id":0, "s":"foo", "b":true, "i": null})),
+            ),
+        ];
+
+        assert_eq!(actual_output, expected_output);
     }
 
     #[test]
