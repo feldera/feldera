@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 
 use crate::{
-    algebra::{OrdZSet, ZBatch},
+    algebra::{HasOne, OrdZSet, ZBatch},
     circuit::{
         circuit_builder::RefStreamValue,
         operator_traits::{BinaryOperator, Operator},
     },
     dynamic::{DataTrait, DynData, DynUnit, Erase},
-    trace::{Batch, BatchReader, BatchReaderFactories, Builder, Cursor},
+    trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     Circuit, DBData, RootCircuit, Scope, Stream, ZWeight,
 };
 
@@ -194,10 +194,11 @@ where
 
         let mut cursor = data.cursor();
 
-        let mut errors =
-            <OrdZSet<E> as Batch>::Builder::new_builder(&self.factories.errors_factory, ());
-
-        let mut error = self.factories.errors_factory.key_factory().default_box();
+        let mut errors = self
+            .factories
+            .errors_factory
+            .weighted_items_factory()
+            .default_box();
 
         while cursor.key_valid() {
             if (self.filter_func)(threshold, cursor.key()) {
@@ -209,16 +210,19 @@ where
             } else {
                 while cursor.val_valid() {
                     let w = **cursor.weight();
-                    (self.report_func)(threshold, cursor.key(), cursor.val(), w, &mut error);
-
-                    errors.push_vals(&mut error, ().erase_mut(), 1.erase_mut());
+                    errors.push_with(&mut |item| {
+                        let (kv, weight) = item.split_mut();
+                        **weight = HasOne::one();
+                        (self.report_func)(threshold, cursor.key(), cursor.val(), w, kv.fst_mut());
+                    });
                     cursor.step_val();
                 }
             }
             cursor.step_key();
         }
 
-        self.error_stream_val.put(errors.done());
+        let errors = <OrdZSet<E>>::dyn_from_tuples(&self.factories.errors_factory, (), &mut errors);
+        self.error_stream_val.put(errors);
         builder.done()
     }
 }
@@ -281,10 +285,11 @@ where
 
         let mut cursor = data.cursor();
 
-        let mut errors =
-            <OrdZSet<E> as Batch>::Builder::new_builder(&self.factories.errors_factory, ());
-
-        let mut error = self.factories.errors_factory.key_factory().default_box();
+        let mut errors = self
+            .factories
+            .errors_factory
+            .weighted_items_factory()
+            .default_box();
 
         while cursor.key_valid() {
             while cursor.val_valid() {
@@ -293,16 +298,19 @@ where
                 if (self.filter_func)(threshold, cursor.key(), cursor.val()) {
                     builder.push_refs(cursor.key(), cursor.val(), w.erase());
                 } else {
-                    (self.report_func)(threshold, cursor.key(), cursor.val(), w, &mut error);
-
-                    errors.push_vals(&mut error, ().erase_mut(), 1.erase_mut());
+                    errors.push_with(&mut |item| {
+                        let (kv, weight) = item.split_mut();
+                        **weight = HasOne::one();
+                        (self.report_func)(threshold, cursor.key(), cursor.val(), w, kv.fst_mut());
+                    });
                 }
                 cursor.step_val();
             }
             cursor.step_key();
         }
 
-        self.error_stream_val.put(errors.done());
+        let errors = <OrdZSet<E>>::dyn_from_tuples(&self.factories.errors_factory, (), &mut errors);
+        self.error_stream_val.put(errors);
         builder.done()
     }
 }
