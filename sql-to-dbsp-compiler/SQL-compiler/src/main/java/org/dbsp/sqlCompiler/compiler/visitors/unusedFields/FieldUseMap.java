@@ -300,14 +300,15 @@ public class FieldUseMap {
 
         @Override
         public DBSPExpression allUsedFields(DBSPExpression from, int depth) {
+            if (depth == 0)
+                return from.applyCloneIfNeeded();
+
             boolean isRaw = this.getTupleType().isRaw();
-            int size = depth <= 0 || isRaw ? this.size() : this.getCompressedSize();
+            int size = isRaw ? this.size() : this.getCompressedSize();
             DBSPExpression[] fields = new DBSPExpression[size];
             int index = 0;
             for (int i = 0; i < this.size(); i++) {
-                if (depth <= 0) {
-                    fields[index++] = from.field(i).applyCloneIfNeeded();
-                } else if (this.fields.get(i).anyUsed() || isRaw) {
+                if (this.fields.get(i).anyUsed() || isRaw) {
                     // For raw tuples never discard fields, rather return Tup0.
                     fields[index++] = this.fields.get(i).allUsedFields(from.field(i), depth - 1);
                 }

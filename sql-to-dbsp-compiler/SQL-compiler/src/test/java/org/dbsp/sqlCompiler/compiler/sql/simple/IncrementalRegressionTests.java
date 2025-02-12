@@ -640,8 +640,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 if (c.getName().contains("sql")) {
                     System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());
-                    this.compileRustTestCase(sql);
-                    // this.getCC(sql);
+                    // this.compileRustTestCase(sql);
+                    this.getCC(sql);
                 }
             }
         }

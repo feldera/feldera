@@ -26,6 +26,25 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3517() {
+        this.getCCS("""
+                create table t_problematic
+                    ( r0 ROW
+                        ( j00 VARCHAR
+                        )
+                    , r1 ROW
+                        ( r10 ROW
+                            ( j100 VARCHAR
+                            )
+                        , j11 VARCHAR
+                        )
+                    );
+                create view v0 as select parse_json(t_problematic.r1.r10.j100) from t_problematic;
+                create view v1 as select parse_json(t_problematic.r1.j11) from t_problematic;
+                """);
+    }
+
+    @Test
     public void internalIssue174() {
         this.compileRustTestCase("""
                 CREATE FUNCTION a2m(input VARIANT ARRAY) RETURNS VARIANT NOT NULL AS VariantNull();
