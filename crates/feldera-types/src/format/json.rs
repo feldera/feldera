@@ -161,6 +161,9 @@ pub enum JsonUpdateFormat {
 
     #[serde(rename = "raw")]
     Raw,
+
+    #[serde(rename = "redis")]
+    Redis,
 }
 
 impl Display for JsonUpdateFormat {
@@ -171,6 +174,7 @@ impl Display for JsonUpdateFormat {
             JsonUpdateFormat::Debezium => write!(f, "debezium"),
             JsonUpdateFormat::Snowflake => write!(f, "snowflake"),
             JsonUpdateFormat::Raw => write!(f, "raw"),
+            JsonUpdateFormat::Redis => write!(f, "redis"),
         }
     }
 }
@@ -229,6 +233,7 @@ pub struct JsonEncoderConfig {
     ///
     /// This option is only valid with the `debezium` update format.
     pub key_fields: Option<Vec<String>>,
+    pub key_separator: Option<String>,
 }
 
 impl Default for JsonEncoderConfig {
@@ -239,6 +244,7 @@ impl Default for JsonEncoderConfig {
             buffer_size_records: 10_000,
             array: false,
             key_fields: None,
+            key_separator: Some(":".to_string()),
         }
     }
 }
