@@ -4,7 +4,7 @@ services:
     profiles: [ "kafka-connect",
                 "demo-debezium-mysql", "demo-snowflake-sink", "demo-debezium-jdbc",
                 "demo-debezium-postgres" ]
-    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.36.0}
+    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.37.0}
     build:
       context: ../
       dockerfile: deploy/Dockerfile.kafka-connect
