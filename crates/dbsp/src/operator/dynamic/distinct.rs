@@ -2,6 +2,7 @@
 
 use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metrics::Gauge;
+use crate::trace::TupleBuilder;
 use crate::{
     algebra::{
         AddByRef, HasOne, HasZero, IndexedZSet, IndexedZSetReader, Lattice, OrdIndexedZSet,
@@ -375,11 +376,12 @@ where
     async fn eval(&mut self, delta: &Z, delayed_integral: &I) -> Z {
         self.num_inputs += delta.len();
 
-        let mut builder = Z::Builder::with_capacity(&self.input_factories, (), delta.len());
+        let mut builder = Z::Builder::with_capacity(&self.input_factories, delta.len());
         let mut delta_cursor = delta.cursor();
         let mut integral_cursor = delayed_integral.cursor();
 
         while delta_cursor.key_valid() {
+            let mut any_values = false;
             if integral_cursor.seek_key_exact(delta_cursor.key()) {
                 while delta_cursor.val_valid() {
                     let w = **delta_cursor.weight();
@@ -397,11 +399,13 @@ where
                     if old_weight.le0() {
                         // Weight changes from non-positive to positive.
                         if new_weight.ge0() && !new_weight.is_zero() {
-                            builder.push_refs(delta_cursor.key(), v, ZWeight::one().erase());
+                            builder.push_val_diff(v, ZWeight::one().erase());
+                            any_values = true;
                         }
                     } else if new_weight.le0() {
                         // Weight changes from positive to non-positive.
-                        builder.push_refs(delta_cursor.key(), v, ZWeight::one().neg().erase());
+                        builder.push_val_diff(v, ZWeight::one().neg().erase());
+                        any_values = true;
                     }
 
                     delta_cursor.step_val();
@@ -411,15 +415,15 @@ where
                     let new_weight = **delta_cursor.weight();
 
                     if new_weight.ge0() && !new_weight.is_zero() {
-                        builder.push_refs(
-                            delta_cursor.key(),
-                            delta_cursor.val(),
-                            ZWeight::one().erase(),
-                        );
+                        builder.push_val_diff(delta_cursor.val(), ZWeight::one().erase());
+                        any_values = true;
                     }
                     delta_cursor.step_val();
                 }
             };
+            if any_values {
+                builder.push_key(delta_cursor.key());
+            }
 
             delta_cursor.step_key();
         }
@@ -609,7 +613,7 @@ where
         key: &Z::Key,
         val: &Z::Val,
         trace_cursor: &mut T::Cursor<'_>,
-        output: &mut Z::Builder,
+        output: &mut TupleBuilder<Z::Builder, Z>,
         item: &mut DynPair<DynPair<Z::Key, Z::Val>, Z::R>,
     ) {
         if trace_cursor.key_valid() && trace_cursor.key() == key {
@@ -656,7 +660,7 @@ where
                 // compute the partial derivative.
                 let output_weight = Self::partial_derivative(&self.distinct_vals);
                 if !output_weight.is_zero() {
-                    output.push_refs(key, val, output_weight.erase());
+                    output.push_refs(key, val, &(), output_weight.erase());
                 }
 
                 let (kv, weight) = item.split_mut();
@@ -825,7 +829,8 @@ where
         self.empty_input = delta.is_empty();
 
         // We iterate over keys and values in order, so it is safe to use `Builder`.
-        let mut result_builder = Z::Builder::with_capacity(&self.input_factories, (), delta.len());
+        let result_builder = Z::Builder::with_capacity(&self.input_factories, delta.len());
+        let mut result_builder = TupleBuilder::new(&self.input_factories, result_builder);
 
         let mut delta_cursor = delta.cursor();
         let mut trace_cursor = trace.cursor();

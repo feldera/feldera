@@ -14,10 +14,9 @@ use crate::{
     },
     time::{Antichain, AntichainRef},
     trace::{
-        cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
         ord::{filter, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, Merger, Serializer, TimedBuilder, WeightedItem,
+        Deserializer, Filter, Merger, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
@@ -46,6 +45,7 @@ where
     item_factory: &'static dyn Factory<DynPair<K, DynUnit>>,
     weighted_item_factory: &'static dyn Factory<WeightedItem<K, DynUnit, R>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>>,
+    weighted_vals_factory: &'static dyn Factory<DynWeightedPairs<DynUnit, R>>,
 }
 
 impl<K, R> Clone for FileWSetFactories<K, R>
@@ -62,6 +62,7 @@ where
             item_factory: self.item_factory,
             weighted_item_factory: self.weighted_item_factory,
             weighted_items_factory: self.weighted_items_factory,
+            weighted_vals_factory: self.weighted_vals_factory,
         }
     }
 }
@@ -85,6 +86,7 @@ where
             item_factory: WithFactory::<Tup2<KType, ()>>::FACTORY,
             weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::FACTORY,
             weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::FACTORY,
+            weighted_vals_factory: WithFactory::<LeanVec<Tup2<(), RType>>>::FACTORY,
         }
     }
 
@@ -124,6 +126,10 @@ where
         &self,
     ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
         self.weighted_items_factory
+    }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynUnit, R>> {
+        self.weighted_vals_factory
     }
 
     fn time_diffs_factory(
@@ -765,21 +771,6 @@ where
     }
 }
 
-impl<K, R> HasTimeDiffCursor<K, DynUnit, (), R> for FileWSetCursor<'_, K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    type TimeDiffCursor<'a>
-        = SingletonTimeDiffCursor<'a, R>
-    where
-        Self: 'a;
-
-    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        SingletonTimeDiffCursor::new(self.val_valid().then(|| self.diff.as_ref()))
-    }
-}
-
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
 pub struct FileWSetBuilder<K, R>
@@ -791,6 +782,7 @@ where
     factories: FileWSetFactories<K, R>,
     #[size_of(skip)]
     writer: Writer1<K, R>,
+    weight: Box<R>,
 }
 
 impl<K, R> Builder<FileWSet<K, R>> for FileWSetBuilder<K, R>
@@ -799,15 +791,8 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    #[inline]
-    fn new_builder(factories: &<FileWSet<K, R> as BatchReader>::Factories, time: ()) -> Self {
-        Self::with_capacity(factories, time, 1_000_000)
-    }
-
-    #[inline]
     fn with_capacity(
         factories: &<FileWSet<K, R> as BatchReader>::Factories,
-        _time: (),
         capacity: usize,
     ) -> Self {
         Self {
@@ -820,47 +805,24 @@ where
                 capacity,
             )
             .unwrap(),
+            weight: factories.weight_factory().default_box(),
         }
     }
 
-    #[inline]
-    fn reserve(&mut self, _additional: usize) {}
-
-    #[inline]
-    fn push(&mut self, item: &mut WeightedItem<K, DynUnit, R>) {
-        let (kv, r) = item.split();
-        let (k, v) = kv.split();
-
-        self.push_refs(k, v, r);
-    }
-
-    #[inline(never)]
-    fn done(self) -> FileWSet<K, R> {
+    fn done_with_bounds(self, _bounds: (Antichain<()>, Antichain<()>)) -> FileWSet<K, R> {
         FileWSet {
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap()),
         }
     }
 
-    fn push_refs(&mut self, key: &K, _val: &DynUnit, weight: &R) {
-        self.writer.write0((key, weight)).unwrap();
+    fn push_key(&mut self, key: &K) {
+        self.writer.write0((key, &*self.weight)).unwrap();
     }
 
-    fn push_vals(&mut self, key: &mut K, _val: &mut DynUnit, weight: &mut R) {
-        self.push_refs(key, &(), weight)
-    }
-}
+    fn push_val(&mut self, _val: &DynUnit) {}
 
-impl<K, R> TimedBuilder<FileWSet<K, R>> for FileWSetBuilder<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn push_time(&mut self, key: &K, val: &DynUnit, _time: &(), weight: &R) {
-        self.push_refs(key, val, weight);
-    }
-
-    fn done_with_bounds(self, _lower: Antichain<()>, _upper: Antichain<()>) -> FileWSet<K, R> {
-        self.done()
+    fn push_time_diff(&mut self, _time: &(), weight: &R) {
+        weight.clone_to(&mut self.weight);
     }
 }

@@ -12,6 +12,7 @@ use crate::{
     trace::{
         cursor::{CursorEmpty, CursorGroup, CursorPair},
         BatchFactories, BatchReaderFactories, Builder, Cursor, OrdIndexedWSetFactories, Spine,
+        TupleBuilder,
     },
     Circuit, DynZWeight, RootCircuit, Stream,
 };
@@ -399,7 +400,10 @@ where
         let mut input_trace_cursor = input_trace.cursor();
         let mut output_trace_cursor = output_trace.cursor();
 
-        let mut builder = OB::Builder::with_capacity(&self.output_factories, (), delta.len());
+        let mut builder = TupleBuilder::new(
+            &self.output_factories,
+            OB::Builder::with_capacity(&self.output_factories, delta.len()),
+        );
 
         while delta_cursor.key_valid() {
             let key = clone_box(delta_cursor.key());
@@ -410,7 +414,7 @@ where
             let mut cb_asc = |val: &mut OB::Val, w: &mut B::R| {
                 key.clone_to(&mut key2);
                 // println!("val: {val:?}, w: {w:?}");
-                builder.push_vals(&mut key2, val, w);
+                builder.push_vals(&mut key2, val, &mut (), w);
             };
             // Output callback that pushes to an intermediate buffer.
             let mut cb_desc = |val: &mut OB::Val, w: &mut B::R| {

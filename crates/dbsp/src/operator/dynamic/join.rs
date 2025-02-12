@@ -959,7 +959,7 @@ where
 
         // Choose capacity heuristically.
         let mut builder =
-            Z::Builder::with_capacity(&self.output_factories, (), min(i1.len(), i2.len()));
+            Z::Builder::with_capacity(&self.output_factories, min(i1.len(), i2.len()));
 
         let mut output = output_key_factory.default_box();
 
@@ -977,12 +977,9 @@ where
 
                             (self.join_func)(cursor1.key(), v1, v2, output.as_mut());
 
-                            Builder::push_vals(
-                                &mut builder,
-                                output.as_mut(),
-                                ().erase_mut(),
-                                w1.mul_by_ref(&w2).erase_mut(),
-                            );
+                            builder
+                                .push_val_diff_mut(().erase_mut(), w1.mul_by_ref(&w2).erase_mut());
+                            builder.push_key_mut(output.as_mut());
                             cursor2.step_val();
                         }
 

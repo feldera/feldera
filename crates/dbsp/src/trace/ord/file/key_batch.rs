@@ -13,10 +13,9 @@ use crate::{
     },
     time::{Antichain, AntichainRef},
     trace::{
-        cursor::{HasTimeDiffCursor, TimeDiffCursor},
         ord::{filter, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Filter, Merger, TimedBuilder, WeightedItem,
+        Filter, Merger, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
@@ -48,6 +47,7 @@ where
     opt_key_factory: &'static dyn Factory<DynOpt<K>>,
     weighted_item_factory: &'static dyn Factory<WeightedItem<K, DynUnit, R>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>>,
+    weighted_vals_factory: &'static dyn Factory<DynWeightedPairs<DynUnit, R>>,
     pub timediff_factory: &'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>,
 }
 
@@ -69,6 +69,7 @@ where
             opt_key_factory: self.opt_key_factory,
             weighted_item_factory: self.weighted_item_factory,
             weighted_items_factory: self.weighted_items_factory,
+            weighted_vals_factory: self.weighted_vals_factory,
             timediff_factory: self.timediff_factory,
         }
     }
@@ -97,6 +98,7 @@ where
             opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
             weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::FACTORY,
             weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::FACTORY,
+            weighted_vals_factory: WithFactory::<LeanVec<Tup2<(), RType>>>::FACTORY,
             timediff_factory: WithFactory::<LeanVec<Tup2<T, RType>>>::FACTORY,
         }
     }
@@ -136,6 +138,10 @@ where
         &self,
     ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
         self.weighted_items_factory
+    }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynUnit, R>> {
+        self.weighted_vals_factory
     }
 
     fn time_diffs_factory(
@@ -399,12 +405,10 @@ where
                     *fuel -= 1;
                 });
                 self.time_diffs.consolidate();
-                for i in 0..self.time_diffs.len() {
-                    let (time, diff) = self.time_diffs[i].split();
-                    self.writer.write1((time, diff)).unwrap();
-                }
-
                 if !self.time_diffs.is_empty() {
+                    for (t, d) in self.time_diffs.dyn_iter().map(|td| td.split()) {
+                        self.writer.write1((t, d)).unwrap();
+                    }
                     self.writer
                         .write0((cursor.key.as_ref(), ().erase()))
                         .unwrap();
@@ -654,18 +658,6 @@ type RawKeyCursor<'s, K, T, R> = FileCursor<
     ),
 >;
 
-type RawTimeDiffCursor<'s, K, T, R> = FileCursor<
-    's,
-    DynDataTyped<T>,
-    R,
-    (),
-    (
-        &'static K,
-        &'static DynUnit,
-        (&'static DynDataTyped<T>, &'static R, ()),
-    ),
->;
-
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf)]
 pub struct FileKeyCursor<'s, K, T, R>
@@ -877,54 +869,6 @@ where
     }
 }
 
-pub struct FileKeyTimeDiffCursor<'a, K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    cursor: RawTimeDiffCursor<'a, K, T, R>,
-    time: T,
-}
-
-impl<'a, K, T, R> TimeDiffCursor<'a, T, R> for FileKeyTimeDiffCursor<'a, K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn current<'b>(&'b mut self, tmp: &'b mut R) -> Option<(&'b T, &'b R)> {
-        if unsafe { self.cursor.item((&mut self.time, tmp)) }.is_some() {
-            Some((&self.time, tmp))
-        } else {
-            None
-        }
-    }
-
-    fn step(&mut self) {
-        self.cursor.move_next().unwrap();
-    }
-}
-
-impl<K, T, R> HasTimeDiffCursor<K, DynUnit, T, R> for FileKeyCursor<'_, K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    type TimeDiffCursor<'a>
-        = FileKeyTimeDiffCursor<'a, K, T, R>
-    where
-        Self: 'a;
-
-    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        FileKeyTimeDiffCursor {
-            cursor: self.cursor.next_column().unwrap().first().unwrap(),
-            time: T::default(),
-        }
-    }
-}
-
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
 pub struct FileKeyBuilder<K, T, R>
@@ -935,55 +879,9 @@ where
 {
     #[size_of(skip)]
     factories: FileKeyBatchFactories<K, T, R>,
-    time: T,
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, DynDataTyped<T>, R>,
     key: Box<DynOpt<K>>,
-}
-
-impl<K, T, R> TimedBuilder<FileKeyBatch<K, T, R>> for FileKeyBuilder<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    /// Pushes a tuple including `time` into the builder.
-    ///
-    /// A caller that uses this must finalize the batch with
-    /// [`Self::done_with_bounds`], supplying correct upper and lower bounds, to
-    /// ensure that the final batch's invariants are correct.
-    #[inline]
-    fn push_time(&mut self, key: &K, _val: &DynUnit, time: &T, weight: &R) {
-        if let Some(cur_key) = self.key.get() {
-            if cur_key != key {
-                self.writer.write0((cur_key, ().erase())).unwrap();
-                self.key.from_ref(key);
-            }
-        } else {
-            self.key.from_ref(key);
-        }
-        self.writer.write1((time, weight)).unwrap();
-    }
-
-    /// Finalizes a batch with lower bound `lower` and upper bound `upper`.
-    /// This is only necessary if `push_time()` was used; otherwise, use
-    /// [`Self::done`] instead.
-    #[inline(never)]
-    fn done_with_bounds(
-        mut self,
-        lower: Antichain<T>,
-        upper: Antichain<T>,
-    ) -> FileKeyBatch<K, T, R> {
-        if let Some(key) = self.key.get() {
-            self.writer.write0((key, ().erase())).unwrap();
-        }
-        FileKeyBatch {
-            factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap()),
-            lower,
-            upper,
-        }
-    }
 }
 
 impl<K, T, R> Builder<FileKeyBatch<K, T, R>> for FileKeyBuilder<K, T, R>
@@ -994,15 +892,9 @@ where
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn new_builder(factories: &FileKeyBatchFactories<K, T, R>, time: T) -> Self {
-        Self::with_capacity(factories, time, 1_000_000)
-    }
-
-    #[inline]
-    fn with_capacity(factories: &FileKeyBatchFactories<K, T, R>, time: T, capacity: usize) -> Self {
+    fn with_capacity(factories: &FileKeyBatchFactories<K, T, R>, capacity: usize) -> Self {
         Self {
             factories: factories.clone(),
-            time,
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
@@ -1016,36 +908,26 @@ where
         }
     }
 
-    #[inline]
-    fn reserve(&mut self, _additional: usize) {}
-
-    #[inline]
-    fn push(&mut self, item: &mut WeightedItem<K, DynUnit, R>) {
-        let (kv, weight) = item.split();
-        let k = kv.fst();
-        self.push_refs(k, &(), weight);
+    fn push_key(&mut self, key: &K) {
+        self.writer.write0((key, &())).unwrap();
     }
 
-    #[inline]
-    fn push_refs(&mut self, key: &K, _val: &DynUnit, weight: &R) {
-        let time = self.time.clone();
-        self.push_time(key, &(), &time, weight);
+    fn push_val(&mut self, _val: &DynUnit) {}
+
+    fn push_time_diff(&mut self, time: &T, weight: &R) {
+        self.writer.write1((time, weight)).unwrap();
     }
 
-    fn push_vals(&mut self, key: &mut K, val: &mut DynUnit, weight: &mut R) {
-        self.push_refs(key, val, weight);
-    }
-
-    #[inline(never)]
-    fn done(self) -> FileKeyBatch<K, T, R> {
-        let lower = Antichain::from_elem(self.time.clone());
-        let time_next = self.time.advance(0);
-        let upper = if time_next <= self.time {
-            Antichain::new()
-        } else {
-            Antichain::from_elem(time_next)
-        };
-        self.done_with_bounds(lower, upper)
+    fn done_with_bounds(
+        self,
+        (lower, upper): (Antichain<T>, Antichain<T>),
+    ) -> FileKeyBatch<K, T, R> {
+        FileKeyBatch {
+            factories: self.factories,
+            file: Arc::new(self.writer.into_reader().unwrap()),
+            lower,
+            upper,
+        }
     }
 }
 

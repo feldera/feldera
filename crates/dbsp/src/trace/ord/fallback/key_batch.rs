@@ -14,7 +14,7 @@ use crate::{
             FileKeyBatch, OrdKeyBatch,
         },
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
-        FileKeyBatchFactories, Filter, Merger, OrdKeyBatchFactories, TimedBuilder, WeightedItem,
+        FileKeyBatchFactories, Filter, Merger, OrdKeyBatchFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -23,12 +23,11 @@ use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize}
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug},
-    mem::replace,
     ops::Deref,
     path::{Path, PathBuf},
 };
 
-use super::utils::{copy_to_builder, pick_merge_destination, BuildTo, GenericMerger};
+use super::utils::{copy_to_builder, pick_merge_destination, GenericMerger};
 
 pub struct FallbackKeyBatchFactories<K, T, R>
 where
@@ -107,6 +106,10 @@ where
         &self,
     ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
         self.file.weighted_items_factory()
+    }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynUnit, R>> {
+        self.file.weighted_vals_factory()
     }
 
     fn time_diffs_factory(
@@ -323,11 +326,11 @@ where
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
             Inner::Vec(vec) => {
-                let mut file = FileKeyBuilder::timed_with_capacity(&self.factories.file, 0);
+                let mut file = FileKeyBuilder::with_capacity(&self.factories.file, 0);
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
                     inner: Inner::File(
-                        file.done_with_bounds(vec.lower().to_owned(), vec.upper().to_owned()),
+                        file.done_with_bounds((vec.lower().to_owned(), vec.upper().to_owned())),
                     ),
                     factories: self.factories.clone(),
                 })
@@ -508,36 +511,8 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    /// In-memory.
     Vec(VecKeyBuilder<K, T, R>),
-
-    /// On-storage.
     File(FileKeyBuilder<K, T, R>),
-
-    /// In-memory as long as we don't exceed a maximum threshold size.
-    Threshold {
-        vec: VecKeyBuilder<K, T, R>,
-
-        /// Bytes left to add until the threshold is exceeded.
-        remaining: usize,
-    },
-}
-
-impl<K, T, R> FallbackKeyBuilder<K, T, R>
-where
-    Self: SizeOf,
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    /// We ran out of the bytes threshold for `BuilderInner::Threshold`. Spill
-    /// to storage as `BuilderInner::File`, writing `vec` as the initial
-    /// contents.
-    fn spill(&mut self, vec: OrdKeyBatch<K, T, R>) {
-        let mut file = FileKeyBuilder::timed_with_capacity(&self.factories.file, 0);
-        copy_to_builder(&mut file, vec.cursor());
-        self.inner = BuilderInner::File(file);
-    }
 }
 
 impl<K, T, R> Builder<FallbackKeyBatch<K, T, R>> for FallbackKeyBuilder<K, T, R>
@@ -547,130 +522,15 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    #[inline]
-    fn new_builder(factories: &FallbackKeyBatchFactories<K, T, R>, time: T) -> Self {
-        Self::with_capacity(factories, time, 0)
-    }
-
-    #[inline]
-    fn with_capacity(
-        factories: &FallbackKeyBatchFactories<K, T, R>,
-        time: T,
-        capacity: usize,
-    ) -> Self {
+    fn with_capacity(factories: &FallbackKeyBatchFactories<K, T, R>, capacity: usize) -> Self {
         Self {
             factories: factories.clone(),
-            inner: match BuildTo::for_capacity(
-                &factories.vec,
-                &factories.file,
-                time,
-                capacity,
-                VecKeyBuilder::with_capacity,
-                FileKeyBuilder::with_capacity,
-            ) {
-                BuildTo::Memory(vec) => BuilderInner::Vec(vec),
-                BuildTo::Storage(file) => BuilderInner::File(file),
-                BuildTo::Threshold(vec, remaining) => BuilderInner::Threshold { vec, remaining },
-            },
+            inner: BuilderInner::Vec(VecKeyBuilder::with_capacity(&factories.vec, capacity)),
         }
     }
 
-    #[inline]
-    fn reserve(&mut self, _additional: usize) {}
-
-    #[inline]
-    fn push(&mut self, item: &mut DynPair<DynPair<K, DynUnit>, R>) {
-        match &mut self.inner {
-            BuilderInner::File(file) => file.push(item),
-            BuilderInner::Vec(vec) => vec.push(item),
-            BuilderInner::Threshold { vec, remaining } => {
-                let size = item.size_of().total_bytes();
-                vec.push(item);
-                if size > *remaining {
-                    let vec = replace(
-                        vec,
-                        VecKeyBuilder::timed_with_capacity(&self.factories.vec, 0),
-                    )
-                    .done();
-                    self.spill(vec);
-                } else {
-                    *remaining -= size;
-                }
-            }
-        }
-    }
-
-    #[inline]
-    fn push_refs(&mut self, key: &K, val: &DynUnit, weight: &R) {
-        match &mut self.inner {
-            BuilderInner::File(file) => file.push_refs(key, val, weight),
-            BuilderInner::Vec(vec) => vec.push_refs(key, val, weight),
-            BuilderInner::Threshold { vec, remaining } => {
-                let size = (key, val, weight).size_of().total_bytes();
-                vec.push_refs(key, val, weight);
-                if size > *remaining {
-                    let vec = replace(
-                        vec,
-                        VecKeyBuilder::timed_with_capacity(&self.factories.vec, 0),
-                    )
-                    .done();
-                    self.spill(vec);
-                } else {
-                    *remaining -= size;
-                }
-            }
-        }
-    }
-
-    #[inline]
-    fn push_vals(&mut self, key: &mut K, val: &mut DynUnit, weight: &mut R) {
-        match &mut self.inner {
-            BuilderInner::File(file) => file.push_vals(key, val, weight),
-            BuilderInner::Vec(vec) => vec.push_vals(key, val, weight),
-            BuilderInner::Threshold { vec, remaining } => {
-                let size = (key as &K, weight as &R).size_of().total_bytes();
-                vec.push_vals(key, val, weight);
-                if size > *remaining {
-                    let vec = replace(
-                        vec,
-                        VecKeyBuilder::timed_with_capacity(&self.factories.vec, 0),
-                    )
-                    .done();
-                    self.spill(vec);
-                } else {
-                    *remaining -= size;
-                }
-            }
-        }
-    }
-
-    #[inline(never)]
-    fn done(self) -> FallbackKeyBatch<K, T, R> {
-        FallbackKeyBatch {
-            factories: self.factories,
-            inner: match self.inner {
-                BuilderInner::File(file) => Inner::File(file.done()),
-                BuilderInner::Vec(vec) | BuilderInner::Threshold { vec, .. } => {
-                    Inner::Vec(vec.done())
-                }
-            },
-        }
-    }
-}
-
-impl<K, T, R> TimedBuilder<FallbackKeyBatch<K, T, R>> for FallbackKeyBuilder<K, T, R>
-where
-    Self: SizeOf,
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn timed_for_merge<B, AR>(
-        factories: &<FallbackKeyBatch<K, T, R> as BatchReader>::Factories,
-        batches: &[AR],
-    ) -> Self
+    fn for_merge<B, AR>(factories: &FallbackKeyBatchFactories<K, T, R>, batches: &[AR]) -> Self
     where
-        Self: Sized,
         B: BatchReader,
         AR: Deref<Target = B>,
     {
@@ -678,53 +538,91 @@ where
         Self {
             factories: factories.clone(),
             inner: match pick_merge_destination(batches.iter().map(Deref::deref), None) {
-                BatchLocation::Memory => BuilderInner::Vec(VecKeyBuilder::with_capacity(
-                    &factories.vec,
-                    T::default(),
-                    cap,
-                )),
-                BatchLocation::Storage => BuilderInner::File(FileKeyBuilder::with_capacity(
-                    &factories.file,
-                    T::default(),
-                    cap,
-                )),
+                BatchLocation::Memory => {
+                    BuilderInner::Vec(VecKeyBuilder::with_capacity(&factories.vec, cap))
+                }
+                BatchLocation::Storage => {
+                    BuilderInner::File(FileKeyBuilder::with_capacity(&factories.file, cap))
+                }
             },
         }
     }
 
-    fn push_time(&mut self, key: &K, val: &DynUnit, time: &T, weight: &R) {
+    fn push_time_diff(&mut self, time: &T, weight: &R) {
         match &mut self.inner {
-            BuilderInner::File(file) => file.push_time(key, val, time, weight),
-            BuilderInner::Vec(vec) => vec.push_time(key, val, time, weight),
-            BuilderInner::Threshold { vec, remaining } => {
-                let size = (key, val, weight).size_of().total_bytes();
-                vec.push_time(key, val, time, weight);
-                if size > *remaining {
-                    let vec = replace(
-                        vec,
-                        VecKeyBuilder::timed_with_capacity(&self.factories.vec, 0),
-                    )
-                    .done();
-                    self.spill(vec);
-                } else {
-                    *remaining -= size;
-                }
-            }
+            BuilderInner::Vec(vec) => vec.push_time_diff(time, weight),
+            BuilderInner::File(file) => file.push_time_diff(time, weight),
         }
     }
 
-    fn done_with_bounds(
-        self,
-        lower: Antichain<T>,
-        upper: Antichain<T>,
-    ) -> FallbackKeyBatch<K, T, R> {
+    fn push_val(&mut self, val: &DynUnit) {
+        match &mut self.inner {
+            BuilderInner::Vec(vec) => vec.push_val(val),
+            BuilderInner::File(file) => file.push_val(val),
+        }
+    }
+
+    fn push_key(&mut self, key: &K) {
+        match &mut self.inner {
+            BuilderInner::Vec(vec) => vec.push_key(key),
+            BuilderInner::File(file) => file.push_key(key),
+        }
+    }
+
+    fn push_time_diff_mut(&mut self, time: &mut T, weight: &mut R) {
+        match &mut self.inner {
+            BuilderInner::Vec(vec) => vec.push_time_diff_mut(time, weight),
+            BuilderInner::File(file) => file.push_time_diff_mut(time, weight),
+        }
+    }
+
+    fn push_val_mut(&mut self, val: &mut DynUnit) {
+        match &mut self.inner {
+            BuilderInner::Vec(vec) => vec.push_val_mut(val),
+            BuilderInner::File(file) => file.push_val_mut(val),
+        }
+    }
+
+    fn push_key_mut(&mut self, key: &mut K) {
+        match &mut self.inner {
+            BuilderInner::Vec(vec) => vec.push_key_mut(key),
+            BuilderInner::File(file) => file.push_key_mut(key),
+        }
+    }
+
+    fn push_val_diff(&mut self, val: &DynUnit, weight: &R)
+    where
+        T: PartialEq<()>,
+    {
+        match &mut self.inner {
+            BuilderInner::Vec(vec) => vec.push_val_diff(val, weight),
+            BuilderInner::File(file) => file.push_val_diff(val, weight),
+        }
+    }
+
+    fn push_val_diff_mut(&mut self, val: &mut DynUnit, weight: &mut R)
+    where
+        T: PartialEq<()>,
+    {
+        match &mut self.inner {
+            BuilderInner::Vec(vec) => vec.push_val_diff_mut(val, weight),
+            BuilderInner::File(file) => file.push_val_diff_mut(val, weight),
+        }
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        match &mut self.inner {
+            BuilderInner::Vec(vec) => vec.reserve(additional),
+            BuilderInner::File(file) => file.reserve(additional),
+        }
+    }
+
+    fn done_with_bounds(self, bounds: (Antichain<T>, Antichain<T>)) -> FallbackKeyBatch<K, T, R> {
         FallbackKeyBatch {
             factories: self.factories,
             inner: match self.inner {
-                BuilderInner::File(file) => Inner::File(file.done_with_bounds(lower, upper)),
-                BuilderInner::Vec(vec) | BuilderInner::Threshold { vec, .. } => {
-                    Inner::Vec(vec.done_with_bounds(lower, upper))
-                }
+                BuilderInner::File(file) => Inner::File(file.done_with_bounds(bounds)),
+                BuilderInner::Vec(vec) => Inner::Vec(vec.done_with_bounds(bounds)),
             },
         }
     }

@@ -1655,13 +1655,13 @@ where
     F: Fn(&D) -> T,
 {
     let factories = OrdWSetFactories::new::<T, (), ZWeight>();
-    let mut builder = OrdWSetBuilder::with_capacity(&factories, (), data.len());
+    let mut builder = OrdWSetBuilder::with_capacity(&factories, data.len());
     let mut cursor = data.cursor();
     while cursor.key_valid() {
-        let mut weight = *cursor.weight().deref();
         let item = unsafe { cursor.key().downcast::<D>() };
         let mut data = mapper(item);
-        builder.push_vals(data.erase_mut(), ().erase_mut(), weight.erase_mut());
+        builder.push_val_diff(().erase(), cursor.weight());
+        builder.push_key_mut(data.erase_mut());
         cursor.step_key();
     }
     TypedBatch::new(builder.done())
@@ -1685,15 +1685,15 @@ where
 {
     let factories = OrdZSetFactories::new::<D, (), ZWeight>();
 
-    let mut builder = OrdWSetBuilder::with_capacity(&factories, (), data.len());
+    let mut builder = OrdWSetBuilder::with_capacity(&factories, data.len());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {
-        let weight = *cursor.weight().deref();
         let item = unsafe { cursor.key().downcast::<D>() };
         if comparator(item, value) {
             // println!("controlled_filter accepts={:?}", item);
-            builder.push_refs(item.erase(), ().erase(), weight.erase());
+            builder.push_val_diff(().erase(), cursor.weight());
+            builder.push_key(cursor.key());
         } else {
             late();
         }
@@ -1715,20 +1715,25 @@ where
     F: Fn((&K, &D), &T) -> bool,
 {
     let factories = OrdIndexedZSetFactories::new::<K, D, ZWeight>();
-    let mut builder = OrdIndexedWSetBuilder::with_capacity(&factories, (), data.len());
+    let mut builder = OrdIndexedWSetBuilder::with_capacity(&factories, data.len());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {
         let key = unsafe { cursor.key().downcast::<K>() }.clone();
+        let mut any_values = false;
         while cursor.val_valid() {
             let w = *cursor.weight().deref();
             let item = unsafe { cursor.val().downcast::<D>() };
             if comparator((&key, item), value) {
-                builder.push_refs(&key, item.erase(), w.erase());
+                builder.push_val_diff(item.erase(), w.erase());
+                any_values = true;
             } else {
                 late();
             }
             cursor.step_val();
+        }
+        if any_values {
+            builder.push_key(cursor.key());
         }
         cursor.step_key();
     }

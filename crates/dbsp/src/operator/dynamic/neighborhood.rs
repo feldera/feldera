@@ -9,6 +9,7 @@ use crate::{
     trace::{
         ord::fallback::indexed_wset::{FallbackIndexedWSet, FallbackIndexedWSetFactories},
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine,
+        TupleBuilder,
     },
     utils::Tup2,
     Circuit, DBData, DynZWeight, NumEntries, RootCircuit, Stream, ZWeight,
@@ -422,11 +423,11 @@ where
             }
 
             // Assemble final result.
-            let mut builder = <<OrdIndexedZSet<_, _> as Batch>::Builder>::with_capacity(
+            let builder = <<OrdIndexedZSet<_, _> as Batch>::Builder>::with_capacity(
                 &self.output_factories,
-                (),
                 before.len() + after.len(),
             );
+            let mut builder = TupleBuilder::new(&self.output_factories, builder);
             for update in before.dyn_iter_mut().rev() {
                 builder.push(update);
             }
@@ -559,11 +560,11 @@ where
                 }
             }
 
-            let mut builder = <<DynNeighborhood<T::Key, T::Val> as Batch>::Builder>::with_capacity(
+            let builder = <<DynNeighborhood<T::Key, T::Val> as Batch>::Builder>::with_capacity(
                 &self.output_factories,
-                (),
                 before.len() + after.len(),
             );
+            let mut builder = TupleBuilder::new(&self.output_factories, builder);
             for update in before.dyn_iter_mut().rev() {
                 builder.push(update);
             }

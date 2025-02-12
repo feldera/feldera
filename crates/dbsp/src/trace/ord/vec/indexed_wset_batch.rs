@@ -6,13 +6,12 @@ use crate::{
     },
     time::{Antichain, AntichainRef},
     trace::{
-        cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
         layers::{
-            Builder as _, Cursor as _, Layer, LayerBuilder, LayerCursor, LayerFactories, Leaf,
-            LeafBuilder, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
+            Builder as _, Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
+            MergeBuilder, OrdOffset, Trie,
         },
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, Merger, Serializer, TimedBuilder, WeightedItem,
+        Deserializer, Filter, Merger, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -36,6 +35,7 @@ where
     layer_factories: LayerFactories<K, LeafFactories<V, R>>,
     item_factory: &'static dyn Factory<DynPair<K, V>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
+    weighted_vals_factory: &'static dyn Factory<DynWeightedPairs<V, R>>,
     weighted_item_factory: &'static dyn Factory<DynPair<DynPair<K, V>, R>>,
 }
 
@@ -51,6 +51,7 @@ where
             item_factory: self.item_factory,
             weighted_items_factory: self.weighted_items_factory,
             weighted_item_factory: self.weighted_item_factory,
+            weighted_vals_factory: self.weighted_vals_factory,
         }
     }
 }
@@ -72,6 +73,7 @@ where
             item_factory: WithFactory::<Tup2<KType, VType>>::FACTORY,
             weighted_items_factory:
                 WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
+            weighted_vals_factory: WithFactory::<LeanVec<Tup2<VType, RType>>>::FACTORY,
             weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
         }
     }
@@ -106,6 +108,11 @@ where
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
         self.weighted_items_factory
     }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<V, R>> {
+        self.weighted_vals_factory
+    }
+
     fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>> {
         self.weighted_item_factory
     }
@@ -778,24 +785,6 @@ where
     }
 }
 
-impl<K, V, R> HasTimeDiffCursor<K, V, (), R> for VecIndexedWSetCursor<'_, K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    type TimeDiffCursor<'a>
-        = SingletonTimeDiffCursor<'a, R>
-    where
-        Self: 'a;
-
-    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        SingletonTimeDiffCursor::new(self.val_valid().then(|| self.cursor.child.current_diff()))
-    }
-}
-
-type IndexBuilder<K, V, R, O> = LayerBuilder<K, LeafBuilder<V, R>, O>;
-
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
 pub struct VecIndexedWSetBuilder<K, V, R, O = usize>
@@ -805,11 +794,70 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
-    builder: IndexBuilder<K, V, R, O>,
     #[size_of(skip)]
     factories: VecIndexedWSetFactories<K, V, R>,
-    // weighted_item_factory: &'static dyn Factory<dyn DynPair<K, V>, R>,
-    // batch_item_factory: &'static BatchItemFactory<K, V, Pair<K, V>, R>,
+    keys: Box<DynVec<K>>,
+    offs: Vec<O>,
+    vals: Box<DynVec<V>>,
+    diffs: Box<DynVec<R>>,
+}
+
+impl<K, V, R, O> VecIndexedWSetBuilder<K, V, R, O>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    fn pushed_key(&mut self) {
+        self.offs.push(O::from_usize(self.vals.len()));
+
+        debug_assert!(
+            {
+                let n = self.offs.len();
+                self.offs[n - 1] > self.offs[n - 2]
+            },
+            "every key must have at least one value"
+        );
+
+        debug_assert!(
+            {
+                let n = self.keys.len();
+                n == 1 || self.keys[n - 2] < self.keys[n - 1]
+            },
+            "keys must be strictly monotonically increasing but {:?} >= {:?}",
+            &self.keys[self.keys.len() - 2],
+            &self.keys[self.keys.len() - 1]
+        );
+    }
+
+    fn pushed_val(&self) {
+        debug_assert_eq!(
+            self.vals.len(),
+            self.diffs.len(),
+            "every value must have exactly one diff"
+        );
+
+        debug_assert!(
+            {
+                let n = self.vals.len();
+                let last_n = self.offs.last().unwrap().into_usize();
+                let n_vals = n - last_n;
+                n_vals < 2 || self.vals[n - 2] < self.vals[n - 1]
+            },
+            "values for a key must be strictly monotonically increasing but {:?} >= {:?}",
+            &self.vals[self.vals.len() - 2],
+            &self.vals[self.vals.len() - 1]
+        );
+    }
+
+    fn pushed_diff(&self) {
+        debug_assert_eq!(
+            self.vals.len() + 1,
+            self.diffs.len(),
+            "every diff must have exactly one value"
+        );
+    }
 }
 
 impl<K, V, R, O> Builder<VecIndexedWSet<K, V, R, O>> for VecIndexedWSetBuilder<K, V, R, O>
@@ -819,146 +867,88 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
-    #[inline]
-    fn new_builder(factories: &VecIndexedWSetFactories<K, V, R>, _time: ()) -> Self {
+    fn with_capacity(factories: &VecIndexedWSetFactories<K, V, R>, capacity: usize) -> Self {
+        let mut keys = factories.layer_factories.keys.default_box();
+        keys.reserve_exact(capacity);
+
+        let mut offs = Vec::with_capacity(capacity + 1);
+        offs.push(O::zero());
+
+        let mut vals = factories.layer_factories.child.keys.default_box();
+        vals.reserve_exact(capacity);
+
+        let mut diffs = factories.layer_factories.child.diffs.default_box();
+        diffs.reserve_exact(capacity);
         Self {
-            builder: IndexBuilder::<K, V, R, O>::new(&factories.layer_factories),
             factories: factories.clone(),
+            keys,
+            offs,
+            vals,
+            diffs,
         }
     }
 
-    #[inline]
-    fn with_capacity(
-        factories: &VecIndexedWSetFactories<K, V, R>,
-        _time: (),
-        capacity: usize,
-    ) -> Self {
-        Self {
-            builder: <IndexBuilder<K, V, R, O> as TupleBuilder>::with_capacity(
-                &factories.layer_factories,
-                capacity,
-            ),
-            factories: factories.clone(),
-        }
-    }
-
-    #[inline]
     fn reserve(&mut self, additional: usize) {
-        self.builder.reserve(additional);
+        self.keys.reserve(additional);
+        self.offs.reserve(additional);
+        self.vals.reserve(additional);
+        self.diffs.reserve(additional);
     }
 
-    #[inline]
-    fn push(&mut self, kvr: &mut DynPair<DynPair<K, V>, R>) {
-        let (kv, r) = kvr.split_mut();
-        let (k, v) = kv.split_mut();
-        self.builder.push_tuple((k, (v, r)));
+    fn push_key(&mut self, key: &K) {
+        self.keys.push_ref(key);
+        self.pushed_key();
     }
 
-    fn push_refs(&mut self, key: &K, val: &V, weight: &R) {
-        self.builder.push_refs((key, (val, weight)))
+    fn push_key_mut(&mut self, key: &mut K) {
+        self.keys.push_val(key);
+        self.pushed_key();
     }
 
-    fn push_vals(&mut self, key: &mut K, val: &mut V, weight: &mut R) {
-        self.builder.push_tuple((key, (val, weight)))
+    fn push_val(&mut self, val: &V) {
+        self.vals.push_ref(val);
+        self.pushed_val();
     }
 
-    #[inline(never)]
-    fn done(self) -> VecIndexedWSet<K, V, R, O> {
-        VecIndexedWSet {
-            layer: self.builder.done(),
-            factories: self.factories,
-        }
+    fn push_val_mut(&mut self, val: &mut V) {
+        self.vals.push_val(val);
+        self.pushed_val();
     }
-}
 
-impl<K, V, R, O> TimedBuilder<VecIndexedWSet<K, V, R, O>> for VecIndexedWSetBuilder<K, V, R, O>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    fn push_time(&mut self, key: &K, val: &V, _time: &(), weight: &R) {
-        self.push_refs(key, val, weight);
+    fn push_time_diff(&mut self, _time: &(), weight: &R) {
+        self.diffs.push_ref(weight);
+        self.pushed_diff();
+    }
+
+    fn push_time_diff_mut(&mut self, _time: &mut (), weight: &mut R) {
+        self.diffs.push_val(weight);
+        self.pushed_diff();
+    }
+
+    fn push_val_diff(&mut self, val: &V, weight: &R) {
+        self.vals.push_ref(val);
+        self.diffs.push_ref(weight);
+        self.pushed_val();
+    }
+
+    fn push_val_diff_mut(&mut self, val: &mut V, weight: &mut R) {
+        self.vals.push_val(val);
+        self.diffs.push_val(weight);
+        self.pushed_val();
     }
 
     fn done_with_bounds(
         self,
-        _lower: Antichain<()>,
-        _upper: Antichain<()>,
+        _bounds: (Antichain<()>, Antichain<()>),
     ) -> VecIndexedWSet<K, V, R, O> {
-        self.done()
-    }
-}
-
-/*pub struct VecIndexedWSetConsumer<K, V, R, O>
-where
-    K: 'static,
-    V: 'static,
-    R: 'static,
-    O: OrdOffset,
-{
-    consumer: OrderedLayerConsumer<K, V, R, O>,
-}
-
-impl<K, V, R, O> Consumer<K, V, R, ()> for VecIndexedWSetConsumer<K, V, R, O>
-where
-    O: OrdOffset,
-{
-    type ValueConsumer<'a> = VecIndexedWSetValueConsumer<'a, K, V,  R, O>
-    where
-        Self: 'a;
-
-    fn key_valid(&self) -> bool {
-        self.consumer.key_valid()
-    }
-
-    fn peek_key(&self) -> &K {
-        self.consumer.peek_key()
-    }
-
-    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
-        let (key, consumer) = self.consumer.next_key();
-        (key, VecIndexedWSetValueConsumer::new(consumer))
-    }
-
-    fn seek_key(&mut self, key: &K)
-    where
-        K: Ord,
-    {
-        self.consumer.seek_key(key)
-    }
-}
-
-pub struct VecIndexedWSetValueConsumer<'a, K, V, R, O>
-where
-    V: 'static,
-    R: 'static,
-{
-    consumer: OrderedLayerValues<'a, V, R>,
-    __type: PhantomData<(K, O)>,
-}
-
-impl<'a, K, V, R, O> VecIndexedWSetValueConsumer<'a, K, V, R, O> {
-    #[inline]
-    const fn new(consumer: OrderedLayerValues<'a, V, R>) -> Self {
-        Self {
-            consumer,
-            __type: PhantomData,
+        VecIndexedWSet {
+            layer: Layer::from_parts(
+                &self.factories.layer_factories,
+                self.keys,
+                self.offs,
+                Leaf::from_parts(&self.factories.layer_factories.child, self.vals, self.diffs),
+            ),
+            factories: self.factories,
         }
     }
 }
-
-impl<'a, K, V, R, O> ValueConsumer<'a, V, R, ()> for VecIndexedWSetValueConsumer<'a, K, V, R, O> {
-    fn value_valid(&self) -> bool {
-        self.consumer.value_valid()
-    }
-
-    fn next_value(&mut self) -> (V, R, ()) {
-        self.consumer.next_value()
-    }
-
-    fn remaining_values(&self) -> usize {
-        self.consumer.remaining_values()
-    }
-}*/

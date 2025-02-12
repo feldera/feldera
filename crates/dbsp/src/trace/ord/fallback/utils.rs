@@ -6,12 +6,7 @@ use size_of::SizeOf;
 use crate::{
     dynamic::{DataTrait, DynDataTyped, DynWeightedPairs, Factory, WeightTrait},
     time::Antichain,
-    trace::{
-        cursor::{HasTimeDiffCursor, TimeDiffCursor},
-        ord::filter,
-        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor, Filter,
-        TimedBuilder,
-    },
+    trace::{ord::filter, Batch, BatchLocation, BatchReader, Builder, Cursor, Filter},
     Runtime, Timestamp,
 };
 
@@ -74,7 +69,6 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
     O: Batch + BatchReader<Key = K, Val = V, R = R, Time = T>,
-    O::Builder: TimedBuilder<O>,
 {
     builder: O::Builder,
     lower: Antichain<T>,
@@ -93,7 +87,6 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
     O: Batch + BatchReader<Key = K, Val = V, R = R, Time = T>,
-    O::Builder: TimedBuilder<O>,
 {
     pub fn new<A, B>(
         output_factories: &O::Factories,
@@ -106,7 +99,7 @@ where
         B: BatchReader<Time = T>,
     {
         Self {
-            builder: O::Builder::new_builder(output_factories, T::default()),
+            builder: O::Builder::new_builder(output_factories),
             lower: batch1.lower().meet(batch2.lower()),
             upper: batch1.upper().join(batch2.upper()),
             pos1: Position::Start,
@@ -126,8 +119,8 @@ where
     ) where
         A: BatchReader<Key = K, Val = V, R = R, Time = T>,
         B: BatchReader<Key = K, Val = V, R = R, Time = T>,
-        A::Cursor<'s>: HasTimeDiffCursor<K, V, T, R>,
-        B::Cursor<'s>: HasTimeDiffCursor<K, V, T, R>,
+        A::Cursor<'s>: Cursor<K, V, T, R>,
+        B::Cursor<'s>: Cursor<K, V, T, R>,
     {
         let advance_func = |t: &mut DynDataTyped<T>| t.join_assign(frontier);
 
@@ -139,86 +132,56 @@ where
 
         let mut cursor1 = self.pos1.to_cursor(source1);
         let mut cursor2 = self.pos2.to_cursor(source2);
-        source1.factories().weight_factory().with(&mut |diff1| {
-            source1.factories().weight_factory().with(&mut |diff2| {
-                source1.factories().weight_factory().with(&mut |sum| {
-                    while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
-                        match cursor1.key().cmp(cursor2.key()) {
-                            Ordering::Less => self.copy_values_if(
-                                diff1,
-                                &mut cursor1,
-                                key_filter,
-                                value_filter,
-                                time_map_func,
-                                fuel,
-                            ),
-                            Ordering::Equal => self.merge_values_if(
-                                &mut cursor1,
-                                &mut cursor2,
-                                diff1,
-                                diff2,
-                                sum,
-                                key_filter,
-                                value_filter,
-                                time_map_func,
-                                fuel,
-                            ),
-                            Ordering::Greater => self.copy_values_if(
-                                diff1,
-                                &mut cursor2,
-                                key_filter,
-                                value_filter,
-                                time_map_func,
-                                fuel,
-                            ),
-                        }
-                    }
+        while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
+            match cursor1.key().cmp(cursor2.key()) {
+                Ordering::Less => {
+                    self.copy_values_if(&mut cursor1, key_filter, value_filter, time_map_func, fuel)
+                }
+                Ordering::Equal => self.merge_values_if(
+                    &mut cursor1,
+                    &mut cursor2,
+                    key_filter,
+                    value_filter,
+                    time_map_func,
+                    fuel,
+                ),
+                Ordering::Greater => {
+                    self.copy_values_if(&mut cursor2, key_filter, value_filter, time_map_func, fuel)
+                }
+            }
+        }
 
-                    while cursor1.key_valid() && *fuel > 0 {
-                        self.copy_values_if(
-                            diff1,
-                            &mut cursor1,
-                            key_filter,
-                            value_filter,
-                            time_map_func,
-                            fuel,
-                        );
-                    }
-                    while cursor2.key_valid() && *fuel > 0 {
-                        self.copy_values_if(
-                            diff1,
-                            &mut cursor2,
-                            key_filter,
-                            value_filter,
-                            time_map_func,
-                            fuel,
-                        );
-                    }
-                })
-            })
-        });
+        while cursor1.key_valid() && *fuel > 0 {
+            self.copy_values_if(&mut cursor1, key_filter, value_filter, time_map_func, fuel);
+        }
+        while cursor2.key_valid() && *fuel > 0 {
+            self.copy_values_if(&mut cursor2, key_filter, value_filter, time_map_func, fuel);
+        }
         self.pos1 = Position::from_cursor(&cursor1);
         self.pos2 = Position::from_cursor(&cursor2);
     }
 
     pub fn done(self) -> O {
-        self.builder.done_with_bounds(self.lower, self.upper)
+        self.builder.done_with_bounds((self.lower, self.upper))
     }
 
     fn copy_values_if<C>(
         &mut self,
-        tmp: &mut R,
         cursor: &mut C,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
         map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
     ) where
-        C: HasTimeDiffCursor<K, V, T, R>,
+        C: Cursor<K, V, T, R>,
     {
         if filter(key_filter, cursor.key()) {
+            let mut any = false;
             while cursor.val_valid() {
-                self.copy_time_diffs_if(cursor, tmp, value_filter, map_func, fuel);
+                any = self.copy_time_diffs_if(cursor, value_filter, map_func, fuel) || any;
+            }
+            if any {
+                self.builder.push_key(cursor.key());
             }
         }
         *fuel -= 1;
@@ -228,56 +191,50 @@ where
     fn copy_time_diffs_if<C>(
         &mut self,
         cursor: &mut C,
-        tmp: &mut R,
         value_filter: &Option<Filter<V>>,
         map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
-    ) where
-        C: HasTimeDiffCursor<K, V, T, R>,
+    ) -> bool
+    where
+        C: Cursor<K, V, T, R>,
     {
+        let mut any = false;
         if filter(value_filter, cursor.val()) {
             if let Some(map_func) = map_func {
-                let mut tdc = cursor.time_diff_cursor();
-
                 let Some(time_diffs) = self.time_diffs.as_mut() else {
                     panic!("generic merger created without time_diff factory");
                 };
 
                 time_diffs.clear();
-
-                loop {
-                    let Some((time, diff)) = tdc.current(tmp) else {
-                        break;
-                    };
+                cursor.map_times(&mut |time, diff| {
                     *fuel -= 1;
 
                     let mut time: T = time.clone();
                     map_func(&mut time);
 
                     time_diffs.push_refs((&time, diff));
-                    tdc.step();
-                }
-
+                });
                 time_diffs.consolidate();
 
                 for i in 0..time_diffs.len() {
                     let (time, diff) = time_diffs.index(i).split();
-
-                    self.builder
-                        .push_time(cursor.key(), cursor.val(), time, diff);
+                    self.builder.push_time_diff(time, diff);
                 }
+                any = !time_diffs.is_empty();
             } else {
-                let mut tdc = cursor.time_diff_cursor();
-                while let Some((time, diff)) = tdc.current(tmp) {
-                    self.builder
-                        .push_time(cursor.key(), cursor.val(), time, diff);
-                    tdc.step();
+                cursor.map_times(&mut |time, diff| {
+                    self.builder.push_time_diff(time, diff);
                     *fuel -= 1;
-                }
+                });
+                any = true;
             }
+        }
+        if any {
+            self.builder.push_val(cursor.val());
         }
         *fuel -= 1;
         cursor.step_val();
+        any
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -285,127 +242,48 @@ where
         &mut self,
         cursor1: &mut C1,
         cursor2: &mut C2,
-        tmp1: &mut R,
-        tmp2: &mut R,
-        sum: &mut R,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
         map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
     ) where
-        C1: HasTimeDiffCursor<K, V, T, R>,
-        C2: HasTimeDiffCursor<K, V, T, R>,
+        C1: Cursor<K, V, T, R>,
+        C2: Cursor<K, V, T, R>,
     {
         if filter(key_filter, cursor1.key()) {
+            let mut any = false;
             while cursor1.val_valid() && cursor2.val_valid() {
                 match cursor1.val().cmp(cursor2.val()) {
                     Ordering::Less => {
-                        self.copy_time_diffs_if(cursor1, tmp1, value_filter, map_func, fuel)
+                        any = self.copy_time_diffs_if(cursor1, value_filter, map_func, fuel) || any;
                     }
                     Ordering::Equal => {
-                        if let Some(map_func) = map_func {
-                            self.map_time_and_merge_diffs_if(
-                                cursor1,
-                                cursor2,
-                                tmp1,
-                                value_filter,
-                                map_func,
-                                fuel,
-                            )
-                        } else {
-                            self.merge_time_diffs_if(
-                                cursor1,
-                                cursor2,
-                                tmp1,
-                                tmp2,
-                                sum,
-                                value_filter,
-                                fuel,
-                            )
-                        }
+                        any = self.map_time_and_merge_diffs_if(
+                            cursor1,
+                            cursor2,
+                            value_filter,
+                            map_func,
+                            fuel,
+                        ) || any;
                     }
                     Ordering::Greater => {
-                        self.copy_time_diffs_if(cursor2, tmp1, value_filter, map_func, fuel)
+                        any = self.copy_time_diffs_if(cursor2, value_filter, map_func, fuel) || any;
                     }
                 }
             }
             while cursor1.val_valid() {
-                self.copy_time_diffs_if(cursor1, tmp1, value_filter, map_func, fuel);
+                any = self.copy_time_diffs_if(cursor1, value_filter, map_func, fuel) || any;
             }
             while cursor2.val_valid() {
-                self.copy_time_diffs_if(cursor2, tmp2, value_filter, map_func, fuel);
+                any = self.copy_time_diffs_if(cursor2, value_filter, map_func, fuel) || any;
+            }
+            if any {
+                self.builder.push_key(cursor1.key());
             }
         }
         *fuel -= 1;
         cursor1.step_key();
         cursor2.step_key();
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn merge_time_diffs_if<C1, C2>(
-        &mut self,
-        cursor1: &mut C1,
-        cursor2: &mut C2,
-        tmp1: &mut R,
-        tmp2: &mut R,
-        sum: &mut R,
-        value_filter: &Option<Filter<V>>,
-        fuel: &mut isize,
-    ) where
-        C1: HasTimeDiffCursor<K, V, T, R>,
-        C2: HasTimeDiffCursor<K, V, T, R>,
-    {
-        if filter(value_filter, cursor1.val()) {
-            let mut tdc1 = cursor1.time_diff_cursor();
-            let mut tdc2 = cursor2.time_diff_cursor();
-
-            loop {
-                let Some((time1, diff1)) = tdc1.current(tmp1) else {
-                    break;
-                };
-                let Some((time2, diff2)) = tdc2.current(tmp2) else {
-                    break;
-                };
-
-                match time1.cmp(time2) {
-                    Ordering::Less => {
-                        self.builder
-                            .push_time(cursor1.key(), cursor1.val(), time1, diff1);
-                        tdc1.step();
-                    }
-                    Ordering::Equal => {
-                        diff1.add(diff2, sum);
-                        if !sum.is_zero() {
-                            self.builder
-                                .push_time(cursor1.key(), cursor1.val(), time1, sum);
-                        }
-                        tdc1.step();
-                        tdc2.step();
-                    }
-                    Ordering::Greater => {
-                        self.builder
-                            .push_time(cursor2.key(), cursor2.val(), time2, diff2);
-                        tdc2.step();
-                    }
-                }
-                *fuel -= 1;
-            }
-            while let Some((time1, diff1)) = tdc1.current(tmp1) {
-                self.builder
-                    .push_time(cursor1.key(), cursor1.val(), time1, diff1);
-                tdc1.step();
-                *fuel -= 1;
-            }
-            while let Some((time2, diff2)) = tdc2.current(tmp2) {
-                self.builder
-                    .push_time(cursor2.key(), cursor2.val(), time2, diff2);
-                tdc2.step();
-                *fuel -= 1;
-            }
-        }
-        *fuel -= 1;
-        cursor1.step_val();
-        cursor2.step_val();
     }
 
     // Like `merge_time_diffs_if`, but additionally applies `map_func` to each timestamp.
@@ -415,89 +293,72 @@ where
         &mut self,
         cursor1: &mut C1,
         cursor2: &mut C2,
-        tmp: &mut R,
         value_filter: &Option<Filter<V>>,
-        map_func: &dyn Fn(&mut DynDataTyped<T>),
+        map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
-    ) where
-        C1: HasTimeDiffCursor<K, V, T, R>,
-        C2: HasTimeDiffCursor<K, V, T, R>,
+    ) -> bool
+    where
+        C1: Cursor<K, V, T, R>,
+        C2: Cursor<K, V, T, R>,
     {
+        let mut any = false;
         if filter(value_filter, cursor1.val()) {
-            let Some(time_diffs) = self.time_diffs.as_mut() else {
-                panic!("generic merger created without time_diff factory");
-            };
+            let time_diffs = self
+                .time_diffs
+                .as_mut()
+                .expect("generic merger created without time_diff factory");
 
             time_diffs.clear();
-
-            let mut tdc1 = cursor1.time_diff_cursor();
-            let mut tdc2 = cursor2.time_diff_cursor();
-
-            loop {
-                let Some((time, diff)) = tdc1.current(tmp) else {
-                    break;
-                };
-
-                let mut time: T = time.clone();
-                map_func(&mut time);
-
-                time_diffs.push_refs((&time, diff));
-                tdc1.step();
+            if let Some(map_func) = map_func {
+                cursor1.map_times(&mut |time, diff| {
+                    let mut time: T = time.clone();
+                    map_func(&mut time);
+                    time_diffs.push_refs((&time, diff));
+                });
+                cursor2.map_times(&mut |time, diff| {
+                    let mut time: T = time.clone();
+                    map_func(&mut time);
+                    time_diffs.push_refs((&time, diff));
+                });
+            } else {
+                cursor1.map_times(&mut |time, diff| time_diffs.push_refs((time, diff)));
+                cursor2.map_times(&mut |time, diff| time_diffs.push_refs((time, diff)));
             }
-
-            loop {
-                let Some((time, diff)) = tdc2.current(tmp) else {
-                    break;
-                };
-
-                let mut time = time.clone();
-                map_func(&mut time);
-
-                time_diffs.push_refs((&time, diff));
-                tdc2.step();
-            }
-
             time_diffs.consolidate();
 
-            for i in 0..time_diffs.len() {
-                let time_diff = time_diffs.index(i);
-
-                self.builder.push_time(
-                    cursor1.key(),
-                    cursor1.val(),
-                    time_diff.fst(),
-                    time_diff.snd(),
-                );
+            if !time_diffs.is_empty() {
+                for (t, d) in time_diffs.dyn_iter().map(|td| td.split()) {
+                    self.builder.push_time_diff(t, d);
+                }
+                self.builder.push_val(cursor1.val());
+                any = true;
             }
         }
 
         *fuel -= 1;
         cursor1.step_val();
         cursor2.step_val();
+        any
     }
 }
 
 /// Reads all of the data from `cursor` and writes it to `builder`.
 pub(super) fn copy_to_builder<B, Output, C, K, V, T, R>(builder: &mut B, mut cursor: C)
 where
-    B: TimedBuilder<Output>,
+    B: Builder<Output>,
     Output: Batch<Key = K, Val = V, Time = T, R = R>,
-    C: HasTimeDiffCursor<K, V, T, R>,
+    C: Cursor<K, V, T, R>,
     K: ?Sized,
     V: ?Sized,
     R: WeightTrait + ?Sized,
 {
-    let mut tmp = cursor.weight_factory().default_box();
     while cursor.key_valid() {
         while cursor.val_valid() {
-            let mut td_cursor = cursor.time_diff_cursor();
-            while let Some((time, diff)) = td_cursor.current(&mut tmp) {
-                builder.push_time(cursor.key(), cursor.val(), time, diff);
-                td_cursor.step();
-            }
-            drop(td_cursor);
+            cursor.map_times(&mut |time, diff| builder.push_time_diff(time, diff));
+            builder.push_val(cursor.val());
             cursor.step_val();
         }
+        builder.push_key(cursor.key());
         cursor.step_key();
     }
 }
@@ -531,31 +392,5 @@ where
 
             BatchLocation::Memory
         }
-    }
-}
-
-#[allow(dead_code)]
-pub(super) enum BuildTo<M, S> {
-    Memory(M),
-    Storage(S),
-    Threshold(M, usize),
-}
-
-impl<M, S> BuildTo<M, S> {
-    pub fn for_capacity<MF, SF, T, MC, SC>(
-        vf: MF,
-        _sf: SF,
-        time: T,
-        capacity: usize,
-        mc: MC,
-        _sc: SC,
-    ) -> Self
-    where
-        MC: Fn(MF, T, usize) -> M,
-        SC: Fn(SF, T, usize) -> S,
-    {
-        // For now, always build to memory, because spines are the main place we
-        // want to write to storage and spines only do merging.
-        Self::Memory(mc(vf, time, capacity))
     }
 }

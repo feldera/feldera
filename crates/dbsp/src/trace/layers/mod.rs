@@ -22,6 +22,7 @@ pub trait OrdOffset:
     Copy
     + Debug
     + PartialEq
+    + PartialOrd
     + Add<Output = Self>
     + Sub<Output = Self>
     + TryFrom<usize>
@@ -44,6 +45,7 @@ where
     O: Copy
         + Debug
         + PartialEq
+        + PartialOrd
         + Add<Output = Self>
         + Sub<Output = Self>
         + TryFrom<usize>

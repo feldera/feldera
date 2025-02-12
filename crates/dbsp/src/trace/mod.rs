@@ -215,6 +215,7 @@ pub trait BatchFactories<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: Wei
     fn item_factory(&self) -> &'static dyn Factory<DynPair<K, V>>;
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>;
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<V, R>>;
     fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>>;
 
     /// Factory for a vector of (T, R) or `None` if `T` is `()`.
@@ -488,7 +489,7 @@ where
     type Batcher: Batcher<Self>;
 
     /// A type used to assemble batches from ordered update sequences.
-    type Builder: TimedBuilder<Self>;
+    type Builder: Builder<Self>;
 
     /// A type used to progressively merge batches.
     type Merger: Merger<Self::Key, Self::Val, Self::Time, Self::R, Self>;
@@ -535,19 +536,24 @@ where
     where
         C: Cursor<Self::Key, Self::Val, (), Self::R>,
     {
-        let mut builder = Self::Builder::with_capacity(factories, timestamp.clone(), capacity);
-        let mut weight = cursor.weight_factory().default_box();
+        let mut builder = Self::Builder::with_capacity(factories, capacity);
         while cursor.key_valid() {
+            let mut any_values = false;
             while cursor.val_valid() {
-                cursor.weight().clone_to(&mut weight);
+                let weight = cursor.weight();
                 if !weight.is_zero() {
-                    builder.push_refs(cursor.key(), cursor.val(), &weight);
+                    builder.push_time_diff(timestamp, weight);
+                    builder.push_val(cursor.val());
+                    any_values = true;
                 }
                 cursor.step_val();
             }
+            if any_values {
+                builder.push_key(cursor.key());
+            }
             cursor.step_key();
         }
-        builder.done()
+        builder.done_with_bounds(bounds_for_fixed_time(timestamp))
     }
 
     /*
@@ -600,7 +606,8 @@ where
 
     /// Creates an empty batch.
     fn dyn_empty(factories: &Self::Factories) -> Self {
-        Self::Builder::new_builder(factories, Self::Time::default()).done()
+        Self::Builder::new_builder(factories)
+            .done_with_bounds(bounds_for_fixed_time(&Self::Time::default()))
     }
 
     /// Returns elements from `self` that satisfy a predicate.
@@ -609,17 +616,21 @@ where
         Self::Time: PartialEq<()> + From<()>,
     {
         let factories = self.factories();
-        let mut builder = Self::Builder::new_builder(&factories, Self::Time::from(()));
+        let mut builder = Self::Builder::new_builder(&factories);
         let mut cursor = self.cursor();
-        let mut w = factories.weight_factory().default_box();
 
         while cursor.key_valid() {
+            let mut any_values = false;
             while cursor.val_valid() {
                 if predicate(cursor.key(), cursor.val()) {
-                    cursor.weight().clone_to(&mut w);
-                    builder.push_refs(cursor.key(), cursor.val(), &w);
+                    builder.push_diff(cursor.weight());
+                    builder.push_val(cursor.val());
+                    any_values = true;
                 }
                 cursor.step_val();
+            }
+            if any_values {
+                builder.push_key(cursor.key());
             }
             cursor.step_key();
         }
@@ -678,93 +689,298 @@ where
 }
 
 /// Functionality for building batches from ordered update sequences.
+///
+/// This interface requires the client to push all of the time-diff pairs
+/// associated with a value, then the value, then all the time-diff pairs
+/// associated with the next value, then that value, and so on. Once all of the
+/// values associated with the current key have been pushed, the client pushes
+/// the key.
+///
+/// If this interface is too low-level for the client, consider wrapping it in a
+/// [TupleBuilder].
+///
+/// # Example
+///
+/// To push the following tuples:
+///
+/// ```text
+/// (k1, v1, t1, r1)
+/// (k1, v1, t2, r2)
+/// (k1, v2, t1, r1)
+/// (k1, v3, t2, r2)
+/// (k2, v1, t1, r1)
+/// (k2, v1, t2, r2)
+/// (k3, v1, t1, r1)
+/// (k4, v2, t2, r2)
+/// ```
+///
+/// the client would use:
+///
+/// ```ignore
+/// builder.push_time_diff(t1, r1);
+/// builder.push_time_diff(t2, r2);
+/// builder.push_val(v1);
+/// builder.push_time_diff(t1, r1);
+/// builder.push_val(v2);
+/// builder.push_time_diff(t2, r2);
+/// builder.push_val(v3);
+/// builder.push_key(k1);
+/// builder.push_time_diff(t1, r1);
+/// builder.push_time_diff(t2, r2);
+/// builder.push_val(v1);
+/// builder.push_key(k2);
+/// builder.push_time_diff(t1, r1);
+/// builder.push_val(v1);
+/// builder.push_key(k3);
+/// builder.push_time_diff(t2, r2);
+/// builder.push_val(v2);
+/// builder.push_key(k4);
+/// ```
 pub trait Builder<Output>: SizeOf
 where
+    Self: Sized,
     Output: Batch,
 {
-    /// Allocates an empty builder.  All tuples in the builder (and its output
-    /// batch) will have timestamp `time`.
-    fn new_builder(factories: &Output::Factories, time: Output::Time) -> Self;
-
-    /// Allocates an empty builder with some capacity.  All tuples in the
-    /// builder (and its output batch) will have timestamp `time`.
-    fn with_capacity(factories: &Output::Factories, time: Output::Time, cap: usize) -> Self;
-
-    /// Adds an element to the batch.
-    fn push(&mut self, element: &mut DynPair<DynPair<Output::Key, Output::Val>, Output::R>);
-
-    fn push_refs(&mut self, key: &Output::Key, val: &Output::Val, weight: &Output::R);
-
-    fn push_vals(&mut self, key: &mut Output::Key, val: &mut Output::Val, weight: &mut Output::R);
-
-    fn reserve(&mut self, additional: usize);
-
-    /// Adds an ordered sequence of elements to the batch.
-    #[inline]
-    fn extend<
-        'a,
-        It: Iterator<Item = &'a mut WeightedItem<Output::Key, Output::Val, Output::R>>,
-    >(
-        &mut self,
-        iter: It,
-    ) {
-        let (lower, upper) = iter.size_hint();
-        self.reserve(upper.unwrap_or(lower));
-
-        for item in iter {
-            self.push(item);
-        }
+    /// Creates a new builder with an initial capacity of 0.
+    fn new_builder(factories: &Output::Factories) -> Self {
+        Self::with_capacity(factories, 0)
     }
 
-    /// Completes building and returns the batch.
-    fn done(self) -> Output;
-}
+    /// Creates an empty builder with some initial `capacity` for keys.
+    fn with_capacity(factories: &Output::Factories, capacity: usize) -> Self;
 
-/// Functionality for building timed batches from ordered update sequences.
-///
-/// The [`Builder`] trait builds a batch in which every tuple has the same time.
-/// This trait builds a batch in which each tuple's time can be individually
-/// specified.
-pub trait TimedBuilder<Output>: Builder<Output>
-where
-    Output: Batch,
-{
-    /// Allocates an empty builder with some capacity.
-    fn timed_with_capacity(factories: &Output::Factories, cap: usize) -> Self
+    /// Creates an empty builder to hold the result of merging `batches`.
+    fn for_merge<B, AR>(factories: &Output::Factories, batches: &[AR]) -> Self
     where
-        Self: Sized,
-    {
-        <Self as Builder<Output>>::with_capacity(factories, Output::Time::default(), cap)
-    }
-
-    /// Allocates an empty builder to hold the result of merging `batches`.
-    fn timed_for_merge<B, AR>(factories: &Output::Factories, batches: &[AR]) -> Self
-    where
-        Self: Sized,
         B: BatchReader,
         AR: Deref<Target = B>,
     {
         let cap = batches.iter().map(|b| b.len()).sum();
-        <Self as Builder<Output>>::with_capacity(factories, Output::Time::default(), cap)
+        Self::with_capacity(factories, cap)
     }
 
-    /// Adds an element to the batch.
-    fn push_time(
+    /// Adds time-diff pair `(time, weight)`.
+    fn push_time_diff(&mut self, time: &Output::Time, weight: &Output::R);
+
+    /// Adds time-diff pair `(time, weight)`.
+    fn push_time_diff_mut(&mut self, time: &mut Output::Time, weight: &mut Output::R) {
+        self.push_time_diff(time, weight);
+    }
+
+    /// Adds value `val`.
+    fn push_val(&mut self, val: &Output::Val);
+
+    /// Adds value `val`.
+    fn push_val_mut(&mut self, val: &mut Output::Val) {
+        self.push_val(val);
+    }
+
+    /// Adds key `key`.
+    fn push_key(&mut self, key: &Output::Key);
+
+    /// Adds key `key`.
+    fn push_key_mut(&mut self, key: &mut Output::Key) {
+        self.push_key(key);
+    }
+
+    /// Adds time-diff pair `(), weight`.
+    fn push_diff(&mut self, weight: &Output::R)
+    where
+        Output::Time: PartialEq<()>,
+    {
+        self.push_time_diff(&Output::Time::default(), weight);
+    }
+
+    /// Adds time-diff pair `(), weight`.
+    fn push_diff_mut(&mut self, weight: &mut Output::R)
+    where
+        Output::Time: PartialEq<()>,
+    {
+        self.push_diff(weight);
+    }
+
+    /// Adds time-diff pair `(), weight` and value `val`.
+    fn push_val_diff(&mut self, val: &Output::Val, weight: &Output::R)
+    where
+        Output::Time: PartialEq<()>,
+    {
+        self.push_time_diff(&Output::Time::default(), weight);
+        self.push_val(val);
+    }
+
+    /// Adds time-diff pair `(), weight` and value `val`.
+    fn push_val_diff_mut(&mut self, val: &mut Output::Val, weight: &mut Output::R)
+    where
+        Output::Time: PartialEq<()>,
+    {
+        self.push_val_diff(val, weight);
+    }
+
+    /// Allocates room for `additional` keys.
+    fn reserve(&mut self, additional: usize) {
+        let _ = additional;
+    }
+
+    /// Completes building and returns the batch.
+    fn done(self) -> Output
+    where
+        Output::Time: PartialEq<()>,
+    {
+        self.done_with_bounds(bounds_for_fixed_time(&Output::Time::default()))
+    }
+
+    /// Completes building and returns the batch with lower bound `bounds.0` and
+    /// upper bound `bounds.1`.  The bounds must be correct to avoid violating
+    /// invariants in the output type.
+    fn done_with_bounds(self, bounds: (Antichain<Output::Time>, Antichain<Output::Time>))
+        -> Output;
+}
+
+/// Returns appropriate bounds for a batch in which all tuples have the given
+/// `time`.
+pub fn bounds_for_fixed_time<T>(time: &T) -> (Antichain<T>, Antichain<T>)
+where
+    T: Timestamp,
+{
+    let lower = Antichain::from_elem(time.clone());
+    let time_next = time.advance(0);
+    let upper = if time_next <= *time {
+        Antichain::new()
+    } else {
+        Antichain::from_elem(time_next)
+    };
+    (lower, upper)
+}
+
+/// Batch builder that accepts a full tuple at a time.
+///
+/// This wrapper for [Builder] allows a full tuple to be added at a time.
+pub struct TupleBuilder<B, Output>
+where
+    B: Builder<Output>,
+    Output: Batch,
+{
+    builder: B,
+    kv: Box<DynPair<Output::Key, Output::Val>>,
+    has_kv: bool,
+}
+
+impl<B, Output> TupleBuilder<B, Output>
+where
+    B: Builder<Output>,
+    Output: Batch,
+{
+    pub fn new(factories: &Output::Factories, builder: B) -> Self {
+        Self {
+            builder,
+            kv: factories.item_factory().default_box(),
+            has_kv: false,
+        }
+    }
+
+    /// Adds `element` to the batch.
+    pub fn push(&mut self, element: &mut DynPair<DynPair<Output::Key, Output::Val>, Output::R>)
+    where
+        Output::Time: PartialEq<()>,
+    {
+        let (kv, w) = element.split_mut();
+        let (k, v) = kv.split_mut();
+        self.push_vals(k, v, &mut Output::Time::default(), w);
+    }
+
+    /// Adds tuple `(key, val, time, weight)` to the batch.
+    pub fn push_refs(
         &mut self,
         key: &Output::Key,
         val: &Output::Val,
         time: &Output::Time,
         weight: &Output::R,
-    );
+    ) {
+        if self.has_kv {
+            let (k, v) = self.kv.split_mut();
+            if k != key {
+                self.builder.push_val_mut(v);
+                self.builder.push_key_mut(k);
+                self.kv.from_refs(key, val);
+            } else if v != val {
+                self.builder.push_val_mut(v);
+                val.clone_to(v);
+            }
+        } else {
+            self.has_kv = true;
+            self.kv.from_refs(key, val);
+        }
+        self.builder.push_time_diff(time, weight);
+    }
 
-    /// Completes building and returns the batch with lower bound `lower` and
-    /// upper bound `upper`.  The bounds must be correct to avoid violating
+    /// Adds tuple `(key, val, time, weight)` to the batch.
+    pub fn push_vals(
+        &mut self,
+        key: &mut Output::Key,
+        val: &mut Output::Val,
+        time: &mut Output::Time,
+        weight: &mut Output::R,
+    ) {
+        if self.has_kv {
+            let (k, v) = self.kv.split_mut();
+            if k != key {
+                self.builder.push_val_mut(v);
+                self.builder.push_key_mut(k);
+                self.kv.from_vals(key, val);
+            } else if v != val {
+                self.builder.push_val_mut(v);
+                val.move_to(v);
+            }
+        } else {
+            self.has_kv = true;
+            self.kv.from_vals(key, val);
+        }
+        self.builder.push_time_diff_mut(time, weight);
+    }
+
+    pub fn reserve(&mut self, additional: usize) {
+        self.builder.reserve(additional)
+    }
+
+    /// Adds all of the tuples in `iter` to the batch.
+    pub fn extend<'a, I>(&mut self, iter: I)
+    where
+        Output::Time: PartialEq<()>,
+        I: Iterator<Item = &'a mut WeightedItem<Output::Key, Output::Val, Output::R>>,
+    {
+        let (lower, upper) = iter.size_hint();
+        self.reserve(upper.unwrap_or(lower));
+
+        for item in iter {
+            let (kv, w) = item.split_mut();
+            let (k, v) = kv.split_mut();
+
+            self.push_vals(k, v, &mut Output::Time::default(), w);
+        }
+    }
+
+    /// Completes building and returns the batch.
+    pub fn done(self) -> Output
+    where
+        Output::Time: PartialEq<()>,
+    {
+        self.done_with_bounds(bounds_for_fixed_time(&Output::Time::default()))
+    }
+
+    /// Completes building and returns the batch with lower bound `bounds.0` and
+    /// upper bound `bounds.1`.  The bounds must be correct to avoid violating
     /// invariants in the output type.
-    fn done_with_bounds(
-        self,
-        lower: Antichain<Output::Time>,
-        upper: Antichain<Output::Time>,
-    ) -> Output;
+    pub fn done_with_bounds(
+        mut self,
+        bounds: (Antichain<Output::Time>, Antichain<Output::Time>),
+    ) -> Output {
+        if self.has_kv {
+            let (k, v) = self.kv.split_mut();
+            self.builder.push_val_mut(v);
+            self.builder.push_key_mut(k);
+        }
+        self.builder.done_with_bounds(bounds)
+    }
 }
 
 /// Represents a merge in progress.
@@ -937,13 +1153,14 @@ where
     let offsets = unsafe { archived_root::<Vec<usize>>(data) };
     assert!(offsets.len() % 2 == 0);
     let n = offsets.len() / 2;
-    let mut builder = B::Builder::with_capacity(factories, (), n);
+    let mut builder = B::Builder::with_capacity(factories, n);
     let mut key = factories.key_factory().default_box();
     let mut diff = factories.weight_factory().default_box();
     for i in 0..n {
         unsafe { key.deserialize_from_bytes(data, offsets[i * 2] as usize) };
         unsafe { diff.deserialize_from_bytes(data, offsets[i * 2 + 1] as usize) };
-        builder.push_refs(&key, &(), &diff);
+        builder.push_val_diff(&(), &diff);
+        builder.push_key(&key);
     }
     builder.done()
 }

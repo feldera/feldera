@@ -341,11 +341,11 @@ where
         // Inputs must be sorted by key
         debug_assert!(updates.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())));
 
-        let mut key_updates = self.batch_factories.weighted_items_factory().default_box();
+        let mut key_updates = self.batch_factories.weighted_vals_factory().default_box();
 
         let mut trace_cursor = trace.cursor();
 
-        let mut builder = B::Builder::with_capacity(&self.batch_factories, (), updates.len() * 2);
+        let mut builder = B::Builder::with_capacity(&self.batch_factories, updates.len() * 2);
 
         let val_filter = self.bounds.effective_val_filter();
         let key_filter = self.bounds.effective_key_filter();
@@ -377,17 +377,21 @@ where
                 if let Some(cur_key) = cur_key.get_mut() {
                     if let Some(val) = cur_val.get_mut() {
                         key_updates.push_with(&mut |item| {
-                            let (kv, w) = item.split_mut();
-                            let (k, v) = kv.split_mut();
+                            let (v, w) = item.split_mut();
 
-                            cur_key.move_to(k);
                             val.move_to(v);
                             **w = HasOne::one();
                         });
                     }
                     key_updates.consolidate();
-                    builder.extend(key_updates.dyn_iter_mut());
-                    key_updates.truncate(0);
+                    if !key_updates.is_empty() {
+                        for pair in key_updates.dyn_iter_mut() {
+                            let (v, d) = pair.split_mut();
+                            builder.push_val_diff_mut(v, d);
+                        }
+                        builder.push_key(cur_key);
+                    }
+                    key_updates.clear();
                 }
 
                 skip_key = false;
@@ -412,11 +416,9 @@ where
 
                             if passes_filter(&val_filter, val) {
                                 key_updates.push_with(&mut |item| {
-                                    let (kv, w) = item.split_mut();
-                                    let (k, v) = kv.split_mut();
+                                    let (v, w) = item.split_mut();
 
                                     val.clone_to(v);
-                                    key.clone_to(k);
                                     **w = weight.neg()
                                 });
                                 cur_val.from_ref(val);
@@ -462,17 +464,21 @@ where
         if let Some(cur_key) = cur_key.get_mut() {
             if let Some(val) = cur_val.get_mut() {
                 key_updates.push_with(&mut |item| {
-                    let (kv, w) = item.split_mut();
-                    let (k, v) = kv.split_mut();
+                    let (v, w) = item.split_mut();
 
-                    cur_key.move_to(k);
                     val.move_to(v);
                     **w = HasOne::one();
                 });
             }
 
             key_updates.consolidate();
-            builder.extend(key_updates.dyn_iter_mut());
+            if !key_updates.is_empty() {
+                for pair in key_updates.dyn_iter_mut() {
+                    let (v, d) = pair.split_mut();
+                    builder.push_val_diff_mut(v, d);
+                }
+                builder.push_key(cur_key);
+            }
             key_updates.clear();
         }
 
