@@ -6,6 +6,7 @@ import {
   getPipeline,
   type ExtendedPipeline,
   type Pipeline,
+  type PipelineStatus,
   type SqlCompilerMessage
 } from '$lib/services/pipelineManager'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
@@ -194,16 +195,7 @@ export const extractRustCompilerError = <Report>(
  */
 export const extractProgramErrors =
   <Report>(getReport: (pipelineName: string, message: string) => Report) =>
-  (pipeline: {
-    name: string
-    status:
-      | { RustError: string }
-      | { SystemError: string }
-      | { SqlError: SqlCompilerMessage[] }
-      | { SqlWarning: SqlCompilerMessage[] }
-      | string
-      | { PipelineError: ErrorResponse }
-  }) => {
+  (pipeline: { name: string; status: PipelineStatus }) => {
     const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
     const result = match(pipeline.status)
       .returnType<SystemError<any, Report>[]>()
@@ -294,16 +286,7 @@ export const extractProgramErrors =
     return result
   }
 
-export const extractProgramStderr = (pipeline: {
-  name: string
-  status:
-    | { RustError: string }
-    | { SystemError: string }
-    | { SqlError: SqlCompilerMessage[] }
-    | { SqlWarning: SqlCompilerMessage[] }
-    | string
-    | { PipelineError: ErrorResponse }
-}) => {
+export const extractProgramStderr = (pipeline: { name: string; status: PipelineStatus }) => {
   const result = match(pipeline.status)
     .returnType<string[]>()
     .with({ RustError: P.any }, (e) => [e.RustError])
