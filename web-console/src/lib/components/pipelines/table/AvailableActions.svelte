@@ -12,7 +12,7 @@
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
-  import { isPipelineIdle } from '$lib/functions/pipelines/status'
+  import { isPipelineEditable } from '$lib/functions/pipelines/status'
   let {
     pipelines,
     selectedPipelines = $bindable()
@@ -27,9 +27,16 @@
   let statusActions = (status: PipelineStatus) =>
     match(status)
       .returnType<(typeof availableActions)[number][]>()
-      .with('Queued', 'Compiling SQL', () => ['delete'])
-      .with('SQL compiled', () => ['delete'])
-      .with('Compiling binary', () => ['delete'])
+      .with(
+        { Queued: P.any },
+        { 'Compiling SQL': P.any },
+        { 'SQL compiled': P.any },
+        { 'Compiling binary': P.any },
+        (cause) => [
+          ...(Object.values(cause)[0] === 'upgrade' ? ['shutdown' as const] : []),
+          'delete'
+        ]
+      )
       .with('Shutdown', { SqlWarning: P.any }, () => ['start', 'delete'])
       .with('Initializing', () => ['shutdown', 'delete'])
       .with('Starting up', () => ['shutdown', 'delete'])
@@ -82,7 +89,7 @@
   }
   let deletePipelines = () => {
     selected.forEach(async (pipeline) => {
-      if (!isPipelineIdle(pipeline.status)) {
+      if (!isPipelineEditable(pipeline.status)) {
         await postPipelineAction(pipeline.name, 'shutdown').then((waitFor) => waitFor())
       }
       return deletePipeline(pipeline.name)
