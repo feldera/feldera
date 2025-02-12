@@ -9,10 +9,12 @@ use dbsp::{
     operator::{MapHandle, SetHandle, ZSetHandle},
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
 };
-use feldera_types::program_schema::Relation;
+use feldera_adapterlib::catalog::CircuitCatalog;
+use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -297,6 +299,7 @@ impl Catalog {
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
             integrate_handle: None,
+            indexes: BTreeMap::new(),
         };
 
         self.register_output_batch_handles(handles).unwrap();
@@ -344,6 +347,7 @@ impl Catalog {
             )) as Arc<dyn SerBatchReaderHandle>),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
+            indexes: BTreeMap::new(),
         };
 
         self.register_output_batch_handles(handles).unwrap();
@@ -383,6 +387,7 @@ impl Catalog {
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
             integrate_handle: None,
+            indexes: BTreeMap::new(),
         };
 
         self.register_output_batch_handles(handles).unwrap();
@@ -431,9 +436,50 @@ impl Catalog {
             integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, VD, ()>>::new(
                 integrate_handle,
             )) as Arc<dyn SerBatchReaderHandle>),
+            indexes: BTreeMap::new(),
         };
 
         self.register_output_batch_handles(handles).unwrap();
+    }
+
+    /// Register an index associated with output stream `view_name`.
+    ///
+    /// The index stream should contain the same updates as the primary
+    /// stream, but as an indexed Z-set.
+    pub fn register_index<K, KD, V, VD>(
+        &mut self,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        view_name: &SqlIdentifier,
+        index_name: &SqlIdentifier,
+    ) -> Option<()>
+    where
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>
+            + Send
+            + 'static,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Send
+            + 'static,
+        K: DBData + Send + Sync + From<KD> + Default,
+        V: DBData + Send + Sync + From<VD> + Default,
+    {
+        let output_handles = self.output_handles_mut(view_name)?;
+        if output_handles.indexes.contains_key(index_name) {
+            return None;
+        }
+
+        let stream_handle = stream.output();
+
+        output_handles.indexes.insert(
+            index_name.clone(),
+            Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(stream_handle))
+                as Box<dyn SerCollectionHandle>,
+        );
+
+        Some(())
     }
 }
 
