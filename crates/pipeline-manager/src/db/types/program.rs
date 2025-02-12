@@ -548,7 +548,8 @@ pub fn generate_program_info(
             match connector.config.transport {
                 TransportConfig::FileOutput(_)
                 | TransportConfig::KafkaOutput(_)
-                | TransportConfig::DeltaTableOutput(_) => {}
+                | TransportConfig::DeltaTableOutput(_)
+                | TransportConfig::RedisOutput(_) => {}
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedOutputConnector {
                         position: origin_value.value_position,
