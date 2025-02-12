@@ -555,11 +555,9 @@ where
             .apply_named("Weigh", move |batch| {
                 let mut agg = output_factories.weight_factory().default_box();
                 let mut agg_delta = output_factories.weight_factory().default_box();
-                let mut key = output_factories.key_factory().default_box();
                 let mut input_weight = batch.factories().weight_factory().default_box();
 
-                let mut delta =
-                    <O::Builder>::with_capacity(&output_factories, (), batch.key_count());
+                let mut delta = <O::Builder>::with_capacity(&output_factories, batch.key_count());
                 let mut cursor = batch.cursor();
                 while cursor.key_valid() {
                     agg.set_zero();
@@ -576,8 +574,8 @@ where
                         cursor.step_val();
                     }
                     if !agg.is_zero() {
-                        cursor.key().clone_to(&mut key);
-                        delta.push_vals(&mut key, ().erase_mut(), &mut agg);
+                        delta.push_val_diff_mut(().erase_mut(), &mut agg);
+                        delta.push_key(cursor.key());
                     }
                     cursor.step_key();
                 }
@@ -698,7 +696,7 @@ where
 {
     #[trace]
     async fn eval(&mut self, i: &Z) -> O {
-        let mut builder = O::Builder::with_capacity(&self.factories, (), i.len());
+        let mut builder = O::Builder::with_capacity(&self.factories, i.len());
         let mut agg = self.option_output_factory.default_box();
         let mut key = self.factories.key_factory().default_box();
 
@@ -710,7 +708,9 @@ where
 
             if let Some(agg) = agg.get_mut() {
                 cursor.key().clone_to(key.as_mut());
-                builder.push_vals(&mut key, agg, ZWeight::one().erase_mut());
+                builder.push_diff_mut(ZWeight::one().erase_mut());
+                builder.push_val_mut(agg);
+                builder.push_key_mut(&mut key);
             }
             cursor.step_key();
         }

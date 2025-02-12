@@ -1051,7 +1051,6 @@ mod test {
                 let mut cursor = batch.inner().cursor();
                 let mut result = <DynOrdZSet<DynData> as DynBatch>::Builder::with_capacity(
                     &BatchReaderFactories::new::<u64, (), ZWeight>(),
-                    (),
                     batch.len(),
                 );
 
@@ -1060,7 +1059,8 @@ mod test {
                         .weight()
                         .downcast_checked::<ZWeight>()
                         .mul(nworkers as i64);
-                    result.push_refs(cursor.key(), ().erase(), w.erase());
+                    result.push_val_diff(().erase(), w.erase());
+                    result.push_key(cursor.key());
                     cursor.step_key();
                 }
                 TypedBatch::new(result.done())

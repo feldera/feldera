@@ -14,10 +14,9 @@ use crate::{
     },
     time::{Antichain, AntichainRef},
     trace::{
-        cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
         ord::{filter, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Filter, Merger, TimedBuilder, VecIndexedWSetFactories, WeightedItem,
+        Filter, Merger, VecIndexedWSetFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
@@ -114,6 +113,10 @@ where
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
         self.vec_indexed_wset_factory.weighted_items_factory()
+    }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<V, R>> {
+        self.vec_indexed_wset_factory.weighted_vals_factory()
     }
 
     fn time_diffs_factory(
@@ -864,22 +867,6 @@ where
     }
 }
 
-impl<K, V, R> HasTimeDiffCursor<K, V, (), R> for FileIndexedWSetCursor<'_, K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    type TimeDiffCursor<'a>
-        = SingletonTimeDiffCursor<'a, R>
-    where
-        Self: 'a;
-
-    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        SingletonTimeDiffCursor::new(self.val_valid().then(|| self.diff.as_ref()))
-    }
-}
-
 /// A builder for batches from ordered update tuples.
 #[derive(SizeOf)]
 pub struct FileIndexedWSetBuilder<K, V, R>
@@ -892,7 +879,7 @@ where
     factories: FileIndexedWSetFactories<K, V, R>,
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, R>,
-    key: Box<DynOpt<K>>,
+    weight: Box<R>,
 }
 
 impl<K, V, R> Builder<FileIndexedWSet<K, V, R>> for FileIndexedWSetBuilder<K, V, R>
@@ -903,16 +890,7 @@ where
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn new_builder(factories: &FileIndexedWSetFactories<K, V, R>, _time: ()) -> Self {
-        Self::with_capacity(factories, _time, 1_000_000)
-    }
-
-    #[inline]
-    fn with_capacity(
-        factories: &FileIndexedWSetFactories<K, V, R>,
-        _time: (),
-        capacity: usize,
-    ) -> Self {
+    fn with_capacity(factories: &FileIndexedWSetFactories<K, V, R>, capacity: usize) -> Self {
         Self {
             factories: factories.clone(),
             writer: Writer2::new(
@@ -924,67 +902,38 @@ where
                 capacity,
             )
             .unwrap(),
-            key: factories.opt_key_factory.default_box(),
+            weight: factories.weight_factory().default_box(),
         }
     }
 
-    #[inline]
-    fn reserve(&mut self, _additional: usize) {}
-
-    #[inline]
-    fn push(&mut self, item: &mut DynPair<DynPair<K, V>, R>) {
-        let (kv, r) = item.split();
-        let (k, v) = kv.split();
-
-        self.push_refs(k, v, r);
-    }
-
-    #[inline]
-    fn push_refs(&mut self, key: &K, val: &V, weight: &R) {
-        if let Some(cur_key) = self.key.get() {
-            if cur_key != key {
-                self.writer.write0((cur_key, ().erase())).unwrap();
-                self.key.from_ref(key);
-            }
-        } else {
-            self.key.from_ref(key);
-        }
-        self.writer.write1((val, weight)).unwrap();
-    }
-
-    #[inline]
-    fn push_vals(&mut self, key: &mut K, val: &mut V, weight: &mut R) {
-        self.push_refs(key, val, weight)
-    }
-
-    #[inline(never)]
-    fn done(mut self) -> FileIndexedWSet<K, V, R> {
-        if let Some(key) = self.key.get() {
-            self.writer.write0((key, ().erase())).unwrap();
-        }
+    fn done(self) -> FileIndexedWSet<K, V, R> {
         FileIndexedWSet {
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap()),
         }
     }
-}
 
-impl<K, V, R> TimedBuilder<FileIndexedWSet<K, V, R>> for FileIndexedWSetBuilder<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn push_time(&mut self, key: &K, val: &V, _time: &(), weight: &R) {
-        self.push_refs(key, val, weight);
+    fn push_key(&mut self, key: &K) {
+        self.writer.write0((key, &())).unwrap();
     }
 
-    fn done_with_bounds(
-        self,
-        _lower: Antichain<()>,
-        _upper: Antichain<()>,
-    ) -> FileIndexedWSet<K, V, R> {
-        self.done()
+    fn push_val(&mut self, val: &V) {
+        self.writer.write1((val, &*self.weight)).unwrap();
+    }
+
+    fn push_time_diff(&mut self, _time: &(), weight: &R) {
+        weight.clone_to(&mut self.weight);
+    }
+
+    fn push_val_diff(&mut self, val: &V, weight: &R) {
+        self.writer.write1((val, weight)).unwrap();
+    }
+
+    fn done_with_bounds(self, _bounds: (Antichain<()>, Antichain<()>)) -> FileIndexedWSet<K, V, R> {
+        FileIndexedWSet {
+            factories: self.factories,
+            file: Arc::new(self.writer.into_reader().unwrap()),
+        }
     }
 }
 

@@ -167,16 +167,21 @@ where
 {
     fn distinct(&self) -> Self {
         let factories = self.factories();
-        let mut builder = Self::Builder::with_capacity(&factories, (), self.key_count());
+        let mut builder = Self::Builder::with_capacity(&factories, self.key_count());
         let mut cursor = self.cursor();
 
         while cursor.key_valid() {
+            let mut n_updates = 0;
             while cursor.val_valid() {
                 let weight = cursor.weight();
                 if weight.ge0() {
-                    builder.push_refs(cursor.key(), cursor.val(), ZWeight::one().erase());
+                    builder.push_val_diff(cursor.val(), ZWeight::one().erase());
+                    n_updates += 1;
                 }
                 cursor.step_val();
+            }
+            if n_updates > 0 {
+                builder.push_key(cursor.key());
             }
             cursor.step_key();
         }
