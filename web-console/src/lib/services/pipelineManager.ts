@@ -68,7 +68,7 @@ const toPipelineThumb = (
   description: pipeline.description,
   runtimeConfig: pipeline.runtime_config,
   programConfig: pipeline.program_config,
-  status: consolidatePipelineStatus(
+  ...consolidatePipelineStatus(
     pipeline.program_status,
     pipeline.deployment_status,
     pipeline.deployment_desired_status,
@@ -118,7 +118,7 @@ const toExtendedPipeline = ({
   runtimeConfig: pipeline.runtime_config,
   version: pipeline.version,
   refreshVersion: pipeline.refresh_version,
-  status: consolidatePipelineStatus(
+  ...consolidatePipelineStatus(
     program_status,
     deployment_status,
     deployment_desired_status,
@@ -217,17 +217,15 @@ export const getPipelineStatus = async (pipeline_name: string) => {
     path: { pipeline_name: encodeURIComponent(pipeline_name) },
     query: { selector: 'status' }
   })
-  return {
-    status: consolidatePipelineStatus(
-      pipeline.program_status,
-      pipeline.deployment_status,
-      pipeline.deployment_desired_status,
-      pipeline.deployment_error
-    )
-  }
+  return consolidatePipelineStatus(
+    pipeline.program_status,
+    pipeline.deployment_status,
+    pipeline.deployment_desired_status,
+    pipeline.deployment_error
+  )
 }
 
-export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>
+export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>['status']
 
 export const getPipelineStats = async (pipeline_name: string) => {
   return handled(_getPipelineStats)({
@@ -254,11 +252,19 @@ const consolidatePipelineStatus = (
   desiredStatus: _PipelineStatus,
   pipelineError: ErrorResponse | null | undefined
 ) => {
-  return match([pipelineStatus, desiredStatus, pipelineError, programStatus])
-    .with(['Shutdown', P.any, P.nullish, 'CompilingSql'], () => 'Compiling SQL' as const)
-    .with(['Shutdown', P.any, P.nullish, 'SqlCompiled'], () => 'SQL compiled' as const)
-    .with(['Shutdown', P.any, P.nullish, 'Pending'], () => 'Queued' as const)
-    .with(['Shutdown', P.any, P.nullish, 'CompilingRust'], () => 'Compiling binary' as const)
+  const status = match([pipelineStatus, desiredStatus, pipelineError, programStatus])
+    .with(['Shutdown', P.any, P.nullish, 'CompilingSql'], () => ({
+      'Compiling SQL': desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+    }))
+    .with(['Shutdown', P.any, P.nullish, 'SqlCompiled'], () => ({
+      'SQL compiled': desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+    }))
+    .with(['Shutdown', P.any, P.nullish, 'Pending'], () => ({
+      Queued: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+    }))
+    .with(['Shutdown', P.any, P.nullish, 'CompilingRust'], () => ({
+      'Compiling binary': desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+    }))
     .with(
       ['Shutdown', P.any, P.nullish, { SqlError: P.select() }],
       (SqlError): { SqlError: SqlCompilerMessage[] } | { SqlWarning: SqlCompilerMessage[] } =>
@@ -275,9 +281,9 @@ const consolidatePipelineStatus = (
     .with(['Shutdown', 'Shutdown', P.select(P.nonNullable), P.any], () => 'Shutdown' as const)
     .with(['Provisioning', P.any, P.nullish, P._], () => 'Starting up' as const)
     .with(['Initializing', P.any, P.nullish, P._], () => 'Initializing' as const)
-    .with(['Paused', P.any, P.nullish, 'CompilingSql'], () => 'Compiling SQL' as const)
-    .with(['Paused', P.any, P.nullish, 'Pending'], () => 'Queued' as const)
-    .with(['Paused', P.any, P.nullish, 'CompilingRust'], () => 'Compiling binary' as const)
+    // .with(['Paused', P.any, P.nullish, 'CompilingSql'], () => ({'Compiling SQL': desiredStatus === 'Shutdown' ? 'compile' : 'upgrade'}))
+    // .with(['Paused', P.any, P.nullish, 'Pending'], () => ({'Queued': desiredStatus === 'Shutdown' ? 'compile' : 'upgrade'}))
+    // .with(['Paused', P.any, P.nullish, 'CompilingRust'], () => ({'Compiling binary': desiredStatus === 'Shutdown' ? 'compile' : 'upgrade'}))
     .with(['Paused', 'Running', P.nullish, P._], () => 'Resuming' as const)
     .with(['Paused', 'Shutdown', P.nullish, P._], () => 'ShuttingDown' as const)
     .with(['Paused', P.any, P.nullish, P._], () => 'Paused' as const)
@@ -292,6 +298,9 @@ const consolidatePipelineStatus = (
         `Unable to consolidatePipelineStatus: ${pipelineStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
       )
     })
+  return {
+    status
+  }
 }
 
 export const deletePipeline = async (pipeline_name: string) => {
