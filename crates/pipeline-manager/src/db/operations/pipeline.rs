@@ -52,7 +52,8 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
      p.program_status_since, p.program_error, p.program_info,
      p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_binary_url,
      p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
-     p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version";
+     p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version,
+     p.deployment_check, p.deployment_check_timestamp";
 
 /// Converts a pipeline table row to its extended descriptor with all fields.
 ///
@@ -65,7 +66,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
 ///   Backwards incompatible changes therein will prevent retrieval of pipelines
 ///   because an error will be returned instead.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
-    assert_eq!(row.len(), 27);
+    assert_eq!(row.len(), 29);
 
     // Runtime configuration: RuntimeConfig
     let runtime_config = deserialize_json_value(row.get(7))?;
@@ -126,6 +127,8 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         deployment_config,
         deployment_location: row.get(25),
         refresh_version: Version(row.get(26)),
+        deployment_check: row.get(27),
+        deployment_check_timestamp: row.get(28),
     })
 }
 
@@ -134,13 +137,14 @@ const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
     "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version,
      p.program_version, p.program_status, p.program_status_since, p.program_error,
      p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
-     p.deployment_error, p.deployment_location, p.refresh_version";
+     p.deployment_error, p.deployment_location, p.refresh_version,
+     p.deployment_check, p.deployment_check_timestamp";
 
 /// Converts a pipeline table row to its extended descriptor with only fields relevant to monitoring.
 fn row_to_extended_pipeline_descriptor_monitoring(
     row: &Row,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    assert_eq!(row.len(), 17);
+    assert_eq!(row.len(), 19);
     let deployment_error = match row.get::<_, Option<String>>(14) {
         None => None,
         Some(s) => Some(deserialize_error_response(&s)?),
@@ -162,6 +166,8 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         deployment_error,
         deployment_location: row.get(15),
         refresh_version: Version(row.get(16)),
+        deployment_check: row.get(17),
+        deployment_check_timestamp: row.get(18),
     })
 }
 
@@ -786,6 +792,7 @@ pub(crate) async fn set_deployment_status(
     new_deployment_error: Option<ErrorResponse>,
     new_deployment_config: Option<serde_json::Value>,
     new_deployment_location: Option<String>,
+    new_deployment_check: Option<String>,
 ) -> Result<(), DBError> {
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
 
@@ -877,6 +884,19 @@ pub(crate) async fn set_deployment_status(
         current.deployment_location
     };
 
+    // Deployment check is set when becoming...
+    // - ShuttingDown or Shutdown: NULL
+    // - Otherwise: a value
+    let final_deployment_check = if new_deployment_status == PipelineStatus::ShuttingDown
+        || new_deployment_status == PipelineStatus::Shutdown
+    {
+        assert!(new_deployment_check.is_none());
+        new_deployment_check
+    } else {
+        assert!(new_deployment_check.is_some());
+        new_deployment_check
+    };
+
     // Execute query
     let stmt = txn
         .prepare_cached(
@@ -885,23 +905,82 @@ pub(crate) async fn set_deployment_status(
                      deployment_status_since = now(),
                      deployment_error = $2,
                      deployment_config = $3,
-                     deployment_location = $4
-                 WHERE tenant_id = $5 AND id = $6",
+                     deployment_location = $4,
+                     deployment_check = $5,
+                     deployment_check_timestamp = (CASE WHEN $6 THEN now() ELSE NULL END)
+                 WHERE tenant_id = $7 AND id = $8",
         )
         .await?;
     let rows_affected = txn
         .execute(
             &stmt,
             &[
-                &new_deployment_status.to_string(),
+                &new_deployment_status.to_string(), // $1: deployment_status
                 &match final_deployment_error {
+                    // $2: deployment_error
                     None => None,
                     Some(v) => Some(serialize_error_response(&v)?),
                 },
-                &final_deployment_config.map(|v| v.to_string()),
-                &final_deployment_location,
-                &tenant_id.0,
-                &pipeline_id.0,
+                &final_deployment_config.map(|v| v.to_string()), // $3: deployment_config
+                &final_deployment_location,                      // $4: deployment_location
+                &final_deployment_check,                         // $5: deployment_check
+                &final_deployment_check.is_some(),               // $6: deployment_check_timestamp
+                &tenant_id.0,                                    // $7: tenant_id
+                &pipeline_id.0,                                  // $8: id
+            ],
+        )
+        .await?;
+    if rows_affected > 0 {
+        Ok(())
+    } else {
+        Err(DBError::UnknownPipeline { pipeline_id })
+    }
+}
+
+/// Sets pipeline deployment check when the status does not change.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn set_deployment_check(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    version_guard: Version,
+    new_deployment_check: String,
+) -> Result<(), DBError> {
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+
+    // Use the version guard to check that the deployment is the intended one
+    if current.version != version_guard {
+        return Err(DBError::OutdatedPipelineVersion {
+            outdated_version: version_guard,
+            latest_version: current.version,
+        });
+    }
+
+    // Deployment check cannot be separately set when shutdown or shutting down as it is not relevant
+    if current.deployment_status == PipelineStatus::ShuttingDown
+        || current.deployment_status == PipelineStatus::Shutdown
+    {
+        return Err(DBError::DeploymentCheckUpdateWhileShutdown {
+            status: current.deployment_status,
+        });
+    }
+
+    // Execute query
+    let stmt = txn
+        .prepare_cached(
+            "UPDATE pipeline
+                 SET deployment_check = $1,
+                     deployment_check_timestamp = now()
+                 WHERE tenant_id = $2 AND id = $3",
+        )
+        .await?;
+    let rows_affected = txn
+        .execute(
+            &stmt,
+            &[
+                &new_deployment_check, // $1: deployment_check
+                &tenant_id.0,          // $2: tenant_id
+                &pipeline_id.0,        // $3: id
             ],
         )
         .await?;

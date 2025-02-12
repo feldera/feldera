@@ -84,6 +84,8 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         deployment_status: PipelineStatus::Shutdown,
         deployment_status_since: Default::default(),
         deployment_desired_status: PipelineDesiredStatus::Shutdown,
+        deployment_check: None,
+        deployment_check_timestamp: None,
         deployment_error: None,
         refresh_version: Version(4),
     }
@@ -138,6 +140,8 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         deployment_status: PipelineStatus::Shutdown,
         deployment_status_since: Default::default(),
         deployment_desired_status: PipelineDesiredStatus::Shutdown,
+        deployment_check: None,
+        deployment_check_timestamp: None,
         deployment_error: None,
         refresh_version: Version(1),
     }
@@ -177,6 +181,8 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
         deployment_status: pipeline.deployment_status,
         deployment_status_since: pipeline.deployment_status_since,
         deployment_desired_status: pipeline.deployment_desired_status,
+        deployment_check: pipeline.deployment_check,
+        deployment_check_timestamp: pipeline.deployment_check_timestamp,
         deployment_error: pipeline.deployment_error,
         refresh_version: pipeline.refresh_version,
     }
@@ -226,6 +232,8 @@ fn pipeline_selected_info_internal_to_external(
         deployment_status: pipeline.deployment_status,
         deployment_status_since: pipeline.deployment_status_since,
         deployment_desired_status: pipeline.deployment_desired_status,
+        deployment_check: pipeline.deployment_check,
+        deployment_check_timestamp: pipeline.deployment_check_timestamp,
         deployment_error: pipeline.deployment_error,
         refresh_version: pipeline.refresh_version,
     }

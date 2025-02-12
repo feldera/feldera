@@ -160,6 +160,9 @@ pub enum DBError {
         desired_status: PipelineDesiredStatus,
         requested_desired_status: PipelineDesiredStatus,
     },
+    DeploymentCheckUpdateWhileShutdown {
+        status: PipelineStatus,
+    },
 }
 
 impl DBError {
@@ -546,6 +549,12 @@ impl Display for DBError {
                     "Deployment status (current: '{status:?}', desired: '{desired_status:?}') cannot have desired changed to '{requested_desired_status:?}'. {hint}"
                 )
             }
+            DBError::DeploymentCheckUpdateWhileShutdown { status } => {
+                write!(
+                    f,
+                    "Cannot update deployment check while status ({status}) is ShuttingDown or Shutdown"
+                )
+            }
         }
     }
 }
@@ -617,6 +626,9 @@ impl DetailedError for DBError {
             Self::IllegalPipelineStateTransition { .. } => {
                 Cow::from("IllegalPipelineStateTransition")
             }
+            Self::DeploymentCheckUpdateWhileShutdown { .. } => {
+                Cow::from("DeploymentCheckUpdateWhileShutdown")
+            }
         }
     }
 }
@@ -666,6 +678,7 @@ impl ResponseError for DBError {
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidDeploymentStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::IllegalPipelineStateTransition { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which is not valid
+            Self::DeploymentCheckUpdateWhileShutdown { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
         }
     }
 

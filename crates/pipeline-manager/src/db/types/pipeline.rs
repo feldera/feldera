@@ -459,6 +459,15 @@ pub struct ExtendedPipelineDescr {
     /// Desired pipeline status, i.e., the status requested by the user.
     pub deployment_desired_status: PipelineDesiredStatus,
 
+    /// Latest check information about the resources that are provisioned during deployment.
+    /// It describes which resources are ready, which are not, and why. This field is set unless
+    /// the `deployment_status` of the pipeline is [`ShuttingDown`](`PipelineStatus::ShuttingDown`)
+    /// or [`Shutdown`](`PipelineStatus::Shutdown`).
+    pub deployment_check: Option<String>,
+
+    /// Timestamp at which the current `deployment_check` was set.
+    pub deployment_check_timestamp: Option<DateTime<Utc>>,
+
     /// Error that caused the pipeline to fail.
     ///
     /// This field is only used when the `deployment_status` of the pipeline
@@ -501,6 +510,8 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
+    pub deployment_check: Option<String>,
+    pub deployment_check_timestamp: Option<DateTime<Utc>>,
     pub deployment_error: Option<ErrorResponse>,
     pub deployment_location: Option<String>,
     pub refresh_version: Version,

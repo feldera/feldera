@@ -1256,17 +1256,24 @@ async fn pipeline_deployment() {
                 &BTreeMap::default(),
             ))
             .unwrap(),
+            "",
         )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_initializing(tenant_id, pipeline1.id, Version(1), "location1")
+        .transit_deployment_status_to_initializing(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            "",
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_paused(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_status_to_paused(tenant_id, pipeline1.id, Version(1), "")
         .await
         .unwrap();
     handle
@@ -1276,7 +1283,7 @@ async fn pipeline_deployment() {
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_running(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_status_to_running(tenant_id, pipeline1.id, Version(1), "")
         .await
         .unwrap();
     handle
@@ -1412,24 +1419,25 @@ async fn pipeline_provision_version_guard() {
                       &BTreeMap::default(),
                       &BTreeMap::default(),
                   )).unwrap(),
+                  ""
               )
               .await.unwrap_err(),
         DBError::OutdatedPipelineVersion { outdated_version, latest_version } if outdated_version == Version(1) && latest_version == Version(2)));
     assert!(matches!(
         handle.db
-              .transit_deployment_status_to_initializing(tenant_id, pipeline.id, Version(1), "location1")
+              .transit_deployment_status_to_initializing(tenant_id, pipeline.id, Version(1), "location1", "")
               .await.unwrap_err(),
         DBError::OutdatedPipelineVersion { outdated_version, latest_version } if outdated_version == Version(1) && latest_version == Version(2)
     ));
     assert!(matches!(
         handle.db
-              .transit_deployment_status_to_paused(tenant_id, pipeline.id, Version(1))
+              .transit_deployment_status_to_paused(tenant_id, pipeline.id, Version(1), "")
               .await.unwrap_err(),
         DBError::OutdatedPipelineVersion { outdated_version, latest_version } if outdated_version == Version(1) && latest_version == Version(2)
     ));
     assert!(matches!(
         handle.db
-              .transit_deployment_status_to_running(tenant_id, pipeline.id, Version(1))
+              .transit_deployment_status_to_running(tenant_id, pipeline.id, Version(1), "")
               .await.unwrap_err(),
         DBError::OutdatedPipelineVersion { outdated_version, latest_version } if outdated_version == Version(1) && latest_version == Version(2)
     ));
@@ -1460,6 +1468,7 @@ async fn pipeline_provision_version_guard() {
                 &BTreeMap::default(),
             ))
             .unwrap(),
+            "",
         )
         .await
         .unwrap();
@@ -1562,11 +1571,12 @@ enum StorageAction {
         PipelineId,
         Version,
         #[proptest(strategy = "limited_pipeline_config()")] serde_json::Value,
+        String,
     ),
-    TransitDeploymentStatusToInitializing(TenantId, PipelineId, Version, String),
-    TransitDeploymentStatusToRunning(TenantId, PipelineId, Version),
-    TransitDeploymentStatusToPaused(TenantId, PipelineId, Version),
-    TransitDeploymentStatusToUnavailable(TenantId, PipelineId, Version),
+    TransitDeploymentStatusToInitializing(TenantId, PipelineId, Version, String, String),
+    TransitDeploymentStatusToRunning(TenantId, PipelineId, Version, String),
+    TransitDeploymentStatusToPaused(TenantId, PipelineId, Version, String),
+    TransitDeploymentStatusToUnavailable(TenantId, PipelineId, Version, String),
     TransitDeploymentStatusToShuttingDown(TenantId, PipelineId, Version),
     TransitDeploymentStatusToShutdown(TenantId, PipelineId, Version),
     TransitDeploymentStatusToFailed(
@@ -1574,7 +1584,9 @@ enum StorageAction {
         PipelineId,
         Version,
         #[proptest(strategy = "limited_error_response()")] ErrorResponse,
+        String,
     ),
+    UpdateDeploymentCheck(TenantId, PipelineId, Version, String),
     ListPipelineIdsAcrossAllTenants,
     ListPipelinesAcrossAllTenantsForMonitoring,
     ClearOngoingSqlCompilation(#[proptest(strategy = "limited_platform_version()")] String),
@@ -1597,6 +1609,9 @@ fn convert_pipeline_with_constant_timestamps(
     pipeline.created_at = timestamp;
     pipeline.program_status_since = timestamp;
     pipeline.deployment_status_since = timestamp;
+    if pipeline.deployment_check_timestamp.is_some() {
+        pipeline.deployment_check_timestamp = Some(timestamp);
+    }
     pipeline
 }
 
@@ -1609,6 +1624,9 @@ fn convert_pipeline_for_monitoring_with_constant_timestamps(
     pipeline.created_at = timestamp;
     pipeline.program_status_since = timestamp;
     pipeline.deployment_status_since = timestamp;
+    if pipeline.deployment_check_timestamp.is_some() {
+        pipeline.deployment_check_timestamp = Some(timestamp);
+    }
     pipeline
 }
 
@@ -2065,34 +2083,34 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.set_deployment_desired_status_shutdown(tenant_id, &pipeline_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitDeploymentStatusToProvisioning(tenant_id, pipeline_id, version_guard, pipeline_config) => {
+                            StorageAction::TransitDeploymentStatusToProvisioning(tenant_id, pipeline_id, version_guard, pipeline_config, deployment_check) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_provisioning(tenant_id, pipeline_id, version_guard, pipeline_config.clone()).await;
-                                let impl_response = handle.db.transit_deployment_status_to_provisioning(tenant_id, pipeline_id, version_guard, pipeline_config.clone()).await;
+                                let model_response = model.transit_deployment_status_to_provisioning(tenant_id, pipeline_id, version_guard, pipeline_config.clone(), &deployment_check).await;
+                                let impl_response = handle.db.transit_deployment_status_to_provisioning(tenant_id, pipeline_id, version_guard, pipeline_config.clone(), &deployment_check).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitDeploymentStatusToInitializing(tenant_id, pipeline_id, version_guard, deployment_location) => {
+                            StorageAction::TransitDeploymentStatusToInitializing(tenant_id, pipeline_id, version_guard, deployment_location, deployment_check) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_initializing(tenant_id, pipeline_id, version_guard, &deployment_location).await;
-                                let impl_response = handle.db.transit_deployment_status_to_initializing(tenant_id, pipeline_id, version_guard, &deployment_location).await;
+                                let model_response = model.transit_deployment_status_to_initializing(tenant_id, pipeline_id, version_guard, &deployment_location, &deployment_check).await;
+                                let impl_response = handle.db.transit_deployment_status_to_initializing(tenant_id, pipeline_id, version_guard, &deployment_location, &deployment_check).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitDeploymentStatusToRunning(tenant_id, pipeline_id, version_guard) => {
+                            StorageAction::TransitDeploymentStatusToRunning(tenant_id, pipeline_id, version_guard, deployment_check) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_running(tenant_id, pipeline_id, version_guard).await;
-                                let impl_response = handle.db.transit_deployment_status_to_running(tenant_id, pipeline_id, version_guard).await;
+                                let model_response = model.transit_deployment_status_to_running(tenant_id, pipeline_id, version_guard, &deployment_check).await;
+                                let impl_response = handle.db.transit_deployment_status_to_running(tenant_id, pipeline_id, version_guard, &deployment_check).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitDeploymentStatusToPaused(tenant_id, pipeline_id, version_guard) => {
+                            StorageAction::TransitDeploymentStatusToPaused(tenant_id, pipeline_id, version_guard, deployment_check) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_paused(tenant_id, pipeline_id, version_guard).await;
-                                let impl_response = handle.db.transit_deployment_status_to_paused(tenant_id, pipeline_id, version_guard).await;
+                                let model_response = model.transit_deployment_status_to_paused(tenant_id, pipeline_id, version_guard, &deployment_check).await;
+                                let impl_response = handle.db.transit_deployment_status_to_paused(tenant_id, pipeline_id, version_guard, &deployment_check).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitDeploymentStatusToUnavailable(tenant_id, pipeline_id, version_guard) => {
+                            StorageAction::TransitDeploymentStatusToUnavailable(tenant_id, pipeline_id, version_guard, deployment_check) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_unavailable(tenant_id, pipeline_id, version_guard).await;
-                                let impl_response = handle.db.transit_deployment_status_to_unavailable(tenant_id, pipeline_id, version_guard).await;
+                                let model_response = model.transit_deployment_status_to_unavailable(tenant_id, pipeline_id, version_guard, &deployment_check).await;
+                                let impl_response = handle.db.transit_deployment_status_to_unavailable(tenant_id, pipeline_id, version_guard, &deployment_check).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitDeploymentStatusToShuttingDown(tenant_id, pipeline_id, version_guard) => {
@@ -2107,10 +2125,16 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.transit_deployment_status_to_shutdown(tenant_id, pipeline_id, version_guard).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitDeploymentStatusToFailed(tenant_id, pipeline_id, version_guard, deployment_error) => {
+                            StorageAction::TransitDeploymentStatusToFailed(tenant_id, pipeline_id, version_guard, deployment_error, deployment_check) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_failed(tenant_id, pipeline_id, version_guard, &deployment_error).await;
-                                let impl_response = handle.db.transit_deployment_status_to_failed(tenant_id, pipeline_id, version_guard, &deployment_error).await;
+                                let model_response = model.transit_deployment_status_to_failed(tenant_id, pipeline_id, version_guard, &deployment_error, &deployment_check).await;
+                                let impl_response = handle.db.transit_deployment_status_to_failed(tenant_id, pipeline_id, version_guard, &deployment_error, &deployment_check).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::UpdateDeploymentCheck(tenant_id, pipeline_id, version_guard, deployment_check) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.update_deployment_check(tenant_id, pipeline_id, version_guard, &deployment_check).await;
+                                let impl_response = handle.db.update_deployment_check(tenant_id, pipeline_id, version_guard, &deployment_check).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::ListPipelineIdsAcrossAllTenants => {
@@ -2466,6 +2490,8 @@ fn convert_descriptor_to_monitoring(
         deployment_status: pipeline.deployment_status,
         deployment_status_since: pipeline.program_status_since,
         deployment_desired_status: pipeline.deployment_desired_status,
+        deployment_check: pipeline.deployment_check,
+        deployment_check_timestamp: pipeline.deployment_check_timestamp,
         deployment_error: pipeline.deployment_error.clone(),
         deployment_location: pipeline.deployment_location.clone(),
         refresh_version: pipeline.refresh_version,
@@ -2751,6 +2777,8 @@ impl Storage for Mutex<DbModel> {
             deployment_status: PipelineStatus::Shutdown,
             deployment_status_since: now,
             deployment_desired_status: PipelineDesiredStatus::Shutdown,
+            deployment_check: None,
+            deployment_check_timestamp: None,
             deployment_error: None,
             deployment_config: None,
             deployment_location: None,
@@ -3088,6 +3116,7 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_config: serde_json::Value,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let new_status = PipelineStatus::Provisioning;
         let mut pipeline = self
@@ -3101,6 +3130,8 @@ impl Storage for Mutex<DbModel> {
         })?;
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_check = Some(deployment_check.to_string());
+        pipeline.deployment_check_timestamp = Some(Utc::now());
         pipeline.deployment_config = Some(deployment_config);
         self.lock()
             .await
@@ -3115,6 +3146,7 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_location: &str,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let new_status = PipelineStatus::Initializing;
         let mut pipeline = self
@@ -3122,6 +3154,8 @@ impl Storage for Mutex<DbModel> {
             .await?;
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_check = Some(deployment_check.to_string());
+        pipeline.deployment_check_timestamp = Some(Utc::now());
         pipeline.deployment_location = Some(deployment_location.to_string());
         self.lock()
             .await
@@ -3135,6 +3169,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let new_status = PipelineStatus::Running;
         let mut pipeline = self
@@ -3142,6 +3177,8 @@ impl Storage for Mutex<DbModel> {
             .await?;
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_check = Some(deployment_check.to_string());
+        pipeline.deployment_check_timestamp = Some(Utc::now());
         self.lock()
             .await
             .pipelines
@@ -3154,6 +3191,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let new_status = PipelineStatus::Paused;
         let mut pipeline = self
@@ -3161,6 +3199,8 @@ impl Storage for Mutex<DbModel> {
             .await?;
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_check = Some(deployment_check.to_string());
+        pipeline.deployment_check_timestamp = Some(Utc::now());
         self.lock()
             .await
             .pipelines
@@ -3173,6 +3213,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let new_status = PipelineStatus::Unavailable;
         let mut pipeline = self
@@ -3180,6 +3221,8 @@ impl Storage for Mutex<DbModel> {
             .await?;
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_check = Some(deployment_check.to_string());
+        pipeline.deployment_check_timestamp = Some(Utc::now());
         self.lock()
             .await
             .pipelines
@@ -3202,6 +3245,8 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_config = None;
         pipeline.deployment_location = None;
         pipeline.deployment_error = None;
+        pipeline.deployment_check = None;
+        pipeline.deployment_check_timestamp = None;
         self.lock()
             .await
             .pipelines
@@ -3221,6 +3266,8 @@ impl Storage for Mutex<DbModel> {
             .await?;
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_check = None;
+        pipeline.deployment_check_timestamp = None;
         self.lock()
             .await
             .pipelines
@@ -3234,6 +3281,7 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_error: &ErrorResponse,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let new_status = PipelineStatus::Failed;
         let mut pipeline = self
@@ -3242,6 +3290,44 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
         pipeline.deployment_error = Some(deployment_error.clone());
+        pipeline.deployment_check = Some(deployment_check.to_string());
+        pipeline.deployment_check_timestamp = Some(Utc::now());
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
+    }
+
+    async fn update_deployment_check(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_check: &str,
+    ) -> Result<(), DBError> {
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+
+        // Version guard
+        if pipeline.version != version_guard {
+            return Err(DBError::OutdatedPipelineVersion {
+                outdated_version: version_guard,
+                latest_version: pipeline.version,
+            });
+        }
+
+        // Check it is not shutting down or shutdown
+        if pipeline.deployment_status == PipelineStatus::ShuttingDown
+            || pipeline.deployment_status == PipelineStatus::Shutdown
+        {
+            return Err(DBError::DeploymentCheckUpdateWhileShutdown {
+                status: pipeline.deployment_status,
+            });
+        }
+
+        // Update the pipeline
+        pipeline.deployment_check = Some(deployment_check.to_string());
+        pipeline.deployment_check_timestamp = Some(Utc::now());
         self.lock()
             .await
             .pipelines

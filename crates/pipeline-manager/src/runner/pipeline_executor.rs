@@ -71,15 +71,17 @@ pub trait PipelineExecutor: Sync + Send {
     ) -> Result<(), ManagerError>;
 
     /// Validates whether the provisioning initiated by `provision()` is completed.
+    /// Always returns a deployment check as defined by `check()` for informative purposes.
     /// Returns the following:
-    /// - `Ok(Some(deployment_location))` if provisioning completed successfully
-    /// - `Ok(None)` if provisioning is still ongoing
-    /// - `Err(...)` if provisioning failed
-    async fn is_provisioned(&self) -> Result<Option<String>, ManagerError>;
+    /// - `Ok((deployment_check, Some(deployment_location)))` if provisioning completed successfully
+    /// - `Ok((deployment_check, None))` if provisioning is still ongoing
+    /// - `Err((deployment_check, e))` if provisioning failed
+    async fn is_provisioned(&mut self) -> Result<(String, Option<String>), (String, ManagerError)>;
 
-    /// Checks the pipeline.
-    /// Returns an error if the provisioned resources encountered a fatal error.
-    async fn check(&mut self) -> Result<(), ManagerError>;
+    /// Checks the pipeline and returns information about the provisioned resources,
+    /// providing a detailed breakdown of each resource's readiness and why.
+    /// Returns an error if any of the provisioned resources encountered a fatal error.
+    async fn check(&mut self) -> Result<String, (String, ManagerError)>;
 
     /// Terminates and deletes provisioned resources (including storage),
     /// and switches to rejection logging.

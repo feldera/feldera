@@ -640,6 +640,7 @@ impl Storage for StoragePostgres {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_config: serde_json::Value,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -652,6 +653,7 @@ impl Storage for StoragePostgres {
             None,
             Some(deployment_config),
             None,
+            Some(deployment_check.to_string()),
         )
         .await?;
         txn.commit().await?;
@@ -664,6 +666,7 @@ impl Storage for StoragePostgres {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_location: &str,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -676,6 +679,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             Some(deployment_location.to_string()),
+            Some(deployment_check.to_string()),
         )
         .await?;
         txn.commit().await?;
@@ -687,6 +691,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -699,6 +704,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             None,
+            Some(deployment_check.to_string()),
         )
         .await?;
         txn.commit().await?;
@@ -710,6 +716,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -722,6 +729,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             None,
+            Some(deployment_check.to_string()),
         )
         .await?;
         txn.commit().await?;
@@ -733,6 +741,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -745,6 +754,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             None,
+            Some(deployment_check.to_string()),
         )
         .await?;
         txn.commit().await?;
@@ -765,6 +775,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             PipelineStatus::ShuttingDown,
+            None,
             None,
             None,
             None,
@@ -791,6 +802,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             None,
+            None,
         )
         .await?;
         txn.commit().await?;
@@ -803,6 +815,7 @@ impl Storage for StoragePostgres {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_error: &ErrorResponse,
+        deployment_check: &str,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -815,6 +828,28 @@ impl Storage for StoragePostgres {
             Some(deployment_error.clone()),
             None,
             None,
+            Some(deployment_check.to_string()),
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn update_deployment_check(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_check: &str,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::set_deployment_check(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            deployment_check.to_string(),
         )
         .await?;
         txn.commit().await?;

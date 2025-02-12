@@ -180,6 +180,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::transport::iceberg::IcebergCatalogType,
         feldera_types::transport::iceberg::RestCatalogConfig,
         feldera_types::transport::iceberg::GlueCatalogConfig,
+        feldera_types::transport::postgres::PostgresReaderConfig,
         feldera_types::transport::http::Chunk,
         feldera_types::query::AdhocQueryArgs,
         feldera_types::query::AdHocResultFormat,
@@ -344,7 +345,9 @@ pub fn log_response(
                 } else {
                     Level::Debug
                 }
-            } else if response.status().is_client_error() {
+            } else if response.status().is_client_error()
+                || response.status() == StatusCode::SERVICE_UNAVAILABLE
+            {
                 Level::Info
             } else {
                 Level::Error

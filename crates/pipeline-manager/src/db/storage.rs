@@ -36,6 +36,8 @@ impl ExtendedPipelineDescrRunner {
                 deployment_status: pipeline.deployment_status,
                 deployment_status_since: pipeline.deployment_status_since,
                 deployment_desired_status: pipeline.deployment_desired_status,
+                deployment_check: pipeline.deployment_check.clone(),
+                deployment_check_timestamp: pipeline.deployment_check_timestamp,
                 deployment_error: pipeline.deployment_error.clone(),
                 deployment_location: pipeline.deployment_location.clone(),
                 refresh_version: pipeline.refresh_version,
@@ -281,6 +283,7 @@ pub(crate) trait Storage {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_config: serde_json::Value,
+        deployment_check: &str,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Initializing`.
@@ -290,6 +293,7 @@ pub(crate) trait Storage {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_location: &str,
+        deployment_check: &str,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Running`.
@@ -298,6 +302,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_check: &str,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Paused`.
@@ -306,6 +311,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_check: &str,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Unavailable`.
@@ -314,6 +320,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_check: &str,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `ShuttingDown`.
@@ -339,6 +346,16 @@ pub(crate) trait Storage {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_error: &ErrorResponse,
+        deployment_check: &str,
+    ) -> Result<(), DBError>;
+
+    /// Updates the deployment check.
+    async fn update_deployment_check(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_check: &str,
     ) -> Result<(), DBError>;
 
     /// Retrieves a list of all pipeline ids across all tenants.
