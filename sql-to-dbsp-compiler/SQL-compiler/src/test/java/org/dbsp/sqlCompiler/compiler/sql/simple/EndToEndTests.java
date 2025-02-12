@@ -618,8 +618,10 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void whereTest() {
-        String query = "SELECT * FROM T WHERE COL3";
-        this.testQuery(query, z0);
+        String query = "SELECT T.COL1 FROM T WHERE COL3";
+        this.testQuery(query, new DBSPZSetExpression(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10))));
     }
 
     @Test
