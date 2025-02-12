@@ -1,6 +1,6 @@
 [package]
 name = "feldera-types"
-version = "0.36.0"
+version = "0.37.0"
 edition = "2021"
 license = "MIT"
 description = "Public API types for Feldera"

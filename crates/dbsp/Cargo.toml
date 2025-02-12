@@ -1,6 +1,6 @@
 [package]
 name = "dbsp"
-version = "0.36.0"
+version = "0.37.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Continuous streaming analytics engine"
@@ -68,7 +68,7 @@ metrics = { version = "0.23.0" }
 rlimit = "0.10.1"
 serde = { version = "1.0", features = ["derive"] }
 ptr_meta = "0.2.0"
-feldera-types = { path = "../feldera-types", version = "0.36.0" }
+feldera-types = { path = "../feldera-types", version = "0.37.0" }
 libc = "0.2.153"
 static_assertions = "1.1.0"
 zip = "0.6.2"
