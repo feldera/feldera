@@ -62,6 +62,10 @@ impl CircuitCatalog for Catalog {
         self.output_batch_handles.get(name)
     }
 
+    fn output_handles_mut(&mut self, name: &SqlIdentifier) -> Option<&mut OutputCollectionHandles> {
+        self.output_batch_handles.get_mut(name)
+    }
+
     fn output_iter(
         &self,
     ) -> Box<dyn Iterator<Item = (&SqlIdentifier, &OutputCollectionHandles)> + '_> {

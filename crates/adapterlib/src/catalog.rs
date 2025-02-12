@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
@@ -499,6 +499,8 @@ pub trait CircuitCatalog: Send + Sync {
 
     /// Look up output stream handles by name.
     fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles>;
+
+    fn output_handles_mut(&mut self, name: &SqlIdentifier) -> Option<&mut OutputCollectionHandles>;
 }
 
 pub struct InputCollectionHandle {
@@ -528,4 +530,7 @@ pub struct OutputCollectionHandles {
 
     /// A stream of changes to the collection.
     pub delta_handle: Box<dyn SerCollectionHandle>,
+
+    /// Indexes over the collection defined using CREATE INDEX in SQL.
+    pub indexes: BTreeMap<SqlIdentifier, Box<dyn SerCollectionHandle>>,
 }
