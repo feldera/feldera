@@ -75,7 +75,9 @@ const toPipelineThumb = (
     pipeline.deployment_error
   ),
   deploymentStatusSince: pipeline.deployment_status_since,
-  refreshVersion: pipeline.refresh_version
+  refreshVersion: pipeline.refresh_version,
+  deploymentCheck: pipeline.deployment_check,
+  deploymentCheckTimestamp: pipeline.deployment_check_timestamp
 })
 
 const toPipeline = <
@@ -123,7 +125,9 @@ const toExtendedPipeline = ({
     deployment_status,
     deployment_desired_status,
     deployment_error
-  )
+  ),
+  deploymentCheck: pipeline.deployment_check,
+  deploymentCheckTimestamp: pipeline.deployment_check_timestamp
 })
 
 const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({

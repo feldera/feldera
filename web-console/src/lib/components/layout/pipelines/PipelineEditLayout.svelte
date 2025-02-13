@@ -266,7 +266,10 @@ example = "1.0"`
             </DoubleClickInput>
           {/snippet}
         </PipelineBreadcrumbs>
-        <PipelineStatus class="mt-0 h-6 sm:mt-1.5" status={pipeline.current.status}
+        <PipelineStatus
+          class="mt-0 h-6 sm:mt-1.5"
+          status={pipeline.current.status}
+          statusText={pipeline.current.deploymentCheck}
         ></PipelineStatus>
       </div>
     {/snippet}
