@@ -52,7 +52,8 @@ impl OutputFormat for JsonOutputFormat {
         &self,
         endpoint_name: &str,
         config: &ConnectorConfig,
-        schema: &Relation,
+        key_schema: &Option<Relation>,
+        value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
         let mut config = JsonEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
@@ -64,7 +65,7 @@ impl OutputFormat for JsonOutputFormat {
                 )
             })?;
 
-        validate(&config, endpoint_name, schema)?;
+        validate(&config, endpoint_name, key_schema, value_schema)?;
 
         // Snowflake and Debezium require one record per message.
         if matches!(
@@ -74,15 +75,23 @@ impl OutputFormat for JsonOutputFormat {
             config.buffer_size_records = 1;
         }
 
-        Ok(Box::new(JsonEncoder::new(consumer, config, schema)))
+        Ok(Box::new(JsonEncoder::new(consumer, config, value_schema)))
     }
 }
 
 fn validate(
     config: &JsonEncoderConfig,
     endpoint_name: &str,
-    schema: &Relation,
+    key_schema: &Option<Relation>,
+    value_schema: &Relation,
 ) -> Result<(), ControllerError> {
+    if key_schema.is_some() {
+        return Err(ControllerError::invalid_encoder_configuration(
+            endpoint_name,
+            "JSON encoder cannot be attached to an index",
+        ));
+    }
+
     if !matches!(
         config.update_format,
         JsonUpdateFormat::InsertDelete
@@ -113,7 +122,7 @@ fn validate(
         }
 
         for key_field in key_fields.iter() {
-            if schema.field(key_field).is_none() {
+            if value_schema.field(key_field).is_none() {
                 return Err(ControllerError::invalid_encoder_configuration(
                     endpoint_name,
                     &format!("'key_fields' references unknown field '{key_field}'"),

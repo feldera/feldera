@@ -99,6 +99,18 @@ pub enum ConfigError {
         stream_name: String,
     },
 
+    /// Endpoint configuration specifies an index name
+    /// that is not found in the circuit catalog.
+    UnknownIndex {
+        endpoint_name: String,
+        index_name: String,
+    },
+
+    NotAnIndex {
+        endpoint_name: String,
+        index_name: String,
+    },
+
     InputFormatNotSupported {
         endpoint_name: String,
         error: String,
@@ -159,6 +171,8 @@ impl DbspDetailedError for ConfigError {
             Self::UnknownOutputTransport { .. } => Cow::from("UnknownOutputTransport"),
             Self::UnknownInputStream { .. } => Cow::from("UnknownInputStream"),
             Self::UnknownOutputStream { .. } => Cow::from("UnknownOutputStream"),
+            Self::UnknownIndex { .. } => Cow::from("UnknownIndex"),
+            Self::NotAnIndex { .. } => Cow::from("NotAnIndex"),
             Self::InputFormatNotSupported { .. } => Cow::from("InputFormatNotSupported"),
             Self::OutputFormatNotSupported { .. } => Cow::from("OutputFormatNotSupported"),
             Self::InputFormatNotSpecified { .. } => Cow::from("InputFormatNotSpecified"),
@@ -250,6 +264,20 @@ impl Display for ConfigError {
             } => {
                 write!(f, "Output endpoint '{endpoint_name}' specifies unknown output table or view '{stream_name}'")
             }
+            Self::UnknownIndex {
+                endpoint_name,
+                index_name,
+            } => {
+                write!(f, "Output endpoint '{endpoint_name}' specifies index name '{index_name}'; however, the '{index_name}' relation is not an index")
+            }
+
+            Self::NotAnIndex {
+                endpoint_name,
+                index_name,
+            } => {
+                write!(f, "Output endpoint '{endpoint_name}' specifies unknown index '{index_name}'")
+            }
+
             Self::InputFormatNotSupported {
                 endpoint_name,
                 error,
@@ -417,6 +445,20 @@ impl ConfigError {
         Self::UnknownOutputStream {
             endpoint_name: endpoint_name.to_owned(),
             stream_name: stream_name.to_owned(),
+        }
+    }
+
+    pub fn unknown_index(endpoint_name: &str, index_name: &str) -> Self {
+        Self::UnknownIndex {
+            endpoint_name: endpoint_name.to_owned(),
+            index_name: index_name.to_owned(),
+        }
+    }
+
+    pub fn not_an_index(endpoint_name: &str, index_name: &str) -> Self {
+        Self::NotAnIndex {
+            endpoint_name: endpoint_name.to_owned(),
+            index_name: index_name.to_owned(),
         }
     }
 
@@ -985,6 +1027,18 @@ impl ControllerError {
     pub fn unknown_output_stream(endpoint_name: &str, stream_name: &str) -> Self {
         Self::Config {
             config_error: ConfigError::unknown_output_stream(endpoint_name, stream_name),
+        }
+    }
+
+    pub fn unknown_index(endpoint_name: &str, index_name: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::unknown_index(endpoint_name, index_name),
+        }
+    }
+
+    pub fn not_an_index(endpoint_name: &str, index_name: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::not_an_index(endpoint_name, index_name),
         }
     }
 

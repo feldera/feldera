@@ -204,18 +204,6 @@ pub struct AvroEncoderConfig {
     /// * `record_name` for `raw` update format
     pub subject_name_strategy: Option<SubjectNameStrategy>,
 
-    /// When this option is set, only the listed fields appear in the Debezium message key.
-    ///
-    /// This option is only valid with the `confluent_jdbc` update format.
-    /// It is used when writing to a table with primary keys.
-    /// For such tables, the Confluent JDBC sink connector expects the message key
-    /// (and its schema) to contain only the primary key columns.
-    ///
-    /// When this field is set, the connector generates a separate Avro schema, containing
-    /// only the listed fields, and uses this schema to encode Kafka
-    /// message keys.
-    pub key_fields: Option<Vec<String>>,
-
     /// Set to `true` if serialized messages should only contain raw data
     /// without the header carrying schema ID.
     /// `False` by default.

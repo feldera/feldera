@@ -1751,7 +1751,7 @@ impl ControllerInner {
     fn initialize_adhoc_queries(self: &Arc<Self>) {
         // Sync feldera catalog with datafusion catalog
         for (name, clh) in self.catalog.output_iter() {
-            let arrow_fields = relation_to_arrow_fields(&clh.schema.fields, false);
+            let arrow_fields = relation_to_arrow_fields(&clh.value_schema.fields, false);
             let input_handle = self
                 .catalog
                 .input_collection_handle(name)
@@ -2001,12 +2001,48 @@ impl ControllerInner {
         // └───────┘   └───────────┘   └────────┘
 
         // Lookup output handle in catalog.
-        let handles = self
-            .catalog
-            .output_handles(&SqlIdentifier::from(&endpoint_config.stream))
-            .ok_or_else(|| {
-                ControllerError::unknown_output_stream(endpoint_name, &endpoint_config.stream)
-            })?;
+        let (handles, stream_name) = if let Some(index) = &endpoint_config.connector_config.index {
+            if self
+                .catalog
+                .output_handles(&SqlIdentifier::from(&endpoint_config.stream))
+                .is_none()
+            {
+                return Err(ControllerError::unknown_output_stream(
+                    endpoint_name,
+                    &endpoint_config.stream,
+                ));
+            };
+
+            let handle = self
+                .catalog
+                .output_handles(&SqlIdentifier::from(index))
+                .ok_or_else(|| ControllerError::unknown_index(endpoint_name, index))?;
+
+            if handle.index_of.is_none() {
+                return Err(ControllerError::not_an_index(endpoint_name, index));
+            }
+
+            if handle.index_of != Some(SqlIdentifier::from(&endpoint_config.stream)) {
+                return Err(ControllerError::unknown_output_stream(
+                    endpoint_name,
+                    &endpoint_config.stream,
+                ));
+            }
+
+            (handle, index.clone())
+        } else {
+            (
+                self.catalog
+                    .output_handles(&SqlIdentifier::from(&endpoint_config.stream))
+                    .ok_or_else(|| {
+                        ControllerError::unknown_output_stream(
+                            endpoint_name,
+                            &endpoint_config.stream,
+                        )
+                    })?,
+                endpoint_config.stream.to_string(),
+            )
+        };
 
         let endpoint_id = self.next_output_id.fetch_add(1, Ordering::AcqRel);
         let endpoint_name_str = endpoint_name.to_string();
@@ -2050,7 +2086,8 @@ impl ControllerInner {
             format.new_encoder(
                 endpoint_name,
                 &endpoint_config.connector_config,
-                &handles.schema,
+                &handles.key_schema,
+                &handles.value_schema,
                 probe,
             )?
         } else {
@@ -2059,7 +2096,7 @@ impl ControllerInner {
                 endpoint_id,
                 endpoint_name,
                 endpoint_config,
-                &handles.schema,
+                &handles.value_schema,
                 self_weak,
             )?;
 
@@ -2067,11 +2104,8 @@ impl ControllerInner {
         };
 
         let parker = Parker::new();
-        let endpoint_descr = OutputEndpointDescr::new(
-            endpoint_name,
-            &endpoint_config.stream,
-            parker.unparker().clone(),
-        );
+        let endpoint_descr =
+            OutputEndpointDescr::new(endpoint_name, &stream_name, parker.unparker().clone());
         let queue = endpoint_descr.queue.clone();
         let disconnect_flag = endpoint_descr.disconnect_flag.clone();
         let controller = self.clone();

@@ -39,9 +39,9 @@ impl Catalog {
 
     pub fn register_output_batch_handles(
         &mut self,
+        name: &SqlIdentifier,
         handles: OutputCollectionHandles,
     ) -> Result<(), ControllerError> {
-        let name = &handles.schema.name;
         if self.output_batch_handles.contains_key(name) {
             return Err(ControllerError::duplicate_output_stream(&name.sql_name()));
         }

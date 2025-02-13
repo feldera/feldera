@@ -128,6 +128,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -974,7 +975,20 @@ public class ToRustVisitor extends CircuitVisitor {
                 this.builder.append(operator.viewName.toString())
                         .append("\"), &SqlIdentifier::from(\"")
                         .append(operator.query);
-                this.builder.append("\"));")
+                this.builder.append("\"),")
+                        .newline().append("&vec!(");
+                DBSPTypeStruct keyStruct = raw.tupFields[0].to(DBSPTypeStruct.class);
+                boolean first = true;
+                for (Iterator<ProgramIdentifier> it = keyStruct.getFieldNames(); it.hasNext(); ) {
+                    ProgramIdentifier field = it.next();
+                    if (!first)
+                        this.builder.append(",");
+                    first = false;
+                    this.builder.append("&SqlIdentifier::from(\"")
+                            .append(field.toString())
+                            .append("\")");
+                }
+                this.builder.append("));")
                         .newline();
             } else {
                 IHasSchema description = this.metadata.getViewDescription(operator.viewName);
