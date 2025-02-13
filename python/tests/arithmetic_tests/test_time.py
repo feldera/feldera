@@ -99,8 +99,18 @@ class arithtst_time_sub_tmeinterval(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {"id": 0, "sec_str": "12:45:12", "min_str": "12:45:45", "hrs_str": "13:30:45"},
-            {"id": 1, "sec_str": "14:17:09", "min_str": "14:16:55", "hrs_str": "13:23:55"},
+            {
+                "id": 0,
+                "sec_str": "12:45:12",
+                "min_str": "12:45:45",
+                "hrs_str": "13:30:45",
+            },
+            {
+                "id": 1,
+                "sec_str": "14:17:09",
+                "min_str": "14:16:55",
+                "hrs_str": "13:23:55",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW time_sub_sinterval AS SELECT
                       v1.id,
@@ -115,8 +125,18 @@ class arithtst_tme_add_sinterval(TstView):
     def __init__(self):
         # Validated on MySQL
         self.data = [
-            {"id": 0, "sec_str": "00:16:18", "min_str": "00:15:45", "hrs_str": "23:30:45"},
-            {"id": 1, "sec_str": "02:30:41", "min_str": "02:30:55", "hrs_str": "03:23:55"},
+            {
+                "id": 0,
+                "sec_str": "00:16:18",
+                "min_str": "00:15:45",
+                "hrs_str": "23:30:45",
+            },
+            {
+                "id": 1,
+                "sec_str": "02:30:41",
+                "min_str": "02:30:55",
+                "hrs_str": "03:23:55",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW tme_add_sinterval AS SELECT
                       v1.id,
@@ -234,8 +254,18 @@ class arithtst_tme_minus_tme_interval(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
-            {"id": 0, "htm_str": "12:45:45", "hts_str": "12:45:12", "mts_str": "12:45:12"},
-            {"id": 1, "htm_str": "14:16:55", "hts_str": "14:17:09", "mts_str": "14:17:09"},
+            {
+                "id": 0,
+                "htm_str": "12:45:45",
+                "hts_str": "12:45:12",
+                "mts_str": "12:45:12",
+            },
+            {
+                "id": 1,
+                "htm_str": "14:16:55",
+                "hts_str": "14:17:09",
+                "mts_str": "14:17:09",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW tme_minus_tme_interval AS SELECT
                               v1.id,
