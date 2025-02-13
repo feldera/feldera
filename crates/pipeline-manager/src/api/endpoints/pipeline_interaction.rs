@@ -113,7 +113,7 @@ async fn http_input(
             &endpoint,
             req,
             body,
-            None,
+            Some(Duration::from_secs(300)),
         )
         .await
 }
