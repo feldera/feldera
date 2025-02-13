@@ -596,6 +596,15 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Assert.assertTrue(same);
     }
 
+    @Test
+    public void indexTest() {
+        String sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON V(id, v);""";
+        this.compileRustTestCase(sql);
+    }
+
     @Test @Ignore("To be invoked manually every time a new function is added")
     public void generateFunctionIndex() throws IOException {
         // When invoked it generates documentation for the supported functions and operators

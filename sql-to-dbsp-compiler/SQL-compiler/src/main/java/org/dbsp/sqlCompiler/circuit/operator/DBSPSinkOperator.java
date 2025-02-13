@@ -29,17 +29,34 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
 import java.util.List;
 
 public final class DBSPSinkOperator extends DBSPViewBaseOperator {
-    public DBSPSinkOperator(CalciteObject node, ProgramIdentifier viewName, String query,
-                            DBSPTypeStruct originalRowType,
+    /** Create a SinkOperator.  May represent an output view or an index over a view.
+     * TODO: this should probably be broken in two separate sublcasses for views and indexes.
+     *
+     * @param node             Calcite node represented.
+     * @param viewName         Name of view or index represented by the sink.
+     * @param queryOrViewName  Query defining the view, or the view name that is indexed.
+     * @param originalRowType  Type of data of the view.  This is a struct type for a view,
+     *                         and a raw tuple with 2 fields for an index: (key, value), each a struct.
+     * @param metadata         Metadata of view (for an index this is the view's metadata).
+     * @param input            Unique input stream. */
+    public DBSPSinkOperator(CalciteObject node, ProgramIdentifier viewName, String queryOrViewName,
+                            DBSPType originalRowType,
                             ViewMetadata metadata,
                             OutputPort input) {
-        super(node, "inspect", null, viewName, query,
+        super(node, "inspect", null, viewName, queryOrViewName,
                 originalRowType, metadata, input);
+    }
+
+    /** True if this sink corresponds to an INDEX statement */
+    public boolean isIndex() {
+        return this.outputType.is(DBSPTypeIndexedZSet.class);
     }
 
     @Override

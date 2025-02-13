@@ -314,6 +314,23 @@ SqlDeclareView SqlDeclareView() :
    }
 }
 
+SqlCreateIndex SqlCreateIndex(Span s, boolean replace) :
+{
+    final SqlIdentifier id;
+    final SqlIdentifier indexed;
+    List<SqlNode> columns = new ArrayList<SqlNode>();
+    SqlNodeList columnList;
+}
+{
+   <INDEX>
+   id = CompoundIdentifier() <ON>
+   indexed = CompoundIdentifier()
+   columnList = ParenthesizedSimpleIdentifierList()
+   {
+        return new SqlCreateIndex(s.end(this), id, indexed, columnList);
+   }
+}
+
 void ColumnDeclaration(List<SqlNode> list) :
 {
     final SqlIdentifier id;
