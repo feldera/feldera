@@ -235,9 +235,16 @@ impl OutputFormat for CsvOutputFormat {
         &self,
         endpoint_name: &str,
         config: &ConnectorConfig,
-        _schema: &Relation,
+        key_schema: &Option<Relation>,
+        _value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
+        if key_schema.is_some() {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "CSV encoder cannot be attached to an index",
+            ));
+        }
         let config = CsvEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
             .map_err(|e| {
                 ControllerError::encoder_config_parse_error(
