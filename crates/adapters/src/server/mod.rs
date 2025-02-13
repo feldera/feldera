@@ -727,6 +727,7 @@ async fn create_http_input_endpoint(
         connector_config: ConnectorConfig {
             transport: TransportConfig::HttpInput(config),
             format: Some(format),
+            index: None,
             output_buffer_config: Default::default(),
             max_batch_size: default_max_batch_size(),
             max_queued_records: HttpInputTransport::default_max_buffered_records(),
@@ -924,6 +925,7 @@ async fn output_endpoint(
                 &args.format,
                 &req,
             )?),
+            index: None,
             output_buffer_config: Default::default(),
             max_batch_size: default_max_batch_size(),
             max_queued_records: HttpOutputTransport::default_max_buffered_records(),

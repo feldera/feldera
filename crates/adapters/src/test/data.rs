@@ -69,6 +69,15 @@ impl TestStruct {
         ]
     }
 
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("TestStruct", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+
     pub fn avro_schema() -> &'static str {
         r#"{
             "type": "record",
@@ -90,6 +99,71 @@ serialize_struct!(TestStruct()[4]{
     b["b"]: bool,
     i["i"]: Option<i64>,
     s["s"]: String
+});
+
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    Arbitrary,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct KeyStruct {
+    pub id: u32,
+}
+
+impl KeyStruct {
+    pub fn for_id(id: u32) -> Self {
+        Self { id }
+    }
+
+    pub fn arrow_schema() -> Arc<Schema> {
+        Arc::new(Schema::new(vec![arrow::datatypes::Field::new(
+            "id",
+            DataType::Int64,
+            false,
+        )]))
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![Field::new("id".into(), ColumnType::bigint(false))]
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("KeyStruct", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+
+    pub fn avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "KeyStruct",
+            "fields": [
+                { "name": "id", "type": "long" }
+            ]
+        }"#
+    }
+}
+
+deserialize_without_context!(KeyStruct);
+
+serialize_struct!(KeyStruct()[1]{
+    id["id"]: u32
 });
 
 /// Generate a batch of records no larger that `size`.

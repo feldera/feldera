@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
@@ -523,14 +523,14 @@ impl InputCollectionHandle {
 /// A set of stream handles associated with each output collection.
 #[derive(Clone)]
 pub struct OutputCollectionHandles {
-    pub schema: Relation,
+    pub key_schema: Option<Relation>,
+    pub value_schema: Relation,
+
+    pub index_of: Option<SqlIdentifier>,
 
     /// A handle to a snapshot of a materialized table/view.
     pub integrate_handle: Option<Arc<dyn SerBatchReaderHandle>>,
 
     /// A stream of changes to the collection.
     pub delta_handle: Box<dyn SerCollectionHandle>,
-
-    /// Indexes over the collection defined using CREATE INDEX in SQL.
-    pub indexes: BTreeMap<SqlIdentifier, Box<dyn SerCollectionHandle>>,
 }

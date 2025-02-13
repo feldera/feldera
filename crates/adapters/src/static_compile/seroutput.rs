@@ -23,7 +23,7 @@ use feldera_types::{
     serde_with_context::{SerializationContext, SerializeWithContext, SqlSerdeConfig},
 };
 use serde_arrow::ArrayBuilder;
-use std::{any::Any, collections::HashSet};
+use std::{any::Any, collections::HashSet, fmt::Debug};
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
 
 /// Implementation of the [`std::io::Write`] trait that allows swapping out
@@ -283,8 +283,8 @@ where
     B: BatchReader<Time = ()> + Send + Sync + Clone,
     B::Inner: Send,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
     fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SyncSerBatchReader>> {
         self.handle.take_from_worker(worker).map(|batch| {
@@ -312,8 +312,8 @@ where
     B: Batch<Time = ()> + Send + Sync + Clone,
     B::InnerBatch: Send,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
     fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatch>> {
         self.handle
@@ -376,8 +376,8 @@ impl<B, KD, VD> SerBatchReader for SerBatchImpl<B, KD, VD>
 where
     B: BatchReader<Time = ()>,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
     fn key_count(&self) -> usize {
         self.batch.inner().key_count()
@@ -440,8 +440,8 @@ impl<B, KD, VD> SyncSerBatchReader for SerBatchImpl<B, KD, VD>
 where
     B: BatchReader<Time = ()> + Send + Sync,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
 }
 
@@ -449,8 +449,8 @@ impl<B, KD, VD> SerBatch for SerBatchImpl<B, KD, VD>
 where
     B: Batch<Time = ()> + Send + Sync,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Sync + Send> {
         self
@@ -495,8 +495,8 @@ where
     T: Trace<Time = ()>,
     //TypedBatch<T::Key, T::Val, T::R, <T::InnerTrace as DynTrace>::Batch>: Send + Sync,
     T::R: Into<i64>,
-    KD: From<T::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
-    VD: From<T::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    KD: From<T::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+    VD: From<T::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
     fn insert(&mut self, batch: Arc<dyn SerBatch>) {
         let batch = Arc::unwrap_or_clone(
@@ -534,8 +534,8 @@ where
     Ser: BytesSerializer<C>,
     B: BatchReader<Time = ()>,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<C> + Send,
-    VD: From<B::Val> + SerializeWithContext<C> + Send,
+    KD: From<B::Key> + SerializeWithContext<C> + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<C> + Send + Debug,
 {
     pub fn new(batch: &'a B, serializer: Ser) -> Self {
         let cursor = batch.inner().cursor();
@@ -600,8 +600,8 @@ where
     Ser: BytesSerializer<C>,
     B: BatchReader<Time = ()>,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<C> + Send,
-    VD: From<B::Val> + SerializeWithContext<C> + Send,
+    KD: From<B::Key> + SerializeWithContext<C> + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<C> + Send + Debug,
     <B::Inner as DynBatchReader>::Cursor<'a>: Send,
 {
     fn key_valid(&self) -> bool {
@@ -649,6 +649,8 @@ where
 
     #[cfg(feature = "with-avro")]
     fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
+        // println!("val_to_avro {:?}", &self.val);
+
         Ok(self
             .serializer
             .serialize_avro(self.val.as_ref().unwrap(), schema, refs, true)?)

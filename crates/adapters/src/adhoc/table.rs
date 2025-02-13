@@ -279,6 +279,7 @@ impl DataSink for AdHocTableSink {
                     name: Cow::from("parquet"),
                     config: YamlValue::Null,
                 }),
+                index: None,
                 output_buffer_config: Default::default(),
                 max_batch_size: default_max_batch_size(),
                 max_queued_records: default_max_queued_records(),

@@ -268,12 +268,12 @@ WITH (
         }}
     }},
     {{
+        "index": "test_view_index",
         "format": {{
             "name": "avro",
             "config": {{
                 "update_format": "confluent_jdbc",
-                "registry_urls": ["{registry_url_from_pipeline}"],
-                "key_fields": ["id"]
+                "registry_urls": ["{registry_url_from_pipeline}"]
             }}
         }},
         "transport": {{
@@ -289,6 +289,9 @@ WITH (
     ]'
 )
 as select * from test_table;
+
+
+create index test_view_index on test_view (id);
     """
 
 
