@@ -25,11 +25,11 @@ public final class DBSPViewOperator
         implements IHasColumnsMetadata
 {
     public DBSPViewOperator(
-            CalciteObject node, ProgramIdentifier viewName, String query, DBSPTypeStruct originalRowType,
+            CalciteObject node, ProgramIdentifier viewName, String query, DBSPType originalRowType,
             ViewMetadata metadata, OutputPort input) {
         super(node, "map", DBSPClosureExpression.id(), viewName, query,
                 originalRowType, metadata, input);
-        assert metadata.size() == originalRowType.fields.size();
+        assert metadata.size() == originalRowType.to(DBSPTypeStruct.class).fields.size();
     }
 
     /** True if any column has LATENESS information */

@@ -130,6 +130,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CalciteTableDescription;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
@@ -235,8 +236,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 import static org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator.TopKNumbering.*;
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.SEMIGROUP;
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.*;
 
 /**
  * The compiler is stateful: it compiles a sequence of SQL statements
@@ -3481,6 +3481,54 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
+    @Nullable
+    public DBSPNode compileCreateIndex(CreateIndexStatement ci) {
+        ProgramIdentifier viewName = ci.refersTo;
+        DBSPViewOperator view = this.getCircuit().getView(viewName);
+        // This can happen when the index does not refer to a view
+        if (view == null)
+            return null;
+
+        DBSPTypeStruct struct = view.originalRowType.to(DBSPTypeStruct.class);
+        List<Integer> keyColumnIndexes = new ArrayList<>();
+        List<ViewColumnMetadata> keyColumns = new ArrayList<>();
+        DBSPVariablePath var = view.getOutputZSetElementType().ref().var();
+
+        int i = 0;
+        for (ProgramIdentifier col: ci.columns) {
+            DBSPTypeStruct.Field field = struct.getField(col);
+            assert field != null;
+            DBSPTypeCode code = field.type.code;
+            if (code == ARRAY || code == MAP || code == VARIANT || code == STRUCT) {
+                this.compiler.reportError(new SourcePositionRange(ci.columnParserPosition(i)),
+                        "Illegal type in INDEX",
+                        "Cannot index on column " + col.singleQuote() + " because it has type " +
+                        field.type.asSqlString());
+            }
+            keyColumnIndexes.add(field.index);
+            keyColumns.add(view.metadata.columns.get(field.index));
+            i++;
+        }
+
+        DBSPTypeStruct keyStruct = TypeCompiler.asStruct(this.compiler,
+                ci.getCalciteObject(), ci.indexName, keyColumns, false);
+
+        DBSPExpression index = new DBSPRawTupleExpression(
+                new DBSPTupleExpression(Linq.map(
+                        keyColumnIndexes, c -> var.deref().field(c).applyCloneIfNeeded()), false),
+                DBSPTupleExpression.flatten(var.deref()));
+        DBSPMapIndexOperator indexOp = new DBSPMapIndexOperator(ci.getCalciteObject(),
+                index.closure(var), view.outputPort());
+        this.addOperator(indexOp);
+
+        DBSPSimpleOperator result = new DBSPSinkOperator(
+                ci.getCalciteObject(), ci.indexName,
+                ci.refersTo.toString(), new DBSPTypeRawTuple(keyStruct, struct),
+                view.metadata, indexOp.outputPort());
+        this.addOperator(result);
+        return result;
+    }
+
     @SuppressWarnings("UnusedReturnValue")
     @Nullable
     public DBSPNode compile(RelStatement statement) {
@@ -3510,6 +3558,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else if (statement.is(DeclareViewStatement.class)) {
             DeclareViewStatement decl = statement.to(DeclareViewStatement.class);
             return this.compileDeclareView(decl);
+        } else if (statement.is(CreateIndexStatement.class)) {
+            CreateIndexStatement ci = statement.to(CreateIndexStatement.class);
+            return this.compileCreateIndex(ci);
         }
         throw new UnsupportedException(statement.getCalciteObject());
     }

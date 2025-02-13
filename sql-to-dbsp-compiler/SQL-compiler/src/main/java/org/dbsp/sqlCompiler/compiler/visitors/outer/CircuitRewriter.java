@@ -190,7 +190,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             return;
         }
         OutputPort input = this.mapped(operator.input());
-        DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
+        DBSPType originalRowType = this.transform(operator.originalRowType);
         DBSPType outputType = this.transform(operator.outputType);
         DBSPSimpleOperator result = operator;
         if (!originalRowType.sameType(operator.originalRowType)
@@ -210,7 +210,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             return;
         }
         OutputPort input = this.mapped(operator.input());
-        DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
+        DBSPType originalRowType = this.transform(operator.originalRowType);
         DBSPType outputType = this.transform(operator.outputType);
         DBSPSimpleOperator result = operator;
         if (!originalRowType.sameType(operator.originalRowType)
