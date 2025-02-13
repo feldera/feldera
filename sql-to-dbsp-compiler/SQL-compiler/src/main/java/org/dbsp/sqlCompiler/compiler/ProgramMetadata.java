@@ -42,6 +42,14 @@ public class ProgramMetadata {
         return Utilities.getExists(this.inputTables, name);
     }
 
+    public boolean hasTable(ProgramIdentifier name) {
+        return this.inputTables.containsKey(name);
+    }
+
+    public boolean hasView(ProgramIdentifier name) {
+        return this.outputViews.containsKey(name);
+    }
+
     public IHasSchema getViewDescription(ProgramIdentifier name) {
         return Utilities.getExists(this.outputViews, name);
     }

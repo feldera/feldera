@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateIndex;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
@@ -85,7 +86,7 @@ public class ParserTests {
     }
 
     @Test
-    public void parseRecursive() throws SqlParseException {
+    public void parseRecursiveTest() throws SqlParseException {
         SqlToRelCompiler compiler = this.getCompiler();
         List<ParsedStatement> node = compiler.parseStatements("""
                 DECLARE RECURSIVE VIEW V(x INT);
@@ -95,6 +96,21 @@ public class ParserTests {
         Assert.assertEquals(2, node.size());
         Assert.assertTrue(node.get(0).statement() instanceof SqlDeclareView);
         Assert.assertTrue(node.get(1).statement() instanceof SqlCreateView);
+    }
+
+    @Test
+    public void parseCreateIndexTest() throws SqlParseException {
+        SqlToRelCompiler compiler = this.getCompiler();
+        List<ParsedStatement> node = compiler.parseStatements("""
+                CREATE TABLE T(x INT, y BIGINT);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX VINDEX ON V(x);
+                """);
+        Assert.assertNotNull(node);
+        Assert.assertEquals(3, node.size());
+        Assert.assertTrue(node.get(0).statement() instanceof SqlCreateTable);
+        Assert.assertTrue(node.get(1).statement() instanceof SqlCreateView);
+        Assert.assertTrue(node.get(2).statement() instanceof SqlCreateIndex);
     }
 
     @Test

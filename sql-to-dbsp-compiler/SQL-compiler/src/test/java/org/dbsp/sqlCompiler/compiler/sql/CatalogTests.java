@@ -163,6 +163,47 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void negativeIndexTests() {
+        String sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON V(id, id);""";
+        this.statementsFailingInCompilation(sql,
+                "Duplicated name: Column 'id' duplicated in index");
+        sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON V(unknown);""";
+        this.statementsFailingInCompilation(sql,
+                "Column 'unknown' used in CREATE INDEX statement 'ix' does not exist in view 'v'");
+        sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON Z(id);""";
+        this.statementsFailingInCompilation(sql,
+                "Indexed object not found: Object with name 'z' used in CREATE INDEX statement 'ix' does not exist.");
+        sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON V(z);""";
+        this.statementsFailingInCompilation(sql,
+                "Cannot index on column 'z' because it has type ARRAY");
+        sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE INDEX IX ON T(id);""";
+        this.shouldWarn(sql, "Indexed table: INDEX 'ix' refers to TABLE 't'; this has no effect.");
+    }
+
+    @Test
+    public void indexTest() {
+        String sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON V(id, v);""";
+        this.getCCS(sql);
+    }
+
+    @Test
     public void issue2028() {
         String sql = """
                 CREATE TABLE varchar_pk (
