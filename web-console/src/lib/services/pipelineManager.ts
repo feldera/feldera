@@ -74,7 +74,7 @@ const toPipelineThumb = (
     pipeline.deployment_desired_status,
     pipeline.deployment_error
   ),
-  programStatus: pipeline.program_status,
+  deploymentStatusSince: pipeline.deployment_status_since,
   refreshVersion: pipeline.refresh_version
 })
 
