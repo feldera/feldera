@@ -66,15 +66,13 @@ const toPipelineThumb = (
 ) => ({
   name: pipeline.name,
   description: pipeline.description,
-  runtimeConfig: pipeline.runtime_config,
-  programConfig: pipeline.program_config,
   ...consolidatePipelineStatus(
     pipeline.program_status,
     pipeline.deployment_status,
     pipeline.deployment_desired_status,
     pipeline.deployment_error
   ),
-  programStatus: pipeline.program_status,
+  deploymentStatusSince: pipeline.deployment_status_since,
   refreshVersion: pipeline.refresh_version
 })
 
