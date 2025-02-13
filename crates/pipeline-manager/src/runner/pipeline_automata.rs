@@ -113,7 +113,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// Timeout for an HTTP request of the automaton to a pipeline.
     const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
-    /// An error occurred before provisioning is ongoing, as such no deployment check is and will be available.
+    /// An error occurred before provisioning is ongoing, as such no deployment check is available.
     const DEPLOYMENT_CHECK_NO_PROVISION: &'static str =
         "No deployment check is available as the pipeline failed before one could be performed.";
 
@@ -343,12 +343,19 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             (PipelineStatus::Failed, PipelineDesiredStatus::Shutdown) => {
                 State::TransitionToShuttingDown
             }
-            (PipelineStatus::Failed, PipelineDesiredStatus::Paused) => State::Unchanged {
-                deployment_check: None,
-            },
-            (PipelineStatus::Failed, PipelineDesiredStatus::Running) => State::Unchanged {
-                deployment_check: None,
-            },
+            (
+                PipelineStatus::Failed,
+                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
+            ) => {
+                let deployment_check = self
+                    .pipeline_handle
+                    .check()
+                    .await
+                    .unwrap_or_else(|(deployment_check, _)| deployment_check);
+                State::Unchanged {
+                    deployment_check: Some(deployment_check),
+                }
+            }
 
             // Shutting down
             (PipelineStatus::ShuttingDown, _) => {

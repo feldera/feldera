@@ -348,7 +348,7 @@ impl LocalRunner {
         } else {
             CheckResult::Failed {
                 cause: format!(
-                    "- Directory '{}' no longer exists: was it deleted externally?",
+                    "- Directory '{}' no longer exists",
                     pipeline_dir.to_string_lossy()
                 ),
             }
