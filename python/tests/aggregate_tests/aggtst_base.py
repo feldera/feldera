@@ -112,7 +112,7 @@ class View(SqlObject):
             expected = self.get_data()
 
             tc = unittest.TestCase()
-            tc.maxDiff = None # display the difference between expected and actual results during an assertion error, even if the difference is large
+            tc.maxDiff = None  # display the difference between expected and actual results during an assertion error, even if the difference is large
             tc.assertCountEqual(
                 data, expected, f"\nASSERTION ERROR: failed view: {self.name}"
             )
