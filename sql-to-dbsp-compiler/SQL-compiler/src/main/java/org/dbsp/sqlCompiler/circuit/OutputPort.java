@@ -102,4 +102,8 @@ public class OutputPort {
     public boolean isSimpleNode() {
         return this.node().is(DBSPSimpleOperator.class);
     }
+
+    public String asJson() {
+        return "{ \"node\": " + this.operator.id + ", \"output\": " + this.outputNumber + " }";
+    }
 }

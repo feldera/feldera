@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -30,7 +30,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
         assert !type.is(DBSPTypeIndexedZSet.class);
     }
 
-    public DBSPApplyOperator(CalciteObject node, DBSPClosureExpression function,
+    public DBSPApplyOperator(CalciteRelNode node, DBSPClosureExpression function,
                              DBSPType outputType, OutputPort input, @Nullable String comment) {
         super(node, "apply", function, outputType, false, input, comment);
         assert function.parameters.length == 1: "Expected 1 parameter for function " + function;
@@ -43,7 +43,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
                 "Function return type " + function.getResultType() + " does not match output type " + outputType;
     }
 
-    public DBSPApplyOperator(CalciteObject node, DBSPClosureExpression function,
+    public DBSPApplyOperator(CalciteRelNode node, DBSPClosureExpression function,
                              OutputPort input, @Nullable String comment) {
         this(node, function, function.getResultType(), input, comment);
     }
@@ -51,7 +51,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApplyOperator(
-                this.getNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
+                this.getRelNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
                 outputType, this.input(), this.comment)
                 .copyAnnotations(this);
     }
@@ -61,7 +61,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
         assert newInputs.size() == 1: "Expected 1 input " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApplyOperator(
-                    this.getNode(), this.getClosureFunction(),
+                    this.getRelNode(), this.getClosureFunction(),
                     newInputs.get(0), this.comment)
                     .copyAnnotations(this);
         }

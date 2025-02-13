@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -13,7 +13,7 @@ import java.util.List;
 /** The z^-1 operator from DBSP.
  * If the function is specified, it is the initial value produced by the delay. */
 public final class DBSPDelayOperator extends DBSPUnaryOperator {
-    public DBSPDelayOperator(CalciteObject node, @Nullable DBSPExpression initial, OutputPort source) {
+    public DBSPDelayOperator(CalciteRelNode node, @Nullable DBSPExpression initial, OutputPort source) {
         super(node, initial == null ? "delay" : "delay_with_initial_value",
                 initial, source.outputType(), source.isMultiset(), source);
         assert initial == null || initial.getType().sameType(source.outputType()) :
@@ -23,14 +23,14 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPDelayOperator(this.getNode(), this.function, newInputs.get(0))
+            return new DBSPDelayOperator(this.getRelNode(), this.function, newInputs.get(0))
                     .copyAnnotations(this);
         return this;
     }
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression function, DBSPType unusedOutputType) {
-        return new DBSPDelayOperator(this.getNode(), function, this.input())
+        return new DBSPDelayOperator(this.getRelNode(), function, this.input())
                 .copyAnnotations(this);
     }
 

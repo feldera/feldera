@@ -6,7 +6,7 @@ import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -25,7 +25,7 @@ public final class DBSPViewOperator
         implements IHasColumnsMetadata
 {
     public DBSPViewOperator(
-            CalciteObject node, ProgramIdentifier viewName, String query, DBSPTypeStruct originalRowType,
+            CalciteRelNode node, ProgramIdentifier viewName, String query, DBSPTypeStruct originalRowType,
             ViewMetadata metadata, OutputPort input) {
         super(node, "map", DBSPClosureExpression.id(), viewName, query,
                 originalRowType, metadata, input);
@@ -48,7 +48,7 @@ public final class DBSPViewOperator
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression ignoredFunction, DBSPType ignoredType) {
-        return new DBSPViewOperator(this.getNode(), this.viewName, this.query, this.originalRowType,
+        return new DBSPViewOperator(this.getRelNode(), this.viewName, this.query, this.originalRowType,
                 this.metadata, this.input()).copyAnnotations(this);
     }
 
@@ -56,7 +56,7 @@ public final class DBSPViewOperator
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPViewOperator(
-                    this.getNode(), this.viewName, this.query, this.originalRowType,
+                    this.getRelNode(), this.viewName, this.query, this.originalRowType,
                     this.metadata, newInputs.get(0)).copyAnnotations(this);
         return this;
     }

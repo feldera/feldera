@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -19,7 +19,7 @@ public final class DBSPAggregateLinearPostprocessRetainKeysOperator extends DBSP
 
     // This operator is incremental-only
     public DBSPAggregateLinearPostprocessRetainKeysOperator(
-            CalciteObject node,
+            CalciteRelNode node,
             DBSPTypeIndexedZSet outputType,
             DBSPExpression function,
             DBSPClosureExpression postProcess,
@@ -49,7 +49,7 @@ public final class DBSPAggregateLinearPostprocessRetainKeysOperator extends DBSP
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateLinearPostprocessRetainKeysOperator(
-                    this.getNode(), this.outputType.to(DBSPTypeIndexedZSet.class),
+                    this.getRelNode(), this.outputType.to(DBSPTypeIndexedZSet.class),
                     this.getFunction(), this.postProcess, this.retainKeysFunction,
                     newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);

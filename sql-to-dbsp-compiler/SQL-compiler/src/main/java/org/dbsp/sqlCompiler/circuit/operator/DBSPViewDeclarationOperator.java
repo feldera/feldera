@@ -5,6 +5,8 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteSqlNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -23,13 +25,17 @@ import java.util.List;
 @NonCoreIR
 public final class DBSPViewDeclarationOperator
         extends DBSPSourceTableOperator {
+    final CalciteSqlNode viewDeclaration;
+
     public DBSPViewDeclarationOperator(
-            CalciteObject node, CalciteObject sourceName,
+            CalciteSqlNode node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, ProgramIdentifier name) {
-        super(node, "Z", sourceName, outputType, originalRowType, true, metadata, name, null);
+        super(new RelAnd(), "Z", sourceName, outputType, originalRowType, true,
+                metadata, name, null);
         assert metadata.getColumnCount() == originalRowType.fields.size();
         assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();
+        this.viewDeclaration = node;
     }
 
     @Override
@@ -43,7 +49,7 @@ public final class DBSPViewDeclarationOperator
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return new DBSPViewDeclarationOperator(this.getNode(), this.sourceName,
+        return new DBSPViewDeclarationOperator(this.viewDeclaration, this.sourceName,
                 outputType.to(DBSPTypeZSet.class), this.originalRowType,
                 this.metadata, this.tableName).copyAnnotations(this);
     }
@@ -53,7 +59,7 @@ public final class DBSPViewDeclarationOperator
         assert newInputs.isEmpty();
         if (force)
             return new DBSPViewDeclarationOperator(
-                    this.getNode(), this.sourceName, this.getOutputZSetType(), this.originalRowType,
+                    this.viewDeclaration, this.sourceName, this.getOutputZSetType(), this.originalRowType,
                     this.metadata, this.tableName).copyAnnotations(this);
         return this;
     }

@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.apache.calcite.rel.RelNode;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
@@ -7,6 +8,9 @@ import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.LastRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 
@@ -35,13 +39,20 @@ public abstract class DBSPSourceTableOperator
      * @param comment    A comment describing the operator.
      */
     protected DBSPSourceTableOperator(
-            CalciteObject node, String operation, CalciteObject sourceName,
+            CalciteRelNode node, String operation, CalciteObject sourceName,
             DBSPType outputType, DBSPTypeStruct originalRowType, boolean isMultiset,
             TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
         super(node, operation, outputType, isMultiset, name, comment);
+        assert node.is(RelAnd.class);
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;
         this.metadata = metadata;
+    }
+
+    /** Mark the fact that a RelNode refers to this table */
+    public void refer(RelNode node) {
+        // Only mutating operation, used during circuit construction.
+        this.getRelNode().to(RelAnd.class).add(new LastRel(node));
     }
 
     @Override

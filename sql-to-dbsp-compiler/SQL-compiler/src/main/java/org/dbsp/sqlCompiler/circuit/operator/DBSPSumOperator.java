@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -36,7 +36,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public final class DBSPSumOperator extends DBSPSimpleOperator {
-    public DBSPSumOperator(CalciteObject node, List<OutputPort> inputs) {
+    public DBSPSumOperator(CalciteRelNode node, List<OutputPort> inputs) {
         super(node, "sum", null, inputs.get(0).outputType(), true);
         for (OutputPort op: inputs) {
             this.addInput(op);
@@ -47,7 +47,7 @@ public final class DBSPSumOperator extends DBSPSimpleOperator {
         }
     }
 
-    public DBSPSumOperator(CalciteObject node, OutputPort... inputs) {
+    public DBSPSumOperator(CalciteRelNode node, OutputPort... inputs) {
         this(node, Linq.list(inputs));
     }
 
@@ -75,7 +75,7 @@ public final class DBSPSumOperator extends DBSPSimpleOperator {
             different = this.inputsDiffer(newInputs);
         }
         if (different)
-            return new DBSPSumOperator(this.getNode(), newInputs).copyAnnotations(this);
+            return new DBSPSumOperator(this.getRelNode(), newInputs).copyAnnotations(this);
         return this;
     }
 }

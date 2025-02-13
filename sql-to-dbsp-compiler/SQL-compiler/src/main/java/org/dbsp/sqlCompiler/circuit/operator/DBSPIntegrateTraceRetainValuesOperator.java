@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
@@ -23,14 +23,14 @@ import java.util.Objects;
 public final class DBSPIntegrateTraceRetainValuesOperator
         extends DBSPBinaryOperator implements GCOperator {
     public DBSPIntegrateTraceRetainValuesOperator(
-            CalciteObject node, DBSPExpression function,
+            CalciteRelNode node, DBSPExpression function,
             OutputPort data, OutputPort control) {
         super(node, "integrate_trace_retain_values",
                 function, data.outputType(), data.isMultiset(), data, control);
     }
 
     public static DBSPIntegrateTraceRetainValuesOperator create(
-            CalciteObject node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
+            CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
         DBSPType controlType = control.outputType();
         assert controlType.is(DBSPTypeTupleBase.class) : "Control type is not a tuple: " + controlType;
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
@@ -57,7 +57,7 @@ public final class DBSPIntegrateTraceRetainValuesOperator
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIntegrateTraceRetainValuesOperator(
-                this.getNode(), Objects.requireNonNull(expression),
+                this.getRelNode(), Objects.requireNonNull(expression),
                 this.left(), this.right());
     }
 
@@ -66,7 +66,7 @@ public final class DBSPIntegrateTraceRetainValuesOperator
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateTraceRetainValuesOperator(
-                    this.getNode(), this.getFunction(),
+                    this.getRelNode(), this.getFunction(),
                     newInputs.get(0), newInputs.get(1));
         return this;
     }

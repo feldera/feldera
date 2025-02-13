@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -15,7 +15,7 @@ import java.util.List;
 public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
     public final DBSPClosureExpression init;
 
-    public DBSPChainAggregateOperator(CalciteObject node, DBSPClosureExpression init,
+    public DBSPChainAggregateOperator(CalciteRelNode node, DBSPClosureExpression init,
                                       DBSPClosureExpression function, DBSPType outputType, OutputPort source) {
         super(node, "chain_aggregate", function, outputType, false, source);
         this.init = init;
@@ -31,7 +31,7 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPChainAggregateOperator(this.getNode(), this.init, this.getClosureFunction(),
+            return new DBSPChainAggregateOperator(this.getRelNode(), this.init, this.getClosureFunction(),
                     this.outputType, newInputs.get(0)).copyAnnotations(this);
         return this;
     }

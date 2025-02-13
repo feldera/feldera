@@ -148,7 +148,7 @@ public class UnusedFields extends Passes {
                     remainingColumns, source.metadata.getForeignKeys(),
                     source.metadata.materialized, source.metadata.isStreaming());
             DBSPSourceMultisetOperator replacement = new DBSPSourceMultisetOperator(
-                    source.getNode(), source.sourceName, new DBSPTypeZSet(newType.toTuple()), newType,
+                    source.getRelNode(), source.sourceName, new DBSPTypeZSet(newType.toTuple()), newType,
                     metadata, source.tableName, source.comment);
             this.addOperator(replacement);
             Utilities.putNew(this.replacement, source, replacement);
@@ -172,7 +172,7 @@ public class UnusedFields extends Passes {
             FindUnusedFields finder = this.data.finders.get(src);
             RewriteFields rw = finder.getFieldRewriter(1);
             DBSPClosureExpression newMap = rw.rewriteClosure(map.getClosureFunction());
-            DBSPSimpleOperator result = new DBSPMapOperator(map.getNode(), newMap, newSource.outputPort());
+            DBSPSimpleOperator result = new DBSPMapOperator(map.getRelNode(), newMap, newSource.outputPort());
 
             this.map(map, result);
         }

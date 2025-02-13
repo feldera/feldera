@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 
 /** Combine a Join followed by a filter into a JoinFilterMap. */
 public class FilterJoinVisitor extends CircuitCloneWithGraphsVisitor {
@@ -19,8 +20,9 @@ public class FilterJoinVisitor extends CircuitCloneWithGraphsVisitor {
         if (source.node().is(DBSPJoinOperator.class) &&
                 (this.getGraph().getFanout(operator.input().node()) == 1)) {
             DBSPJoinOperator join = source.node().to(DBSPJoinOperator.class);
+            CalciteRelNode node = join.getRelNode().after(operator.getRelNode());
             DBSPSimpleOperator result =
-                    new DBSPJoinFilterMapOperator(join.getNode(), source.getOutputZSetType(),
+                    new DBSPJoinFilterMapOperator(node, source.getOutputZSetType(),
                             join.getFunction(), operator.getFunction(), null,
                             join.isMultiset, join.inputs.get(0), join.inputs.get(1))
                             .copyAnnotations(operator);

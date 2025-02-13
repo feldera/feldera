@@ -48,7 +48,7 @@ public class LinearPostprocessRetainKeys implements CircuitTransform, IWritesLog
                     // Because we sorted the graph we know that this has already been processed
                     OutputPort right = this.mapped(integrator.right());
                     DBSPAggregateLinearPostprocessRetainKeysOperator replacement =
-                            new DBSPAggregateLinearPostprocessRetainKeysOperator(operator.getNode(),
+                            new DBSPAggregateLinearPostprocessRetainKeysOperator(operator.getRelNode(),
                                     operator.getOutputIndexedZSetType(),
                                     operator.getFunction(),
                                     operator.postProcess,

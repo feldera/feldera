@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -16,7 +16,7 @@ import java.util.Objects;
  * See {@link DBSPJoinIndexOperator} for the function signature. */
 public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
     public DBSPStreamJoinIndexOperator(
-            CalciteObject node, DBSPTypeIndexedZSet outputType,
+            CalciteRelNode node, DBSPTypeIndexedZSet outputType,
             DBSPExpression function, boolean isMultiset,
             OutputPort left, OutputPort right) {
         super(node, "stream_join_index", function, outputType, isMultiset, left, right);
@@ -26,7 +26,7 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPStreamJoinIndexOperator(
-                this.getNode(), outputType.to(DBSPTypeIndexedZSet.class),
+                this.getRelNode(), outputType.to(DBSPTypeIndexedZSet.class),
                 Objects.requireNonNull(expression),
                 this.isMultiset, this.left(), this.right()).copyAnnotations(this);
     }
@@ -35,7 +35,7 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPStreamJoinIndexOperator(
-                    this.getNode(), this.getOutputIndexedZSetType(),
+                    this.getRelNode(), this.getOutputIndexedZSetType(),
                     this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         return this;
@@ -53,7 +53,7 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
     @Override
     public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
         return new DBSPStreamJoinIndexOperator(
-                this.getNode(), this.getOutputIndexedZSetType(), function, this.isMultiset, left, right);
+                this.getRelNode(), this.getOutputIndexedZSetType(), function, this.isMultiset, left, right);
     }
 
     // equivalent inherited from base class

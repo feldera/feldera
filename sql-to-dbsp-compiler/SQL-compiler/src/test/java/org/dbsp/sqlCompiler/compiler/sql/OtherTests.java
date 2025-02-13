@@ -108,8 +108,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     // This is also testing the deterministic node numbering
     // The numbering of the nodes will change when the optimizations are changed.
     @Test public void toStringTest() {
-        // Ensure some test was run before so the state of the counters is not deterministic.
-        this.testIntCastWarning();
         // Reset the counters.
         NameGen.reset();
         DBSPNode.reset();
@@ -124,7 +122,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String expected = """
                 Circuit circuit {
                     // DBSPConstantOperator s0
-                    let s0: stream<WSet<Tup3<s, s, s>>> = (zset!());
+                    let s0: stream<WSet<Tup3<s, s, s>>> = constant(zset!());
                     // DBSPSourceMultisetOperator s1
                     // CREATE TABLE `t` (`col1` INTEGER NOT NULL, `col2` DOUBLE NOT NULL, `col3` BOOLEAN NOT NULL, `col4` VARCHAR NOT NULL, `col5` INTEGER, `col6` DOUBLE)
                     let s1 = t();

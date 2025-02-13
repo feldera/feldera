@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -36,10 +37,11 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
      * @param comment    A comment describing the operator.
      */
     public DBSPSourceMapOperator(
-            CalciteObject node, CalciteObject sourceName, List<Integer> keyFields,
+            CalciteRelNode node, CalciteObject sourceName, List<Integer> keyFields,
             DBSPTypeIndexedZSet outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
-        super(node, "map", sourceName, outputType, originalRowType, false, metadata, name, comment);
+        super(node, "map", sourceName, outputType, originalRowType, false,
+                metadata, name, comment);
         this.keyFields = keyFields;
     }
 
@@ -54,7 +56,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return new DBSPSourceMapOperator(this.getNode(), this.sourceName,
+        return new DBSPSourceMapOperator(this.getRelNode(), this.sourceName,
                 this.keyFields, outputType.to(DBSPTypeIndexedZSet.class), this.originalRowType,
                 this.metadata, this.tableName, this.comment).copyAnnotations(this);
     }
@@ -63,7 +65,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.isEmpty();
         if (force)
-            return new DBSPSourceMapOperator(this.getNode(), this.sourceName,
+            return new DBSPSourceMapOperator(this.getRelNode(), this.sourceName,
                     this.keyFields, this.getOutputIndexedZSetType(), this.originalRowType,
                     this.metadata, this.tableName, this.comment).copyAnnotations(this);
         return this;

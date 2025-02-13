@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -37,7 +37,7 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPMapOperator extends DBSPUnaryOperator {
-    public DBSPMapOperator(CalciteObject node, DBSPExpression function,
+    public DBSPMapOperator(CalciteRelNode node, DBSPExpression function,
                            DBSPTypeZSet outputType, OutputPort input) {
         // Currently the output type can only be a ZSet, but the input
         // type may be a ZSet or an IndexedZSet.
@@ -50,7 +50,7 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
         this.checkArgumentFunctionType(function, 0, input);
     }
 
-    public DBSPMapOperator(CalciteObject node, DBSPClosureExpression function, OutputPort input) {
+    public DBSPMapOperator(CalciteRelNode node, DBSPClosureExpression function, OutputPort input) {
         this(node, function, new DBSPTypeZSet(function.getResultType()), input);
     }
 
@@ -66,7 +66,7 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPMapOperator(
-                this.getNode(), Objects.requireNonNull(expression),
+                this.getRelNode(), Objects.requireNonNull(expression),
                 outputType.to(DBSPTypeZSet.class), this.input())
                 .copyAnnotations(this);
     }
@@ -76,7 +76,7 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
         assert newInputs.size() == 1;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPMapOperator(
-                    this.getNode(), this.getFunction(),
+                    this.getRelNode(), this.getFunction(),
                     this.getOutputZSetType(), newInputs.get(0))
                     .copyAnnotations(this);
         return this;

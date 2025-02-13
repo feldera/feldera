@@ -60,4 +60,19 @@ public class SourcePositionRange implements IHasSourcePositionRange {
         this.appendAsJson(result);
         return result;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+
+        SourcePositionRange that = (SourcePositionRange) o;
+        return start.equals(that.start) && end.equals(that.end);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = start.hashCode();
+        result = 31 * result + end.hashCode();
+        return result;
+    }
 }

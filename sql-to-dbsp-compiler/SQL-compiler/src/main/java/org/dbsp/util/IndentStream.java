@@ -34,21 +34,25 @@ import java.util.stream.Stream;
 public class IndentStream implements IIndentStream {
     private Appendable stream;
     int indent = 0;
-    static final int amount = 4;
+    int amount = 4;
     boolean emitIndent = false;
 
     public IndentStream(Appendable appendable) {
         this.stream = appendable;
     }
 
-    /**
-     * Set the output stream.
-     * @return The previous output stream.
-     */
+    /** Set the output stream.
+     * @return The previous output stream. */
     public Appendable setOutputStream(Appendable appendable) {
         Appendable result = this.stream;
         this.stream = appendable;
         return result;
+    }
+
+    public IIndentStream setIndentAmount(int amount) {
+        assert amount > 0;
+        this.amount = amount;
+        return this;
     }
 
     @Override
