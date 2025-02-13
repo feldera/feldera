@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -57,7 +57,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
      * @param outputProducer  Optional function with signature (rank, tuple) which produces the output.
      * @param source          Input operator.
      */
-    public DBSPIndexedTopKOperator(CalciteObject node, TopKNumbering numbering,
+    public DBSPIndexedTopKOperator(CalciteRelNode node, TopKNumbering numbering,
                                    DBSPComparatorExpression comparator, DBSPExpression limit,
                                    @Nullable DBSPClosureExpression outputProducer, OutputPort source) {
         super(node, "topK", comparator,
@@ -73,7 +73,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPIndexedTopKOperator(this.getNode(), this.numbering,
+            return new DBSPIndexedTopKOperator(this.getRelNode(), this.numbering,
                     this.getFunction().to(DBSPComparatorExpression.class),
                     this.limit, this.outputProducer, newInputs.get(0)).copyAnnotations(this);
         return this;
@@ -93,7 +93,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPIndexedTopKOperator(this.getNode(), this.numbering,
+        return new DBSPIndexedTopKOperator(this.getRelNode(), this.numbering,
                 Objects.requireNonNull(expression).to(DBSPComparatorExpression.class), this.limit,
                 this.outputProducer, this.input()).copyAnnotations(this);
     }

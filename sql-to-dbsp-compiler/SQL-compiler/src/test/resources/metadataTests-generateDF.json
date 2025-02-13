@@ -73,38 +73,50 @@
     "s0": {
       "operation": "constant",
       "inputs": [],
-      "calcite": [0],
+      "calcite": {
+        "partial": 0
+      },
       "positions": []
     }, "s1": {
       "operation": "constant",
       "inputs": [],
-      "calcite": [3],
+      "calcite": {
+        "partial": 3
+      },
       "positions": []
     }, "s2": {
       "operation": "multiset t",
       "inputs": [],
-      "calcite": [1],
+      "calcite": {
+        "final": 1
+      },
       "positions": []
     }, "s3": {
       "operation": "map_index",
       "inputs": [
         { "node": "s2", "output": 0 }
       ],
-      "calcite": [3],
+      "calcite": {
+        "partial": 3
+      },
       "positions": []
     }, "s4": {
       "operation": "differentiate",
       "inputs": [
         { "node": "s3", "output": 0 }
       ],
-      "calcite": [3],
+      "calcite": {
+        "partial": 3
+      },
       "positions": []
     }, "s5": {
       "operation": "aggregate_linear_postprocess",
       "inputs": [
         { "node": "s4", "output": 0 }
       ],
-      "calcite": [3],
+      "calcite": {
+        "partial": 3
+      },
       "positions": [
         {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
       ]
@@ -113,35 +125,45 @@
       "inputs": [
         { "node": "s5", "output": 0 }
       ],
-      "calcite": [3],
+      "calcite": {
+        "partial": 3
+      },
       "positions": []
     }, "s7": {
       "operation": "map",
       "inputs": [
         { "node": "s6", "output": 0 }
       ],
-      "calcite": [3],
+      "calcite": {
+        "partial": 3
+      },
       "positions": []
     }, "s8": {
       "operation": "neg",
       "inputs": [
         { "node": "s7", "output": 0 }
       ],
-      "calcite": [3],
+      "calcite": {
+        "partial": 3
+      },
       "positions": []
     }, "s9": {
       "operation": "integrate",
       "inputs": [
         { "node": "s8", "output": 0 }
       ],
-      "calcite": [3],
+      "calcite": {
+        "partial": 3
+      },
       "positions": []
     }, "s10": {
       "operation": "integrate",
       "inputs": [
         { "node": "s6", "output": 0 }
       ],
-      "calcite": [3],
+      "calcite": {
+        "partial": 3
+      },
       "positions": []
     }, "s11": {
       "operation": "sum",
@@ -150,21 +172,27 @@
         { "node": "s9", "output": 0 },
         { "node": "s10", "output": 0 }
       ],
-      "calcite": [3],
+      "calcite": {
+        "final": 3
+      },
       "positions": []
     }, "s12": {
       "operation": "inspect",
       "inputs": [
         { "node": "s11", "output": 0 }
       ],
-      "calcite": [3],
+      "calcite": {
+        "final": 3
+      },
       "positions": []
     }, "s13": {
       "operation": "inspect",
       "inputs": [
         { "node": "s0", "output": 0 }
       ],
-      "calcite": [0],
+      "calcite": {
+        "final": 0
+      },
       "positions": []
     }
   },

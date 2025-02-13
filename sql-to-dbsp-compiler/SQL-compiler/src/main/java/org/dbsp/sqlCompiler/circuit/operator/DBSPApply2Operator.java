@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -17,7 +17,7 @@ import java.util.Objects;
  * The inputs and outputs cannot be Z-sets or indexed Z-sets.
  * The comments from {@link DBSPApplyOperator} apply to this operator as well. */
 public final class DBSPApply2Operator extends DBSPBinaryOperator {
-    public DBSPApply2Operator(CalciteObject node, DBSPClosureExpression function,
+    public DBSPApply2Operator(CalciteRelNode node, DBSPClosureExpression function,
                               OutputPort left, OutputPort right) {
         super(node, "apply2", function, function.getResultType(), false, left, right);
         assert function.parameters.length == 2: "Expected 2 parameters for function " + function;
@@ -35,7 +35,7 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApply2Operator(
-                this.getNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
+                this.getRelNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
                 this.left(), this.right())
                 .copyAnnotations(this);
     }
@@ -45,7 +45,7 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
         assert newInputs.size() == 2: "Expected 2 inputs " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApply2Operator(
-                    this.getNode(), this.getClosureFunction(),
+                    this.getRelNode(), this.getClosureFunction(),
                     newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         }

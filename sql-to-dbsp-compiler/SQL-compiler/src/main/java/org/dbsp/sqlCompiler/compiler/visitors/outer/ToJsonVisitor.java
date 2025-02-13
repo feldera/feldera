@@ -6,7 +6,6 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -126,17 +125,10 @@ public class ToJsonVisitor extends CircuitRewriter {
             }
         }
 
-        this.builder.appendJsonLabelAndColon("calcite")
-                .append("[");
-        if (operator.is(DBSPSourceTableOperator.class)) {
-            DBSPSourceTableOperator src = operator.to(DBSPSourceTableOperator.class);
-            var ids = Linq.map(src.referredFrom, rel -> Integer.toString(getRelId(rel)));
-            this.builder.join(", ", ids);
-        } else {
-            CalciteRelNode node = operator.getNode().to(CalciteRelNode.class);
-            this.builder.append(this.getRelId(node.relNode));
-        }
-        this.builder.append("]").append(",").newline();
+        this.builder.appendJsonLabelAndColon("calcite");
+        CalciteRelNode node = operator.getNode().to(CalciteRelNode.class);
+        node.asJson(this.builder, this.relId);
+        this.builder.append(",").newline();
         this.builder.appendJsonLabelAndColon("positions")
                 .append("[");
         var list = Linq.list(this.getPositions());

@@ -12,7 +12,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
-import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.util.Linq;
@@ -45,11 +44,11 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
             DBSPSimpleOperator result;
             if (isRaw) {
                 result = new DBSPMapIndexOperator(
-                        operator.getNode(), projection, replace.outputPort())
+                        operator.getRelNode(), projection, replace.outputPort())
                         .addAnnotation(new IsProjection(size));
             } else {
                 result = new DBSPMapOperator(
-                        operator.getNode(), projection, replace.outputPort())
+                        operator.getRelNode(), projection, replace.outputPort())
                         .addAnnotation(new IsProjection(size));
             }
             this.addOperator(result);
@@ -92,7 +91,7 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
             DBSPClosureExpression projection = this.fcp.inputProjection.get(operator);
             int size = source.outputType().getToplevelFieldCount();
             DBSPSimpleOperator result = new DBSPMapOperator(
-                    operator.getNode(), projection, source).addAnnotation(new IsProjection(size));
+                    operator.getRelNode(), projection, source).addAnnotation(new IsProjection(size));
             this.map(operator, result);
             return;
         }
@@ -109,7 +108,7 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
             DBSPClosureExpression projection = this.fcp.inputProjection.get(operator);
             int size = source.outputType().getToplevelFieldCount();
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    operator.getNode(), projection, source).addAnnotation(new IsProjection(size));
+                    operator.getRelNode(), projection, source).addAnnotation(new IsProjection(size));
             this.map(operator, result);
             return;
         }

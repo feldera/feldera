@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -33,7 +34,7 @@ import java.util.List;
  * It is invoked only when the function returns 'false'. */
 public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError {
     public DBSPControlledKeyFilterOperator(
-            CalciteObject node, DBSPClosureExpression function, DBSPClosureExpression error,
+            CalciteRelNode node, DBSPClosureExpression function, DBSPClosureExpression error,
             OutputPort data, OutputPort control) {
         super(node, "controlled_key_filter_typed", data.outputType(),
                 TypeCompiler.makeZSet(error.getResultType()), function, error);
@@ -101,7 +102,7 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPControlledKeyFilterOperator(
-                    this.getNode(), this.function, this.error,
+                    this.getRelNode(), this.function, this.error,
                     newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         return this;

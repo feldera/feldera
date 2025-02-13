@@ -28,11 +28,6 @@ public class CalciteObject implements ICastable, IHasSourcePositionRange {
         return "";
     }
 
-    @Nullable
-    public String asJson() {
-        return null;
-    }
-
     public String toInternalString() {
         return this.toString();
     }
@@ -41,11 +36,11 @@ public class CalciteObject implements ICastable, IHasSourcePositionRange {
         return SourcePositionRange.INVALID;
     }
 
-    public static CalciteObject create(RelNode node) {
-        return new CalciteRelNode(node);
+    public static IntermediateRel create(RelNode node) {
+        return new IntermediateRel(node);
     }
 
-    public static CalciteObject create(SqlNode node) {
+    public static CalciteSqlNode create(SqlNode node) {
         return new CalciteSqlNode(node);
     }
 

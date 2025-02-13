@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -23,7 +24,7 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
                         "now", new DBSPTypeTimestamp(node, false))));
     }
 
-    public DBSPNowOperator(CalciteObject node) {
+    public DBSPNowOperator(CalciteRelNode node) {
         super(node, "now", createFunction(node),
                 createFunction(node).getType(),
                 false);

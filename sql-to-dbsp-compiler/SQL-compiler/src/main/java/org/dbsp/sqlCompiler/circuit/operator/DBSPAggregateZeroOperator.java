@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -43,7 +43,7 @@ public class DBSPAggregateZeroOperator extends DBSPUnaryOperator {
      * @param source Input from aggregation.
      */
     public DBSPAggregateZeroOperator(
-            CalciteObject node, DBSPExpression zero, OutputPort source) {
+            CalciteRelNode node, DBSPExpression zero, OutputPort source) {
         super(node, "aggregate_zero", zero, TypeCompiler.makeZSet(zero.getType()),
                 false, source);
     }
@@ -51,7 +51,7 @@ public class DBSPAggregateZeroOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPAggregateZeroOperator(this.getNode(), this.getFunction(),
+            return new DBSPAggregateZeroOperator(this.getRelNode(), this.getFunction(),
                     newInputs.get(0))
                     .copyAnnotations(this);
         return this;

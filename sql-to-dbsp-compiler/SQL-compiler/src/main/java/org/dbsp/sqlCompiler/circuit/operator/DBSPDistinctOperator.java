@@ -24,14 +24,14 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
 import java.util.List;
 
 public final class DBSPDistinctOperator extends DBSPUnaryOperator {
-    public DBSPDistinctOperator(CalciteObject node, OutputPort input) {
+    public DBSPDistinctOperator(CalciteRelNode node, OutputPort input) {
         super(node, "distinct", null, input.outputType(), false, input);
     }
 
@@ -48,7 +48,7 @@ public final class DBSPDistinctOperator extends DBSPUnaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDistinctOperator(
-                    this.getNode(), newInputs.get(0)).copyAnnotations(this);
+                    this.getRelNode(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 }

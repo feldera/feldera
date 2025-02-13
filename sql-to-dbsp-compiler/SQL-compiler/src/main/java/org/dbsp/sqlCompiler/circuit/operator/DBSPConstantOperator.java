@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -38,7 +38,7 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
     /** If true generate the constant only on the first step, then generate 0 */
     public final boolean incremental;
 
-    public DBSPConstantOperator(CalciteObject node, DBSPExpression value,
+    public DBSPConstantOperator(CalciteRelNode node, DBSPExpression value,
                                 boolean incremental, boolean isMultiset) {
         // Notice that we use the 'this.function' field to represent
         // the constant value.  Constants are not ClosureExpressions.
@@ -57,7 +57,7 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPConstantOperator(this.getNode(), Objects.requireNonNull(expression),
+        return new DBSPConstantOperator(this.getRelNode(), Objects.requireNonNull(expression),
                 this.incremental, this.isMultiset)
                 .copyAnnotations(this);
     }
@@ -65,7 +65,7 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPConstantOperator(this.getNode(), this.getFunction(),
+            return new DBSPConstantOperator(this.getRelNode(), this.getFunction(),
                     this.incremental, this.isMultiset)
                     .copyAnnotations(this);
         return this;

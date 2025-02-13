@@ -265,12 +265,16 @@
     "s0": {
       "operation": "constant",
       "inputs": [],
-      "calcite": [0],
+      "calcite": {
+        "partial": 0
+      },
       "positions": []
     }, "s1": {
       "operation": "constant",
       "inputs": [],
-      "calcite": [1],
+      "calcite": {
+        "final": 1
+      },
       "positions": []
     }, "s2": {
       "operation": "nested",
@@ -281,7 +285,9 @@
         "operation": "Z fibonacci-decl",
         "inputs": [],
         "backedges": [{ "node": "s10", "output": 0 }],
-        "calcite": [2],
+        "calcite": {
+          "final": 2
+        },
         "positions": []
       },
       "s4": {
@@ -289,7 +295,9 @@
         "inputs": [
           { "node": "s3", "output": 0 }
         ],
-        "calcite": [3],
+        "calcite": {
+          "final": 3
+        },
         "positions": [
           {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26}
         ]
@@ -299,7 +307,9 @@
         "inputs": [
           { "node": "s3", "output": 0 }
         ],
-        "calcite": [4],
+        "calcite": {
+          "partial": 4
+        },
         "positions": [
           {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50}
         ]
@@ -309,7 +319,9 @@
         "inputs": [
           { "node": "s4", "output": 0 }
         ],
-        "calcite": [4],
+        "calcite": {
+          "partial": 4
+        },
         "positions": []
       },
       "s7": {
@@ -317,7 +329,9 @@
         "inputs": [
           { "node": "s5", "output": 0 }
         ],
-        "calcite": [4],
+        "calcite": {
+          "partial": 4
+        },
         "positions": [
           {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50}
         ]
@@ -328,7 +342,9 @@
           { "node": "s6", "output": 0 },
           { "node": "s7", "output": 0 }
         ],
-        "calcite": [4],
+        "calcite": {
+          "partial": 4
+        },
         "positions": [
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":15,"start_column":9,"end_line_number":15,"end_column":18},
@@ -342,7 +358,9 @@
         "inputs": [
           { "node": "s1", "output": 0 }
         ],
-        "calcite": [7],
+        "calcite": {
+          "final": 7
+        },
         "positions": []
       },
       "s10": {
@@ -351,7 +369,9 @@
           { "node": "s9", "output": 0 },
           { "node": "s8", "output": 0 }
         ],
-        "calcite": [7],
+        "calcite": {
+          "final": 7
+        },
         "positions": []
       }
     }, "s11": {
@@ -359,14 +379,18 @@
       "inputs": [
         { "node": "s2", "output": 0 }
       ],
-      "calcite": [7],
+      "calcite": {
+        "final": 7
+      },
       "positions": []
     }, "s12": {
       "operation": "inspect",
       "inputs": [
         { "node": "s0", "output": 0 }
       ],
-      "calcite": [0],
+      "calcite": {
+        "final": 0
+      },
       "positions": []
     }
   },

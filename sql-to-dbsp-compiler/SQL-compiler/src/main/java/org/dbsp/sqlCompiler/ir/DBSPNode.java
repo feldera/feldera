@@ -43,9 +43,10 @@ public abstract class DBSPNode
     public static long outerId = 0;
     public final long id;
 
-    /** Original Calcite object node that produced this node. */
-    private final
-    CalciteObject node;
+    /** Original Calcite object node that produced this node.
+     * This is essentially final; it can only be mutated for DBSPOperator nodes
+     * while the graph is still being constructed. */
+    protected CalciteObject node;
 
     /** Controls the debugging for deterministic executions. */
     static boolean DEBUG_DETERMINISM = false;

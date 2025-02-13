@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -34,7 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import java.util.List;
 
 public final class DBSPSinkOperator extends DBSPViewBaseOperator {
-    public DBSPSinkOperator(CalciteObject node, ProgramIdentifier viewName, String query,
+    public DBSPSinkOperator(CalciteRelNode node, ProgramIdentifier viewName, String query,
                             DBSPTypeStruct originalRowType,
                             ViewMetadata metadata,
                             OutputPort input) {
@@ -55,7 +55,7 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSinkOperator(
-                    this.getNode(), this.viewName, this.query, this.originalRowType,
+                    this.getRelNode(), this.viewName, this.query, this.originalRowType,
                     this.metadata, newInputs.get(0)).copyAnnotations(this);
         return this;
     }

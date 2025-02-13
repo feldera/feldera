@@ -245,7 +245,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         }
 
         DBSPExpression function = node.getAggregate().asFold(this.compiler());
-        DBSPSimpleOperator result = new DBSPStreamAggregateOperator(node.getNode(),node.getOutputIndexedZSetType(),
+        DBSPSimpleOperator result = new DBSPStreamAggregateOperator(
+                node.getRelNode(), node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
         this.map(node, result);
     }
@@ -259,7 +260,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         }
         DBSPExpression function = node.getAggregate().asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPAggregateOperator(
-                node.getNode(), node.getOutputIndexedZSetType(),
+                node.getRelNode(), node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
         this.map(node, result);
     }
@@ -282,7 +283,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(compiler);
             DBSPExpression tmp = let.getVarReference();
             DBSPIfExpression ifexp = new DBSPIfExpression(
-                    node.getNode(),
+                    node.getRelNode(),
                     cond,
                     tmp.some(),
                     tmp.getType().withMayBeNull(true).none());
@@ -304,7 +305,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     .call(expression.body.borrow())
                     .reduce(compiler);
             DBSPIfExpression ifexp = new DBSPIfExpression(
-                    node.getNode(),
+                    node.getRelNode(),
                     cond,
                     map.some(),
                     map.getType().withMayBeNull(true).none());
@@ -320,7 +321,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
         DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(), node);
-        DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(node.getNode(), node.getOutputZSetType(),
+        DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
                 this.mapped(node.left()), this.mapped(node.right()))
                 .copyAnnotations(node);
@@ -331,10 +332,10 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     public void postorder(DBSPNoopOperator node) {
         DBSPSimpleOperator replacement;
         if (node.outputType.is(DBSPTypeZSet.class)) {
-            replacement = new DBSPMapOperator(node.getNode(), node.getFunction(),
+            replacement = new DBSPMapOperator(node.getRelNode(), node.getFunction(),
                     node.getOutputZSetType(), this.mapped(node.input()));
         } else {
-            replacement = new DBSPMapIndexOperator(node.getNode(), node.getFunction(),
+            replacement = new DBSPMapIndexOperator(node.getRelNode(), node.getFunction(),
                     node.getOutputIndexedZSetType(), this.mapped(node.input()));
         }
         this.map(node, replacement);
@@ -347,7 +348,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
         DBSPExpression function = node.getAggregate().asFold(this.compiler());
-        DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateOperator(node.getNode(),
+        DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateOperator(node.getRelNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(), this.mapped(node.input()));
         this.map(node, result);
@@ -360,7 +361,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
         DBSPExpression function = node.aggregate.asFold(this.compiler());
-        DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getNode(),
+        DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getRelNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(),
                 this.mapped(node.left()), this.mapped(node.right()));

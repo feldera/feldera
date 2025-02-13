@@ -24,14 +24,14 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
 import java.util.List;
 
 public final class DBSPIntegrateOperator extends DBSPUnaryOperator {
-    public DBSPIntegrateOperator(CalciteObject node, OutputPort source) {
+    public DBSPIntegrateOperator(CalciteRelNode node, OutputPort source) {
         super(node, "integrate", null, source.outputType(), source.isMultiset(), source);
     }
 
@@ -48,7 +48,7 @@ public final class DBSPIntegrateOperator extends DBSPUnaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateOperator(
-                    this.getNode(), newInputs.get(0)).copyAnnotations(this);
+                    this.getRelNode(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 }

@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -49,8 +50,9 @@ public class FilterMapVisitor extends CircuitCloneWithGraphsVisitor {
                     ifTrue.some(),
                     resultType.withMayBeNull(true).none());
             DBSPClosureExpression function = ifExp.closure(newParam);
+            CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
             DBSPSimpleOperator result =
-                    new DBSPFlatMapOperator(source.getNode(),
+                    new DBSPFlatMapOperator(node,
                             function, operator.getOutputZSetType(),
                             operator.isMultiset, source.inputs.get(0));
             this.map(operator, result);
@@ -84,8 +86,9 @@ public class FilterMapVisitor extends CircuitCloneWithGraphsVisitor {
                     tmp.getType().withMayBeNull(true).none());
             DBSPBlockExpression block = new DBSPBlockExpression(Linq.list(let), ifexp);
             DBSPClosureExpression function = block.closure(map.parameters);
+            CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
             DBSPSimpleOperator result =
-                    new DBSPFlatMapOperator(source.getNode(),
+                    new DBSPFlatMapOperator(node,
                             function, source.getOutputZSetType(),
                             operator.isMultiset, source.inputs.get(0));
             this.map(operator, result);

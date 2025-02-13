@@ -770,10 +770,10 @@ public class SqlToRelCompiler implements IWritesLogs {
                         "Expected a simple string", "Found " + Utilities.singleQuote(inode.toString()));
                 continue;
             }
-            SqlNode iinode = list.get(i+1);
-            if (!(iinode instanceof SqlCharStringLiteral value)) {
-                this.errorReporter.reportError(new SourcePositionRange(iinode.getParserPosition()),
-                        "Expected a simple string", "Found " + Utilities.singleQuote(iinode.toString()));
+            SqlNode iiNode = list.get(i+1);
+            if (!(iiNode instanceof SqlCharStringLiteral value)) {
+                this.errorReporter.reportError(new SourcePositionRange(iiNode.getParserPosition()),
+                        "Expected a simple string", "Found " + Utilities.singleQuote(iiNode.toString()));
                 continue;
             }
 
@@ -809,7 +809,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             assert lastStatement != null;
             assert lastStatement instanceof CreateViewStatement;
             CreateViewStatement cv = (CreateViewStatement) lastStatement;
-            RelNode node = cv.getRelNode();
+            RelNode node = cv.getRel();
             if (node instanceof LogicalTableScan) {
                 // This means that a subtraction with 0 was reduced to a simple value
                 assert this.converter != null;
@@ -864,7 +864,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             assert lastStatement != null;
             assert lastStatement instanceof CreateViewStatement;
             CreateViewStatement cv = (CreateViewStatement) lastStatement;
-            RelNode node = cv.getRelNode();
+            RelNode node = cv.getRel();
             if (node instanceof LogicalValues) {
                 assert this.converter != null;
                 return this.converter.convertExpression(value);
@@ -1232,7 +1232,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
             CreateViewStatement view = Objects.requireNonNull(statement).as(CreateViewStatement.class);
             assert view != null;
-            RelNode node = view.getRelNode();
+            RelNode node = view.getRel();
             ProjectExtractor extractor = new ProjectExtractor();
             extractor.go(node);
             return Objects.requireNonNull(extractor.body);

@@ -704,7 +704,8 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         File json = File.createTempFile("out", ".json", new File("."));
         json.deleteOnExit();
-        CompilerMain.execute("--dataflow", json.getPath(), file.getPath());
+        CompilerMessages msg = CompilerMain.execute("--dataflow", json.getPath(), file.getPath());
+        assert msg.exitCode == 0;
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDF.json");
         Assert.assertEquals(expected, jsonContents);
@@ -740,7 +741,8 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         File json = File.createTempFile("out", ".json", new File("."));
         json.deleteOnExit();
-        CompilerMain.execute("--dataflow", json.getPath(), file.getPath());
+        CompilerMessages msg = CompilerMain.execute("--dataflow", json.getPath(), file.getPath());
+        assert msg.exitCode == 0;
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDFRecursive.json");
         Assert.assertEquals(expected, jsonContents);

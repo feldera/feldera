@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -18,7 +18,7 @@ import java.util.Objects;
  * The code generator has to wrap this value in a Some to be able to use the DBSP operator. */
 public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator {
     public DBSPJoinIndexOperator(
-            CalciteObject node, DBSPTypeIndexedZSet outputType,
+            CalciteRelNode node, DBSPTypeIndexedZSet outputType,
             DBSPExpression function, boolean isMultiset,
             OutputPort left, OutputPort right) {
         super(node, "join_index", function, outputType, isMultiset, left, right);
@@ -28,7 +28,7 @@ public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator {
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPJoinIndexOperator(
-                this.getNode(), outputType.to(DBSPTypeIndexedZSet.class),
+                this.getRelNode(), outputType.to(DBSPTypeIndexedZSet.class),
                 Objects.requireNonNull(expression),
                 this.isMultiset, this.left(), this.right()).copyAnnotations(this);
     }
@@ -37,7 +37,7 @@ public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPJoinIndexOperator(
-                    this.getNode(), this.getOutputIndexedZSetType(),
+                    this.getRelNode(), this.getOutputIndexedZSetType(),
                     this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         return this;
@@ -54,7 +54,7 @@ public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator {
 
     @Override
     public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
-        return new DBSPJoinIndexOperator(this.getNode(), this.getOutputIndexedZSetType(), function, this.isMultiset, left, right);
+        return new DBSPJoinIndexOperator(this.getRelNode(), this.getOutputIndexedZSetType(), function, this.isMultiset, left, right);
     }
 
     // equivalent inherited from base class

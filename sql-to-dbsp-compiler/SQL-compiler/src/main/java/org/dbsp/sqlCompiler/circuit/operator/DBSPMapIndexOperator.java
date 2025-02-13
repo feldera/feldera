@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -45,7 +45,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
      * @param indexFunction   Function that indexes.
      * @param outputType      Type of output stream element.
      * @param input           Source operator. */
-    public DBSPMapIndexOperator(CalciteObject node, DBSPExpression indexFunction,
+    public DBSPMapIndexOperator(CalciteRelNode node, DBSPExpression indexFunction,
                                 DBSPTypeIndexedZSet outputType,
                                 OutputPort input) {
         this(node, indexFunction, outputType, input.isMultiset(), input);
@@ -59,7 +59,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
      * @param node            Corresponding Calcite node.
      * @param indexFunction   Function that indexes.
      * @param input           Source operator. */
-    public DBSPMapIndexOperator(CalciteObject node, DBSPClosureExpression indexFunction,
+    public DBSPMapIndexOperator(CalciteRelNode node, DBSPClosureExpression indexFunction,
                                 OutputPort input) {
         this(node, indexFunction, extractType(indexFunction), input.isMultiset(), input);
     }
@@ -71,7 +71,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
      * @param isMultiset      True if the input is a multiset.
      * @param outputType      Type of output stream element.
      * @param input           Source operator. */
-    public DBSPMapIndexOperator(CalciteObject node, DBSPExpression indexFunction,
+    public DBSPMapIndexOperator(CalciteRelNode node, DBSPExpression indexFunction,
                                 DBSPTypeIndexedZSet outputType,
                                 boolean isMultiset,
                                 OutputPort input) {
@@ -100,7 +100,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType type) {
         DBSPTypeIndexedZSet ixOutputType = type.to(DBSPTypeIndexedZSet.class);
         return new DBSPMapIndexOperator(
-                this.getNode(), Objects.requireNonNull(expression),
+                this.getRelNode(), Objects.requireNonNull(expression),
                 ixOutputType, this.input()).copyAnnotations(this);
     }
 
@@ -109,7 +109,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
         assert newInputs.size() == 1;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPMapIndexOperator(
-                    this.getNode(), this.getFunction(),
+                    this.getRelNode(), this.getFunction(),
                     this.getOutputIndexedZSetType(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }

@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -13,7 +13,7 @@ import java.util.List;
  * than using the pair. */
 @NonCoreIR
 public final class DBSPDelayedIntegralOperator extends DBSPUnaryOperator {
-    public DBSPDelayedIntegralOperator(CalciteObject node, OutputPort source) {
+    public DBSPDelayedIntegralOperator(CalciteRelNode node, OutputPort source) {
         super(node, "delay_trace", null, source.outputType(), source.isMultiset(), source);
     }
 
@@ -30,7 +30,7 @@ public final class DBSPDelayedIntegralOperator extends DBSPUnaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDelayedIntegralOperator(
-                    this.getNode(), newInputs.get(0));
+                    this.getRelNode(), newInputs.get(0));
         return this;
     }
 }

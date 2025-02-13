@@ -8,19 +8,18 @@ import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.LastRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 
 import javax.annotation.Nullable;
-import java.util.List;
 
 /** Base class for source operators which represent tables. */
 public abstract class DBSPSourceTableOperator
         extends DBSPSourceBaseOperator
         implements IHasColumnsMetadata {
-    /** List of RelNodes that refer to this table.  This is only mutated while the first graph is constructed,
-     * and immutable afterward. */
-    public final List<RelNode> referredFrom;
     /** Original output row type, as a struct (not a tuple), i.e., with named columns. */
     public final DBSPTypeStruct originalRowType;
     public final CalciteObject sourceName;
@@ -40,20 +39,20 @@ public abstract class DBSPSourceTableOperator
      * @param comment    A comment describing the operator.
      */
     protected DBSPSourceTableOperator(
-            CalciteObject node, String operation, CalciteObject sourceName,
+            CalciteRelNode node, String operation, CalciteObject sourceName,
             DBSPType outputType, DBSPTypeStruct originalRowType, boolean isMultiset,
-            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment,
-            List<RelNode> referredFrom) {
+            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
         super(node, operation, outputType, isMultiset, name, comment);
+        assert node.is(RelAnd.class);
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;
         this.metadata = metadata;
-        this.referredFrom = referredFrom;
     }
 
     /** Mark the fact that a RelNode refers to this table */
     public void refer(RelNode node) {
-        this.referredFrom.add(node);
+        // Only mutating operation, used during circuit construction.
+        this.getRelNode().to(RelAnd.class).add(new LastRel(node));
     }
 
     @Override

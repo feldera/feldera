@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -27,7 +27,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
     public final DBSPExpression map;
 
     public DBSPJoinFilterMapOperator(
-            CalciteObject node, DBSPTypeZSet outputType,
+            CalciteRelNode node, DBSPTypeZSet outputType,
             DBSPExpression function, @Nullable DBSPExpression filter, @Nullable DBSPExpression map,
             boolean isMultiset,
             OutputPort left, OutputPort right) {
@@ -44,7 +44,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPJoinFilterMapOperator(
-                this.getNode(), outputType.to(DBSPTypeZSet.class),
+                this.getRelNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression), this.filter, this.map,
                 this.isMultiset, this.left(), this.right()).copyAnnotations(this);
     }
@@ -53,7 +53,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPJoinFilterMapOperator(
-                    this.getNode(), this.getOutputZSetType(),
+                    this.getRelNode(), this.getOutputZSetType(),
                     this.getFunction(), this.filter, this.map,
                     this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
@@ -81,7 +81,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
 
     @Override
     public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
-        return new DBSPJoinFilterMapOperator(this.getNode(), this.getOutputZSetType(), function,
+        return new DBSPJoinFilterMapOperator(this.getRelNode(), this.getOutputZSetType(), function,
                 this.filter, this.map, this.isMultiset, left, right);
     }
 }
