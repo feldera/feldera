@@ -10,6 +10,10 @@ import { goto } from '$app/navigation'
 import posthog from 'posthog-js'
 import { getConfig } from '$lib/services/pipelineManager'
 import type { Configuration } from '$lib/services/manager'
+import Dayjs from 'dayjs'
+import duration from 'dayjs/plugin/duration'
+
+Dayjs.extend(duration)
 
 const { OidcClient, OidcLocation } = AxaOidc
 
