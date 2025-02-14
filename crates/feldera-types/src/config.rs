@@ -15,6 +15,7 @@ use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::nexmark::NexmarkInputConfig;
 use crate::transport::postgres::PostgresReaderConfig;
 use crate::transport::pubsub::PubSubInputConfig;
+use crate::transport::redis::RedisOutputConfig;
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
 use core::fmt;
@@ -580,6 +581,7 @@ pub enum TransportConfig {
     S3Input(S3InputConfig),
     DeltaTableInput(DeltaTableReaderConfig),
     DeltaTableOutput(DeltaTableWriterConfig),
+    RedisOutput(RedisOutputConfig),
     // Prevent rust from complaining about large size difference between enum variants.
     IcebergInput(Box<IcebergReaderConfig>),
     PostgresInput(PostgresReaderConfig),
@@ -612,6 +614,7 @@ impl TransportConfig {
             TransportConfig::HttpInput(_) => "http_input".to_string(),
             TransportConfig::HttpOutput => "http_output".to_string(),
             TransportConfig::AdHocInput(_) => "adhoc_input".to_string(),
+            TransportConfig::RedisOutput(_) => "redis_output".to_string(),
         }
     }
 }
