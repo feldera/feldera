@@ -40,7 +40,9 @@ class FelderaClient:
             library. `True` by default.
         """
 
-        self.config = Config(url, api_key, timeout=timeout, requests_verify=requests_verify)
+        self.config = Config(
+            url, api_key, timeout=timeout, requests_verify=requests_verify
+        )
         self.http = HttpRequests(self.config)
 
         try:
