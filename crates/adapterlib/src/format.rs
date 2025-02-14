@@ -188,7 +188,8 @@ pub trait OutputFormat: Send + Sync {
         &self,
         endpoint_name: &str,
         config: &ConnectorConfig,
-        schema: &Relation,
+        key_schema: &Option<Relation>,
+        value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError>;
 }

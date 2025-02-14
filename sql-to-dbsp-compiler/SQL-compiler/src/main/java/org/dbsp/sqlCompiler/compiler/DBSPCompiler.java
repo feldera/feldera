@@ -59,6 +59,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
@@ -143,6 +144,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     final Map<ProgramIdentifier, Map<ProgramIdentifier, SqlLateness>> viewLateness = new HashMap<>();
 
     final Map<ProgramIdentifier, CreateViewStatement> views = new HashMap<>();
+    final Map<ProgramIdentifier, CreateIndexStatement> indexes = new HashMap<>();
     /** All UDFs from the SQL program.  The ones in Rust have no bodies */
     public final List<DBSPFunction> functions = new ArrayList<>();
 
@@ -477,6 +479,44 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return parsed;
     }
 
+    boolean validateCreateIndex(CreateIndexStatement statement) {
+        ProgramIdentifier refersTo = statement.refersTo;
+        if (this.metadata.hasTable(refersTo)) {
+            this.reportWarning(
+                    new SourcePositionRange(statement.createIndex.name.getParserPosition()),
+                    "Indexed table",
+                    "INDEX " + statement.indexName.singleQuote() + " refers to TABLE " +
+                    statement.refersTo.singleQuote() + "; this has no effect.");
+            return true;
+        }
+        if (!this.metadata.hasView(refersTo)) {
+            this.reportError(
+                    new SourcePositionRange(statement.createIndex.indexed.getParserPosition()),
+                    "Indexed object not found",
+                        "Object with name " + statement.refersTo.singleQuote() +
+                    " used in CREATE INDEX statement "  + statement.indexName.singleQuote() +
+                    " does not exist.");
+            return false;
+        }
+        CreateViewStatement view = Utilities.getExists(this.views, statement.refersTo);
+        int i = 0;
+        for (ProgramIdentifier col: statement.columns) {
+            int index = view.getColumnIndex(col);
+            if (index < 0) {
+                SqlNode sqlNode = statement.createIndex.columns.get(i);
+                this.reportError(
+                        new SourcePositionRange(sqlNode.getParserPosition()),
+                        "Column not found",
+                        "Column " + col.singleQuote() +
+                                " used in CREATE INDEX statement "  + statement.indexName.singleQuote() +
+                                " does not exist in view " + view.relationName.singleQuote());
+                return false;
+            }
+            i++;
+        }
+        return true;
+    }
+
     @Nullable DBSPCircuit runAllCompilerStages() {
         List<ParsedStatement> parsed = this.runParser();
         if (this.hasErrors())
@@ -576,13 +616,19 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     if (properties != null)
                         properties.checkKnownProperties(this::validateViewProperty);
                     currentViewPosition = cv.createView.getParserPosition();
-                    this.views.put(cv.getName(), cv);
+                    Utilities.putNew(this.views, cv.getName(), cv);
                 } else if (fe.is(CreateTableStatement.class)) {
                     CreateTableStatement ct = fe.to(CreateTableStatement.class);
                     PropertyList properties = ct.getProperties();
                     if (properties != null)
                         properties.checkKnownProperties(this::validateTableProperty);
                     foreignKeys.addAll(ct.foreignKeys);
+                } else if (fe.is(CreateIndexStatement.class)) {
+                    CreateIndexStatement ct = fe.to(CreateIndexStatement.class);
+                    boolean success = this.validateCreateIndex(ct);
+                    if (!success)
+                        return null;
+                    Utilities.putNew(this.indexes, ct.getName(), ct);
                 }
                 this.relToDBSPCompiler.compile(fe);
             }

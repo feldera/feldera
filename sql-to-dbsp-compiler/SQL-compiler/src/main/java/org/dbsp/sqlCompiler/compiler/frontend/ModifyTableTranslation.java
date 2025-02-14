@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
@@ -77,6 +78,10 @@ class ModifyTableTranslation {
                     throw new UnsupportedException(statement.getCalciteObject());
                 }
                 int actualIndex = tableDefinition.getColumnIndex(id);
+                if (actualIndex < 0) {
+                    throw new CompilationError("Column " + id + " not found in table " +
+                            tableDefinition, CalciteObject.create(id.getParserPosition()));
+                }
                 // This must be a permutation
                 for (int value : this.columnPermutation.values())
                     if (value == actualIndex)

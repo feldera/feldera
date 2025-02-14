@@ -9,10 +9,12 @@ use dbsp::{
     operator::{MapHandle, SetHandle, ZSetHandle},
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
 };
-use feldera_types::program_schema::Relation;
+use feldera_adapterlib::catalog::CircuitCatalog;
+use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -288,18 +290,21 @@ impl Catalog {
         Z::Key: Sync + From<D>,
     {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
+        let name = schema.name.clone();
 
         // Create handle for the stream itself.
         let delta_handle = stream.output();
 
         let handles = OutputCollectionHandles {
-            schema,
+            key_schema: None,
+            value_schema: schema,
+            index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
             integrate_handle: None,
         };
 
-        self.register_output_batch_handles(handles).unwrap();
+        self.register_output_batch_handles(&name, handles).unwrap();
     }
 
     /// Like `register_output_zset`, but additionally materializes the integral
@@ -321,6 +326,7 @@ impl Catalog {
         Z::Key: Sync + From<D>,
     {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
+        let name = schema.name.clone();
 
         // The integral of this stream is used by the ad hoc query engine. The engine treats the integral
         // computed by each worker as a separate partition.  This means that integrals should not contain
@@ -338,7 +344,9 @@ impl Catalog {
             .output();
 
         let handles = OutputCollectionHandles {
-            schema,
+            key_schema: None,
+            value_schema: schema,
+            index_of: None,
             integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, D, ()>>::new(
                 integrate_handle,
             )) as Arc<dyn SerBatchReaderHandle>),
@@ -346,7 +354,7 @@ impl Catalog {
                 as Box<dyn SerCollectionHandle>,
         };
 
-        self.register_output_batch_handles(handles).unwrap();
+        self.register_output_batch_handles(&name, handles).unwrap();
     }
 
     /// Add an output stream that carries updates to an indexed Z-set that
@@ -374,18 +382,21 @@ impl Catalog {
         V: DBData + Send + Sync + From<VD> + Default,
     {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
+        let name = schema.name.clone();
 
         // Create handle for the stream itself.
         let delta_handle = stream.map(|(_k, v)| v.clone()).output();
 
         let handles = OutputCollectionHandles {
-            schema,
+            key_schema: None,
+            value_schema: schema,
+            index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
             integrate_handle: None,
         };
 
-        self.register_output_batch_handles(handles).unwrap();
+        self.register_output_batch_handles(&name, handles).unwrap();
     }
 
     /// Like `register_output_map`, but additionally materializes the integral
@@ -410,6 +421,7 @@ impl Catalog {
         V: DBData + Send + Sync + From<VD> + Default,
     {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
+        let name = schema.name.clone();
 
         // Create handle for the stream itself.
         let delta_handle = stream.map(|(_k, v)| v.clone()).output();
@@ -425,7 +437,9 @@ impl Catalog {
             .output();
 
         let handles = OutputCollectionHandles {
-            schema,
+            key_schema: None,
+            value_schema: schema,
+            index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
             integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, VD, ()>>::new(
@@ -433,8 +447,81 @@ impl Catalog {
             )) as Arc<dyn SerBatchReaderHandle>),
         };
 
-        self.register_output_batch_handles(handles).unwrap();
+        self.register_output_batch_handles(&name, handles).unwrap();
     }
+
+    /// Register an index associated with output stream `view_name`.
+    ///
+    /// The index stream should contain the same updates as the primary
+    /// stream, but as an indexed Z-set.
+    pub fn register_index<K, KD, V, VD>(
+        &mut self,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        index_name: &SqlIdentifier,
+        view_name: &SqlIdentifier,
+        key_fields: &[&SqlIdentifier],
+    ) -> Option<()>
+    where
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>
+            + Send
+            + Debug
+            + 'static,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Send
+            + Debug
+            + 'static,
+        K: DBData + Send + Sync + From<KD> + Default,
+        V: DBData + Send + Sync + From<VD> + Default,
+    {
+        if self.output_handles(index_name).is_some() {
+            return None;
+        }
+
+        let view_handles = self.output_handles(view_name)?;
+
+        let stream_handle = stream.output();
+
+        let handles = OutputCollectionHandles {
+            key_schema: Some(index_schema(
+                index_name,
+                &view_handles.value_schema,
+                key_fields,
+            )),
+            value_schema: view_handles.value_schema.clone(),
+            index_of: Some(view_name.clone()),
+            delta_handle: Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(stream_handle))
+                as Box<dyn SerCollectionHandle>,
+            integrate_handle: None,
+        };
+
+        self.register_output_batch_handles(index_name, handles)
+            .unwrap();
+
+        Some(())
+    }
+}
+
+fn index_schema(
+    index_name: &SqlIdentifier,
+    base_schema: &Relation,
+    key_fields: &[&SqlIdentifier],
+) -> Relation {
+    let mut fields = Vec::new();
+    for field in key_fields.iter() {
+        let base_field = base_schema
+            .fields
+            .iter()
+            .find(|f| f.name == **field)
+            .unwrap_or_else(|| panic!("column {field} not found in {}", base_schema.name))
+            .clone();
+        fields.push(base_field);
+    }
+
+    Relation::new(index_name.clone(), fields, false, BTreeMap::new())
 }
 
 #[cfg(test)]

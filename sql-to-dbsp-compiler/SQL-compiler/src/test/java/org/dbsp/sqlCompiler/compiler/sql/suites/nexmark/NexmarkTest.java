@@ -547,8 +547,8 @@ SELECT
 -- Illustrates a SPLIT_INDEX SQL.
 -- -------------------------------------------------------------------------------------------------
 
-CREATE FUNCTION SPLIT_INDEX(s VARCHAR, sep CHAR, index INT) RETURNS VARCHAR
-AS SPLIT(s, CAST(sep AS VARCHAR))[index + 1];
+CREATE FUNCTION SPLIT_INDEX(s VARCHAR, sep CHAR, ix INT) RETURNS VARCHAR
+AS SPLIT(s, CAST(sep AS VARCHAR))[ix + 1];
 
 CREATE VIEW Q22 AS
 SELECT

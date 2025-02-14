@@ -121,6 +121,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateIndex;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView;
@@ -132,6 +133,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
@@ -1004,7 +1006,11 @@ public class SqlToRelCompiler implements IWritesLogs {
                     type = this.specToRel(typeSpec, true);
                 }
                 SqlTypeName tn = type.getSqlTypeName();
-                if (tn == SqlTypeName.ARRAY || tn == SqlTypeName.MULTISET || tn == SqlTypeName.MAP) {
+                if (tn == SqlTypeName.ARRAY ||
+                        tn == SqlTypeName.MULTISET ||
+                        tn == SqlTypeName.MAP ||
+                        tn == SqlTypeName.ROW ||
+                        tn == SqlTypeName.VARIANT) {
                     this.errorReporter.reportError(new SourcePositionRange(typeSpec.getParserPosition()),
                             "Illegal PRIMARY KEY type",
                             "PRIMARY KEY column " + Utilities.singleQuote(name.getSimple()) +
@@ -1487,11 +1493,50 @@ public class SqlToRelCompiler implements IWritesLogs {
     }
 
     @Nullable
+    private CreateIndexStatement compileCreateIndex(ParsedStatement node) {
+        CalciteObject object = CalciteObject.create(node);
+        SqlCreateIndex ci = (SqlCreateIndex) node.statement();
+        if (ci.ifNotExists)
+            throw new UnsupportedException("IF NOT EXISTS not supported for INDEX", object);
+        Map<ProgramIdentifier, SqlIdentifier> columns = new HashMap<>();
+        if (ci.columns.isEmpty()) {
+            this.errorReporter.reportError(new SourcePositionRange(ci.getParserPosition()),
+                    "Invalid statement",
+                    "Empty column set in CREATE INDEX statement ");
+            return null;
+        }
+        boolean success = true;
+        for (SqlNode col: ci.columns) {
+            assert col instanceof SqlIdentifier;
+            SqlIdentifier id = (SqlIdentifier) col;
+            ProgramIdentifier pid = Utilities.toIdentifier(id);
+            if (columns.containsKey(pid)) {
+                SqlIdentifier previous = columns.get(pid);
+                this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()),
+                        "Duplicated name",
+                        "Column " + pid.singleQuote() + " duplicated in index");
+                this.errorReporter.reportError(new SourcePositionRange(previous.getParserPosition()),
+                        "Previous definition", "", true);
+                success = false;
+            } else {
+                Utilities.putNew(columns, pid, id);
+            }
+        }
+        if (!success)
+            return null;
+        var result = new CreateIndexStatement(node, Utilities.toIdentifier(ci.name), ci);
+        success = this.calciteCatalog.addDefinition(result.indexName, this.errorReporter, result);
+        if (!success)
+            return null;
+        return result;
+    }
+
+    @Nullable
     private CreateTableStatement compileCreateTable(ParsedStatement node, SourceFileContents sources) {
         CalciteObject object = CalciteObject.create(node);
         SqlCreateTable ct = (SqlCreateTable) node.statement();
         if (ct.ifNotExists)
-            throw new UnsupportedException("IF NOT EXISTS not supported", object);
+            throw new UnsupportedException("IF NOT EXISTS not supported for TABLE", object);
         ProgramIdentifier tableName = Utilities.toIdentifier(ct.name);
         if (node.visible() && this.functionExists(tableName.name())) {
             this.errorReporter.reportError(new SourcePositionRange(ct.name.getParserPosition()),
@@ -1623,6 +1668,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .newline();
         SqlKind kind = node.statement().getKind();
         switch (kind) {
+            case CREATE_INDEX:
+                return this.compileCreateIndex(node);
             case CREATE_VIEW:
                 // Invoked recursively when synthesizing code, e.g., for validating lateness
                 return this.compileCreateView(node, new HashMap<>(), sources);

@@ -499,6 +499,8 @@ pub trait CircuitCatalog: Send + Sync {
 
     /// Look up output stream handles by name.
     fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles>;
+
+    fn output_handles_mut(&mut self, name: &SqlIdentifier) -> Option<&mut OutputCollectionHandles>;
 }
 
 pub struct InputCollectionHandle {
@@ -521,7 +523,10 @@ impl InputCollectionHandle {
 /// A set of stream handles associated with each output collection.
 #[derive(Clone)]
 pub struct OutputCollectionHandles {
-    pub schema: Relation,
+    pub key_schema: Option<Relation>,
+    pub value_schema: Relation,
+
+    pub index_of: Option<SqlIdentifier>,
 
     /// A handle to a snapshot of a materialized table/view.
     pub integrate_handle: Option<Arc<dyn SerBatchReaderHandle>>,

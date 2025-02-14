@@ -90,12 +90,18 @@ public class CreateViewStatement extends CreateRelationStatement {
             int index = Integer.parseInt(val.getString());
             if (index >= 0 && index < this.columns.size())
                 return index;
-            throw new CompilationError("View " + Utilities.singleQuote(relationName.name()) +
+            throw new CompilationError("View " + relationName.singleQuote() +
                     " does not have a column with number " + index,
                     CalciteObject.create(val.getParserPosition()));
         } catch (NumberFormatException ignored) {}
 
         ProgramIdentifier canonical = compiler.canonicalName(val.getString(), false);
-        return this.getColumnIndex(canonical);
+        int index = this.getColumnIndex(canonical);
+        if (index < 0) {
+            throw new CompilationError("Column " + canonical.singleQuote() +
+                    " not found in " + relationName.singleQuote(),
+                    CalciteObject.create(val.getParserPosition()));
+        }
+        return index;
     }
 }

@@ -20,6 +20,7 @@ data: {
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView"
+      "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateIndex"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey"
     ]
@@ -27,6 +28,7 @@ data: {
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is
     # not a reserved keyword, add it to the 'nonReservedKeywords' section.
     keywords: [
+      "INDEX"
       "DISCARD"
       "IF"
       "LATENESS"
@@ -923,6 +925,7 @@ data: {
     createStatementParserMethods: [
       "SqlCreateView"
       "SqlCreateExtendedTable"
+      "SqlCreateIndex"
       "SqlCreateType"
       "SqlCreateFunction"
     ]

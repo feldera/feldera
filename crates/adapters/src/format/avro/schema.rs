@@ -13,8 +13,6 @@ use feldera_types::program_schema::{
     canonical_identifier, ColumnType, Field, Relation, SqlIdentifier, SqlType,
 };
 
-use crate::ControllerError;
-
 /// Indicates whether the field has an optional type (`["null", T]`) and,
 /// if so, whether the non-null element of the union is at position 0 or 1.
 pub enum OptionalField {
@@ -263,37 +261,6 @@ pub fn is_valid_avro_identifier(ident: &str) -> bool {
 
     (first.is_ascii_alphabetic() || first == '_')
         && ident.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-pub fn gen_key_schema(
-    record_schema: &RecordSchema,
-    key_fields: &[SqlIdentifier],
-) -> Result<AvroSchema, ControllerError> {
-    let key_fields = key_fields.iter().map(|f| f.name()).collect::<Vec<_>>();
-
-    let mut fields = Vec::new();
-    let mut lookup = BTreeMap::new();
-
-    for field in record_schema.fields.iter() {
-        if key_fields.contains(&field.name) {
-            lookup.insert(field.name.clone(), fields.len());
-            fields.push(field.clone());
-        }
-    }
-
-    let key_record_schema = RecordSchema {
-        fields,
-        lookup,
-        name: Name {
-            name: format!("__{}__Key", &record_schema.name.name),
-            namespace: record_schema.name.namespace.clone(),
-        },
-        aliases: None,
-        doc: None,
-        attributes: BTreeMap::new(),
-    };
-
-    Ok(AvroSchema::Record(key_record_schema))
 }
 
 #[derive(Default)]

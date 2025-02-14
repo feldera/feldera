@@ -192,9 +192,17 @@ impl OutputFormat for ParquetOutputFormat {
         &self,
         endpoint_name: &str,
         config: &ConnectorConfig,
-        schema: &Relation,
+        key_schema: &Option<Relation>,
+        value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
+        if key_schema.is_some() {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "Parquet encoder cannot be attached to an index",
+            ));
+        }
+
         let config = ParquetEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
             .map_err(|e| {
                 ControllerError::encoder_config_parse_error(
@@ -206,7 +214,7 @@ impl OutputFormat for ParquetOutputFormat {
         Ok(Box::new(ParquetEncoder::new(
             consumer,
             config,
-            schema.clone(),
+            value_schema.clone(),
         )?))
     }
 }

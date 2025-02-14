@@ -424,6 +424,22 @@ pub struct ConnectorConfig {
     /// Parser configuration.
     pub format: Option<FormatConfig>,
 
+    /// Name of the index that the connector is attached to.
+    ///
+    /// This property is valid for output connectors only.  It is used with data
+    /// transports and formats that expect output updates in the form of key/value
+    /// pairs, where the key typically represents a unique id associated with the
+    /// table or view.
+    ///
+    /// To support such output formats, an output connector can be attached to an
+    /// index created using the SQL CREATE INDEX statement.  An index of a table
+    /// or view contains the same updates as the table or view itself, indexed by
+    /// one or more key columns.
+    ///
+    /// See individual connector documentation for details on how they work
+    /// with indexes.
+    pub index: Option<String>,
+
     /// Output buffer configuration.
     #[serde(flatten)]
     pub output_buffer_config: OutputBufferConfig,

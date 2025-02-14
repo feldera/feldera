@@ -55,7 +55,8 @@ use crate::format::get_input_format;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
     generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
-    DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergTestStruct, TestStruct, TestStruct2,
+    DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergTestStruct, KeyStruct, TestStruct,
+    TestStruct2,
 };
 use dbsp::circuit::CircuitConfig;
 use dbsp::utils::Tup2;

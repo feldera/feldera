@@ -39,9 +39,9 @@ impl Catalog {
 
     pub fn register_output_batch_handles(
         &mut self,
+        name: &SqlIdentifier,
         handles: OutputCollectionHandles,
     ) -> Result<(), ControllerError> {
-        let name = &handles.schema.name;
         if self.output_batch_handles.contains_key(name) {
             return Err(ControllerError::duplicate_output_stream(&name.sql_name()));
         }
@@ -60,6 +60,10 @@ impl CircuitCatalog for Catalog {
     /// Look up output stream handles by name.
     fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles> {
         self.output_batch_handles.get(name)
+    }
+
+    fn output_handles_mut(&mut self, name: &SqlIdentifier) -> Option<&mut OutputCollectionHandles> {
+        self.output_batch_handles.get_mut(name)
     }
 
     fn output_iter(
