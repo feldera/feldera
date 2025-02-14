@@ -130,7 +130,7 @@ where
 
         // Choose capacity heuristically.
         let mut builder =
-            Out::Builder::with_capacity(&self.output_factories, (), min(pairs.len(), keys.len()));
+            Out::Builder::with_capacity(&self.output_factories, min(pairs.len(), keys.len()));
 
         // While both keys are valid
         while key_cursor.key_valid() && pair_cursor.key_valid() {
@@ -151,7 +151,8 @@ where
                         item.from_refs(pair_cursor.key(), pair_cursor.val());
 
                         // Add to our output batch
-                        builder.push_vals(item.as_mut(), ().erase_mut(), kv_weight.erase_mut());
+                        builder.push_val_diff_mut(().erase_mut(), kv_weight.erase_mut());
+                        builder.push_key_mut(item.as_mut());
                         pair_cursor.step_val();
                     }
 

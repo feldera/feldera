@@ -8,7 +8,9 @@ use crate::{
     },
     circuit_cache_key,
     dynamic::{ClonableTrait, DataTrait, DynPair, DynUnit},
-    trace::{Batch, BatchFactories, BatchReader, Builder, Cursor, OrdIndexedWSet},
+    trace::{
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, OrdIndexedWSet,
+    },
 };
 use minitrace::trace;
 use std::{borrow::Cow, marker::PhantomData, ops::DerefMut};
@@ -137,18 +139,29 @@ where
 {
     #[trace]
     async fn eval(&mut self, input: &CI) -> CO {
-        let mut builder = <CO as Batch>::Builder::with_capacity(&self.factories, (), input.len());
+        let mut builder = <CO as Batch>::Builder::with_capacity(&self.factories, input.len());
 
         let mut cursor = input.cursor();
-        let mut item = self.factories.weighted_item_factory().default_box();
+        let mut prev_key = self.factories.key_factory().default_box();
+        let mut has_prev_key = false;
         while cursor.key_valid() {
-            let (kv, weight) = item.split_mut();
-            // TODO: pass key (and value?) by reference
-            cursor.weight().clone_to(weight);
-            cursor.key().clone_to(kv);
-            builder.push(&mut *item);
+            builder.push_diff(cursor.weight());
+            let (k, v) = cursor.key().split();
+            if has_prev_key {
+                if k != &*prev_key {
+                    builder.push_key_mut(&mut prev_key);
+                    k.clone_to(&mut prev_key);
+                }
+            } else {
+                k.clone_to(&mut prev_key);
+                has_prev_key = true;
+            }
+            builder.push_val(v);
 
             cursor.step_key();
+        }
+        if has_prev_key {
+            builder.push_key_mut(&mut prev_key);
         }
 
         builder.done()

@@ -138,12 +138,12 @@ where
                 } else {
                     let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                         &output_factories,
-                        (),
                         num_quantiles,
                     );
                     for i in 0..num_quantiles {
                         let key = &sample.layer.keys[(i * sample_size) / num_quantiles];
-                        builder.push_refs(key, ().erase(), ZWeight::one().erase());
+                        builder.push_val_diff(().erase(), ZWeight::one().erase());
+                        builder.push_key(key);
                     }
                     builder.done()
                 }
@@ -172,12 +172,12 @@ where
                 } else {
                     let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                         &factories.output_factories,
-                        (),
                         num_quantiles,
                     );
                     for i in 0..num_quantiles {
                         let key = &sample.layer.keys[(i * sample_size) / num_quantiles];
-                        builder.push_refs(key, ().erase(), ZWeight::one().erase());
+                        builder.push_val_diff(().erase(), ZWeight::one().erase());
+                        builder.push_key(key);
                     }
                     builder.done()
                 }
@@ -233,11 +233,11 @@ where
 
             let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                 &self.output_factories,
-                (),
                 sample.len(),
             );
             for key in sample.dyn_iter_mut() {
-                builder.push_vals(key, ().erase_mut(), ZWeight::one().erase_mut());
+                builder.push_val_diff(().erase(), ZWeight::one().erase());
+                builder.push_key_mut(key);
             }
             builder.done()
         } else {
@@ -308,7 +308,6 @@ where
 
             let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                 &self.output_factories,
-                (),
                 sample_size,
             );
 
@@ -320,11 +319,8 @@ where
                 while cursor.val_valid() {
                     if !cursor.weight().is_zero() {
                         item.from_refs(key, cursor.val());
-                        builder.push_refs(
-                            item.as_mut(),
-                            ().erase_mut(),
-                            ZWeight::one().erase_mut(),
-                        );
+                        builder.push_val_diff(().erase(), ZWeight::one().erase());
+                        builder.push_key_mut(item.as_mut());
                         break;
                     }
                     cursor.step_val();

@@ -677,17 +677,17 @@ where
         // This is probably ok, because the batch will either get freed at the end
         // of the current clock tick or get added to the trace, where it will likely
         // get merged with other batches soon, at which point the waste is gone.
-        let mut builder = B::Builder::with_capacity(&input.factories(), (), input.len());
-        let mut weight = input.factories().weight_factory().default_box();
+        let mut builder = B::Builder::with_capacity(&input.factories(), input.len());
 
         let mut cursor = input.cursor();
         while cursor.key_valid() {
             if (self.filter)(cursor.key()) {
                 while cursor.val_valid() {
-                    cursor.weight().clone_to(&mut *weight);
-                    Builder::push_refs(&mut builder, cursor.key(), cursor.val(), &*weight);
+                    builder.push_diff(cursor.weight());
+                    builder.push_val(cursor.val());
                     cursor.step_val();
                 }
+                builder.push_key(cursor.key());
             }
             cursor.step_key();
         }
@@ -840,17 +840,21 @@ where
         // This is probably ok, because the batch will either get freed at the end
         // of the current clock tick or get added to the trace, where it will likely
         // get merged with other batches soon, at which point the waste is gone.
-        let mut builder = B::Builder::with_capacity(&input.factories(), (), input.len());
-        let mut weight = input.factories().weight_factory().default_box();
+        let mut builder = B::Builder::with_capacity(&input.factories(), input.len());
 
         let mut cursor = input.cursor();
         while cursor.key_valid() {
+            let mut any_values = false;
             while cursor.val_valid() {
                 if (self.filter)((cursor.key(), cursor.val())) {
-                    cursor.weight().clone_to(&mut *weight);
-                    Builder::push_refs(&mut builder, cursor.key(), cursor.val(), &*weight);
+                    builder.push_diff(cursor.weight());
+                    builder.push_val(cursor.val());
+                    any_values = true;
                 }
                 cursor.step_val();
+            }
+            if any_values {
+                builder.push_key(cursor.key());
             }
             cursor.step_key();
         }

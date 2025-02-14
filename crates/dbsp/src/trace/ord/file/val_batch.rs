@@ -1,6 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
-use crate::trace::cursor::{HasTimeDiffCursor, TimeDiffCursor};
-use crate::trace::{BatchLocation, TimedBuilder};
+use crate::trace::BatchLocation;
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
@@ -48,6 +47,7 @@ where
     item_factory: &'static dyn Factory<DynPair<K, V>>,
     weighted_item_factory: &'static dyn Factory<WeightedItem<K, V, R>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
+    weighted_vals_factory: &'static dyn Factory<DynWeightedPairs<V, R>>,
 }
 
 impl<K, V, T, R> Clone for FileValBatchFactories<K, V, T, R>
@@ -68,6 +68,7 @@ where
             item_factory: self.item_factory,
             weighted_item_factory: self.weighted_item_factory,
             weighted_items_factory: self.weighted_items_factory,
+            weighted_vals_factory: self.weighted_vals_factory,
         }
     }
 }
@@ -96,6 +97,7 @@ where
             weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
             weighted_items_factory:
                 WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
+            weighted_vals_factory: WithFactory::<LeanVec<Tup2<VType, RType>>>::FACTORY,
         }
     }
 
@@ -133,6 +135,10 @@ where
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
         self.weighted_items_factory
+    }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<V, R>> {
+        self.weighted_vals_factory
     }
 
     fn time_diffs_factory(
@@ -1013,56 +1019,6 @@ where
     }
 }
 
-pub struct FileValTimeDiffCursor<T, R>
-where
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    timediffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
-    index: usize,
-}
-
-impl<T, R> TimeDiffCursor<'_, T, R> for FileValTimeDiffCursor<T, R>
-where
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn current(&mut self, _tmp: &mut R) -> Option<(&T, &R)> {
-        if self.index < self.timediffs.len() {
-            let (time, diff) = self.timediffs[self.index].split();
-            Some((time, diff))
-        } else {
-            None
-        }
-    }
-
-    fn step(&mut self) {
-        self.index += 1;
-    }
-}
-
-impl<K, V, T, R> HasTimeDiffCursor<K, V, T, R> for FileValCursor<'_, K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    type TimeDiffCursor<'a>
-        = FileValTimeDiffCursor<T, R>
-    where
-        Self: 'a;
-
-    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        let mut timediffs = self.timediff_factory.default_box();
-        self.times(timediffs.as_mut());
-        FileValTimeDiffCursor {
-            timediffs,
-            index: 0,
-        }
-    }
-}
-
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
 pub struct FileValBuilder<K, V, T, R>
@@ -1074,113 +1030,9 @@ where
 {
     #[size_of(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
-    time: T,
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
-    cur: Option<BuilderState<K, V, T, R>>,
-}
-
-#[derive(SizeOf)]
-struct BuilderState<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    key: Box<K>,
-    val: Box<V>,
-    timediffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
-}
-
-impl<K, V, T, R> BuilderState<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn new(
-        key: &K,
-        val: &V,
-        time: &T,
-        weight: &R,
-        factories: &FileValBatchFactories<K, V, T, R>,
-    ) -> Self {
-        let mut timediffs = factories.timediff_factory.default_box();
-        timediffs.push_refs((time.erase(), weight));
-        Self {
-            key: clone_box(key),
-            val: clone_box(val),
-            timediffs,
-        }
-    }
-
-    fn flush_val(
-        &mut self,
-        writer: &mut Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
-    ) {
-        writer.write1((&self.val, self.timediffs.as_ref())).unwrap();
-        self.timediffs.clear();
-    }
-
-    fn flush_keyval(
-        &mut self,
-        writer: &mut Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
-    ) {
-        self.flush_val(writer);
-        writer.write0((&self.key, ().erase())).unwrap();
-    }
-}
-
-impl<K, V, T, R> TimedBuilder<FileValBatch<K, V, T, R>> for FileValBuilder<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn push_time(&mut self, key: &K, val: &V, time: &T, weight: &R) {
-        debug_assert!(!weight.is_zero());
-        if let Some(cur) = &mut self.cur {
-            if &*cur.key != key {
-                // Key differs from previous, so write the old (V, timediffs) to
-                // column 1 and the old key to column 0, and then save the new
-                // key and value as the new current.
-                cur.flush_keyval(&mut self.writer);
-                key.clone_to(&mut cur.key);
-                val.clone_to(&mut cur.val);
-            } else if &*cur.val != val {
-                // Value differs from previous, but the key is the same, so
-                // write the old (V, timediffs) to column 1 and save the new
-                // value as the new current.
-                cur.flush_val(&mut self.writer);
-                val.clone_to(&mut cur.val);
-            } else {
-                // Same key and value, so we're just appending the new timediff.
-            }
-            cur.timediffs.push_refs((time.erase(), weight));
-        } else {
-            // First (K, V, T, R).
-            self.cur = Some(BuilderState::new(key, val, time, weight, &self.factories));
-        }
-    }
-
-    fn done_with_bounds(
-        mut self,
-        lower: Antichain<T>,
-        upper: Antichain<T>,
-    ) -> FileValBatch<K, V, T, R> {
-        if let Some(cur) = &mut self.cur {
-            cur.flush_keyval(&mut self.writer);
-        }
-        FileValBatch {
-            factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap()),
-            lower,
-            upper,
-        }
-    }
+    time_diffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
 }
 
 impl<K, V, T, R> Builder<FileValBatch<K, V, T, R>> for FileValBuilder<K, V, T, R>
@@ -1191,18 +1043,9 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn new_builder(factories: &FileValBatchFactories<K, V, T, R>, time: T) -> Self {
-        Self::with_capacity(factories, time, 1_000_000)
-    }
-
-    fn with_capacity(
-        factories: &FileValBatchFactories<K, V, T, R>,
-        time: T,
-        capacity: usize,
-    ) -> Self {
+    fn with_capacity(factories: &FileValBatchFactories<K, V, T, R>, capacity: usize) -> Self {
         Self {
             factories: factories.clone(),
-            time,
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
@@ -1212,44 +1055,33 @@ where
                 capacity,
             )
             .unwrap(),
-            cur: None,
+            time_diffs: factories.timediff_factory.default_box(),
         }
     }
 
-    fn reserve(&mut self, _additional: usize) {}
-
-    fn push(&mut self, item: &mut DynPair<DynPair<K, V>, R>) {
-        let (kv, r) = item.split();
-        let (k, v) = kv.split();
-
-        self.push_refs(k, v, r);
-    }
-
-    fn push_refs(&mut self, key: &K, val: &V, diff: &R) {
-        let time = self.time.clone();
-        self.push_time(key, val, &time, diff);
-    }
-
-    fn push_vals(&mut self, key: &mut K, val: &mut V, diff: &mut R) {
-        self.push_refs(key, val, diff)
-    }
-
-    fn done(mut self) -> FileValBatch<K, V, T, R> {
-        if let Some(cur) = &mut self.cur {
-            cur.flush_keyval(&mut self.writer);
-        }
-        let time_next = self.time.advance(0);
-        let upper = if time_next <= self.time {
-            Antichain::new()
-        } else {
-            Antichain::from_elem(time_next)
-        };
+    fn done_with_bounds(
+        self,
+        (lower, upper): (Antichain<T>, Antichain<T>),
+    ) -> FileValBatch<K, V, T, R> {
         FileValBatch {
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap()),
-            lower: Antichain::from_elem(self.time),
+            lower,
             upper,
         }
+    }
+
+    fn push_key(&mut self, key: &K) {
+        self.writer.write0((key, &())).unwrap();
+    }
+
+    fn push_time_diff(&mut self, time: &T, weight: &R) {
+        self.time_diffs.push_refs((time, weight));
+    }
+
+    fn push_val(&mut self, val: &V) {
+        self.writer.write1((val, &*self.time_diffs)).unwrap();
+        self.time_diffs.clear();
     }
 }
 

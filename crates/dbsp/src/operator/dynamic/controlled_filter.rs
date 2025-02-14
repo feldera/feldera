@@ -190,7 +190,7 @@ where
     E: DataTrait + ?Sized,
 {
     async fn eval(&mut self, data: &Z, threshold: &Box<T>) -> Z {
-        let mut builder = Z::Builder::new_builder(&self.factories.batch_factories, ());
+        let mut builder = Z::Builder::new_builder(&self.factories.batch_factories);
 
         let mut cursor = data.cursor();
 
@@ -204,9 +204,11 @@ where
             if (self.filter_func)(threshold, cursor.key()) {
                 while cursor.val_valid() {
                     let w = **cursor.weight();
-                    builder.push_refs(cursor.key(), cursor.val(), w.erase());
+                    builder.push_diff(w.erase());
+                    builder.push_val(cursor.val());
                     cursor.step_val();
                 }
+                builder.push_key(cursor.key());
             } else {
                 while cursor.val_valid() {
                     let w = **cursor.weight();
@@ -281,7 +283,7 @@ where
     E: DataTrait + ?Sized,
 {
     async fn eval(&mut self, data: &Z, threshold: &Box<T>) -> Z {
-        let mut builder = Z::Builder::new_builder(&self.factories.batch_factories, ());
+        let mut builder = Z::Builder::new_builder(&self.factories.batch_factories);
 
         let mut cursor = data.cursor();
 
@@ -292,11 +294,14 @@ where
             .default_box();
 
         while cursor.key_valid() {
+            let mut any_values = false;
             while cursor.val_valid() {
                 let w = **cursor.weight();
 
                 if (self.filter_func)(threshold, cursor.key(), cursor.val()) {
-                    builder.push_refs(cursor.key(), cursor.val(), w.erase());
+                    builder.push_diff(w.erase());
+                    builder.push_val(cursor.val());
+                    any_values = true;
                 } else {
                     errors.push_with(&mut |item| {
                         let (kv, weight) = item.split_mut();
@@ -305,6 +310,9 @@ where
                     });
                 }
                 cursor.step_val();
+            }
+            if any_values {
+                builder.push_key(cursor.key());
             }
             cursor.step_key();
         }

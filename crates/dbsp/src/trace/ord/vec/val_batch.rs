@@ -6,13 +6,12 @@ use crate::{
     },
     time::{Antichain, AntichainRef},
     trace::{
-        cursor::{HasTimeDiffCursor, TimeDiffCursor},
         layers::{
-            Builder as _, Cursor as _, Layer, LayerBuilder, LayerCursor, LayerFactories, Leaf,
-            LeafBuilder, LeafCursor, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
+            Builder as _, Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
+            MergeBuilder, OrdOffset, Trie,
         },
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, Merger, Serializer, TimedBuilder,
+        Deserializer, Filter, Merger, Serializer,
     },
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
@@ -39,6 +38,7 @@ where
     consolidate_weights: &'static dyn ConsolidatePairedSlices<DynDataTyped<T>, R>,
     weighted_item_factory: &'static dyn Factory<DynPair<DynPair<K, V>, R>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
+    weighted_vals_factory: &'static dyn Factory<DynWeightedPairs<V, R>>,
     time_diffs_factory: &'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>,
 }
 
@@ -56,6 +56,7 @@ where
             consolidate_weights: self.consolidate_weights,
             weighted_item_factory: self.weighted_item_factory,
             weighted_items_factory: self.weighted_items_factory,
+            weighted_vals_factory: self.weighted_vals_factory,
             time_diffs_factory: self.time_diffs_factory,
         }
     }
@@ -92,6 +93,7 @@ where
             weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
             weighted_items_factory:
                 WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
+            weighted_vals_factory: WithFactory::<LeanVec<Tup2<VType, RType>>>::FACTORY,
             time_diffs_factory: WithFactory::<LeanVec<Tup2<T, RType>>>::FACTORY,
         }
     }
@@ -132,6 +134,10 @@ where
 
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
         self.weighted_items_factory
+    }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<V, R>> {
+        self.weighted_vals_factory
     }
 
     fn time_diffs_factory(
@@ -720,49 +726,6 @@ where
     }
 }
 
-pub struct VecValTimeDiffCursor<'a, T, R>(LeafCursor<'a, DynDataTyped<T>, R>)
-where
-    T: Timestamp,
-    R: WeightTrait + ?Sized;
-
-impl<'a, T, R> TimeDiffCursor<'a, T, R> for VecValTimeDiffCursor<'a, T, R>
-where
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn current(&mut self, _tmp: &mut R) -> Option<(&T, &R)> {
-        if self.0.valid() {
-            Some((self.0.current_key(), self.0.current_diff()))
-        } else {
-            None
-        }
-    }
-    fn step(&mut self) {
-        self.0.step()
-    }
-}
-
-impl<K, V, T, R, O> HasTimeDiffCursor<K, V, T, R> for VecValCursor<'_, K, V, T, R, O>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    type TimeDiffCursor<'a>
-        = VecValTimeDiffCursor<'a, T, R>
-    where
-        Self: 'a;
-
-    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        VecValTimeDiffCursor(self.cursor.child.values())
-    }
-}
-
-type RawVecValBuilder<K, V, T, R, O> =
-    LayerBuilder<K, LayerBuilder<V, LeafBuilder<DynDataTyped<T>, R>, O>, O>;
-
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
 pub struct VecValBuilder<K, V, T, R, O = usize>
@@ -773,18 +736,17 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
-    time: T,
-    builder: RawVecValBuilder<K, V, T, R, O>,
     #[size_of(skip)]
     factories: VecValBatchFactories<K, V, T, R>,
-    // #[size_of(skip)]
-    // item_factory: &'static PairVTable<K, V>,
-    // #[size_of(skip)]
-    // weighted_item_factory: &'static WeightedVTable<Pair<K, V>, R>,
-    // batch_item_factory: &'static BatchItemVTable<K, V, Pair<K, V>, R>,
+    keys: Box<DynVec<K>>,
+    offs: Vec<O>,
+    vals: Box<DynVec<V>>,
+    val_offs: Vec<O>,
+    times: Box<DynVec<DynDataTyped<T>>>,
+    diffs: Box<DynVec<R>>,
 }
 
-impl<K, V, T, R, O> TimedBuilder<VecValBatch<K, V, T, R, O>> for VecValBuilder<K, V, T, R, O>
+impl<K, V, T, R, O> VecValBuilder<K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -792,21 +754,16 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
-    fn push_time(&mut self, key: &K, val: &V, time: &T, weight: &R) {
-        self.builder.push_refs((key, (val, (time, weight))));
+    fn pushed_key(&mut self) {
+        let off = O::from_usize(self.vals.len());
+        debug_assert!(off > *self.offs.last().unwrap());
+        self.offs.push(off);
     }
 
-    fn done_with_bounds(
-        self,
-        lower: Antichain<T>,
-        upper: Antichain<T>,
-    ) -> VecValBatch<K, V, T, R, O> {
-        VecValBatch {
-            layer: self.builder.done(),
-            lower,
-            upper,
-            factories: self.factories,
-        }
+    fn pushed_val(&mut self) {
+        let val_off = O::from_usize(self.times.len());
+        debug_assert!(val_off > *self.val_offs.last().unwrap());
+        self.val_offs.push(val_off);
     }
 }
 
@@ -819,73 +776,96 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
-    #[inline]
-    fn new_builder(factories: &VecValBatchFactories<K, V, T, R>, time: T) -> Self {
+    fn with_capacity(factories: &VecValBatchFactories<K, V, T, R>, capacity: usize) -> Self {
+        let mut keys = factories.layer_factories.keys.default_box();
+        keys.reserve_exact(capacity);
+
+        let mut offs = Vec::with_capacity(capacity + 1);
+        offs.push(O::zero());
+
+        let mut vals = factories.layer_factories.child.keys.default_box();
+        vals.reserve_exact(capacity);
+
+        let mut val_offs = Vec::with_capacity(capacity + 1);
+        val_offs.push(O::zero());
+
+        let mut times = factories.layer_factories.child.child.keys.default_box();
+        times.reserve_exact(capacity);
+
+        let mut diffs = factories.layer_factories.child.child.diffs.default_box();
+        diffs.reserve_exact(capacity);
         Self {
-            time,
-            builder: RawVecValBuilder::<K, V, T, R, O>::new(&factories.layer_factories),
             factories: factories.clone(),
-            // item_factory: factories.item_factory,
-            // weighted_item_factory: factories.weighted_item_factory,
-            // batch_item_factory: factories.batch_item_factory,
+            keys,
+            offs,
+            vals,
+            val_offs,
+            times,
+            diffs,
         }
     }
 
-    #[inline]
-    fn with_capacity(factories: &VecValBatchFactories<K, V, T, R>, time: T, cap: usize) -> Self {
-        Self {
-            time,
-            builder: <RawVecValBuilder<K, V, T, R, O> as TupleBuilder>::with_capacity(
-                &factories.layer_factories,
-                cap,
-            ),
-            factories: factories.clone(),
-            // item_factory: factories.item_factory,
-            // weighted_item_factory: factories.weighted_item_factory,
-            // batch_item_factory: factories.batch_item_factory,
-        }
-    }
-
-    #[inline]
     fn reserve(&mut self, additional: usize) {
-        self.builder.reserve(additional);
+        self.keys.reserve(additional);
+        self.offs.reserve(additional);
+        self.vals.reserve(additional);
+        self.times.reserve(additional);
+        self.diffs.reserve(additional);
     }
 
-    #[inline]
-    fn push(&mut self, kvr: &mut DynPair<DynPair<K, V>, R>) {
-        let (kv, r) = kvr.split_mut();
-        let (k, v) = kv.split_mut();
-        self.builder
-            .push_tuple((k, (v, (&mut self.time.clone(), r))));
+    fn push_key(&mut self, key: &K) {
+        self.keys.push_ref(key);
+        self.pushed_key();
     }
 
-    #[inline]
-    fn push_refs(&mut self, key: &K, val: &V, weight: &R) {
-        self.builder.push_refs((key, (val, (&self.time, weight))));
+    fn push_key_mut(&mut self, key: &mut K) {
+        self.keys.push_val(key);
+        self.pushed_key();
     }
 
-    #[inline]
-    fn push_vals(&mut self, key: &mut K, val: &mut V, weight: &mut R) {
-        self.builder
-            .push_tuple((key, (val, (&mut self.time.clone(), weight))));
+    fn push_val(&mut self, val: &V) {
+        self.vals.push_ref(val);
+        self.pushed_val();
     }
 
-    #[inline(never)]
-    fn done(self) -> VecValBatch<K, V, T, R, O> {
-        let time_next = self.time.advance(0);
-        let upper = if time_next <= self.time {
-            Antichain::new()
-        } else {
-            Antichain::from_elem(time_next)
-        };
+    fn push_val_mut(&mut self, val: &mut V) {
+        self.vals.push_val(val);
+        self.pushed_val();
+    }
+
+    fn push_time_diff(&mut self, time: &T, weight: &R) {
+        self.times.push(time.clone());
+        self.diffs.push_ref(weight);
+    }
+
+    fn push_time_diff_mut(&mut self, time: &mut T, weight: &mut R) {
+        self.times.push(time.clone());
+        self.diffs.push_val(weight);
+    }
+
+    fn done_with_bounds(
+        self,
+        (lower, upper): (Antichain<T>, Antichain<T>),
+    ) -> VecValBatch<K, V, T, R, O> {
         VecValBatch {
-            layer: self.builder.done(),
-            lower: Antichain::from_elem(self.time),
-            upper,
+            layer: Layer::from_parts(
+                &self.factories.layer_factories,
+                self.keys,
+                self.offs,
+                Layer::from_parts(
+                    &self.factories.layer_factories.child,
+                    self.vals,
+                    self.val_offs,
+                    Leaf::from_parts(
+                        &self.factories.layer_factories.child.child,
+                        self.times,
+                        self.diffs,
+                    ),
+                ),
+            ),
             factories: self.factories,
-            // item_factory: self.item_factory,
-            // weighted_item_factory: self.weighted_item_factory,
-            // batch_item_factory: self.batch_item_factory,
+            upper,
+            lower,
         }
     }
 }

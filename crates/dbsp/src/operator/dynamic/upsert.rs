@@ -8,7 +8,9 @@ use crate::{
     operator::dynamic::trace::{
         DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace,
     },
-    trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
+    trace::{
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, TupleBuilder,
+    },
     Circuit, DBData, Stream, Timestamp, ZWeight,
 };
 use minitrace::trace;
@@ -319,7 +321,8 @@ where
 
         let mut trace_cursor = trace.cursor();
 
-        let mut builder = B::Builder::with_capacity(&self.batch_factories, (), updates.len() * 2);
+        let builder = B::Builder::with_capacity(&self.batch_factories, updates.len() * 2);
+        let mut builder = TupleBuilder::new(&self.batch_factories, builder);
 
         let val_filter = self.bounds.effective_val_filter();
         let key_filter = self.bounds.effective_key_filter();

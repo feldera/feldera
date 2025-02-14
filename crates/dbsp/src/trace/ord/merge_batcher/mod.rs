@@ -2,7 +2,7 @@
 
 use crate::{
     dynamic::{pair::DynPair, DynWeightedPairs},
-    trace::{Batch, BatchFactories, Batcher, Builder},
+    trace::{bounds_for_fixed_time, Batch, BatchFactories, Batcher, Builder, TupleBuilder},
 };
 use size_of::SizeOf;
 use std::marker::PhantomData;
@@ -67,18 +67,23 @@ where
         self.sorter.finish_into(&mut merged);
 
         // Try and pre-allocate our builder a little bit
-        let mut builder = B::Builder::with_capacity(
+        let builder = B::Builder::with_capacity(
             &self.batch_factories,
-            self.time.clone(),
             merged.iter().map(|batch| batch.len()).sum(),
         );
+        let mut builder = TupleBuilder::new(&self.batch_factories, builder);
 
         for mut buffer in merged.drain(..) {
             // Safety: buffer.into_iter() passes ownership to valid items of the correct
             // type to the caller.
-            builder.extend(buffer.dyn_iter_mut());
+            for tuple in buffer.dyn_iter_mut() {
+                let (kv, w) = tuple.split_mut();
+                let (k, v) = kv.split_mut();
+
+                builder.push_vals(k, v, &mut self.time.clone(), w);
+            }
         }
 
-        builder.done()
+        builder.done_with_bounds(bounds_for_fixed_time(&self.time))
     }
 }

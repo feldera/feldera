@@ -9,11 +9,10 @@ use crate::{
     circuit_cache_key,
     dynamic::Data,
     operator::communication::new_exchange_operators,
-    trace::{merge_untimed_batches, Batch, BatchReader, BatchReaderFactories, Builder, Cursor},
+    trace::{merge_untimed_batches, Batch, BatchReader, Builder, Cursor},
     Circuit, Runtime, Stream,
 };
 
-use crate::dynamic::ClonableTrait;
 use std::{hash::Hash, panic::Location};
 
 circuit_cache_key!(ShardId<C, D>((StreamId, ShardingPolicy) => Stream<C, D>));
@@ -136,23 +135,19 @@ where
             // We iterate over tuples in the batch in order; hence tuples added
             // to each shard are also ordered, so we can use the more efficient
             // `Builder` API (instead of `Batcher`) to construct output batches.
-            builders.push(OB::Builder::with_capacity(
-                factories,
-                (),
-                batch.len() / shards,
-            ));
+            builders.push(OB::Builder::with_capacity(factories, batch.len() / shards));
         }
 
         let mut cursor = batch.cursor();
-        let mut weight = factories.weight_factory().default_box();
 
         while cursor.key_valid() {
-            let batch_index = cursor.key().default_hash() as usize % shards;
+            let b = &mut builders[cursor.key().default_hash() as usize % shards];
             while cursor.val_valid() {
-                cursor.weight().clone_to(&mut *weight);
-                builders[batch_index].push_refs(cursor.key(), cursor.val(), &*weight);
+                b.push_diff(cursor.weight());
+                b.push_val(cursor.val());
                 cursor.step_val();
             }
+            b.push_key(cursor.key());
             cursor.step_key();
         }
 

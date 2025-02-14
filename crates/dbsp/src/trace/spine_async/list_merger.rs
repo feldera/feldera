@@ -5,8 +5,8 @@ use crate::{
     dynamic::{DynDataTyped, DynWeightedPairs, Weight, WeightTrait},
     time::Timestamp,
     trace::{
-        cursor::CursorList, ord::filter, Batch, BatchFactories, BatchReaderFactories, Cursor,
-        Filter, TimedBuilder,
+        cursor::CursorList, ord::filter, Batch, BatchFactories, BatchReaderFactories, Builder,
+        Cursor, Filter,
     },
 };
 
@@ -56,7 +56,7 @@ where
         assert!(self.batches.len() >= 2);
         // TODO
         let factories = self.batches[0].factories();
-        let builder = B::Builder::timed_for_merge(&factories, &self.batches);
+        let builder = B::Builder::for_merge(&factories, &self.batches);
 
         ListMerger {
             batches: self.batches,
@@ -115,8 +115,12 @@ where
         fuel: &mut isize,
     ) {
         if filter(key_filter, self.cursor.key()) {
+            let mut any = false;
             while self.cursor.val_valid() {
-                self.copy_time_diffs_if(value_filter, map_func, fuel);
+                any = self.copy_time_diffs_if(value_filter, map_func, fuel) || any;
+            }
+            if any {
+                self.builder.push_key(self.cursor.key());
             }
         }
         *fuel -= 1;
@@ -128,7 +132,8 @@ where
         value_filter: &Option<Filter<B::Val>>,
         map_func: Option<&dyn Fn(&mut DynDataTyped<B::Time>)>,
         fuel: &mut isize,
-    ) {
+    ) -> bool {
+        let mut any = false;
         if filter(value_filter, self.cursor.val()) {
             // If this is a timed batch, we must consolidate the (time, weight) array; otherwise we
             // simply compute the total weight of the current value.
@@ -156,10 +161,9 @@ where
 
                 for i in 0..time_diffs.len() {
                     let (time, diff) = time_diffs.index(i).split();
-
-                    self.builder
-                        .push_time(self.cursor.key(), self.cursor.val(), time, diff);
+                    self.builder.push_time_diff(time, diff);
                 }
+                any = !time_diffs.is_empty();
             } else {
                 self.tmp_weight.set_zero();
                 self.cursor.map_times(&mut |_time, w| {
@@ -167,17 +171,18 @@ where
                     self.tmp_weight.add_assign(w)
                 });
                 if !self.tmp_weight.is_zero() {
-                    self.builder.push_time(
-                        self.cursor.key(),
-                        self.cursor.val(),
-                        &B::Time::default(),
-                        &self.tmp_weight,
-                    );
+                    self.builder
+                        .push_time_diff(&B::Time::default(), &self.tmp_weight);
+                    any = true;
                 }
+            }
+            if any {
+                self.builder.push_val(self.cursor.val());
             }
         }
         *fuel -= 1;
         self.cursor.step_val();
+        any
     }
 
     /// Extracts merged results.
@@ -197,6 +202,6 @@ where
                 batch.upper().join(upper.as_ref())
             });
 
-        self.builder.done_with_bounds(lower, upper)
+        self.builder.done_with_bounds((lower, upper))
     }
 }

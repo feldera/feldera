@@ -11,7 +11,7 @@ use crate::{
         time_series::radix_tree::treenode::TreeNode,
         trace::{TraceBounds, TraceFeedback},
     },
-    trace::{Batch, BatchReader, BatchReaderFactories, Builder, Spine},
+    trace::{Batch, BatchReader, BatchReaderFactories, Builder, Spine, TupleBuilder},
     Circuit, DBData, DynZWeight, Stream, ZWeight,
 };
 use dyn_clone::clone_box;
@@ -262,7 +262,8 @@ where
             &mut *updates,
         );
 
-        let mut builder = O::Builder::with_capacity(&self.output_factories, (), updates.len() * 2);
+        let builder = O::Builder::with_capacity(&self.output_factories, updates.len() * 2);
+        let mut builder = TupleBuilder::new(&self.output_factories, builder);
 
         // `updates` are already ordered by prefix.  All that remains is to order
         // insertion and deletion within each update.
@@ -275,6 +276,7 @@ where
                         builder.push_vals(
                             prefix.clone().erase_mut(),
                             new,
+                            &mut (),
                             ZWeight::one().erase_mut(),
                         );
                     };
@@ -282,6 +284,7 @@ where
                         builder.push_vals(
                             prefix.erase_mut(),
                             old,
+                            &mut (),
                             ZWeight::one().neg().erase_mut(),
                         );
                     };
@@ -293,11 +296,17 @@ where
                         builder.push_vals(
                             prefix.clone().erase_mut(),
                             old,
+                            &mut (),
                             ZWeight::one().neg().erase_mut(),
                         );
                     };
                     if let Some(new) = update.new_mut().get_mut() {
-                        builder.push_vals(prefix.erase_mut(), new, ZWeight::one().erase_mut());
+                        builder.push_vals(
+                            prefix.erase_mut(),
+                            new,
+                            &mut (),
+                            ZWeight::one().erase_mut(),
+                        );
                     };
                 }
             }

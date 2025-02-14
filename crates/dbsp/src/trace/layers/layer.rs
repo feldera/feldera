@@ -55,7 +55,6 @@ impl<K: DataTrait + ?Sized, C: Clone> Clone for LayerFactories<K, C> {
 ///
 /// In this representation, the values for `keys[i]` are found at `vals[offs[i]
 /// .. offs[i+1]]`.
-// False positive from clippy
 #[derive(SizeOf, Archive, Serialize)]
 pub struct Layer<K, L, O = usize>
 where
@@ -132,37 +131,33 @@ impl<K: DataTrait + ?Sized, L, O: 'static> Layer<K, L, O>
 where
     L: Trie,
 {
-    /*
-    /// Break down an `OrderedLayer` into its constituent parts
-    pub fn into_parts(self) -> (ErasedVec<K>, Vec<O>, L, usize) {
-        (self.keys, self.offs, self.vals)
-    }
-
-    /// Expose an `OrderedLayer` as its constituent parts
-    pub fn as_parts(&self) -> (&[K], &[O], &L, usize) {
-        (&self.keys, &self.offs, &self.vals)
-    }
-
     /// Create a new `OrderedLayer` from its component parts
-    ///
-    /// # Safety
-    ///
-    /// - `keys` must have a length of `offs.len() + 1` and every offset within
-    ///   `offs` must be a valid value index into `vals`.
-    /// - Every key's offset range must also be a valid range within `vals`
-    /// - Every value range must be non-empty
-    pub unsafe fn from_parts(keys: Vec<K>, offs: Vec<O>, vals: L) -> Self {
-        // TODO: Maybe validate indices into `vals` when debug assertions are enabled
-        // TODO: Maybe validate that value ranges are all valid
+    pub fn from_parts(
+        factories: &LayerFactories<K, <L as Trie>::Factories>,
+        mut keys: Box<DynVec<K>>,
+        mut offs: Vec<O>,
+        vals: L,
+    ) -> Self
+    where
+        O: OrdOffset,
+    {
         debug_assert_eq!(keys.len() + 1, offs.len());
+        debug_assert_eq!(offs.last().unwrap().into_usize(), vals.keys());
+
+        if keys.spare_capacity() >= keys.len() / 10 {
+            keys.shrink_to_fit();
+        }
+        if offs.capacity() - offs.len() >= offs.len() / 10 {
+            offs.shrink_to_fit();
+        }
 
         Self {
+            factories: factories.clone(),
             keys,
             offs,
             vals,
         }
     }
-    */
 
     /// Assume the invariants of the current builder
     ///

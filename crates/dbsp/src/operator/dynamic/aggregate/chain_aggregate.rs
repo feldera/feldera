@@ -126,7 +126,7 @@ where
         let mut delta_cursor = delta.cursor();
         let mut output_trace_cursor = output_trace.cursor();
 
-        let mut builder = OZ::Builder::with_capacity(&self.output_factories, (), delta.len());
+        let mut builder = OZ::Builder::with_capacity(&self.output_factories, delta.len());
 
         let mut old = self.output_factories.val_factory().default_box();
         let mut new = self.output_factories.val_factory().default_box();
@@ -170,18 +170,21 @@ where
             if retract {
                 match new.cmp(&old) {
                     Ordering::Less => {
-                        builder.push_refs(&key, &new, (1 as ZWeight).erase());
-                        builder.push_vals(&mut key, &mut old, (-1 as ZWeight).erase_mut());
+                        builder.push_val_diff_mut(&mut new, (1 as ZWeight).erase_mut());
+                        builder.push_val_diff_mut(&mut old, (-1 as ZWeight).erase_mut());
+                        builder.push_key_mut(&mut key);
                     }
                     Ordering::Greater => {
-                        builder.push_refs(&key, &old, (-1 as ZWeight).erase());
-                        builder.push_vals(&mut key, &mut new, (1 as ZWeight).erase_mut());
+                        builder.push_val_diff_mut(&mut old, (-1 as ZWeight).erase_mut());
+                        builder.push_val_diff_mut(&mut new, (1 as ZWeight).erase_mut());
+                        builder.push_key_mut(&mut key);
                     }
                     _ => (),
                 }
                 // do nothing if new == old.
             } else {
-                builder.push_vals(&mut key, &mut new, 1.erase_mut());
+                builder.push_val_diff_mut(&mut new, 1.erase_mut());
+                builder.push_key_mut(&mut key);
             }
 
             delta_cursor.step_key();

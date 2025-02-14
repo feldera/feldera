@@ -370,7 +370,7 @@ where
         output_trace: Cow<'_, OT>,
     ) -> O {
         let mut builder =
-            O::Builder::with_capacity(&self.factories.output_factories, (), delta.len() * 2);
+            O::Builder::with_capacity(&self.factories.output_factories, delta.len() * 2);
 
         let mut updates = self
             .factories
@@ -384,7 +384,6 @@ where
 
         let mut pair = self.factories.output_factories.val_factory().default_box();
         let mut key = self.factories.input_factories.key_factory().default_box();
-        let mut key_clone = self.factories.input_factories.key_factory().default_box();
 
         while delta_cursor.key_valid() {
             // println!("partition: {:?}", delta_cursor.key());
@@ -453,6 +452,7 @@ where
 
             // `updates` are already ordered by prefix.  All that remains is to order
             // insertion and deletion within each update.
+            let mut any_values = false;
             for update in updates.dyn_iter_mut() {
                 match update.new().cmp(update.old()) {
                     Ordering::Equal => {}
@@ -461,22 +461,13 @@ where
 
                         if let Some(new) = update.new_mut().get_mut() {
                             pair.from_vals(prefix.clone().erase_mut(), new);
-                            key.clone_to(&mut key_clone);
-                            builder.push_vals(
-                                &mut key_clone,
-                                &mut *pair,
-                                ZWeight::one().erase_mut(),
-                            );
+                            builder.push_val_diff_mut(&mut *pair, ZWeight::one().erase_mut());
+                            any_values = true;
                         };
                         if let Some(old) = update.old_mut().get_mut() {
                             pair.from_vals(prefix.erase_mut(), old);
-                            key.clone_to(&mut key_clone);
-
-                            builder.push_vals(
-                                &mut key_clone,
-                                &mut *pair,
-                                ZWeight::one().neg().erase_mut(),
-                            );
+                            builder.push_val_diff_mut(&mut *pair, ZWeight::one().neg().erase_mut());
+                            any_values = true;
                         };
                     }
                     Ordering::Greater => {
@@ -484,26 +475,19 @@ where
 
                         if let Some(old) = update.old_mut().get_mut() {
                             pair.from_vals(prefix.clone().erase_mut(), old);
-                            key.clone_to(&mut key_clone);
-
-                            builder.push_vals(
-                                &mut key_clone,
-                                &mut *pair,
-                                ZWeight::one().neg().erase_mut(),
-                            );
+                            builder.push_val_diff_mut(&mut *pair, ZWeight::one().neg().erase_mut());
+                            any_values = true;
                         };
                         if let Some(new) = update.new_mut().get_mut() {
                             pair.from_vals(prefix.erase_mut(), new);
-                            key.clone_to(&mut key_clone);
-
-                            builder.push_vals(
-                                &mut key_clone,
-                                &mut *pair,
-                                ZWeight::one().erase_mut(),
-                            );
+                            builder.push_val_diff_mut(&mut *pair, ZWeight::one().erase_mut());
+                            any_values = true;
                         };
                     }
                 }
+            }
+            if any_values {
+                builder.push_key(&*key);
             }
 
             delta_cursor.step_key();

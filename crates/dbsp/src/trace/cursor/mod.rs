@@ -74,14 +74,6 @@ enum Direction {
 ///
 /// Every key in a nonempty collection has at least one value.
 ///
-/// # Visiting time-diff pairs within a value
-///
-/// Time-diff pairs are most often visited using [`map_times`] and related
-/// methods, which take a closure that is applied to each of the pairs. For
-/// cases where there is known to be only one pair, [`weight`] is
-/// appropriate. In special cases, the [`TimeDiffCursor`] trait allows iterating
-/// through all of the pairs.
-///
 /// # Example
 ///
 /// The following is typical code for iterating through all of the key-value
@@ -472,79 +464,6 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.0.fast_forward_vals()
-    }
-}
-
-/// Visits the `(time, diff)` pairs at a [`Cursor`]'s `(key, value)` position.
-///
-/// Obtained via [`HasTimeDiffCursor`].
-///
-/// Within time-diff pairs, the times may not be ordered or unique and, in
-/// particular, [`CursorList`](`cursor_list::CursorList`) cursors can contain
-/// out-of-order and duplicate timestamps.  Because duplicate times are
-/// possible, it's possible to have multiple diffs even when `T = ()`.
-///
-/// That said, most specific kinds of batches do guarantee unique and ordered
-/// time-diff pairs, including [`OrdWSet`](crate::trace::ord::OrdWSet),
-/// [`OrdIndexedWSet`](crate::trace::ord::OrdIndexedWSet), and similar `WSet`
-/// and `ZSet` types and indexed versions.
-pub trait TimeDiffCursor<'a, T, R>
-where
-    R: ?Sized,
-{
-    /// Returns the current time-diff pair, if there is one, or `None` if the
-    /// cursor has been exhausted.
-    fn current<'b>(&'b mut self, tmp: &'b mut R) -> Option<(&'b T, &'b R)>;
-
-    /// Advances to the next time-diff pair.
-    fn step(&mut self);
-}
-
-/// Obtains a [`TimeDiffCursor`] for a [`Cursor`]'s current position.
-///
-/// Not every cursor type implements this trait.  It's usually better to use
-/// [`Cursor::map_times`] and related functions, which are always available.
-pub trait HasTimeDiffCursor<K, V, T, R>: Cursor<K, V, T, R>
-where
-    K: ?Sized,
-    V: ?Sized,
-    R: ?Sized,
-{
-    /// The `(time, diff)` cursor type for the [`Cursor`].
-    type TimeDiffCursor<'a>: TimeDiffCursor<'a, T, R>
-    where
-        Self: 'a;
-
-    /// Returns the [`TimeDiffCursor`] for this cursor's key-value position.  If
-    /// the current key or value is not valid, the returned cursor will have
-    /// length 0.
-    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_>;
-}
-
-/// An implementation of [`TimeDiffCursor`] for simple cases.
-pub struct SingletonTimeDiffCursor<'a, R>(Option<&'a R>)
-where
-    R: ?Sized;
-
-impl<'a, R> SingletonTimeDiffCursor<'a, R>
-where
-    R: ?Sized,
-{
-    pub fn new(diff: Option<&'a R>) -> Self {
-        Self(diff)
-    }
-}
-
-impl<'a, R> TimeDiffCursor<'a, (), R> for SingletonTimeDiffCursor<'a, R>
-where
-    R: ?Sized,
-{
-    fn current(&mut self, _tmp: &mut R) -> Option<(&(), &R)> {
-        self.0.map(|diff| (&(), diff))
-    }
-
-    fn step(&mut self) {
-        self.0 = None;
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{HasOne, HasZero, IndexedZSet, UnsignedPrimInt, ZRingValue},
+    algebra::{HasZero, IndexedZSet, UnsignedPrimInt, ZRingValue},
     circuit::{
         operator_traits::{Operator, QuaternaryOperator},
         Scope,
@@ -25,7 +25,7 @@ use crate::{
         },
         Avg,
     },
-    trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine},
+    trace::{Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Spine},
     utils::Tup2,
     Circuit, DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
 };
@@ -772,9 +772,9 @@ where
         let mut input_trace_cursor = input_trace.cursor();
         let mut tree_cursor = radix_tree.cursor();
 
-        let mut retraction_builder = O::Builder::new_builder(&self.output_factories, ());
+        let mut retraction_builder = O::Builder::new_builder(&self.output_factories);
         let mut insertion_builder =
-            O::Builder::with_capacity(&self.output_factories, (), input_delta.len());
+            O::Builder::with_capacity(&self.output_factories, input_delta.len());
 
         // println!("delta: {input_delta:#x?}");
         // println!("radix tree: {radix_tree:#x?}");
@@ -784,7 +784,7 @@ where
         // println!("tree: {treestr}");
         // tree_partition_cursor.rewind_keys();
 
-        let mut item = self.output_factories.weighted_item_factory().default_box();
+        let mut val = self.output_factories.val_factory().default_box();
         let mut acc = self.aggregator.opt_accumulator_factory().default_box();
         let mut agg = self.aggregator.output_factory().default_box();
 
@@ -801,21 +801,21 @@ where
                     PartitionCursor::new(&mut output_trace_cursor),
                     ranges.clone(),
                 );
+                let mut any_values = false;
                 while range_cursor.key_valid() {
                     while range_cursor.val_valid() {
                         let weight = **range_cursor.weight();
                         if !weight.is_zero() {
-                            let (kv, w) = item.split_mut();
-                            let (k, v) = kv.split_mut();
-                            delta_cursor.key().clone_to(k);
-                            v.from_refs(range_cursor.key(), range_cursor.val());
-                            **w = weight.neg();
-                            // println!("retract ({item:?})");
-                            retraction_builder.push(&mut *item);
+                            val.from_refs(range_cursor.key(), range_cursor.val());
+                            retraction_builder.push_val_diff_mut(&mut *val, &mut weight.neg());
+                            any_values = true;
                         }
                         range_cursor.step_val();
                     }
                     range_cursor.step_key();
+                }
+                if any_values {
+                    retraction_builder.push_key(delta_cursor.key());
                 }
             };
 
@@ -836,6 +836,7 @@ where
 
                 // For all affected times, seek them in `input_trace`, compute aggregates using
                 // using radix_tree.
+                let mut any_values = false;
                 while input_range_cursor.key_valid() {
                     let range = self.range.range_of(input_range_cursor.key());
                     tree_partition_cursor.rewind_keys();
@@ -849,12 +850,7 @@ where
                     while input_range_cursor.val_valid() {
                         // Generate output update.
                         if !input_range_cursor.weight().le0() {
-                            let (kv, w) = item.split_mut();
-                            let (k, v) = kv.split_mut();
-
-                            delta_cursor.key().clone_to(k);
-                            **v.fst_mut() = **input_range_cursor.key();
-                            **w = HasOne::one();
+                            **val.fst_mut() = **input_range_cursor.key();
                             if let Some(range) = range {
                                 tree_partition_cursor.aggregate_range(
                                     &range,
@@ -863,17 +859,18 @@ where
                                 );
                                 if let Some(acc) = acc.get_mut() {
                                     self.aggregator.finalize(acc, agg.as_mut());
-                                    v.snd_mut().from_val(agg.as_mut());
+                                    val.snd_mut().from_val(agg.as_mut());
                                 } else {
-                                    v.snd_mut().set_none();
+                                    val.snd_mut().set_none();
                                 }
                             } else {
-                                v.snd_mut().set_none();
+                                val.snd_mut().set_none();
                             }
 
                             // println!("insert({item:?})");
 
-                            insertion_builder.push(item.as_mut());
+                            insertion_builder.push_val_diff_mut(&mut *val, 1.erase_mut());
+                            any_values = true;
                             break;
                         }
 
@@ -881,6 +878,9 @@ where
                     }
 
                     input_range_cursor.step_key();
+                }
+                if any_values {
+                    insertion_builder.push_key(delta_cursor.key());
                 }
             }
 

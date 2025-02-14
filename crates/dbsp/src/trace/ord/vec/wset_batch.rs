@@ -7,15 +7,11 @@ use crate::{
     },
     time::{Antichain, AntichainRef},
     trace::{
-        cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
         deserialize_wset,
-        layers::{
-            Builder as _, Cursor as _, Leaf, LeafBuilder, LeafCursor, LeafFactories, MergeBuilder,
-            Trie, TupleBuilder,
-        },
+        layers::{Builder as _, Cursor as _, Leaf, LeafCursor, LeafFactories, MergeBuilder, Trie},
         ord::merge_batcher::MergeBatcher,
         serialize_wset, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories,
-        Builder, Cursor, Deserializer, Filter, Merger, Serializer, TimedBuilder, WeightedItem,
+        Builder, Cursor, Deserializer, Filter, Merger, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -34,6 +30,7 @@ pub struct VecWSetFactories<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
     item_factory: &'static dyn Factory<DynPair<K, DynUnit>>,
     weighted_item_factory: &'static dyn Factory<WeightedItem<K, DynUnit, R>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>>,
+    weighted_vals_factory: &'static dyn Factory<DynWeightedPairs<DynUnit, R>>,
     //pub batch_item_factory: &'static BatchItemFactory<K, (), K, R>,
 }
 
@@ -44,6 +41,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Clone for VecWSetFactories<
             item_factory: self.item_factory,
             weighted_item_factory: self.weighted_item_factory,
             weighted_items_factory: self.weighted_items_factory,
+            weighted_vals_factory: self.weighted_vals_factory,
         }
     }
 }
@@ -62,6 +60,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReaderFactories<K, Dyn
             item_factory: WithFactory::<Tup2<KType, ()>>::FACTORY,
             weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::FACTORY,
             weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::FACTORY,
+            weighted_vals_factory: WithFactory::<LeanVec<Tup2<(), RType>>>::FACTORY,
         }
     }
 
@@ -99,6 +98,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchFactories<K, DynUnit, 
         &self,
     ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
         self.weighted_items_factory
+    }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynUnit, R>> {
+        self.weighted_vals_factory
     }
 
     fn time_diffs_factory(
@@ -612,100 +615,129 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
     }
 }
 
-impl<K, R> HasTimeDiffCursor<K, DynUnit, (), R> for VecWSetCursor<'_, K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    type TimeDiffCursor<'a>
-        = SingletonTimeDiffCursor<'a, R>
-    where
-        Self: 'a;
-
-    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        SingletonTimeDiffCursor::new(self.val_valid().then(|| self.cursor.current_diff()))
-    }
-}
-
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
-pub struct VecWSetBuilder<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
-    builder: LeafBuilder<K, R>,
-    #[size_of(skip)]
-    factories: VecWSetFactories<K, R>,
-    // item_factory: &'static WeightedFactory<K, R>,
-    // batch_item_factory: &'static BatchItemFactory<K, (), K, R>,
-}
-
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Builder<VecWSet<K, R>> for VecWSetBuilder<K, R>
-where
-    Self: SizeOf,
-{
-    #[inline]
-    fn new_builder(factories: &VecWSetFactories<K, R>, _time: ()) -> Self {
-        Self {
-            builder: LeafBuilder::new(&factories.layer_factories),
-            factories: factories.clone(),
-            // item_factory: vtables.weighted_item_factory,
-            // batch_item_factory: vtables.batch_item_factory,
-        }
-    }
-
-    #[inline]
-    fn with_capacity(factories: &VecWSetFactories<K, R>, _time: (), capacity: usize) -> Self {
-        Self {
-            builder: <LeafBuilder<K, R> as TupleBuilder>::with_capacity(
-                &factories.layer_factories,
-                capacity,
-            ),
-            factories: factories.clone(),
-            // item_factory: vtables.weighted_item_factory,
-            // batch_item_factory: vtables.batch_item_factory,
-        }
-    }
-
-    #[inline]
-    fn reserve(&mut self, additional: usize) {
-        self.builder.reserve(additional);
-    }
-
-    #[inline]
-    fn push(&mut self, element: &mut WeightedItem<K, DynUnit, R>) {
-        let (kv, weight) = element.split_mut();
-        let k = kv.fst_mut();
-        self.builder.push_tuple((k, weight));
-    }
-
-    #[inline]
-    fn push_refs(&mut self, key: &K, _val: &DynUnit, weight: &R) {
-        self.builder.push_refs((key, weight))
-    }
-
-    #[inline]
-    fn push_vals(&mut self, key: &mut K, _val: &mut DynUnit, weight: &mut R) {
-        self.builder.push_tuple((key, weight))
-    }
-
-    #[inline(never)]
-    fn done(self) -> VecWSet<K, R> {
-        VecWSet {
-            layer: self.builder.done(),
-            factories: self.factories,
-        }
-    }
-}
-
-impl<K, R> TimedBuilder<VecWSet<K, R>> for VecWSetBuilder<K, R>
+pub struct VecWSetBuilder<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn push_time(&mut self, key: &K, val: &DynUnit, _time: &(), weight: &R) {
-        self.push_refs(key, val, weight);
+    #[size_of(skip)]
+    factories: VecWSetFactories<K, R>,
+    keys: Box<DynVec<K>>,
+    #[cfg(debug_assertions)]
+    val: bool,
+    diffs: Box<DynVec<R>>,
+}
+
+impl<K, R> VecWSetBuilder<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn pushed_key(&mut self) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert!(self.val, "every key must have exactly one value");
+            debug_assert_eq!(
+                self.keys.len(),
+                self.diffs.len(),
+                "every key must have exactly one diff"
+            );
+            self.val = false;
+        }
+
+        debug_assert!(
+            {
+                let n = self.keys.len();
+                n == 1 || self.keys[n - 2] < self.keys[n - 1]
+            },
+            "keys must be strictly monotonically increasing but {:?} >= {:?}",
+            &self.keys[self.keys.len() - 2],
+            &self.keys[self.keys.len() - 1]
+        );
     }
 
-    fn done_with_bounds(self, _lower: Antichain<()>, _upper: Antichain<()>) -> VecWSet<K, R> {
-        self.done()
+    fn pushed_val(&self) {
+        debug_assert_eq!(
+            self.diffs.len(),
+            self.keys.len() + 1,
+            "every value must have exactly one diff"
+        );
+    }
+
+    fn pushed_diff(&self) {
+        #[cfg(debug_assertions)]
+        debug_assert!(!self.val, "every val must have exactly one key");
+        debug_assert_eq!(
+            self.keys.len() + 1,
+            self.diffs.len(),
+            "every diff must have exactly one key"
+        );
+    }
+}
+
+impl<K, R> Builder<VecWSet<K, R>> for VecWSetBuilder<K, R>
+where
+    Self: SizeOf,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn with_capacity(factories: &VecWSetFactories<K, R>, capacity: usize) -> Self {
+        let mut keys = factories.layer_factories.keys.default_box();
+        keys.reserve_exact(capacity);
+
+        let mut diffs = factories.layer_factories.diffs.default_box();
+        diffs.reserve_exact(capacity);
+        Self {
+            factories: factories.clone(),
+            keys,
+            #[cfg(debug_assertions)]
+            val: false,
+            diffs,
+        }
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.keys.reserve(additional);
+        self.diffs.reserve(additional);
+    }
+
+    fn push_key(&mut self, key: &K) {
+        self.keys.push_ref(key);
+        self.pushed_key();
+    }
+
+    fn push_key_mut(&mut self, key: &mut K) {
+        self.keys.push_val(key);
+        self.pushed_key();
+    }
+
+    fn push_val(&mut self, _val: &DynUnit) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert!(!self.val);
+            self.val = true;
+            self.pushed_val();
+        }
+    }
+
+    fn push_time_diff(&mut self, _time: &(), weight: &R) {
+        self.diffs.push_ref(weight);
+        self.pushed_diff();
+    }
+
+    fn push_time_diff_mut(&mut self, _time: &mut (), weight: &mut R) {
+        self.diffs.push_val(weight);
+        self.pushed_diff();
+    }
+
+    fn done_with_bounds(self, _bounds: (Antichain<()>, Antichain<()>)) -> VecWSet<K, R> {
+        debug_assert_eq!(self.keys.len(), self.diffs.len());
+        VecWSet {
+            layer: Leaf::from_parts(&self.factories.layer_factories, self.keys, self.diffs),
+            factories: self.factories,
+        }
     }
 }
 

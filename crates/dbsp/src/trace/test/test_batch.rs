@@ -11,7 +11,7 @@ use crate::{
     time::{Antichain, AntichainRef},
     trace::{
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Batcher, Builder,
-        Cursor, Filter, Merger, TimedBuilder, Trace,
+        Cursor, Filter, Merger, Trace,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -123,6 +123,11 @@ where
     fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
         todo!()
     }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<V, R>> {
+        todo!()
+    }
+
     fn time_diffs_factory(
         &self,
     ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>> {
@@ -759,33 +764,9 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
-    time: T,
     result: TestBatch<K, V, T, R>,
-}
-
-impl<K, V, T, R> TimedBuilder<TestBatch<K, V, T, R>> for TestBatchBuilder<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    T: Timestamp,
-{
-    fn push_time(&mut self, key: &K, val: &V, time: &T, weight: &R) {
-        match self
-            .result
-            .data
-            .entry((clone_box(key), clone_box(val), time.clone()))
-        {
-            Entry::Occupied(mut oe) => oe.get_mut().as_mut().add_assign(weight),
-            Entry::Vacant(ve) => {
-                ve.insert(clone_box(weight));
-            }
-        }
-    }
-
-    fn done_with_bounds(self, _lower: Antichain<T>, _upper: Antichain<T>) -> TestBatch<K, V, T, R> {
-        self.done()
-    }
+    time_diffs: Vec<(T, Box<R>)>,
+    vals: BTreeMap<Box<V>, Vec<(T, Box<R>)>>,
 }
 
 impl<K, V, T, R> Builder<TestBatch<K, V, T, R>> for TestBatchBuilder<K, V, T, R>
@@ -795,46 +776,46 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
-    fn new_builder(factories: &TestBatchFactories<K, V, T, R>, time: T) -> Self {
+    fn with_capacity(factories: &TestBatchFactories<K, V, T, R>, _cap: usize) -> Self {
         Self {
-            time,
             result: TestBatch::new(factories),
+            time_diffs: Vec::new(),
+            vals: BTreeMap::new(),
         }
     }
 
-    fn with_capacity(factories: &TestBatchFactories<K, V, T, R>, time: T, _cap: usize) -> Self {
-        Self::new_builder(factories, time)
+    fn push_time_diff(&mut self, time: &T, weight: &R) {
+        self.time_diffs.push((time.clone(), clone_box(weight)));
     }
 
-    fn push(&mut self, element: &mut DynPair<DynPair<K, V>, R>) {
-        let pair = &*element;
-        let (kv, r) = pair.split();
-        let (k, v) = kv.split();
+    fn push_val(&mut self, val: &V) {
+        assert!(!self.time_diffs.is_empty());
+        assert!(self
+            .vals
+            .insert(clone_box(val), std::mem::take(&mut self.time_diffs))
+            .is_none());
+    }
 
-        match self
-            .result
-            .data
-            .entry((clone_box(k), clone_box(v), self.time.clone()))
-        {
-            Entry::Occupied(mut oe) => oe.get_mut().as_mut().add_assign(r),
-            Entry::Vacant(ve) => {
-                let _ = ve.insert(clone_box(r));
+    fn push_key(&mut self, key: &K) {
+        assert!(self.time_diffs.is_empty());
+        assert!(!self.vals.is_empty());
+        for (val, time_diffs) in std::mem::take(&mut self.vals) {
+            for (t, r) in time_diffs {
+                match self
+                    .result
+                    .data
+                    .entry((clone_box(key), clone_box(&*val), t.clone()))
+                {
+                    Entry::Occupied(mut oe) => oe.get_mut().as_mut().add_assign(&*r),
+                    Entry::Vacant(ve) => {
+                        let _ = ve.insert(clone_box(&*r));
+                    }
+                }
             }
         }
     }
 
-    fn push_refs(&mut self, k: &K, v: &V, r: &R) {
-        let time = self.time.clone();
-        self.push_time(k, v, &time, r);
-    }
-
-    fn push_vals(&mut self, k: &mut K, v: &mut V, r: &mut R) {
-        self.push_refs(k, v, r)
-    }
-
-    fn reserve(&mut self, _additional: usize) {}
-
-    fn done(mut self) -> TestBatch<K, V, T, R> {
+    fn done_with_bounds(mut self, _bounds: (Antichain<T>, Antichain<T>)) -> TestBatch<K, V, T, R> {
         self.result.data.retain(|_, r| !r.is_zero());
         self.result
     }

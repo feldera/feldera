@@ -27,13 +27,14 @@ use crate::{
             assert_batch_cursors_eq, assert_batch_eq, assert_trace_eq, test_batch_sampling,
             test_trace_sampling, TestBatch, TestBatchFactories,
         },
-        Batch, BatchReader, BatchReaderFactories, Spine, Trace,
+        Batch, BatchReader, BatchReaderFactories, Builder, Spine, Trace,
     },
     utils::{Tup2, Tup3, Tup4},
     DynZWeight, Runtime, ZWeight,
 };
 
-use super::{Builder, Filter, TimedBuilder};
+use super::{bounds_for_fixed_time, Filter};
+use itertools::Itertools;
 
 pub mod test_batch;
 
@@ -353,13 +354,21 @@ fn timed_indexed_batch_from_tuples<B>(
 ) -> B
 where
     B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>,
-    B::Builder: TimedBuilder<B>,
 {
-    let mut builder = B::Builder::timed_with_capacity(factories, tuples.len());
-    for Tup4(key, val, time, diff) in tuples {
-        builder.push_time(key, val, time, diff);
+    let mut builder = B::Builder::with_capacity(factories, tuples.len());
+    #[allow(clippy::into_iter_on_ref)]
+    for (key, vtds) in &tuples.into_iter().chunk_by(|Tup4(key, _, _, _)| key) {
+        for (val, tds) in &vtds.into_iter().chunk_by(|Tup4(_, val, _, _)| val) {
+            for Tup4(_, _, time, diff) in tds {
+                builder.push_time_diff(time, diff);
+            }
+            builder.push_val(val);
+        }
+        builder.push_key(key);
     }
-    builder.done()
+    // This use of `bounds_for_fixed_time` is clearly wrong but works for our
+    // purposes.
+    builder.done_with_bounds(bounds_for_fixed_time(&0))
 }
 
 fn test_indexed_zset_trace_builder<B>(
@@ -368,7 +377,6 @@ fn test_indexed_zset_trace_builder<B>(
     seed: u64,
 ) where
     B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>,
-    B::Builder: TimedBuilder<B>,
 {
     tuples.sort_unstable();
     tuples.retain(|Tup4(_k, _v, _t, r)| *r != 0);
@@ -388,13 +396,19 @@ fn test_indexed_zset_trace_builder<B>(
 fn timed_batch_from_tuples<B>(factories: &B::Factories, tuples: &[Tup3<i32, u32, ZWeight>]) -> B
 where
     B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>,
-    B::Builder: TimedBuilder<B>,
 {
-    let mut builder = B::Builder::timed_with_capacity(factories, tuples.len());
-    for Tup3(key, time, diff) in tuples {
-        builder.push_time(key, &(), time, diff);
+    let mut builder = B::Builder::with_capacity(factories, tuples.len());
+    #[allow(clippy::into_iter_on_ref)]
+    for (key, tds) in &tuples.into_iter().chunk_by(|Tup3(key, _time, _diff)| key) {
+        for Tup3(_key, time, diff) in tds {
+            builder.push_time_diff(time, diff);
+        }
+        builder.push_val(&());
+        builder.push_key(key);
     }
-    builder.done()
+    // This use of `bounds_for_fixed_time` is clearly wrong but works for our
+    // purposes.
+    builder.done_with_bounds(bounds_for_fixed_time(&0))
 }
 
 fn test_zset_trace_builder<B>(
@@ -403,7 +417,6 @@ fn test_zset_trace_builder<B>(
     seed: u64,
 ) where
     B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>,
-    B::Builder: TimedBuilder<B>,
 {
     tuples.sort_unstable();
     tuples.retain(|Tup3(_k, _t, r)| *r != 0);

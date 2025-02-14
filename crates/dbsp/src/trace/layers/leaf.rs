@@ -123,6 +123,25 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
         result
     }
 
+    pub fn from_parts(
+        factories: &LeafFactories<K, R>,
+        mut keys: Box<DynVec<K>>,
+        mut diffs: Box<DynVec<R>>,
+    ) -> Self {
+        debug_assert_eq!(keys.len(), diffs.len());
+        if keys.spare_capacity() >= keys.len() / 10 {
+            keys.shrink_to_fit();
+        }
+        if diffs.spare_capacity() >= diffs.len() / 10 {
+            diffs.shrink_to_fit();
+        }
+        Self {
+            factories: factories.clone(),
+            keys,
+            diffs,
+        }
+    }
+
     // FIXME: We need to do some extra stuff for zsts
     pub fn len(&self) -> usize {
         debug_assert_eq!(self.keys.len(), self.diffs.len());
