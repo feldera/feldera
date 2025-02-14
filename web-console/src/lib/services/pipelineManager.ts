@@ -73,8 +73,7 @@ const toPipelineThumb = (
     pipeline.deployment_desired_status,
     pipeline.deployment_error
   ),
-  programStatus: pipeline.program_status,
-  refreshVersion: pipeline.refresh_version
+  programStatus: pipeline.program_status
 })
 
 const toPipeline = <
@@ -116,7 +115,6 @@ const toExtendedPipeline = ({
   programVersion: pipeline.program_version,
   runtimeConfig: pipeline.runtime_config,
   version: pipeline.version,
-  refreshVersion: pipeline.refresh_version,
   status: consolidatePipelineStatus(
     program_status,
     deployment_status,
@@ -194,8 +192,7 @@ export const getPipelines = async (): Promise<PipelineThumb[]> => {
 
 export const getPipelineStatus = async (pipeline_name: string) => {
   const pipeline = await handled(_getPipeline)({
-    path: { pipeline_name: encodeURIComponent(pipeline_name) },
-    query: { selector: 'status' }
+    path: { pipeline_name: encodeURIComponent(pipeline_name) }
   })
   return {
     status: consolidatePipelineStatus(

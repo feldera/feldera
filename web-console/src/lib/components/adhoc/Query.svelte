@@ -152,7 +152,7 @@
     </div>
 
     {#if result}
-      {@const itemHeight = 'h-7'}
+    {@const itemHeight = 'h-7'}
       {#key result.columns}
         <div class="pr-4 pt-2">
           <div class="relative h-full w-fit max-w-full">
@@ -185,9 +185,7 @@
                       <thead>
                         <tr>
                           {#each result.columns as column}
-                            <SqlColumnHeader
-                              {column}
-                              class="bg-white-dark sticky top-0 z-10 {itemHeight}"
+                            <SqlColumnHeader {column} class="bg-white-dark sticky top-0 z-10 {itemHeight}"
                             ></SqlColumnHeader>
                           {/each}
                         </tr>
@@ -214,11 +212,11 @@
                     {/each}
                   </tr>
                 {:else if 'error' in row}
-                  <tr {style} class={itemHeight}>
+                  <tr {style} class="{itemHeight}">
                     <td colspan="99999999" class="px-2 preset-tonal-error">{row.error}</td>
                   </tr>
                 {:else}
-                  <tr {style} class={itemHeight}>
+                  <tr {style} class="{itemHeight}">
                     <td colspan="99999999" class="px-2 preset-tonal-warning">{row.warning}</td>
                   </tr>
                 {/if}
