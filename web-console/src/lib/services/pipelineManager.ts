@@ -47,7 +47,6 @@ import JSONbig from 'true-json-bigint'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 import invariant from 'tiny-invariant'
 import { tuple } from '$lib/functions/common/tuple'
-import { sleep } from '$lib/functions/common/promise'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -302,6 +301,8 @@ export const deletePipeline = async (pipeline_name: string) => {
 }
 
 export type PipelineAction = 'start' | 'pause' | 'shutdown' | 'start_paused'
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export const postPipelineAction = async (
   pipeline_name: string,

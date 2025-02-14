@@ -1,7 +1,6 @@
 import { getPipelines, type PipelineThumb } from '$lib/services/pipelineManager'
 import { onMount } from 'svelte'
 import { useToast } from '$lib/compositions/useToastNotification'
-import { closedIntervalAction } from '$lib/functions/common/promise'
 
 let pipelines = $state<PipelineThumb[] | undefined>(undefined)
 const reload = async () => {
@@ -13,6 +12,34 @@ export const useUpdatePipelineList = () => {
     updatePipelines(updater: (ps: PipelineThumb[]) => PipelineThumb[]) {
       pipelines = updater(pipelines ?? [])
     }
+  }
+}
+
+/**
+ * Start calling an action in a loop with an interval while waiting for the previous invocation to resolve
+ * Does not perform the action on the initial call
+ * Does not handle rejection
+ * @returns A function to cancel the action loop
+ */
+const closedIntervalAction = (action: () => Promise<void>, periodMs: number) => {
+  let timeout: NodeJS.Timeout | undefined
+  let onTimeoutReject: () => void
+  let t1 = Date.now()
+  setTimeout(async () => {
+    do {
+      await new Promise((resolve, reject) => {
+        const t2 = Date.now()
+        timeout = setTimeout(resolve, Math.max(Math.min(periodMs - t2 + t1, periodMs), 0))
+        onTimeoutReject = reject
+      })
+      t1 = Date.now()
+      await action()
+    } while (timeout)
+  })
+  return () => {
+    clearTimeout(timeout)
+    timeout = undefined
+    onTimeoutReject()
   }
 }
 
