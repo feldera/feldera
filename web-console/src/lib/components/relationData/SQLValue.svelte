@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { SQLValueJS } from '$lib/types/sql.ts'
+  import type { SQLValueJS } from '$lib/functions/sqlValue'
   import { BigNumber } from 'bignumber.js/bignumber.js'
   import type { HTMLTdAttributes } from 'svelte/elements'
   import JSONbig from 'true-json-bigint'

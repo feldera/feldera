@@ -12,7 +12,7 @@
   import Query, { type Row } from '$lib/components/adhoc/Query.svelte'
   import { type QueryData } from '$lib/components/adhoc/Query.svelte'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
-  import type { SQLValueJS } from '$lib/types/sql.ts'
+  import type { SQLValueJS } from '$lib/functions/sqlValue'
   import {
     CustomJSONParserTransformStream,
     parseCancellable

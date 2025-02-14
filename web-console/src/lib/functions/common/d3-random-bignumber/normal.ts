@@ -1,6 +1,6 @@
 import { BigNumber } from 'bignumber.js/bignumber.js'
 
-import type { RandomBigNumberGenerationSource } from './generationSource'
+import { RandomBigNumberGenerationSource } from './generationSource'
 
 export interface RandomNormalBigNumber extends RandomBigNumberGenerationSource {
   /**

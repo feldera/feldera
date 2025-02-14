@@ -1,6 +1,6 @@
 <script lang="ts" module>
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import type { SQLValueJS } from '$lib/types/sql.ts'
+  import type { SQLValueJS } from '$lib/functions/sqlValue'
   import type { Field } from '$lib/services/manager'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
 

@@ -45,6 +45,7 @@ const { OidcClient } = AxaOidc
 import { client, createClient } from '@hey-api/client-fetch'
 import JSONbig from 'true-json-bigint'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
+import type { SQLValueJS } from '$lib/functions/sqlValue'
 import invariant from 'tiny-invariant'
 import { tuple } from '$lib/functions/common/tuple'
 
@@ -386,6 +387,19 @@ export const adHocQuery = async (pipelineName: string, query: string) => {
   }
   invariant(result.body !== null)
   return result.body
+
+  // const text = await result.text()
+  // const entries = text
+  //   .split('\n')
+  //   .slice(0, -1)
+  //   .map((v) => JSONbig.parse(v) as Record<string, SQLValueJS>)
+  // const columns = entries.length
+  //   ? Object.keys(entries[0]).map(
+  //       (key) =>
+  //         ({ name: key, case_sensitive: false, columntype: { nullable: true } }) satisfies Field
+  //     )
+  //   : []
+  // return { rows: entries.map(Object.values), columns }
 }
 
 export type XgressEntry = { previewSlice: string } & (
