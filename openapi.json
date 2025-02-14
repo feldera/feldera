@@ -397,6 +397,8 @@
                     "deployment_status": "Shutdown",
                     "deployment_status_since": "1970-01-01T00:00:00Z",
                     "deployment_desired_status": "Shutdown",
+                    "deployment_check": null,
+                    "deployment_check_timestamp": null,
                     "deployment_error": null,
                     "refresh_version": 4
                   },
@@ -447,6 +449,8 @@
                     "deployment_status": "Shutdown",
                     "deployment_status_since": "1970-01-01T00:00:00Z",
                     "deployment_desired_status": "Shutdown",
+                    "deployment_check": null,
+                    "deployment_check_timestamp": null,
                     "deployment_error": null,
                     "refresh_version": 1
                   }
@@ -565,6 +569,8 @@
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
                   "deployment_desired_status": "Shutdown",
+                  "deployment_check": null,
+                  "deployment_check_timestamp": null,
                   "deployment_error": null,
                   "refresh_version": 4
                 }
@@ -687,6 +693,8 @@
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
                   "deployment_desired_status": "Shutdown",
+                  "deployment_check": null,
+                  "deployment_check_timestamp": null,
                   "deployment_error": null,
                   "refresh_version": 4
                 }
@@ -822,6 +830,8 @@
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
                   "deployment_desired_status": "Shutdown",
+                  "deployment_check": null,
+                  "deployment_check_timestamp": null,
                   "deployment_error": null,
                   "refresh_version": 4
                 }
@@ -875,6 +885,8 @@
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
                   "deployment_desired_status": "Shutdown",
+                  "deployment_check": null,
+                  "deployment_check_timestamp": null,
                   "deployment_error": null,
                   "refresh_version": 4
                 }
@@ -1062,6 +1074,8 @@
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
                   "deployment_desired_status": "Shutdown",
+                  "deployment_check": null,
+                  "deployment_check_timestamp": null,
                   "deployment_error": null,
                   "refresh_version": 4
                 }
@@ -3394,6 +3408,15 @@
             "type": "string",
             "format": "date-time"
           },
+          "deployment_check": {
+            "type": "string",
+            "nullable": true
+          },
+          "deployment_check_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
           "deployment_desired_status": {
             "$ref": "#/components/schemas/PipelineDesiredStatus"
           },
@@ -3487,6 +3510,15 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "deployment_check": {
+            "type": "string",
+            "nullable": true
+          },
+          "deployment_check_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "deployment_desired_status": {
             "$ref": "#/components/schemas/PipelineDesiredStatus"
@@ -3627,6 +3659,24 @@
           "udf_toml": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "PostgresReaderConfig": {
+        "type": "object",
+        "description": "Postgres input connector configuration.",
+        "required": [
+          "uri",
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Query that specifies what data to fetch from postgres."
+          },
+          "uri": {
+            "type": "string",
+            "description": "Postgres URI."
           }
         }
       },

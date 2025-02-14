@@ -457,7 +457,7 @@ or timestamp.
 
 * \`snapshot_and_follow\` - read a snapshot of the table before switching to continuous ingestion
 mode.`,
-  enum: ['snapshot', 'follow', 'snapshot_and_follow']
+  enum: ['snapshot', 'follow', 'snapshot_and_follow', 'cdc']
 } as const
 
 export const $DeltaTableReaderConfig = {
@@ -465,6 +465,26 @@ export const $DeltaTableReaderConfig = {
   description: 'Delta table input connector configuration.',
   required: ['uri', 'mode'],
   properties: {
+    cdc_delete_filter: {
+      type: 'string',
+      description: `A predicate that determines whether the record represents a deletion.
+
+This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+each row in the Delta table to determine whether the row represents a deletion event.
+Its value must be a valid Boolean SQL expression that can be used in a query of the
+form \`SELECT * from <table> WHERE <cdc_delete_filter>\`.`,
+      nullable: true
+    },
+    cdc_order_by: {
+      type: 'string',
+      description: `An expression that determines the ordering of updates in the Delta table.
+
+This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+each row in the Delta table to determine the order in which updates in the table should
+be applied. Its value must be a valid SQL expression that can be used in a query of the
+form \`SELECT * from <table> ORDER BY <cdc_order_by>\`.`,
+      nullable: true
+    },
     datetime: {
       type: 'string',
       description: `Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,
@@ -1795,6 +1815,15 @@ It both includes fields which are user-provided and system-generated.`,
       type: 'string',
       format: 'date-time'
     },
+    deployment_check: {
+      type: 'string',
+      nullable: true
+    },
+    deployment_check_timestamp: {
+      type: 'string',
+      format: 'date-time',
+      nullable: true
+    },
     deployment_desired_status: {
       $ref: '#/components/schemas/PipelineDesiredStatus'
     },
@@ -1891,6 +1920,15 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
     created_at: {
       type: 'string',
       format: 'date-time'
+    },
+    deployment_check: {
+      type: 'string',
+      nullable: true
+    },
+    deployment_check_timestamp: {
+      type: 'string',
+      format: 'date-time',
+      nullable: true
     },
     deployment_desired_status: {
       $ref: '#/components/schemas/PipelineDesiredStatus'
@@ -2095,6 +2133,22 @@ Fields which are optional and not provided will be set to their empty type value
     udf_toml: {
       type: 'string',
       nullable: true
+    }
+  }
+} as const
+
+export const $PostgresReaderConfig = {
+  type: 'object',
+  description: 'Postgres input connector configuration.',
+  required: ['uri', 'query'],
+  properties: {
+    query: {
+      type: 'string',
+      description: 'Query that specifies what data to fetch from postgres.'
+    },
+    uri: {
+      type: 'string',
+      description: 'Postgres URI.'
     }
   }
 } as const
@@ -3251,6 +3305,19 @@ export const $TransportConfig = {
         name: {
           type: 'string',
           enum: ['iceberg_input']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
+          $ref: '#/components/schemas/PostgresReaderConfig'
+        },
+        name: {
+          type: 'string',
+          enum: ['postgres_input']
         }
       }
     },

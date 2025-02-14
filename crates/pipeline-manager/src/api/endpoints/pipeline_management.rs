@@ -78,6 +78,8 @@ pub struct PipelineInfo {
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
+    pub deployment_check: Option<String>,
+    pub deployment_check_timestamp: Option<DateTime<Utc>>,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
 }
@@ -111,6 +113,8 @@ pub struct PipelineInfoInternal {
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
+    pub deployment_check: Option<String>,
+    pub deployment_check_timestamp: Option<DateTime<Utc>>,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
 }
@@ -136,6 +140,8 @@ impl PipelineInfoInternal {
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
+            deployment_check: extended_pipeline.deployment_check,
+            deployment_check_timestamp: extended_pipeline.deployment_check_timestamp,
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
         }
@@ -171,6 +177,8 @@ pub struct PipelineSelectedInfo {
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
+    pub deployment_check: Option<String>,
+    pub deployment_check_timestamp: Option<DateTime<Utc>>,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
 }
@@ -208,6 +216,8 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
+    pub deployment_check: Option<String>,
+    pub deployment_check_timestamp: Option<DateTime<Utc>>,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
 }
@@ -235,6 +245,8 @@ impl PipelineSelectedInfoInternal {
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
+            deployment_check: extended_pipeline.deployment_check,
+            deployment_check_timestamp: extended_pipeline.deployment_check_timestamp,
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
         }
@@ -260,6 +272,8 @@ impl PipelineSelectedInfoInternal {
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
+            deployment_check: extended_pipeline.deployment_check,
+            deployment_check_timestamp: extended_pipeline.deployment_check_timestamp,
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
         }
@@ -290,6 +304,8 @@ pub enum PipelineFieldSelector {
     /// - `deployment_status`
     /// - `deployment_status_since`
     /// - `deployment_desired_status`
+    /// - `deployment_check`
+    /// - `deployment_check_timestamp`
     /// - `deployment_error`
     /// - `refresh_version`
     All,
@@ -308,6 +324,8 @@ pub enum PipelineFieldSelector {
     /// - `deployment_status`
     /// - `deployment_status_since`
     /// - `deployment_desired_status`
+    /// - `deployment_check`
+    /// - `deployment_check_timestamp`
     /// - `deployment_error`
     /// - `refresh_version`
     Status,

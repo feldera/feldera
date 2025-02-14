@@ -329,12 +329,30 @@ export type DatagenStrategy =
  * * `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion
  * mode.
  */
-export type DeltaTableIngestMode = 'snapshot' | 'follow' | 'snapshot_and_follow'
+export type DeltaTableIngestMode = 'snapshot' | 'follow' | 'snapshot_and_follow' | 'cdc'
 
 /**
  * Delta table input connector configuration.
  */
 export type DeltaTableReaderConfig = {
+  /**
+   * A predicate that determines whether the record represents a deletion.
+   *
+   * This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+   * each row in the Delta table to determine whether the row represents a deletion event.
+   * Its value must be a valid Boolean SQL expression that can be used in a query of the
+   * form `SELECT * from <table> WHERE <cdc_delete_filter>`.
+   */
+  cdc_delete_filter?: string | null
+  /**
+   * An expression that determines the ordering of updates in the Delta table.
+   *
+   * This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+   * each row in the Delta table to determine the order in which updates in the table should
+   * be applied. Its value must be a valid SQL expression that can be used in a query of the
+   * form `SELECT * from <table> ORDER BY <cdc_order_by>`.
+   */
+  cdc_order_by?: string | null
   /**
    * Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,
    * "2024-12-09T16:09:53+00:00".
@@ -1306,6 +1324,8 @@ export type PipelineId = string
  */
 export type PipelineInfo = {
   created_at: string
+  deployment_check?: string | null
+  deployment_check_timestamp?: string | null
   deployment_desired_status: PipelineDesiredStatus
   deployment_error?: ErrorResponse | null
   deployment_status: PipelineStatus
@@ -1334,6 +1354,8 @@ export type PipelineInfo = {
  */
 export type PipelineSelectedInfo = {
   created_at: string
+  deployment_check?: string | null
+  deployment_check_timestamp?: string | null
   deployment_desired_status: PipelineDesiredStatus
   deployment_error?: ErrorResponse | null
   deployment_status: PipelineStatus
@@ -1444,6 +1466,20 @@ export type PostPutPipeline = {
   runtime_config?: RuntimeConfig | null
   udf_rust?: string | null
   udf_toml?: string | null
+}
+
+/**
+ * Postgres input connector configuration.
+ */
+export type PostgresReaderConfig = {
+  /**
+   * Query that specifies what data to fetch from postgres.
+   */
+  query: string
+  /**
+   * Postgres URI.
+   */
+  uri: string
 }
 
 /**
@@ -2054,6 +2090,10 @@ export type TransportConfig =
   | {
       config: IcebergReaderConfig
       name: 'iceberg_input'
+    }
+  | {
+      config: PostgresReaderConfig
+      name: 'postgres_input'
     }
   | {
       config: DatagenInputConfig

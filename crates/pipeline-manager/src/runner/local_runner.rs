@@ -11,6 +11,7 @@ use crate::runner::logs_buffer::LogsBuffer;
 use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor};
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
+use indoc::formatdoc;
 use log::{debug, error};
 use reqwest::StatusCode;
 use std::path::Path;
@@ -159,6 +160,31 @@ impl Drop for LocalRunner {
     }
 }
 
+enum CheckResult {
+    Ready { status: String },
+    Failed { cause: String },
+}
+
+impl CheckResult {
+    fn readiness(&self) -> String {
+        match self {
+            CheckResult::Ready { .. } => "OK".to_string(),
+            CheckResult::Failed { .. } => "FAILED".to_string(),
+        }
+    }
+
+    fn explanation(&self) -> String {
+        match self {
+            CheckResult::Ready { status } => status.to_string(),
+            CheckResult::Failed { cause } => cause.to_string(),
+        }
+    }
+
+    fn is_failed(&self) -> bool {
+        matches!(self, CheckResult::Failed { .. })
+    }
+}
+
 impl LocalRunner {
     /// Sets up a thread which listens to log follow requests and new incoming lines
     /// from stdout/stderr. New followers are caught up and existing followers receive
@@ -279,6 +305,69 @@ impl LocalRunner {
         });
         debug!("Logging is operational for pipeline {}", pipeline_id);
         (terminate_sender, join_handle)
+    }
+
+    /// Checks the process and working directory of the deployment.
+    /// Returns a boolean indicating if either encountered a fatal error and the deployment check string.
+    fn inner_check(&mut self) -> (bool, String) {
+        // Pipeline process status must be checkable and not have exited
+        let process_check = if let Some(p) = &mut self.process {
+            match p.try_wait() {
+                Ok(status) => {
+                    if let Some(status) = status {
+                        // If there is an exit status, the process has exited
+                        CheckResult::Failed {
+                            cause: format!("- Process exited prematurely with {status}"),
+                        }
+                    } else {
+                        CheckResult::Ready {
+                            status: "- Process is reachable and has not exited".to_string(),
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Unable to check if it has an exit status, which indicates something went wrong
+                    CheckResult::Failed {
+                        cause: format!("- Process status could not be checked due to: {e}"),
+                    }
+                }
+            }
+        } else {
+            // No process handle
+            CheckResult::Failed {
+                cause: "- The pipeline-manager and this pipeline were previously terminated -- shutdown and start the pipeline again".to_string(),
+            }
+        };
+
+        // Pipeline working directory must exist
+        let pipeline_dir = &self.config.pipeline_dir(self.pipeline_id);
+        let working_dir_check = if Path::new(pipeline_dir).is_dir() {
+            CheckResult::Ready {
+                status: "- Directory exists".to_string(),
+            }
+        } else {
+            CheckResult::Failed {
+                cause: format!(
+                    "- Directory '{}' no longer exists",
+                    pipeline_dir.to_string_lossy()
+                ),
+            }
+        };
+
+        (
+            working_dir_check.is_failed() || process_check.is_failed(),
+            formatdoc! {"
+                Process [{}]
+                {}
+
+                Working directory [{}]
+                {}",
+                process_check.readiness(),
+                process_check.explanation(),
+                working_dir_check.readiness(),
+                working_dir_check.explanation(),
+            },
+        )
     }
 }
 
@@ -448,7 +537,15 @@ impl PipelineExecutor for LocalRunner {
     }
 
     /// Process deployment provisioning is completed when the port file is found and read.
-    async fn is_provisioned(&self) -> Result<Option<String>, ManagerError> {
+    async fn is_provisioned(&mut self) -> Result<(String, Option<String>), (String, ManagerError)> {
+        let (is_fatal, deployment_check) = self.inner_check();
+        if is_fatal {
+            return Err((
+                deployment_check.clone(),
+                ManagerError::from(RunnerError::RunnerDeploymentCheckError { deployment_check }),
+            ));
+        }
+
         let port_file_path = self.config.port_file_path(self.pipeline_id);
         match fs::read_to_string(port_file_path).await {
             Ok(port) => {
@@ -456,65 +553,33 @@ impl PipelineExecutor for LocalRunner {
                 match parse {
                     Ok(port) => {
                         let host = &self.config.pipeline_host;
-                        Ok(Some(format!("{host}:{port}")))
+                        Ok((deployment_check, Some(format!("{host}:{port}"))))
                     }
-                    Err(e) => Err(ManagerError::from(
-                        RunnerError::RunnerDeploymentProvisionError {
+                    Err(e) => Err((
+                        deployment_check.clone(),
+                        ManagerError::from(RunnerError::RunnerDeploymentProvisionError {
                             error: format!("unable to parse port file due to: {e}"),
-                        },
+                        }),
                     )),
                 }
             }
-            Err(_) => Ok(None),
+            Err(_) => Ok((deployment_check, None)),
         }
     }
 
     /// Checks the process deployment is healthy.
-    /// - Pipeline working directory must exist
     /// - Process status must be checkable and not be exited
-    async fn check(&mut self) -> Result<(), ManagerError> {
-        // Pipeline working directory must exist
-        let pipeline_dir = &self.config.pipeline_dir(self.pipeline_id);
-        if !Path::new(pipeline_dir).is_dir() {
-            return Err(ManagerError::from(RunnerError::RunnerDeploymentCheckError {
-                error: format!("Pipeline working directory {} no longer exists (it should only be deleted at shutdown)", pipeline_dir.to_string_lossy())
-            }));
-        }
-
-        // Pipeline process status must be checkable and not be exited
-        if let Some(p) = &mut self.process {
-            match p.try_wait() {
-                Ok(status) => {
-                    if let Some(status) = status {
-                        // If there is an exit status, the process has exited
-                        return Err(ManagerError::from(
-                            RunnerError::RunnerDeploymentCheckError {
-                                error: format!("Pipeline process exited prematurely with {status}"),
-                            },
-                        ));
-                    }
-                }
-                Err(e) => {
-                    // Unable to check if it has an exit status, which indicates something went wrong
-                    return Err(ManagerError::from(
-                        RunnerError::RunnerDeploymentCheckError {
-                            error: format!(
-                                "Pipeline process status could not be checked due to: {e}"
-                            ),
-                        },
-                    ));
-                }
-            }
+    /// - Pipeline working directory must exist
+    async fn check(&mut self) -> Result<String, (String, ManagerError)> {
+        let (is_fatal, deployment_check) = self.inner_check();
+        if is_fatal {
+            Err((
+                deployment_check.clone(),
+                ManagerError::from(RunnerError::RunnerDeploymentCheckError { deployment_check }),
+            ))
         } else {
-            // No process handle
-            return Err(ManagerError::from(
-                RunnerError::RunnerDeploymentCheckError {
-                    error: "the pipeline-manager and this pipeline were previously terminated -- shutdown and start the pipeline again".to_string(),
-                },
-            ));
-        };
-
-        Ok(())
+            Ok(deployment_check)
+        }
     }
 
     /// Shuts down the process deployment.

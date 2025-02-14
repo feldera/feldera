@@ -7,6 +7,7 @@
   import PanelAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
   import PanelChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
   import PanelPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
+  import PanelDeployment from '$lib/components/pipelines/editor/TabDeployment.svelte'
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
   import PanelLogs from '$lib/components/pipelines/editor/TabLogs.svelte'
   import { tuple } from '$lib/functions/common/tuple'
@@ -37,9 +38,9 @@
   let tabs = $derived(
     [
       tuple('Errors' as const, TabControlPipelineErrors, PanelPipelineErrors),
-      tuple('Performance' as const, TabControlPerformance, PanelPerformance),
-      separateAdHocTab ? null : tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery),
-      tuple('Changes Stream' as const, TabControlChangeStream, PanelChangeStream),
+      tuple('Performance' as const, 'Perf', PanelPerformance),
+      separateAdHocTab ? null : tuple('Ad-Hoc Queries' as const, 'Ad-Hoc', PanelAdHocQuery),
+      tuple('Changes Stream' as const, 'Changes', PanelChangeStream),
       tuple('Logs' as const, undefined, PanelLogs)
     ].filter(nonNull)
   )
@@ -104,21 +105,6 @@
   {/if}
 {/snippet}
 
-{#snippet TabControlPerformance()}
-  <span class="inline sm:hidden"> Perf </span>
-  <span class="hidden sm:inline"> Performance </span>
-{/snippet}
-
-{#snippet TabControlAdhoc()}
-  <span class="inline sm:hidden"> Ad-Hoc </span>
-  <span class="hidden sm:inline"> Ad-Hoc Queries </span>
-{/snippet}
-
-{#snippet TabControlChangeStream()}
-  <span class="inline sm:hidden"> Changes </span>
-  <span class="hidden sm:inline"> Changes Stream </span>
-{/snippet}
-
 <Tabs
   bind:value={currentTab.value}
   listMargin=""
@@ -131,14 +117,19 @@
         <Tabs.Control
           value={tabName}
           base=""
-          classes="px-3 py-2"
+          classes="px-2 xs:px-3 py-2"
           labelBase=""
           translateX=""
           stateInactive="rounded hover:!bg-opacity-50 hover:bg-surface-100-900"
           stateActive="inset-y-2 border-b-2 pb-1.5 border-surface-950-50 outline-none"
         >
           {#if tabControl}
-            {@render tabControl(pipeline.current)}
+            {#if typeof tabControl === 'string'}
+              <span class="inline md:hidden">{tabControl}</span>
+              <span class="hidden md:inline">{tabName}</span>
+            {:else}
+              {@render tabControl(pipeline.current)}
+            {/if}
           {:else}
             <span>{tabName}</span>
           {/if}

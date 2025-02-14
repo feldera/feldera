@@ -1,9 +1,15 @@
 <script lang="ts">
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
   import { type PipelineStatus } from '$lib/services/pipelineManager'
   import { match, P } from 'ts-pattern'
 
-  const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
+  const {
+    status,
+    statusText,
+    class: _class = ''
+  }: { status: PipelineStatus; class?: string; statusText?: string | null } = $props()
   const chipClass = $derived(
     match(status)
       .with('Shutdown', { SqlWarning: P.any }, () => 'bg-surface-100-900')
@@ -31,8 +37,19 @@
       )
       .exhaustive()
   )
+
+  const theme = useSkeletonTheme()
 </script>
 
-<div class={'chip pointer-events-none w-32 uppercase ' + chipClass + ' ' + _class}>
+<div class={'chip w-32 uppercase hover:brightness-100 ' + chipClass + ' ' + _class}>
   {getPipelineStatusLabel(status)}
 </div>
+{#if statusText}
+  <Tooltip
+    activeContent
+    class="bg-white-dark z-10 whitespace-pre-wrap rounded p-4 text-base max-w-[1000px]"
+    style="font-family: {theme.config.monospaceFontFamily}"
+  >
+    {statusText}
+  </Tooltip>
+{/if}

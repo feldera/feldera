@@ -50,7 +50,7 @@ pub enum RunnerError {
         error: String,
     },
     RunnerDeploymentCheckError {
-        error: String,
+        deployment_check: String,
     },
     RunnerDeploymentShutdownError {
         error: String,
@@ -237,10 +237,10 @@ impl Display for RunnerError {
                 )
             }
             Self::RunnerDeploymentProvisionError { error } => {
-                write!(f, "Deployment provisioning failed: {error}")
+                write!(f, "Deployment provision operation failed: {error}")
             }
-            Self::RunnerDeploymentCheckError { error } => {
-                write!(f, "Deployment check failed: {error}")
+            Self::RunnerDeploymentCheckError { deployment_check } => {
+                write!(f, "Deployment check failed: one or more deployment resources encountered a fatal error.\nThe check that raised the error(s) is below.\n\n{deployment_check}")
             }
             Self::RunnerDeploymentShutdownError { error } => {
                 write!(f, "Deployment shutdown failed (will retry): {error}")
