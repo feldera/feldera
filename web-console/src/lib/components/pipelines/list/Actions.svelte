@@ -67,6 +67,10 @@
   }
 
   const active = $derived.by(() => {
+    const unscheduleButton =
+      pipeline.current.deploymentDesiredStatus === 'Shutdown'
+        ? ('_spacer_long' as const)
+        : ('_unschedule' as const)
     return match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
       .with('Shutdown', { SqlWarning: P.any }, () => ['_spacer_long', '_start_paused'])
@@ -78,18 +82,10 @@
       .with('Paused', () => ['_shutdown', '_start'])
       .with('ShuttingDown', () => ['_spacer_long', '_status_spinner'])
       .with({ PipelineError: P.any }, () => ['_shutdown', '_spacer_long'])
-      .with(
-        { Queued: P.any },
-        { 'Compiling SQL': P.any },
-        { 'SQL compiled': P.any },
-        { 'Compiling binary': P.any },
-        (cause) => [
-          Object.values(cause)[0] === 'upgrade'
-            ? ('_unschedule' as const)
-            : ('_spacer_long' as const),
-          '_start_pending'
-        ]
-      )
+      .with('Queued', 'Compiling SQL', 'SQL compiled', 'Compiling binary', () => [
+        unscheduleButton,
+        '_start_pending'
+      ])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
         '_spacer_long',
         '_start_error'
