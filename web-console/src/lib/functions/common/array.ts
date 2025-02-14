@@ -1,5 +1,3 @@
-import { nonNull } from '$lib/functions/common/function'
-
 /**
  * Group elements into two based on a binary predicate
  * @param arr
@@ -294,5 +292,3 @@ export function binarySearchMax(arr: number[], target: number): number {
 
   return result
 }
-
-export const singleton = <T>(value: T | null | undefined) => (nonNull(value) ? [value] : [])
