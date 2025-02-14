@@ -4779,6 +4779,7 @@ dependencies = [
 name = "feldera-macros"
 version = "0.36.0"
 dependencies = [
+ "prettyplease",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
