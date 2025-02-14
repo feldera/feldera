@@ -29,15 +29,18 @@ class FelderaClient:
         url: str,
         api_key: Optional[str] = None,
         timeout: Optional[float] = None,
+        requests_verify: bool = True,
     ) -> None:
         """
         :param url: The url to Feldera API (ex: https://try.feldera.com)
         :param api_key: The optional API key for Feldera
         :param timeout: (optional) The amount of time in seconds that the client will wait for a response before timing
             out.
+        :param requests_verify: The `verify` parameter passed to the requests
+            library. `True` by default.
         """
 
-        self.config = Config(url, api_key, timeout=timeout)
+        self.config = Config(url, api_key, timeout=timeout, requests_verify=requests_verify)
         self.http = HttpRequests(self.config)
 
         try:
