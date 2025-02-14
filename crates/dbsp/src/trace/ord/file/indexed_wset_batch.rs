@@ -13,6 +13,7 @@ use crate::{
         },
     },
     trace::{
+        merge_batches_by_reference,
         ord::{filter, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
         Builder, Cursor, Filter, Merger, VecIndexedWSetFactories, WeightedItem,
@@ -294,7 +295,7 @@ where
     #[inline]
     fn add_assign_by_ref(&mut self, rhs: &Self) {
         if !rhs.is_empty() {
-            *self = self.merge(rhs, &None, &None);
+            *self = merge_batches_by_reference(&self.factories, [self as &Self, rhs], &None, &None);
         }
     }
 }
@@ -307,7 +308,7 @@ where
 {
     #[inline]
     fn add_by_ref(&self, rhs: &Self) -> Self {
-        self.merge(rhs, &None, &None)
+        merge_batches_by_reference(&self.factories, [self, rhs], &None, &None)
     }
 }
 

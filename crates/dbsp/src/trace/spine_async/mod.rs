@@ -12,8 +12,8 @@ use crate::{
     storage::buffer_cache::CacheStats,
     time::{Antichain, Timestamp},
     trace::{
-        cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor,
-        Filter, Trace,
+        cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Builder,
+        Cursor, Filter, Trace,
     },
     Error, NumEntries, Runtime,
 };
@@ -22,6 +22,7 @@ use crate::storage::file::to_bytes;
 use crate::storage::write_commit_metadata;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
+use list_merger::ArcMerger;
 use metrics::{counter, gauge};
 use ouroboros::self_referencing;
 use rand::Rng;
@@ -53,7 +54,7 @@ mod thread;
 use self::thread::{BackgroundThread, WorkerStatus};
 use super::{BatchLocation, Bounds, BoundsRef};
 use crate::circuit::metrics::{BATCHES_PER_LEVEL, COMPACTION_STALL_TIME, ONGOING_MERGES_PER_LEVEL};
-use list_merger::{ListMerger, ListMergerBuilder};
+pub use list_merger::ListMerger;
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
@@ -543,7 +544,7 @@ where
 
     fn run(
         stored_fuel: &mut [isize; MAX_LEVELS],
-        mergers: &mut [Option<ListMerger<B>>; MAX_LEVELS],
+        mergers: &mut [Option<ArcMerger<B>>; MAX_LEVELS],
         state: &Arc<Mutex<SharedState<B>>>,
         idle: &Arc<Condvar>,
         no_backpressure: &Arc<Condvar>,
@@ -563,7 +564,7 @@ where
                     stored_fuel[level].max(10_000)
                 };
                 let mut fuel = starting_fuel;
-                merger.work(&key_filter, &value_filter, &frontier, &mut fuel);
+                merger.work(&frontier, &mut fuel);
                 let fuel_consumed = starting_fuel - fuel;
                 stored_fuel[level] = (stored_fuel[level] - fuel_consumed).max(0);
                 stored_fuel[level + 1] += fuel_consumed;
@@ -591,11 +592,15 @@ where
         for (level, batches) in start_merges {
             gauge!(ONGOING_MERGES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => ident)
                 .set(batches.len() as f64);
-
-            let merger = ListMergerBuilder::with_capacity(batches.len())
-                .with_batches(batches)
-                .build();
-            mergers[level] = Some(merger);
+            let factories = batches[0].factories();
+            let builder = B::Builder::for_merge(&factories, &batches, None);
+            mergers[level] = Some(ArcMerger::new(
+                &factories,
+                builder,
+                batches,
+                &key_filter,
+                &value_filter,
+            ));
         }
 
         let state = state.lock().unwrap();

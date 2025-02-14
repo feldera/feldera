@@ -645,6 +645,37 @@ where
             value_filter: None,
         }
     }
+
+    pub fn merge(
+        source1: &Self,
+        source2: &Self,
+        key_filter: &Option<Filter<K>>,
+        value_filter: &Option<Filter<V>>,
+    ) -> Self {
+        let data = source1
+            .data
+            .iter()
+            .chain(source2.data.iter())
+            .filter(|((k, v, _t), _r)| {
+                #[allow(clippy::borrowed_box)]
+                fn include<K: ?Sized>(x: &Box<K>, filter: &Option<Filter<K>>) -> bool {
+                    match filter {
+                        Some(filter) => (filter.filter_func)(x),
+                        None => true,
+                    }
+                }
+
+                include(k, key_filter) && include(v, value_filter)
+            })
+            .map(|((k, v, t), r)| {
+                (
+                    (clone_box(k.as_ref()), clone_box(v.as_ref()), t.clone()),
+                    clone_box(r.as_ref()),
+                )
+            })
+            .collect::<Vec<_>>();
+        Self::from_data(&data)
+    }
 }
 
 // pub struct TestBatchConsumer<K, V, T, R> {
@@ -1270,9 +1301,7 @@ where
     }
 
     fn insert(&mut self, batch: Self::Batch) {
-        self.data = self
-            .merge(&batch, &self.key_filter, &self.value_filter)
-            .data;
+        self.data = Self::merge(self, &batch, &self.key_filter, &self.value_filter).data;
     }
 
     fn clear_dirty_flag(&mut self) {}

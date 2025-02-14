@@ -38,20 +38,20 @@ use crate::storage::buffer_cache::CacheStats;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::time::Antichain;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
-use cursor::CursorList;
+use cursor::{FilteredMergeCursor, UnfilteredMergeCursor};
 use dyn_clone::DynClone;
 use rand::Rng;
 use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
-use std::ops::Deref;
 use std::path::Path;
+use std::sync::Arc;
 use std::{fmt::Debug, hash::Hash, path::PathBuf};
 
 pub mod cursor;
 pub mod layers;
 pub mod ord;
 pub mod spine_async;
-pub use spine_async::{Spine, SpineSnapshot};
+pub use spine_async::{ListMerger, Spine, SpineSnapshot};
 
 #[cfg(test)]
 pub mod test;
@@ -77,7 +77,7 @@ use crate::{
     time::AntichainRef,
     Error, NumEntries, Timestamp,
 };
-pub use cursor::Cursor;
+pub use cursor::{Cursor, MergeCursor};
 pub use layers::Trie;
 
 /// Trait for data stored in batches.
@@ -174,6 +174,10 @@ impl<V: ?Sized> Filter<V> {
 
     pub fn metadata(&self) -> &MetaItem {
         &self.metadata
+    }
+
+    pub fn include(this: &Option<Filter<V>>, value: &V) -> bool {
+        this.as_ref().is_none_or(|f| (f.filter_func)(value))
     }
 }
 
@@ -380,6 +384,31 @@ where
     /// Acquires a cursor to the batch's contents.
     fn cursor(&self) -> Self::Cursor<'_>;
 
+    /// Acquires a merge cursor for the batch's contents.
+    fn merge_cursor(
+        &self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        if key_filter.is_none() && value_filter.is_none() {
+            Box::new(UnfilteredMergeCursor::new(self.cursor()))
+        } else {
+            Box::new(FilteredMergeCursor::new(
+                UnfilteredMergeCursor::new(self.cursor()),
+                key_filter,
+                value_filter,
+            ))
+        }
+    }
+
+    /// Acquires a merge cursor for the batch's contents.
+    fn consuming_cursor(
+        &mut self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        self.merge_cursor(key_filter, value_filter)
+    }
     //fn consumer(self) -> Self::Consumer;
 
     /// The number of keys in the batch.
@@ -477,6 +506,62 @@ where
     where
         Self::Time: PartialEq<()>,
         RG: Rng;
+}
+
+impl<B> BatchReader for Arc<B>
+where
+    B: BatchReader,
+{
+    type Factories = B::Factories;
+    type Key = B::Key;
+    type Val = B::Val;
+    type Time = B::Time;
+    type R = B::R;
+    type Cursor<'s> = B::Cursor<'s>;
+    fn factories(&self) -> Self::Factories {
+        (**self).factories()
+    }
+    fn cursor(&self) -> Self::Cursor<'_> {
+        (**self).cursor()
+    }
+    fn merge_cursor(
+        &self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        (**self).merge_cursor(key_filter, value_filter)
+    }
+    fn key_count(&self) -> usize {
+        (**self).key_count()
+    }
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+    fn approximate_byte_size(&self) -> usize {
+        (**self).approximate_byte_size()
+    }
+    fn location(&self) -> BatchLocation {
+        (**self).location()
+    }
+    fn cache_stats(&self) -> CacheStats {
+        (**self).cache_stats()
+    }
+    fn is_empty(&self) -> bool {
+        (**self).is_empty()
+    }
+    fn bounds(&self) -> BoundsRef<'_, Self::Time> {
+        (**self).bounds()
+    }
+    fn maybe_contains_key(&self, key: &Self::Key) -> bool {
+        (**self).maybe_contains_key(key)
+    }
+    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
+    where
+        Self::Time: PartialEq<()>,
+        RG: Rng,
+    {
+        (**self).sample_keys(rng, sample_size, sample)
+    }
 }
 
 /// A [`BatchReader`] plus features for constructing new batches.
@@ -756,13 +841,20 @@ where
     /// Creates an empty builder with some initial `capacity` for keys.
     fn with_capacity(factories: &Output::Factories, capacity: usize) -> Self;
 
-    /// Creates an empty builder to hold the result of merging `batches`.
-    fn for_merge<B, AR>(factories: &Output::Factories, batches: &[AR]) -> Self
+    /// Creates an empty builder to hold the result of merging
+    /// `batches`. Optionally, `location` can specify the preferred location for
+    /// the result of the merge.
+    fn for_merge<'a, B, I>(
+        factories: &Output::Factories,
+        batches: I,
+        location: Option<BatchLocation>,
+    ) -> Self
     where
         B: BatchReader,
-        AR: Deref<Target = B>,
+        I: IntoIterator<Item = &'a B> + Clone,
     {
-        let cap = batches.iter().map(|b| b.len()).sum();
+        let _ = location;
+        let cap = batches.into_iter().map(|b| b.len()).sum();
         Self::with_capacity(factories, cap)
     }
 
@@ -1126,60 +1218,87 @@ where
     T: IntoIterator<Item = B>,
     B: Batch,
 {
-    // Repeatedly merge the smallest two batches until no more than one batch is
-    // left.
+    // Collect input batches, discarding empty batches.
+    let mut batches = batches
+        .into_iter()
+        .filter(|b| !b.is_empty())
+        .collect::<Vec<_>>();
+
+    // Merge groups of up to 64 input batches to one output batch each.
     //
-    // Because weights can add to zero, merging two non-empty batches can yield
-    // an empty batch.
-    let mut batches: Vec<_> = batches.into_iter().filter(|b| !b.is_empty()).collect();
-    batches.sort_unstable_by(|a, b| a.len().cmp(&b.len()).reverse());
+    // In practice, there are <= 64 input batches and 1 output batch (or 0 if
+    // the inputs cancel each other out).
     while batches.len() > 1 {
-        let a = batches.pop().unwrap();
-        let b = batches.pop().unwrap();
-        let new = a.merge(&b, key_filter, value_filter);
-        if !new.is_empty() {
-            let new_len = new.len();
-            let position = batches
-                .binary_search_by(|element| element.len().cmp(&new_len).reverse())
-                .unwrap_or_else(|err| err);
-            batches.insert(position, new);
+        let mut inputs = batches.split_off(batches.len().saturating_sub(64));
+        let bounds = Bounds::for_merge(inputs.iter());
+        let result: B = ListMerger::merge(
+            factories,
+            B::Builder::for_merge(factories, &inputs, Some(BatchLocation::Memory)),
+            inputs
+                .iter_mut()
+                .map(|b| b.consuming_cursor(key_filter.clone(), value_filter.clone()))
+                .collect(),
+            bounds,
+        );
+        if !result.is_empty() {
+            batches.push(result);
         }
     }
-    batches.pop().unwrap_or(B::dyn_empty(factories))
+
+    // Take the final output batch, or synthesize an empty one if all the
+    // batches added up to nothing.
+    batches.pop().unwrap_or_else(|| B::dyn_empty(factories))
 }
 
-/// Merges all of the batches in `batches` and returns the merged result.
+/// Merges all of the batches in `batches`, applying `key_filter` and
+/// `value_filter`, and returns the merged result.
 ///
-/// This implements a multiway merge rather than iterating a 2-way merge.  This
-/// is theoretically and asymptotically more efficient, but it is practically
-/// much more efficient for the case where cloning items in the batch is
-/// expensive, because 2-way merges will clone each data item `lg n` times
-/// whereas an N-way merge will only clone them once each. For a 16-way merge,
-/// that's a 4x reduction.
-pub fn merge_untimed_batches<B, T>(factories: &B::Factories, batches: T) -> B
+/// Every tuple will be passed through the filters.
+pub fn merge_batches_by_reference<'a, B, T>(
+    factories: &B::Factories,
+    batches: T,
+    key_filter: &Option<Filter<B::Key>>,
+    value_filter: &Option<Filter<B::Val>>,
+) -> B
 where
-    T: IntoIterator<Item = B>,
-    B: Batch<Time = ()>,
+    T: IntoIterator<Item = &'a B> + Clone,
+    B: Batch,
 {
-    let mut batches: Vec<_> = batches.into_iter().filter(|b| !b.is_empty()).collect();
-    match batches.len() {
-        0 => B::dyn_empty(factories),
-        1 => batches.pop().unwrap(),
-        2 => {
-            // Presumably the specialized merge implementation for the batch
-            // type can do better than our general algorithm.
-            merge_batches(factories, batches, &None, &None)
-        }
-        _ => B::from_cursor(
-            CursorList::new(
-                factories.weight_factory(),
-                batches.iter().map(|b| b.cursor()).collect(),
-            ),
-            &(),
+    // Collect input batches, discarding empty batches.
+    let mut batches = batches
+        .into_iter()
+        .filter(|b| !b.is_empty())
+        .collect::<Vec<_>>();
+
+    // Merge groups of up to 64 input batches to one output batch each. This
+    // also transforms `&B` in `batches` into `B` in `outputs`.
+    //
+    // In practice, there are <= 64 input batches and 1 output batch (or 0 if
+    // the inputs cancel each other out).
+    let mut outputs = Vec::with_capacity(batches.len().div_ceil(64));
+    while !batches.is_empty() {
+        let inputs = batches.split_off(batches.len().saturating_sub(64));
+        let bounds = Bounds::for_merge(inputs.iter().cloned());
+        let result: B = ListMerger::merge(
             factories,
-            batches.iter().map(|b| b.len()).sum(),
-        ),
+            B::Builder::for_merge(
+                factories,
+                inputs.iter().cloned(),
+                Some(BatchLocation::Memory),
+            ),
+            inputs
+                .into_iter()
+                .map(|b| b.merge_cursor(key_filter.clone(), value_filter.clone()))
+                .collect(),
+            bounds,
+        );
+        if !result.is_empty() {
+            outputs.push(result);
+        }
     }
+
+    // Merge the output batches (in practice, either 0 or 1 of them).
+    merge_batches(factories, outputs, key_filter, value_filter)
 }
 
 /// Compares two batches for equality.  This works regardless of whether the
