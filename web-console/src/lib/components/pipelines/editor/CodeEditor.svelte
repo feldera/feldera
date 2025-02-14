@@ -263,7 +263,7 @@
   })
 
   $effect(() => {
-    _downstreamChanged = openFiles[filePath]?.sync.downstreamChanged ?? false
+    _downstreamChanged = openFiles[filePath].sync.downstreamChanged
   })
 
   $effect(() => {
@@ -316,12 +316,7 @@
       </div>
     </div>
     <div class="relative flex-1">
-      <div class="absolute h-full w-full" onkeydown={e => {
-        if (e.code === 'Period' && e.key === ':') {
-          // Workaround for Firefox browser when using AZERTY layout
-          editorRef.trigger('Firefox AZERTY workaround', 'editor.action.commentLine', undefined)
-        }
-      }}>
+      <div class="absolute h-full w-full">
         <MonacoEditor
           markers={file.markers}
           onready={(editorRef) => {
