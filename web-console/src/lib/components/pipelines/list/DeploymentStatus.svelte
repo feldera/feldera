@@ -16,13 +16,7 @@
       .with('Resuming', () => 'preset-filled-tertiary-200-800')
       .with('ShuttingDown', () => 'preset-filled-secondary-200-800')
       .with({ PipelineError: P.any }, () => '')
-      .with(
-        { Queued: P.any },
-        { 'Compiling SQL': P.any },
-        { 'SQL compiled': P.any },
-        { 'Compiling binary': P.any },
-        () => ''
-      )
+      .with('Queued', 'Compiling SQL', 'SQL compiled', 'Compiling binary', () => '')
       .with('Unavailable', () => 'bg-orange-300 dark:bg-orange-700')
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => '')
       .exhaustive()

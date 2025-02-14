@@ -20,7 +20,7 @@
     type PipelineAction,
     type PipelineThumb
   } from '$lib/services/pipelineManager'
-  import { isPipelineEditable } from '$lib/functions/pipelines/status'
+  import { isPipelineIdle } from '$lib/functions/pipelines/status'
   import { nonNull } from '$lib/functions/common/function'
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -30,6 +30,7 @@
   import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import TabAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
+  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import EditorOptionsPopup from './EditorOptionsPopup.svelte'
   import { useIsTablet, useIsScreenLg } from '$lib/compositions/layout/useIsMobile.svelte'
@@ -57,7 +58,7 @@
   } = $props()
 
   let editDisabled = $derived(
-    nonNull(pipeline.current.status) && !isPipelineEditable(pipeline.current.status)
+    nonNull(pipeline.current.status) && !isPipelineIdle(pipeline.current.status)
   )
 
   const { updatePipelines } = useUpdatePipelineList()
