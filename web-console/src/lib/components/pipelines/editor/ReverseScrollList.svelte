@@ -5,14 +5,8 @@
   let {
     items,
     item: renderItem,
-    class: _class = '',
-    overscan
-  }: {
-    items: Row[]
-    item: Snippet<[item: Row, index: number]>
-    class?: string
-    overscan?: number
-  } = $props()
+    class: _class = ''
+  }: { items: Row[]; item: Snippet<[item: Row]>; class?: string } = $props()
 
   let handle1: number = 0
   let handle2: number = 0
@@ -61,7 +55,6 @@
 <VList
   bind:this={ref}
   data={items}
-  {overscan}
   onscroll={(scrollTop) => {
     // TODO: re-enable only for vertical scroll when it can be disambiguated from horizontal scroll
     // cancelAnimationFrame(handle1)
