@@ -1,5 +1,6 @@
 import { base } from '$app/paths'
-import { groupBy } from '$lib/functions/common/array'
+import { groupBy, partition } from '$lib/functions/common/array'
+import { nonNull } from '$lib/functions/common/function'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
 import type { ErrorResponse } from '$lib/services/manager'
 import {
@@ -90,7 +91,7 @@ export const extractInternalCompilationError = <Report>(
   source: string,
   getReport: (pipelineName: string, message: string) => Report
 ): SystemError<any, Report> | null => {
-  const isInternalError = /main\.rs/.test(stderr)
+  const isInternalError = /main\.rs:/.test(stderr)
   if (!isInternalError) {
     return null
   }
@@ -102,7 +103,7 @@ export const extractInternalCompilationError = <Report>(
       tag: 'programError',
       source,
       report: getReport(pipelineName, stderr),
-      body: stderr.match(/([\S\s]+?)\n\n/)?.[1] ?? 'Unknown internal compilation error' // Return first stderr paragraph as error body
+      body: stderr.match(/([\S\s]+?)\n/)?.[1] ?? 'Unknown internal compilation error' // Return first stderr paragraph as error body
     }
   }
 }
@@ -209,9 +210,8 @@ export const extractProgramErrors =
           // so we don't need to split it into errors
           return [rustInternalCompilerError]
         }
-        const rustCompilerMessages: string[] = Array.from(
-          e.RustError.matchAll(rustCompilerErrorRegex)
-        ).map((match) => match[1])
+        const rustCompilerMessages: string[] =
+          Array.from(e.RustError.matchAll(rustCompilerErrorRegex)).map((match) => match[1]) ?? []
         const rustCompilerErrors = rustCompilerMessages.map(
           extractRustCompilerError(pipeline.name, source, getReport)
         )
