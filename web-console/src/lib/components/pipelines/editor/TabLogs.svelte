@@ -2,9 +2,7 @@
   let streams: Record<
     string,
     {
-      firstRowIndex: number
       rows: string[]
-      rowBoundaries: number[]
       totalSkippedBytes: number
       stream: { open: ReadableStream<Uint8Array>; stop: () => void } | { closed: {} }
     }
@@ -21,11 +19,11 @@
 
 <script lang="ts">
   import LogsStreamList from '$lib/components/pipelines/editor/LogsStreamList.svelte'
+  import prettyAnsi from 'pretty-ansi'
 
   import {
     parseCancellable,
     pushAsCircularBuffer,
-    pushAsCircularBuffer2,
     SplitNewlineTransformStream
   } from '$lib/functions/pipelines/changeStream'
   import { pipelineLogsStream, type ExtendedPipeline } from '$lib/services/pipelineManager'
@@ -39,10 +37,8 @@
   $effect.pre(() => {
     if (!streams[pipelineName]) {
       streams[pipelineName] = {
-        firstRowIndex: 0,
         stream: { closed: {} },
         rows: [''],
-        rowBoundaries: [],
         totalSkippedBytes: 0
       }
     }
@@ -73,14 +69,11 @@
       const { cancel } = parseCancellable(
         result,
         {
-          pushChanges: (changes) => {
-            const droppedNum = pushAsCircularBuffer(
-              () => streams[pipelineName].rows,
-              bufferSize,
-              (v) => v
-            )(changes)
-            streams[pipelineName].firstRowIndex += droppedNum
-          },
+          pushChanges: pushAsCircularBuffer(
+            () => streams[pipelineName].rows,
+            bufferSize,
+            (v) => prettyAnsi(v as string)
+          ),
           onParseEnded: (reason) => {
             streams[pipelineName].stream = { closed: {} }
             if (
@@ -102,10 +95,8 @@
         }
       )
       streams[pipelineName] = {
-        firstRowIndex: 0,
         stream: { open: result, stop: cancel },
         rows: [''], // A workaround: current virtual list implementation will freeze if an empty list suddenly gets a lot of data
-        rowBoundaries: [],
         totalSkippedBytes: 0
       }
     })
