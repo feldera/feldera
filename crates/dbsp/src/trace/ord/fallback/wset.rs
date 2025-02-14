@@ -8,14 +8,15 @@ use crate::{
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
         cursor::DelegatingCursor,
-        deserialize_wset,
+        deserialize_wset, merge_batches_by_reference,
         ord::{
             file::wset_batch::{FileWSetBuilder, FileWSetMerger},
             merge_batcher::MergeBatcher,
             vec::wset_batch::{VecWSet, VecWSetBuilder, VecWSetFactories, VecWSetMerger},
         },
         serialize_wset, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories,
-        Bounds, BoundsRef, Builder, FileWSet, FileWSetFactories, Filter, Merger, WeightedItem,
+        Bounds, BoundsRef, Builder, FileWSet, FileWSetFactories, Filter, MergeCursor, Merger,
+        WeightedItem,
     },
     DBData, DBWeight, NumEntries,
 };
@@ -24,7 +25,6 @@ use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize}
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug},
-    ops::Deref,
     path::Path,
 };
 use std::{ops::Neg, path::PathBuf};
@@ -282,7 +282,7 @@ where
     #[inline]
     fn add_assign_by_ref(&mut self, rhs: &Self) {
         if !rhs.is_empty() {
-            *self = self.merge(rhs, &None, &None);
+            *self = merge_batches_by_reference(&self.factories, [self as &Self, rhs], &None, &None);
         }
     }
 }
@@ -294,7 +294,7 @@ where
 {
     #[inline]
     fn add_by_ref(&self, rhs: &Self) -> Self {
-        self.merge(rhs, &None, &None)
+        merge_batches_by_reference(&self.factories, [self, rhs], &None, &None)
     }
 }
 
@@ -320,6 +320,28 @@ where
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
         })
+    }
+
+    fn merge_cursor(
+        &self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        match &self.inner {
+            Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),
+            Inner::File(file) => file.merge_cursor(key_filter, value_filter),
+        }
+    }
+
+    fn consuming_cursor(
+        &mut self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        match &mut self.inner {
+            Inner::Vec(vec) => vec.consuming_cursor(key_filter, value_filter),
+            Inner::File(file) => file.consuming_cursor(key_filter, value_filter),
+        }
     }
 
     #[inline]
@@ -590,15 +612,19 @@ where
         }
     }
 
-    fn for_merge<B, AR>(factories: &FallbackWSetFactories<K, R>, batches: &[AR]) -> Self
+    fn for_merge<'a, B, I>(
+        factories: &FallbackWSetFactories<K, R>,
+        batches: I,
+        location: Option<BatchLocation>,
+    ) -> Self
     where
         B: BatchReader,
-        AR: Deref<Target = B>,
+        I: IntoIterator<Item = &'a B> + Clone,
     {
-        let cap = batches.iter().map(|b| b.deref().len()).sum();
+        let cap = batches.clone().into_iter().map(|b| b.len()).sum();
         Self {
             factories: factories.clone(),
-            inner: match pick_merge_destination(batches.iter().map(Deref::deref), None) {
+            inner: match pick_merge_destination(batches, location) {
                 BatchLocation::Memory => {
                     BuilderInner::Vec(VecWSetBuilder::with_capacity(&factories.vec, cap))
                 }

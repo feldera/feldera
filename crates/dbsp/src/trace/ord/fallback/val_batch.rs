@@ -1,12 +1,11 @@
 use std::fmt::{Display, Formatter};
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use crate::storage::buffer_cache::CacheStats;
 use crate::trace::cursor::DelegatingCursor;
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
-use crate::trace::{BatchLocation, Bounds, BoundsRef};
+use crate::trace::{BatchLocation, Bounds, BoundsRef, MergeCursor};
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait,
@@ -254,6 +253,17 @@ where
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
         })
+    }
+
+    fn merge_cursor(
+        &self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        match &self.inner {
+            Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),
+            Inner::File(file) => file.merge_cursor(key_filter, value_filter),
+        }
     }
 
     fn key_count(&self) -> usize {
@@ -540,15 +550,19 @@ where
         }
     }
 
-    fn for_merge<B, AR>(factories: &FallbackValBatchFactories<K, V, T, R>, batches: &[AR]) -> Self
+    fn for_merge<'a, B, I>(
+        factories: &FallbackValBatchFactories<K, V, T, R>,
+        batches: I,
+        location: Option<BatchLocation>,
+    ) -> Self
     where
         B: BatchReader,
-        AR: Deref<Target = B>,
+        I: IntoIterator<Item = &'a B> + Clone,
     {
-        let cap = batches.iter().map(|b| b.deref().len()).sum();
+        let cap = batches.clone().into_iter().map(|b| b.len()).sum();
         Self {
             factories: factories.clone(),
-            inner: match pick_merge_destination(batches.iter().map(Deref::deref), None) {
+            inner: match pick_merge_destination(batches, location) {
                 BatchLocation::Memory => {
                     BuilderInner::Vec(VecValBuilder::with_capacity(&factories.vec, cap))
                 }

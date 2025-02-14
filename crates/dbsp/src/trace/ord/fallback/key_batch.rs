@@ -13,7 +13,8 @@ use crate::{
             FileKeyBatch, OrdKeyBatch,
         },
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
-        Builder, FileKeyBatchFactories, Filter, Merger, OrdKeyBatchFactories, WeightedItem,
+        Builder, FileKeyBatchFactories, Filter, MergeCursor, Merger, OrdKeyBatchFactories,
+        WeightedItem,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -22,7 +23,6 @@ use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize}
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug},
-    ops::Deref,
     path::{Path, PathBuf},
 };
 
@@ -241,6 +241,17 @@ where
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
         })
+    }
+
+    fn merge_cursor(
+        &self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        match &self.inner {
+            Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),
+            Inner::File(file) => file.merge_cursor(key_filter, value_filter),
+        }
     }
 
     #[inline]
@@ -519,15 +530,19 @@ where
         }
     }
 
-    fn for_merge<B, AR>(factories: &FallbackKeyBatchFactories<K, T, R>, batches: &[AR]) -> Self
+    fn for_merge<'a, B, I>(
+        factories: &FallbackKeyBatchFactories<K, T, R>,
+        batches: I,
+        location: Option<BatchLocation>,
+    ) -> Self
     where
         B: BatchReader,
-        AR: Deref<Target = B>,
+        I: IntoIterator<Item = &'a B> + Clone,
     {
-        let cap = batches.iter().map(|b| b.deref().len()).sum();
+        let cap = batches.clone().into_iter().map(|b| b.len()).sum();
         Self {
             factories: factories.clone(),
-            inner: match pick_merge_destination(batches.iter().map(Deref::deref), None) {
+            inner: match pick_merge_destination(batches, location) {
                 BatchLocation::Memory => {
                     BuilderInner::Vec(VecKeyBuilder::with_capacity(&factories.vec, cap))
                 }

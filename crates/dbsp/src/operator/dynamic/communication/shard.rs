@@ -9,7 +9,7 @@ use crate::{
     circuit_cache_key,
     dynamic::Data,
     operator::communication::new_exchange_operators,
-    trace::{merge_untimed_batches, Batch, BatchReader, Builder, Cursor},
+    trace::{merge_batches, Batch, BatchReader, Builder},
     Circuit, Runtime, Stream,
 };
 
@@ -84,7 +84,7 @@ where
                                     move || Vec::new(),
                                     move |batch: IB, batches: &mut Vec<OB>| {
                                         Self::shard_batch(
-                                            &batch,
+                                            batch,
                                             num_workers,
                                             &mut builders,
                                             batches,
@@ -97,7 +97,7 @@ where
                                 self.circuit()
                                     .add_exchange(sender, receiver, self)
                                     .apply_owned_named("merge shards", move |batches| {
-                                        merge_untimed_batches(&factories_clone2, batches)
+                                        merge_batches(&factories_clone2, batches, &None, &None)
                                     })
                             });
 
@@ -121,7 +121,7 @@ where
 
     // Partitions the batch into `nshards` partitions based on the hash of the key.
     fn shard_batch<OB>(
-        batch: &IB,
+        mut batch: IB,
         shards: usize,
         builders: &mut Vec<OB::Builder>,
         outputs: &mut Vec<OB>,
@@ -138,19 +138,30 @@ where
             builders.push(OB::Builder::with_capacity(factories, batch.len() / shards));
         }
 
-        let mut cursor = batch.cursor();
-
-        while cursor.key_valid() {
-            let b = &mut builders[cursor.key().default_hash() as usize % shards];
-            while cursor.val_valid() {
-                b.push_diff(cursor.weight());
-                b.push_val(cursor.val());
-                cursor.step_val();
+        let mut cursor = batch.consuming_cursor(None, None);
+        if cursor.has_mut() {
+            while cursor.key_valid() {
+                let b = &mut builders[cursor.key().default_hash() as usize % shards];
+                while cursor.val_valid() {
+                    b.push_diff_mut(cursor.weight_mut());
+                    b.push_val_mut(cursor.val_mut());
+                    cursor.step_val();
+                }
+                b.push_key_mut(cursor.key_mut());
+                cursor.step_key();
             }
-            b.push_key(cursor.key());
-            cursor.step_key();
+        } else {
+            while cursor.key_valid() {
+                let b = &mut builders[cursor.key().default_hash() as usize % shards];
+                while cursor.val_valid() {
+                    b.push_diff(cursor.weight());
+                    b.push_val(cursor.val());
+                    cursor.step_val();
+                }
+                b.push_key(cursor.key());
+                cursor.step_key();
+            }
         }
-
         for builder in builders.drain(..) {
             outputs.push(builder.done());
         }

@@ -9,8 +9,8 @@ use crate::{
             Builder as _, Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
             MergeBuilder, OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, Merger, Serializer, WeightedItem, Bounds, BoundsRef,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
+        Builder, Cursor, Deserializer, Filter, MergeCursor, Merger, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -428,6 +428,19 @@ where
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
         VecIndexedWSetCursor::new(self)
+    }
+
+    fn consuming_cursor(
+        &mut self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn crate::trace::MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_>
+    {
+        if key_filter.is_none() && value_filter.is_none() {
+            Box::new(VecIndexedWSetConsumingCursor::new(self))
+        } else {
+            self.merge_cursor(key_filter, value_filter)
+        }
     }
 
     fn factories(&self) -> Self::Factories {
@@ -944,5 +957,103 @@ where
             ),
             factories: self.factories,
         }
+    }
+}
+
+/// A cursor for consuming a [VecIndexedWSet].
+struct VecIndexedWSetConsumingCursor<'a, K, V, R, O = usize>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    wset: &'a mut VecIndexedWSet<K, V, R, O>,
+    key_index: usize,
+    val_index: usize,
+    val_max: usize,
+}
+
+impl<'a, K, V, R, O> VecIndexedWSetConsumingCursor<'a, K, V, R, O>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    fn new(wset: &'a mut VecIndexedWSet<K, V, R, O>) -> Self {
+        let val_max = wset
+            .layer
+            .offs
+            .get(1)
+            .map_or(0, |offset| offset.into_usize());
+        Self {
+            wset,
+            key_index: 0,
+            val_index: 0,
+            val_max,
+        }
+    }
+}
+
+impl<K, V, R, O> MergeCursor<K, V, (), R> for VecIndexedWSetConsumingCursor<'_, K, V, R, O>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    fn key_valid(&self) -> bool {
+        self.key_index < self.wset.layer.keys.len()
+    }
+    fn val_valid(&self) -> bool {
+        self.val_index < self.val_max
+    }
+    fn key(&self) -> &K {
+        self.wset.layer.keys.index(self.key_index)
+    }
+
+    fn val(&self) -> &V {
+        debug_assert!(self.val_valid());
+        &self.wset.layer.vals.keys[self.val_index]
+    }
+
+    fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
+        logic(&(), &self.wset.layer.vals.diffs[self.val_index])
+    }
+
+    fn weight(&mut self) -> &R {
+        &self.wset.layer.vals.diffs[self.val_index]
+    }
+
+    fn has_mut(&self) -> bool {
+        true
+    }
+
+    fn key_mut(&mut self) -> &mut K {
+        &mut self.wset.layer.keys[self.key_index]
+    }
+
+    fn val_mut(&mut self) -> &mut V {
+        &mut self.wset.layer.vals.keys[self.val_index]
+    }
+
+    fn weight_mut(&mut self) -> &mut R {
+        &mut self.wset.layer.vals.diffs[self.val_index]
+    }
+
+    fn step_key(&mut self) {
+        self.key_index += 1;
+        if self.key_valid() {
+            self.val_index = self.wset.layer.offs[self.key_index].into_usize();
+            self.val_max = self.wset.layer.offs[self.key_index + 1].into_usize();
+        } else {
+            self.val_index = 0;
+            self.val_max = 0;
+        }
+    }
+
+    fn step_val(&mut self) {
+        self.val_index += 1;
     }
 }

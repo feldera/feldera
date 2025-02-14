@@ -11,7 +11,7 @@ pub use crate::{
         ZSetReader as DynZSetReader,
     },
     trace::{
-        Batch as DynBatch, BatchReader as DynBatchReader,
+        merge_batches_by_reference, Batch as DynBatch, BatchReader as DynBatchReader,
         FallbackIndexedWSet as DynFallbackIndexedWSet, FallbackKeyBatch as DynFallbackKeyBatch,
         FallbackValBatch as DynFallbackValBatch, FallbackWSet as DynFallbackWSet,
         FileIndexedWSet as DynFileIndexedWSet, FileKeyBatch as DynFileKeyBatch,
@@ -347,7 +347,12 @@ where
 
     /// Merge `self` with `other`.
     pub fn merge(&self, other: &Self) -> Self {
-        Self::new(self.inner.merge(&other.inner, &None, &None))
+        Self::new(merge_batches_by_reference(
+            &self.inner.factories(),
+            [&self.inner, &other.inner],
+            &None,
+            &None,
+        ))
     }
 }
 
