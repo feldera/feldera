@@ -118,7 +118,7 @@ function splitStreamByMaxChunk(
       }
     },
     {},
-    { highWaterMark: maxChunkBufferSize, size: (c) => c?.length ?? 0 }
+    { highWaterMark: maxChunkBufferSize, size: (c) => c.length }
   )
 }
 
