@@ -55,7 +55,7 @@ use dbsp::{
     circuit::metrics::TOTAL_LATE_RECORDS,
     dynamic::{DowncastTrait, DynData, Erase},
     trace::{
-        ord::{OrdIndexedWSetBuilder, OrdWSetBuilder, OrdWSetFactories},
+        ord::{OrdIndexedWSetBuilder, OrdWSetBuilder},
         BatchReader, BatchReaderFactories, Builder, Cursor,
     },
     typed_batch::TypedBatch,
@@ -1654,17 +1654,16 @@ where
     T: DBData + 'static,
     F: Fn(&D) -> T,
 {
-    let factories = OrdWSetFactories::new::<T, (), ZWeight>();
-    let mut builder = OrdWSetBuilder::with_capacity(&factories, data.len());
+    let mut tuples = Vec::new();
     let mut cursor = data.cursor();
     while cursor.key_valid() {
         let item = unsafe { cursor.key().downcast::<D>() };
-        let mut data = mapper(item);
-        builder.push_val_diff(().erase(), cursor.weight());
-        builder.push_key_mut(data.erase_mut());
+        let data = mapper(item);
+        let weight = unsafe { *cursor.weight().downcast::<ZWeight>() };
+        tuples.push(Tup2(Tup2(data, ()), weight));
         cursor.step_key();
     }
-    TypedBatch::new(builder.done())
+    WSet::from_tuples((), tuples)
 }
 
 #[doc(hidden)]
