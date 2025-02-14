@@ -10,6 +10,7 @@ from feldera.rest.errors import (
 
 import json
 import requests
+from requests.packages import urllib3
 from typing import Callable, Optional, Any, Union, Mapping, Sequence, List
 
 
@@ -22,6 +23,11 @@ class HttpRequests:
     def __init__(self, config: Config) -> None:
         self.config = config
         self.headers = {"User-Agent": "feldera-python-sdk/v1"}
+        self.requests_verify = config.requests_verify
+
+        if not self.requests_verify:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
         if self.config.api_key:
             self.headers["Authorization"] = f"Bearer {self.config.api_key}"
 
@@ -69,6 +75,7 @@ class HttpRequests:
                     headers=headers,
                     params=params,
                     stream=stream,
+                    verify=self.requests_verify,
                 )
             elif isinstance(body, bytes):
                 request = http_method(
@@ -78,6 +85,7 @@ class HttpRequests:
                     data=body,
                     params=params,
                     stream=stream,
+                    verify=self.requests_verify,
                 )
             else:
                 request = http_method(
@@ -87,6 +95,7 @@ class HttpRequests:
                     data=json_serialize(body) if serialize else body,
                     params=params,
                     stream=stream,
+                    verify=self.requests_verify,
                 )
 
             resp = self.__validate(request, stream=stream)
