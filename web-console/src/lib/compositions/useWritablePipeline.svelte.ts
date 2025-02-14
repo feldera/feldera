@@ -79,7 +79,8 @@ export const useRefreshPipeline = (
       if (thumb.refreshVersion === pipeline.refreshVersion) {
         set({
           ...pipeline,
-          ...thumb
+          status: thumb.status,
+          programStatus: thumb.programStatus
         })
       } else {
         reload()
