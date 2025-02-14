@@ -1224,7 +1224,8 @@ public class AggScottTests extends ScottBaseTests {
 
                 -- [CALCITE-1016] "GROUP BY constant" on empty relation should return 0 rows
                 -- Should return 0 rows
-                select '1' from emp where false group by 1;
+                -- disambiguated group by from 1 to '2'
+                select '1' from emp where false group by '2';
                 +--------+
                 | EXPR$0 |
                 +--------+
@@ -1232,7 +1233,8 @@ public class AggScottTests extends ScottBaseTests {
                 (0 rows)
 
                 -- Should return 0 rows
-                select count('1') from emp where false group by 1;
+                -- disambiguated group by from 1 to '2'
+                select count('1') from emp where false group by '2';
                 +--------+
                 | EXPR$0 |
                 +--------+
@@ -1259,7 +1261,8 @@ public class AggScottTests extends ScottBaseTests {
 
                 -- As above, but on VALUES rather than table
                 -- Should return 0 rows
-                select '1' from (values (1, 2), (3, 4)) where false group by 1;
+                -- disambiguated group by from 1 to '2'
+                select '1' from (values (1, 2), (3, 4)) where false group by '2';
                 +--------+
                 | EXPR$0 |
                 +--------+
@@ -1267,7 +1270,8 @@ public class AggScottTests extends ScottBaseTests {
                 (0 rows)
 
                 -- Should return 0 rows
-                select count('1') from (values (1, 2), (3, 4)) where false group by 1;
+                -- disambiguated group by from 1 to '2'
+                select count('1') from (values (1, 2), (3, 4)) where false group by '2';
                 +--------+
                 | EXPR$0 |
                 +--------+
@@ -1294,7 +1298,8 @@ public class AggScottTests extends ScottBaseTests {
 
                 -- As above, but on join
                 -- Should return 0 rows
-                select '1' from emp join dept using (deptno) where false group by 1;
+                -- disambiguated group by from 1 to '2'
+                select '1' from emp join dept using (deptno) where false group by '2';
                 +--------+
                 | EXPR$0 |
                 +--------+
@@ -1302,7 +1307,8 @@ public class AggScottTests extends ScottBaseTests {
                 (0 rows)
 
                 -- Should return 0 rows
-                select count('1') from emp join dept using (deptno) where false group by 1;
+                -- disambiguated group by from 1 to '2'
+                select count('1') from emp join dept using (deptno) where false group by '2';
                 +--------+
                 | EXPR$0 |
                 +--------+
