@@ -140,20 +140,16 @@ export type Pipeline = ReturnType<typeof toPipeline>
 export type ExtendedPipeline = ReturnType<typeof toExtendedPipeline>
 
 export const getPipeline = async (pipeline_name: string) => {
-  return handled(
-    _getPipeline,
-    `Failed to fetch ${pipeline_name} pipeline`
-  )({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(toPipeline)
+  return handled(_getPipeline)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(
+    toPipeline
+  )
 }
 
 export const getExtendedPipeline = async (
   pipeline_name: string,
   options?: { fetch?: (request: Request) => ReturnType<typeof fetch>; onNotFound?: () => void }
 ) => {
-  return handled(
-    _getPipeline,
-    `Failed to fetch ${pipeline_name} pipeline`
-  )({
+  return handled(_getPipeline)({
     path: { pipeline_name: encodeURIComponent(pipeline_name) },
     ...options
   }).then(toExtendedPipeline, (e) => {
@@ -171,48 +167,33 @@ export const postPipeline = async (pipeline: PipelineDescr) => {
   if (!pipeline.name) {
     throw new Error('Cannot create pipeline with empty name')
   }
-  return handled(
-    _postPipeline,
-    `Failed to create ${pipeline.name} pipeline`
-  )({ body: pipeline }).then(toPipelineThumb)
+  return handled(_postPipeline)({ body: pipeline }).then(toPipelineThumb)
 }
 
 /**
  * Pipeline should already exist
  */
 export const putPipeline = async (pipeline_name: string, newPipeline: PipelineDescr) => {
-  await handled(
-    _putPipeline,
-    `Failed to update ${pipeline_name} pipeline`
-  )({
+  await _putPipeline({
     body: newPipeline,
     path: { pipeline_name: encodeURIComponent(pipeline_name) }
   })
 }
 
 export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pipeline>) => {
-  return await handled(
-    _patchPipeline,
-    `Failed to update ${pipeline_name} pipeline`
-  )({
+  return await handled(_patchPipeline)({
     path: { pipeline_name: encodeURIComponent(pipeline_name) },
     body: fromPipeline(pipeline)
   }).then(toExtendedPipeline)
 }
 
 export const getPipelines = async (): Promise<PipelineThumb[]> => {
-  const pipelines = await handled(
-    listPipelines,
-    'Failed to fetch the list of pipelines'
-  )({ query: { selector: 'status' } })
+  const pipelines = await handled(listPipelines)({ query: { selector: 'status' } })
   return pipelines.map(toPipelineThumb)
 }
 
 export const getPipelineStatus = async (pipeline_name: string) => {
-  const pipeline = await handled(
-    _getPipeline,
-    `Failed to get ${pipeline_name} pipeline's status`
-  )({
+  const pipeline = await handled(_getPipeline)({
     path: { pipeline_name: encodeURIComponent(pipeline_name) },
     query: { selector: 'status' }
   })
@@ -231,20 +212,27 @@ export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>
 export const getPipelineStats = async (pipeline_name: string) => {
   return handled(_getPipelineStats)({
     path: { pipeline_name: encodeURIComponent(pipeline_name) }
-  })
-    .then((status) => ({
+  }).then(
+    (status) => ({
       pipelineName: pipeline_name,
       status: status as ControllerStatus | null
-    }))
-    .catch((e) => {
+    }),
+    (e) => {
       if (e.error_code === 'PipelineInteractionNotDeployed') {
         return {
           pipelineName: pipeline_name,
           status: 'not running' as const
         }
       }
-      throw new Error(`Failed to fetch ${pipeline_name} pipeline stats`)
-    })
+      if (e instanceof TypeError && e.message === 'Failed to fetch') {
+        return {
+          pipelineName: pipeline_name,
+          status: 'not running' as const
+        }
+      }
+      throw e
+    }
+  )
 }
 
 const consolidatePipelineStatus = (
@@ -294,10 +282,7 @@ const consolidatePipelineStatus = (
 }
 
 export const deletePipeline = async (pipeline_name: string) => {
-  await handled(
-    _deletePipeline,
-    `Failed to delete ${pipeline_name} pipeline`
-  )({ path: { pipeline_name } })
+  await handled(_deletePipeline)({ path: { pipeline_name } })
 }
 
 export type PipelineAction = 'start' | 'pause' | 'shutdown' | 'start_paused'
@@ -308,10 +293,7 @@ export const postPipelineAction = async (
   pipeline_name: string,
   action: PipelineAction
 ): Promise<() => Promise<void>> => {
-  await handled(
-    _postPipelineAction,
-    `Failed to ${action} ${pipeline_name} pipeline`
-  )({
+  await handled(_postPipelineAction)({
     path: { pipeline_name, action: action === 'start_paused' ? 'pause' : action }
   })
   return async () => {
@@ -353,13 +335,12 @@ export const getAuthConfig = () =>
 
 export const getConfig = () => handled(_getConfig)({ client: unauthenticatedClient })
 
-export const getApiKeys = () => handled(listApiKeys, `Failed to fetch API keys`)()
+export const getApiKeys = () => handled(listApiKeys)()
 
-export const postApiKey = (name: string) =>
-  handled(_postApiKey, `Failed to create API key`)({ body: { name } })
+export const postApiKey = (name: string) => handled(_postApiKey)({ body: { name } })
 
 export const deleteApiKey = (name: string) =>
-  handled(_deleteApiKey, `Failed to delete ${name} API key`)({ path: { api_key_name: name } })
+  handled(_deleteApiKey)({ path: { api_key_name: name } })
 
 const getAuthenticatedFetch = () => {
   try {
@@ -441,7 +422,7 @@ const extractDemoType = (demo: { title: string }) => {
 }
 
 export const getDemos = () =>
-  handled(getConfigDemos, `Failed to fetch available demos`)().then((demos) =>
+  handled(getConfigDemos)().then((demos) =>
     demos.map((demo) => {
       const [title, type] = extractDemoType(demo)
       return {
