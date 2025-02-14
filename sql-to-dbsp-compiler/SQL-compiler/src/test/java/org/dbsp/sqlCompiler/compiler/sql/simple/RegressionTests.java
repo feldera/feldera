@@ -1919,4 +1919,13 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE t2(c0 varchar);
                 CREATE VIEW v2 AS (SELECT 1 FROM t1 JOIN t2 ON (1 IS NOT DISTINCT FROM NULL));""");
     }
+
+    @Test
+    public void testGroupbyOrdinal() {
+        this.getCCS("""
+                CREATE TABLE X (xx int);
+                CREATE VIEW Y
+                AS select xx from X
+                group by 1""");
+    }
 }

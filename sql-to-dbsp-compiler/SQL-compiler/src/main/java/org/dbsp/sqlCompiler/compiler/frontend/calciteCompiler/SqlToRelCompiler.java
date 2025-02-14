@@ -102,7 +102,9 @@ import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.sql.util.SqlBasicVisitor;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.util.SqlShuttle;
+import org.apache.calcite.sql.validate.SqlConformance;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
+import org.apache.calcite.sql.validate.SqlDelegatingConformance;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.sql2rel.ConvertToChecked;
@@ -463,6 +465,17 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.rootSchema.add(name, schema);
     }
 
+    static class Conformance extends SqlDelegatingConformance {
+        protected Conformance(SqlConformance delegate) {
+            super(delegate);
+        }
+
+        @Override
+        public boolean isGroupByOrdinal() {
+            return true;
+        }
+    }
+
     /** Add a new set of operators to the operator table.  Creates a new validator, converter */
     public void addOperatorTable(SqlOperatorTable operatorTable) {
         SqlOperatorTable newOperatorTable;
@@ -475,6 +488,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
         SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT
                 .withIdentifierExpansion(true);
+        validatorConfig = validatorConfig.withConformance(new Conformance(validatorConfig.conformance()));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
                 CalciteSchema.from(this.rootSchema), Collections.singletonList(calciteCatalog.schemaName),
                 this.typeFactory, connectionConfig);
