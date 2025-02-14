@@ -1,3 +1,5 @@
+import { clearInterval, setInterval } from 'worker-timers'
+
 import { getPipelineStats, type ExtendedPipeline } from '$lib/services/pipelineManager'
 import {
   accumulatePipelineMetrics,
@@ -7,7 +9,6 @@ import {
 import { isMetricsAvailable } from '$lib/functions/pipelines/status'
 import { untrack } from 'svelte'
 import { useToast } from './useToastNotification'
-import { closedIntervalAction } from '$lib/functions/common/promise'
 
 let metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metrics data for better performance
 let getMetrics = $state<() => typeof metrics>(() => metrics)
@@ -17,6 +18,7 @@ export const useAggregatePipelineStats = (
   refetchMs: number,
   keepMs?: number
 ) => {
+  let timeout = $state<NodeJS.Timeout>()
   let pipelineStatus = $derived(pipeline.current.status)
 
   let metricsAvailable = $derived(isMetricsAvailable(pipelineStatus))
@@ -25,31 +27,41 @@ export const useAggregatePipelineStats = (
     if (metricsAvailable === 'no') {
       metrics[pipelineName] = emptyPipelineMetrics
       getMetrics = () => metrics
-      return Promise.resolve()
+      return
     }
     if (metricsAvailable === 'soon') {
+      timeout = setTimeout(() => doFetch(pipelineName), Math.max(0, refetchMs))
       getMetrics = () => metrics
-      return Promise.resolve()
+      return
     }
     let requestTimestamp = Date.now()
-    return getPipelineStats(pipelineName).then((stats) => {
-      let responseTimestamp = Date.now()
-      metrics[pipelineName] = accumulatePipelineMetrics(
-        (requestTimestamp + responseTimestamp) / 2,
-        refetchMs,
-        keepMs
-      )(metrics[pipelineName], stats.status === 'not running' ? { status: null } : stats)
-      getMetrics = () => metrics
-    }, toastError)
+    return getPipelineStats(pipelineName)
+      .then((stats) => {
+        let responseTimestamp = Date.now()
+        metrics[pipelineName] = accumulatePipelineMetrics(
+          (requestTimestamp + responseTimestamp) / 2,
+          refetchMs,
+          keepMs
+        )(metrics[pipelineName], stats.status === 'not running' ? { status: null } : stats)
+        getMetrics = () => metrics
+      })
+      .catch(toastError)
+      .finally(() => {
+        let responseTimestamp = Date.now()
+        timeout = setTimeout(
+          () => doFetch(pipelineName),
+          Math.max(0, requestTimestamp + refetchMs - responseTimestamp)
+        )
+      })
   }
 
   let pipelineName = $derived(pipeline.current.name)
   $effect(() => {
     pipelineName
     metricsAvailable
-    const cancel = untrack(() => closedIntervalAction(() => doFetch(pipelineName), refetchMs))
+    untrack(() => doFetch(pipelineName))
     return () => {
-      cancel()
+      clearTimeout(timeout)
     }
   })
   return {
