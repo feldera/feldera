@@ -52,25 +52,20 @@ thread_local! {
     static THREAD: RefCell<Weak<BackgroundThread>> = const { RefCell::new(Weak::new()) };
 }
 
-/// A function that returns a [Worker].
+/// A function that returns a [WorkerFn].
 ///
-/// This exists because the [Worker] that we use constructs a merger, which are
-/// not required to be `Send` and in practice are not (because our storage
+/// This exists because the [WorkerFn] that we use constructs a merger, which
+/// are not required to be `Send` and in practice are not (because our storage
 /// implementations are thread-specific).  This means that the caller of
 /// [BackgroundThread::add_worker] can't construct a merger for the worker,
 /// because it would then be moved from the caller's thread to the background
 /// thread. Thus, instead, the `WorkerConstructorFn` is called once in the
 /// background thread to do the construction.
-type WorkerConstructorFn = Box<dyn FnOnce() -> Box<dyn Worker> + Send>;
+type WorkerConstructorFn = Box<dyn FnOnce() -> WorkerFn + Send>;
 
-pub trait Worker {
-    /// Does some work. Called repeatedly until it reports that it is done.
-    fn run(&mut self) -> WorkerStatus;
-
-    /// Returns a priority for running the worker. Higher numbers are higher
-    /// priorities.
-    fn priority(&self) -> usize;
-}
+/// The worker function, which is called repeatedly until it reports that it is
+/// done.
+type WorkerFn = Box<dyn FnMut() -> WorkerStatus>;
 
 impl BackgroundThread {
     pub fn add_worker(worker: WorkerConstructorFn) {
@@ -118,7 +113,6 @@ impl BackgroundThread {
 
     fn run(self: Arc<Self>) {
         let mut workers = Vec::new();
-        let mut priorities = Vec::new();
         loop {
             // Gather newly submitted workers.
             let mut inner = self.0.lock().unwrap();
@@ -131,26 +125,16 @@ impl BackgroundThread {
             }
             drop(inner);
 
-            // Collect the priority of every worker.
-            priorities.clear();
-            for worker in workers.iter() {
-                priorities.push(worker.priority());
-            }
-            let max = priorities.iter().copied().max().unwrap();
-
-            // Run workers.
-            //
-            // We run only the worker(s) with the highest priority. If all of
-            // them are idle (which is unlikely since they have the highest
-            // priority) then we give all the workers a chance to run.
+            // Run through workers.
             let mut idle = true;
-            let mut priority = priorities.iter().copied();
-            workers.retain_mut(|worker| {
-                priority.next().unwrap() != max || run_worker(worker, &mut idle)
+            workers.retain_mut(|worker| match worker() {
+                WorkerStatus::Busy => {
+                    idle = false;
+                    true
+                }
+                WorkerStatus::Idle => true,
+                WorkerStatus::Done => false,
             });
-            if idle {
-                workers.retain_mut(|worker| run_worker(worker, &mut idle));
-            }
 
             // If there's at least one worker and all of them are idle, wait for
             // something to change.
@@ -162,16 +146,5 @@ impl BackgroundThread {
                 std::thread::park();
             }
         }
-    }
-}
-
-fn run_worker(worker: &mut Box<dyn Worker>, idle: &mut bool) -> bool {
-    match worker.run() {
-        WorkerStatus::Busy => {
-            *idle = false;
-            true
-        }
-        WorkerStatus::Idle => true,
-        WorkerStatus::Done => false,
     }
 }
