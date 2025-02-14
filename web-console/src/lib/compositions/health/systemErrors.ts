@@ -63,16 +63,6 @@ export const extractPipelineErrors = (pipeline: ExtendedPipeline): SystemError[]
     }))()
   ]
 }
-export const extractPipelineStderr = (pipeline: ExtendedPipeline): string[] => {
-  if (!(typeof pipeline.status === 'object' && 'PipelineError' in pipeline.status)) {
-    return []
-  }
-  return [
-    `Pipeline process returned an error code ${pipeline.status.PipelineError.error_code}:\n
-${pipeline.status.PipelineError.message}
-${Object.entries(pipeline.status.PipelineError.details).map((k, v) => `${k}: ${v}\n`)}`
-  ]
-}
 
 export const programErrorReport = (pipeline: Pipeline) => (pipelineName: string, message: string) =>
   ({
@@ -200,7 +190,6 @@ export const extractProgramErrors =
       | { RustError: string }
       | { SystemError: string }
       | { SqlError: SqlCompilerMessage[] }
-      | { SqlWarning: SqlCompilerMessage[] }
       | string
       | { PipelineError: ErrorResponse }
   }) => {
@@ -268,66 +257,9 @@ export const extractProgramErrors =
             }
           }))
       )
-      .with(
-        {
-          SqlWarning: P.any
-        },
-        (es) =>
-          es.SqlWarning.map((e) => ({
-            name: `Error in SQL code of ${pipeline.name}`,
-            message: showSqlCompilerMessage(e),
-            cause: {
-              entityName: pipeline.name,
-              tag: 'programError',
-              source:
-                source +
-                '#program.sql:' +
-                e.start_line_number +
-                (e.start_column > 1 ? ':' + e.start_column.toString() : ''),
-              report: getReport(pipeline.name, e.message),
-              body: e,
-              warning: e.warning
-            }
-          }))
-      )
       .otherwise(() => [])
     return result
   }
-
-export const extractProgramStderr = (pipeline: {
-  name: string
-  status:
-    | { RustError: string }
-    | { SystemError: string }
-    | { SqlError: SqlCompilerMessage[] }
-    | { SqlWarning: SqlCompilerMessage[] }
-    | string
-    | { PipelineError: ErrorResponse }
-}) => {
-  const result = match(pipeline.status)
-    .returnType<string[]>()
-    .with({ RustError: P.any }, (e) => [e.RustError])
-    .with(
-      {
-        SystemError: P.any
-      },
-      (e) => [e.SystemError]
-    )
-    .with(
-      {
-        SqlError: P.any
-      },
-      (es) => [es.SqlError.join('\n')]
-    )
-    .with(
-      {
-        SqlWarning: P.any
-      },
-      (es) => [es.SqlWarning.join('\n')]
-    )
-    .otherwise(() => [])
-  return result
-}
 
 export const programErrorsPerFile = <Report>(errors: SystemError<any, Report>[]) =>
   Object.fromEntries(
@@ -434,44 +366,4 @@ export const extractPipelineXgressErrors = ({
           : [])
       ])
     )
-}
-
-export const extractPipelineXgressStderr = ({
-  pipelineName,
-  status
-}: {
-  pipelineName: string
-  status: Pick<ControllerStatus, 'inputs' | 'outputs'> | null | 'not running'
-}): string[] => {
-  const stats = status == null || status === 'not running' ? { inputs: [], outputs: [] } : status
-  return [
-    stats.inputs
-      .flatMap((input) => [
-        ...(input.metrics.num_parse_errors
-          ? [
-              `${input.metrics.num_parse_errors} parse errors in ${input.config.transport.name} connector ${input.endpoint_name} of ${pipelineName}`
-            ]
-          : []),
-        ...(input.metrics.num_transport_errors
-          ? [
-              `${input.metrics.num_transport_errors} transport errors in ${input.config.transport.name} connector ${input.endpoint_name} of ${pipelineName}`
-            ]
-          : [])
-      ])
-      .concat(
-        stats.outputs.flatMap((output) => [
-          ...(output.metrics.num_encode_errors
-            ? [
-                `${output.metrics.num_encode_errors} encode errors in ${output.config.transport.name} connector ${output.endpoint_name} of ${pipelineName}`
-              ]
-            : []),
-          ...(output.metrics.num_transport_errors
-            ? [
-                `${output.metrics.num_transport_errors} transport errors in ${output.config.transport.name} connector ${output.endpoint_name} of ${pipelineName}`
-              ]
-            : [])
-        ])
-      )
-      .join('\n')
-  ]
 }

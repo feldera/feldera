@@ -13,9 +13,9 @@
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineList from '$lib/components/pipelines/List.svelte'
-  import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
+  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import BookADemo from '$lib/components/other/BookADemo.svelte'
 
   const dialog = useGlobalDialog()
 
@@ -24,7 +24,7 @@
   useRefreshPipelineList()
   const rightDrawer = useDrawer('right')
   const isTablet = useIsTablet()
-  const { showPipelinesPanel: leftDrawer } = useLayoutSettings()
+  const leftDrawer = useLocalStorage('layout/pipelines/pipelinesPanel/show', !isTablet.current) // Make pipeline drawer open by default on larger screens
   const pipelineList = usePipelineList(data.preloaded)
 </script>
 

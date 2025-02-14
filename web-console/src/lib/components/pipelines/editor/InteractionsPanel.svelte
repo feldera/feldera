@@ -78,7 +78,7 @@
   let programErrors = $derived(
     extractProgramErrors(() => pipeline.current)({
       name: pipeline.current.name,
-      status: pipeline.current.status
+      status: pipeline.current.programStatus
     })
   )
   let pipelineErrors = $derived(extractPipelineErrors(pipeline.current))
@@ -126,7 +126,7 @@
   classes="flex flex-col flex-1 !space-y-0 bg-surface-50-950 rounded-container p-4 pt-3"
 >
   {#snippet list()}
-    <div class="w-full">
+    <div class=" w-full">
       {#each tabs as [tabName, tabControl]}
         <Tabs.Control
           value={tabName}
@@ -151,7 +151,7 @@
     {@const TabComponent = tabs.find((tab) => tab[0] === currentTab.value)?.[2]}
     {#if TabComponent}
       <div class="relative h-full">
-        <div class="absolute h-full w-full sm:pt-4">
+        <div class="absolute h-full w-full">
           <TabComponent {pipeline} {metrics} {errors}></TabComponent>
         </div>
       </div>
