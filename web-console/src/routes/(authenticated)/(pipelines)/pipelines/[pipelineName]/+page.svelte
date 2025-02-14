@@ -8,7 +8,6 @@
   import { goto } from '$app/navigation'
   import { base } from '$app/paths'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager.js'
-  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte.js'
 
   let { data } = $props()
 
@@ -22,13 +21,11 @@
     pipelineCache.current = pipeline
   }
   let pipeline = $derived(writablePipeline(pipelineCache, set))
-  const pipelineList = usePipelineList(data.preloaded)
 
   useRefreshPipeline(
     () => pipelineCache,
     set,
     () => data.preloadedPipeline,
-    () => pipelineList.pipelines,
     () => goto(`${base}/`)
   )
 </script>
