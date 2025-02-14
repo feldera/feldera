@@ -1,6 +1,6 @@
 import { BigNumber } from 'bignumber.js/bignumber.js'
 
-import type { RandomBigNumberGenerationSource } from './generationSource'
+import { RandomBigNumberGenerationSource } from './generationSource'
 
 /**
  * A configurable random number generator for the exponential distribution.

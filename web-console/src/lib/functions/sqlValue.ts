@@ -14,7 +14,16 @@ import dayjs, { Dayjs, isDayjs } from 'dayjs'
 import invariant from 'tiny-invariant'
 import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
-import type { SQLValueJS } from '$lib/types/sql.ts'
+
+export type SQLValueJS =
+  | string
+  | number
+  | boolean
+  | BigNumber
+  | Dayjs
+  | SQLValueJS[]
+  | Map<string, SQLValueJS>
+  | null
 
 /**
  * The format we get back from the ingress rest API.

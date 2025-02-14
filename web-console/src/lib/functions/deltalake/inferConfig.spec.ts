@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte'
+import { expect, test } from '@playwright/experimental-ct-react'
 
 import { inferDeltaLakeStorageConfig } from './inferConfig'
 
