@@ -284,6 +284,8 @@ impl DataSink for AdHocTableSink {
                 max_batch_size: default_max_batch_size(),
                 max_queued_records: default_max_queued_records(),
                 paused: false,
+                labels: vec![],
+                start_after: None,
             },
         };
 

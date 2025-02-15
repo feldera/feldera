@@ -732,6 +732,8 @@ async fn create_http_input_endpoint(
             max_batch_size: default_max_batch_size(),
             max_queued_records: HttpInputTransport::default_max_buffered_records(),
             paused: false,
+            labels: vec![],
+            start_after: None,
         },
     };
 
@@ -930,6 +932,8 @@ async fn output_endpoint(
             max_batch_size: default_max_batch_size(),
             max_queued_records: HttpOutputTransport::default_max_buffered_records(),
             paused: false,
+            labels: vec![],
+            start_after: None,
         },
     };
 

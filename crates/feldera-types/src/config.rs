@@ -20,6 +20,7 @@ use crate::transport::url::UrlInputConfig;
 use core::fmt;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 use std::path::Path;
 use std::{borrow::Cow, collections::BTreeMap};
@@ -415,6 +416,34 @@ pub struct InputEndpointConfig {
     pub connector_config: ConnectorConfig,
 }
 
+/// Deserialize the `start_after` property of a connector configuration.
+/// It requires a non-standard deserialization because we want to accept
+/// either a string or an array of strings.
+fn deserialize_start_after<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<JsonValue>::deserialize(deserializer)?;
+    match value {
+        Some(JsonValue::String(s)) => Ok(Some(vec![s])),
+        Some(JsonValue::Array(arr)) => {
+            let vec = arr
+                .into_iter()
+                .map(|item| {
+                    item.as_str()
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| serde::de::Error::custom("invalid 'start_after' property: expected a string, an array of strings, or null"))
+                })
+                .collect::<Result<Vec<String>, _>>()?;
+            Ok(Some(vec))
+        }
+        Some(JsonValue::Null) | None => Ok(None),
+        _ => Err(serde::de::Error::custom(
+            "invalid 'start_after' property: expected a string, an array of strings, or null",
+        )),
+    }
+}
+
 /// A data connector's configuration
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ConnectorConfig {
@@ -488,6 +517,22 @@ pub struct ConnectorConfig {
     /// The default is `false`.
     #[serde(default)]
     pub paused: bool,
+
+    /// Arbitrary user-defined text labels associated with the connector.
+    ///
+    /// These labels can be used in conjunction with the `start_after` property
+    /// to control the start order of connectors.
+    #[serde(default)]
+    pub labels: Vec<String>,
+
+    /// Start the connector after all connectors with specified labels.
+    ///
+    /// This property is used to control the start order of connectors.
+    /// The connector will not start until all connectors with the specified
+    /// labels have finished processing all inputs.
+    #[serde(deserialize_with = "deserialize_start_after")]
+    #[serde(default)]
+    pub start_after: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]

@@ -50,14 +50,14 @@ use rmpv::Value as RmpValue;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     cmp::min,
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
     time::Duration,
 };
-use tracing::error;
+use tracing::{debug, error};
 
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {
@@ -422,6 +422,47 @@ impl ControllerStatus {
         }
     }
 
+    /// Invoked when one of the input endpoints has finished processing
+    /// to check if any paused endpoints have all their 'start_after'
+    /// dependencies satisfied and can be started.
+    pub fn start_dependencies(&self, backpressure_thread_unparker: &Unparker) {
+        let mut endpoints_to_start: Vec<EndpointId> = Vec::new();
+
+        let inputs = self.inputs.read().unwrap();
+
+        let mut unfinished_labels = BTreeSet::new();
+        for input in inputs.values() {
+            if !input.finished() {
+                unfinished_labels.extend(input.config.connector_config.labels.iter());
+            }
+        }
+
+        for (endpoint_id, input) in inputs.iter() {
+            if !input.paused {
+                continue;
+            }
+            if let Some(start_after) = &input.config.connector_config.start_after {
+                if start_after
+                    .iter()
+                    .all(|label| !unfinished_labels.contains(label))
+                {
+                    debug!("starting endpoint {}, whose 'start_after' dependencies have been satisfied", input.endpoint_name);
+                    endpoints_to_start.push(*endpoint_id);
+                }
+            }
+        }
+
+        drop(inputs);
+
+        for endpoint_id in endpoints_to_start.iter() {
+            self.start_input_endpoint(endpoint_id);
+        }
+
+        if !endpoints_to_start.is_empty() {
+            backpressure_thread_unparker.unpark();
+        }
+    }
+
     pub fn remove_input(&self, endpoint_id: &EndpointId) -> Option<InputEndpointStatus> {
         self.inputs.write().unwrap().remove(endpoint_id)
     }
@@ -559,17 +600,35 @@ impl ControllerStatus {
     /// * `circuit_thread_unparker` - unparker used to wake up the circuit
     ///   thread if the total number of buffered records exceeds
     ///   `min_batch_size_records`.
-    pub fn eoi(&self, endpoint_id: EndpointId, circuit_thread_unparker: &Unparker) {
+    pub fn eoi(
+        &self,
+        endpoint_id: EndpointId,
+        circuit_thread_unparker: &Unparker,
+        backpressure_thread_unparker: &Unparker,
+    ) {
         if self.global_metrics.num_buffered_input_records() == 0 {
             circuit_thread_unparker.unpark();
         }
+
+        let mut finished = false;
 
         // Update endpoint counters, no need to wake up the backpressure thread since we
         // won't see any more inputs from this endpoint.
         let inputs = self.inputs.read().unwrap();
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
             endpoint_stats.eoi();
+            finished = endpoint_stats.finished();
         };
+
+        drop(inputs);
+
+        // Check if we can start any paused endpoints waiting for this endpoint to finish.
+        // It's possible that the endpoint is at the end of input, but not all of its updates
+        // have been processed yet. In this case, `finished` will be `false`, and we will call
+        // `start_dependencies` when the endpoint is finished in the `completed()` method below.
+        if finished {
+            self.start_dependencies(backpressure_thread_unparker);
+        }
     }
 
     pub fn completed(
@@ -578,12 +637,24 @@ impl ControllerStatus {
         num_records: u64,
         hash: u64,
         metadata: Option<RmpValue>,
+        backpressure_thread_unparker: &Unparker,
     ) {
         let inputs = self.inputs.read().unwrap();
         self.global_metrics.consume_buffered_inputs(num_records);
+
+        let mut finished = false;
+
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
             endpoint_stats.completed(num_records, hash, metadata);
+            finished = endpoint_stats.finished();
         };
+
+        drop(inputs);
+
+        // Check if we can start any paused endpoints waiting for this endpoint to finish.
+        if finished {
+            self.start_dependencies(backpressure_thread_unparker);
+        }
     }
 
     pub fn enqueue_batch(&self, endpoint_id: EndpointId, num_records: usize) {
@@ -809,7 +880,9 @@ impl InputEndpointStatus {
         config: InputEndpointConfig,
         reader: Box<dyn InputReader>,
     ) -> Self {
-        let paused_by_user = config.connector_config.paused;
+        let paused_by_user =
+            config.connector_config.paused || config.connector_config.start_after.is_some();
+
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
@@ -841,11 +914,18 @@ impl InputEndpointStatus {
     }
 
     fn eoi(&self) {
+        debug!("endpoint {} has reached end of input", self.endpoint_name);
         self.metrics.end_of_input.store(true, Ordering::Release);
     }
 
     fn is_eoi(&self) -> bool {
         self.metrics.end_of_input.load(Ordering::Acquire)
+    }
+
+    /// True if the endpoint has reached end of input and doesn't have
+    /// any more buffered records.
+    fn finished(&self) -> bool {
+        self.is_eoi() && self.metrics.buffered_records.load(Ordering::Acquire) == 0
     }
 
     /// Increment parser error counter.
