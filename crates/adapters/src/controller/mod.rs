@@ -33,12 +33,14 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
+use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::CircuitStorageConfig;
 use dbsp::{
     circuit::{CircuitConfig, Layout},
     profile::GraphProfile,
     DBSPHandle,
 };
+use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_types::format::json::JsonLines;
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
@@ -79,10 +81,12 @@ use tokio::sync::oneshot;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
+use validate::validate_config;
 
 mod error;
 mod metadata;
 mod stats;
+mod validate;
 
 use crate::adhoc::table::AdHocTable;
 use crate::catalog::{SerBatchReader, SerTrace, SyncSerBatchReader};
@@ -174,6 +178,8 @@ impl Controller {
             + Send
             + 'static,
     {
+        validate_config(config)?;
+
         let (circuit_thread_handle, inner) = {
             // A channel to communicate circuit initialization status.
             // The `circuit_factory` closure must be invoked in the context of
@@ -465,6 +471,17 @@ impl Controller {
 
     pub(crate) fn metrics(&self) -> PrometheusHandle {
         self.inner.prometheus_handle.clone()
+    }
+
+    /// Execute a SQL query over materialized tables and views;
+    /// return result as a text table.
+    pub async fn execute_query_text(&self, query: &str) -> Result<String, AnyError> {
+        execute_query_text(&self.session_context()?, query).await
+    }
+
+    /// Like execute_query_text, but can run outside of async runtime.
+    pub fn execute_query_text_sync(&self, query: &str) -> Result<String, AnyError> {
+        TOKIO.block_on(async { self.execute_query_text(query).await })
     }
 }
 
@@ -2386,7 +2403,11 @@ impl ControllerInner {
     ///
     /// See [`ControllerStatus::eoi`].
     pub fn eoi(&self, endpoint_id: EndpointId) {
-        self.status.eoi(endpoint_id, &self.circuit_thread_unparker)
+        self.status.eoi(
+            endpoint_id,
+            &self.circuit_thread_unparker,
+            &self.backpressure_thread_unparker,
+        )
     }
 
     fn output_buffers_full(&self) -> bool {
@@ -2462,9 +2483,13 @@ impl InputConsumer for InputProbe {
     }
 
     fn replayed(&self, num_records: usize, hash: u64) {
-        self.controller
-            .status
-            .completed(self.endpoint_id, num_records as u64, hash, None);
+        self.controller.status.completed(
+            self.endpoint_id,
+            num_records as u64,
+            hash,
+            None,
+            &self.controller.backpressure_thread_unparker,
+        );
         self.controller.unpark_circuit();
     }
 
@@ -2474,6 +2499,7 @@ impl InputConsumer for InputProbe {
             num_records as u64,
             hash,
             Some(metadata),
+            &self.controller.backpressure_thread_unparker,
         );
         self.controller.unpark_circuit();
     }
@@ -2592,12 +2618,161 @@ mod test {
     use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
     use std::{
         fs::{create_dir, remove_file, File},
+        io::Write,
         thread::sleep,
         time::Duration,
     };
     use tempfile::{NamedTempFile, TempDir};
+    use tracing::info;
 
     use proptest::prelude::*;
+
+    #[test]
+    fn test_start_after_cyclic() {
+        init_test_logger();
+
+        let config_str = r#"
+name: test
+workers: 4
+inputs:
+    test_input1.endpoint1:
+        stream: test_input1
+        labels:
+            - label1
+        start_after: label2
+        transport:
+            name: file_input
+            config:
+                path: "file1"
+        format:
+            name: json
+            config:
+                array: true
+                update_format: raw
+    test_input1.endpoint2:
+        stream: test_input1
+        labels:
+            - label2
+        start_after: label1
+        transport:
+            name: file_input
+            config:
+                path: file2
+        format:
+            name: json
+            config:
+                array: true
+                update_format: raw
+    "#
+        .to_string();
+
+        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+        let Err(err) = Controller::with_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &TestStruct::schema(),
+                ))
+            },
+            &config,
+            Box::new(|e| panic!("error: {e}")),
+        ) else {
+            panic!("expected to fail")
+        };
+
+        assert_eq!(&err.to_string(), "invalid controller configuration: cyclic 'start_after' dependency detected: endpoint 'test_input1.endpoint1' with label 'label1' waits for endpoint 'test_input1.endpoint2' with label 'label2', which waits for endpoint 'test_input1.endpoint1' with label 'label1'");
+    }
+
+    #[test]
+    fn test_start_after() {
+        init_test_logger();
+
+        // Two JSON files with a few records each.
+        let temp_input_file1 = NamedTempFile::new().unwrap();
+        let temp_input_file2 = NamedTempFile::new().unwrap();
+
+        temp_input_file1
+            .as_file()
+            .write_all(br#"[{"id": 1, "b": true, "s": "foo"}, {"id": 2, "b": true, "s": "foo"}]"#)
+            .unwrap();
+        temp_input_file2
+            .as_file()
+            .write_all(br#"[{"id": 3, "b": true, "s": "foo"}, {"id": 4, "b": true, "s": "foo"}]"#)
+            .unwrap();
+
+        // Controller configuration with two input connectors;
+        // the second starts after the first one finishes.
+        let config_str = format!(
+            r#"
+name: test
+workers: 4
+inputs:
+    test_input1.endpoint1:
+        stream: test_input1
+        transport:
+            name: file_input
+            labels:
+                - backfill
+            config:
+                path: {:?}
+        format:
+            name: json
+            config:
+                array: true
+                update_format: raw
+    test_input1.endpoint2:
+        stream: test_input1
+        start_after: backfill
+        transport:
+            name: file_input
+            config:
+                path: {:?}
+        format:
+            name: json
+            config:
+                array: true
+                update_format: raw
+    "#,
+            temp_input_file1.path().to_str().unwrap(),
+            temp_input_file2.path().to_str().unwrap(),
+        );
+
+        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+        let controller = Controller::with_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &TestStruct::schema(),
+                ))
+            },
+            &config,
+            Box::new(|e| panic!("error: {e}")),
+        )
+        .unwrap();
+
+        controller.start();
+
+        // Wait 3 seconds, assert(no data in the output table)
+
+        // Unpause the first connector.
+
+        wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+        let result = controller
+            .execute_query_text_sync("select * from test_output1 order by id")
+            .unwrap();
+
+        let expected = r#"+----+------+---+-----+
+| id | b    | i | s   |
++----+------+---+-----+
+| 1  | true |   | foo |
+| 2  | true |   | foo |
+| 3  | true |   | foo |
+| 4  | true |   | foo |
++----+------+---+-----+"#;
+
+        assert_eq!(&result, expected);
+    }
 
     // TODO: Parameterize this with config string, so we can test different
     // input/output formats and transports when we support more than one.
@@ -2649,8 +2824,8 @@ outputs:
             output_path,
             );
 
-            println!("input file: {}", temp_input_file.path().to_str().unwrap());
-            println!("output file: {output_path}");
+            info!("input file: {}", temp_input_file.path().to_str().unwrap());
+            info!("output file: {output_path}");
             let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
             let controller = Controller::with_config(
                     |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[])),

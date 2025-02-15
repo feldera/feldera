@@ -206,6 +206,7 @@ const sidebars = {
                         id: 'connectors/index'
                     },
                     items: [
+                        'connectors/orchestration',
                         {
                             type: 'category',
                             label: 'Input',
@@ -249,11 +250,11 @@ const sidebars = {
                                     id: 'connectors/sources/debezium',
                                     label: 'Debezium'
                                 },
-				{
-				    type: 'doc',
-				    id: 'connectors/sources/postgresql',
-				    label: 'PostgreSQL'
-				},
+                                {
+                                    type: 'doc',
+                                    id: 'connectors/sources/postgresql',
+                                    label: 'PostgreSQL'
+                                },
                                 {
                                     type: 'doc',
                                     id: 'connectors/sources/s3',

@@ -149,6 +149,14 @@ pub enum ConfigError {
         error: String,
     },
 
+    CyclicDependency {
+        cycle: Vec<(String, String)>,
+    },
+
+    EmptyStartAfter {
+        endpoint_name: String,
+    },
+
     FtRequiresStorage,
     FtRequiresFtInput,
 }
@@ -183,6 +191,8 @@ impl DbspDetailedError for ConfigError {
             Self::InvalidOutputBufferConfig { .. } => Cow::from("InvalidOutputBufferConfig"),
             Self::FtRequiresStorage => Cow::from("FtRequiresStorage"),
             Self::FtRequiresFtInput => Cow::from("FtWithNonFtInput"),
+            Self::CyclicDependency { .. } => Cow::from("CyclicDependency"),
+            Self::EmptyStartAfter { .. } => Cow::from("EmptyStartAfter"),
         }
     }
 }
@@ -344,8 +354,17 @@ impl Display for ConfigError {
                     "invalid output buffer configuration for endpoint '{endpoint_name}': {error}"
                 )
             }
-            ConfigError::FtRequiresStorage => write!(f, "Fault tolerance is configured, which requires storage, but storage is not enabled"),
-            ConfigError::FtRequiresFtInput => write!(f, "Fault tolerance is configured, but it cannot be enabled because the pipeline has at least one non-fault-tolerant input adapter"),
+            Self::CyclicDependency { cycle } => {
+                let mut cycle = cycle.clone();
+                cycle.push(cycle[0].clone());
+                let tail = cycle[1..].iter().map(|(endpoint, label)| format!("waits for endpoint '{endpoint}' with label '{label}'")).collect::<Vec<_>>().join(", which ");
+                write!(f, "cyclic 'start_after' dependency detected: endpoint '{}' with label '{}' {}", cycle[0].0, cycle[0].1, tail)
+            }
+            Self::EmptyStartAfter { endpoint_name } => {
+                write!(f, "empty 'start_after' field for input endpoint '{}'", endpoint_name)
+            }
+            Self::FtRequiresStorage => write!(f, "Fault tolerance is configured, which requires storage, but storage is not enabled"),
+            Self::FtRequiresFtInput => write!(f, "Fault tolerance is configured, but it cannot be enabled because the pipeline has at least one non-fault-tolerant input adapter"),
         }
     }
 }
@@ -513,6 +532,16 @@ impl ConfigError {
         Self::InvalidOutputBufferConfig {
             endpoint_name: endpoint_name.to_string(),
             error: error.to_string(),
+        }
+    }
+
+    pub fn cyclic_dependency(cycle: Vec<(String, String)>) -> Self {
+        Self::CyclicDependency { cycle }
+    }
+
+    pub fn empty_start_after(endpoint_name: &str) -> Self {
+        Self::EmptyStartAfter {
+            endpoint_name: endpoint_name.to_string(),
         }
     }
 }

@@ -1,5 +1,6 @@
 use crate::errors::metadata::ControllerError;
 use anyhow::{anyhow, Error as AnyError};
+use arrow::util::pretty::pretty_format_batches;
 use datafusion::common::arrow::array::{AsArray, RecordBatch};
 use datafusion::logical_expr::sqlparser::parser::ParserError;
 use datafusion::prelude::{SQLOptions, SessionContext};
@@ -54,6 +55,29 @@ pub async fn execute_singleton_query(
     }
 
     Ok(result[0].column(0).as_string::<i32>().value(0).to_string())
+}
+
+/// Execute a SQL query that returns a result with exactly one row and column of type `string`.
+pub async fn execute_query_text(
+    datafusion: &SessionContext,
+    query: &str,
+) -> Result<String, AnyError> {
+    let options = SQLOptions::new()
+        .with_allow_ddl(false)
+        .with_allow_dml(false);
+
+    let df = datafusion
+        .sql_with_options(query, options)
+        .await
+        .map_err(|e| anyhow!("error compiling query '{query}': {e}"))?;
+
+    Ok(pretty_format_batches(
+        &df.collect()
+            .await
+            .map_err(|e| anyhow!("error executing query '{query}': {e}"))?,
+    )
+    .map_err(|e| anyhow!("error formatting result of query '{query}': {e}"))?
+    .to_string())
 }
 
 /// Parse expression only to validate it.
