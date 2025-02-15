@@ -698,7 +698,6 @@ where
     async fn eval(&mut self, i: &Z) -> O {
         let mut builder = O::Builder::with_capacity(&self.factories, i.len());
         let mut agg = self.option_output_factory.default_box();
-        let mut key = self.factories.key_factory().default_box();
 
         let mut cursor = i.cursor();
 
@@ -707,10 +706,8 @@ where
                 .aggregate_and_finalize(&mut CursorGroup::new(&mut cursor, ()), agg.as_mut());
 
             if let Some(agg) = agg.get_mut() {
-                cursor.key().clone_to(key.as_mut());
-                builder.push_diff_mut(ZWeight::one().erase_mut());
-                builder.push_val_mut(agg);
-                builder.push_key_mut(&mut key);
+                builder.push_val_diff_mut(agg, ZWeight::one().erase_mut());
+                builder.push_key(cursor.key());
             }
             cursor.step_key();
         }

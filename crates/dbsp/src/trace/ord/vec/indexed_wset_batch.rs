@@ -855,7 +855,7 @@ where
         debug_assert_eq!(
             self.vals.len() + 1,
             self.diffs.len(),
-            "every diff must have exactly one value"
+            "every value must have exactly one diff"
         );
     }
 }
@@ -916,22 +916,26 @@ where
     }
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
+        debug_assert!(!weight.is_zero());
         self.diffs.push_ref(weight);
         self.pushed_diff();
     }
 
     fn push_time_diff_mut(&mut self, _time: &mut (), weight: &mut R) {
+        debug_assert!(!weight.is_zero());
         self.diffs.push_val(weight);
         self.pushed_diff();
     }
 
     fn push_val_diff(&mut self, val: &V, weight: &R) {
+        debug_assert!(!weight.is_zero());
         self.vals.push_ref(val);
         self.diffs.push_ref(weight);
         self.pushed_val();
     }
 
     fn push_val_diff_mut(&mut self, val: &mut V, weight: &mut R) {
+        debug_assert!(!weight.is_zero());
         self.vals.push_val(val);
         self.diffs.push_val(weight);
         self.pushed_val();

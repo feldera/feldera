@@ -723,11 +723,13 @@ where
     }
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
+        debug_assert!(!weight.is_zero());
         self.diffs.push_ref(weight);
         self.pushed_diff();
     }
 
     fn push_time_diff_mut(&mut self, _time: &mut (), weight: &mut R) {
+        debug_assert!(!weight.is_zero());
         self.diffs.push_val(weight);
         self.pushed_diff();
     }

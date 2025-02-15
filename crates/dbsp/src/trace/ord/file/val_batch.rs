@@ -1076,6 +1076,7 @@ where
     }
 
     fn push_time_diff(&mut self, time: &T, weight: &R) {
+        debug_assert!(!weight.is_zero());
         self.time_diffs.push_refs((time, weight));
     }
 

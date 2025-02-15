@@ -915,6 +915,7 @@ where
     fn push_val(&mut self, _val: &DynUnit) {}
 
     fn push_time_diff(&mut self, time: &T, weight: &R) {
+        debug_assert!(!weight.is_zero());
         self.writer.write1((time, weight)).unwrap();
     }
 
