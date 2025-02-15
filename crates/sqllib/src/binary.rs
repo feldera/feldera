@@ -342,3 +342,64 @@ pub fn to_int_(source: ByteArray) -> i32 {
 }
 
 some_function1!(to_int, ByteArray, i32);
+
+/*
+#[doc(hidden)]
+pub fn agg_and_bytes_bytes(left: &mut ByteArray, right: ByteArray) {
+    left.and(&right);
+}
+
+#[doc(hidden)]
+pub fn agg_and_bytesN_bytes(left: &mut Option<ByteArray>, right: ByteArray) {
+    if let Some(left) = left.as_mut() {
+        agg_and_bytes_bytes(left, right);
+    } else {
+        *left = Some(right.clone());
+    }
+}
+
+#[doc(hidden)]
+pub fn agg_and_bytes_bytesN(left: &mut ByteArray, right: Option<ByteArray>) {
+    match right {
+        None => (),
+        Some(right) => agg_and_bytes_bytes(left, right),
+    }
+}
+
+#[doc(hidden)]
+pub fn agg_and_bytesN_bytesN(left: &mut Option<ByteArray>, right: Option<ByteArray>) {
+    if let Some(left) = left.as_mut() {
+        agg_and_bytes_bytesN(left, right);
+    } else {
+        *left = right.clone();
+    }
+}
+
+#[doc(hidden)]
+pub fn agg_or_bytes(left: &mut ByteArray, right: ByteArray) {
+    left.or(&right);
+}
+
+#[doc(hidden)]
+pub fn agg_xor_bytes(left: &mut ByteArray, right: ByteArray) {
+    left.xor(&right);
+}
+
+#[doc(hidden)]
+#[inline]
+#[allow(clippy::unnecessary_cast)]
+pub fn right_xor_weigh_bytes(right: ByteArray, w: Weight) -> ByteArray {
+    if ((w as i64) % 2) == 0 {
+        ByteArray::zero(right.length())
+    } else {
+        right
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn right_xor_weigh_bytesN(right: Option<ByteArray>, w: Weight) -> Option<ByteArray> {
+    let right = right?;
+    Some(right_xor_weigh_bytes(right, w))
+}
+*/

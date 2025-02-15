@@ -82,6 +82,35 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue3262b() {
+        this.compileRustTestCase("""
+                CREATE TABLE T (
+                        a ROW(
+                            b ROW(
+                                c VARCHAR NULL,
+                                d VARCHAR
+                            ) NULL,
+                            e ROW(
+                                f VARCHAR NULL,
+                                g VARCHAR
+                            )
+                        ) NULL,
+                        h ROW(
+                            i ROW(
+                                j VARCHAR NULL,
+                                k VARCHAR
+                            ) NULL,
+                            l ROW(
+                                m VARCHAR NULL,
+                                n VARCHAR
+                            )
+                        )
+                    );
+                CREATE VIEW V AS SELECT -- t.a, t.a.b, t.a.b.c, t.a.b.d, t.a.e, t.a.e.f, t.a.e.g,
+                                        t.h, t.h.i, t.h.i.j, t.h.i.j, t.h.l, t.h.l.m, t.h.l.n FROM T;""");
+    }
+
+    @Test
     public void issue3219() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE CUSTOMER (

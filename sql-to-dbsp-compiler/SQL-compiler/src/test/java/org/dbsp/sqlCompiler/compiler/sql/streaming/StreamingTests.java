@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
-import com.beust.jcommander.Parameter;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
@@ -1872,7 +1871,7 @@ public class StreamingTests extends StreamingTestBase {
                                                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)
                                                                 )))))
                                         */
-                                        new DBSPStringLiteral("(Some(10.0), 2023-12-29 10:00:00)")
+                                        new DBSPStringLiteral("Tup2(Some(10.0), 2023-12-29 10:00:00)")
                         )))));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
@@ -1924,7 +1923,7 @@ public class StreamingTests extends StreamingTestBase {
                                                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)
                                                                 ))))
                                          */
-                                        new DBSPStringLiteral("(Some(10.0), 2023-12-29 09:10:00)")
+                                        new DBSPStringLiteral("Tup2(Some(10.0), 2023-12-29 09:10:00)")
                                 )))));
         // Insert tuple in the past, but before the last waterline
         ccs.addChange(new InputOutputChange(
@@ -2014,7 +2013,7 @@ public class StreamingTests extends StreamingTestBase {
                                                                 ))))
 
                                          */
-                                        new DBSPStringLiteral("(Some(10.0), 2023-12-29 10:00:00)")
+                                        new DBSPStringLiteral("Tup2(Some(10.0), 2023-12-29 10:00:00)")
                                 )))));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
@@ -2058,7 +2057,7 @@ public class StreamingTests extends StreamingTestBase {
                                                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)
                                                                 ))))
                                          */
-                                        new DBSPStringLiteral("(Some(10.0), 2023-12-29 09:10:00)")
+                                        new DBSPStringLiteral("Tup2(Some(10.0), 2023-12-29 09:10:00)")
                                 )))));
         // Insert tuple in the past, but before the last waterline
         ccs.addChange(new InputOutputChange(
