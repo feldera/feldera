@@ -834,11 +834,13 @@ where
     }
 
     fn push_time_diff(&mut self, time: &T, weight: &R) {
+        debug_assert!(!weight.is_zero());
         self.times.push(time.clone());
         self.diffs.push_ref(weight);
     }
 
     fn push_time_diff_mut(&mut self, time: &mut T, weight: &mut R) {
+        debug_assert!(!weight.is_zero());
         self.times.push(time.clone());
         self.diffs.push_val(weight);
     }

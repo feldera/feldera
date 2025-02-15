@@ -922,10 +922,12 @@ where
     }
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
+        debug_assert!(!weight.is_zero());
         weight.clone_to(&mut self.weight);
     }
 
     fn push_val_diff(&mut self, val: &V, weight: &R) {
+        debug_assert!(!weight.is_zero());
         self.writer.write1((val, weight)).unwrap();
     }
 

@@ -823,6 +823,7 @@ where
     fn push_val(&mut self, _val: &DynUnit) {}
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
+        debug_assert!(!weight.is_zero());
         weight.clone_to(&mut self.weight);
     }
 }
