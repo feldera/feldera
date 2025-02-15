@@ -594,7 +594,8 @@ where
     cursor: RawCursor<'s, K, R>,
     key: Box<K>,
     pub(crate) diff: Box<R>,
-    valid: bool,
+    key_valid: bool,
+    val_valid: bool,
 }
 
 impl<K, R> Clone for FileWSetCursor<'_, K, R>
@@ -608,7 +609,8 @@ where
             cursor: self.cursor.clone(),
             key: clone_box(&self.key),
             diff: clone_box(&self.diff),
-            valid: self.valid,
+            key_valid: self.key_valid,
+            val_valid: self.val_valid,
         }
     }
 }
@@ -634,7 +636,8 @@ where
             cursor,
             key,
             diff,
-            valid,
+            key_valid: valid,
+            val_valid: valid,
         }
     }
 
@@ -647,7 +650,9 @@ where
         F: Fn(&mut RawCursor<'s, K, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.cursor).unwrap();
-        self.valid = unsafe { self.cursor.item((&mut self.key, &mut self.diff)) }.is_some();
+        let valid = unsafe { self.cursor.item((&mut self.key, &mut self.diff)) }.is_some();
+        self.key_valid = valid;
+        self.val_valid = valid;
     }
 }
 
@@ -657,16 +662,17 @@ where
     R: WeightTrait + ?Sized,
 {
     fn key(&self) -> &K {
-        debug_assert!(self.valid);
+        debug_assert!(self.key_valid);
         self.key.as_ref()
     }
 
     fn val(&self) -> &DynUnit {
+        debug_assert!(self.val_valid);
         &()
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
-        if self.valid {
+        if self.val_valid {
             logic(&(), self.diff.as_ref());
         }
     }
@@ -676,16 +682,16 @@ where
     }
 
     fn weight(&mut self) -> &R {
-        debug_assert!(self.valid);
+        debug_assert!(self.val_valid);
         self.diff.as_ref()
     }
 
     fn key_valid(&self) -> bool {
-        self.valid
+        self.key_valid
     }
 
     fn val_valid(&self) -> bool {
-        self.valid
+        self.val_valid
     }
 
     fn step_key(&mut self) {
@@ -705,7 +711,7 @@ where
             return false;
         }
         self.seek_key(key);
-        self.key_valid() && self.key().eq(key)
+        self.get_key() == Some(key)
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -721,14 +727,14 @@ where
     }
 
     fn step_val(&mut self) {
-        self.valid = false;
+        self.val_valid = false;
     }
 
     fn seek_val(&mut self, _val: &DynUnit) {}
 
     fn seek_val_with(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
         if !predicate(&()) {
-            self.valid = false;
+            self.val_valid = false;
         }
     }
 
@@ -741,23 +747,23 @@ where
     }
 
     fn rewind_vals(&mut self) {
-        self.valid = true;
+        self.val_valid = true;
     }
 
     fn step_val_reverse(&mut self) {
-        self.valid = false;
+        self.val_valid = false;
     }
 
     fn seek_val_reverse(&mut self, _val: &DynUnit) {}
 
     fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
         if !predicate(&()) {
-            self.valid = false;
+            self.val_valid = false;
         }
     }
 
     fn fast_forward_vals(&mut self) {
-        self.valid = true;
+        self.val_valid = true;
     }
 
     fn weight_factory(&self) -> &'static dyn Factory<R> {
@@ -765,7 +771,7 @@ where
     }
 
     fn map_values(&mut self, logic: &mut dyn FnMut(&DynUnit, &R)) {
-        if self.valid {
+        if self.val_valid {
             logic(&(), self.diff.as_ref())
         }
     }
