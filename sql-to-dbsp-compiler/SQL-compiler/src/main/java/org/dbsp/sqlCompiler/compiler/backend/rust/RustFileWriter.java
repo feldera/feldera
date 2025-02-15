@@ -137,7 +137,6 @@ public class RustFileWriter {
                 };
                 use core::cmp::Ordering;
                 use rust_decimal::Decimal;
-                use dbsp::declare_tuples;
                 use feldera_sqllib::{
                     *,
                     array::*,
@@ -219,8 +218,8 @@ public class RustFileWriter {
         {
             fn combine(left: &Tuple2<T0, T1>, right: &Tuple2<T0, T1>) -> Tuple2<T0, T1> {
                 Tuple2::new(
-                    TS0::combine(&left.0, &right.0),
-                    TS1::combine(&left.1, &right.1),
+                    TS0::combine(left.get_0(), right.get_0()),
+                    TS1::combine(left.get_1(), right.get_1()),
                 )
             }
         }
@@ -283,7 +282,8 @@ public class RustFileWriter {
                     .append(DBSPTypeCode.TUPLE.rustName)
                     .append(i)
                     .append("::new(").increase()
-                    .join("\n", indexes, ix -> "TS" + ix + "::combine(&left." + ix + ", &right." + ix + "),")
+                    .join("\n", indexes,
+                            ix -> "TS" + ix + "::combine(left.get_" + ix + "(), &right.get_" + ix + "()),")
                     .newline().decrease()
                     .append(")").newline()
                     .decrease()
@@ -292,29 +292,13 @@ public class RustFileWriter {
                     .append("}").newline();
         }
 
-        stream.append("declare_tuples! {").increase();
         for (int i: used.tupleSizesUsed) {
             if (i <= 10)
                 // These are already pre-declared
                 continue;
+            stream.append("feldera_macros::declare_tuple! {");
             stream.append(this.tup(i));
-            stream.append(",\n");
-        }
-        stream.decrease().append("}\n\n");
-
-        for (int i: used.tupleSizesUsed) {
-            if (i <= 10)
-                // These are already pre-declared
-                continue;
-            stream.append("feldera_types::deserialize_without_context!(");
-            stream.append(DBSPTypeCode.TUPLE.rustName)
-                    .append(i);
-            for (int j = 0; j < i; j++) {
-                stream.append(", ");
-                stream.append("T")
-                        .append(j);
-            }
-            stream.append(");\n");
+            stream.append("}\n");
         }
         stream.append("\n");
 

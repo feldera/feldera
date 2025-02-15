@@ -261,18 +261,21 @@ public class ToRustVisitor extends CircuitVisitor {
         tuple.accept(this.innerVisitor);
         this.builder.append(") -> Self");
         this.builder.append(" {")
-                .increase()
-                .append("Self {")
                 .increase();
-        index = 0;
+        this.builder.append("let (");
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            this.builder.append(field.getSanitizedName())
+                    .append(", ");
+        }
+        this.builder.append(") = t.into();").newline();
+        this.builder.append("Self {")
+                .increase();
         for (DBSPTypeStruct.Field field: type.fields.values()) {
             this.builder
                     .append(field.getSanitizedName())
                     .append(": ");
-            this.generateInto("t." + index, field.type, field.type);
-            this.builder.append(", ")
-                .newline();
-            index++;
+            this.generateInto(field.getSanitizedName(), field.type, field.type);
+            this.builder.append(",").newline();
         }
         this.builder.decrease().append("}").newline();
         this.builder.decrease()
@@ -770,12 +773,12 @@ public class ToRustVisitor extends CircuitVisitor {
                 if (!keyStructType.hasField(field.name)) {
                     this.builder.append("if let Some(")
                             .append(name)
-                            .append(") = &changes.")
+                            .append(") = &changes.get_")
                             .append(index)
-                            .append(" { ")
-                            .append("updated.")
+                            .append("() { ")
+                            .append("*updated.get_")
                             .append(index)
-                            .append(" = ")
+                            .append("_mut() = ")
                             .append(name)
                             .append(".clone(); }")
                             .newline();
@@ -1083,17 +1086,15 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    /**
-     * Helper function for generateComparator and generateCmpFunc.
+    /** Helper function for generateComparator and generateCmpFunc.
      * @param fieldNo  Field index that is compared.
-     * @param ascending Comparison direction.
-     */
+     * @param ascending Comparison direction. */
     void emitCompareField(int fieldNo, boolean ascending) {
-        this.builder.append("let ord = left.")
+        this.builder.append("let ord = left.get_")
                 .append(fieldNo)
-                .append(".cmp(&right.")
+                .append("().cmp(right.get_")
                 .append(fieldNo)
-                .append(");")
+                .append("());")
                 .newline();
         this.builder.append("if ord != Ordering::Equal { return ord");
         if (!ascending)
@@ -1143,13 +1144,13 @@ public class ToRustVisitor extends CircuitVisitor {
 
     /** Generate a comparator */
     void generateCmpFunc(DBSPComparatorExpression comparator) {
-        // impl CmpFunc<(String, i32, i32)> for AscDesc {
-        //     fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
-        //         let ord = left.1.cmp(&right.1);
+        // impl CmpFunc<Tup3<String, i32, i32>> for AscDesc {
+        //     fn cmp(left: &Tup3<String, i32, i32>, right: &Tup<String, i32, i32>) -> std::cmp::Ordering {
+        //         let ord = left.get_1().cmp(right.get_1());
         //         if ord != Ordering::Equal { return ord; }
-        //         let ord = right.2.cmp(&left.2);
+        //         let ord = right.get_2().cmp(left.get_2());
         //         if ord != Ordering::Equal { return ord; }
-        //         let ord = left.3.cmp(&right.3);
+        //         let ord = left.get_3().cmp(&right.get_3());
         //         if ord != Ordering::Equal { return ord; }
         //         return Ordering::Equal;
         //     }

@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
@@ -306,8 +307,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.newline().append(".then(");
         this.builder.append("Extract::new(move |r: &");
         expression.comparedValueType().accept(this);
-        this.builder.append("| r.")
-                .append(expression.fieldNo);
+        this.builder.append("| ");
+        if (expression.comparedValueType().to(DBSPTypeTuple.class).getFieldType(expression.fieldNo).hasCopy())
+            this.builder.append("*");
+        this.builder.append("r.get_")
+                .append(expression.fieldNo)
+                .append("()");
         if (!expression.comparedValueType().to(DBSPTypeTuple.class).getFieldType(expression.fieldNo).hasCopy())
             this.builder.append(".clone()");
         this.builder.append(")");
@@ -1227,7 +1232,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         expression.expression.accept(this);
         if (expression.expression.is(DBSPFieldExpression.class) &&
-                expression.expression.getType().mayBeNull)
+                expression.expression.getType().mayBeNull &&
+                expression.expression.to(DBSPFieldExpression.class).expression.getType().code !=
+                        DBSPTypeCode.RAW_TUPLE)
             this.builder.append(".cloned()");
         else
             this.builder.append(".clone()");
@@ -1446,7 +1453,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         assert !this.compilingAssignmentLHS;
         this.compilingAssignmentLHS = true;
+        this.visitingChild = 0;
+        if (expression.left.is(DBSPFieldExpression.class) &&
+                !expression.left.getType().hasCopy())
+            this.builder.append("*");
         expression.left.accept(this);
+        this.visitingChild = 1;
         this.compilingAssignmentLHS = false;
         this.builder.append(" = ");
         expression.right.accept(this);
@@ -1588,109 +1600,100 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append("Some(x) => ");
         if (expression.needsSome())
             this.builder.append("Some(");
-        this.builder.append("(*x).get().")
-                .append(expression.fieldNo);
+        if (fieldType.hasCopy())
+            this.builder.append("*");
+        this.builder.append("(*x).get().get_")
+                .append(expression.fieldNo)
+                .append("()");
         if (!fieldType.hasCopy())
             this.builder.append(".clone()");
         if (expression.needsSome())
             this.builder.append(")");
-        this.builder.decrease().append("}").newline();
+        this.builder.append(",").newline().decrease().append("}");
         this.pop(expression);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPFieldExpression expression) {
-        IDBSPInnerNode parent = this.getParent();
-        this.push(expression);
-        boolean avoidRef = false;
-        if (parent != null) {
-            if (parent.is(DBSPBinaryExpression.class)) {
-                DBSPBinaryExpression bin = parent.to(DBSPBinaryExpression.class);
-                if (bin.opcode == DBSPOpcode.SQL_INDEX ||
-                        bin.opcode == DBSPOpcode.MAP_INDEX ||
-                        bin.opcode == DBSPOpcode.VARIANT_INDEX) {
-                    if (this.visitingChild == 0)
-                        // We are explicitly taking a reference for these cases
-                        avoidRef = true;
-                }
-            } else if (parent.is(DBSPBorrowExpression.class)) {
-                // Pattern appearing in aggregation
-                avoidRef = true;
-            }
-        }
-
         // Expression of the form x.0
         // We have four cases, depending on the nullability of x, and of the 0-th field
-        // in the type of x.  Invariant:
-        // we generate code such that
-        // - if the field is further indexed, we return a reference to the field (as_ref())
-        // - if the field is a structure, we return a reference (as_ref()).  We expect
-        //   that the consumer will clone this if necessary.
-        // - if the field is a scalar, we return the field's value (cloned())
+        // in the type of x:
+        // Type                       Result type   Access
+        // Tup1<i32>                  i32           *(x.get_0())
+        // Tup1<Option<i32>>          Option<i32>   x.get_0().as_ref().cloned()
+        // Option<Tup1<i32>>          Option<i32>   x.as_ref().map(|t| t.get_0()).cloned()
+        // Option<Tup1<Option1<i32>>  Option<i32>   x.as_ref().and_then(|t| t.get_0().as_ref()).cloned()
+        boolean isRaw = true;
         DBSPType sourceType = expression.expression.getType();
-        boolean fieldTypeIsNullable = false;
+        boolean tupleIsNullable = sourceType.mayBeNull;  // false -> cases 0 and 1
+        boolean fieldIsNullable = false;  // false -> cases 0 and 2
+        boolean resultIsNullable = expression.getType().mayBeNull; // false -> case 0
+
         if (sourceType.is(DBSPTypeTupleBase.class)) {
             // This should always be true when we compile SQL programs, but
-            // it may be false when we generate some testing code
-            DBSPType fieldType = sourceType.to(DBSPTypeTupleBase.class).getFieldType(expression.fieldNo);
-            fieldTypeIsNullable = fieldType.mayBeNull;
+            // it may be false when we generate some testing code.  In that case,
+            // the type is Any.
+            DBSPTypeTupleBase tuple = sourceType.to(DBSPTypeTupleBase.class);
+            fieldIsNullable = tuple.getFieldType(expression.fieldNo).mayBeNull;
+            isRaw = tuple.isRaw();
         }
-        if (!sourceType.mayBeNull) {
-            // x is not nullable
+
+        if (isRaw) {
+            // RAW tuples are used in more constrained ways
+            assert !sourceType.mayBeNull;
             expression.expression.accept(this);
-            this.builder.append(".")
-                    .append(expression.fieldNo);
-            if (expression.getType().mayBeNull && !this.compilingAssignmentLHS && !avoidRef) {
-                // The value is in an option.
-                this.builder.append(".as_ref()");
-                if (expression.getType().hasCopy()) {
-                    // This cloned() is used to convert Option<&T> into a T value.
-                    // It is done only for scalar Ts, because all other expressions
-                    // are followed by a real clone() call, which will be also compiled into a cloned().
-                    this.builder.append(".cloned()");
-                }
+            this.builder.append(".").append(expression.fieldNo);
+            return VisitDecision.STOP;
+        }
+
+        IDBSPInnerNode parent = this.getParent();
+        this.push(expression);
+        boolean needMut = this.compilingAssignmentLHS;
+        boolean toplevelField = parent != null && !parent.is(DBSPFieldExpression.class);
+        boolean deref = false;
+        if (parent != null) {
+            if (parent.is(DBSPBaseTupleExpression.class) ||
+                parent.is(DBSPApplyExpression.class) ||
+                parent.is(DBSPUnaryExpression.class) ||
+                parent.is(DBSPBinaryExpression.class) ||
+                parent.is(DBSPSomeExpression.class) ||
+                parent.is(DBSPCastExpression.class))
+                deref = true;
+        }
+
+        if (!tupleIsNullable) {
+            // x is not nullable
+            if (deref) {
+                this.builder.append("*");
             }
+            expression.expression.accept(this);
+            this.builder.append(".get_")
+                    .append(expression.fieldNo);
+            if (needMut)
+                this.builder.append("_mut");
+            this.builder.append("()");
+            if (toplevelField && !expression.getType().hasCopy() && resultIsNullable)
+                this.builder.append(".as_ref()");
         } else {
             // Accessing a field within a nullable struct is allowed
-            if (!expression.getType().mayBeNull) {
-                // If the result is not null, we need to unwrap().
-                // This should really not happen.
-                assert false;
-
-                this.compiler.reportWarning(expression.getSourcePosition(), "Potential crash",
-                        "Expecting a non-null field from a possibly nullable struct");
-                expression.expression.accept(this);
-                this.builder.append(".unwrap().")
-                        .append(expression.fieldNo);
+            expression.expression.accept(this);
+            if (toplevelField && !expression.type.is(DBSPTypeTupleBase.class))
+                this.builder.append(".as_ref()");
+            if (fieldIsNullable) {
+                this.builder.append(".and_then_ref(|x| x.");
             } else {
-                expression.expression.accept(this);
-                if (!expression.expression.is(DBSPFieldExpression.class))
-                    this.builder.append(".as_ref()");
-                this.builder.increase();
-                if (fieldTypeIsNullable) {
-                    this.builder.append(".and_then(|x| x.");
-                } else {
-                    this.builder.append(".map(|x| ");
-                    if (!expression.getType().hasCopy())
-                        this.builder.append("&");
-                    this.builder.append("x.");
-                }
-                /*
-                if (this.options.ioOptions.verbosity > 0) {
-                    this.builder.append(": ");
-                    sourceType.withMayBeNull(false).ref().accept(this);
-                }
-                 */
-                this.builder.append(expression.fieldNo);
-                if (fieldTypeIsNullable &&
-                        expression.getType().mayBeNull &&
-                        !expression.getType().hasCopy() &&
-                        !avoidRef) {
-                    this.builder.append(".as_ref()");
-                }
-                this.builder.append(")").decrease();
+                this.builder.append(".as_ref().map(|x| ");
+                this.builder.append("x.");
             }
+            this.builder.append("get_")
+                    .append(expression.fieldNo);
+            if (needMut)
+                this.builder.append("_mut");
+            this.builder.append("()");
+            this.builder.append(")");
+            if (fieldIsNullable)
+                this.builder.append(".as_ref()");
         }
         this.pop(expression);
         return VisitDecision.STOP;

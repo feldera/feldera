@@ -70,6 +70,27 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, Neg};
 
+/// a variant of Option::and_then which returns a reference
+#[doc(hidden)]
+pub trait AndThenRef<T, U> {
+    fn and_then_ref<F>(&self, f: F) -> &Option<U>
+    where
+        F: FnOnce(&T) -> &Option<U>;
+}
+
+#[doc(hidden)]
+impl<T, U> AndThenRef<T, U> for Option<T> {
+    fn and_then_ref<F>(&self, f: F) -> &Option<U>
+    where
+        F: FnOnce(&T) -> &Option<U>,
+    {
+        match self {
+            Some(v) => f(v),
+            None => &Option::None,
+        }
+    }
+}
+
 /// Convert a value of a SQL data type to an integer
 /// that preserves ordering.  Used for partitioned_rolling_aggregates
 #[doc(hidden)]
@@ -1666,7 +1687,7 @@ where
         let item = unsafe { cursor.key().downcast::<D>() };
         let data = mapper(item);
         let weight = unsafe { *cursor.weight().downcast::<ZWeight>() };
-        tuples.push(Tup2(Tup2(data, ()), weight));
+        tuples.push(Tup2::new(Tup2::new(data, ()), weight));
         cursor.step_key();
     }
     WSet::from_tuples((), tuples)

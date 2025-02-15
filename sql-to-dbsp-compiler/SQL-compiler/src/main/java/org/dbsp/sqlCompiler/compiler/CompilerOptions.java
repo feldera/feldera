@@ -183,7 +183,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         @Nullable
         public String inputFile = null;
         @Parameter(names = "-v", description = "Output verbosity")
-        public int verbosity = 0;
+        public int verbosity = 1;
         @Parameter(names = "--handles",
                 description = "Use handles (true) or Catalog (false) in the emitted Rust code")
         public boolean emitHandles = false;
