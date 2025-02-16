@@ -512,17 +512,28 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return call.op.getName().toLowerCase();
     }
 
-    public static DBSPExpression compilePolymorphicFunction(String opName, CalciteObject node, DBSPType resultType,
-                                                            List<DBSPExpression> ops, Integer... expectedArgCount) {
+    public static DBSPExpression compilePolymorphicFunction(
+            boolean adjustNullability, String opName, CalciteObject node, DBSPType resultType,
+            List<DBSPExpression> ops, Integer... expectedArgCount) {
         validateArgCount(node, opName, ops.size(), expectedArgCount);
         StringBuilder functionName = new StringBuilder(opName);
         DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);
+        boolean resultNullable = false;
         for (DBSPExpression op: ops) {
             DBSPType type = op.getType();
             // Form the function name from the argument types
             functionName.append("_").append(type.baseTypeWithSuffix());
+            if (type.mayBeNull)
+                resultNullable = true;
         }
-        return new DBSPApplyExpression(node, functionName.toString(), resultType, operands);
+        DBSPType intermediateResultType = resultType;
+        if (adjustNullability && resultType.mayBeNull && !resultNullable) {
+            intermediateResultType = resultType.withMayBeNull(false);
+        }
+        DBSPExpression result = new DBSPApplyExpression(node, functionName.toString(), intermediateResultType, operands);
+        if (resultType.sameType(intermediateResultType))
+            return result;
+        return result.castToNullable();
     }
 
     /**
@@ -530,16 +541,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      * depending on the argument types.
      * @param  call Operation that is compiled.
      * @param  node CalciteObject holding the call.
+     * @param  adjustNullability  If true infer nullability from arguments' nullability.  Else trust the supplied type.
      * @param  resultType Type of result produced by call.  We assume that
      *                    the typechecker is right, and this is the correct
-     *                    result produced by this function.  No cast needed.
+     *                    result produced by this function, modulo nullability.  No cast needed.
      * @param  ops  Translated operands for the call.
-     * @param  expectedArgCount A list containing all known possible argument counts.
-     */
-    static DBSPExpression compilePolymorphicFunction(RexCall call, CalciteObject node, DBSPType resultType,
-                                    List<DBSPExpression> ops, Integer... expectedArgCount) {
+     * @param  expectedArgCount A list containing all known possible argument counts. */
+    static DBSPExpression compilePolymorphicFunction(
+            boolean adjustNullability,
+            RexCall call, CalciteObject node, DBSPType resultType,
+            List<DBSPExpression> ops, Integer... expectedArgCount) {
         String opName = getCallName(call);
-        return compilePolymorphicFunction(opName, node, resultType, ops, expectedArgCount);
+        return compilePolymorphicFunction(adjustNullability, opName, node, resultType, ops, expectedArgCount);
     }
 
     static String typeString(DBSPType type) {
@@ -942,16 +955,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                     new DBSPTypeInteger(right.getNode(), 32, true, rightType.mayBeNull), false);
                         }
 
-                        return compilePolymorphicFunction(call, node, type, Linq.list(left, right), 2);
+                        return compilePolymorphicFunction(true, call, node, type, Linq.list(left, right), 2);
                     }
                     case "numeric_inc":
                     case "sign":
                     case "abs": {
-                        return compilePolymorphicFunction(call, node, type,
+                        return compilePolymorphicFunction(true, call, node, type,
                                 ops, 1);
                     }
                     case "st_distance": {
-                        return compilePolymorphicFunction(call, node, type,
+                        return compilePolymorphicFunction(true, call, node, type,
                                 ops, 2);
                     }
                     case "log10":
@@ -962,13 +975,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         if (!ops.get(0).type.mayBeNull) {
                             type = type.withMayBeNull(false);
                         }
-                        return compilePolymorphicFunction(call, node, type, ops, 1);
+                        return compilePolymorphicFunction(true, call, node, type, ops, 1);
                     }
                     case "log": {
                         // Turn the arguments into Double
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureDouble(ops, i);
-                        return compilePolymorphicFunction(call, node, type, ops, 1, 2);
+                        return compilePolymorphicFunction(true, call, node, type, ops, 1, 2);
                     }
                     case "power": {
                         validateArgCount(node, operationName, ops.size(), 2);
@@ -991,7 +1004,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                     ops.set(0, ops.get(0).cast(type, false));
                                 }
                                 return compilePolymorphicFunction(
-                                        "sqrt", node, type, ops, 1);
+                                        true, "sqrt", node, type, ops, 1);
                             }
                         }
 
@@ -1002,7 +1015,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             }
                         }
 
-                        return compilePolymorphicFunction(call, node, type, ops, 2);
+                        return compilePolymorphicFunction(true, call, node, type, ops, 2);
                     }
                     case "pi": {
                         return compileFunction(call, node, type, ops, 0);
@@ -1030,7 +1043,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "csch":
                     case "exp": {
                         this.ensureDouble(ops, 0);
-                        return compilePolymorphicFunction(call, node, type, ops, 1);
+                        return compilePolymorphicFunction(true, call, node, type, ops, 1);
                     }
                     case "is_inf":
                     case "is_nan": {
@@ -1038,12 +1051,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         if (!ops.get(0).type.is(DBSPTypeReal.class)) {
                             this.ensureDouble(ops, 0);
                         }
-                        return compilePolymorphicFunction(call, node, type, ops, 1);
+                        return compilePolymorphicFunction(true, call, node, type, ops, 1);
                     }
                     case "atan2": {
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureDouble(ops, i);
-                        return compilePolymorphicFunction(call, node, type, ops, 2);
+                        return compilePolymorphicFunction(true, call, node, type, ops, 2);
                     }
                     case "split":
                         // Calcite should be doing this, but it doesn't.
@@ -1168,7 +1181,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compileFunction(call, node, type, ops, 1);
                     case "parse_json":
                     case "to_json":
-                        return compilePolymorphicFunction(call, node, type, ops, 1);
+                        return compilePolymorphicFunction(false, call, node, type, ops, 1);
                     case "sequence":
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureInteger(ops, i, 32);
@@ -1348,7 +1361,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                         + " applied to integer arguments is useless.");
                         return ops.get(0);
                     }
-                    return compilePolymorphicFunction(call, node, type, ops, 1);
+                    return compilePolymorphicFunction(true, call, node, type, ops, 1);
                 } else {
                     throw operandCountError(node, operationName, call.operandCount());
                 }
