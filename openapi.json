@@ -2218,6 +2218,13 @@
                 "description": "Name of the index that the connector is attached to.\n\nThis property is valid for output connectors only.  It is used with data\ntransports and formats that expect output updates in the form of key/value\npairs, where the key typically represents a unique id associated with the\ntable or view.\n\nTo support such output formats, an output connector can be attached to an\nindex created using the SQL CREATE INDEX statement.  An index of a table\nor view contains the same updates as the table or view itself, indexed by\none or more key columns.\n\nSee individual connector documentation for details on how they work\nwith indexes.",
                 "nullable": true
               },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Arbitrary user-defined text labels associated with the connector.\n\nThese labels can be used in conjunction with the `start_after` property\nto control the start order of connectors."
+              },
               "max_batch_size": {
                 "type": "integer",
                 "format": "int64",
@@ -2233,6 +2240,14 @@
               "paused": {
                 "type": "boolean",
                 "description": "Create connector in paused state.\n\nThe default is `false`."
+              },
+              "start_after": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Start the connector after all connectors with specified labels.\n\nThis property is used to control the start order of connectors.\nThe connector will not start until all connectors with the specified\nlabels have finished processing all inputs.",
+                "nullable": true
               },
               "transport": {
                 "$ref": "#/components/schemas/TransportConfig"
