@@ -110,13 +110,13 @@
           }}
         >
           {#if 'insert' in row}
-            <td class="block h-7 w-20 bg-opacity-30 pt-1 text-center font-mono bg-success-100-900"
-              >Insert</td
-            >
+            <td class="block h-7 w-20 bg-opacity-30 pt-1 text-center font-mono bg-success-100-900">
+              Insert
+            </td>
           {:else}
-            <td class="block h-7 w-20 bg-opacity-30 text-center font-mono bg-error-100-900"
-              >Delete</td
-            >
+            <td class="block h-7 w-20 bg-opacity-30 pt-1 text-center font-mono bg-error-100-900">
+              Delete
+            </td>
           {/if}
 
           {#each Object.values(data) as value}
