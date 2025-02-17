@@ -218,7 +218,7 @@ export class SplitNewlineTransformStream extends TransformStream<Uint8Array, str
     let match
     while ((match = this.newlineRegex.exec(this.buffer)) !== null) {
       // Extract the line from the start of the buffer up to the matched newline
-      const line = this.buffer.slice(0, match.index)
+      const line = this.buffer.slice(0, match.index + match[0].length) // Include the newline character at the end of the line with `match[0].length`: '\n' => 1, '\r\n' => 2
       controller.enqueue(line)
 
       // Update buffer by removing the processed line and newline
