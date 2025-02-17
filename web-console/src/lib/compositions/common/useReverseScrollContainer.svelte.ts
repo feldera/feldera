@@ -39,12 +39,13 @@ export const useReverseScrollContainer = () => {
     if (!ref || !(ref instanceof HTMLDivElement)) {
       return
     }
-    stickToBottom = Math.round(ref.scrollTop - ref.scrollHeight + ref.clientHeight) >= 0
+
+    stickToBottom = Math.round(ref.scrollTop - ref.scrollHeight + ref.clientHeight + 1) >= 0 // + 1 pixel is added to account for imprecision between calculated .scrollTop and .scrollHeight
   }
 
   return {
-    action: ((_node, props?: { observe?: (node: HTMLElement) => HTMLElement }) => {
-      const node = props?.observe?.(_node) ?? _node
+    action: ((_node, props?: { getContainerElement?: (node: HTMLElement) => HTMLElement }) => {
+      const node = props?.getContainerElement?.(_node) ?? _node
       lastHeight = node.offsetHeight
       if (!(node instanceof HTMLDivElement)) {
         return
