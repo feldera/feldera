@@ -76,13 +76,16 @@ impl OutputFormat for JsonOutputFormat {
         // Snowflake and Debezium require one record per message.
         if matches!(
             json_config.update_format,
-            JsonUpdateFormat::Snowflake | JsonUpdateFormat::Debezium |
-            JsonUpdateFormat::Redis
+            JsonUpdateFormat::Snowflake | JsonUpdateFormat::Debezium | JsonUpdateFormat::Redis
         ) {
             json_config.buffer_size_records = 1;
         }
 
-        Ok(Box::new(JsonEncoder::new(consumer, json_config, value_schema)))
+        Ok(Box::new(JsonEncoder::new(
+            consumer,
+            json_config,
+            value_schema,
+        )))
     }
 }
 
