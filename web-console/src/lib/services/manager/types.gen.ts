@@ -160,6 +160,30 @@ export type Configuration = {
 export type ConnectorConfig = OutputBufferConfig & {
   format?: FormatConfig | null
   /**
+   * Name of the index that the connector is attached to.
+   *
+   * This property is valid for output connectors only.  It is used with data
+   * transports and formats that expect output updates in the form of key/value
+   * pairs, where the key typically represents a unique id associated with the
+   * table or view.
+   *
+   * To support such output formats, an output connector can be attached to an
+   * index created using the SQL CREATE INDEX statement.  An index of a table
+   * or view contains the same updates as the table or view itself, indexed by
+   * one or more key columns.
+   *
+   * See individual connector documentation for details on how they work
+   * with indexes.
+   */
+  index?: string | null
+  /**
+   * Arbitrary user-defined text labels associated with the connector.
+   *
+   * These labels can be used in conjunction with the `start_after` property
+   * to control the start order of connectors.
+   */
+  labels?: Array<string>
+  /**
    * Maximum batch size, in records.
    *
    * This is the maximum number of records to process in one batch through
@@ -204,6 +228,14 @@ export type ConnectorConfig = OutputBufferConfig & {
    * The default is `false`.
    */
   paused?: boolean
+  /**
+   * Start the connector after all connectors with specified labels.
+   *
+   * This property is used to control the start order of connectors.
+   * The connector will not start until all connectors with the specified
+   * labels have finished processing all inputs.
+   */
+  start_after?: Array<string> | null
   transport: TransportConfig
 }
 
@@ -329,12 +361,30 @@ export type DatagenStrategy =
  * * `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion
  * mode.
  */
-export type DeltaTableIngestMode = 'snapshot' | 'follow' | 'snapshot_and_follow'
+export type DeltaTableIngestMode = 'snapshot' | 'follow' | 'snapshot_and_follow' | 'cdc'
 
 /**
  * Delta table input connector configuration.
  */
 export type DeltaTableReaderConfig = {
+  /**
+   * A predicate that determines whether the record represents a deletion.
+   *
+   * This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+   * each row in the Delta table to determine whether the row represents a deletion event.
+   * Its value must be a valid Boolean SQL expression that can be used in a query of the
+   * form `SELECT * from <table> WHERE <cdc_delete_filter>`.
+   */
+  cdc_delete_filter?: string | null
+  /**
+   * An expression that determines the ordering of updates in the Delta table.
+   *
+   * This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+   * each row in the Delta table to determine the order in which updates in the table should
+   * be applied. Its value must be a valid SQL expression that can be used in a query of the
+   * form `SELECT * from <table> ORDER BY <cdc_order_by>`.
+   */
+  cdc_order_by?: string | null
   /**
    * Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,
    * "2024-12-09T16:09:53+00:00".
@@ -1257,6 +1307,17 @@ export type PipelineConfig = {
    * Defaults to 0.
    */
   min_batch_size_records?: number
+  /**
+   * Optionally, a list of CPU numbers for CPUs to which the pipeline may pin
+   * its worker threads.  Specify at least twice as many CPU numbers as
+   * workers.  CPUs are generally numbered starting from 0.  The pipeline
+   * might not be able to honor CPU pinning requests.
+   *
+   * CPU pinning can make pipelines run faster and perform more consistently,
+   * as long as different pipelines running on the same machine are pinned to
+   * different CPUs.
+   */
+  pin_cpus?: Array<number>
   resources?: ResourceConfig
   storage?: StorageOptions | null
   /**
@@ -1444,6 +1505,20 @@ export type PostPutPipeline = {
   runtime_config?: RuntimeConfig | null
   udf_rust?: string | null
   udf_toml?: string | null
+}
+
+/**
+ * Postgres input connector configuration.
+ */
+export type PostgresReaderConfig = {
+  /**
+   * Query that specifies what data to fetch from postgres.
+   */
+  query: string
+  /**
+   * Postgres URI.
+   */
+  uri: string
 }
 
 /**
@@ -1806,6 +1881,17 @@ export type RuntimeConfig = {
    * Defaults to 0.
    */
   min_batch_size_records?: number
+  /**
+   * Optionally, a list of CPU numbers for CPUs to which the pipeline may pin
+   * its worker threads.  Specify at least twice as many CPU numbers as
+   * workers.  CPUs are generally numbered starting from 0.  The pipeline
+   * might not be able to honor CPU pinning requests.
+   *
+   * CPU pinning can make pipelines run faster and perform more consistently,
+   * as long as different pipelines running on the same machine are pinned to
+   * different CPUs.
+   */
+  pin_cpus?: Array<number>
   resources?: ResourceConfig
   storage?: StorageOptions | null
   /**
@@ -2054,6 +2140,10 @@ export type TransportConfig =
   | {
       config: IcebergReaderConfig
       name: 'iceberg_input'
+    }
+  | {
+      config: PostgresReaderConfig
+      name: 'postgres_input'
     }
   | {
       config: DatagenInputConfig

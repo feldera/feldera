@@ -2843,6 +2843,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "core_affinity"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "622892f5635ce1fc38c8f16dfc938553ed64af482edb5e150bf4caedbfcb2304"
+dependencies = [
+ "libc",
+ "num_cpus",
+ "winapi",
+]
+
+[[package]]
 name = "cpp_demangle"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3703,6 +3714,7 @@ dependencies = [
  "bytemuck",
  "chrono",
  "clap 4.5.27",
+ "core_affinity",
  "crc32c",
  "criterion",
  "crossbeam",
@@ -3721,6 +3733,7 @@ dependencies = [
  "futures",
  "hashbrown 0.14.5",
  "impl-trait-for-tuples",
+ "indexmap 2.7.1",
  "indicatif",
  "io-uring",
  "itertools 0.14.0",

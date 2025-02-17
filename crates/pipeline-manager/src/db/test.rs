@@ -250,6 +250,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 storage_class: val.val12,
             },
             clock_resolution_usecs: val.val13,
+            pin_cpus: Vec::new(),
         })
         .unwrap()
     }
@@ -962,6 +963,7 @@ async fn pipeline_versioning() {
             storage_class: None,
         },
         clock_resolution_usecs: None,
+        pin_cpus: Vec::new(),
     })
     .unwrap();
     handle
@@ -1388,6 +1390,7 @@ async fn pipeline_provision_version_guard() {
                     max_buffering_delay_usecs: 0,
                     resources: Default::default(),
                     clock_resolution_usecs: None,
+                    pin_cpus: Vec::new(),
                 })
                 .unwrap(),
             ),

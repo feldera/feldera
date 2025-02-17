@@ -10,8 +10,10 @@ use crate::{
     storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
     DetailedError,
 };
-use enum_map::EnumMap;
+use core_affinity::{get_core_ids, CoreId};
+use enum_map::{enum_map, EnumMap};
 use feldera_types::config::StorageCompression;
+use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::path::Path;
@@ -34,6 +36,7 @@ use std::{
     },
     thread::{Builder, JoinHandle, Result as ThreadResult},
 };
+use tracing::{info, warn};
 use typedmap::TypedDashMap;
 
 use super::dbsp_handle::{CircuitStorageConfig, Layout};
@@ -228,6 +231,7 @@ struct RuntimeInner {
     kill_signal: AtomicBool,
     background_threads: Mutex<Vec<JoinHandle<()>>>,
     buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache>>>,
+    pin_cpus: Vec<EnumMap<ThreadType, CoreId>>,
     worker_sequence_numbers: Vec<AtomicUsize>,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
@@ -240,6 +244,57 @@ impl Debug for RuntimeInner {
             .field("storage", &self.storage)
             .finish()
     }
+}
+
+fn display_core_ids<'a>(iter: impl Iterator<Item = &'a CoreId>) -> String {
+    format!(
+        "{:?}",
+        iter.map(|core| core.id).collect::<Vec<_>>().as_slice()
+    )
+}
+
+fn map_pin_cpus(nworkers: usize, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, CoreId>> {
+    let pin_cpus = pin_cpus
+        .iter()
+        .copied()
+        .map(|id| CoreId { id })
+        .collect::<IndexSet<_>>();
+    if pin_cpus.len() < 2 * nworkers {
+        if !pin_cpus.is_empty() {
+            warn!("ignoring cpu pinning request because {nworkers} workers require {} pin CPUs but only {} were specified",
+                      2 * nworkers, pin_cpus.len())
+        }
+        return Vec::new();
+    }
+
+    let Some(core_ids) = get_core_ids() else {
+        warn!("ignoring cpu pinning request because this system's core ids list could not be obtained");
+        return Vec::new();
+    };
+    let core_ids = core_ids.iter().copied().collect::<IndexSet<_>>();
+
+    let missing_cpus = pin_cpus.difference(&core_ids).copied().collect::<Vec<_>>();
+    if !missing_cpus.is_empty() {
+        warn!("ignoring cpu pinning request because requested cpus {missing_cpus:?} are not available (available cpus are: {})",
+              display_core_ids(core_ids.iter()));
+        return Vec::new();
+    }
+
+    let fg_cpus = &pin_cpus[0..nworkers];
+    let bg_cpus = &pin_cpus[nworkers..nworkers * 2];
+    info!(
+        "pinning foreground workers to cpus {} and background workers to cpus {}",
+        display_core_ids(fg_cpus.iter()),
+        display_core_ids(bg_cpus.iter())
+    );
+    (0..nworkers)
+        .map(|i| {
+            enum_map! {
+                ThreadType::Foreground => fg_cpus[i],
+                ThreadType::Background => bg_cpus[i],
+            }
+        })
+        .collect()
 }
 
 impl RuntimeInner {
@@ -281,9 +336,24 @@ impl RuntimeInner {
             buffer_caches: (0..nworkers)
                 .map(|_| EnumMap::from_fn(|_| Arc::new(BufferCache::new(cache_size_bytes))))
                 .collect(),
+            pin_cpus: map_pin_cpus(nworkers, &config.pin_cpus),
             worker_sequence_numbers: (0..nworkers).map(|_| AtomicUsize::new(0)).collect(),
             panic_info: (0..nworkers).map(|_| RwLock::new(None)).collect(),
         })
+    }
+
+    fn pin_cpu(&self) {
+        if !self.pin_cpus.is_empty() {
+            let worker_index = Runtime::worker_index();
+            let thread_type = ThreadType::current();
+            let core = self.pin_cpus[worker_index][thread_type];
+            if !core_affinity::set_for_current(core) {
+                warn!(
+                    "failed to pin worker {worker_index} {thread_type} thread to core {}",
+                    core.id
+                );
+            }
+        }
     }
 }
 
@@ -401,9 +471,10 @@ impl Runtime {
                     .name(format!("dbsp-worker-{worker_index}"))
                     .spawn(move || {
                         // Set the worker's runtime handle and index
-                        RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
                         WORKER_INDEX.set(worker_index);
                         ThreadType::set_current(ThreadType::Foreground);
+                        runtime.inner().pin_cpu();
+                        RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
 
                         // Build the worker's circuit
                         build_circuit();
@@ -647,9 +718,12 @@ impl Runtime {
         let worker_index = Self::worker_index();
         let join_handle = builder
             .spawn(move || {
-                RUNTIME.with(|rt| *rt.borrow_mut() = runtime);
                 WORKER_INDEX.set(worker_index);
                 ThreadType::set_current(ThreadType::Background);
+                if let Some(runtime) = runtime {
+                    runtime.inner().pin_cpu();
+                    RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
+                }
                 f()
             })
             .unwrap_or_else(|error| {
@@ -807,6 +881,7 @@ mod tests {
         let path_clone = path.clone();
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
+            pin_cpus: Vec::new(),
             storage: Some(CircuitStorageConfig {
                 config: StorageConfig {
                     path: path.to_string_lossy().into_owned(),

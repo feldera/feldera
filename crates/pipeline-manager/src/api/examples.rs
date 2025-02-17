@@ -116,6 +116,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
                 storage_class: None,
             },
             clock_resolution_usecs: Some(100_000),
+            pin_cpus: Vec::new(),
         })
         .unwrap(),
         program_code: "CREATE TABLE table2 ( col2 VARCHAR );".to_string(),
