@@ -67,10 +67,18 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
 
     // Constructor
     let constructor = quote! {
-        impl<#(#generics),*> #name<#(#generics),*> {
-            #[allow(clippy::too_many_arguments)]
-            pub fn new(#(#fields: #generics),*) -> Self {
-                Self(42, #(#fields),*)
+    impl<#(#generics),*> #name<#(#generics),*> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(#(#fields: #generics),*) -> Self
+    where
+        #(#generics: core::hash::Hash,)*
+    {
+                let mut hasher = xxhash_rust::xxh3::Xxh3Default::new();
+                #(
+                    #fields.hash(&mut hasher);
+                )*
+
+                Self(hasher.digest(), #(#fields),*)
             }
         }
     };
@@ -106,7 +114,7 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
             type Output = Self;
             fn mul_by_ref(&self, other: &W) -> Self::Output {
                 let #name(_hash, #(#fields),*) = self;
-                #name(42, #(#fields.mul_by_ref(other)),*)
+                #name(0x0, #(#fields.mul_by_ref(other)),*)
             }
         }
 
@@ -115,7 +123,7 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
             #(#generics: #dbsp_crate::algebra::HasZero,)*
         {
             fn zero() -> Self {
-                #name(42, #(#generics::zero()),*)
+                #name(0x0, #(#generics::zero()),*)
             }
             fn is_zero(&self) -> bool {
                 let mut result = true;
@@ -132,7 +140,7 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
             fn add_by_ref(&self, other: &Self) -> Self {
                 let #name(_hash, #(#fields),*) = self;
                 let #name( _hash, #(#fields_of_other),*) = other;
-                #name(42, #(#fields.add_by_ref(#fields_of_other)),*)
+                #name(0x0, #(#fields.add_by_ref(#fields_of_other)),*)
             }
         }
 
@@ -141,8 +149,9 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
             #(#generics: #dbsp_crate::algebra::AddAssignByRef,)*
         {
             fn add_assign_by_ref(&mut self, other: &Self) {
-                let #name(_hash, #(ref mut #fields),*) = self;
-                let #name( _hash, #(ref #fields_of_other),*) = other;
+                let #name(ref mut hash, #(ref mut #fields),*) = self;
+                let #name(_hash, #(ref #fields_of_other),*) = other;
+                *hash = 0x0;
 
                 #(#fields.add_assign_by_ref(#fields_of_other);)*
             }
@@ -154,7 +163,7 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
         {
             fn neg_by_ref(&self) -> Self {
                 let #name(_hash, #(#fields),*) = self;
-                #name(42, #(#fields.neg_by_ref()),*)
+                #name(0x0, #(#fields.neg_by_ref()),*)
             }
         }
     };
@@ -162,7 +171,7 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
     let conversion_traits = quote! {
         impl<#(#generics),*> From<(#(#generics),*)> for #name<#(#generics),*> {
             fn from((#(#fields),*): (#(#generics),*)) -> Self {
-                Self(42, #(#fields),*)
+                Self(0x0, #(#fields),*)
             }
         }
 
@@ -244,9 +253,11 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
             fn eq(&self, other: &Self) -> bool {
                 let #name(hash, #(#fields),*) = self;
                 let #name(other_hash, #(#fields_of_other),*) = other;
-                if *hash != 0 && *other_hash != 0 {
-                    *hash == *other_hash
-                } else {
+
+                if *hash != 0x0 && *other_hash != 0x0 && *hash != *other_hash {
+                    return false;
+                }
+                else {
                     #(#fields == #fields_of_other)&&*
                 }
             }
@@ -257,6 +268,12 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
             fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
                 let #name(_hash, #(#fields),*) = self;
                 let #name(_hash, #(#fields_of_other),*) = other;
+
+                /*
+                if *hash != 0x0 && *hash_other != 0x0 && *hash == *hash_other {
+                    return core::cmp::Ordering::Equal;
+                }*/
+
                 let mut result = Some(core::cmp::Ordering::Equal);
                 #(
                     result = result.and_then(|ord| match ord {
@@ -270,11 +287,14 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
 
         impl<#(#generics: Ord),*> Ord for #name<#(#generics),*> {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-                let #name(hash, #(#fields),*) = self;
-                let #name(hash_other, #(#fields_of_other),*) = other;
-                if *hash != 0 && *hash_other != 0 && *hash == *hash_other {
+                let #name(_hash, #(#fields),*) = self;
+                let #name(_hash_other, #(#fields_of_other),*) = other;
+
+                /*
+                if *hash != 0x0 && *hash_other != 0x0 && *hash == *hash_other {
                     return core::cmp::Ordering::Equal;
                 }
+                */
 
                 let mut result = core::cmp::Ordering::Equal;
                 #(
