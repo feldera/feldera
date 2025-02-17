@@ -600,6 +600,9 @@ pub enum ControllerError {
     /// Unknown input endpoint name.
     UnknownInputEndpoint { endpoint_name: String },
 
+    /// Unknown output endpoint name.
+    UnknownOutputEndpoint { endpoint_name: String },
+
     /// Error parsing input data.
     ///
     /// Parser errors are expected to be
@@ -668,6 +671,7 @@ impl ResponseError for ControllerError {
             } => StatusCode::NOT_FOUND,
             Self::Config { .. } => StatusCode::BAD_REQUEST,
             Self::UnknownInputEndpoint { .. } => StatusCode::NOT_FOUND,
+            Self::UnknownOutputEndpoint { .. } => StatusCode::NOT_FOUND,
             Self::ParseError { .. } => StatusCode::BAD_REQUEST,
             Self::NotSupported { .. } => StatusCode::BAD_REQUEST,
             Self::EnterpriseFeature(_) => StatusCode::NOT_IMPLEMENTED,
@@ -766,6 +770,7 @@ impl DbspDetailedError for ControllerError {
                 Cow::from(format!("ConfigError.{}", config_error.error_code()))
             }
             Self::UnknownInputEndpoint { .. } => Cow::from("UnknownInputEndpoint"),
+            Self::UnknownOutputEndpoint { .. } => Cow::from("UnknownOutputEndpoint"),
             Self::ParseError { .. } => Cow::from("ParseError"),
             Self::EncodeError { .. } => Cow::from("EncodeError"),
             Self::InputTransportError { .. } => Cow::from("InputTransportError"),
@@ -799,6 +804,7 @@ impl DetailedError for ControllerError {
                 Cow::from(format!("ConfigError.{}", config_error.error_code()))
             }
             Self::UnknownInputEndpoint { .. } => Cow::from("UnknownInputEndpoint"),
+            Self::UnknownOutputEndpoint { .. } => Cow::from("UnknownOutputEndpoint"),
             Self::ParseError { .. } => Cow::from("ParseError"),
             Self::EncodeError { .. } => Cow::from("EncodeError"),
             Self::InputTransportError { .. } => Cow::from("InputTransportError"),
@@ -856,6 +862,9 @@ impl Display for ControllerError {
             }
             Self::UnknownInputEndpoint { endpoint_name } => {
                 write!(f, "unknown input endpoint name '{endpoint_name}'")
+            }
+            Self::UnknownOutputEndpoint { endpoint_name } => {
+                write!(f, "unknown output endpoint name '{endpoint_name}'")
             }
             Self::InputTransportError {
                 endpoint_name,
@@ -968,6 +977,12 @@ impl ControllerError {
 
     pub fn unknown_input_endpoint(endpoint_name: &str) -> Self {
         Self::UnknownInputEndpoint {
+            endpoint_name: endpoint_name.to_string(),
+        }
+    }
+
+    pub fn unknown_output_endpoint(endpoint_name: &str) -> Self {
+        Self::UnknownOutputEndpoint {
             endpoint_name: endpoint_name.to_string(),
         }
     }

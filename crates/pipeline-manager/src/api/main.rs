@@ -76,6 +76,8 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_interaction::http_input,
         endpoints::pipeline_interaction::http_output,
         endpoints::pipeline_interaction::post_pipeline_input_connector_action,
+        endpoints::pipeline_interaction::get_pipeline_input_connector_status,
+        endpoints::pipeline_interaction::get_pipeline_output_connector_status,
         endpoints::pipeline_interaction::get_pipeline_logs,
         endpoints::pipeline_interaction::get_pipeline_stats,
         endpoints::pipeline_interaction::get_pipeline_circuit_profile,
@@ -241,6 +243,8 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::http_output)
         .service(endpoints::pipeline_interaction::checkpoint_pipeline)
         .service(endpoints::pipeline_interaction::post_pipeline_input_connector_action)
+        .service(endpoints::pipeline_interaction::get_pipeline_input_connector_status)
+        .service(endpoints::pipeline_interaction::get_pipeline_output_connector_status)
         .service(endpoints::pipeline_interaction::get_pipeline_logs)
         .service(endpoints::pipeline_interaction::get_pipeline_stats)
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
