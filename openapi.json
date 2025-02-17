@@ -381,7 +381,8 @@
                         "storage_mb_max": null,
                         "storage_class": null
                       },
-                      "clock_resolution_usecs": 100000
+                      "clock_resolution_usecs": 100000,
+                      "pin_cpus": []
                     },
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
                     "udf_rust": "",
@@ -431,7 +432,8 @@
                         "storage_mb_max": 10000,
                         "storage_class": null
                       },
-                      "clock_resolution_usecs": 100000
+                      "clock_resolution_usecs": 100000,
+                      "pin_cpus": []
                     },
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
                     "udf_rust": "",
@@ -503,7 +505,8 @@
                     "storage_mb_max": null,
                     "storage_class": null
                   },
-                  "clock_resolution_usecs": 100000
+                  "clock_resolution_usecs": 100000,
+                  "pin_cpus": []
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -549,7 +552,8 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000
+                    "clock_resolution_usecs": 100000,
+                    "pin_cpus": []
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -671,7 +675,8 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000
+                    "clock_resolution_usecs": 100000,
+                    "pin_cpus": []
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -760,7 +765,8 @@
                     "storage_mb_max": null,
                     "storage_class": null
                   },
-                  "clock_resolution_usecs": 100000
+                  "clock_resolution_usecs": 100000,
+                  "pin_cpus": []
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -806,7 +812,8 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000
+                    "clock_resolution_usecs": 100000,
+                    "pin_cpus": []
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -859,7 +866,8 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000
+                    "clock_resolution_usecs": 100000,
+                    "pin_cpus": []
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1046,7 +1054,8 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000
+                    "clock_resolution_usecs": 100000,
+                    "pin_cpus": []
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -3285,6 +3294,15 @@
                 "default": 0,
                 "minimum": 0
               },
+              "pin_cpus": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "description": "Optionally, a list of CPU numbers for CPUs to which the pipeline may pin\nits worker threads.  Specify at least twice as many CPU numbers as\nworkers.  CPUs are generally numbered starting from 0.  The pipeline\nmight not be able to honor CPU pinning requests.\n\nCPU pinning can make pipelines run faster and perform more consistently,\nas long as different pipelines running on the same machine are pinned to\ndifferent CPUs.",
+                "default": []
+              },
               "resources": {
                 "allOf": [
                   {
@@ -3647,6 +3665,24 @@
           "udf_toml": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "PostgresReaderConfig": {
+        "type": "object",
+        "description": "Postgres input connector configuration.",
+        "required": [
+          "uri",
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Query that specifies what data to fetch from postgres."
+          },
+          "uri": {
+            "type": "string",
+            "description": "Postgres URI."
           }
         }
       },
@@ -4151,6 +4187,15 @@
             "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay_usecs` microseconds\nhave passed since at least one input records has been buffered.\nDefaults to 0.",
             "default": 0,
             "minimum": 0
+          },
+          "pin_cpus": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Optionally, a list of CPU numbers for CPUs to which the pipeline may pin\nits worker threads.  Specify at least twice as many CPU numbers as\nworkers.  CPUs are generally numbered starting from 0.  The pipeline\nmight not be able to honor CPU pinning requests.\n\nCPU pinning can make pipelines run faster and perform more consistently,\nas long as different pipelines running on the same machine are pinned to\ndifferent CPUs.",
+            "default": []
           },
           "resources": {
             "allOf": [

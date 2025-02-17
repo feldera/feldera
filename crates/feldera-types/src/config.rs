@@ -259,6 +259,16 @@ pub struct RuntimeConfig {
     ///
     /// Set to `null` to disable periodic clock updates.
     pub clock_resolution_usecs: Option<u64>,
+
+    /// Optionally, a list of CPU numbers for CPUs to which the pipeline may pin
+    /// its worker threads.  Specify at least twice as many CPU numbers as
+    /// workers.  CPUs are generally numbered starting from 0.  The pipeline
+    /// might not be able to honor CPU pinning requests.
+    ///
+    /// CPU pinning can make pipelines run faster and perform more consistently,
+    /// as long as different pipelines running on the same machine are pinned to
+    /// different CPUs.
+    pub pin_cpus: Vec<usize>,
 }
 
 /// Accepts "true" and "false" and converts them to the new format.
@@ -380,6 +390,7 @@ impl Default for RuntimeConfig {
                 // Every 100 ms.
                 Some(100_000)
             },
+            pin_cpus: Vec::new(),
         }
     }
 }

@@ -1386,6 +1386,7 @@ impl ControllerInit {
     ) -> Result<CircuitConfig, ControllerError> {
         Ok(CircuitConfig {
             layout: Layout::new_solo(pipeline_config.global.workers as usize),
+            pin_cpus: pipeline_config.global.pin_cpus.clone(),
             // Put the circuit's checkpoints in a `circuit` subdirectory of the
             // storage directory.
             storage: if let Some(options) = &pipeline_config.global.storage {

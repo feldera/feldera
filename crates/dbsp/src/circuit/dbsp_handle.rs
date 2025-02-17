@@ -219,6 +219,9 @@ pub struct CircuitConfig {
     /// How the circuit is laid out across one or multiple machines.
     pub layout: Layout,
 
+    /// Optionally, CPU numbers for pinning the worker threads.
+    pub pin_cpus: Vec<usize>,
+
     /// Storage configuration. If present, then storage is enabled..
     pub storage: Option<CircuitStorageConfig>,
 }
@@ -247,6 +250,7 @@ impl CircuitConfig {
     pub fn with_workers(n: usize) -> Self {
         Self {
             layout: Layout::new_solo(n),
+            pin_cpus: Vec::new(),
             storage: None,
         }
     }
@@ -1023,6 +1027,7 @@ pub(crate) mod tests {
         let temp = tempdir().expect("Can't create temp dir for storage");
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
+            pin_cpus: Vec::new(),
             storage: Some(CircuitStorageConfig {
                 config: StorageConfig {
                     path: temp.path().to_string_lossy().into_owned(),

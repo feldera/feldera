@@ -79,6 +79,8 @@ snap = "1.1.1"
 enum-map = "2.7.3"
 fastbloom = "0.8.0"
 bytemuck = "1.21.0"
+core_affinity = "0.8.1"
+indexmap = "2.7.1"
 
 [dependencies.time]
 version = "0.3.20"
