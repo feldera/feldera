@@ -1,8 +1,8 @@
 @font-face {
 	font-family: "generic-icons";
 	font-display: block;
-	src: url("generic-icons.woff2?f0f7b86554080b8abfdd0eb906e7ad24") format("woff2"),
-url("generic-icons.woff?f0f7b86554080b8abfdd0eb906e7ad24") format("woff");
+	src: url("generic-icons.woff2?2bd129fa882be525afdb2f6110aa863b") format("woff2"),
+url("generic-icons.woff?2bd129fa882be525afdb2f6110aa863b") format("woff");
 }
 
 .gc {

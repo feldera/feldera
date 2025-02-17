@@ -30,7 +30,12 @@ webfontsGenerator(
       baseSelector: `.${prefix}`,
       classPrefix: `${prefix}-`
     },
-    types: ['woff2', 'woff'],
+    formatOptions: {
+      ttf: {
+        round: 10e12
+      }
+    },
+    types: ['ttf', 'woff2', 'woff'],
     order: ['woff2', 'woff']
   },
   function (error: any) {
