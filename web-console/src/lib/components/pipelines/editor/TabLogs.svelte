@@ -41,7 +41,7 @@
       streams[pipelineName] = {
         firstRowIndex: 0,
         stream: { closed: {} },
-        rows: [''],
+        rows: [],
         rowBoundaries: [],
         totalSkippedBytes: 0
       }
@@ -73,11 +73,11 @@
       const { cancel } = parseCancellable(
         result,
         {
-          pushChanges: (changes) => {
+          pushChanges: (changes: string[]) => {
             const droppedNum = pushAsCircularBuffer(
               () => streams[pipelineName].rows,
               bufferSize,
-              (v) => v
+              (v: string) => v
             )(changes)
             streams[pipelineName].firstRowIndex += droppedNum
           },
@@ -104,7 +104,7 @@
       streams[pipelineName] = {
         firstRowIndex: 0,
         stream: { open: result, stop: cancel },
-        rows: [''], // A workaround: current virtual list implementation will freeze if an empty list suddenly gets a lot of data
+        rows: [],
         rowBoundaries: [],
         totalSkippedBytes: 0
       }
