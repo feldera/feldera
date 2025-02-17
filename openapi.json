@@ -1817,6 +1817,71 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats": {
+      "get": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Retrieve the status of an input connector.",
+        "operationId": "get_pipeline_input_connector_status",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table_name",
+            "in": "path",
+            "description": "Unique table name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connector_name",
+            "in": "path",
+            "description": "Unique input connector name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Action has been processed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Input connector with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}": {
       "post": {
         "tags": [
@@ -1866,6 +1931,71 @@
         "responses": {
           "200": {
             "description": "Action has been processed"
+          },
+          "404": {
+            "description": "Input connector with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats": {
+      "get": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Retrieve the status of an output connector.",
+        "operationId": "get_pipeline_output_connector_status",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "view_name",
+            "in": "path",
+            "description": "Unique SQL view name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connector_name",
+            "in": "path",
+            "description": "Unique input connector name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Action has been processed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
           },
           "404": {
             "description": "Input connector with that name does not exist",

@@ -307,6 +307,130 @@ pub(crate) async fn post_pipeline_input_connector_action(
     Ok(response)
 }
 
+/// Retrieve the status of an input connector.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("table_name" = String, Path, description = "Unique table name"),
+        ("connector_name" = String, Path, description = "Unique input connector name")
+    ),
+    responses(
+        (status = OK
+            , description = "Action has been processed"
+            , content_type = "application/json"
+            , body = Object),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline())),
+        (status = NOT_FOUND
+            , description = "Table with that name does not exist"
+            , body = ErrorResponse),
+        (status = NOT_FOUND
+            , description = "Input connector with that name does not exist"
+            , body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[get("/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats")]
+pub(crate) async fn get_pipeline_input_connector_status(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<(String, String, String)>,
+) -> Result<HttpResponse, ManagerError> {
+    // Parse the URL path parameters
+    let (pipeline_name, table_name, connector_name) = path.into_inner();
+
+    // The table name provided by the user is interpreted as
+    // a SQL identifier to account for case (in-)sensitivity
+    let actual_table_name = SqlIdentifier::from(&table_name).name();
+    let endpoint_name = format!("{actual_table_name}.{connector_name}");
+
+    // URL encode endpoint name to account for special characters
+    let encoded_endpoint_name = urlencoding::encode(&endpoint_name).to_string();
+
+    // Forward the action request to the pipeline
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            &format!("input_endpoints/{encoded_endpoint_name}/stats"),
+            "",
+            None,
+        )
+        .await?;
+
+    Ok(response)
+}
+
+/// Retrieve the status of an output connector.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("view_name" = String, Path, description = "Unique SQL view name"),
+        ("connector_name" = String, Path, description = "Unique input connector name")
+    ),
+    responses(
+        (status = OK
+            , description = "Action has been processed"
+            , content_type = "application/json"
+            , body = Object),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline())),
+        (status = NOT_FOUND
+            , description = "View with that name does not exist"
+            , body = ErrorResponse),
+        (status = NOT_FOUND
+            , description = "Input connector with that name does not exist"
+            , body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[get("/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats")]
+pub(crate) async fn get_pipeline_output_connector_status(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<(String, String, String)>,
+) -> Result<HttpResponse, ManagerError> {
+    // Parse the URL path parameters
+    let (pipeline_name, view_name, connector_name) = path.into_inner();
+
+    // The view name provided by the user is interpreted as
+    // a SQL identifier to account for case (in-)sensitivity
+    let actual_view_name = SqlIdentifier::from(&view_name).name();
+    let endpoint_name = format!("{actual_view_name}.{connector_name}");
+
+    // URL encode endpoint name to account for special characters
+    let encoded_endpoint_name = urlencoding::encode(&endpoint_name).to_string();
+
+    // Forward the action request to the pipeline
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            &format!("output_endpoints/{encoded_endpoint_name}/stats"),
+            "",
+            None,
+        )
+        .await?;
+
+    Ok(response)
+}
+
 /// Retrieve pipeline logs as a stream.
 ///
 /// The logs stream catches up to the extent of the internally configured per-pipeline

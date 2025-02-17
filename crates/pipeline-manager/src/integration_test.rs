@@ -64,7 +64,6 @@ use crate::{
 };
 use anyhow::{bail, Result as AnyResult};
 use feldera_types::config::{ResourceConfig, RuntimeConfig, StorageOptions};
-use feldera_types::program_schema::SqlIdentifier;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -398,6 +397,23 @@ impl TestConfig {
     /// Retrieve the stats of a pipeline as JSON value.
     async fn stats_json(&self, name: &str) -> Value {
         let endpoint = format!("/v0/pipelines/{name}/stats");
+        let response = self.get(endpoint).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        Self::decode_json(response).await
+    }
+
+    /// Retrieve the stats of an input connector as a JSON value.
+    async fn input_connector_stats_json(
+        &self,
+        pipeline_name: &str,
+        table_name: &str,
+        connector_name: &str,
+    ) -> Value {
+        let encoded_table_name = urlencoding::encode(table_name).to_string();
+
+        let endpoint = format!(
+            "/v0/pipelines/{pipeline_name}/tables/{encoded_table_name}/connectors/{connector_name}/stats"
+        );
         let response = self.get(endpoint).await;
         assert_eq!(response.status(), StatusCode::OK);
         Self::decode_json(response).await
@@ -2749,23 +2765,14 @@ async fn basic_orchestration_info(
 ) -> (bool, bool, u64) {
     let stats = config.stats_json(pipeline_name).await;
     let pipeline_paused = stats["global_metrics"]["state"].as_str() == Some("Paused");
-    let connector_paused = stats["inputs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|input| {
-            input["endpoint_name"]
-                == format!(
-                    "{}.{connector_name}",
-                    SqlIdentifier::from(&table_name).name()
-                )
-        })
-        .unwrap()
-        .clone()["paused"]
-        .as_bool()
-        .unwrap();
     let num_processed = stats["global_metrics"]["total_processed_records"]
         .as_u64()
+        .unwrap();
+
+    let connector_paused = config
+        .input_connector_stats_json(pipeline_name, table_name, connector_name)
+        .await["paused"]
+        .as_bool()
         .unwrap();
     (pipeline_paused, connector_paused, num_processed)
 }

@@ -519,6 +519,8 @@ where
         .service(output_endpoint)
         .service(pause_input_endpoint)
         .service(start_input_endpoint)
+        .service(input_endpoint_status)
+        .service(output_endpoint_status)
 }
 
 #[get("/start")]
@@ -1003,6 +1005,38 @@ async fn pause_input_endpoint(
     };
 
     Ok(HttpResponse::Ok())
+}
+
+#[get("/input_endpoints/{endpoint_name}/stats")]
+async fn input_endpoint_status(
+    state: WebData<ServerState>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let endpoint_name = path.into_inner();
+
+    match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            let ep_stats = controller.input_endpoint_status(&endpoint_name)?;
+            Ok(HttpResponse::Ok().json(ep_stats))
+        }
+        None => Err(missing_controller_error(&state)),
+    }
+}
+
+#[get("/output_endpoints/{endpoint_name}/stats")]
+async fn output_endpoint_status(
+    state: WebData<ServerState>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let endpoint_name = path.into_inner();
+
+    match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            let ep_stats = controller.output_endpoint_status(&endpoint_name)?;
+            Ok(HttpResponse::Ok().json(ep_stats))
+        }
+        None => Err(missing_controller_error(&state)),
+    }
 }
 
 #[get("/input_endpoints/{endpoint_name}/start")]

@@ -57,6 +57,7 @@ use metrics_util::{
 };
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
+use serde_json::Value as JsonValue;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -368,6 +369,17 @@ impl Controller {
     /// fully paused.
     pub fn pause_input_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
         self.inner.pause_input_endpoint(endpoint_name)
+    }
+
+    pub fn input_endpoint_status(&self, endpoint_name: &str) -> Result<JsonValue, ControllerError> {
+        self.inner.input_endpoint_status(endpoint_name)
+    }
+
+    pub fn output_endpoint_status(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<JsonValue, ControllerError> {
+        self.inner.output_endpoint_status(endpoint_name)
     }
 
     // Start or resume specified input endpoint.
@@ -1765,6 +1777,21 @@ impl ControllerInner {
         Err(ControllerError::unknown_input_endpoint(endpoint_name))
     }
 
+    fn output_endpoint_id_by_name(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<EndpointId, ControllerError> {
+        let outputs = self.status.output_status();
+
+        for (endpoint_id, descr) in outputs.iter() {
+            if descr.endpoint_name == endpoint_name {
+                return Ok(*endpoint_id);
+            }
+        }
+
+        Err(ControllerError::unknown_output_endpoint(endpoint_name))
+    }
+
     fn initialize_adhoc_queries(self: &Arc<Self>) {
         // Sync feldera catalog with datafusion catalog
         for (name, clh) in self.catalog.output_iter() {
@@ -2308,6 +2335,16 @@ impl ControllerInner {
         self.status.pause_input_endpoint(&endpoint_id);
         self.unpark_backpressure();
         Ok(())
+    }
+
+    fn input_endpoint_status(&self, endpoint_name: &str) -> Result<JsonValue, ControllerError> {
+        let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
+        Ok(serde_json::to_value(&self.status.input_status()[&endpoint_id]).unwrap())
+    }
+
+    fn output_endpoint_status(&self, endpoint_name: &str) -> Result<JsonValue, ControllerError> {
+        let endpoint_id = self.output_endpoint_id_by_name(endpoint_name)?;
+        Ok(serde_json::to_value(&self.status.output_status()[&endpoint_id]).unwrap())
     }
 
     fn start_input_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
