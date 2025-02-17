@@ -1,13 +1,14 @@
 use anyhow::{anyhow, Result as AnyResult};
 use feldera_adapterlib::transport::{AsyncErrorCallback, OutputEndpoint};
 use feldera_types::transport::redis::RedisOutputConfig;
-use redis::{Commands, ConnectionInfo};
+use redis::{ConnectionInfo, Pipeline};
 use std::str::FromStr;
 use tracing::{info_span, span::EnteredSpan};
 
 pub struct RedisOutputEndpoint {
     config: ConnectionInfo,
     pool: Option<r2d2::Pool<redis::Client>>,
+    pipeline: Option<redis::Pipeline>,
 }
 
 impl RedisOutputEndpoint {
@@ -15,6 +16,7 @@ impl RedisOutputEndpoint {
         Ok(Self {
             config: ConnectionInfo::from_str(&config.connection_string)?,
             pool: None,
+            pipeline: None,
         })
     }
 
@@ -43,6 +45,15 @@ impl OutputEndpoint for RedisOutputEndpoint {
         usize::MAX
     }
 
+    // Creates a [`redis::Pipeline`] that is atomic, so that every batch is
+    // committed as a transaction.
+    fn batch_start(&mut self, _step: feldera_adapterlib::transport::Step) -> AnyResult<()> {
+        let mut pipeline = Pipeline::new();
+        pipeline.atomic();
+        self.pipeline = Some(pipeline);
+        Ok(())
+    }
+
     fn push_buffer(&mut self, _: &[u8]) -> anyhow::Result<()> {
         unreachable!()
     }
@@ -59,34 +70,41 @@ impl OutputEndpoint for RedisOutputEndpoint {
             return Err(anyhow!("cannot push empty key to redis"));
         };
 
+        let pipeline = self.pipeline.as_mut().ok_or(anyhow!(
+            "redis: trying to push data before pipeline is initialized: unreachable"
+        ))?;
+
+        if let Some(val) = val {
+            pipeline.set(key, val);
+        } else {
+            pipeline.del(key);
+        }
+
+        Ok(())
+    }
+
+    // Executes the transaction.
+    fn batch_end(&mut self) -> AnyResult<()> {
         let mut conn = self
             .pool
             .clone()
             .ok_or(anyhow!(
-                "redis: trying to push data before connection pool is initialized"
+                "redis: trying to get connection from pool before the pool is initialized: unreachable"
             ))?
             .get()?;
 
-        if let Some(val) = val {
-            let _: () = conn.set(key, val)?;
-        } else {
-            let _: () = conn.del(key)?;
-        }
+        let pipeline = std::mem::take(&mut self.pipeline);
+
+        pipeline
+            .ok_or(anyhow!(
+                "redis: batch_end called before batch_start: unreachable"
+            ))?
+            .exec(&mut conn)?;
 
         Ok(())
     }
 
     fn is_fault_tolerant(&self) -> bool {
         false
-    }
-
-    fn batch_start(&mut self, _step: feldera_adapterlib::transport::Step) -> AnyResult<()> {
-        // TODO: start transction
-        Ok(())
-    }
-
-    fn batch_end(&mut self) -> AnyResult<()> {
-        // TODO: end transction
-        Ok(())
     }
 }
