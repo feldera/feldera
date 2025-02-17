@@ -44,9 +44,12 @@ mod nexmark;
 #[cfg(feature = "with-pubsub")]
 mod pubsub;
 
+#[cfg(feature = "with-redis")]
 mod redis;
 
 use feldera_types::config::TransportConfig;
+
+#[cfg(feature = "with-redis")]
 use redis::output::RedisOutputEndpoint;
 
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};

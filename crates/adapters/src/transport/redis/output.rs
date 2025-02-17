@@ -5,6 +5,9 @@ use redis::{ConnectionInfo, Pipeline};
 use std::str::FromStr;
 use tracing::{info_span, span::EnteredSpan};
 
+/// Handles output to Redis.
+///
+/// This connector sets the output pair.
 pub struct RedisOutputEndpoint {
     config: ConnectionInfo,
     pool: Option<r2d2::Pool<redis::Client>>,
