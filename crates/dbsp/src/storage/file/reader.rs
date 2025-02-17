@@ -5,7 +5,7 @@
 use super::format::Compression;
 use super::{
     cache::FileCacheEntry, AnyFactories, BloomFilterState, Factories,
-    BLOOM_FILTER_FALSE_POSITIVE_RATE,
+    BLOOM_FILTER_FALSE_POSITIVE_RATE, DbspBloomFilter, DbspBloomFilterHasher
 };
 use crate::storage::{
     backend::StorageError,
@@ -1111,7 +1111,7 @@ impl ImmutableFileRef {
 #[derive(Debug)]
 struct ReaderInner<T> {
     file: ImmutableFileRef,
-    bloom_filter: BloomFilter,
+    bloom_filter: DbspBloomFilter,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1171,7 +1171,7 @@ where
         path: PathBuf,
         cache: fn() -> Arc<BufferCache<FileCacheEntry>>,
         file_handle: Arc<dyn FileReader>,
-        bloom_filter: BloomFilter,
+        bloom_filter: DbspBloomFilter,
     ) -> Result<Self, Error> {
         let file_size = file_handle.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
@@ -1248,6 +1248,7 @@ where
                 AtomicCacheStats::default(),
             ),
             bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
+                .hasher(DbspBloomFilterHasher::default())
                 .expected_items(0),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             _phantom: PhantomData,
@@ -1272,13 +1273,13 @@ where
         let bloom_filter = match bf_file {
             Ok(mut bf_file) => {
                 let bloom_storage: BloomFilterState = BloomFilterState::read(&mut bf_file)?;
-                let bloom_filter: BloomFilter = bloom_storage.try_into()?;
+                let bloom_filter: DbspBloomFilter = bloom_storage.try_into()?;
                 bloom_filter
             }
             Err(e) if e.kind() == ErrorKind::NotFound => {
                 // If the bloom filter file does not exist because we're not writing them atm,
                 // we create an empty bloom filter.
-                BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE).expected_items(0)
+                BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE).hasher(DbspBloomFilterHasher::default()).expected_items(0)
             }
             Err(e) => return Err(e.into()),
         };

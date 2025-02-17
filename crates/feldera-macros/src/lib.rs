@@ -324,10 +324,10 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
     });
 
     // Debug print
-    let expanded_pretty = expanded.clone();
-    let parsed_file: syn::File = syn::parse2(expanded_pretty).expect("Failed to parse");
-    let formatted = prettyplease::unparse(&parsed_file);
-    eprintln!("{}", formatted);
+    //let expanded_pretty = expanded.clone();
+    //let parsed_file: syn::File = syn::parse2(expanded_pretty).expect("Failed to parse");
+    //let formatted = prettyplease::unparse(&parsed_file);
+    //eprintln!("{}", formatted);
 
     expanded.into()
 }
