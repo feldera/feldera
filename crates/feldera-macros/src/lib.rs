@@ -50,7 +50,7 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
     // Struct definition
     let struct_def = quote! {
         #[derive(
-            Default, Eq, Ord, Clone, Hash, PartialEq, PartialOrd,
+            Default, Clone, Hash,
             serde::Serialize, serde::Deserialize,
             size_of::SizeOf, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize
         )]
@@ -236,6 +236,60 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
         }
     };
 
+    let comparison_impls = quote! {
+        impl<#(#generics: Eq),*> Eq for #name<#(#generics),*> {}
+
+        impl<#(#generics: PartialEq),*> PartialEq for #name<#(#generics),*>
+        {
+            fn eq(&self, other: &Self) -> bool {
+                let #name(hash, #(#fields),*) = self;
+                let #name(other_hash, #(#fields_of_other),*) = other;
+                if *hash != 0 && *other_hash != 0 {
+                    *hash == *other_hash
+                } else {
+                    #(#fields == #fields_of_other)&&*
+                }
+            }
+        }
+
+        impl<#(#generics: PartialOrd),*> PartialOrd for #name<#(#generics),*>
+        {
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                let #name(_hash, #(#fields),*) = self;
+                let #name(_hash, #(#fields_of_other),*) = other;
+                let mut result = Some(core::cmp::Ordering::Equal);
+                #(
+                    result = result.and_then(|ord| match ord {
+                        core::cmp::Ordering::Equal => #fields.partial_cmp(#fields_of_other),
+                        _ => return Some(ord)
+                    });
+                )*
+                result
+            }
+        }
+
+        impl<#(#generics: Ord),*> Ord for #name<#(#generics),*> {
+            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+                let #name(hash, #(#fields),*) = self;
+                let #name(hash_other, #(#fields_of_other),*) = other;
+                if *hash != 0 && *hash_other != 0 && *hash == *hash_other {
+                    return core::cmp::Ordering::Equal;
+                }
+
+                let mut result = core::cmp::Ordering::Equal;
+                #(
+                    if result == core::cmp::Ordering::Equal {
+                        result = #fields.cmp(#fields_of_other);
+                    } else {
+                        return result;
+                    }
+                )*
+                result
+            }
+        }
+
+    };
+
     expanded.extend(quote! {
         #struct_def
         #constructor
@@ -246,6 +300,7 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
         #debug_impl
         #copy_impl
         #checkpoint_impl
+        #comparison_impls
     });
 
     // Debug print
