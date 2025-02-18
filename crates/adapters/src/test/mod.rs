@@ -27,13 +27,10 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-mod data;
+pub mod data;
 
 #[cfg(feature = "with-kafka")]
 pub mod kafka;
-
-#[cfg(feature = "with-redis")]
-pub mod redis;
 
 pub mod http;
 
