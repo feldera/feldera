@@ -30,7 +30,6 @@ use rkyv::{
     Fallible, Serialize,
 };
 use size_of::{Context, SizeOf};
-use std::sync::Mutex;
 use std::sync::{Arc, MutexGuard};
 use std::time::{Duration, Instant};
 use std::{
@@ -43,6 +42,7 @@ use std::{
     ops::DerefMut,
     sync::Condvar,
 };
+use std::{ops::RangeInclusive, sync::Mutex};
 use textwrap::indent;
 use uuid::Uuid;
 
@@ -116,14 +116,27 @@ where
     /// We merge the least recently added batches (ensuring that batches
     /// eventually get merged).
     fn try_start_merge(&mut self, level: usize) -> Option<Vec<Arc<B>>> {
-        // Some LSM implementations do use slightly different numbers per-level.
-        // We didn't see clear benefits with more/slightly less than 12 batches merged at
-        // once or different numbers per level so everything is set to 12 for now.
-        const MAX_BATCHES_MERGED_AT_ONCE: [usize; MAX_LEVELS] =
-            [12usize, 12, 12, 12, 12, 12, 12, 12, 12];
+        /// Minimum and maximum numbers of batches to merge at each level.
+        ///
+        /// Some LSM implementations do use slightly different maximums per
+        /// level.  We didn't see clear benefits with more/slightly less than 12
+        /// batches merged at once or different numbers per level so everything
+        /// is set to 12 for now.
+        const MERGE_COUNTS: [RangeInclusive<usize>; MAX_LEVELS] = [
+            8..=64,
+            8..=64,
+            3..=64,
+            3..=64,
+            3..=64,
+            3..=64,
+            2..=64,
+            2..=64,
+            2..=64,
+        ];
 
-        if self.merging_batches.is_none() && self.loose_batches.len() >= 2 {
-            let n = std::cmp::min(MAX_BATCHES_MERGED_AT_ONCE[level], self.loose_batches.len());
+        let merge_counts = &MERGE_COUNTS[level];
+        if self.merging_batches.is_none() && self.loose_batches.len() >= *merge_counts.start() {
+            let n = std::cmp::min(*merge_counts.end(), self.loose_batches.len());
             let batches = self.loose_batches.drain(..n).collect::<Vec<_>>();
             self.merging_batches = Some(batches.clone());
             Some(batches)
