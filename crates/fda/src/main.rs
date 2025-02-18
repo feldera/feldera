@@ -928,7 +928,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                             "program_status_since": response.program_status_since,
                         }
                     })
-                    .unwrap();
+                        .unwrap();
                     let table = json_to_table(&value).collapse().to_string();
                     println!("{}", table);
                 }
@@ -1028,15 +1028,16 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             }
         }
         PipelineAction::Program { action } => program(format, action, client).await,
-        PipelineAction::TableConnector {
+        PipelineAction::Connector {
             name,
-            table_name,
+            relation_name,
             connector_name,
             action,
         } => {
-            table_connector(
+            connector(
+                format,
                 name,
-                table_name.as_str(),
+                relation_name.as_str(),
                 connector_name.as_str(),
                 action,
                 client,
@@ -1176,20 +1177,53 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
     }
 }
 
-async fn table_connector(
+async fn connector(
+    format: OutputFormat,
     pipeline_name: String,
-    table_name: &str,
-    connector_name: &str,
+    relation: &str,
+    connector: &str,
     action: ConnectorAction,
     client: Client,
 ) {
+    let rc = client
+        .get_pipeline()
+        .pipeline_name(pipeline_name.clone())
+        .send()
+        .await
+        .map_err(handle_errors_fatal(
+            client.baseurl.clone(),
+            "Failed to get pipeline config",
+            1,
+        ))
+        .map(|response| response.program_info.clone())
+        .unwrap()
+        .unwrap();
+
+    let full_connector_name = format!("{relation}.{connector}");
+    let relation_is_table = rc
+        .input_connectors
+        .iter()
+        .any(|(name, _c)| *name == full_connector_name);
+    let relation_is_view = rc
+        .output_connectors
+        .iter()
+        .any(|(name, _c)| *name == full_connector_name);
+    if !relation_is_table && !relation_is_view {
+        eprintln!("No connector named {connector} found in pipeline {pipeline_name}");
+        std::process::exit(1);
+    }
+
     match action {
         ConnectorAction::Start => {
+            if !relation_is_table {
+                eprintln!("Can not start the output connector '{connector}'. Only input connectors (connectors attached to a table) can be started.");
+                std::process::exit(1);
+            }
             client
                 .post_pipeline_input_connector_action()
                 .pipeline_name(pipeline_name)
-                .table_name(table_name)
-                .connector_name(connector_name)
+                .table_name(relation)
+                .connector_name(connector)
                 .action("start")
                 .send()
                 .await
@@ -1199,14 +1233,18 @@ async fn table_connector(
                     1,
                 ))
                 .unwrap();
-            println!("Table {table_name} connector {connector_name} started successfully.");
+            println!("Table {relation} connector {connector} started successfully.");
         }
         ConnectorAction::Pause => {
+            if !relation_is_table {
+                eprintln!("Can not pause the output connector '{connector}'. Only input connectors (connectors attached to a table) can be paused.");
+                std::process::exit(1);
+            }
             client
                 .post_pipeline_input_connector_action()
                 .pipeline_name(pipeline_name)
-                .table_name(table_name)
-                .connector_name(connector_name)
+                .table_name(relation)
+                .connector_name(connector)
                 .action("pause")
                 .send()
                 .await
@@ -1216,7 +1254,55 @@ async fn table_connector(
                     1,
                 ))
                 .unwrap();
-            println!("Table {table_name} connector {connector_name} paused successfully.");
+            println!("Table {relation} connector {connector} paused successfully.");
+        }
+        ConnectorAction::Stats => {
+            let response = if relation_is_table {
+                client
+                    .get_pipeline_input_connector_status()
+                    .pipeline_name(pipeline_name)
+                    .table_name(relation)
+                    .connector_name(connector)
+                    .send()
+                    .await
+                    .map_err(handle_errors_fatal(
+                        client.baseurl,
+                        "Failed to get table connector stats",
+                        1,
+                    ))
+                    .unwrap()
+            } else {
+                client
+                    .get_pipeline_output_connector_status()
+                    .pipeline_name(pipeline_name)
+                    .view_name(relation)
+                    .connector_name(connector)
+                    .send()
+                    .await
+                    .map_err(handle_errors_fatal(
+                        client.baseurl,
+                        "Failed to get view connector stats",
+                        1,
+                    ))
+                    .unwrap()
+            };
+
+            match format {
+                OutputFormat::Text => {
+                    let table = json_to_table(&serde_json::Value::Object(response.into_inner()))
+                        .collapse()
+                        .into_pool_table()
+                        .to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
+            }
         }
     };
 }

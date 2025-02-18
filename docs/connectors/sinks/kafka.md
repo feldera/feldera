@@ -15,7 +15,7 @@ We will create a Kafka output connector named `total-sales`.
 Kafka broker is located at `example.com:9092` and the topic is `total-sales`.
 
 ```sql
-CREATE VIEW V AS ...
+CREATE VIEW V
 WITH (
    'connectors' = '[
     {
@@ -37,6 +37,7 @@ WITH (
    }
    ]'
 )
+AS ...
 ```
 
 ### Authentication & Encryption
