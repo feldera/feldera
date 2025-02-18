@@ -65,6 +65,15 @@ where
             .with_mut(|fields| fields.merger.work(fields.builder, frontier, fuel))
     }
 
+    pub fn stats(&self) -> (usize, usize, usize) {
+        self.0.with_batches(|batches| {
+            let n_batches = batches.len();
+            let n_keys = batches.iter().map(|b| b.key_count()).sum::<usize>();
+            let n_tuples = batches.iter().map(|b| b.len()).sum::<usize>();
+            (n_batches, n_keys, n_tuples)
+        })
+    }
+
     pub fn done(self) -> B {
         self.0.into_heads().builder.done()
     }
