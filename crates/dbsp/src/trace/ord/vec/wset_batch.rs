@@ -658,14 +658,6 @@ where
         );
     }
 
-    fn pushed_val(&self) {
-        debug_assert_eq!(
-            self.diffs.len(),
-            self.keys.len() + 1,
-            "every value must have exactly one diff"
-        );
-    }
-
     fn pushed_diff(&self) {
         #[cfg(debug_assertions)]
         debug_assert!(!self.val, "every val must have exactly one key");
@@ -718,7 +710,11 @@ where
         {
             debug_assert!(!self.val);
             self.val = true;
-            self.pushed_val();
+            debug_assert_eq!(
+                self.diffs.len(),
+                self.keys.len() + 1,
+                "every value must have exactly one diff"
+            );
         }
     }
 
