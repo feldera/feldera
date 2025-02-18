@@ -73,7 +73,7 @@ pub struct ListMerger<B>
 where
     B: Batch,
 {
-    batches: Vec<Arc<B>>,
+    pub batches: Vec<Arc<B>>,
     cursor: CursorList<B::Key, B::Val, B::Time, B::R, B::Cursor<'static>>,
     builder: B::Builder,
     tmp_weight: Box<B::R>,

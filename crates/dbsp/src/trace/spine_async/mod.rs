@@ -30,7 +30,7 @@ use rkyv::{
     Fallible, Serialize,
 };
 use size_of::{Context, SizeOf};
-use std::sync::{Arc, MutexGuard};
+use std::{cell::RefCell, fs::File, sync::{Arc, MutexGuard}};
 use std::time::{Duration, Instant};
 use std::{
     collections::VecDeque,
@@ -39,6 +39,7 @@ use std::{
 use std::{
     fmt::{self, Debug, Display, Formatter},
     fs,
+    io::Write,
     ops::DerefMut,
     sync::Condvar,
 };
@@ -376,6 +377,79 @@ where
     idle: Arc<Condvar>,
 }
 
+struct MergeState<B>
+where
+    B: Batch,
+{
+    merger: ListMerger<B>,
+    fuel: isize,
+    time: Duration,
+    invocations: usize,
+}
+
+impl<B> MergeState<B>
+where
+    B: Batch,
+{
+    fn new(batches: Vec<Arc<B>>) -> Self {
+        let merger = ListMergerBuilder::with_capacity(batches.len())
+            .with_batches(batches)
+            .build();
+        Self {
+            merger,
+            fuel: 0,
+            time: Duration::ZERO,
+            invocations: 0,
+        }
+    }
+    fn run(
+        &mut self,
+        key_filter: &Option<Filter<B::Key>>,
+        value_filter: &Option<Filter<B::Val>>,
+        frontier: &B::Time,
+        initial_fuel: isize,
+    ) -> (isize, bool) {
+        self.invocations += 1;
+        let mut fuel = initial_fuel;
+        let start = Instant::now();
+        self.merger
+            .work(key_filter, value_filter, frontier, &mut fuel);
+        self.time += start.elapsed();
+        let fuel_consumed = initial_fuel - fuel;
+        self.fuel += fuel_consumed;
+        (fuel_consumed, fuel > 0)
+    }
+    fn done(self, ident: &str, level: usize) -> B {
+        thread_local! {
+            static LOG_FILE: RefCell<File> = {
+                let path = format!("/tmp/{}.txt", Runtime::worker_index());
+                let mut file = File::create(&path).unwrap();
+                writeln!(&mut file, "ident,level,batches,keys,tuples,invocations,fuel,msecs").unwrap();
+                RefCell::new(file)
+            };
+        }
+        let n_batches = self.merger.batches.len();
+        let n_keys = self
+            .merger
+            .batches
+            .iter()
+            .map(|b| b.key_count())
+            .sum::<usize>();
+        let n_tuples = self.merger.batches.iter().map(|b| b.len()).sum::<usize>();
+        LOG_FILE.with_borrow_mut(|file| {
+            writeln!(
+                file,
+                "{ident},{level},{n_batches},{n_keys},{n_tuples},{},{},{}",
+                self.invocations,
+                self.fuel,
+                self.time.as_millis()
+            )
+            .unwrap()
+        });
+        self.merger.done()
+    }
+}
+
 impl<B> AsyncMerger<B>
 where
     B: Batch,
@@ -543,7 +617,7 @@ where
 
     fn run(
         stored_fuel: &mut [isize; MAX_LEVELS],
-        mergers: &mut [Option<ListMerger<B>>; MAX_LEVELS],
+        mergers: &mut [Option<MergeState<B>>; MAX_LEVELS],
         state: &Arc<Mutex<SharedState<B>>>,
         idle: &Arc<Condvar>,
         no_backpressure: &Arc<Condvar>,
@@ -562,14 +636,13 @@ where
                 } else {
                     stored_fuel[level].max(10_000)
                 };
-                let mut fuel = starting_fuel;
-                merger.work(&key_filter, &value_filter, &frontier, &mut fuel);
-                let fuel_consumed = starting_fuel - fuel;
+                let (fuel_consumed, done) =
+                    merger.run(&key_filter, &value_filter, &frontier, starting_fuel);
                 stored_fuel[level] = (stored_fuel[level] - fuel_consumed).max(0);
                 stored_fuel[level + 1] += fuel_consumed;
-                if fuel > 0 {
+                if done {
                     let merger = m.take().unwrap();
-                    let new_batch = Arc::new(merger.done());
+                    let new_batch = Arc::new(merger.done(ident, level));
                     state.lock().unwrap().merge_complete(level, new_batch);
                 }
             }
@@ -592,9 +665,7 @@ where
             gauge!(ONGOING_MERGES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => ident)
                 .set(batches.len() as f64);
 
-            let merger = ListMergerBuilder::with_capacity(batches.len())
-                .with_batches(batches)
-                .build();
+            let merger = MergeState::new(batches);
             mergers[level] = Some(merger);
         }
 
