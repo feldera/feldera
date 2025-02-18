@@ -142,8 +142,6 @@ where
 
                 if let Some(map_func) = map_func {
                     self.cursor.map_times(&mut |time, w| {
-                        *fuel -= 1;
-
                         let mut time: B::Time = time.clone();
                         map_func(&mut time);
 
@@ -151,8 +149,6 @@ where
                     });
                 } else {
                     self.cursor.map_times(&mut |time, w| {
-                        *fuel -= 1;
-
                         time_diffs.push_refs((time, w));
                     });
                 }
@@ -166,10 +162,8 @@ where
                 any = !time_diffs.is_empty();
             } else {
                 self.tmp_weight.set_zero();
-                self.cursor.map_times(&mut |_time, w| {
-                    *fuel -= 1;
-                    self.tmp_weight.add_assign(w)
-                });
+                self.cursor
+                    .map_times(&mut |_time, w| self.tmp_weight.add_assign(w));
                 if !self.tmp_weight.is_zero() {
                     self.builder
                         .push_time_diff(&B::Time::default(), &self.tmp_weight);

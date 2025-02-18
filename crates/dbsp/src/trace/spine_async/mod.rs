@@ -390,7 +390,16 @@ where
             let no_backpressure = Arc::clone(&no_backpressure);
             Box::new(|| {
                 let mut mergers = std::array::from_fn(|_| None);
-                Box::new(move || Self::run(&mut mergers, &state, &idle, &no_backpressure))
+                let mut stored_fuel = std::array::from_fn(|_| 0);
+                Box::new(move || {
+                    Self::run(
+                        &mut stored_fuel,
+                        &mut mergers,
+                        &state,
+                        &idle,
+                        &no_backpressure,
+                    )
+                })
             })
         });
         Self {
@@ -533,6 +542,7 @@ where
     }
 
     fn run(
+        stored_fuel: &mut [isize; MAX_LEVELS],
         mergers: &mut [Option<ListMerger<B>>; MAX_LEVELS],
         state: &Arc<Mutex<SharedState<B>>>,
         idle: &Arc<Condvar>,
@@ -547,8 +557,16 @@ where
 
         for (level, m) in mergers.iter_mut().enumerate() {
             if let Some(merger) = m.as_mut() {
-                let mut fuel = 10_000;
+                let starting_fuel = if level == 0 {
+                    isize::MAX
+                } else {
+                    stored_fuel[level].max(10_000)
+                };
+                let mut fuel = starting_fuel;
                 merger.work(&key_filter, &value_filter, &frontier, &mut fuel);
+                let fuel_consumed = starting_fuel - fuel;
+                stored_fuel[level] = (stored_fuel[level] - fuel_consumed).max(0);
+                stored_fuel[level + 1] += fuel_consumed;
                 if fuel > 0 {
                     let merger = m.take().unwrap();
                     let new_batch = Arc::new(merger.done());
