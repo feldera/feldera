@@ -261,21 +261,21 @@ fn map_pin_cpus(nworkers: usize, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, 
         .collect::<IndexSet<_>>();
     if pin_cpus.len() < 2 * nworkers {
         if !pin_cpus.is_empty() {
-            warn!("ignoring cpu pinning request because {nworkers} workers require {} pin CPUs but only {} were specified",
+            warn!("ignoring CPU pinning request because {nworkers} workers require {} pinned CPUs but only {} were specified",
                       2 * nworkers, pin_cpus.len())
         }
         return Vec::new();
     }
 
     let Some(core_ids) = get_core_ids() else {
-        warn!("ignoring cpu pinning request because this system's core ids list could not be obtained");
+        warn!("ignoring CPU pinning request because this system's core ids list could not be obtained");
         return Vec::new();
     };
     let core_ids = core_ids.iter().copied().collect::<IndexSet<_>>();
 
     let missing_cpus = pin_cpus.difference(&core_ids).copied().collect::<Vec<_>>();
     if !missing_cpus.is_empty() {
-        warn!("ignoring cpu pinning request because requested cpus {missing_cpus:?} are not available (available cpus are: {})",
+        warn!("ignoring CPU pinning request because requested CPUs {missing_cpus:?} are not available (available CPUs are: {})",
               display_core_ids(core_ids.iter()));
         return Vec::new();
     }
@@ -283,7 +283,7 @@ fn map_pin_cpus(nworkers: usize, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, 
     let fg_cpus = &pin_cpus[0..nworkers];
     let bg_cpus = &pin_cpus[nworkers..nworkers * 2];
     info!(
-        "pinning foreground workers to cpus {} and background workers to cpus {}",
+        "pinning foreground workers to CPUs {} and background workers to CPUs {}",
         display_core_ids(fg_cpus.iter()),
         display_core_ids(bg_cpus.iter())
     );
