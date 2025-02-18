@@ -79,6 +79,49 @@ Running           Running            Yes
    ```
    Now the Changes Stream tab no longer will show new input records from connector `c2`.
 
+## Detecting when a connector has finished ingesting data
+
+A common use case for connector orchestration is loading historical data from a database before switching over to a real-time data source such as Kafka. To implement this scenario, we need to determine when the first connector has exhausted all its inputs. This can be achieved by polling the [connector status endpoint](/api/retrieve-the-status-of-an-input-connector), which provides information about the connector's configuration and current state, including the following fields:
+
+```json
+{
+  "endpoint_name": "project_memberships.datagen",
+  "config": {...},
+  "metrics": {
+    "buffered_records": 0,
+    "end_of_input": false,
+    ...
+  },
+  ...
+}
+```
+
+* `end_of_input`: Indicates that the connector has received all available inputs from its data source and will not produce any more.
+* `buffered_records`: Tracks the number of input records received by the connector that have not been ingested by the pipeline yet.
+
+Once `end_of_input` is true and `buffered_records` is 0, the pipeline will no longer receive any new inputs from the connector:
+
+```bash
+curl -s http://localhost:8080/v0/pipelines/my_pipeline/tables/my_table/connectors/my_connector/stats | jq '.metrics.end_of_input == true and .metrics.buffered_records == 0'
+```
+
+Not all connectors reach the end of input. Some, like Kafka and Pub/Sub, continuously wait for new data. Others signal the end of input depending on their configuration. The following table summarizes the end-of-input behavior for different input connectors:
+
+
+| Connector  | Signals end-of-input         | Comment |
+|------------|------------------------------|---------|
+| [HTTP GET](/connectors/sources/http-get)  | yes                         |         |
+| [Datagen](/connectors/sources/datagen)    | when `limit` is set         | The Datagen connector stops producing inputs after reaching the specified record limit. |
+| [Debezium](/connecrors/sources/debezium)  | no                          |         |
+| [Delta Lake](/connectors/sources/delta)   | when `mode=snapshot`        | When configured with `mode=snapshot`, the DeltaLake connector signals the end of input after ingesting the specified snapshot of the table. |
+| File                                      | when `follow=false`         | When configured with `follow=false` (the default), the file input connector signals the end of input after reading the current contents of the file; otherwise (`follow=true`), the connector continues polling for new changes. |
+| [Iceberg](/connectors/sources/iceberg)    | yes                         | Stops after reading a complete table shapshot. |
+| [Kafka](/connectors/sources/kafka)        | no                          | Waits for new messages from the Kafka topic. |
+| [Pub/Sub](/connectors/sources/pubsub)     | no                          | Waits for new messages from the Pub/Sub subscriptio. |
+| [Postgres](/connectors/sources/postgresql)| yes                         | Stops after reading a complete table shapshot (use the [Debezium connector](/connecrors/sources/debezium) for Change Data Capture). |
+| [S3](/connectors/sources/s3)              | yes                         | Stops after reading all objects that match the specified prefix. |
+
+
 ## Automatic connector orchestration
 
 Feldera allows encoding the order of connector activation directly in the SQL program.
@@ -88,7 +131,7 @@ While less general than the mechanism described above, it covers most
 practical situations, while eliminating the need to write
 scripts to monitor and manage connector status via the API.
 
-To configure automatic connector orchestration, you need to:
+To configure automatic connector orchestration:
 
 1. Assign labels to connectors based on their role.
 2. Set the `start_after` attribute to configure the order of connector activation.
