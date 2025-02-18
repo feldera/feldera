@@ -221,7 +221,7 @@ test-adapters:
                 --pull redis:7-alpine
         RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd redpandadata/redpanda:v23.3.21 \
             redpanda start --smp 2  && \
-            docker run -p 6379:6379 redis && \
+            docker run -p 6379:6379 --rm -itd redis && \
             (google-cloud-sdk/bin/gcloud beta emulators pubsub start --project=feldera-test --host-port=127.0.0.1:8685 &) && \
             sleep 5 && \
             RUST_BACKTRACE=1 cargo test --package dbsp_adapters --features "pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue" --package feldera-sqllib
