@@ -51,8 +51,10 @@ $BINARY_PATH apikey delete a
 
 echo "base64 = '0.22.1'" > udf.toml
 echo "use feldera_sqllib::F32;" > udf.rs
-echo "CREATE TABLE example ( id INT NOT NULL PRIMARY KEY );
-CREATE VIEW example_count AS ( SELECT COUNT(*) AS num_rows FROM example );" > program.sql
+cat > program.sql <<EOF
+CREATE TABLE example ( id INT NOT NULL PRIMARY KEY ) WITH ('connectors' = '[{ "name": "c", "transport": { "name": "datagen", "config": { "plan": [{ "limit": 1 }] } } }]');
+CREATE VIEW example_count WITH ('connectors' = '[{ "name": "c", "transport": { "name": "file_output", "config": { "path": "bla" } }, "format": { "name": "csv" } }]') AS ( SELECT COUNT(*) AS num_rows FROM example );
+EOF
 
 $BINARY_PATH create p1 program.sql
 $BINARY_PATH program get p1 | $BINARY_PATH create p2 -s
@@ -77,6 +79,15 @@ $BINARY_PATH start p1
 $BINARY_PATH --format json stats p1 | jq '.metrics'
 $BINARY_PATH log p1
 $BINARY_PATH logs p1
+$BINARY_PATH connector p1 example c stats
+$BINARY_PATH connector p1 example_count c stats
+$BINARY_PATH connector p1 example unknown stats || true
+$BINARY_PATH connector p1 unknown c stats || true
+$BINARY_PATH connector unknown example c stats || true
+$BINARY_PATH connector p1 example c pause
+$BINARY_PATH connector p1 example_count c pause || true
+$BINARY_PATH connector p1 example c start
+$BINARY_PATH connector p1 example unknown start || true
 $BINARY_PATH shutdown p1
 
 $BINARY_PATH delete p1

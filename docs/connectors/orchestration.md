@@ -69,13 +69,13 @@ Running           Running            Yes
 
 3. Start connector `c1`:
    ```
-   fda table-connector example numbers c1 start
+   fda connector example numbers c1 start
    ```
    Now the Changes Stream tab will show new input records from both connectors.
 
 4. Pause connector `c2`:
    ```
-   fda table-connector example numbers c2 pause
+   fda connector example numbers c2 pause
    ```
    Now the Changes Stream tab no longer will show new input records from connector `c2`.
 
@@ -102,7 +102,7 @@ A common use case for connector orchestration is loading historical data from a 
 Once `end_of_input` is true and `buffered_records` is 0, the pipeline will no longer receive any new inputs from the connector:
 
 ```bash
-curl -s http://localhost:8080/v0/pipelines/my_pipeline/tables/my_table/connectors/my_connector/stats | jq '.metrics.end_of_input == true and .metrics.buffered_records == 0'
+fda connector my_pipeline my_table my_connector stats | jq '.metrics.end_of_input == true and .metrics.buffered_records == 0'
 ```
 
 Not all connectors reach the end of input. Some, like Kafka and Pub/Sub, continuously wait for new data. Others signal the end of input depending on their configuration. The following table summarizes the end-of-input behavior for different input connectors:

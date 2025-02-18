@@ -370,12 +370,12 @@ pub enum PipelineAction {
         name: String,
     },
     /// Control an input connector belonging to a table of a pipeline.
-    TableConnector {
+    Connector {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
-        /// The name of the table.
-        table_name: String,
+        /// The name of the table or view.
+        relation_name: String,
         /// The name of the connector.
         connector_name: String,
         #[command(subcommand)]
@@ -515,5 +515,8 @@ pub enum ProgramAction {
 #[derive(Subcommand)]
 pub enum ConnectorAction {
     Start,
+    #[clap(aliases = &["stop"])]
     Pause,
+    #[clap(aliases = &["status"])]
+    Stats,
 }
