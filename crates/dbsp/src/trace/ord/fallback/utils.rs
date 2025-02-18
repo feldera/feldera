@@ -6,7 +6,10 @@ use size_of::SizeOf;
 use crate::{
     dynamic::{DataTrait, DynDataTyped, DynWeightedPairs, Factory, WeightTrait},
     time::Antichain,
-    trace::{ord::filter, Batch, BatchLocation, BatchReader, Builder, Cursor, Filter},
+    trace::{
+        ord::filter, Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Filter,
+    },
     Runtime, Timestamp,
 };
 
@@ -132,24 +135,35 @@ where
 
         let mut cursor1 = self.pos1.to_cursor(source1);
         let mut cursor2 = self.pos2.to_cursor(source2);
-        while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
-            match cursor1.key().cmp(cursor2.key()) {
-                Ordering::Less => {
-                    self.copy_values_if(&mut cursor1, key_filter, value_filter, time_map_func, fuel)
-                }
-                Ordering::Equal => self.merge_values_if(
-                    &mut cursor1,
-                    &mut cursor2,
-                    key_filter,
-                    value_filter,
-                    time_map_func,
-                    fuel,
-                ),
-                Ordering::Greater => {
-                    self.copy_values_if(&mut cursor2, key_filter, value_filter, time_map_func, fuel)
+        source1.factories().weight_factory().with(&mut |sum| {
+            while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
+                match cursor1.key().cmp(cursor2.key()) {
+                    Ordering::Less => self.copy_values_if(
+                        &mut cursor1,
+                        key_filter,
+                        value_filter,
+                        time_map_func,
+                        fuel,
+                    ),
+                    Ordering::Equal => self.merge_values_if(
+                        &mut cursor1,
+                        &mut cursor2,
+                        sum,
+                        key_filter,
+                        value_filter,
+                        time_map_func,
+                        fuel,
+                    ),
+                    Ordering::Greater => self.copy_values_if(
+                        &mut cursor2,
+                        key_filter,
+                        value_filter,
+                        time_map_func,
+                        fuel,
+                    ),
                 }
             }
-        }
+        });
 
         while cursor1.key_valid() && *fuel > 0 {
             self.copy_values_if(&mut cursor1, key_filter, value_filter, time_map_func, fuel);
@@ -242,6 +256,7 @@ where
         &mut self,
         cursor1: &mut C1,
         cursor2: &mut C2,
+        sum: &mut R,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
         map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
@@ -261,6 +276,7 @@ where
                         any = self.map_time_and_merge_diffs_if(
                             cursor1,
                             cursor2,
+                            sum,
                             value_filter,
                             map_func,
                             fuel,
@@ -293,6 +309,7 @@ where
         &mut self,
         cursor1: &mut C1,
         cursor2: &mut C2,
+        sum: &mut R,
         value_filter: &Option<Filter<V>>,
         map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
@@ -303,35 +320,47 @@ where
     {
         let mut any = false;
         if filter(value_filter, cursor1.val()) {
-            let time_diffs = self
-                .time_diffs
-                .as_mut()
-                .expect("generic merger created without time_diff factory");
-
-            time_diffs.clear();
-            if let Some(map_func) = map_func {
-                cursor1.map_times(&mut |time, diff| {
-                    let mut time: T = time.clone();
-                    map_func(&mut time);
-                    time_diffs.push_refs((&time, diff));
-                });
-                cursor2.map_times(&mut |time, diff| {
-                    let mut time: T = time.clone();
-                    map_func(&mut time);
-                    time_diffs.push_refs((&time, diff));
-                });
-            } else {
-                cursor1.map_times(&mut |time, diff| time_diffs.push_refs((time, diff)));
-                cursor2.map_times(&mut |time, diff| time_diffs.push_refs((time, diff)));
-            }
-            time_diffs.consolidate();
-
-            if !time_diffs.is_empty() {
-                for (t, d) in time_diffs.dyn_iter().map(|td| td.split()) {
-                    self.builder.push_time_diff(t, d);
+            if let Some(time_diffs) = &mut self.time_diffs {
+                time_diffs.clear();
+                if let Some(map_func) = map_func {
+                    cursor1.map_times(&mut |time, diff| {
+                        let mut time: T = time.clone();
+                        map_func(&mut time);
+                        time_diffs.push_refs((&time, diff));
+                    });
+                    cursor2.map_times(&mut |time, diff| {
+                        let mut time: T = time.clone();
+                        map_func(&mut time);
+                        time_diffs.push_refs((&time, diff));
+                    });
+                } else {
+                    cursor1.map_times(&mut |time, diff| time_diffs.push_refs((time, diff)));
+                    cursor2.map_times(&mut |time, diff| time_diffs.push_refs((time, diff)));
                 }
-                self.builder.push_val(cursor1.val());
-                any = true;
+                time_diffs.consolidate();
+
+                if !time_diffs.is_empty() {
+                    for (t, d) in time_diffs.dyn_iter().map(|td| td.split()) {
+                        self.builder.push_time_diff(t, d);
+                    }
+                    self.builder.push_val(cursor1.val());
+                    any = true;
+                }
+            } else {
+                debug_assert!(map_func.is_none());
+                sum.set_zero();
+                cursor1.map_times(&mut |time, weight| {
+                    debug_assert_eq!(time, &T::default());
+                    sum.add_assign(weight);
+                });
+                cursor2.map_times(&mut |time, weight| {
+                    debug_assert_eq!(time, &T::default());
+                    sum.add_assign(weight);
+                });
+                if !sum.is_zero() {
+                    self.builder.push_time_diff_mut(&mut T::default(), sum);
+                    self.builder.push_val(cursor1.val());
+                }
             }
         }
 
