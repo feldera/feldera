@@ -1257,7 +1257,7 @@ mod test {
             Ok(())
         }
 
-        async fn is_provisioned(&self) -> Result<Option<String>, ManagerError> {
+        async fn is_provisioned(&mut self) -> Result<Option<String>, ManagerError> {
             Ok(Some(self.uri.clone()))
         }
 

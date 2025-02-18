@@ -8,10 +8,10 @@ use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::logs_buffer::LogsBuffer;
-use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor};
+use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor, LOGS_END_MESSAGE};
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
-use log::{debug, error};
+use log::{debug, error, Level};
 use reqwest::StatusCode;
 use std::path::Path;
 use std::process::Stdio;
@@ -19,6 +19,7 @@ use std::time::Duration;
 use tokio::fs::{remove_dir_all, remove_file};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
+use tokio::sync::mpsc::channel;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::{fs, fs::create_dir_all, select, spawn};
@@ -132,9 +133,13 @@ pub struct LocalRunner {
     config: LocalRunnerConfig,
     client: reqwest::Client,
     process: Option<Child>,
+    log_deployment_check_sender: mpsc::Sender<String>,
     log_terminate_sender_and_join_handle: Option<(
         oneshot::Sender<()>,
-        JoinHandle<mpsc::Receiver<mpsc::Sender<LogMessage>>>,
+        JoinHandle<(
+            mpsc::Receiver<mpsc::Sender<LogMessage>>,
+            mpsc::Receiver<String>,
+        )>,
     )>,
 }
 
@@ -160,19 +165,27 @@ impl Drop for LocalRunner {
 }
 
 impl LocalRunner {
+    /// Number of deployment check messages that can be buffered before dropping instead of sending.
+    const CHANNEL_DEPLOYMENT_CHECK_BUFFER_SIZE: usize = 10000;
+
     /// Sets up a thread which listens to log follow requests and new incoming lines
     /// from stdout/stderr. New followers are caught up and existing followers receive
     /// the new stdout/stderr lines as they come in.
     ///
     /// Returns a sender to invoke termination of the thread and the corresponding join handle.
+    #[allow(clippy::type_complexity)]
     fn setup_log_operational(
         pipeline_id: PipelineId,
         stdout: ChildStdout,
         stderr: ChildStderr,
         mut log_follow_request_receiver: mpsc::Receiver<mpsc::Sender<LogMessage>>,
+        mut log_deployment_check_receiver: mpsc::Receiver<String>,
     ) -> (
         oneshot::Sender<()>,
-        JoinHandle<mpsc::Receiver<mpsc::Sender<LogMessage>>>,
+        JoinHandle<(
+            mpsc::Receiver<mpsc::Sender<LogMessage>>,
+            mpsc::Receiver<String>,
+        )>,
     ) {
         let (terminate_sender, mut terminate_receiver) = oneshot::channel::<()>();
         let join_handle = spawn(async move {
@@ -198,7 +211,9 @@ impl LocalRunner {
                 select! {
                     // Terminate
                     _ = &mut terminate_receiver => {
-                        Self::end_log_of_followers(&mut log_followers, LogMessage::End("LOG STREAM END: pipeline is being shutdown".to_string())).await;
+                        Self::end_log_of_followers(&mut log_followers, LogMessage::End(
+                            Self::format_control_plane_log_line(Level::Info, LOGS_END_MESSAGE)
+                        )).await;
                         debug!("Logs ended: pipeline {pipeline_id} -- terminating logging by request");
                         break;
                     }
@@ -207,10 +222,8 @@ impl LocalRunner {
                         if let Some(follower) = follower {
                             Self::catch_up_and_add_follower(&mut logs, &mut log_followers, follower).await;
                         } else {
-                            // The automata cannot recover from this as this is the only method to receive log followers from the runner.
-                            // Operational logging should not be active when the pipeline is shutdown, and only if the pipeline is
-                            // shutdown should it be deleted (which would cause this). As such, this is an error.
-                            error!("Logs failed: pipeline {pipeline_id} -- request channel closed during operational logging. Logs for this pipeline will no longer work.");
+                            // Fatal: this should only occur upon pipeline deletion, which should not be while it is not shutdown (operational).
+                            error!("Logs failed: {pipeline_id} -- follow request channel itself closed while operational. Logs will no longer work.");
                             break;
                         }
                     }
@@ -220,12 +233,12 @@ impl LocalRunner {
                             Ok(line) => match line {
                                 None => {
                                     stdout_finished = true;
-                                    if stderr_finished {
-                                        let explanation = "stdout and stderr are finished";
-                                        Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
-                                        debug!("Logs ended: pipeline {pipeline_id} -- {explanation}");
-                                        break;
-                                    }
+                                    Self::process_log_line_with_followers(
+                                        &mut logs,
+                                        &mut log_followers,
+                                        Self::format_control_plane_log_line(Level::Info, "Process stdout ended")
+                                    ).await;
+                                    debug!("Logs stdout ended: pipeline {pipeline_id}");
                                 }
                                 Some(line) => {
                                     println!("{line}"); // Also print it to manager's stdout
@@ -233,10 +246,14 @@ impl LocalRunner {
                                 }
                             },
                             Err(e) => {
-                                let explanation = format!("stdout experienced I/O error. Logs for this pipeline until restarted will no longer work. Error: {e}");
-                                Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
-                                error!("Logs ended (unexpected): pipeline {pipeline_id} -- {explanation}");
-                                break;
+                                stdout_finished = true;
+                                let message = format!("Process stdout encountered I/O error: {e}");
+                                Self::process_log_line_with_followers(
+                                    &mut logs,
+                                    &mut log_followers,
+                                    Self::format_control_plane_log_line(Level::Error, &message)
+                                ).await;
+                                error!("Logs stdout ended (unexpected): pipeline {pipeline_id}: {message}");
                             }
                         }
                     }
@@ -246,12 +263,12 @@ impl LocalRunner {
                             Ok(line) => match line {
                                 None => {
                                     stderr_finished = true;
-                                    if stdout_finished {
-                                        let explanation = "stdout and stderr are finished";
-                                        Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
-                                        debug!("Logs ended: pipeline {pipeline_id} -- {explanation}");
-                                        break;
-                                    }
+                                     Self::process_log_line_with_followers(
+                                        &mut logs,
+                                        &mut log_followers,
+                                        Self::format_control_plane_log_line(Level::Info, "Process stderr ended")
+                                    ).await;
+                                    debug!("Logs stderr ended: pipeline {pipeline_id}");
                                 }
                                 Some(line) => {
                                     eprintln!("{line}"); // Also print it to manager's stderr
@@ -259,11 +276,29 @@ impl LocalRunner {
                                 }
                             },
                             Err(e) => {
-                                let explanation = format!("stderr experienced I/O error. Logs for this pipeline until restarted will no longer work. Error: {e}");
-                                Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
-                                error!("Logs ended (unexpected): {pipeline_id} -- {explanation}");
-                                break;
+                                stderr_finished = true;
+                                let message = format!("Process stderr encountered I/O error: {e}");
+                                Self::process_log_line_with_followers(
+                                    &mut logs,
+                                    &mut log_followers,
+                                    Self::format_control_plane_log_line(Level::Error, &message)
+                                ).await;
+                                error!("Logs stderr ended (unexpected): pipeline {pipeline_id}: {message}");
                             }
+                        }
+                    }
+                    // New deployment check
+                    message = log_deployment_check_receiver.recv() => {
+                        if let Some(message) = message {
+                            Self::process_log_line_with_followers(
+                                &mut logs,
+                                &mut log_followers,
+                                Self::format_control_plane_log_line(Level::Error, &message)
+                            ).await;
+                        } else {
+                            // Fatal: this should only occur upon pipeline deletion, which should not be while it is not shutdown (operational).
+                            error!("Logs failed: {pipeline_id} -- deployment check channel itself closed while operational. Logs will no longer work.");
+                            break;
                         }
                     }
                 }
@@ -271,14 +306,76 @@ impl LocalRunner {
 
             // The end of the scope of this loop will cause the Senders of the
             // followers to be dropped and disconnected, which will notify the
-            // Receivers on the other end
+            // Receivers on the other end.
 
             // Return the log follow receiver such that it can be re-used when
-            // the pipeline is restarted
-            log_follow_request_receiver
+            // the pipeline is restarted.
+            (log_follow_request_receiver, log_deployment_check_receiver)
         });
         debug!("Logging is operational for pipeline {}", pipeline_id);
         (terminate_sender, join_handle)
+    }
+
+    /// Checks the process and working directory of the deployment.
+    /// Returns a fatal error if it is encountered.
+    async fn inner_check(&mut self) -> Result<(), String> {
+        // Pipeline process status must be checkable and not have exited
+        let process_check = if let Some(p) = &mut self.process {
+            match p.try_wait() {
+                Ok(status) => {
+                    if let Some(status) = status {
+                        // If there is an exit status, the process has exited
+                        Err(format!("Pipeline process exited prematurely with {status}"))
+                    } else {
+                        Ok(())
+                    }
+                }
+                Err(e) => {
+                    // Unable to check if it has an exit status, which indicates something went wrong
+                    Err(format!(
+                        "Pipeline process status could not be checked due to: {e}"
+                    ))
+                }
+            }
+        } else {
+            // No process handle
+            Err("The pipeline-manager and this pipeline were previously terminated. Shutdown and start the pipeline again.".to_string())
+        };
+
+        // Pipeline working directory must exist
+        let pipeline_dir = &self.config.pipeline_dir(self.pipeline_id);
+        let working_dir_check = if Path::new(pipeline_dir).is_dir() {
+            Ok(())
+        } else {
+            Err(format!(
+                "Working directory '{}' no longer exists.",
+                pipeline_dir.to_string_lossy()
+            ))
+        };
+
+        // Collect errors
+        let mut errors = vec![];
+        if let Err(e) = &working_dir_check {
+            errors.push(e.clone());
+        }
+        if let Err(e) = &process_check {
+            errors.push(e.clone());
+        }
+
+        // Write to both runner and pipeline log
+        for error in &errors {
+            error!("Deployment of pipeline {}: {}", self.pipeline_id, error);
+            if let Err(e) = self.log_deployment_check_sender.try_send(error.clone()) {
+                error!("Unable to send deployment check to the pipeline log due to: {e}");
+            }
+        }
+
+        // Result
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("\n"))
+        }
     }
 }
 
@@ -302,13 +399,19 @@ impl PipelineExecutor for LocalRunner {
         client: reqwest::Client,
         log_follow_request_receiver: mpsc::Receiver<mpsc::Sender<LogMessage>>,
     ) -> Self {
-        let (log_reject_terminate_sender, log_reject_join_handle) =
-            Self::setup_log_rejection(pipeline_id, log_follow_request_receiver);
+        let (log_deployment_check_sender, log_deployment_check_receiver) =
+            channel::<String>(Self::CHANNEL_DEPLOYMENT_CHECK_BUFFER_SIZE);
+        let (log_reject_terminate_sender, log_reject_join_handle) = Self::setup_log_rejection(
+            pipeline_id,
+            log_follow_request_receiver,
+            log_deployment_check_receiver,
+        );
         Self {
             pipeline_id,
             config,
             client,
             process: None,
+            log_deployment_check_sender,
             log_terminate_sender_and_join_handle: Some((
                 log_reject_terminate_sender,
                 log_reject_join_handle,
@@ -430,13 +533,14 @@ impl PipelineExecutor for LocalRunner {
             .log_terminate_sender_and_join_handle
             .take()
             .expect("Log terminate sender and join handle are not present");
-        let log_follow_request_receiver =
+        let (log_follow_request_receiver, log_deployment_check_receiver) =
             Self::terminate_log_thread(current_log_terminate_sender, current_log_join_handle).await;
         let (new_log_terminate_sender, new_log_join_handle) = Self::setup_log_operational(
             self.pipeline_id,
             stdout,
             stderr,
             log_follow_request_receiver,
+            log_deployment_check_receiver,
         );
 
         // Store state
@@ -448,7 +552,13 @@ impl PipelineExecutor for LocalRunner {
     }
 
     /// Process deployment provisioning is completed when the port file is found and read.
-    async fn is_provisioned(&self) -> Result<Option<String>, ManagerError> {
+    async fn is_provisioned(&mut self) -> Result<Option<String>, ManagerError> {
+        if let Err(error) = self.inner_check().await {
+            return Err(ManagerError::from(
+                RunnerError::RunnerDeploymentCheckError { error },
+            ));
+        }
+
         let port_file_path = self.config.port_file_path(self.pipeline_id);
         match fs::read_to_string(port_file_path).await {
             Ok(port) => {
@@ -473,48 +583,13 @@ impl PipelineExecutor for LocalRunner {
     /// - Pipeline working directory must exist
     /// - Process status must be checkable and not be exited
     async fn check(&mut self) -> Result<(), ManagerError> {
-        // Pipeline working directory must exist
-        let pipeline_dir = &self.config.pipeline_dir(self.pipeline_id);
-        if !Path::new(pipeline_dir).is_dir() {
-            return Err(ManagerError::from(RunnerError::RunnerDeploymentCheckError {
-                error: format!("Pipeline working directory {} no longer exists (it should only be deleted at shutdown)", pipeline_dir.to_string_lossy())
-            }));
-        }
-
-        // Pipeline process status must be checkable and not be exited
-        if let Some(p) = &mut self.process {
-            match p.try_wait() {
-                Ok(status) => {
-                    if let Some(status) = status {
-                        // If there is an exit status, the process has exited
-                        return Err(ManagerError::from(
-                            RunnerError::RunnerDeploymentCheckError {
-                                error: format!("Pipeline process exited prematurely with {status}"),
-                            },
-                        ));
-                    }
-                }
-                Err(e) => {
-                    // Unable to check if it has an exit status, which indicates something went wrong
-                    return Err(ManagerError::from(
-                        RunnerError::RunnerDeploymentCheckError {
-                            error: format!(
-                                "Pipeline process status could not be checked due to: {e}"
-                            ),
-                        },
-                    ));
-                }
-            }
+        if let Err(error) = self.inner_check().await {
+            Err(ManagerError::from(
+                RunnerError::RunnerDeploymentCheckError { error },
+            ))
         } else {
-            // No process handle
-            return Err(ManagerError::from(
-                RunnerError::RunnerDeploymentCheckError {
-                    error: "the pipeline-manager and this pipeline were previously terminated -- shutdown and start the pipeline again".to_string(),
-                },
-            ));
-        };
-
-        Ok(())
+            Ok(())
+        }
     }
 
     /// Shuts down the process deployment.
@@ -547,10 +622,13 @@ impl PipelineExecutor for LocalRunner {
             .log_terminate_sender_and_join_handle
             .take()
             .expect("Log terminate sender and join handle are not present");
-        let log_follow_request_receiver =
+        let (log_follow_request_receiver, log_deployment_check_receiver) =
             Self::terminate_log_thread(current_log_terminate_sender, current_log_join_handle).await;
-        let (new_log_terminate_sender, new_log_join_handle) =
-            Self::setup_log_rejection(self.pipeline_id, log_follow_request_receiver);
+        let (new_log_terminate_sender, new_log_join_handle) = Self::setup_log_rejection(
+            self.pipeline_id,
+            log_follow_request_receiver,
+            log_deployment_check_receiver,
+        );
         self.log_terminate_sender_and_join_handle =
             Some((new_log_terminate_sender, new_log_join_handle));
 

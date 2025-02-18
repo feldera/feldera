@@ -68,6 +68,13 @@ impl ErrorResponse {
                 response.error_code,
                 response.message
             );
+        } else if error.status_code() == StatusCode::SERVICE_UNAVAILABLE {
+            info!(
+                "[HTTP error] {} {}: {}",
+                error.status_code(),
+                response.error_code,
+                response.message
+            );
         } else {
             // All other status responses should not occur in the implementation,
             // and thus are logged as errors. Many of the implementation errors are

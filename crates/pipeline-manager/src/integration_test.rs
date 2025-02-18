@@ -58,6 +58,7 @@ use crate::config::PgEmbedConfig;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramStatus};
 use crate::runner::local_runner::LocalRunner;
+use crate::runner::pipeline_executor::LOGS_END_MESSAGE;
 use crate::{
     config::{ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig},
     db::types::pipeline::PipelineStatus,
@@ -2685,20 +2686,13 @@ async fn pipeline_logs() {
     assert_eq!(response_logs_running.status(), StatusCode::OK);
     let logs1 = String::from_utf8(response_logs_paused.body().await.unwrap().to_vec()).unwrap();
     let logs2 = String::from_utf8(response_logs_running.body().await.unwrap().to_vec()).unwrap();
-    // It might take time for the logs to become available or upon shutdown they become
-    // no longer available, as such any of these three endings is possible
+    let normal_ending = format!("{}\n", LOGS_END_MESSAGE);
     assert!(
-        logs1.ends_with("LOG STREAM END: pipeline is being shutdown\n")
-            || logs1.ends_with("LOG STREAM END: stdout and stderr are finished\n")
-            || logs1.ends_with("LOG STREAM END: no longer available, please try again later\n")
-            || logs1.ends_with("LOG STREAM UNAVAILABLE: please try again later\n"),
+        logs1.ends_with(&normal_ending),
         "Unexpected logs ending: {logs1}"
     );
     assert!(
-        logs2.ends_with("LOG STREAM END: pipeline is being shutdown\n")
-            || logs2.ends_with("LOG STREAM END: stdout and stderr are finished\n")
-            || logs2.ends_with("LOG STREAM END: no longer available, please try again later\n")
-            || logs2.ends_with("LOG STREAM UNAVAILABLE: please try again later\n"),
+        logs2.ends_with(&normal_ending),
         "Unexpected logs ending: {logs2}"
     );
 
