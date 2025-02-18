@@ -3,8 +3,9 @@ use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::logs_buffer::LogsBuffer;
 use async_trait::async_trait;
+use chrono::SecondsFormat;
 use feldera_types::config::{PipelineConfig, StorageConfig};
-use log::{debug, error};
+use log::{debug, error, Level};
 use std::time::Duration;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, oneshot};
@@ -18,6 +19,9 @@ pub enum LogMessage {
     Line(String),
     End(String),
 }
+
+/// Text shown at the end of logs upon shutdown.
+pub const LOGS_END_MESSAGE: &str = "End of logs: pipeline is being shutdown";
 
 /// Trait to be implemented by any pipeline runner.
 /// The `PipelineAutomaton` invokes these methods per pipeline.
@@ -75,7 +79,7 @@ pub trait PipelineExecutor: Sync + Send {
     /// - `Ok(Some(deployment_location))` if provisioning completed successfully
     /// - `Ok(None)` if provisioning is still ongoing
     /// - `Err(...)` if provisioning failed
-    async fn is_provisioned(&self) -> Result<Option<String>, ManagerError>;
+    async fn is_provisioned(&mut self) -> Result<Option<String>, ManagerError>;
 
     /// Checks the pipeline.
     /// Returns an error if the provisioned resources encountered a fatal error.
@@ -88,12 +92,17 @@ pub trait PipelineExecutor: Sync + Send {
     /// Sets up a thread which replies to any log follow request with a rejection that the pipeline
     /// has not yet started.
     /// Returns a sender to invoke termination of the thread and the corresponding join handle.
+    #[allow(clippy::type_complexity)]
     fn setup_log_rejection(
         pipeline_id: PipelineId,
         mut log_follow_request_receiver: mpsc::Receiver<mpsc::Sender<LogMessage>>,
+        mut log_deployment_check_receiver: mpsc::Receiver<String>,
     ) -> (
         oneshot::Sender<()>,
-        JoinHandle<mpsc::Receiver<mpsc::Sender<LogMessage>>>,
+        JoinHandle<(
+            mpsc::Receiver<mpsc::Sender<LogMessage>>,
+            mpsc::Receiver<String>,
+        )>,
     ) {
         let (terminate_sender, mut terminate_receiver) = oneshot::channel::<()>();
         let join_handle = spawn(async move {
@@ -116,9 +125,16 @@ pub trait PipelineExecutor: Sync + Send {
                             break;
                         }
                     }
+                    // New deployment check lines are ignored
+                    line = log_deployment_check_receiver.recv() => {
+                        if line.is_none() {
+                            debug!("Log deployment check sender itself terminated. Log rejection thread is ended for this reason.");
+                            break;
+                        }
+                    }
                 }
             }
-            log_follow_request_receiver
+            (log_follow_request_receiver, log_deployment_check_receiver)
         });
         debug!(
             "Logging request are being rejected for pipeline {}",
@@ -132,8 +148,14 @@ pub trait PipelineExecutor: Sync + Send {
     /// Returns the log follow request receiver.
     async fn terminate_log_thread(
         terminate_sender: oneshot::Sender<()>,
-        join_handle: JoinHandle<mpsc::Receiver<mpsc::Sender<LogMessage>>>,
-    ) -> mpsc::Receiver<mpsc::Sender<LogMessage>> {
+        join_handle: JoinHandle<(
+            mpsc::Receiver<mpsc::Sender<LogMessage>>,
+            mpsc::Receiver<String>,
+        )>,
+    ) -> (
+        mpsc::Receiver<mpsc::Sender<LogMessage>>,
+        mpsc::Receiver<String>,
+    ) {
         // The terminate receiver might have been dropped already if there was an unrecoverable
         // error. If this occurred, the thread will have exited by itself. As such, it is not
         // needed to check whether send was a success or not.
@@ -264,5 +286,15 @@ pub trait PipelineExecutor: Sync + Send {
         // All Senders were cleared and will go out of scope, which
         // results in them being dropped and the Receivers being notified
         // no Senders exists anymore.
+    }
+
+    /// Formats a control plane log line including the tag, timestamp and level.
+    fn format_control_plane_log_line(level: Level, message: &str) -> String {
+        let timestamp = chrono::Utc::now();
+        format!(
+            // This is in line with the tracing format printed by the pipeline itself.
+            "[control-plane] {}  {level} {message}",
+            timestamp.to_rfc3339_opts(SecondsFormat::Micros, true)
+        )
     }
 }

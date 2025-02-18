@@ -237,10 +237,10 @@ impl Display for RunnerError {
                 )
             }
             Self::RunnerDeploymentProvisionError { error } => {
-                write!(f, "Deployment provisioning failed: {error}")
+                write!(f, "Deployment provision operation failed: {error}")
             }
             Self::RunnerDeploymentCheckError { error } => {
-                write!(f, "Deployment check failed: {error}")
+                write!(f, "Deployment check failed: one or more deployment resources encountered a fatal error.\n\n{error}")
             }
             Self::RunnerDeploymentShutdownError { error } => {
                 write!(f, "Deployment shutdown failed (will retry): {error}")

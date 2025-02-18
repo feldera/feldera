@@ -345,7 +345,9 @@ pub fn log_response(
                 } else {
                     Level::Debug
                 }
-            } else if response.status().is_client_error() {
+            } else if response.status().is_client_error()
+                || response.status() == StatusCode::SERVICE_UNAVAILABLE
+            {
                 Level::Info
             } else {
                 Level::Error
