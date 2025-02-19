@@ -112,7 +112,7 @@ Not all connectors reach the end of input. Some, like Kafka and Pub/Sub, continu
 |------------|------------------------------|---------|
 | [HTTP GET](/connectors/sources/http-get)  | yes                         |         |
 | [Datagen](/connectors/sources/datagen)    | when `limit` is set         | The Datagen connector stops producing inputs after reaching the specified record limit. |
-| [Debezium](/connecrors/sources/debezium)  | no                          |         |
+| [Debezium](/connectors/sources/debezium)  | no                          |         |
 | [Delta Lake](/connectors/sources/delta)   | when `mode=snapshot`        | When configured with `mode=snapshot`, the DeltaLake connector signals the end of input after ingesting the specified snapshot of the table. |
 | File                                      | when `follow=false`         | When configured with `follow=false` (the default), the file input connector signals the end of input after reading the current contents of the file; otherwise (`follow=true`), the connector continues polling for new changes. |
 | [Iceberg](/connectors/sources/iceberg)    | yes                         | Stops after reading a complete table shapshot. |
