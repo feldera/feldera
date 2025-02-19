@@ -118,7 +118,7 @@ Not all connectors reach the end of input. Some, like Kafka and Pub/Sub, continu
 | [Iceberg](/connectors/sources/iceberg)    | yes                         | Stops after reading a complete table shapshot. |
 | [Kafka](/connectors/sources/kafka)        | no                          | Waits for new messages from the Kafka topic. |
 | [Pub/Sub](/connectors/sources/pubsub)     | no                          | Waits for new messages from the Pub/Sub subscriptio. |
-| [Postgres](/connectors/sources/postgresql)| yes                         | Stops after reading a complete table shapshot (use the [Debezium connector](/connecrors/sources/debezium) for Change Data Capture). |
+| [Postgres](/connectors/sources/postgresql)| yes                         | Stops after reading a complete table shapshot (use the [Debezium connector](/connectors/sources/debezium) for Change Data Capture). |
 | [S3](/connectors/sources/s3)              | yes                         | Stops after reading all objects that match the specified prefix. |
 
 
