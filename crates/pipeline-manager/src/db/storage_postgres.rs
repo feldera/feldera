@@ -584,10 +584,10 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(), DBError> {
+    ) -> Result<PipelineId, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::set_deployment_desired_status(
+        let pipeline_id = operations::pipeline::set_deployment_desired_status(
             &txn,
             tenant_id,
             pipeline_name,
@@ -595,17 +595,17 @@ impl Storage for StoragePostgres {
         )
         .await?;
         txn.commit().await?;
-        Ok(())
+        Ok(pipeline_id)
     }
 
     async fn set_deployment_desired_status_paused(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(), DBError> {
+    ) -> Result<PipelineId, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::set_deployment_desired_status(
+        let pipeline_id = operations::pipeline::set_deployment_desired_status(
             &txn,
             tenant_id,
             pipeline_name,
@@ -613,17 +613,17 @@ impl Storage for StoragePostgres {
         )
         .await?;
         txn.commit().await?;
-        Ok(())
+        Ok(pipeline_id)
     }
 
     async fn set_deployment_desired_status_shutdown(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(), DBError> {
+    ) -> Result<PipelineId, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::set_deployment_desired_status(
+        let pipeline_id = operations::pipeline::set_deployment_desired_status(
             &txn,
             tenant_id,
             pipeline_name,
@@ -631,7 +631,7 @@ impl Storage for StoragePostgres {
         )
         .await?;
         txn.commit().await?;
-        Ok(())
+        Ok(pipeline_id)
     }
 
     async fn transit_deployment_status_to_provisioning(

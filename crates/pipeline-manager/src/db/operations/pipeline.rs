@@ -743,7 +743,7 @@ pub(crate) async fn set_deployment_desired_status(
     tenant_id: TenantId,
     pipeline_name: &str,
     new_desired_status: PipelineDesiredStatus,
-) -> Result<(), DBError> {
+) -> Result<PipelineId, DBError> {
     let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
 
     // Check that the desired status can be set
@@ -767,7 +767,7 @@ pub(crate) async fn set_deployment_desired_status(
         )
         .await?;
     if modified_rows > 0 {
-        Ok(())
+        Ok(current.id)
     } else {
         Err(DBError::UnknownPipeline {
             pipeline_id: current.id,
