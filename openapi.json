@@ -3000,7 +3000,8 @@
           "weighted",
           "debezium",
           "snowflake",
-          "raw"
+          "raw",
+          "redis"
         ]
       },
       "KafkaHeader": {
@@ -4945,6 +4946,24 @@
                 "type": "string",
                 "enum": [
                   "delta_table_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/RedisOutputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "redis_output"
                 ]
               }
             }

@@ -44,7 +44,13 @@ mod nexmark;
 #[cfg(feature = "with-pubsub")]
 mod pubsub;
 
+#[cfg(feature = "with-redis")]
+mod redis;
+
 use feldera_types::config::TransportConfig;
+
+#[cfg(feature = "with-redis")]
+use redis::output::RedisOutputEndpoint;
 
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
 #[cfg(feature = "with-kafka")]
@@ -100,6 +106,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::DeltaTableOutput(_)
         | TransportConfig::PostgresInput(_)
         | TransportConfig::HttpOutput
+        | TransportConfig::RedisOutput(_)
         | TransportConfig::IcebergInput(_) => return Ok(None),
     };
     if fault_tolerant && !endpoint.is_fault_tolerant() {
@@ -134,6 +141,10 @@ pub fn output_transport_config_to_endpoint(
             )?))),
             true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
         },
+        #[cfg(feature = "with-redis")]
+        TransportConfig::RedisOutput(config) => {
+            Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
+        }
         _ => Ok(None),
     }
 }
