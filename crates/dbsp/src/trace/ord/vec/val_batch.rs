@@ -6,11 +6,10 @@ use crate::{
     },
     trace::{
         layers::{
-            Builder as _, Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
-            MergeBuilder, OrdOffset, Trie,
+            Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
-        Builder, Cursor, Deserializer, Filter, Merger, Serializer,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Bounds, BoundsRef, Builder,
+        Cursor, Deserializer, Serializer,
     },
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
@@ -400,7 +399,6 @@ where
 {
     type Batcher = MergeBatcher<Self>;
     type Builder = VecValBuilder<K, V, T, R, O>;
-    type Merger = VecValMerger<K, V, T, R, O>;
 
     fn checkpoint_path(&self) -> Option<PathBuf> {
         unimplemented!()
@@ -417,145 +415,6 @@ where
                 .collect(),
         )
     }*/
-
-    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
-        VecValMerger::new_merger(self, other, dst_hint)
-    }
-}
-
-/// State for an in-progress merge.
-#[derive(SizeOf)]
-pub struct VecValMerger<K, V, T, R, O = usize>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    T: Timestamp,
-    O: OrdOffset,
-{
-    // first batch, and position therein.
-    lower1: usize,
-    upper1: usize,
-    // second batch, and position therein.
-    lower2: usize,
-    upper2: usize,
-    // result that we are currently assembling.
-    result: <VecValBatchLayer<K, V, T, R, O> as Trie>::MergeBuilder,
-    bounds: Bounds<T>,
-    #[size_of(skip)]
-    factories: VecValBatchFactories<K, V, T, R>,
-    // #[size_of(skip)]
-    // item_factory: &'static PairVTable<K, V>,
-    // #[size_of(skip)]
-    // weighted_item_factory: &'static WeightedVTable<Pair<K, V>, R>,
-    // #[size_of(skip)]
-    // batch_item_factory: &'static BatchItemVTable<K, V, Pair<K, V>, R>,
-}
-
-impl<K, V, T, R, O> Merger<K, V, T, R, VecValBatch<K, V, T, R, O>> for VecValMerger<K, V, T, R, O>
-where
-    Self: SizeOf,
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    T: Timestamp,
-    O: OrdOffset,
-{
-    fn new_merger(
-        batch1: &VecValBatch<K, V, T, R, O>,
-        batch2: &VecValBatch<K, V, T, R, O>,
-        _dst_hint: Option<BatchLocation>,
-    ) -> Self {
-        // Leonid: we do not require batch bounds to grow monotonically.
-        // assert!(batch1.upper() == batch2.lower());
-
-        VecValMerger {
-            lower1: 0,
-            upper1: batch1.layer.keys(),
-            lower2: 0,
-            upper2: batch2.layer.keys(),
-            result: <<VecValBatchLayer<K, V, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
-            bounds: batch1.bounds().to_owned().combine(batch2.bounds()),
-            factories: batch1.factories.clone(),
-            // item_factory: batch1.item_factory,
-            // weighted_item_factory: batch1.weighted_item_factory,
-            // batch_item_factory: batch1.batch_item_factory,
-        }
-    }
-
-    fn done(self) -> VecValBatch<K, V, T, R, O> {
-        assert!(self.lower1 == self.upper1);
-        assert!(self.lower2 == self.upper2);
-
-        VecValBatch {
-            // item_factory: &self.item_factory,
-            // weighted_item_factory: &self.weighted_item_factory,
-            // batch_item_factory: &self.batch_item_factory,
-            factories: self.factories.clone(),
-            layer: self.result.done(),
-            bounds: self.bounds,
-        }
-    }
-
-    fn work(
-        &mut self,
-        source1: &VecValBatch<K, V, T, R, O>,
-        source2: &VecValBatch<K, V, T, R, O>,
-        key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<V>>,
-        frontier: &T,
-        fuel: &mut isize,
-    ) {
-        let advance_func = |t: &mut DynDataTyped<T>| {
-            t.join_assign(frontier);
-        };
-
-        let time_map_func = if frontier == &T::minimum() {
-            None
-        } else {
-            Some(&advance_func as &dyn Fn(&mut DynDataTyped<T>))
-        };
-
-        match (key_filter, value_filter) {
-            (Some(key_filter), Some(value_filter)) => {
-                self.result.push_merge_retain_values_fueled(
-                    (&source1.layer, &mut self.lower1, self.upper1),
-                    (&source2.layer, &mut self.lower2, self.upper2),
-                    &key_filter.filter_func,
-                    &value_filter.filter_func,
-                    time_map_func,
-                    fuel,
-                );
-            }
-            (Some(key_filter), None) => {
-                self.result.push_merge_retain_keys_fueled(
-                    (&source1.layer, &mut self.lower1, self.upper1),
-                    (&source2.layer, &mut self.lower2, self.upper2),
-                    &key_filter.filter_func,
-                    time_map_func,
-                    fuel,
-                );
-            }
-            (None, Some(value_filter)) => {
-                self.result.push_merge_retain_values_fueled(
-                    (&source1.layer, &mut self.lower1, self.upper1),
-                    (&source2.layer, &mut self.lower2, self.upper2),
-                    &|_| true,
-                    &value_filter.filter_func,
-                    time_map_func,
-                    fuel,
-                );
-            }
-            (None, None) => {
-                self.result.push_merge_fueled(
-                    (&source1.layer, &mut self.lower1, self.upper1),
-                    (&source2.layer, &mut self.lower2, self.upper2),
-                    time_map_func,
-                    fuel,
-                );
-            }
-        }
-    }
 }
 
 /// A cursor for navigating a single layer.

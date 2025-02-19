@@ -7,11 +7,10 @@ use crate::{
     },
     trace::{
         deserialize_wset,
-        layers::{Builder as _, Cursor as _, Leaf, LeafCursor, LeafFactories, MergeBuilder, Trie},
+        layers::{Cursor as _, Leaf, LeafCursor, LeafFactories, Trie},
         ord::merge_batcher::MergeBatcher,
-        serialize_wset, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories,
-        Bounds, BoundsRef, Builder, Cursor, Deserializer, Filter, MergeCursor, Merger, Serializer,
-        WeightedItem,
+        serialize_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Bounds,
+        BoundsRef, Builder, Cursor, Deserializer, Filter, MergeCursor, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -20,7 +19,6 @@ use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
-    cmp::max,
     fmt::{self, Debug, Display},
     ops::Neg,
 };
@@ -391,85 +389,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Batch for VecWSet<K, R> {
     type Batcher = MergeBatcher<Self>;
     type Builder = VecWSetBuilder<K, R>;
-    type Merger = VecWSetMerger<K, R>;
 
     /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self {
         Self::from_tuples(time, keys)
     }*/
-
-    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
-        VecWSetMerger::new_merger(self, other, dst_hint)
-    }
-}
-
-/// State for an in-progress merge.
-#[derive(SizeOf)]
-pub struct VecWSetMerger<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
-    // result that we are currently assembling.
-    result: <Leaf<K, R> as Trie>::MergeBuilder,
-    #[size_of(skip)]
-    factories: VecWSetFactories<K, R>,
-    // item_factory: &'static WeightedFactory<K, R>,
-    // batch_item_factory: &'static BatchItemFactory<K, (), K, R>,
-}
-
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Merger<K, DynUnit, (), R, VecWSet<K, R>>
-    for VecWSetMerger<K, R>
-where
-    Self: SizeOf,
-{
-    fn new_merger(
-        batch1: &VecWSet<K, R>,
-        batch2: &VecWSet<K, R>,
-        _dst_hint: Option<BatchLocation>,
-    ) -> Self {
-        Self {
-            result: <<Leaf<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
-                &batch1.layer,
-                &batch2.layer,
-            ),
-            factories: batch1.factories.clone(),
-            // item_factory: batch1.weighted_item_factory,
-            // batch_item_factory: batch1.batch_item_factory,
-        }
-    }
-
-    fn done(self) -> VecWSet<K, R> {
-        VecWSet {
-            layer: self.result.done(),
-            factories: self.factories,
-            // weighted_item_factory: self.item_factory,
-            // batch_item_factory: self.batch_item_factory,
-        }
-    }
-
-    fn work(
-        &mut self,
-        source1: &VecWSet<K, R>,
-        source2: &VecWSet<K, R>,
-        key_filter: &Option<Filter<K>>,
-        _value_filter: &Option<Filter<DynUnit>>,
-        _frontier: &(),
-        fuel: &mut isize,
-    ) {
-        let initial_size = self.result.keys();
-
-        if let Some(key_filter) = key_filter {
-            self.result.push_merge_retain_keys(
-                source1.layer.cursor(),
-                source2.layer.cursor(),
-                &key_filter.filter_func,
-                None,
-            );
-        } else {
-            self.result
-                .push_merge(source1.layer.cursor(), source2.layer.cursor(), None);
-        }
-        let effort = self.result.keys() - initial_size;
-        *fuel -= effort as isize;
-
-        *fuel = max(*fuel, 1);
-    }
 }
 
 /// A cursor for navigating a single layer.

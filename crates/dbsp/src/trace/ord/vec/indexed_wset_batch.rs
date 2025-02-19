@@ -6,11 +6,10 @@ use crate::{
     },
     trace::{
         layers::{
-            Builder as _, Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
-            MergeBuilder, OrdOffset, Trie,
+            Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
-        Builder, Cursor, Deserializer, Filter, MergeCursor, Merger, Serializer, WeightedItem,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Bounds, BoundsRef, Builder,
+        Cursor, Deserializer, Filter, MergeCursor, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -491,132 +490,6 @@ where
 {
     type Batcher = MergeBatcher<Self>;
     type Builder = VecIndexedWSetBuilder<K, V, R, O>;
-    type Merger = VecIndexedWSetMerger<K, V, R, O>;
-
-    /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
-    where
-        Self::Val: From<()>,
-    {
-        Self::from_tuples(
-            time,
-            keys.into_iter()
-                .map(|(k, w)| ((k, From::from(())), w))
-                .collect(),
-        )
-    }*/
-
-    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
-        VecIndexedWSetMerger::new_merger(self, other, dst_hint)
-    }
-}
-
-/// State for an in-progress merge.
-#[derive(SizeOf)]
-pub struct VecIndexedWSetMerger<K, V, R, O = usize>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    // first batch, and position therein.
-    lower1: usize,
-    upper1: usize,
-    // second batch, and position therein.
-    lower2: usize,
-    upper2: usize,
-    // result that we are currently assembling.
-    result: <Layers<K, V, R, O> as Trie>::MergeBuilder,
-    #[size_of(skip)]
-    factories: VecIndexedWSetFactories<K, V, R>,
-}
-
-impl<K, V, R, O> Merger<K, V, (), R, VecIndexedWSet<K, V, R, O>>
-    for VecIndexedWSetMerger<K, V, R, O>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    #[inline]
-    fn new_merger(
-        batch1: &VecIndexedWSet<K, V, R, O>,
-        batch2: &VecIndexedWSet<K, V, R, O>,
-        _dst_hint: Option<BatchLocation>,
-    ) -> Self {
-        Self {
-            lower1: 0,
-            upper1: batch1.layer.keys(),
-            lower2: 0,
-            upper2: batch2.layer.keys(),
-            result: <<Layers<K, V, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
-                &batch1.layer,
-                &batch2.layer,
-            ),
-            factories: batch1.factories.clone(),
-        }
-    }
-
-    #[inline]
-    fn done(self) -> VecIndexedWSet<K, V, R, O> {
-        VecIndexedWSet {
-            layer: self.result.done(),
-            factories: self.factories,
-        }
-    }
-
-    fn work(
-        &mut self,
-        source1: &VecIndexedWSet<K, V, R, O>,
-        source2: &VecIndexedWSet<K, V, R, O>,
-        key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<V>>,
-        _frontier: &(),
-        fuel: &mut isize,
-    ) {
-        // Use the more expensive `push_merge_truncate_values_fueled`
-        // method if we need to remove truncated values during merging.
-        match (key_filter, value_filter) {
-            (Some(key_filter), Some(value_filter)) => {
-                self.result.push_merge_retain_values_fueled(
-                    (&source1.layer, &mut self.lower1, self.upper1),
-                    (&source2.layer, &mut self.lower2, self.upper2),
-                    &key_filter.filter_func,
-                    &value_filter.filter_func,
-                    None,
-                    fuel,
-                );
-            }
-            (Some(key_filter), None) => {
-                self.result.push_merge_retain_keys_fueled(
-                    (&source1.layer, &mut self.lower1, self.upper1),
-                    (&source2.layer, &mut self.lower2, self.upper2),
-                    &key_filter.filter_func,
-                    None,
-                    fuel,
-                );
-            }
-            (None, Some(value_filter)) => {
-                self.result.push_merge_retain_values_fueled(
-                    (&source1.layer, &mut self.lower1, self.upper1),
-                    (&source2.layer, &mut self.lower2, self.upper2),
-                    &|_| true,
-                    &value_filter.filter_func,
-                    None,
-                    fuel,
-                );
-            }
-            (None, None) => {
-                self.result.push_merge_fueled(
-                    (&source1.layer, &mut self.lower1, self.upper1),
-                    (&source2.layer, &mut self.lower2, self.upper2),
-                    None,
-                    fuel,
-                );
-            }
-        }
-    }
 }
 
 /// A cursor for navigating a single layer.
