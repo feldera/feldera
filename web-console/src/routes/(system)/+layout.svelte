@@ -12,7 +12,9 @@
     toastError(new Error(event.reason, { cause: { name: 'Unhandled rejection' } }))
   })
   window.addEventListener('rejectionhandled', (event) => {
-    toastError(new Error(event.reason, { cause: { name: 'Rejection handled' } }))
+    if (event.reason) {
+      toastError(new Error(event.reason, { cause: { name: 'Rejection handled' } }))
+    }
   })
   let { children } = $props()
 </script>

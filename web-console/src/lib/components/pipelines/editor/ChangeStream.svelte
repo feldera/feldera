@@ -16,11 +16,13 @@
 
   import { humanSize } from '$lib/functions/common/string'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
-  import ReverseScrollFixedList from '$lib/components/pipelines/editor/ReverseScrollFixedList.svelte'
+  import List from '$lib/components/common/virtualList/HeadlessVirtualList.svelte'
   import SQLValue from '$lib/components/relationData/SQLValue.svelte'
   import type { Field } from '$lib/services/manager'
   import SqlColumnHeader from '$lib/components/relationData/SQLColumnHeader.svelte'
   import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
+  import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
+  import ScrollDownFab from '$lib/components/other/ScrollDownFab.svelte'
 
   let {
     changeStream
@@ -30,6 +32,8 @@
 
   let popupRef: HTMLElement | undefined = $state()
   let tooltip = usePopoverTooltip(() => popupRef)
+
+  const reverseScroll = useReverseScrollContainer()
 </script>
 
 <div
@@ -53,28 +57,18 @@
       )} in total.
     </WarningBanner>
   {/if}
-  <ReverseScrollFixedList
-    itemSize={28}
-    items={changeStream.rows}
-    class="overflow-scroll scrollbar"
-    stickyIndices={changeStream.headers}
-  >
-    {#snippet listContainer(children, { height, onscroll, onresize, setref })}
-      {@const _height = {
-        set current(x: number) {
-          onresize({ clientHeight: x })
-        }
-      }}
-      {@const ref = {
-        set current(el: HTMLElement) {
-          setref(el)
+  <List itemSize={28} itemCount={changeStream.rows.length} stickyIndices={changeStream.headers}>
+    {#snippet listContainer(children, { height, onscroll, setClientHeight })}
+      {@const _ = {
+        set clientHeight(value: number) {
+          setClientHeight(value)
         }
       }}
       <div
         class="h-full overflow-auto scrollbar"
+        use:reverseScroll.action={{ observeContentSize: () => changeStream.rows.length }}
         {onscroll}
-        bind:clientHeight={_height.current}
-        bind:this={ref.current}
+        bind:clientHeight={_.clientHeight}
       >
         <table style:height class="">
           <tbody>
@@ -83,8 +77,9 @@
         </table>
       </div>
     {/snippet}
-    {#snippet item(row, index, style, padding, isSticky)}
-      {#if 'skippedBytes' in row}
+    {#snippet item({ index, style, padding, isSticky })}
+      {@const row = changeStream.rows[index]}
+      {#if !row}{:else if 'skippedBytes' in row}
         <tr class="h-7" style="{style} {padding}">
           <td colspan="99">
             <span>{`Skipped ${humanSize(row.skippedBytes)} of changes stream`}</span>
@@ -133,12 +128,13 @@
       {/if}
     {/snippet}
     {#snippet emptyItem()}
-      <tr class="h-0"></tr>
+      <tr class="hidden"></tr>
     {/snippet}
     {#snippet footer()}
       <tr style="height: auto; ">
         <td></td>
       </tr>
     {/snippet}
-  </ReverseScrollFixedList>
+  </List>
+  <ScrollDownFab {reverseScroll}></ScrollDownFab>
 </div>

@@ -84,11 +84,11 @@
       <table class="bg-white-dark table max-w-[1000px] rounded text-base">
         <thead>
           <tr>
-            <th class="text-center font-normal text-surface-600-400">Table</th>
-            <th class="text-center font-normal text-surface-600-400">Ingested records</th>
-            <th class="text-center font-normal text-surface-600-400">Ingested bytes</th>
-            <th class="text-center font-normal text-surface-600-400">Parse errors</th>
-            <th class="text-center font-normal text-surface-600-400">Transport errors</th>
+            <th class="font-normal text-surface-600-400">Table</th>
+            <th class="!text-end font-normal text-surface-600-400">Ingested records</th>
+            <th class="!text-end font-normal text-surface-600-400">Ingested bytes</th>
+            <th class="!text-end font-normal text-surface-600-400">Parse errors</th>
+            <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
           </tr>
         </thead>
         <tbody>
@@ -114,12 +114,12 @@
       <table class="bg-white-dark table max-w-[1200px] rounded text-base">
         <thead>
           <tr>
-            <th class="text-center font-normal text-surface-600-400">View</th>
-            <th class="text-center font-normal text-surface-600-400">Transmitted records</th>
-            <th class="text-center font-normal text-surface-600-400">Transmitted bytes</th>
-            <th class="text-center font-normal text-surface-600-400">Processed records</th>
-            <th class="text-center font-normal text-surface-600-400">Encode errors</th>
-            <th class="text-center font-normal text-surface-600-400">Transport errors</th>
+            <th class="font-normal text-surface-600-400">View</th>
+            <th class="!text-end font-normal text-surface-600-400">Transmitted records</th>
+            <th class="!text-end font-normal text-surface-600-400">Transmitted bytes</th>
+            <th class="!text-end font-normal text-surface-600-400">Processed records</th>
+            <th class="!text-end font-normal text-surface-600-400">Encode errors</th>
+            <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
           </tr>
         </thead>
         <tbody>

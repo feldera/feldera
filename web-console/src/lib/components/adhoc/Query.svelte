@@ -39,7 +39,9 @@
   import SQLValue from '$lib/components/relationData/SQLValue.svelte'
   import SqlColumnHeader from '$lib/components/relationData/SQLColumnHeader.svelte'
   import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
-  import ReverseScrollFixedList from '$lib/components/pipelines/editor/ReverseScrollFixedList.svelte'
+  import List from '$lib/components/common/virtualList/HeadlessVirtualList.svelte'
+  import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
+  import ScrollDownFab from '$lib/components/other/ScrollDownFab.svelte'
 
   let {
     query = $bindable(),
@@ -80,6 +82,7 @@
   $effect(() => {
     rows = result?.rows() ?? []
   })
+  const reverseScroll = useReverseScrollContainer()
 </script>
 
 <div
@@ -156,29 +159,18 @@
       {#key result.columns}
         <div class="pr-4 pt-2">
           <div class="relative h-full w-fit max-w-full">
-            <ReverseScrollFixedList
-              itemSize={28}
-              items={rows}
-              class=""
-              stickyIndices={[]}
-              marginTop={28}
-            >
-              {#snippet listContainer(items, { height, onscroll, onresize, setref })}
-                {@const _height = {
-                  set current(x: number) {
-                    onresize({ clientHeight: x })
-                  }
-                }}
-                {@const ref = {
-                  set current(el: HTMLElement) {
-                    setref(el)
+            <List itemSize={28} itemCount={rows.length} stickyIndices={[]} marginTop={28}>
+              {#snippet listContainer(items, { height, onscroll, setClientHeight })}
+                {@const _ = {
+                  set clientHeight(value: number) {
+                    setClientHeight(value)
                   }
                 }}
                 <div
                   class="relative h-full max-h-64 w-fit max-w-full overflow-auto rounded scrollbar"
+                  use:reverseScroll.action={{ observeContentSize: () => rows.length }}
                   {onscroll}
-                  bind:clientHeight={_height.current}
-                  bind:this={ref.current}
+                  bind:clientHeight={_.clientHeight}
                 >
                   <table style:height class="w-fit" use:keepMaxWidth>
                     {#if result.columns.length}
@@ -199,8 +191,9 @@
                   </table>
                 </div>
               {/snippet}
-              {#snippet item(row, index, style, padding, isSticky)}
-                {#if 'cells' in row}
+              {#snippet item({ index, style, padding, isSticky })}
+                {@const row = rows[index]}
+                {#if !row}{:else if 'cells' in row}
                   <tr {style} class="{itemHeight} whitespace-nowrap odd:bg-white odd:even:bg-black">
                     {#each row.cells as value}
                       <SQLValue
@@ -231,7 +224,8 @@
                   <td></td>
                 </tr>
               {/snippet}
-            </ReverseScrollFixedList>
+            </List>
+            <ScrollDownFab {reverseScroll}></ScrollDownFab>
           </div>
         </div>
       {/key}
