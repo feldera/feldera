@@ -9,8 +9,8 @@ use crate::{
         Factory, Vector, WeightTrait,
     },
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Batcher, Bounds,
-        BoundsRef, Builder, Cursor, Filter, Merger, Trace,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher, Bounds, BoundsRef,
+        Builder, Cursor, Filter, Trace,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -851,70 +851,6 @@ where
     }
 }
 
-#[derive(SizeOf)]
-pub struct TestBatchMerger<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    T: Timestamp,
-{
-    data: Vec<((Box<K>, Box<V>, T), Box<R>)>,
-}
-
-impl<K, V, T, R> Merger<K, V, T, R, TestBatch<K, V, T, R>> for TestBatchMerger<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    T: Timestamp,
-{
-    fn new_merger(
-        _source1: &TestBatch<K, V, T, R>,
-        _source2: &TestBatch<K, V, T, R>,
-        _dst_hint: Option<BatchLocation>,
-    ) -> Self {
-        Self { data: Vec::new() }
-    }
-
-    #[allow(clippy::borrowed_box)]
-    fn work(
-        &mut self,
-        source1: &TestBatch<K, V, T, R>,
-        source2: &TestBatch<K, V, T, R>,
-        key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<V>>,
-        _frontier: &T,
-        _fuel: &mut isize,
-    ) {
-        self.data = source1
-            .data
-            .iter()
-            .chain(source2.data.iter())
-            .filter(|((k, v, _t), _r)| {
-                fn include<K: ?Sized>(x: &Box<K>, filter: &Option<Filter<K>>) -> bool {
-                    match filter {
-                        Some(filter) => (filter.filter_func)(x),
-                        None => true,
-                    }
-                }
-
-                include(k, key_filter) && include(v, value_filter)
-            })
-            .map(|((k, v, t), r)| {
-                (
-                    (clone_box(k.as_ref()), clone_box(v.as_ref()), t.clone()),
-                    clone_box(r.as_ref()),
-                )
-            })
-            .collect();
-    }
-
-    fn done(self) -> TestBatch<K, V, T, R> {
-        TestBatch::from_data(&self.data)
-    }
-}
-
 pub struct TestBatchCursor<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -1254,7 +1190,6 @@ where
 {
     type Batcher = TestBatchBatcher<K, V, T, R>;
     type Builder = TestBatchBuilder<K, V, T, R>;
-    type Merger = TestBatchMerger<K, V, T, R>;
 
     /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
     where

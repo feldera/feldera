@@ -90,7 +90,7 @@ use crate::{
     time::{Antichain, AntichainRef, Timestamp},
     trace::{
         cursor::CursorList, Batch, BatchReader, BatchReaderFactories, CommittedSpine, Cursor,
-        Filter, Merger, Trace,
+        Filter, Trace,
     },
     Error, NumEntries,
 };

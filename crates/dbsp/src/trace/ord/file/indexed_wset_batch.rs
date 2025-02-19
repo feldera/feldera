@@ -13,10 +13,9 @@ use crate::{
         },
     },
     trace::{
-        merge_batches_by_reference,
-        ord::{filter, merge_batcher::MergeBatcher},
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
-        Builder, Cursor, Filter, Merger, VecIndexedWSetFactories, WeightedItem,
+        merge_batches_by_reference, ord::merge_batcher::MergeBatcher, Batch, BatchFactories,
+        BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef, Builder, Cursor,
+        VecIndexedWSetFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
@@ -25,7 +24,6 @@ use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
-    cmp::Ordering,
     fmt::{self, Debug},
     ops::Neg,
     path::{Path, PathBuf},
@@ -402,11 +400,6 @@ where
 {
     type Batcher = MergeBatcher<Self>;
     type Builder = FileIndexedWSetBuilder<K, V, R>;
-    type Merger = FileIndexedWSetMerger<K, V, R>;
-
-    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
-        FileIndexedWSetMerger::new_merger(self, other, dst_hint)
-    }
 
     fn checkpoint_path(&self) -> Option<PathBuf> {
         self.file.mark_for_checkpoint();
@@ -426,210 +419,6 @@ where
             factories: factories.clone(),
             file,
         })
-    }
-}
-
-/// State for an in-progress merge.
-#[derive(SizeOf)]
-pub struct FileIndexedWSetMerger<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    #[size_of(skip)]
-    factories: FileIndexedWSetFactories<K, V, R>,
-
-    // Position in first batch.
-    lower1: usize,
-    // Position in second batch.
-    lower2: usize,
-
-    // Output so far.
-    #[size_of(skip)]
-    writer: Writer2<K, DynUnit, V, R>,
-}
-
-impl<K, V, R> FileIndexedWSetMerger<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn copy_values_if(
-        &mut self,
-        cursor: &mut FileIndexedWSetCursor<K, V, R>,
-        key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<V>>,
-        fuel: &mut isize,
-    ) {
-        if filter(key_filter, cursor.key.as_ref()) {
-            *fuel -= cursor.val_cursor.len() as isize;
-            let mut n = 0;
-            while cursor.val_valid() {
-                let val = cursor.val();
-                if filter(value_filter, val) {
-                    let diff = cursor.diff.as_ref();
-                    self.writer.write1((val, diff)).unwrap();
-                    n += 1;
-                }
-                cursor.step_val();
-            }
-            if n > 0 {
-                self.writer
-                    .write0((cursor.key.as_ref(), ().erase()))
-                    .unwrap();
-            }
-        } else {
-            *fuel -= 1;
-        }
-        cursor.step_key();
-    }
-
-    fn copy_value(
-        &mut self,
-        cursor: &mut FileIndexedWSetCursor<K, V, R>,
-        value_filter: &Option<Filter<V>>,
-    ) -> u64 {
-        let retval = if filter(value_filter, cursor.val.as_ref()) {
-            self.writer
-                .write1((cursor.val.as_ref(), cursor.diff.as_ref()))
-                .unwrap();
-            1
-        } else {
-            0
-        };
-        cursor.step_val();
-        retval
-    }
-
-    fn merge_values<'a>(
-        &mut self,
-        cursor1: &mut FileIndexedWSetCursor<'a, K, V, R>,
-        cursor2: &mut FileIndexedWSetCursor<'a, K, V, R>,
-        value_filter: &Option<Filter<V>>,
-    ) -> bool {
-        let mut n = 0;
-        let mut sum = self.factories.weight_factory().default_box();
-
-        while cursor1.val_valid() && cursor2.val_valid() {
-            let value1 = cursor1.val();
-            let value2 = cursor2.val();
-            let cmp = value1.cmp(value2);
-            match cmp {
-                Ordering::Less => {
-                    n += self.copy_value(cursor1, value_filter);
-                }
-                Ordering::Equal => {
-                    if filter(value_filter, value1) {
-                        cursor1.diff.as_ref().add(cursor2.diff.as_ref(), &mut sum);
-                        if !sum.is_zero() {
-                            self.writer.write1((value1, &sum)).unwrap();
-                            n += 1;
-                        }
-                    }
-                    cursor1.step_val();
-                    cursor2.step_val();
-                }
-
-                Ordering::Greater => {
-                    n += self.copy_value(cursor2, value_filter);
-                }
-            }
-        }
-
-        while cursor1.val_valid() {
-            n += self.copy_value(cursor1, value_filter);
-        }
-        while cursor2.val_valid() {
-            n += self.copy_value(cursor2, value_filter);
-        }
-        n > 0
-    }
-}
-
-impl<K, V, R> Merger<K, V, (), R, FileIndexedWSet<K, V, R>> for FileIndexedWSetMerger<K, V, R>
-where
-    Self: SizeOf,
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    #[inline]
-    fn new_merger(
-        batch1: &FileIndexedWSet<K, V, R>,
-        batch2: &FileIndexedWSet<K, V, R>,
-        _dst_hint: Option<BatchLocation>,
-    ) -> Self {
-        Self {
-            factories: batch1.factories.clone(),
-            lower1: 0,
-            lower2: 0,
-            writer: Writer2::new(
-                &batch1.factories.factories0,
-                &batch1.factories.factories1,
-                Runtime::buffer_cache(),
-                &*Runtime::storage_backend().unwrap(),
-                Runtime::file_writer_parameters(),
-                batch1.key_count() + batch2.key_count(),
-            )
-            .unwrap(),
-        }
-    }
-
-    fn done(self) -> FileIndexedWSet<K, V, R> {
-        let file = Arc::new(self.writer.into_reader().unwrap());
-        FileIndexedWSet {
-            factories: self.factories.clone(),
-            file,
-        }
-    }
-
-    fn work(
-        &mut self,
-        source1: &FileIndexedWSet<K, V, R>,
-        source2: &FileIndexedWSet<K, V, R>,
-        key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<V>>,
-        _frontier: &(),
-        fuel: &mut isize,
-    ) {
-        let mut cursor1 = FileIndexedWSetCursor::new_from(source1, self.lower1);
-        let mut cursor2 = FileIndexedWSetCursor::new_from(source2, self.lower2);
-        while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
-            match cursor1.key.as_ref().cmp(cursor2.key.as_ref()) {
-                Ordering::Less => {
-                    self.copy_values_if(&mut cursor1, key_filter, value_filter, fuel);
-                }
-                Ordering::Equal => {
-                    if filter(key_filter, cursor1.key.as_ref()) {
-                        *fuel -= (cursor1.val_cursor.len() + cursor2.val_cursor.len()) as isize;
-                        if self.merge_values(&mut cursor1, &mut cursor2, value_filter) {
-                            self.writer
-                                .write0((cursor1.key.as_ref(), ().erase()))
-                                .unwrap();
-                        }
-                    } else {
-                        *fuel -= 1;
-                    }
-                    cursor1.step_key();
-                    cursor2.step_key();
-                }
-
-                Ordering::Greater => {
-                    self.copy_values_if(&mut cursor2, key_filter, value_filter, fuel);
-                }
-            }
-        }
-
-        while cursor1.key_valid() && *fuel > 0 {
-            self.copy_values_if(&mut cursor1, key_filter, value_filter, fuel);
-        }
-        while cursor2.key_valid() && *fuel > 0 {
-            self.copy_values_if(&mut cursor2, key_filter, value_filter, fuel);
-        }
-        self.lower1 = cursor1.key_cursor.absolute_position() as usize;
-        self.lower2 = cursor2.key_cursor.absolute_position() as usize;
     }
 }
 

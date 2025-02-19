@@ -11,8 +11,7 @@
 //!
 //! The [`Batch`] trait extends [`BatchReader`] with types and methods for
 //! creating new traces from ordered tuples ([`Batch::Builder`]) or unordered
-//! tuples ([`Batch::Batcher`]), or by merging traces of like types
-//! ([`Batch::Merger`]).
+//! tuples ([`Batch::Batcher`]), or by merging traces of like types.
 //!
 //! The [`Trace`] trait, which also extends [`BatchReader`], adds methods to
 //! append new batches.  New tuples must not have times earlier than any of the
@@ -58,14 +57,14 @@ pub mod test;
 
 pub use ord::{
     FallbackIndexedWSet, FallbackIndexedWSetBuilder, FallbackIndexedWSetFactories,
-    FallbackIndexedWSetMerger, FallbackKeyBatch, FallbackKeyBatchFactories, FallbackValBatch,
-    FallbackValBatchFactories, FallbackWSet, FallbackWSetBuilder, FallbackWSetFactories,
-    FallbackWSetMerger, FileIndexedWSet, FileIndexedWSetFactories, FileKeyBatch,
-    FileKeyBatchFactories, FileValBatch, FileValBatchFactories, FileWSet, FileWSetFactories,
-    OrdIndexedWSet, OrdIndexedWSetBuilder, OrdIndexedWSetFactories, OrdIndexedWSetMerger,
-    OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch, OrdValBatchFactories, OrdWSet, OrdWSetBuilder,
-    OrdWSetFactories, OrdWSetMerger, VecIndexedWSet, VecIndexedWSetFactories, VecKeyBatch,
-    VecKeyBatchFactories, VecValBatch, VecValBatchFactories, VecWSet, VecWSetFactories,
+    FallbackKeyBatch, FallbackKeyBatchFactories, FallbackValBatch, FallbackValBatchFactories,
+    FallbackWSet, FallbackWSetBuilder, FallbackWSetFactories, FileIndexedWSet,
+    FileIndexedWSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
+    FileValBatchFactories, FileWSet, FileWSetFactories, OrdIndexedWSet, OrdIndexedWSetBuilder,
+    OrdIndexedWSetFactories, OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch, OrdValBatchFactories,
+    OrdWSet, OrdWSetBuilder, OrdWSetFactories, VecIndexedWSet, VecIndexedWSetFactories,
+    VecKeyBatch, VecKeyBatchFactories, VecValBatch, VecValBatchFactories, VecWSet,
+    VecWSetFactories,
 };
 
 use rkyv::{archived_root, de::deserializers::SharedDeserializeMap, Deserialize};
@@ -568,8 +567,8 @@ where
 ///
 /// [`Batch`] extends [`BatchReader`] with types for constructing new batches
 /// from ordered tuples ([`Self::Builder`]) or unordered tuples
-/// ([`Self::Batcher`]), or by merging traces of like types ([`Self::Merger`]),
-/// plus some convenient methods for using those types.
+/// ([`Self::Batcher`]), or by merging traces of like types, plus some
+/// convenient methods for using those types.
 ///
 /// See [crate documentation](crate::trace) for more information on batches and
 /// traces.
@@ -582,9 +581,6 @@ where
 
     /// A type used to assemble batches from ordered update sequences.
     type Builder: Builder<Self>;
-
-    /// A type used to progressively merge batches.
-    type Merger: Merger<Self::Key, Self::Val, Self::Time, Self::R, Self>;
 
     /// Assemble an unordered vector of weighted items into a batch.
     #[allow(clippy::type_complexity)]
@@ -656,45 +652,6 @@ where
     where
         Self::Val: From<()>;
     */
-
-    /// Initiates the merging of consecutive batches.
-    ///
-    /// The result of this method can be exercised to eventually produce the
-    /// same result that a call to `self.merge(other)` would produce, but it
-    /// can be done in a measured fashion. This can help to avoid latency
-    /// spikes where a large merge needs to happen.
-    ///
-    /// If `dst_hint` is set, then the merger should prefer to write the output
-    /// batch there, if it can.
-    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
-        Self::Merger::new_merger(self, other, dst_hint)
-    }
-
-    /// Merges `self` with `other` by running merger to completion, applying
-    /// `key_filter` and `value_filter`.
-    ///
-    /// We keep the merge output in memory on the assumption that it's primarily
-    /// spine merges that should be kept on storage, under the theory that other
-    /// merges are likely to be large if large batches are passing through the
-    /// pipeline.
-    fn merge(
-        &self,
-        other: &Self,
-        key_filter: &Option<Filter<Self::Key>>,
-        value_filter: &Option<Filter<Self::Val>>,
-    ) -> Self {
-        let mut fuel = isize::MAX;
-        let mut merger = Self::Merger::new_merger(self, other, Some(BatchLocation::Memory));
-        merger.work(
-            self,
-            other,
-            key_filter,
-            value_filter,
-            &Self::Time::minimum(),
-            &mut fuel,
-        );
-        merger.done()
-    }
 
     /// Creates an empty batch.
     fn dyn_empty(factories: &Self::Factories) -> Self {
@@ -1169,36 +1126,6 @@ where
         }
         self.builder.done_with_bounds(bounds)
     }
-}
-
-/// Represents a merge in progress.
-pub trait Merger<K: ?Sized, V: ?Sized, T, R: ?Sized, Output>: SizeOf
-where
-    Output: Batch<Key = K, Val = V, Time = T, R = R>,
-{
-    /// Creates a new merger to merge the supplied batches.
-    fn new_merger(source1: &Output, source2: &Output, dst_hint: Option<BatchLocation>) -> Self;
-
-    /// Perform some amount of work, decrementing `fuel`.
-    ///
-    /// If `fuel` is greater than zero after the call, the merging is complete
-    /// and one should call `done` to extract the merged results.
-    fn work(
-        &mut self,
-        source1: &Output,
-        source2: &Output,
-        key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<V>>,
-        frontier: &T,
-        fuel: &mut isize,
-    );
-
-    /// Extracts merged results.
-    ///
-    /// This method should only be called after `work` has been called and
-    /// has not brought `fuel` to zero. Otherwise, the merge is still in
-    /// progress.
-    fn done(self) -> Output;
 }
 
 /// Merges all of the batches in `batches`, applying `key_filter` and

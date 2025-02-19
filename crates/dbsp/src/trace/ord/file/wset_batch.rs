@@ -13,10 +13,9 @@ use crate::{
         },
     },
     trace::{
-        merge_batches_by_reference,
-        ord::{filter, merge_batcher::MergeBatcher},
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
-        Builder, Cursor, Deserializer, Filter, Merger, Serializer, WeightedItem,
+        merge_batches_by_reference, ord::merge_batcher::MergeBatcher, Batch, BatchFactories,
+        BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef, Builder, Cursor,
+        Deserializer, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
@@ -26,7 +25,6 @@ use rand::{seq::index::sample, Rng};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
-    cmp::Ordering,
     fmt::{self, Debug},
     ops::Neg,
     path::{Path, PathBuf},
@@ -421,11 +419,6 @@ where
 {
     type Batcher = MergeBatcher<Self>;
     type Builder = FileWSetBuilder<K, R>;
-    type Merger = FileWSetMerger<K, R>;
-
-    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
-        FileWSetMerger::new_merger(self, other, dst_hint)
-    }
 
     fn checkpoint_path(&self) -> Option<PathBuf> {
         self.file.mark_for_checkpoint();
@@ -445,133 +438,6 @@ where
             factories: factories.clone(),
             file,
         })
-    }
-}
-
-/// State for an in-progress merge.
-#[derive(SizeOf)]
-pub struct FileWSetMerger<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    #[size_of(skip)]
-    factories: FileWSetFactories<K, R>,
-
-    // Position in first batch.
-    lower1: usize,
-    // Position in second batch.
-    lower2: usize,
-
-    // Output so far.
-    #[size_of(skip)]
-    writer: Writer1<K, R>,
-}
-
-impl<K, R> Merger<K, DynUnit, (), R, FileWSet<K, R>> for FileWSetMerger<K, R>
-where
-    Self: SizeOf,
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn new_merger(
-        batch1: &FileWSet<K, R>,
-        batch2: &FileWSet<K, R>,
-        _dst_hint: Option<BatchLocation>,
-    ) -> Self {
-        Self {
-            factories: batch1.factories.clone(),
-            lower1: 0,
-            lower2: 0,
-            writer: Writer1::new(
-                &batch1.factories.file_factories,
-                Runtime::buffer_cache(),
-                &*Runtime::storage_backend().unwrap(),
-                Runtime::file_writer_parameters(),
-                batch1.key_count() + batch2.key_count(),
-            )
-            .unwrap(),
-        }
-    }
-
-    fn done(self) -> FileWSet<K, R> {
-        FileWSet {
-            factories: self.factories.clone(),
-            file: Arc::new(self.writer.into_reader().unwrap()),
-        }
-    }
-
-    fn work(
-        &mut self,
-        source1: &FileWSet<K, R>,
-        source2: &FileWSet<K, R>,
-        key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<DynUnit>>,
-        _frontier: &(),
-        fuel: &mut isize,
-    ) {
-        if !filter(value_filter, &()) {
-            return;
-        }
-
-        let mut cursor1 = FileWSetCursor::new_from(source1, self.lower1);
-        let mut cursor2 = FileWSetCursor::new_from(source2, self.lower2);
-        let mut sum = self.factories.weight_factory.default_box();
-        while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
-            match cursor1.key.as_ref().cmp(cursor2.key.as_ref()) {
-                Ordering::Less => {
-                    if filter(key_filter, cursor1.key.as_ref()) {
-                        self.writer
-                            .write0((cursor1.key.as_ref(), cursor1.diff.as_ref()))
-                            .unwrap();
-                    }
-                    *fuel -= 1;
-                    cursor1.step_key();
-                }
-                Ordering::Equal => {
-                    if filter(key_filter, cursor1.key.as_ref()) {
-                        cursor1.diff.as_ref().add(cursor2.diff.as_ref(), &mut sum);
-                        if !sum.is_zero() {
-                            self.writer.write0((cursor1.key.as_ref(), &sum)).unwrap();
-                        }
-                    }
-                    *fuel -= 2;
-                    cursor1.step_key();
-                    cursor2.step_key();
-                }
-
-                Ordering::Greater => {
-                    if filter(key_filter, cursor2.key.as_ref()) {
-                        self.writer
-                            .write0((cursor2.key.as_ref(), cursor2.diff.as_ref()))
-                            .unwrap();
-                    }
-                    *fuel -= 1;
-                    cursor2.step_key();
-                }
-            }
-        }
-
-        while cursor1.key_valid() && *fuel > 0 {
-            if filter(key_filter, cursor1.key.as_ref()) {
-                self.writer
-                    .write0((cursor1.key.as_ref(), cursor1.diff.as_ref()))
-                    .unwrap();
-            }
-            *fuel -= 1;
-            cursor1.step_key();
-        }
-        while cursor2.key_valid() && *fuel > 0 {
-            if filter(key_filter, cursor2.key.as_ref()) {
-                self.writer
-                    .write0((cursor2.key.as_ref(), cursor2.diff.as_ref()))
-                    .unwrap();
-            }
-            *fuel -= 1;
-            cursor2.step_key();
-        }
-        self.lower1 = cursor1.cursor.absolute_position() as usize;
-        self.lower2 = cursor2.cursor.absolute_position() as usize;
     }
 }
 

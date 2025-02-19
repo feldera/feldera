@@ -76,7 +76,7 @@ where
     }
 }
 
-/// Merger that merges 2..=64 batches at a time.
+/// Merger that merges up to 64 batches at a time.
 pub struct ListMerger<C, B>
 where
     C: MergeCursor<B::Key, B::Val, B::Time, B::R>,

@@ -7,14 +7,11 @@ use crate::{
     trace::{
         cursor::DelegatingCursor,
         ord::{
-            file::key_batch::{FileKeyBuilder, FileKeyMerger},
-            merge_batcher::MergeBatcher,
-            vec::key_batch::{VecKeyBuilder, VecKeyMerger},
-            FileKeyBatch, OrdKeyBatch,
+            file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher,
+            vec::key_batch::VecKeyBuilder, FileKeyBatch, OrdKeyBatch,
         },
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
-        Builder, FileKeyBatchFactories, Filter, MergeCursor, Merger, OrdKeyBatchFactories,
-        WeightedItem,
+        Builder, FileKeyBatchFactories, Filter, MergeCursor, OrdKeyBatchFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -26,7 +23,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::utils::{copy_to_builder, pick_merge_destination, GenericMerger};
+use super::utils::{copy_to_builder, pick_merge_destination};
 
 pub struct FallbackKeyBatchFactories<K, T, R>
 where
@@ -143,26 +140,6 @@ where
 {
     Vec(OrdKeyBatch<K, T, R>),
     File(FileKeyBatch<K, T, R>),
-}
-
-impl<K, T, R> Inner<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn as_file(&self) -> Option<&FileKeyBatch<K, T, R>> {
-        match self {
-            Inner::Vec(_vec) => None,
-            Inner::File(file) => Some(file),
-        }
-    }
-    fn as_vec(&self) -> Option<&OrdKeyBatch<K, T, R>> {
-        match self {
-            Inner::Vec(vec) => Some(vec),
-            Inner::File(_file) => None,
-        }
-    }
 }
 
 impl<K, T, R> Debug for FallbackKeyBatch<K, T, R>
@@ -320,11 +297,6 @@ where
 {
     type Batcher = MergeBatcher<Self>;
     type Builder = FallbackKeyBuilder<K, T, R>;
-    type Merger = FallbackKeyMerger<K, T, R>;
-
-    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
-        Self::Merger::new_merger(self, other, dst_hint)
-    }
 
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
@@ -352,143 +324,6 @@ where
             factories: factories.clone(),
             inner: Inner::File(FileKeyBatch::<K, T, R>::from_path(&factories.file, path)?),
         })
-    }
-}
-
-/// State for an in-progress merge.
-#[derive(SizeOf)]
-pub struct FallbackKeyMerger<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    #[size_of(skip)]
-    factories: FallbackKeyBatchFactories<K, T, R>,
-    inner: MergerInner<K, T, R>,
-}
-
-#[derive(SizeOf)]
-enum MergerInner<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    AllFile(FileKeyMerger<K, T, R>),
-    AllVec(VecKeyMerger<K, T, R>),
-    ToVec(GenericMerger<K, DynUnit, T, R, OrdKeyBatch<K, T, R>>),
-    ToFile(GenericMerger<K, DynUnit, T, R, FileKeyBatch<K, T, R>>),
-}
-
-impl<K, T, R> Merger<K, DynUnit, T, R, FallbackKeyBatch<K, T, R>> for FallbackKeyMerger<K, T, R>
-where
-    Self: SizeOf,
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn new_merger(
-        batch1: &FallbackKeyBatch<K, T, R>,
-        batch2: &FallbackKeyBatch<K, T, R>,
-        dst_hint: Option<BatchLocation>,
-    ) -> Self {
-        FallbackKeyMerger {
-            factories: batch1.factories.clone(),
-            inner: match (
-                pick_merge_destination([batch1, batch2], dst_hint),
-                &batch1.inner,
-                &batch2.inner,
-            ) {
-                (BatchLocation::Memory, Inner::Vec(vec1), Inner::Vec(vec2)) => {
-                    MergerInner::AllVec(VecKeyMerger::new_merger(vec1, vec2, dst_hint))
-                }
-                (BatchLocation::Memory, _, _) => MergerInner::ToVec(GenericMerger::new(
-                    &batch1.factories.vec,
-                    Some(batch1.factories.file.timediff_factory),
-                    batch1,
-                    batch2,
-                )),
-                (BatchLocation::Storage, Inner::File(file1), Inner::File(file2)) => {
-                    MergerInner::AllFile(FileKeyMerger::new_merger(file1, file2, dst_hint))
-                }
-                (BatchLocation::Storage, _, _) => MergerInner::ToFile(GenericMerger::new(
-                    &batch1.factories.file,
-                    Some(batch1.factories.file.timediff_factory),
-                    batch1,
-                    batch2,
-                )),
-            },
-        }
-    }
-
-    fn done(self) -> FallbackKeyBatch<K, T, R> {
-        FallbackKeyBatch {
-            factories: self.factories.clone(),
-            inner: match self.inner {
-                MergerInner::AllFile(merger) => Inner::File(merger.done()),
-                MergerInner::AllVec(merger) => Inner::Vec(merger.done()),
-                MergerInner::ToVec(merger) => Inner::Vec(merger.done()),
-                MergerInner::ToFile(merger) => Inner::File(merger.done()),
-            },
-        }
-    }
-
-    fn work(
-        &mut self,
-        source1: &FallbackKeyBatch<K, T, R>,
-        source2: &FallbackKeyBatch<K, T, R>,
-        key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<DynUnit>>,
-        frontier: &T,
-        fuel: &mut isize,
-    ) {
-        match &mut self.inner {
-            MergerInner::AllFile(merger) => merger.work(
-                source1.inner.as_file().unwrap(),
-                source2.inner.as_file().unwrap(),
-                key_filter,
-                value_filter,
-                frontier,
-                fuel,
-            ),
-            MergerInner::AllVec(merger) => merger.work(
-                source1.inner.as_vec().unwrap(),
-                source2.inner.as_vec().unwrap(),
-                key_filter,
-                value_filter,
-                frontier,
-                fuel,
-            ),
-            MergerInner::ToVec(merger) => match (&source1.inner, &source2.inner) {
-                (Inner::File(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, frontier, fuel)
-                }
-                (Inner::Vec(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, frontier, fuel)
-                }
-                (Inner::File(a), Inner::Vec(b)) => {
-                    merger.work(a, b, key_filter, value_filter, frontier, fuel)
-                }
-                (Inner::Vec(a), Inner::Vec(b)) => {
-                    merger.work(a, b, key_filter, value_filter, frontier, fuel)
-                }
-            },
-            MergerInner::ToFile(merger) => match (&source1.inner, &source2.inner) {
-                (Inner::File(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, frontier, fuel)
-                }
-                (Inner::Vec(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, frontier, fuel)
-                }
-                (Inner::File(a), Inner::Vec(b)) => {
-                    merger.work(a, b, key_filter, value_filter, frontier, fuel)
-                }
-                (Inner::Vec(a), Inner::Vec(b)) => {
-                    merger.work(a, b, key_filter, value_filter, frontier, fuel)
-                }
-            },
-        }
     }
 }
 
