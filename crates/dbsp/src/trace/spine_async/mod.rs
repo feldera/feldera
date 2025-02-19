@@ -117,10 +117,8 @@ where
     fn try_start_merge(&mut self, level: usize) -> Option<Vec<Arc<B>>> {
         /// Minimum and maximum numbers of batches to merge at each level.
         ///
-        /// Some LSM implementations do use slightly different maximums per
-        /// level.  We didn't see clear benefits with more/slightly less than 12
-        /// batches merged at once or different numbers per level so everything
-        /// is set to 12 for now.
+        /// The minimum number of batches to merge is key to performance.  The
+        /// maximum number seems much less important.
         const MERGE_COUNTS: [RangeInclusive<usize>; MAX_LEVELS] = [
             8..=64,
             8..=64,
@@ -556,6 +554,9 @@ where
 
         for (level, m) in mergers.iter_mut().enumerate() {
             if let Some(merger) = m.as_mut() {
+                // The following treatment of fuel works well for the test case
+                // used to tune it, but it is not theoretically sound or well
+                // principled. It is likely that it should be redone.
                 let starting_fuel = if level == 0 {
                     isize::MAX
                 } else {
