@@ -16,11 +16,11 @@
       .with('Resuming', () => 'preset-filled-tertiary-200-800')
       .with('ShuttingDown', () => 'preset-filled-secondary-200-800')
       .with({ PipelineError: P.any }, () => 'preset-filled-error-400-600')
-      .with('Queued', () => 'preset-filled-warning-400-600')
       .with(
-        'Compiling SQL',
-        'SQL compiled',
-        'Compiling binary',
+        { Queued: P.any },
+        { 'Compiling SQL': P.any },
+        { 'SQL compiled': P.any },
+        { 'Compiling binary': P.any },
         () => 'preset-filled-warning-400-600'
       )
       .with('Unavailable', () => 'bg-orange-300 dark:bg-orange-700')
@@ -35,7 +35,7 @@
 </script>
 
 <div class="p-2">
-  <div class="h-4 w-4 flex-none rounded-full text-[0.66rem] uppercase {chipClass} {_class}"></div>
+  <div class="h-3 w-3 flex-none rounded-full text-[0.66rem] uppercase {chipClass} {_class}"></div>
 </div>
 <Tooltip
   class="pointer-events-none ml-2 whitespace-nowrap rounded bg-white text-surface-950-50 dark:bg-black"

@@ -2,7 +2,6 @@ import { defineConfig, type UserConfig } from 'vite'
 
 import svg from '@poppanator/sveltekit-svg'
 import { sveltekit } from '@sveltejs/kit/vite'
-
 import viteSvgToWebfont from 'vite-svg-2-webfont'
 import { resolve } from 'path'
 

@@ -13,8 +13,7 @@ const config = {
     }),
     alias: {
       $assets: 'src/assets'
-    },
-    paths: {}
+    }
   }
 }
 

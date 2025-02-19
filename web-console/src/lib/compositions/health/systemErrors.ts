@@ -1,12 +1,12 @@
 import { base } from '$app/paths'
-import { groupBy, partition } from '$lib/functions/common/array'
-import { nonNull } from '$lib/functions/common/function'
+import { groupBy } from '$lib/functions/common/array'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
 import type { ErrorResponse } from '$lib/services/manager'
 import {
   getPipeline,
   type ExtendedPipeline,
   type Pipeline,
+  type PipelineStatus,
   type SqlCompilerMessage
 } from '$lib/services/pipelineManager'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
@@ -64,6 +64,16 @@ export const extractPipelineErrors = (pipeline: ExtendedPipeline): SystemError[]
     }))()
   ]
 }
+export const extractPipelineStderr = (pipeline: ExtendedPipeline): string[] => {
+  if (!(typeof pipeline.status === 'object' && 'PipelineError' in pipeline.status)) {
+    return []
+  }
+  return [
+    `Pipeline process returned an error code ${pipeline.status.PipelineError.error_code}:\n
+${pipeline.status.PipelineError.message}
+${Object.entries(pipeline.status.PipelineError.details).map((k, v) => `${k}: ${v}\n`)}`
+  ]
+}
 
 export const programErrorReport = (pipeline: Pipeline) => (pipelineName: string, message: string) =>
   ({
@@ -91,7 +101,7 @@ export const extractInternalCompilationError = <Report>(
   source: string,
   getReport: (pipelineName: string, message: string) => Report
 ): SystemError<any, Report> | null => {
-  const isInternalError = /main\.rs:/.test(stderr)
+  const isInternalError = /main\.rs/.test(stderr)
   if (!isInternalError) {
     return null
   }
@@ -103,7 +113,7 @@ export const extractInternalCompilationError = <Report>(
       tag: 'programError',
       source,
       report: getReport(pipelineName, stderr),
-      body: stderr.match(/([\S\s]+?)\n/)?.[1] ?? 'Unknown internal compilation error' // Return first stderr paragraph as error body
+      body: stderr.match(/([\S\s]+?)\n\n/)?.[1] ?? 'Unknown internal compilation error' // Return first stderr paragraph as error body
     }
   }
 }
@@ -185,15 +195,7 @@ export const extractRustCompilerError = <Report>(
  */
 export const extractProgramErrors =
   <Report>(getReport: (pipelineName: string, message: string) => Report) =>
-  (pipeline: {
-    name: string
-    status:
-      | { RustError: string }
-      | { SystemError: string }
-      | { SqlError: SqlCompilerMessage[] }
-      | string
-      | { PipelineError: ErrorResponse }
-  }) => {
+  (pipeline: { name: string; status: PipelineStatus }) => {
     const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
     const result = match(pipeline.status)
       .returnType<SystemError<any, Report>[]>()
@@ -210,8 +212,9 @@ export const extractProgramErrors =
           // so we don't need to split it into errors
           return [rustInternalCompilerError]
         }
-        const rustCompilerMessages: string[] =
-          Array.from(e.RustError.matchAll(rustCompilerErrorRegex)).map((match) => match[1]) ?? []
+        const rustCompilerMessages: string[] = Array.from(
+          e.RustError.matchAll(rustCompilerErrorRegex)
+        ).map((match) => match[1])
         const rustCompilerErrors = rustCompilerMessages.map(
           extractRustCompilerError(pipeline.name, source, getReport)
         )
@@ -257,9 +260,57 @@ export const extractProgramErrors =
             }
           }))
       )
+      .with(
+        {
+          SqlWarning: P.any
+        },
+        (es) =>
+          es.SqlWarning.map((e) => ({
+            name: `Error in SQL code of ${pipeline.name}`,
+            message: showSqlCompilerMessage(e),
+            cause: {
+              entityName: pipeline.name,
+              tag: 'programError',
+              source:
+                source +
+                '#program.sql:' +
+                e.start_line_number +
+                (e.start_column > 1 ? ':' + e.start_column.toString() : ''),
+              report: getReport(pipeline.name, e.message),
+              body: e,
+              warning: e.warning
+            }
+          }))
+      )
       .otherwise(() => [])
     return result
   }
+
+export const extractProgramStderr = (pipeline: { name: string; status: PipelineStatus }) => {
+  const result = match(pipeline.status)
+    .returnType<string[]>()
+    .with({ RustError: P.any }, (e) => [e.RustError])
+    .with(
+      {
+        SystemError: P.any
+      },
+      (e) => [e.SystemError]
+    )
+    .with(
+      {
+        SqlError: P.any
+      },
+      (es) => [es.SqlError.join('\n')]
+    )
+    .with(
+      {
+        SqlWarning: P.any
+      },
+      (es) => [es.SqlWarning.join('\n')]
+    )
+    .otherwise(() => [])
+  return result
+}
 
 export const programErrorsPerFile = <Report>(errors: SystemError<any, Report>[]) =>
   Object.fromEntries(
@@ -366,4 +417,44 @@ export const extractPipelineXgressErrors = ({
           : [])
       ])
     )
+}
+
+export const extractPipelineXgressStderr = ({
+  pipelineName,
+  status
+}: {
+  pipelineName: string
+  status: Pick<ControllerStatus, 'inputs' | 'outputs'> | null | 'not running'
+}): string[] => {
+  const stats = status == null || status === 'not running' ? { inputs: [], outputs: [] } : status
+  return [
+    stats.inputs
+      .flatMap((input) => [
+        ...(input.metrics.num_parse_errors
+          ? [
+              `${input.metrics.num_parse_errors} parse errors in ${input.config.transport.name} connector ${input.endpoint_name} of ${pipelineName}`
+            ]
+          : []),
+        ...(input.metrics.num_transport_errors
+          ? [
+              `${input.metrics.num_transport_errors} transport errors in ${input.config.transport.name} connector ${input.endpoint_name} of ${pipelineName}`
+            ]
+          : [])
+      ])
+      .concat(
+        stats.outputs.flatMap((output) => [
+          ...(output.metrics.num_encode_errors
+            ? [
+                `${output.metrics.num_encode_errors} encode errors in ${output.config.transport.name} connector ${output.endpoint_name} of ${pipelineName}`
+              ]
+            : []),
+          ...(output.metrics.num_transport_errors
+            ? [
+                `${output.metrics.num_transport_errors} transport errors in ${output.config.transport.name} connector ${output.endpoint_name} of ${pipelineName}`
+              ]
+            : [])
+        ])
+      )
+      .join('\n')
+  ]
 }

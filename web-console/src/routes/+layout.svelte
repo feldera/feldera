@@ -7,8 +7,11 @@
   import posthog from 'posthog-js'
   import { browser } from '$app/environment'
   import { beforeNavigate, afterNavigate } from '$app/navigation'
+  import { ToastProvider } from '@skeletonlabs/skeleton-svelte'
 
   // import type { Action } from 'svelte/action'
+  // import '$assets/fonts/feldera-material-icons.css'
+  // import '$assets/fonts/generic-icons.css'
   import 'virtual:feldera-material-icons-webfont.css'
   import 'virtual:generic-icons-webfont.css'
 
@@ -35,4 +38,11 @@
   class="{darkMode.current} scrollbar-thumb-surface-200 scrollbar-thumb-rounded-full scrollbar-w-2.5 scrollbar-h-2.5 hover:scrollbar-thumb-surface-400 dark:scrollbar-thumb-surface-800 dark:hover:scrollbar-thumb-surface-600"
 />
 
-{@render children()}
+<ToastProvider
+  groupClasses="pointer-events-none"
+  toastClasses="pointer-events-auto"
+  messageClasses="!text-base max-w-sm"
+  btnDismissClasses="!text-xl"
+>
+  {@render children()}
+</ToastProvider>

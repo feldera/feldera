@@ -28,7 +28,7 @@
 </script>
 
 <div
-  class="relative flex flex-col gap-2 pb-4 pr-4 scrollbar"
+  class="relative flex flex-col gap-2 pr-2 scrollbar"
   style="overflow-y: overlay;"
   use:bindScrollY={{ scrollY }}
 >
@@ -42,7 +42,7 @@
   </div>
   {#each pipelines as pipeline}
     <a
-      class="flex flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {page.params
+      class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {page.params
         .pipelineName === pipeline.name
         ? 'bg-surface-50-950'
         : 'hover:bg-surface-50-950'}"

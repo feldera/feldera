@@ -1,5 +1,7 @@
 import { getPipelines, type PipelineThumb } from '$lib/services/pipelineManager'
 import { onMount } from 'svelte'
+import { useToast } from '$lib/compositions/useToastNotification'
+import { closedIntervalAction } from '$lib/functions/common/promise'
 
 let pipelines = $state<PipelineThumb[] | undefined>(undefined)
 const reload = async () => {
@@ -15,11 +17,9 @@ export const useUpdatePipelineList = () => {
 }
 
 export const useRefreshPipelineList = () => {
+  const { toastError } = useToast()
   onMount(() => {
-    let interval = setInterval(() => reload(), 2000)
-    return () => {
-      clearInterval(interval)
-    }
+    return closedIntervalAction(() => reload().catch(toastError), 2000)
   })
 }
 

@@ -1,0 +1,33 @@
+@font-face {
+	font-family: "generic-icons";
+	font-display: block;
+	src: url("generic-icons.woff2?2bd129fa882be525afdb2f6110aa863b") format("woff2"),
+url("generic-icons.woff?2bd129fa882be525afdb2f6110aa863b") format("woff");
+}
+
+.gc {
+	line-height: 1;
+}
+
+.gc:before {
+	font-family: generic-icons !important;
+	font-style: normal;
+	font-weight: normal !important;
+	vertical-align: top;
+}
+
+.gc-layout-panel-right:before {
+	content: "\f101";
+}
+.gc-circle-solid:before {
+	content: "\f102";
+}
+.gc-http-get:before {
+	content: "\f103";
+}
+.gc-boiling-flask:before {
+	content: "\f104";
+}
+.gc-loader-alt:before {
+	content: "\f105";
+}

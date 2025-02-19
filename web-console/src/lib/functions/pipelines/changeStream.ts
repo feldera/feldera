@@ -80,9 +80,11 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
     cancel: () => {
       flush()
       closedReason = 'cancelled'
-      reader.cancel().catch((e) => {
-        cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
-      })
+      reader
+        .cancel() // A call to .cancel() here sometimes causes multiple rejectionhandled events emitted on window object
+        .catch((e) => {
+          cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
+        })
     }
   }
 }
@@ -118,7 +120,7 @@ function splitStreamByMaxChunk(
       }
     },
     {},
-    { highWaterMark: maxChunkBufferSize, size: (c) => c.length }
+    { highWaterMark: maxChunkBufferSize, size: (c) => c?.length ?? 0 }
   )
 }
 
@@ -218,7 +220,7 @@ export class SplitNewlineTransformStream extends TransformStream<Uint8Array, str
     let match
     while ((match = this.newlineRegex.exec(this.buffer)) !== null) {
       // Extract the line from the start of the buffer up to the matched newline
-      const line = this.buffer.slice(0, match.index)
+      const line = this.buffer.slice(0, match.index + match[0].length) // Include the newline character at the end of the line with `match[0].length`: '\n' => 1, '\r\n' => 2
       controller.enqueue(line)
 
       // Update buffer by removing the processed line and newline
@@ -276,4 +278,41 @@ export const pushAsCircularBuffer =
     arr().splice(0, numItemsToDrop)
     arr().push(...vs.slice(0, numNewItems))
     return numItemsToDrop
+  }
+
+/**
+ *
+ * @returns Index offset of items in the original list after push (positive number)
+ */
+export const pushAsCircularBuffer2 =
+  <T>(
+    getStr: () => string,
+    appendStr: (...str: string[]) => void,
+    rowBoundaries: () => number[],
+    bufferSize: number,
+    mapValue: (v: T) => string
+  ) =>
+  (values: T[]) => {
+    const vs = values.map(mapValue)
+    const lengths = vs.map((v) => v.length)
+    const deltaLength = lengths.reduce((acc, cur) => acc + cur, 0)
+    const offset = getStr().length + deltaLength - bufferSize
+    let baseBoundaryIndex = rowBoundaries().findIndex((b) => b >= offset) ?? offset // Find a boundary to slice on
+    let baseBoundary = rowBoundaries()[baseBoundaryIndex]
+    rowBoundaries().splice(0, baseBoundaryIndex + 1)
+    rowBoundaries().forEach((_, i) => (rowBoundaries()[i] -= baseBoundary))
+    rowBoundaries().push(...lengths)
+    getStr().slice(0, offset)
+    let deltaBoundary = 0
+    let deltaSliceIndex = lengths.findIndex((b) => {
+      deltaBoundary += b
+      return deltaBoundary > bufferSize
+    })
+    if (deltaSliceIndex === -1) {
+      deltaSliceIndex = lengths.length
+    }
+    deltaSliceIndex = lengths.length - deltaSliceIndex
+    const newRows = vs.slice(deltaSliceIndex)
+    appendStr(...newRows)
+    return Math.max(offset, 0)
   }

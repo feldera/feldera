@@ -15,12 +15,13 @@
   import { extractErrorMarkers, felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
   import {
     postPipelineAction,
+    programStatusOf,
     type ExtendedPipeline,
     type Pipeline,
     type PipelineAction,
     type PipelineThumb
   } from '$lib/services/pipelineManager'
-  import { isPipelineIdle } from '$lib/functions/pipelines/status'
+  import { isPipelineEditable } from '$lib/functions/pipelines/status'
   import { nonNull } from '$lib/functions/common/function'
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -30,7 +31,6 @@
   import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import TabAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
-  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import EditorOptionsPopup from './EditorOptionsPopup.svelte'
   import { useIsTablet, useIsScreenLg } from '$lib/compositions/layout/useIsMobile.svelte'
@@ -43,6 +43,7 @@
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
 
   let {
     preloaded,
@@ -57,7 +58,7 @@
   } = $props()
 
   let editDisabled = $derived(
-    nonNull(pipeline.current.status) && !isPipelineIdle(pipeline.current.status)
+    nonNull(pipeline.current.status) && !isPipelineEditable(pipeline.current.status)
   )
 
   const { updatePipelines } = useUpdatePipelineList()
@@ -88,12 +89,12 @@
     programErrorsPerFile(
       extractProgramErrors(programErrorReport(pipeline.current))({
         name: pipeline.current.name,
-        status: pipeline.current.programStatus
+        status: pipeline.current.status
       })
     )
   )
 
-  let metrics = useAggregatePipelineStats(pipeline, 1000, 61000)
+  let metrics = useAggregatePipelineStats(pipeline, 1000, 64000)
   let files = $derived.by(() => {
     const current = pipeline.current
     const patch = pipeline.patch
@@ -180,9 +181,7 @@ example = "1.0"`
   const drawer = useDrawer('right')
   const pipelineList = usePipelineList(preloaded)
 
-  let showPipelinesPanel = useLocalStorage('layout/pipelines/pipelinesPanel/show', false)
-  let showMonitoringPanel = useLocalStorage('layout/pipelines/monitoringPanel', true)
-  let separateAdHocTab = useLocalStorage('layout/pipelines/separateAdHoc', false)
+  let { showPipelinesPanel, showMonitoringPanel, separateAdHocTab } = useLayoutSettings()
   let downstreamChanged = $state(false)
   let isDraggingPipelineListResizer = $state(false)
   let saveFile = $state(() => {})
@@ -231,7 +230,7 @@ example = "1.0"`
 <div class="flex h-full w-full flex-col">
   <AppHeader>
     {#snippet afterStart()}
-      <div class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 sm:flex-row">
+      <div class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 sm:flex-row sm:items-center">
         <PipelineBreadcrumbs
           class="-ml-3 py-1 pl-3"
           textClass="text-base"
@@ -268,8 +267,7 @@ example = "1.0"`
             </DoubleClickInput>
           {/snippet}
         </PipelineBreadcrumbs>
-        <PipelineStatus class="mt-0 h-6 sm:mt-1.5" status={pipeline.current.status}
-        ></PipelineStatus>
+        <PipelineStatus class="mt-0 h-6" status={pipeline.current.status}></PipelineStatus>
       </div>
     {/snippet}
     {#snippet beforeEnd()}
@@ -287,7 +285,7 @@ example = "1.0"`
           ></CreatePipelineButton>
         </div>
         <BookADemo class="btn-icon preset-filled-surface-50-950"></BookADemo>
-        <Tooltip class="bg-white-dark rounded text-surface-950-50">Book a demo</Tooltip>
+        <Tooltip class="bg-white-dark z-10 rounded text-surface-950-50">Book a demo</Tooltip>
       {/if}
     {/snippet}
   </AppHeader>
@@ -324,7 +322,7 @@ example = "1.0"`
     {#if !isTablet.current}
       <PaneResizer
         class="pane-divider-vertical ml-1.5 mr-2"
-        onDraggingChange={(isDragging) => {
+        onDraggingChange={(isDragging: boolean) => {
           isDraggingPipelineListResizer = isDragging
         }}
       ></PaneResizer>
@@ -385,7 +383,7 @@ example = "1.0"`
             </div>
           {/snippet}
           {#snippet statusBarCenter()}
-            <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
+            <ProgramStatus programStatus={programStatusOf(pipeline.current.status)}></ProgramStatus>
           {/snippet}
           {#snippet statusBarEnd()}
             <div class="ml-auto flex flex-nowrap items-center gap-1">
@@ -408,7 +406,7 @@ example = "1.0"`
           {/snippet}
           {#snippet fileTab(text, onClick, isCurrent, isSaved)}
             <button
-              class=" flex flex-nowrap py-2 pl-2 pr-5 sm:pl-3 {isCurrent
+              class=" flex flex-nowrap py-2 pl-2 pr-5 font-medium sm:pl-3 {isCurrent
                 ? 'inset-y-2 border-b-2 pb-1.5 border-surface-950-50'
                 : ' rounded hover:!bg-opacity-50 hover:bg-surface-100-900'}"
               onclick={onClick}
