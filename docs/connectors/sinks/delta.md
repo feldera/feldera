@@ -79,10 +79,10 @@ WITH (
         "aws_access_key_id": <AWS_ACCESS_KEY_ID>,
         "aws_secret_access_key": <AWS_SECRET_ACCESS_KEY>,
         "aws_region": "us-east-1"
-      },
-      "enable_output_buffer": true,
-      "max_output_buffer_time_millis": 10000
-    }
+      }
+    },
+    "enable_output_buffer": true,
+    "max_output_buffer_time_millis": 10000
  }]'
 )
 AS SELECT * FROM my_table;
