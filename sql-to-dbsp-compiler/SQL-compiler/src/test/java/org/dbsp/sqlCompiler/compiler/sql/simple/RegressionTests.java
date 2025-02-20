@@ -1894,6 +1894,13 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3547() {
+        this.queryFailingInCompilation(
+                "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5], ARRAY[3, 2, 1]);",
+                "UNNEST with multiple vectors");
+    }
+
+    @Test
     public void issue2736() {
         var ccs = this.getCCS("""
                 create table latest_cells(
