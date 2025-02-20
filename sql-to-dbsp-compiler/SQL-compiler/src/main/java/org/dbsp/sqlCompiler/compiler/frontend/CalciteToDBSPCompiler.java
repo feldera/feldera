@@ -1232,6 +1232,19 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.keyFields.add(index);
         }
 
+        public void addAll(List<Integer> indexes) {
+            for (int i: indexes)
+                this.add(i);
+        }
+
+        public void addAllUsed(@Nullable FieldUseMap map) {
+            if (map == null)
+                return;
+            if (map.isRef())
+                map = map.deref();
+            this.addAll(map.getUsedFields());
+        }
+
         /** Extract the non-key fields from a value into a tuple, in the order they appear in the tuple.
          * For our example, the result will be [e.0, e.2, e.4]
          *
@@ -1340,6 +1353,53 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
+    /** Create the AND of a list of boolean expressions */
+    DBSPExpression makeAnd(List<DBSPExpression> predicates) {
+        DBSPExpression result = predicates.get(0);
+        assert result.getType().code == BOOL;
+        for (int i = 1; i < predicates.size(); i++) {
+            DBSPExpression next = predicates.get(i);
+            assert next.getType().code == BOOL;
+            boolean nullable = result.getType().mayBeNull || next.getType().mayBeNull;
+            result = ExpressionCompiler.makeBinaryExpression(
+                    result.getNode(), DBSPTypeBool.create(nullable), DBSPOpcode.AND, result, next);
+        }
+        return ExpressionCompiler.wrapBoolIfNeeded(result);
+    }
+
+    /** Like {@link ExpressionCompiler}, but shift input references by the specified amount.
+     * Used to pull predicates to the RHS of a join.  The indexes are expressed in terms of the
+     * join output, which contains the left input concatenated with the right input. */
+    static class ShiftingExpressionCompiler extends ExpressionCompiler {
+        final int shiftAmount;
+
+        public ShiftingExpressionCompiler(
+                @Nullable RelNode context, @Nullable DBSPVariablePath inputRow, DBSPCompiler compiler, int shift) {
+            super(context, inputRow, compiler);
+            this.shiftAmount = shift;
+        }
+
+        /** Convert an expression that refers to a field in the input row.
+         * @param inputRef   index in the input row.
+         * @return           the corresponding DBSP expression. */
+        @Override
+        public DBSPExpression visitInputRef(RexInputRef inputRef) {
+            CalciteObject node = CalciteObject.create(this.context, inputRef);
+            if (this.inputRow == null)
+                throw new InternalCompilerError("Row referenced without a row context", node);
+            // Unfortunately it looks like we can't trust the type coming from Calcite.
+            DBSPTypeTuple type = this.inputRow.getType().deref().to(DBSPTypeTuple.class);
+            int index = inputRef.getIndex() - this.shiftAmount;
+            if (index < type.size()) {
+                DBSPExpression field = this.inputRow.deref().field(index);
+                return field.applyCloneIfNeeded();
+            }
+            if (index - type.size() < this.constants.size())
+                return this.visitLiteral(this.constants.get(index - type.size()));
+            throw new InternalCompilerError("Index in row out of bounds ", node);
+        }
+    }
+
     private void visitJoin(LogicalJoin join) {
         CalciteObject node = CalciteObject.create(join);
         // The result is the sum of all these operators.
@@ -1356,10 +1416,39 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPSimpleOperator right = this.getInputAs(join.getInput(1), true);
         DBSPTypeTuple leftElementType = left.getOutputZSetElementType().to(DBSPTypeTuple.class);
         DBSPTypeTuple rightElementType = right.getOutputZSetElementType().to(DBSPTypeTuple.class);
+        DBSPSimpleOperator leftPulled = left;
+        DBSPSimpleOperator rightPulled = right;
+        int leftColumns = leftElementType.size();
+        int rightColumns = rightElementType.size();
+        int totalColumns = leftColumns + rightColumns;
+        FieldUseMap leftPulledFields = null;
+        FieldUseMap rightPulledFields = null;
+        FieldUseMap conditionFields = null;
 
         JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
         JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join, join.getCondition());
+        if (!decomposition.leftPredicates.isEmpty()) {
+            DBSPVariablePath t = leftElementType.ref().var();
+            ExpressionCompiler expressionCompiler = new ExpressionCompiler(join, t, this.compiler);
+            List<DBSPExpression> pullLeft = Linq.map(decomposition.leftPredicates, expressionCompiler::compile);
+            DBSPExpression result = makeAnd(pullLeft);
+            DBSPClosureExpression clo = result.closure(t);
+            leftPulled = new DBSPFilterOperator(node, clo, left.outputPort());
+            leftPulledFields = FindUnusedFields.computeUsedFields(clo, this.compiler);
+            this.addOperator(leftPulled);
+        }
+        if (!decomposition.rightPredicates.isEmpty()) {
+            DBSPVariablePath t = rightElementType.ref().var();
+            ExpressionCompiler expressionCompiler = new ShiftingExpressionCompiler(join, t, this.compiler, leftColumns);
+            List<DBSPExpression> pullRight = Linq.map(decomposition.rightPredicates, expressionCompiler::compile);
+            DBSPExpression result = makeAnd(pullRight);
+            DBSPClosureExpression clo = result.closure(t);
+            rightPulled = new DBSPFilterOperator(node, clo, right.outputPort());
+            rightPulledFields = FindUnusedFields.computeUsedFields(clo, this.compiler);
+            this.addOperator(rightPulled);
+        }
+
         if (decomposition.isCrossJoin())
             // An outer cross-join is always equivalent with an inner cross join
             joinType = JoinRelType.INNER;
@@ -1368,14 +1457,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // this will make some key columns non-nullable
         DBSPSimpleOperator filteredLeft = this.filterNonNullFields(join,
                 Linq.map(Linq.where(decomposition.comparisons, JoinConditionAnalyzer.EqualityTest::nonNull),
-                        JoinConditionAnalyzer.EqualityTest::leftColumn), left, false);
+                        JoinConditionAnalyzer.EqualityTest::leftColumn), leftPulled, false);
         DBSPSimpleOperator filteredRight = this.filterNonNullFields(join,
                 Linq.map(Linq.where(decomposition.comparisons, JoinConditionAnalyzer.EqualityTest::nonNull),
-                        JoinConditionAnalyzer.EqualityTest::rightColumn), right, false);
+                        JoinConditionAnalyzer.EqualityTest::rightColumn), rightPulled, false);
 
-        int leftColumns = leftElementType.size();
-        int rightColumns = rightElementType.size();
-        int totalColumns = leftColumns + rightColumns;
         DBSPTypeTuple leftResultType = resultType.slice(0, leftColumns);
         DBSPTypeTuple rightResultType = resultType.slice(leftColumns, leftColumns + rightColumns);
         // Map a left variable field that is used as key field into the corresponding key field index
@@ -1426,7 +1512,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPSimpleOperator inner;
         DBSPTypeTuple lrType;
         boolean hasFilter = false;
-        FieldUseMap conditionFields = null;
         {
             DBSPVariablePath k = keyType.ref().var();
             DBSPVariablePath l0 = leftTupleType.ref().var();
@@ -1471,10 +1556,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     joinResult = inner;
                     hasFilter = true;
 
-                    FindUnusedFields fu = new FindUnusedFields(this.compiler);
                     DBSPClosureExpression closure = condition.to(DBSPClosureExpression.class);
-                    fu.findUnusedFields(closure);
-                    conditionFields = fu.parameterFieldMap.get(closure.parameters[0]);
+                    conditionFields = FindUnusedFields.computeUsedFields(closure, this.compiler);
                 }
                 // if bLit it true we don't need to filter.
             }
@@ -1500,8 +1583,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath joinVar = lrType.ref().var();
 
         if (joinType == JoinRelType.LEFT || joinType == JoinRelType.FULL) {
-            if (!hasFilter) {
-                // If there is no filter after the join, we can do a more efficient antijoin
+            if (!hasFilter && decomposition.leftPredicates.isEmpty()) {
+                // If there is no filter before or after the join, we can do a more efficient antijoin
                 DBSPTypeTuple toSubtractKeyType = rightNonNullIndex.getOutputIndexedZSetType().getKeyTypeTuple();
                 DBSPType leftKeyType = lkf.keyType(leftElementType);
                 DBSPTypeTuple antiJoinKeyType = TypeCompiler.reduceType(node, toSubtractKeyType, leftKeyType, "")
@@ -1571,9 +1654,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // - key = (join key fields, condition fields part of left)
                 // - value = the remaining left columns
                 KeyFields extendedLeft = new KeyFields(lkf);
-                FieldUseMap leftConditionFields = conditionFields.deref().slice(0, leftColumns);
-                for (int i: leftConditionFields.getUsedFields())
-                    extendedLeft.add(i);
+                if (conditionFields != null) {
+                    // If we pulled a predicate up, there may be no condition fields left
+                    FieldUseMap leftConditionFields = conditionFields.deref().slice(0, leftColumns);
+                    extendedLeft.addAllUsed(leftConditionFields);
+                }
+                extendedLeft.addAllUsed(leftPulledFields);
+                extendedLeft.addAllUsed(rightPulledFields);
 
                 DBSPTypeTuple leftSubKeyType = extendedLeft.keyType(leftResultType);
 
@@ -1618,7 +1705,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         if (joinType == JoinRelType.RIGHT || joinType == JoinRelType.FULL) {
-            if (!hasFilter) {
+            if (!hasFilter && decomposition.rightPredicates.isEmpty()) {
                 DBSPTypeTuple toSubtractKeyType = leftNonNullIndex.getOutputIndexedZSetType().getKeyTypeTuple();
                 {
                     // Subtract (using an antijoin) the left from the right.
@@ -1686,9 +1773,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // - key = (join key fields, condition fields part of right)
                 // - value = the remaining right columns
                 KeyFields extendedRight = new KeyFields(rkf);
-                FieldUseMap rightConditionFields = conditionFields.deref().slice(leftColumns, totalColumns);
-                for (int i: rightConditionFields.getUsedFields())
-                    extendedRight.add(i);
+                if (conditionFields != null) {
+                    FieldUseMap rightConditionFields = conditionFields.deref().slice(leftColumns, totalColumns);
+                    extendedRight.addAllUsed(rightConditionFields);
+                }
+                extendedRight.addAllUsed(leftPulledFields);
+                extendedRight.addAllUsed(rightPulledFields);
                 DBSPTypeTuple rightSubKeyType = extendedRight.keyType(rightResultType);
 
                 // The following loop is an adapted version of extendedRight.keyFields
@@ -1762,6 +1852,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
         JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join, join.getCondition());
+        assert decomposition.rightPredicates.isEmpty();
+        assert decomposition.leftPredicates.isEmpty();
         @Nullable
         RexNode leftOver = decomposition.getLeftOver();
         assert leftOver == null;

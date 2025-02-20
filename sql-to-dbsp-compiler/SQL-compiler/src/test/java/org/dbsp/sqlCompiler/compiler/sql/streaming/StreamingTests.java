@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
@@ -1654,6 +1655,71 @@ public class StreamingTests extends StreamingTestBase {
                 avg  | start | weight
                 ----------------------
                 10.0 | 2023-12-31 00:00:00 | 1""");
+    }
+
+    @Test
+    public void issue3542() {
+        // Validated on Postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE T1(a INT, b INT, c INT);
+                CREATE TABLE T2(l INT, m INT, n INT);
+                CREATE VIEW V0 AS
+                select a, l from t1 full outer join t2 on t1.a = t2.l and t1.b < 5 and t2.m > 0;""");
+        int[] filters = new int[1];
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            public void postorder(DBSPFlatMapOperator unused) {
+                filters[0]++;
+            }
+        };
+        ccs.visit(visitor);
+        // Filters combined with maps into flatmaps
+        assert filters[0] == 4;
+        ccs.step("""
+                INSERT INTO T1 VALUES(0, 1, 2);
+                INSERT INTO T2 VALUES(0, 1, 2);
+                """, """
+                 a | l | weight
+                ----------------
+                 0 | 0 | 1""");
+        ccs.step("""
+                INSERT INTO T1 VALUES(2, 10, 3);
+                """, """
+                 a | l | weight
+                ----------------
+                 2 |   | 1""");
+        ccs.step("""
+                INSERT INTO T2 VALUES(3, -1, 3);
+                """, """
+                 a | l | weight
+                ----------------
+                   | 3 | 1""");
+        ccs.step("""
+                INSERT INTO T2 VALUES(2, -1, 3);
+                """, """
+                 a | l | weight
+                ----------------
+                   | 2 | 1""");
+        ccs.step("""
+                INSERT INTO T2 VALUES(2, 1, 3);
+                """, """
+                 a | l | weight
+                ----------------
+                   | 2 | 1""");
+        ccs.step("""
+                INSERT INTO T1 VALUES(2, 0, 4);
+                """, """
+                 a | l | weight
+                ----------------
+                 2 | 2 | 1
+                   | 2 | -1""");
+        /* Final result is:
+         a 	 |   l
+        -----------
+         0 	  |  0
+         2 	  |  null
+         2    |  2
+         null |  2
+         null |  3 */
     }
 
     @Test
