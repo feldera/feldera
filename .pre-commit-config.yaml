@@ -1,7 +1,7 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 default_language_version:
-    rust: 1.82.0
+    rust: 1.83.0
 repos:
 -   repo: local
     hooks:
