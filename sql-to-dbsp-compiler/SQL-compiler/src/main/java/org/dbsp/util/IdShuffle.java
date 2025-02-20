@@ -31,4 +31,14 @@ public class IdShuffle implements Shuffle {
     public boolean emitsIndex(int index) {
         return true;
     }
+
+    @Override
+    public Shuffle invert() {
+        return this;
+    }
+
+    @Override
+    public boolean isIdentityPermutation() {
+        return true;
+    }
 }

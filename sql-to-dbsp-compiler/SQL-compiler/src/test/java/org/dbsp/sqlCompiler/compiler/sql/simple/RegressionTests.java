@@ -26,6 +26,34 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void testInternal179() {
+        this.getCC("""
+                CREATE TABLE h(p REAL NOT NULL);
+                CREATE TABLE q(r REAL NOT NULL);
+                CREATE VIEW V AS SELECT * FROM h LEFT JOIN q ON ROUND(r) = ROUND(p);
+                """);
+    }
+
+    @Test
+    public void issue3517() {
+        this.getCCS("""
+                create table t_problematic
+                    ( r0 ROW
+                        ( j00 VARCHAR
+                        )
+                    , r1 ROW
+                        ( r10 ROW
+                            ( j100 VARCHAR
+                            )
+                        , j11 VARCHAR
+                        )
+                    );
+                create view v0 as select parse_json(t_problematic.r1.r10.j100) from t_problematic;
+                create view v1 as select parse_json(t_problematic.r1.j11) from t_problematic;
+                """);
+    }
+
+    @Test
     public void internalIssue174() {
         this.compileRustTestCase("""
                 CREATE FUNCTION a2m(input VARIANT ARRAY) RETURNS VARIANT NOT NULL AS VariantNull();
@@ -1899,5 +1927,14 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE t1(c0 varchar);
                 CREATE TABLE t2(c0 varchar);
                 CREATE VIEW v2 AS (SELECT 1 FROM t1 JOIN t2 ON (1 IS NOT DISTINCT FROM NULL));""");
+    }
+
+    @Test
+    public void testGroupbyOrdinal() {
+        this.getCCS("""
+                CREATE TABLE X (xx int);
+                CREATE VIEW Y
+                AS select xx from X
+                group by 1""");
     }
 }

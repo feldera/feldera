@@ -201,6 +201,13 @@ public class Linq {
         return result;
     }
 
+    public static <T> List<T> fill(int count, T value) {
+        List<T> result = new ArrayList<>(count);
+        for (int i = 0; i < count; i++)
+            result.add(value);
+        return result;
+    }
+
     public static <T> List<T> list(Iterator<T> data) {
         List<T> result = new ArrayList<>();
         data.forEachRemaining(result::add);

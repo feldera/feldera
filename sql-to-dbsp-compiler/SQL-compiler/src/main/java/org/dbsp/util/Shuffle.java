@@ -15,4 +15,11 @@ public interface Shuffle {
 
     /** True if the element with the specified index is emitted in the output */
     boolean emitsIndex(int index);
+
+    /** This only works for shuffles which are permutations.
+     * This returns the inverse permutation of this shuffle. */
+    Shuffle invert();
+
+    /** True if this shuffle is an identity permutation */
+    boolean isIdentityPermutation();
 }

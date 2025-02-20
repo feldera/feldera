@@ -107,6 +107,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -127,6 +128,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -409,7 +411,7 @@ public class ToRustVisitor extends CircuitVisitor {
         if (operator.is(DBSPSimpleOperator.class) &&
                 this.compiler.options.ioOptions.verbosity > 0) {
             DBSPSimpleOperator simple = operator.to(DBSPSimpleOperator.class);
-            this.builder.append("// ")
+            this.builder.append("// ").newline()
                     .append(simple.getOutputName())
                     .append(".inspect(|batch| println!(\"")
                     .append(simple.getOutputName())
@@ -635,7 +637,7 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
-    void findNestedStructs(DBSPTypeStruct struct, List<DBSPTypeStruct> result) {
+    void findNestedStructs(DBSPType struct, List<DBSPTypeStruct> result) {
         FindNestedStructs fn = new FindNestedStructs(this.compiler, result);
         fn.apply(struct);
     }
@@ -645,7 +647,7 @@ public class ToRustVisitor extends CircuitVisitor {
         item.accept(this.innerVisitor);
     }
 
-    void generateStructHelpers(DBSPTypeStruct type, @Nullable TableMetadata metadata) {
+    void generateStructHelpers(DBSPType type, @Nullable TableMetadata metadata) {
         List<DBSPTypeStruct> nested = new ArrayList<>();
         findNestedStructs(type, nested);
         for (DBSPTypeStruct s: nested) {
@@ -936,7 +938,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.input().getOutputName())
                 .append(".")
                 .append(operator.operation)
-                .append("::<_, DynData, _, _, _>(");
+                .append("(");
         // This part is different from a standard operator.
         operator.init.accept(this.innerVisitor);
         this.builder.append(", ");
@@ -952,37 +954,67 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSinkOperator operator) {
         this.writeComments(operator);
-        DBSPTypeStruct type = operator.originalRowType;
+        DBSPType type = operator.originalRowType;
         if (!this.useHandles) {
             this.generateStructHelpers(type, null);
-            this.builder.append("type ")
-                    .append(operator.viewName.name())
-                    .append("_struct = ")
-                    .append(type.sanitizedName)
-                    .append(";")
-                    .newline();
-        }
-        if (!this.useHandles) {
-            IHasSchema description = this.metadata.getViewDescription(operator.viewName);
-            JsonNode j = description.asJson();
-            j = this.stripConnectors(j);
-            DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), false, true);
-            String registerFunction = switch (operator.metadata.viewKind) {
-                case MATERIALIZED -> "register_materialized_output_zset";
-                case LOCAL -> throw new InternalCompilerError("Sink operator for local view " + operator);
-                case STANDARD -> "register_output_zset";
-            };
-            this.builder.append("catalog.")
-                    .append(registerFunction)
-                    .append("::<_, ");
-            operator.originalRowType.accept(this.innerVisitor);
-            this.builder.append(">(")
-                    .append(operator.input().getOutputName())
-                    .append(".clone()")
-                    .append(", ");
-            json.accept(this.innerVisitor);
-            this.builder.append(");")
-                    .newline();
+            if (operator.isIndex()) {
+                DBSPTypeRawTuple raw = operator.originalRowType.to(DBSPTypeRawTuple.class);
+                assert raw.size() == 2;
+
+                this.builder.append("catalog.register_index");
+                this.builder.append("::<").increase();
+                operator.getOutputIndexedZSetType().keyType.accept(this.innerVisitor);
+                this.builder.append(",").newline();
+                raw.tupFields[0].accept(this.innerVisitor);
+                this.builder.append(",").newline();
+                operator.getOutputIndexedZSetType().elementType.accept(this.innerVisitor);
+                this.builder.append(",").newline();
+                raw.tupFields[1].accept(this.innerVisitor);
+                this.builder.decrease().append(">");
+                this.builder.append("(").newline()
+                        .append(operator.input().getOutputName())
+                        .append(".clone()")
+                        .append(", &SqlIdentifier::from(\"");
+                this.builder.append(operator.viewName.toString())
+                        .append("\"), &SqlIdentifier::from(\"")
+                        .append(operator.query);
+                this.builder.append("\"),")
+                        .newline().append("&vec!(");
+                DBSPTypeStruct keyStruct = raw.tupFields[0].to(DBSPTypeStruct.class);
+                boolean first = true;
+                for (Iterator<ProgramIdentifier> it = keyStruct.getFieldNames(); it.hasNext(); ) {
+                    ProgramIdentifier field = it.next();
+                    if (!first)
+                        this.builder.append(",");
+                    first = false;
+                    this.builder.append("&SqlIdentifier::from(\"")
+                            .append(field.toString())
+                            .append("\")");
+                }
+                this.builder.append("));")
+                        .newline();
+            } else {
+                IHasSchema description = this.metadata.getViewDescription(operator.viewName);
+                JsonNode j = description.asJson();
+                j = this.stripConnectors(j);
+                DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), false, true);
+                String registerFunction = switch (operator.metadata.viewKind) {
+                    case MATERIALIZED -> "register_materialized_output_zset";
+                    case LOCAL -> throw new InternalCompilerError("Sink operator for local view " + operator);
+                    case STANDARD -> "register_output_zset";
+                };
+                this.builder.append("catalog.")
+                        .append(registerFunction)
+                        .append("::<_, ");
+                operator.originalRowType.accept(this.innerVisitor);
+                this.builder.append(">(")
+                        .append(operator.input().getOutputName())
+                        .append(".clone()")
+                        .append(", ");
+                json.accept(this.innerVisitor);
+                this.builder.append(");")
+                        .newline();
+            }
             if (this.options.ioOptions.sqlNames) {
                 this.builder.append("let ")
                         .append(operator.viewName.name())

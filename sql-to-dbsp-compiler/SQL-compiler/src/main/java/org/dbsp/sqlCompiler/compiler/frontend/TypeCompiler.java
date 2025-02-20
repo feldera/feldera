@@ -28,6 +28,7 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -210,6 +211,19 @@ public class TypeCompiler implements ICompilerComponent {
             }
             return new DBSPTypeTuple(node, mayBeNull, struct, typeFields);
         }
+    }
+
+    public static DBSPTypeStruct asStruct(
+            DBSPCompiler compiler,
+            CalciteObject node, ProgramIdentifier name,
+            List<ViewColumnMetadata> columns, boolean mayBeNull) {
+        List<DBSPTypeStruct.Field> fields = new ArrayList<>();
+        int index = 0;
+        for (ViewColumnMetadata col : columns) {
+            fields.add(new DBSPTypeStruct.Field(col.node, col.getName(), index++, col.getType()));
+        }
+        String saneName = compiler.getSaneStructName(name);
+        return new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
     }
 
     /**

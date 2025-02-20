@@ -889,9 +889,11 @@ public class AggTests extends PostBaseTests {
                 +----+---+---+
                 (9 rows)
 
+                -- modified to disambiguate 1 into '1',
+                -- since it was interpreted as a column index
                 select count(*) as c
                 from emp
-                group by cube(1);
+                group by cube('1');
                 +---+
                 | C |
                 +---+
@@ -900,9 +902,11 @@ public class AggTests extends PostBaseTests {
                 +---+
                 (2 rows)
 
+                -- modified to disambiguate 1 into '1',
+                -- since it was interpreted as a column index
                 select count(*) as c
                 from emp
-                group by rollup(1);
+                group by rollup('1');
                 +---+
                 | C |
                 +---+

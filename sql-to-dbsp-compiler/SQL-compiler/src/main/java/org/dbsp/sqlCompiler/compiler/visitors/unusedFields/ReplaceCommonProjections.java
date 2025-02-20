@@ -116,9 +116,4 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
         if (!this.process(operator))
             super.postorder(operator);
     }
-
-    @Override
-    public Token startVisit(IDBSPOuterNode circuit) {
-        return super.startVisit(circuit);
-    }
 }

@@ -751,7 +751,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 node, sqrtType, DBSPOpcode.MAX,
                 div, sqrtType.to(IsNumericType.class).getZero());
         DBSPExpression sqrt = ExpressionCompiler.compilePolymorphicFunction(
-                "sqrt", node, sqrtType, Linq.list(max), 1);
+                false, "sqrt", node, sqrtType, Linq.list(max), 1);
         sqrt = sqrt.cast(this.nullableResultType, false);
         DBSPClosureExpression post = new DBSPClosureExpression(node, sqrt, a.asParameter());
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);

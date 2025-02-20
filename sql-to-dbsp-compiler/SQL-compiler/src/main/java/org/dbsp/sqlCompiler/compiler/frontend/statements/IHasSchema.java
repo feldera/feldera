@@ -9,7 +9,6 @@ import org.apache.calcite.rel.externalize.RelJson;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.util.JsonBuilder;
 import org.dbsp.sqlCompiler.compiler.IHasCalciteObject;
-import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
@@ -40,12 +39,10 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             if (columns.get(i).getName().equals(ident))
                 return i;
         }
-        throw new CompilationError("Column " + ident.singleQuote() +
-                " not found in " + Utilities.singleQuote(this.getName().toString()),
-                this.getNode());
+        return -1;
     }
 
-    /** Return the index of the specified column. */
+    /** Return the index of the specified column; -1 if columns is not found */
     default int getColumnIndex(SqlIdentifier id) {
         ProgramIdentifier ident = Utilities.toIdentifier(id);
         return this.getColumnIndex(ident);

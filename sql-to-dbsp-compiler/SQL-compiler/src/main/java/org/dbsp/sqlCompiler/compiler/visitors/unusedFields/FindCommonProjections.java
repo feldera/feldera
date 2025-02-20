@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -11,6 +12,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Utilities;
 import org.dbsp.util.graph.Port;
 
@@ -42,11 +44,14 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
     @Override
     public void postorder(DBSPOperator operator) {
         List<Port<DBSPOperator>> successors = this.getGraph().getSuccessors(operator);
-        if (successors.size() < 2 || operator.is(DBSPConstantOperator.class)) {
+        if (operator.is(DBSPNestedOperator.class) ||
+                successors.size() < 2 ||
+                operator.is(DBSPConstantOperator.class)) {
             super.postorder(operator);
             return;
         }
 
+        int depth = operator.outputType(0).is(DBSPTypeZSet.class) ? 1 : 2;
         boolean failed;
         List<FieldUseMap> usage = new ArrayList<>();
         List<FindUnusedFields> finders = new ArrayList<>();
@@ -60,7 +65,7 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
                     FindUnusedFields finder = new FindUnusedFields(compiler);
                     finder.findUnusedFields(closure);
                     finders.add(finder);
-                    failed = !finder.foundUnusedFields(2);
+                    failed = !finder.foundUnusedFields(depth);
                     if (!failed)
                         usage.add(finder.get(closure.parameters[0]));
                 }
@@ -72,7 +77,7 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
         }
 
         FieldUseMap reduced = FieldUseMap.reduce(usage);
-        if (!reduced.hasUnusedFields(2)) {
+        if (!reduced.hasUnusedFields(depth)) {
             super.postorder(operator);
             return;
         }
@@ -82,12 +87,12 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
             // There should be just 1 parameter.
             DBSPParameter param = finder.parameterFieldMap.getParameters().iterator().next();
             finder.setParameterUseMap(param, reduced);
-            RewriteFields rewriter = finder.getFieldRewriter(2);
+            RewriteFields rewriter = finder.getFieldRewriter(depth);
             DBSPClosureExpression clo = rewriter.rewriteClosure(finder.getClosure());
             DBSPOperator op = successors.get(index++).node();
             Utilities.putNew(this.inputProjection, op, clo);
         }
-        DBSPClosureExpression proj = reduced.getProjection(2);
+        DBSPClosureExpression proj = reduced.getProjection(depth);
         Utilities.putNew(this.outputProjection, operator, Objects.requireNonNull(proj));
         Utilities.putNew(this.originalOutputSize, operator, reduced.size());
     }

@@ -129,7 +129,9 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
 
     @Override
     public DBSPType outputType(int outputNo) {
-        return this.internalOutputs.get(outputNo).outputType();
+        OutputPort port = this.internalOutputs.get(outputNo);
+        assert port != null;
+        return port.outputType();
     }
 
     @Override

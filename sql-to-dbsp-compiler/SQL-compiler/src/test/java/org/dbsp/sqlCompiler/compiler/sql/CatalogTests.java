@@ -85,28 +85,32 @@ public class CatalogTests extends BaseSQLTests {
     public void issue3262b() {
         this.compileRustTestCase("""
                 CREATE TABLE T (
+                        z INT NOT NULL,
+                        x INT NULL,
+                        w VARCHAR NOT NULL,
+                        v VARCHAR NULL,
                         a ROW(
                             b ROW(
                                 c VARCHAR NULL,
-                                d VARCHAR
+                                d VARCHAR NOT NULL
                             ) NULL,
                             e ROW(
                                 f VARCHAR NULL,
-                                g VARCHAR
-                            )
+                                g VARCHAR NOT NULL
+                            ) NOT NULL
                         ) NULL,
                         h ROW(
                             i ROW(
                                 j VARCHAR NULL,
-                                k VARCHAR
+                                k VARCHAR NOT NULL
                             ) NULL,
                             l ROW(
                                 m VARCHAR NULL,
-                                n VARCHAR
-                            )
-                        )
+                                n VARCHAR NOT NULL
+                            ) NOT NULL
+                        ) NOT NULL
                     );
-                CREATE VIEW V AS SELECT -- t.a, t.a.b, t.a.b.c, t.a.b.d, t.a.e, t.a.e.f, t.a.e.g,
+                CREATE VIEW V AS SELECT z, x, w, v, t.a, t.a.b, t.a.b.c, t.a.b.d, t.a.e, t.a.e.f, t.a.e.g,
                                         t.h, t.h.i, t.h.i.j, t.h.i.j, t.h.l, t.h.l.m, t.h.l.n FROM T;""");
     }
 
@@ -189,6 +193,47 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE TABLE T(id int);
                 CREATE VIEW V(x, x) AS SELECT id, id+1 FROM T;""";
         this.statementsFailingInCompilation(sql, "Column with name 'x' already defined");
+    }
+
+    @Test
+    public void negativeIndexTests() {
+        String sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON V(id, id);""";
+        this.statementsFailingInCompilation(sql,
+                "Duplicated name: Column 'id' duplicated in index");
+        sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON V(unknown);""";
+        this.statementsFailingInCompilation(sql,
+                "Column 'unknown' used in CREATE INDEX statement 'ix' does not exist in view 'v'");
+        sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON Z(id);""";
+        this.statementsFailingInCompilation(sql,
+                "Indexed object not found: Object with name 'z' used in CREATE INDEX statement 'ix' does not exist.");
+        sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON V(z);""";
+        this.statementsFailingInCompilation(sql,
+                "Cannot index on column 'z' because it has type ARRAY");
+        sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE INDEX IX ON T(id);""";
+        this.shouldWarn(sql, "Indexed table: INDEX 'ix' refers to TABLE 't'; this has no effect.");
+    }
+
+    @Test
+    public void indexTest() {
+        String sql = """
+                CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T;
+                CREATE INDEX IX ON V(id, v);""";
+        this.getCCS(sql);
     }
 
     @Test

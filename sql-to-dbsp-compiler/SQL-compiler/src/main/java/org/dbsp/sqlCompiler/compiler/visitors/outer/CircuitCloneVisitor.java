@@ -110,8 +110,8 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
             derivedFrom = old.node().id;
         newOp.node().setDerivedFrom(derivedFrom);
         assert old.outputType().sameType(newOp.outputType()) :
-          "Replacing operator with type " + old.outputType() +
-                  " with new type " + newOp.outputType();
+          "Replacing operator with type\n" + old.outputType() +
+                  " with new type\n" + newOp.outputType();
     }
 
     protected void map(DBSPSimpleOperator old, DBSPSimpleOperator newOp) {
