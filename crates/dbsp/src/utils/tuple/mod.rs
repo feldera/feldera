@@ -129,7 +129,7 @@ impl Copy for Tup0 {}
 impl<T1, T2> Tup2<T1, T2> {
     #[inline]
     pub fn as_mut(&mut self) -> (&mut T1, &mut T2) {
-        (&mut self.1, &mut self.2)
+        (&mut self.0, &mut self.1)
     }
 
     #[inline]
@@ -156,26 +156,26 @@ impl<T1, T2> Tup2<T1, T2> {
 impl<T1: DBData, T2: DBData> ArchivedTup2<T1, T2> {
     #[inline]
     pub fn as_mut(&mut self) -> (&mut T1::Repr, &mut T2::Repr) {
-        (&mut self.1, &mut self.2)
+        (&mut self.0, &mut self.1)
     }
 
     #[inline]
     pub fn fst(&self) -> &T1::Repr {
-        &self.1
+        &self.0
     }
 
     #[inline]
     pub fn fst_mut(&mut self) -> &mut T1::Repr {
-        &mut self.1
+        &mut self.0
     }
 
     #[inline]
     pub fn snd(&self) -> &T2::Repr {
-        &self.2
+        &self.1
     }
 
     #[inline]
     pub fn snd_mut(&mut self) -> &mut T2::Repr {
-        &mut self.2
+        &mut self.1
     }
 }
