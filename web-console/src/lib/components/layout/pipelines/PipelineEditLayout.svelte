@@ -15,6 +15,7 @@
   import { extractErrorMarkers, felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
   import {
     postPipelineAction,
+    programStatusOf,
     type ExtendedPipeline,
     type Pipeline,
     type PipelineAction,
@@ -383,7 +384,7 @@ example = "1.0"`
             </div>
           {/snippet}
           {#snippet statusBarCenter()}
-            <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
+            <ProgramStatus programStatus={programStatusOf(pipeline.current.status)}></ProgramStatus>
           {/snippet}
           {#snippet statusBarEnd()}
             <div class="ml-auto flex flex-nowrap items-center gap-1">
