@@ -233,7 +233,6 @@ pub struct JsonEncoderConfig {
     ///
     /// This option is only valid with the `debezium` update format.
     pub key_fields: Option<Vec<String>>,
-    pub key_separator: Option<String>,
 }
 
 impl Default for JsonEncoderConfig {
@@ -244,7 +243,6 @@ impl Default for JsonEncoderConfig {
             buffer_size_records: 10_000,
             array: false,
             key_fields: None,
-            key_separator: Some(":".to_string()),
         }
     }
 }

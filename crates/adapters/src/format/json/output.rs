@@ -81,10 +81,16 @@ impl OutputFormat for JsonOutputFormat {
             json_config.buffer_size_records = 1;
         }
 
+        let key_separator = match &config.transport {
+            TransportConfig::RedisOutput(config) => Some(config.key_separator.clone()),
+            _ => None,
+        };
+
         Ok(Box::new(JsonEncoder::new(
             consumer,
             json_config,
             value_schema,
+            key_separator,
         )))
     }
 }
@@ -173,6 +179,7 @@ impl JsonEncoder {
         output_consumer: Box<dyn OutputConsumer>,
         mut config: JsonEncoderConfig,
         schema: &Relation,
+        key_separator: Option<String>,
     ) -> Self {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
 
@@ -194,7 +201,6 @@ impl JsonEncoder {
 
         let key_fields = canonical_key_fields.clone().map(HashSet::from_iter);
         let ordered_key_fields = canonical_key_fields.map(|f| f.collect());
-        let key_separator = std::mem::take(&mut config.key_separator);
 
         Self {
             output_consumer,
@@ -300,13 +306,15 @@ impl Encoder for JsonEncoder {
                         )?;
                     }
                     JsonUpdateFormat::Redis => {
-                        let Some(key_fields) = &self.key_fields else {
-                            unreachable!("key field cannot be empty in redis output config");
-                        };
+                        let key_fields = self
+                            .key_fields
+                            .as_ref()
+                            .expect("key field cannot be empty in redis output config");
 
-                        let Some(ordered_key_fields) = &self.ordered_key_fields else {
-                            unreachable!("key field cannot be empty in redis output config");
-                        };
+                        let ordered_key_fields: &[String] = self
+                            .ordered_key_fields
+                            .as_ref()
+                            .expect("key field cannot be empty in redis output config");
 
                         // Encode the key.
                         let mut buf = Vec::new();
@@ -486,9 +494,7 @@ impl Encoder for JsonEncoder {
             }
 
             buffer.clear();
-            if matches!(self.config.update_format, JsonUpdateFormat::Redis) {
-                key_buffer.clear();
-            }
+            key_buffer.clear();
         }
 
         self.buffer = buffer;
@@ -617,7 +623,6 @@ mod test {
             buffer_size_records: 3,
             array,
             key_fields: None,
-            key_separator: None,
         };
 
         let consumer = MockOutputConsumer::new();
@@ -631,6 +636,7 @@ mod test {
                 false,
                 BTreeMap::new(),
             ),
+            None,
         );
         let zsets = batches
             .iter()
@@ -817,7 +823,6 @@ mod test {
             buffer_size_records: 3,
             array: false,
             key_fields: None,
-            key_separator: None,
         };
 
         let consumer = MockOutputConsumer::with_max_buffer_size_bytes(32);
@@ -830,6 +835,7 @@ mod test {
                 false,
                 BTreeMap::new(),
             ),
+            None,
         );
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
@@ -848,7 +854,6 @@ mod test {
             buffer_size_records: 1,
             array: false,
             key_fields: Some(vec!["id".to_string(), "s".to_string()]),
-            key_separator: None,
         };
 
         let consumer = MockOutputConsumer::new();
@@ -863,6 +868,7 @@ mod test {
                 false,
                 BTreeMap::new(),
             ),
+            None,
         );
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
@@ -918,7 +924,6 @@ mod test {
             buffer_size_records: 1,
             array: false,
             key_fields: Some(vec!["id".to_owned(), "s".to_owned()]),
-            key_separator: None,
         };
 
         let consumer = MockOutputConsumer::new();
@@ -933,6 +938,7 @@ mod test {
                 false,
                 BTreeMap::new(),
             ),
+            None,
         );
 
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
