@@ -8,13 +8,16 @@
   import { Virtualizer, type VirtualizerHandle } from 'virtua/svelte'
   import stripANSI from 'strip-ansi'
   import AnsiDecoratedText from '$lib/components/logs/ANSIDecoratedText.svelte'
+  import ScrollDownFab from '$lib/components/other/ScrollDownFab.svelte'
 
   const theme = useSkeletonTheme()
 
   let { logs }: { logs: { rows: string[]; totalSkippedBytes: number; firstRowIndex: number } } =
     $props()
 
-  const reverseScroll = useReverseScrollContainer()
+  const reverseScroll = useReverseScrollContainer({
+    observeContentElement: (e) => e.firstElementChild!
+  })
   let virtualizer: VirtualizerHandle = $state()!
 </script>
 
@@ -105,15 +108,5 @@
   >
     {@html logs.rows}
   </div> -->
-  {#if !reverseScroll.stickToBottom}
-    <button
-      transition:scale={{ duration: 200 }}
-      class="fd fd-arrow-down absolute bottom-4 right-4 rounded-full p-2 text-[20px] preset-filled-primary-500"
-      onclick={() => {
-        reverseScroll.stickToBottom = true
-        reverseScroll.scrollToBottom()
-      }}
-      aria-label="Scroll to bottom"
-    ></button>
-  {/if}
+  <ScrollDownFab {reverseScroll}></ScrollDownFab>
 </div>
