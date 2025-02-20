@@ -80,7 +80,7 @@ tempfile = "3.10.0"
 async-trait = "0.1"
 arrow = { version = "53.3.0", features = ["chrono-tz"] }
 parquet = { version = "53.3.0", features = ["json"] }
-serde_arrow = { version = "0.13.0-rc.1", features = ["arrow-53"] }
+serde_arrow = { git = "https://github.com/ryzhyk/serde_arrow.git", rev = "dbab218", features = ["arrow-53"] }
 arrow-json = { version = "53.3.0" }
 bytes = "1.5.0"
 # `datafusion` must be enabled for the writer to implement the `Invariant` feature.

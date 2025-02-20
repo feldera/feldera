@@ -9527,8 +9527,7 @@ dependencies = [
 [[package]]
 name = "serde_arrow"
 version = "0.13.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3955420f8b683a83cd73d469fb6b55866edea1e401cd8ae696ef167de7e7c4d9"
+source = "git+https://github.com/ryzhyk/serde_arrow.git?rev=dbab218#dbab218949c6c3e4495ef07d6c7e94a9e65f22cb"
 dependencies = [
  "arrow-array",
  "arrow-schema",
