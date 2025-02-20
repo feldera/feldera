@@ -439,6 +439,10 @@ public class FieldUseMap {
         return this.fieldInfo.to(BitList.class).fields.get(index).anyUsed();
     }
 
+    public boolean isRef() {
+        return this.fieldInfo.is(Ref.class);
+    }
+
     public List<Integer> getUsedFields() {
         return this.fieldInfo.to(BitList.class).allUsedFields();
     }

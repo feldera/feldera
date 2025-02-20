@@ -349,4 +349,11 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
         this.apply(closure);
         return closure;
     }
+
+    public static FieldUseMap computeUsedFields(DBSPClosureExpression closure, DBSPCompiler compiler) {
+        assert closure.parameters.length == 1;
+        FindUnusedFields fu = new FindUnusedFields(compiler);
+        fu.findUnusedFields(closure);
+        return fu.parameterFieldMap.get(closure.parameters[0]);
+    }
 }

@@ -141,11 +141,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     @Nullable
     public final DBSPVariablePath inputRow;
     private final RexBuilder rexBuilder;
-    private final List<RexLiteral> constants;
+    protected final List<RexLiteral> constants;
     private final DBSPCompiler compiler;
     /** Context in which the rex nodes are defined */
     @Nullable
-    private final RelNode context;
+    protected final RelNode context;
 
     public ExpressionCompiler(@Nullable RelNode context,
             @Nullable DBSPVariablePath inputRow, DBSPCompiler compiler) {
@@ -278,7 +278,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     }
 
     // Like makeBinaryExpression, but accepts multiple operands.
-    private static DBSPExpression makeBinaryExpressions(
+    static DBSPExpression makeBinaryExpressions(
             CalciteObject node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
         assert operands.size() >= 2 :
             "Expected at least two operands for binary expression " + opcode;

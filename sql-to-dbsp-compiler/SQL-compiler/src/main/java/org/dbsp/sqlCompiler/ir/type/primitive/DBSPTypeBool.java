@@ -37,8 +37,14 @@ import java.util.Objects;
 public class DBSPTypeBool extends DBSPTypeBaseType implements IsBoundedType {
     public DBSPTypeBool(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.BOOL, mayBeNull); }
 
+    static DBSPTypeBool INSTANCE = new DBSPTypeBool(CalciteObject.EMPTY, false);
+    static DBSPTypeBool NULLABLE_INSTANCE = new DBSPTypeBool(CalciteObject.EMPTY, true);
+
     public static DBSPTypeBool create(boolean mayBeNull) {
-        return new DBSPTypeBool(CalciteObject.EMPTY, mayBeNull);
+        if (mayBeNull)
+            return NULLABLE_INSTANCE;
+        else
+            return INSTANCE;
     }
 
     @Override

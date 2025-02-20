@@ -39,6 +39,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 public class JoinConditionAnalyzer implements IWritesLogs {
     private final int leftTableColumnCount;
@@ -70,18 +71,24 @@ public class JoinConditionAnalyzer implements IWritesLogs {
         }
     }
 
-    /**
-     * A join condition is decomposed into a list of equality comparisons
+    /** A join condition is decomposed into a list of equality comparisons
      * and another general-purpose boolean expression. */
     class ConditionDecomposition {
         final RelNode join;
         public final List<EqualityTest> comparisons;
+        /** Predicates that can be pulled on the left side. */
+        public final List<RexCall> leftPredicates;
+        public final List<RexCall> rightPredicates;
+        /** If true attempt to discover one-sided predicates (that
+         * only involve one side of the join). */
         @Nullable
         RexNode leftOver;
 
         ConditionDecomposition(RelNode join) {
             this.join = join;
             this.comparisons = new ArrayList<>();
+            this.leftPredicates = new ArrayList<>();
+            this.rightPredicates = new ArrayList<>();
             this.leftOver = null;
         }
 
@@ -89,7 +96,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
             this.leftOver = leftOver;
         }
 
-        public void addEquality(RexNode left, RexNode right, DBSPType commonType, boolean nonNull) {
+        void addEquality(RexNode left, RexNode right, DBSPType commonType, boolean nonNull) {
             RexInputRef ref = Objects.requireNonNull(asInputRef(left));
             int l = ref.getIndex();
             ref = Objects.requireNonNull(asInputRef(right));
@@ -102,7 +109,8 @@ public class JoinConditionAnalyzer implements IWritesLogs {
         }
 
         void validate() {
-            if (this.leftOver == null && this.comparisons.isEmpty())
+            if (this.leftOver == null && this.comparisons.isEmpty() &&
+                    this.leftPredicates.isEmpty() && this.rightPredicates.isEmpty())
                 throw new InternalCompilerError("Unexpected empty join condition",
                         CalciteObject.create(this.join));
         }
@@ -113,6 +121,46 @@ public class JoinConditionAnalyzer implements IWritesLogs {
         public RexNode getLeftOver() {
             this.validate();
             return this.leftOver;
+        }
+
+        static class CheckSide extends RexShuttle {
+            final int leftSideSize;
+            public boolean leftRef = false;
+            public boolean rightRef = false;
+
+            CheckSide(int leftSideSize) {
+                this.leftSideSize = leftSideSize;
+            }
+
+            @Override
+            public RexNode visitInputRef(RexInputRef ref) {
+                if (ref.getIndex() < leftSideSize)
+                    this.leftRef = true;
+                else
+                    this.rightRef = true;
+                return ref;
+            }
+
+            public boolean oneSided() {
+                return this.leftRef != this.rightRef;
+            }
+        }
+
+        @SuppressWarnings("BooleanMethodIsAlwaysInverted")
+        boolean checkOneSided(RexCall call) {
+            CheckSide checker = new CheckSide(JoinConditionAnalyzer.this.leftTableColumnCount);
+            checker.apply(call);
+            if (!checker.oneSided()) {
+                return false;
+            } else {
+                if (checker.leftRef) {
+                    this.leftPredicates.add(call);
+                } else {
+                    assert checker.rightRef;
+                    this.rightPredicates.add(call);
+                }
+                return true;
+            }
         }
 
         void analyzeAnd(RexCall call) {
@@ -127,13 +175,17 @@ public class JoinConditionAnalyzer implements IWritesLogs {
 
                 if (opCall.op.kind != SqlKind.EQUALS &&
                         opCall.op.kind != SqlKind.IS_NOT_DISTINCT_FROM) {
-                    unprocessed.add(operand);
+                    if (!this.checkOneSided(opCall)) {
+                        unprocessed.add(operand);
+                    }
                     continue;
                 }
 
                 boolean eq = this.analyzeEquals(opCall);
                 if (!eq) {
-                    unprocessed.add(opCall);
+                    if (!this.checkOneSided(opCall)) {
+                        unprocessed.add(opCall);
+                    }
                 }
             }
 
@@ -224,10 +276,12 @@ public class JoinConditionAnalyzer implements IWritesLogs {
         } else if (call.op.kind == SqlKind.EQUALS || call.op.kind == SqlKind.IS_NOT_DISTINCT_FROM) {
             boolean success = result.analyzeEquals(call);
             if (!success) {
-                result.setLeftOver(call);
+                if (!result.checkOneSided(call))
+                    result.setLeftOver(call);
             }
         } else {
-            result.setLeftOver(call);
+            if (!result.checkOneSided(call))
+                result.setLeftOver(call);
         }
         return result;
     }

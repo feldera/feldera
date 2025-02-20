@@ -1,14 +1,15 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
@@ -91,7 +92,257 @@ public class OuterJoinTests extends SqlIoTest {
     }
 
     @Test
-    public void test() {
+    public void testPredicatePullLeftJoin() {
+        // validated on postgres
+        this.qs("""
+            SELECT * FROM A AS L LEFT JOIN A AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | lx | ly
+            -------------------
+              0 |  0 |  0 |  0
+            (1 row)
+            
+            SELECT * FROM A AS L LEFT JOIN B AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+            (1 row)
+            
+            SELECT * FROM A AS L LEFT JOIN C AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+            (2 rows)
+            
+            SELECT * FROM A AS L LEFT JOIN D AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+            (2 rows)
+            
+            SELECT * FROM C AS L LEFT JOIN A AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |    |    |
+            (2 rows)
+            
+            SELECT * FROM C AS L LEFT JOIN B AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |    |    |
+            (2 rows)
+            
+            SELECT * FROM C AS L LEFT JOIN C AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+              0 |    |    |
+            (3 rows)
+            
+            SELECT * FROM C AS L LEFT JOIN D AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+              0 |    |    |
+            (3 rows)
+            
+            SELECT * FROM B AS L LEFT JOIN A AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+                |  0 |    |
+            (2 rows)
+            
+            SELECT * FROM B AS L LEFT JOIN B AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+                |  0 |    |
+            (2 rows)
+            
+            SELECT * FROM B AS L LEFT JOIN C AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+                |  0 |    |
+            (3 rows)
+            
+            SELECT * FROM B AS L LEFT JOIN D AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+                |  0 |    |
+            (3 rows)
+            
+            SELECT * FROM D AS L LEFT JOIN A AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |    |    |
+                |  0 |    |
+                |    |    |
+            (4 rows)
+            
+            SELECT * FROM D AS L LEFT JOIN B AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |    |    |
+                |  0 |    |
+                |    |    |
+            (4 rows)
+            
+            SELECT * FROM D AS L LEFT JOIN C AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+              0 |    |    |
+                |  0 |    |
+                |    |    |
+            (5 rows)
+            
+            SELECT * FROM D AS L LEFT JOIN D AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+              0 |    |    |
+                |  0 |    |
+                |    |    |
+            (5 rows)""");
+    }
+
+    @Test
+    public void testPredicatePullRightJoin() {
+        // validated on postgres
+        this.qs("""
+            SELECT * FROM A AS L RIGHT JOIN A AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | lx | ly
+            -------------------
+              0 |  0 |  0 |  0
+            (1 row)
+            
+            SELECT * FROM A AS L RIGHT JOIN B AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+                |    |    |  0
+            (2 row)
+            
+            SELECT * FROM A AS L RIGHT JOIN C AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+            (2 rows)
+            
+            SELECT * FROM A AS L RIGHT JOIN D AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+                |    |    |  0
+                |    |    |
+            (4 rows)
+            
+            SELECT * FROM C AS L RIGHT JOIN A AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+            (1 row)
+            
+            SELECT * FROM C AS L RIGHT JOIN B AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+                |    |    |  0
+            (2 rows)
+            
+            SELECT * FROM C AS L RIGHT JOIN C AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+            (2 rows)
+            
+            SELECT * FROM C AS L RIGHT JOIN D AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+                |    |    |  0
+                |    |    |
+            (4 rows)
+            
+            SELECT * FROM B AS L RIGHT JOIN A AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+            (1 row)
+            
+            SELECT * FROM B AS L RIGHT JOIN B AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+                |    |    |  0
+            (2 rows)
+            
+            SELECT * FROM B AS L RIGHT JOIN C AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+            (2 rows)
+            
+            SELECT * FROM B AS L RIGHT JOIN D AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+                |    |    |  0
+                |    |    |
+            (4 rows)
+            
+            SELECT * FROM D AS L RIGHT JOIN A AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+            (1 row)
+            
+            SELECT * FROM D AS L RIGHT JOIN B AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+                |    |    |  0
+            (2 rows)
+            
+            SELECT * FROM D AS L RIGHT JOIN C AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+            (2 rows)
+            
+            SELECT * FROM D AS L RIGHT JOIN D AS R ON L.X = R.X and L.Y = 0;
+             lx | ly | rx | ry
+            -------------------
+              0 |  0 |  0 |  0
+              0 |  0 |  0 |
+                |    |    |  0
+                |    |    |
+            (4 rows)""");
+    }
+
+    @Test
+    public void testStandadJoinCondition() {
         // validated on postgres
         this.qs("""
             SELECT * FROM A AS L LEFT JOIN A AS R ON L.X = R.X and L.Y = R.Y;
