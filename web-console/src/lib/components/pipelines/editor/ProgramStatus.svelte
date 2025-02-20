@@ -9,7 +9,7 @@
     programStatus: ProgramStatus | undefined
   } = $props()
 
-  const spinnerClass = 'animate-spin text-[20px] fill-surface-950-50'
+  const spinnerClass = 'animate-spin h-5 fill-surface-950-50'
   let sqlClass = $derived(
     match(programStatus)
       .with(
@@ -20,29 +20,39 @@
         () => 'fd fd-circle-check-big text-[20px] text-success-500'
       )
       .with({ SqlWarning: P.any }, () => 'fd fd-circle-alert text-[20px] text-warning-500')
-      .with('Pending', 'CompilingSql', undefined, () => 'spinner')
+      .with('Pending', 'CompilingSql', undefined, () => spinnerClass)
       .with(P.shape({}), () => 'fd fd-circle-x inline-block text-[20px] text-error-500')
       .exhaustive()
   )
   let rustClass = $derived(
     match(programStatus)
-      .with('SqlCompiled', 'CompilingRust', () => 'spinner')
+      .with('SqlCompiled', 'CompilingRust', () => spinnerClass)
       .with({ RustError: P.any }, () => 'fd fd-circle-x text-[20px] text-error-500')
-      .with('Success', 'Pending', 'CompilingSql', P.shape({}), undefined, () => '')
+      .with('Success', 'Pending', 'CompilingSql', P.shape({}), undefined, () => 'hidden')
       .exhaustive()
   )
 </script>
 
 <div class="flex flex-nowrap justify-end gap-2 self-center">
-  <span class={sqlClass}>
-    <IconLoader class={sqlClass === 'spinner' ? spinnerClass : 'hidden'}></IconLoader>
-  </span>
+  {#if sqlClass !== spinnerClass}
+    <span class={sqlClass}> </span>
+  {:else}
+    <IconLoader class={sqlClass}></IconLoader>
+  {/if}
   SQL
 </div>
 
-<div class="{rustClass === '' ? 'hidden' : 'flex'} flex-nowrap gap-2 self-center whitespace-nowrap">
-  <span class={rustClass}>
-    <IconLoader class={rustClass === 'spinner' ? spinnerClass : 'hidden'}></IconLoader>
+<div
+  class="{rustClass === 'hidden'
+    ? 'hidden'
+    : 'flex'} flex-nowrap gap-2 self-center whitespace-nowrap"
+>
+  {#if rustClass !== spinnerClass}
+    <span class={rustClass}> </span>
+  {:else}
+    <IconLoader class={rustClass}></IconLoader>
+  {/if}
+  <span>
+    Rust <span class="hidden sm:inline">compiler</span>
   </span>
-  Rust <span class="hidden sm:inline">compiler</span>
 </div>

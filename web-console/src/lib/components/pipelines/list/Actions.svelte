@@ -352,12 +352,11 @@
   <div class={longClass}></div>
 {/snippet}
 {#snippet _spinner()}
-  <IconLoader class="pointer-events-none h-9 w-9 animate-spin {iconClass} fill-surface-950-50"
-  ></IconLoader>
+  <IconLoader class="pointer-events-none h-5 animate-spin fill-surface-950-50"></IconLoader>
 {/snippet}
 {#snippet _status_spinner()}
   <button class="{buttonClass} {longClass} pointer-events-none {basicBtnColor}">
-    <IconLoader class="animate-spin {iconClass} fill-surface-950-50"></IconLoader>
+    <IconLoader class="h-5 animate-spin fill-surface-950-50"></IconLoader>
     <span></span>
   </button>
 {/snippet}
