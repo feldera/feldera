@@ -9,13 +9,12 @@
     height: string
     width: string
     onscroll: (event: ScrollEvent) => void
-    onresize: (event: { clientHeight: number }) => void
-    setref: (setref: HTMLElement) => void
+    setClientHeight: (value: number) => void
   }
 </script>
 
 <script lang="ts">
-  import type { GetKey, OnScroll, ScrollBehavior, ScrollEvent } from './types'
+  import type { OnScroll, ScrollEvent } from './types'
   import type { Snippet } from 'svelte'
   import { binarySearchMax } from '$lib/functions/common/array'
   let {
@@ -59,18 +58,9 @@
     children?: Snippet
   } = $props()
 
-  export function scrollToBottom() {
-    if (!containerRef) {
-      return
-    }
-    containerRef.scrollTo({ top: containerRef.scrollHeight })
-  }
-
   let scrollTop = $state(0)
   let clientHeight = $state(0)
-  let indexOffset = $derived(
-    Math.max(Math.round((scrollTop - marginTop) / itemSize) - overScan - 1, 0)
-  )
+  let indexOffset = $derived(Math.max(Math.round(scrollTop / itemSize) - overScan - 1, 0))
   let visibleCount = $derived(Math.round((clientHeight - marginTop) / itemSize) + 2 + 2 * overScan)
 
   let stickyRow = $derived(
@@ -78,17 +68,14 @@
       binarySearchMax(stickyIndices, indexOffset + 1)
     )
   )
-  let indices = $derived(Array.from({ length: visibleCount }, (_, i) => i + indexOffset))
+  // `visibleCount - 1` displays one less element than needed to cover the visible area at all times (without any extra `overScan`).
+  // This is done as a workaround to a flickering issue when trying to scroll-to-bottom of a long list
+  let indices = $derived(Array.from({ length: visibleCount - 1 }, (_, i) => i + indexOffset))
 
   const onscroll = (event: ScrollEvent) => {
     scrollTop = event.currentTarget.scrollTop
     _onscroll?.(event)
   }
-
-  const onresize = (event: { clientHeight: number }) => {
-    clientHeight = event.clientHeight
-  }
-  let containerRef = $state<Element>()
 </script>
 
 {#snippet defaultListContainer(
@@ -107,8 +94,9 @@
     height: `${itemCount * itemSize + marginTop}px`,
     width: '100%',
     onscroll,
-    onresize,
-    setref: (v) => (containerRef = v)
+    setClientHeight(value: number) {
+      clientHeight = value
+    }
   },
   children
 )}

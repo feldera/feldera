@@ -80,9 +80,11 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
     cancel: () => {
       flush()
       closedReason = 'cancelled'
-      reader.cancel().catch((e) => {
-        cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
-      })
+      reader
+        .cancel() // A call to .cancel() here sometimes causes multiple rejectionhandled events emitted on window object
+        .catch((e) => {
+          cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
+        })
     }
   }
 }
