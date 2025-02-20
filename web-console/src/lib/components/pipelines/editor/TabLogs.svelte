@@ -2,7 +2,9 @@
   let streams: Record<
     string,
     {
+      firstRowIndex: number
       rows: string[]
+      rowBoundaries: number[]
       totalSkippedBytes: number
       stream: { open: ReadableStream<Uint8Array>; stop: () => void } | { closed: {} }
     }
@@ -36,8 +38,10 @@
   $effect.pre(() => {
     if (!streams[pipelineName]) {
       streams[pipelineName] = {
+        firstRowIndex: 0,
         stream: { closed: {} },
         rows: [''],
+        rowBoundaries: [],
         totalSkippedBytes: 0
       }
     }
@@ -68,11 +72,14 @@
       const { cancel } = parseCancellable(
         result,
         {
-          pushChanges: pushAsCircularBuffer(
-            () => streams[pipelineName].rows,
-            bufferSize,
-            (v) => v
-          ),
+          pushChanges: (changes) => {
+            const droppedNum = pushAsCircularBuffer(
+              () => streams[pipelineName].rows,
+              bufferSize,
+              (v) => v
+            )(changes)
+            streams[pipelineName].firstRowIndex += droppedNum
+          },
           onParseEnded: (reason) => {
             streams[pipelineName].stream = { closed: {} }
             if (
@@ -94,8 +101,10 @@
         }
       )
       streams[pipelineName] = {
+        firstRowIndex: 0,
         stream: { open: result, stop: cancel },
         rows: [''], // A workaround: current virtual list implementation will freeze if an empty list suddenly gets a lot of data
+        rowBoundaries: [],
         totalSkippedBytes: 0
       }
     })
