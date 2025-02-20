@@ -20,10 +20,13 @@
   import invariant from 'tiny-invariant'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { enclosure, reclosureKey } from '$lib/functions/common/function'
+  import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   let pipelineName = $derived(pipeline.current.name)
   let isIdle = $derived(isPipelineIdle(pipeline.current.status))
+
+  const reverseScroll = useReverseScrollContainer()
 
   $effect.pre(() => {
     adhocQueries[pipelineName] ??= { queries: [{ query: '' }] }
@@ -132,33 +135,35 @@
   }
 </script>
 
-<div class="flex h-full min-h-full flex-col gap-6 overflow-y-auto py-2 scrollbar">
-  {#if isIdle}
-    <WarningBanner class="sticky top-0 z-20 -mb-4 -translate-y-2">
-      Start the pipeline to be able to run queries
-    </WarningBanner>
-  {/if}
-  {#each adhocQueries[pipelineName].queries as x, i}
-    {#if x}
-      {invariant(adhocQueries[pipelineName].queries[i])}
-      <Query
-        bind:query={adhocQueries[pipelineName].queries[i].query}
-        progress={adhocQueries[pipelineName].queries[i]!.progress}
-        result={adhocQueries[pipelineName].queries[i]!.result}
-        onSubmitQuery={onSubmitQuery(pipelineName, i)}
-        onDeleteQuery={() => {
-          if (!adhocQueries[pipelineName].queries[i]) {
-            return
-          }
-          adhocQueries[pipelineName].queries[i].result?.endResultStream()
-          adhocQueries[pipelineName].queries[i] = undefined // Overwrite with undefined instead of splice to preserve indices of other elements
-        }}
-        onCancelQuery={adhocQueries[pipelineName].queries[i]!.progress
-          ? adhocQueries[pipelineName].queries[i].result?.endResultStream
-          : undefined}
-        disabled={isIdle}
-        isLastQuery={adhocQueries[pipelineName].queries.length === i + 1}
-      ></Query>
+<div class=" h-full min-h-full overflow-y-auto py-2 scrollbar" use:reverseScroll.action>
+  <div class="flex flex-col gap-6">
+    {#if isIdle}
+      <WarningBanner class="sticky top-0 z-20 -mb-4 -translate-y-2">
+        Start the pipeline to be able to run queries
+      </WarningBanner>
     {/if}
-  {/each}
+    {#each adhocQueries[pipelineName].queries as x, i}
+      {#if x}
+        {invariant(adhocQueries[pipelineName].queries[i])}
+        <Query
+          bind:query={adhocQueries[pipelineName].queries[i].query}
+          progress={adhocQueries[pipelineName].queries[i]!.progress}
+          result={adhocQueries[pipelineName].queries[i]!.result}
+          onSubmitQuery={onSubmitQuery(pipelineName, i)}
+          onDeleteQuery={() => {
+            if (!adhocQueries[pipelineName].queries[i]) {
+              return
+            }
+            adhocQueries[pipelineName].queries[i].result?.endResultStream()
+            adhocQueries[pipelineName].queries[i] = undefined // Overwrite with undefined instead of splice to preserve indices of other elements
+          }}
+          onCancelQuery={adhocQueries[pipelineName].queries[i]!.progress
+            ? adhocQueries[pipelineName].queries[i].result?.endResultStream
+            : undefined}
+          disabled={isIdle}
+          isLastQuery={adhocQueries[pipelineName].queries.length === i + 1}
+        ></Query>
+      {/if}
+    {/each}
+  </div>
 </div>
