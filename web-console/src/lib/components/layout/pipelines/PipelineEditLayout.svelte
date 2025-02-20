@@ -94,7 +94,7 @@
     )
   )
 
-  let metrics = useAggregatePipelineStats(pipeline, 1000, 61000)
+  let metrics = useAggregatePipelineStats(pipeline, 1000, 64000)
   let files = $derived.by(() => {
     const current = pipeline.current
     const patch = pipeline.patch
