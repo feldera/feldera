@@ -352,7 +352,7 @@
   {/if}
 {/snippet}
 
-<div class="flex h-full flex-row sm:pt-4">
+<div class="flex h-full flex-row">
   {#if isMobile.current}
     <div
       class="bg-white-dark flex flex-1 flex-col gap-1 overflow-y-auto rounded pl-2 pt-2 scrollbar sm:gap-2 sm:p-2"

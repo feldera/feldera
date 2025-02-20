@@ -18,7 +18,7 @@
   let virtualizer: VirtualizerHandle = $state()!
 </script>
 
-<div class="relative flex h-full flex-1 flex-col rounded sm:pt-4">
+<div class="relative flex h-full flex-1 flex-col rounded">
   {#if logs.totalSkippedBytes}
     <WarningBanner>
       Receiving logs faster than can be displayed. Skipping some logs to keep up, {humanSize(
