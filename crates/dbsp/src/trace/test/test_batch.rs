@@ -8,10 +8,9 @@ use crate::{
         pair::DynPair, DataTrait, DowncastTrait, DynDataTyped, DynVec, DynWeightedPairs, Erase,
         Factory, Vector, WeightTrait,
     },
-    time::{Antichain, AntichainRef},
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Batcher, Builder,
-        Cursor, Filter, Merger, Trace,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Batcher, Bounds,
+        BoundsRef, Builder, Cursor, Filter, Merger, Trace,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -815,7 +814,7 @@ where
         }
     }
 
-    fn done_with_bounds(mut self, _bounds: (Antichain<T>, Antichain<T>)) -> TestBatch<K, V, T, R> {
+    fn done_with_bounds(mut self, _bounds: Bounds<T>) -> TestBatch<K, V, T, R> {
         self.result.data.retain(|_, r| !r.is_zero());
         self.result
     }
@@ -1203,11 +1202,7 @@ where
         self.size_of().total_bytes()
     }
 
-    fn lower(&self) -> AntichainRef<'_, Self::Time> {
-        todo!()
-    }
-
-    fn upper(&self) -> AntichainRef<'_, Self::Time> {
+    fn bounds(&self) -> BoundsRef<'_, T> {
         todo!()
     }
 

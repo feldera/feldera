@@ -2,7 +2,6 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     dynamic::{DataTrait, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
-    time::{Antichain, AntichainRef},
     trace::{
         cursor::DelegatingCursor,
         ord::{
@@ -13,7 +12,7 @@ use crate::{
             },
         },
         Batch, BatchLocation, BatchReader, Builder, FileIndexedWSet, FileIndexedWSetFactories,
-        Filter, Merger,
+        Filter, Merger, Bounds, BoundsRef,
     },
     DBWeight, NumEntries,
 };
@@ -277,14 +276,8 @@ where
         }
     }
 
-    #[inline]
-    fn lower(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::new(&[()])
-    }
-
-    #[inline]
-    fn upper(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::empty()
+    fn bounds(&self) -> BoundsRef<'_, ()> {
+        BoundsRef::empty()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -603,10 +596,7 @@ where
         }
     }
 
-    fn done_with_bounds(
-        self,
-        bounds: (Antichain<()>, Antichain<()>),
-    ) -> FallbackIndexedWSet<K, V, R> {
+    fn done_with_bounds(self, bounds: Bounds<()>) -> FallbackIndexedWSet<K, V, R> {
         FallbackIndexedWSet {
             factories: self.factories,
             inner: match self.inner {

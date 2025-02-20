@@ -4,14 +4,13 @@ use crate::{
         DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, LeanVec, WeightTrait,
         WeightTraitTyped, WithFactory,
     },
-    time::{Antichain, AntichainRef},
     trace::{
         layers::{
             Builder as _, Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
             MergeBuilder, OrdOffset, Trie,
         },
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, Merger, Serializer, WeightedItem,
+        Deserializer, Filter, Merger, Serializer, WeightedItem, Bounds, BoundsRef,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -457,14 +456,8 @@ where
         self.size_of().total_bytes()
     }
 
-    #[inline]
-    fn lower(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::new(&[()])
-    }
-
-    #[inline]
-    fn upper(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::empty()
+    fn bounds(&self) -> BoundsRef<'_, ()> {
+        BoundsRef::empty()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -941,10 +934,7 @@ where
         self.pushed_val();
     }
 
-    fn done_with_bounds(
-        self,
-        _bounds: (Antichain<()>, Antichain<()>),
-    ) -> VecIndexedWSet<K, V, R, O> {
+    fn done_with_bounds(self, _bounds: Bounds<()>) -> VecIndexedWSet<K, V, R, O> {
         VecIndexedWSet {
             layer: Layer::from_parts(
                 &self.factories.layer_factories,

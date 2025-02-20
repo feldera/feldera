@@ -3,14 +3,13 @@ use crate::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         LeanVec, WeightTrait, WithFactory,
     },
-    time::{Antichain, AntichainRef},
     trace::{
         layers::{
             Builder as _, Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
             MergeBuilder, OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, Merger, Serializer, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
+        Builder, Cursor, Deserializer, Filter, Merger, Serializer, WeightedItem,
     },
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
@@ -154,8 +153,7 @@ where
 {
     /// Where all the dataz is.
     pub layer: VecKeyBatchLayer<K, T, R, O>,
-    pub lower: Antichain<T>,
-    pub upper: Antichain<T>,
+    pub bounds: Bounds<T>,
     #[size_of(skip)]
     factories: VecKeyBatchFactories<K, T, R>,
 }
@@ -170,8 +168,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VecKeyBatch")
             .field("layer", &self.layer)
-            .field("lower", &self.lower)
-            .field("upper", &self.upper)
+            .field("bounds", &self.bounds)
             .finish()
     }
 }
@@ -230,8 +227,7 @@ where
     fn clone(&self) -> Self {
         Self {
             layer: self.layer.clone(),
-            lower: self.lower.clone(),
-            upper: self.upper.clone(),
+            bounds: self.bounds.clone(),
             factories: self.factories.clone(),
         }
     }
@@ -318,12 +314,8 @@ where
         self.size_of().total_bytes()
     }
 
-    fn lower(&self) -> AntichainRef<'_, T> {
-        self.lower.as_ref()
-    }
-
-    fn upper(&self) -> AntichainRef<'_, T> {
-        self.upper.as_ref()
+    fn bounds(&self) -> BoundsRef<'_, T> {
+        self.bounds.as_ref()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -376,8 +368,7 @@ where
     upper2: usize,
     // result that we are currently assembling.
     result: <VecKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder,
-    lower: Antichain<T>,
-    upper: Antichain<T>,
+    bounds: Bounds<T>,
     #[size_of(skip)]
     factories: VecKeyBatchFactories<K, T, R>,
 }
@@ -403,8 +394,7 @@ where
             lower2: 0,
             upper2: batch2.layer.keys(),
             result: <<VecKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
-            lower: batch1.lower().meet(batch2.lower()),
-            upper: batch1.upper().join(batch2.upper()),
+            bounds: batch1.bounds().to_owned().combine(batch2.bounds()),
             factories: batch1.factories.clone(),
         }
     }
@@ -415,8 +405,7 @@ where
 
         VecKeyBatch {
             layer: self.result.done(),
-            lower: self.lower,
-            upper: self.upper,
+            bounds: self.bounds,
             factories: self.factories,
         }
     }
@@ -729,10 +718,7 @@ where
         self.diffs.push_val(weight);
     }
 
-    fn done_with_bounds(
-        self,
-        (lower, upper): (Antichain<T>, Antichain<T>),
-    ) -> VecKeyBatch<K, T, R, O> {
+    fn done_with_bounds(self, bounds: Bounds<T>) -> VecKeyBatch<K, T, R, O> {
         VecKeyBatch {
             layer: Layer::from_parts(
                 &self.factories.layer_factories,
@@ -745,8 +731,7 @@ where
                 ),
             ),
             factories: self.factories,
-            lower,
-            upper,
+            bounds,
         }
     }
 }

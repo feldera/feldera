@@ -3,17 +3,15 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use crate::storage::buffer_cache::CacheStats;
-use crate::time::Antichain;
 use crate::trace::cursor::DelegatingCursor;
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
-use crate::trace::BatchLocation;
+use crate::trace::{BatchLocation, Bounds, BoundsRef};
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait,
     },
     storage::file::reader::Error as ReaderError,
-    time::AntichainRef,
     trace::{
         ord::{
             file::val_batch::FileValMerger, merge_batcher::MergeBatcher,
@@ -295,17 +293,10 @@ where
         }
     }
 
-    fn lower(&self) -> AntichainRef<'_, T> {
+    fn bounds(&self) -> BoundsRef<'_, T> {
         match &self.inner {
-            Inner::Vec(vec) => vec.lower(),
-            Inner::File(file) => file.lower(),
-        }
-    }
-
-    fn upper(&self) -> AntichainRef<'_, T> {
-        match &self.inner {
-            Inner::Vec(vec) => vec.upper(),
-            Inner::File(file) => file.upper(),
+            Inner::Vec(vec) => vec.bounds(),
+            Inner::File(file) => file.bounds(),
         }
     }
 
@@ -342,9 +333,7 @@ where
                 let mut file = FileValBuilder::with_capacity(&self.factories.file, 0);
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
-                    inner: Inner::File(
-                        file.done_with_bounds((vec.lower().to_owned(), vec.upper().to_owned())),
-                    ),
+                    inner: Inner::File(file.done_with_bounds(vec.bounds().to_owned())),
                     factories: self.factories.clone(),
                 })
             }
@@ -639,10 +628,7 @@ where
         }
     }
 
-    fn done_with_bounds(
-        self,
-        bounds: (Antichain<T>, Antichain<T>),
-    ) -> FallbackValBatch<K, V, T, R> {
+    fn done_with_bounds(self, bounds: Bounds<T>) -> FallbackValBatch<K, V, T, R> {
         FallbackValBatch {
             factories: self.factories,
             inner: match self.inner {

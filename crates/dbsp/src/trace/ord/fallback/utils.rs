@@ -5,10 +5,9 @@ use size_of::SizeOf;
 
 use crate::{
     dynamic::{DataTrait, DynDataTyped, DynWeightedPairs, Factory, WeightTrait},
-    time::Antichain,
     trace::{
-        ord::filter, Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Filter,
+        ord::filter, Batch, BatchLocation, BatchReader, BatchReaderFactories, Bounds, Builder,
+        Cursor, Filter,
     },
     Runtime, Timestamp,
 };
@@ -74,8 +73,7 @@ where
     O: Batch + BatchReader<Key = K, Val = V, R = R, Time = T>,
 {
     builder: O::Builder,
-    lower: Antichain<T>,
-    upper: Antichain<T>,
+    bounds: Bounds<T>,
     pos1: Position<K>,
     pos2: Position<K>,
 
@@ -103,8 +101,7 @@ where
     {
         Self {
             builder: O::Builder::new_builder(output_factories),
-            lower: batch1.lower().meet(batch2.lower()),
-            upper: batch1.upper().join(batch2.upper()),
+            bounds: batch1.bounds().to_owned().combine(batch2.bounds()),
             pos1: Position::Start,
             pos2: Position::Start,
             time_diffs: time_diff_factory.map(|factory| factory.default_box()),
@@ -176,7 +173,7 @@ where
     }
 
     pub fn done(self) -> O {
-        self.builder.done_with_bounds((self.lower, self.upper))
+        self.builder.done_with_bounds(self.bounds)
     }
 
     fn copy_values_if<C>(

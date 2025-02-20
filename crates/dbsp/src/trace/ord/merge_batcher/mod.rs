@@ -2,7 +2,7 @@
 
 use crate::{
     dynamic::{pair::DynPair, DynWeightedPairs},
-    trace::{bounds_for_fixed_time, Batch, BatchFactories, Batcher, Builder, TupleBuilder},
+    trace::{Batch, BatchFactories, Batcher, Bounds, Builder, TupleBuilder},
 };
 use size_of::SizeOf;
 use std::marker::PhantomData;
@@ -84,6 +84,6 @@ where
             }
         }
 
-        builder.done_with_bounds(bounds_for_fixed_time(&self.time))
+        builder.done_with_bounds(Bounds::for_fixed_time(&self.time))
     }
 }

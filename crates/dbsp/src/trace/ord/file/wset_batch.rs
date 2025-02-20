@@ -12,11 +12,10 @@ use crate::{
             Factories as FileFactories,
         },
     },
-    time::{Antichain, AntichainRef},
     trace::{
         ord::{filter, merge_batcher::MergeBatcher},
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, Merger, Serializer, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
+        Builder, Cursor, Deserializer, Filter, Merger, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
@@ -380,14 +379,8 @@ where
         self.file.cache_stats()
     }
 
-    #[inline]
-    fn lower(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::new(&[()])
-    }
-
-    #[inline]
-    fn upper(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::empty()
+    fn bounds(&self) -> BoundsRef<'_, ()> {
+        BoundsRef::empty()
     }
 
     fn maybe_contains_key(&self, key: &K) -> bool {
@@ -815,7 +808,7 @@ where
         }
     }
 
-    fn done_with_bounds(self, _bounds: (Antichain<()>, Antichain<()>)) -> FileWSet<K, R> {
+    fn done_with_bounds(self, _bounds: Bounds<()>) -> FileWSet<K, R> {
         FileWSet {
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap()),
