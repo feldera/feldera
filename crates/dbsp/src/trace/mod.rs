@@ -25,17 +25,11 @@
 //! Traces are sorted by key and value.  They are not sorted with respect to
 //! time: reading a trace might obtain out of order and duplicate times among
 //! the `(time, diff)` pairs associated with a key and value.
-//!
-//! Traces keep track of the lower and upper bounds among their tuples' times.
-//! If the trace contains incomparable times, then it will have multiple lower
-//! and upper bounds, one for each category of incomparable time, in an
-//! [`Antichain`].
 
 use crate::circuit::metadata::{MetaItem, OperatorMeta};
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
-use crate::time::Antichain;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::{FilteredMergeCursor, UnfilteredMergeCursor};
 use dyn_clone::DynClone;
@@ -73,7 +67,6 @@ use crate::{
     algebra::MonoidValue,
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     storage::file::reader::Error as ReaderError,
-    time::AntichainRef,
     Error, NumEntries, Timestamp,
 };
 pub use cursor::{Cursor, MergeCursor};
@@ -99,11 +92,9 @@ impl<T> DBData for T where
 
 /// A spine that is serialized to a file.
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
-pub(crate) struct CommittedSpine<B: Batch + Send + Sync> {
+pub(crate) struct CommittedSpine {
     pub batches: Vec<String>,
     pub merged: Vec<(String, String)>,
-    pub lower: Vec<B::Time>,
-    pub upper: Vec<B::Time>,
     pub effort: u64,
     pub dirty: bool,
 }
@@ -264,16 +255,6 @@ pub trait Trace: BatchReader {
     fn consolidate(self) -> Option<Self::Batch>;
 
     /// Introduces a batch of updates to the trace.
-    ///
-    /// Batches describe the time intervals they contain, and they should be
-    /// added to the trace in contiguous intervals. If a batch arrives with
-    /// a lower bound that does not equal the upper bound of the most recent
-    /// addition, the trace will add an empty batch. It is an error to then try
-    /// to populate that region of time.
-    ///
-    /// This restriction could be relaxed, especially if we discover ways in
-    /// which batch interval order could commute. For now, the trace should
-    /// complain, to the extent that it cares about contiguous intervals.
     fn insert(&mut self, batch: Self::Batch);
 
     /// Clears the value of the "dirty" flag to `false`.
@@ -450,20 +431,6 @@ where
         self.len() == 0
     }
 
-    /// All times in the batch are greater or equal to an element of `lower`.
-    fn lower(&self) -> AntichainRef<'_, Self::Time> {
-        self.bounds().lower
-    }
-
-    /// All times in the batch are not greater or equal to any element of
-    /// `upper`.
-    fn upper(&self) -> AntichainRef<'_, Self::Time> {
-        self.bounds().upper
-    }
-
-    /// Bounds for the batch's times.
-    fn bounds(&self) -> BoundsRef<'_, Self::Time>;
-
     /// A method that returns either true (possibly in the batch) or false
     /// (definitely not in the batch).
     fn maybe_contains_key(&self, _key: &Self::Key) -> bool {
@@ -547,9 +514,6 @@ where
     }
     fn is_empty(&self) -> bool {
         (**self).is_empty()
-    }
-    fn bounds(&self) -> BoundsRef<'_, Self::Time> {
-        (**self).bounds()
     }
     fn maybe_contains_key(&self, key: &Self::Key) -> bool {
         (**self).maybe_contains_key(key)
@@ -641,7 +605,7 @@ where
             }
             cursor.step_key();
         }
-        builder.done_with_bounds(Bounds::for_fixed_time(timestamp))
+        builder.done()
     }
 
     /*
@@ -655,8 +619,7 @@ where
 
     /// Creates an empty batch.
     fn dyn_empty(factories: &Self::Factories) -> Self {
-        Self::Builder::new_builder(factories)
-            .done_with_bounds(Bounds::for_fixed_time(&Self::Time::default()))
+        Self::Builder::new_builder(factories).done()
     }
 
     /// Returns elements from `self` that satisfy a predicate.
@@ -878,126 +841,7 @@ where
     }
 
     /// Completes building and returns the batch.
-    fn done(self) -> Output
-    where
-        Output::Time: PartialEq<()>,
-    {
-        self.done_with_bounds(Bounds::empty())
-    }
-
-    /// Completes building and returns the batch with the given `bounds`, which
-    /// must be correct to avoid violating invariants in the output type.
-    fn done_with_bounds(self, bounds: Bounds<Output::Time>) -> Output;
-}
-
-/// Bounds for a batch.
-#[derive(Clone, Debug, SizeOf)]
-pub struct Bounds<T>
-where
-    T: Timestamp,
-{
-    /// All times in the batch are greater or equal to an element of `lower`.
-    pub lower: Antichain<T>,
-
-    /// All times in the batch are not greater or equal to any element of
-    /// `upper`.
-    pub upper: Antichain<T>,
-}
-
-impl<T> Bounds<T>
-where
-    T: Timestamp,
-{
-    pub fn as_ref(&self) -> BoundsRef<T> {
-        BoundsRef {
-            lower: self.lower.as_ref(),
-            upper: self.upper.as_ref(),
-        }
-    }
-
-    pub fn empty() -> Self
-    where
-        T: PartialEq<()>,
-    {
-        Bounds {
-            lower: Antichain::from_elem(T::default()),
-            upper: Antichain::new(),
-        }
-    }
-
-    /// Returns appropriate bounds for a batch in which all tuples have the given
-    /// `time`.
-    pub fn for_fixed_time(time: &T) -> Self {
-        let lower = Antichain::from_elem(time.clone());
-        let time_next = time.advance(0);
-        let upper = if time_next <= *time {
-            Antichain::new()
-        } else {
-            Antichain::from_elem(time_next)
-        };
-        Self { lower, upper }
-    }
-
-    pub fn for_merge<'a, B, I>(batches: I) -> Self
-    where
-        B: BatchReader<Time = T>,
-        I: IntoIterator<Item = &'a B>,
-    {
-        let mut batches = batches.into_iter();
-        let Some(batch) = batches.next() else {
-            return Self::for_fixed_time(&B::Time::default());
-        };
-        let mut bounds = batch.bounds().to_owned();
-        for batch in batches {
-            bounds.merge(batch.bounds());
-        }
-        bounds
-    }
-
-    pub fn merge(&mut self, rhs: BoundsRef<T>) {
-        self.lower = self.lower.as_ref().meet(rhs.lower);
-        self.upper = self.upper.as_ref().join(rhs.upper);
-    }
-
-    pub fn combine(mut self, rhs: BoundsRef<T>) -> Self {
-        self.merge(rhs);
-        self
-    }
-}
-
-/// References to bounds for a batch.
-#[derive(Clone, Debug, SizeOf)]
-pub struct BoundsRef<'a, T>
-where
-    T: Timestamp,
-{
-    /// All times in the batch are greater or equal to an element of `lower`.
-    pub lower: AntichainRef<'a, T>,
-
-    /// All times in the batch are not greater or equal to any element of
-    /// `upper`.
-    pub upper: AntichainRef<'a, T>,
-}
-
-impl<T> BoundsRef<'_, T>
-where
-    T: Timestamp,
-{
-    pub fn to_owned(&self) -> Bounds<T> {
-        Bounds {
-            lower: self.lower.to_owned(),
-            upper: self.upper.to_owned(),
-        }
-    }
-}
-
-impl BoundsRef<'_, ()> {
-    pub fn empty() -> BoundsRef<'static, ()> {
-        BoundsRef {
-            lower: AntichainRef::new(&[()]),
-            upper: AntichainRef::empty(),
-        }
-    }
+    fn done(self) -> Output;
 }
 
 /// Batch builder that accepts a full tuple at a time.
@@ -1108,23 +952,13 @@ where
     }
 
     /// Completes building and returns the batch.
-    pub fn done(self) -> Output
-    where
-        Output::Time: PartialEq<()>,
-    {
-        self.done_with_bounds(Bounds::empty())
-    }
-
-    /// Completes building and returns the batch with lower bound `bounds.0` and
-    /// upper bound `bounds.1`.  The bounds must be correct to avoid violating
-    /// invariants in the output type.
-    pub fn done_with_bounds(mut self, bounds: Bounds<Output::Time>) -> Output {
+    pub fn done(mut self) -> Output {
         if self.has_kv {
             let (k, v) = self.kv.split_mut();
             self.builder.push_val_mut(v);
             self.builder.push_key_mut(k);
         }
-        self.builder.done_with_bounds(bounds)
+        self.builder.done()
     }
 }
 
@@ -1157,7 +991,6 @@ where
     // the inputs cancel each other out).
     while batches.len() > 1 {
         let mut inputs = batches.split_off(batches.len().saturating_sub(64));
-        let bounds = Bounds::for_merge(inputs.iter());
         let result: B = ListMerger::merge(
             factories,
             B::Builder::for_merge(factories, &inputs, Some(BatchLocation::Memory)),
@@ -1165,7 +998,6 @@ where
                 .iter_mut()
                 .map(|b| b.consuming_cursor(key_filter.clone(), value_filter.clone()))
                 .collect(),
-            bounds,
         );
         if !result.is_empty() {
             batches.push(result);
@@ -1205,7 +1037,6 @@ where
     let mut outputs = Vec::with_capacity(batches.len().div_ceil(64));
     while !batches.is_empty() {
         let inputs = batches.split_off(batches.len().saturating_sub(64));
-        let bounds = Bounds::for_merge(inputs.iter().cloned());
         let result: B = ListMerger::merge(
             factories,
             B::Builder::for_merge(
@@ -1217,7 +1048,6 @@ where
                 .into_iter()
                 .map(|b| b.merge_cursor(key_filter.clone(), value_filter.clone()))
                 .collect(),
-            bounds,
         );
         if !result.is_empty() {
             outputs.push(result);

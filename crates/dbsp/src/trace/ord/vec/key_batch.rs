@@ -7,8 +7,8 @@ use crate::{
         layers::{
             Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Bounds, BoundsRef, Builder,
-        Cursor, Deserializer, Serializer, WeightedItem,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Serializer, WeightedItem,
     },
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
@@ -152,7 +152,6 @@ where
 {
     /// Where all the dataz is.
     pub layer: VecKeyBatchLayer<K, T, R, O>,
-    pub bounds: Bounds<T>,
     #[size_of(skip)]
     factories: VecKeyBatchFactories<K, T, R>,
 }
@@ -167,7 +166,6 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VecKeyBatch")
             .field("layer", &self.layer)
-            .field("bounds", &self.bounds)
             .finish()
     }
 }
@@ -226,7 +224,6 @@ where
     fn clone(&self) -> Self {
         Self {
             layer: self.layer.clone(),
-            bounds: self.bounds.clone(),
             factories: self.factories.clone(),
         }
     }
@@ -311,10 +308,6 @@ where
 
     fn approximate_byte_size(&self) -> usize {
         self.size_of().total_bytes()
-    }
-
-    fn bounds(&self) -> BoundsRef<'_, T> {
-        self.bounds.as_ref()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -616,7 +609,7 @@ where
         self.diffs.push_val(weight);
     }
 
-    fn done_with_bounds(self, bounds: Bounds<T>) -> VecKeyBatch<K, T, R, O> {
+    fn done(self) -> VecKeyBatch<K, T, R, O> {
         VecKeyBatch {
             layer: Layer::from_parts(
                 &self.factories.layer_factories,
@@ -629,7 +622,6 @@ where
                 ),
             ),
             factories: self.factories,
-            bounds,
         }
     }
 }

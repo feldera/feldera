@@ -8,8 +8,8 @@ use crate::{
         layers::{
             Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Bounds, BoundsRef, Builder,
-        Cursor, Deserializer, Serializer,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Serializer,
     },
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
@@ -197,7 +197,6 @@ where
     // batch_item_factory: &'static BatchItemVTable<K, V, Pair<K, V>, R>,
     /// Where all the dataz is.
     pub layer: VecValBatchLayer<K, V, T, R, O>,
-    pub bounds: Bounds<T>,
 }
 
 unsafe impl<K, V, T, R, O> Send for VecValBatch<K, V, T, R, O>
@@ -221,7 +220,6 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VecValBatch")
             .field("layer", &self.layer)
-            .field("bounds", &self.bounds)
             .finish()
     }
 }
@@ -285,7 +283,6 @@ where
         Self {
             factories: self.factories.clone(),
             layer: self.layer.clone(),
-            bounds: self.bounds.clone(),
         }
     }
 }
@@ -322,8 +319,7 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         writeln!(
             f,
-            "bounds: {:?}\nlayer:\n{}",
-            &self.bounds,
+            "layer:\n{}",
             textwrap::indent(&self.layer.to_string(), "    ")
         )
     }
@@ -374,10 +370,6 @@ where
 
     fn approximate_byte_size(&self) -> usize {
         self.size_of().total_bytes()
-    }
-
-    fn bounds(&self) -> BoundsRef<'_, T> {
-        self.bounds.as_ref()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -692,7 +684,7 @@ where
         self.diffs.push_val(weight);
     }
 
-    fn done_with_bounds(self, bounds: Bounds<T>) -> VecValBatch<K, V, T, R, O> {
+    fn done(self) -> VecValBatch<K, V, T, R, O> {
         VecValBatch {
             layer: Layer::from_parts(
                 &self.factories.layer_factories,
@@ -710,7 +702,6 @@ where
                 ),
             ),
             factories: self.factories,
-            bounds,
         }
     }
 }

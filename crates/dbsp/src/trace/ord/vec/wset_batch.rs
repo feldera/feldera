@@ -9,8 +9,8 @@ use crate::{
         deserialize_wset,
         layers::{Cursor as _, Leaf, LeafCursor, LeafFactories, Trie},
         ord::merge_batcher::MergeBatcher,
-        serialize_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Bounds,
-        BoundsRef, Builder, Cursor, Deserializer, Filter, MergeCursor, Serializer, WeightedItem,
+        serialize_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Deserializer, Filter, MergeCursor, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -374,10 +374,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
         self.size_of().total_bytes()
     }
 
-    fn bounds(&self) -> BoundsRef<'_, ()> {
-        BoundsRef::empty()
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -660,7 +656,7 @@ where
         self.pushed_diff();
     }
 
-    fn done_with_bounds(self, _bounds: Bounds<()>) -> VecWSet<K, R> {
+    fn done(self) -> VecWSet<K, R> {
         debug_assert_eq!(self.keys.len(), self.diffs.len());
         VecWSet {
             layer: Leaf::from_parts(&self.factories.layer_factories, self.keys, self.diffs),

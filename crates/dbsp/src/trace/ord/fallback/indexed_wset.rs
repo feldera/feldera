@@ -10,8 +10,8 @@ use crate::{
             merge_batcher::MergeBatcher,
             vec::indexed_wset_batch::{VecIndexedWSet, VecIndexedWSetBuilder},
         },
-        Batch, BatchLocation, BatchReader, Bounds, BoundsRef, Builder, FileIndexedWSet,
-        FileIndexedWSetFactories, Filter, MergeCursor,
+        Batch, BatchLocation, BatchReader, Builder, FileIndexedWSet, FileIndexedWSetFactories,
+        Filter, MergeCursor,
     },
     DBWeight, NumEntries,
 };
@@ -274,10 +274,6 @@ where
         }
     }
 
-    fn bounds(&self) -> BoundsRef<'_, ()> {
-        BoundsRef::empty()
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -456,12 +452,12 @@ where
         }
     }
 
-    fn done_with_bounds(self, bounds: Bounds<()>) -> FallbackIndexedWSet<K, V, R> {
+    fn done(self) -> FallbackIndexedWSet<K, V, R> {
         FallbackIndexedWSet {
             factories: self.factories,
             inner: match self.inner {
-                BuilderInner::File(file) => Inner::File(file.done_with_bounds(bounds)),
-                BuilderInner::Vec(vec) => Inner::Vec(vec.done_with_bounds(bounds)),
+                BuilderInner::File(file) => Inner::File(file.done()),
+                BuilderInner::Vec(vec) => Inner::Vec(vec.done()),
             },
         }
     }

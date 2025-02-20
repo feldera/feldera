@@ -14,8 +14,8 @@ use crate::{
     },
     trace::{
         merge_batches_by_reference, ord::merge_batcher::MergeBatcher, Batch, BatchFactories,
-        BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef, Builder, Cursor,
-        Deserializer, Serializer, WeightedItem,
+        BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
@@ -378,10 +378,6 @@ where
         self.file.cache_stats()
     }
 
-    fn bounds(&self) -> BoundsRef<'_, ()> {
-        BoundsRef::empty()
-    }
-
     fn maybe_contains_key(&self, key: &K) -> bool {
         self.file.maybe_contains_key(key)
     }
@@ -675,7 +671,7 @@ where
         }
     }
 
-    fn done_with_bounds(self, _bounds: Bounds<()>) -> FileWSet<K, R> {
+    fn done(self) -> FileWSet<K, R> {
         FileWSet {
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap()),

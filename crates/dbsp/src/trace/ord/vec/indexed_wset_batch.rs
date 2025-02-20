@@ -8,8 +8,8 @@ use crate::{
         layers::{
             Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Bounds, BoundsRef, Builder,
-        Cursor, Deserializer, Filter, MergeCursor, Serializer, WeightedItem,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Filter, MergeCursor, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -468,10 +468,6 @@ where
         self.size_of().total_bytes()
     }
 
-    fn bounds(&self) -> BoundsRef<'_, ()> {
-        BoundsRef::empty()
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         Self::Time: PartialEq<()>,
@@ -820,7 +816,7 @@ where
         self.pushed_val();
     }
 
-    fn done_with_bounds(self, _bounds: Bounds<()>) -> VecIndexedWSet<K, V, R, O> {
+    fn done(self) -> VecIndexedWSet<K, V, R, O> {
         VecIndexedWSet {
             layer: Layer::from_parts(
                 &self.factories.layer_factories,

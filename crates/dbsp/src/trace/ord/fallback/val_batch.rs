@@ -5,7 +5,7 @@ use crate::storage::buffer_cache::CacheStats;
 use crate::trace::cursor::DelegatingCursor;
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
-use crate::trace::{BatchLocation, Bounds, BoundsRef, MergeCursor};
+use crate::trace::{BatchLocation, MergeCursor};
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait,
@@ -278,13 +278,6 @@ where
         }
     }
 
-    fn bounds(&self) -> BoundsRef<'_, T> {
-        match &self.inner {
-            Inner::Vec(vec) => vec.bounds(),
-            Inner::File(file) => file.bounds(),
-        }
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -313,7 +306,7 @@ where
                 let mut file = FileValBuilder::with_capacity(&self.factories.file, 0);
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
-                    inner: Inner::File(file.done_with_bounds(vec.bounds().to_owned())),
+                    inner: Inner::File(file.done()),
                     factories: self.factories.clone(),
                 })
             }
@@ -472,12 +465,12 @@ where
         }
     }
 
-    fn done_with_bounds(self, bounds: Bounds<T>) -> FallbackValBatch<K, V, T, R> {
+    fn done(self) -> FallbackValBatch<K, V, T, R> {
         FallbackValBatch {
             factories: self.factories,
             inner: match self.inner {
-                BuilderInner::File(file) => Inner::File(file.done_with_bounds(bounds)),
-                BuilderInner::Vec(vec) => Inner::Vec(vec.done_with_bounds(bounds)),
+                BuilderInner::File(file) => Inner::File(file.done()),
+                BuilderInner::Vec(vec) => Inner::Vec(vec.done()),
             },
         }
     }

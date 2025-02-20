@@ -15,7 +15,7 @@ use crate::{
             vec::wset_batch::{VecWSet, VecWSetBuilder, VecWSetFactories},
         },
         serialize_wset, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories,
-        Bounds, BoundsRef, Builder, FileWSet, FileWSetFactories, Filter, MergeCursor, WeightedItem,
+        Builder, FileWSet, FileWSetFactories, Filter, MergeCursor, WeightedItem,
     },
     DBData, DBWeight, NumEntries,
 };
@@ -363,10 +363,6 @@ where
         }
     }
 
-    fn bounds(&self) -> BoundsRef<'_, ()> {
-        BoundsRef::empty()
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -537,12 +533,12 @@ where
         }
     }
 
-    fn done_with_bounds(self, bounds: Bounds<()>) -> FallbackWSet<K, R> {
+    fn done(self) -> FallbackWSet<K, R> {
         FallbackWSet {
             factories: self.factories,
             inner: match self.inner {
-                BuilderInner::File(file) => Inner::File(file.done_with_bounds(bounds)),
-                BuilderInner::Vec(vec) => Inner::Vec(vec.done_with_bounds(bounds)),
+                BuilderInner::File(file) => Inner::File(file.done()),
+                BuilderInner::Vec(vec) => Inner::Vec(vec.done()),
             },
         }
     }

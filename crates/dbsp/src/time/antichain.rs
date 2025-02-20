@@ -24,14 +24,9 @@ use std::{
 ///
 /// DBSP logical times are, in generally, only [partially ordered].  That means
 /// that a collection of logical times may have multiple different lower bounds,
-/// and an antichain is a way to track all of them.  Thus, DBSP uses antichains
-/// to track the lower and upper time bounds of [batches], as returned by
-/// [`BatchReader::lower`] and [`BatchReader::upper`] as [`AntichainRef`]s.
+/// and an antichain is a way to track all of them.
 ///
 /// [partially ordered]: crate::time#comparing-times
-/// [batches]: crate::trace
-/// [`BatchReader::lower`]: crate::trace::BatchReader::lower
-/// [`BatchReader::upper`]: crate::trace::BatchReader::upper
 #[derive(Default, SizeOf, Archive, Serialize, Deserialize)]
 pub struct Antichain<T>
 where
