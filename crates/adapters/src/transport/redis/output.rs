@@ -17,7 +17,8 @@ pub struct RedisOutputEndpoint {
 impl RedisOutputEndpoint {
     pub fn new(config: RedisOutputConfig) -> AnyResult<Self> {
         Ok(Self {
-            config: ConnectionInfo::from_str(&config.connection_string)?,
+            config: ConnectionInfo::from_str(&config.connection_string)
+                .map_err(|e| anyhow!("error parsing Redis connection string: {e}"))?,
             pool: None,
             pipeline: None,
         })
@@ -36,8 +37,11 @@ impl RedisOutputEndpoint {
 impl OutputEndpoint for RedisOutputEndpoint {
     fn connect(&mut self, _: AsyncErrorCallback) -> anyhow::Result<()> {
         let _guard = self.span();
-        let client = redis::Client::open(self.config.clone())?;
-        let pool = r2d2::Pool::builder().build(client)?;
+        let client = redis::Client::open(self.config.clone())
+            .map_err(|e| anyhow!("error connecting to the Redis server: {e}"))?;
+        let pool = r2d2::Pool::builder()
+            .build(client)
+            .map_err(|e| anyhow!("error opening a connection pool to the Redis server: {e}"))?;
 
         self.pool = Some(pool);
 
@@ -58,7 +62,7 @@ impl OutputEndpoint for RedisOutputEndpoint {
     }
 
     fn push_buffer(&mut self, _: &[u8]) -> anyhow::Result<()> {
-        unreachable!()
+        anyhow::bail!("redis: invalid format selected for redis connector")
     }
 
     fn push_key(
@@ -69,9 +73,7 @@ impl OutputEndpoint for RedisOutputEndpoint {
     ) -> anyhow::Result<()> {
         let _guard = self.span();
 
-        let Some(key) = key else {
-            return Err(anyhow!("cannot push empty key to redis"));
-        };
+        let key = key.ok_or(anyhow!("cannot push empty key to redis"))?;
 
         let pipeline = self.pipeline.as_mut().ok_or(anyhow!(
             "redis: trying to push data before pipeline is initialized: unreachable"
@@ -94,15 +96,19 @@ impl OutputEndpoint for RedisOutputEndpoint {
             .ok_or(anyhow!(
                 "redis: trying to get connection from pool before the pool is initialized: unreachable"
             ))?
-            .get()?;
+            .get().map_err(|e| anyhow!("redis: error trying to get a connection from redis connection pool: {e}"))?;
 
         let pipeline = std::mem::take(&mut self.pipeline);
 
+        let pipeline = pipeline.ok_or(anyhow!(
+            "redis: batch_end called before batch_start: unreachable"
+        ))?;
+
+        let count = pipeline.cmd_iter().count();
+
         pipeline
-            .ok_or(anyhow!(
-                "redis: batch_end called before batch_start: unreachable"
-            ))?
-            .exec(&mut conn)?;
+            .exec(&mut conn)
+            .map_err(|e| anyhow!("redis: error committing Redis transaction; {count} uncommitted updates will be lost: {e}"))?;
 
         Ok(())
     }

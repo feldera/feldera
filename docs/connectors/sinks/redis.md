@@ -1,5 +1,9 @@
 # Redis output connector
 
+:::caution Experimental feature
+Redis support is an experimental feature of Feldera.
+:::
+
 Feldera can output data from a SQL table or view to Redis.
 
 - The Redis connector uses the Rust [redis](https://docs.rs/redis/latest/redis/)
@@ -16,25 +20,27 @@ You must ensure that `key` is unique, or else it will be overridden.
 
 ## Configuration
 
-### Required parameters
+### Required Transport Parameters
 
-* `connection_string` - The connection string to the Redis instance.
+* `connection_string` - Redis connection string.
   The connection string follows the following format:
   `redis://[<username>][:<password>@]<hostname>[:port][/[<db>][?protocol=<protocol>]]`
   This is parsed by the `redis` crate
   (See docs: [Connection Parameters](https://docs.rs/redis/latest/redis/#connection-parameters)).
+
+### Optional Transport Parameters
+* `key_separator` - Separator used to join multiple components into a single key.
+  `:` by default.
 
 ### Format parameters
 
 > Currently, only the `json` format is supported.
 
 * `key_fields` - A **list** of columns used to form the `key` used in Redis.
-* `key_separator` - A **string** used to join the key fields to form the `key`
-  used in Redis.
 
 ## Example
 
-Consider that we have a Feldera pipeline with table `t0` and `v0` as defined
+Consider a Feldera pipeline with table `t0` and view `v0` as defined
 below.
 
 ```sql
@@ -46,14 +52,14 @@ create materialized view v0 with (
     "transport": {
       "name": "redis_output",
       "config": {
-        "connection_string": "redis://localhost:6379/0"
+        "connection_string": "redis://localhost:6379/0",
+        "key_separator": ":"
       }
     },
     "format": {
         "name": "json",
         "config": {
-          "key_fields": ["c0","c2"],
-          "key_separator": ":"
+          "key_fields": ["c0","c2"]
         }
     }
   }

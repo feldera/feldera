@@ -245,7 +245,7 @@ impl OutputFormat for CsvOutputFormat {
                 "CSV encoder cannot be attached to an index",
             ));
         }
-        let config = CsvEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
+        let csv_config = CsvEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
             .map_err(|e| {
                 ControllerError::encoder_config_parse_error(
                     endpoint_name,
@@ -254,7 +254,17 @@ impl OutputFormat for CsvOutputFormat {
                 )
             })?;
 
-        Ok(Box::new(CsvEncoder::new(consumer, config)))
+        if matches!(
+            config.transport,
+            feldera_types::config::TransportConfig::RedisOutput(_)
+        ) {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "'csv' format not yet supported with Redis connector",
+            ));
+        }
+
+        Ok(Box::new(CsvEncoder::new(consumer, csv_config)))
     }
 }
 
