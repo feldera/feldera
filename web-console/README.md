@@ -19,7 +19,7 @@ sudo apt-get install nodejs -y
 # Install Bun
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl gnupg unzip
-sudo curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.0"
+sudo curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.2"
 
 # Install OpenAPI typings generator
 sudo bun install --global @hey-api/openapi-ts
