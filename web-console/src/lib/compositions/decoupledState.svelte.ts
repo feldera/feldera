@@ -24,7 +24,7 @@ export class DecoupledStateProxy<T extends string | number | boolean> {
   protected wait: () => number | 'decoupled'
   protected debounceSet: () => void
   // @ts-ignore:next-line
-  protected timeout: NodeJS.Timeout
+  protected timeout: Timer
 
   constructor(
     upstream: { current: T },
@@ -122,7 +122,7 @@ export class DecoupledState<T extends string | number | boolean> {
   protected wait: () => number | 'decoupled'
   protected debounceSet: () => void
   // @ts-ignore:next-line
-  protected timeout: NodeJS.Timeout
+  protected timeout: Timer
 
   handleUpstreamUpdate() {
     const eq = isEqual(this._upstream.current, this.downstream.current)
@@ -209,7 +209,7 @@ export const useDecoupledState = <T extends string | number | boolean>(
   let downstreamChanged = $state(false)
   let downstream = $state({ current: upstream.current })
 
-  let timeout = $state<NodeJS.Timeout>()
+  let timeout = $state<Timer>()
 
   const cancelDebounce = () => {
     clearTimeout(timeout)
