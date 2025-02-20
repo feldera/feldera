@@ -61,6 +61,35 @@ type ExtendedPipelineDescr = PipelineSelectedInfo
 
 export type ExtendedPipelineDescrNoCode = Omit<ExtendedPipelineDescr, 'program_code'>
 
+export const programStatusOf = (status: PipelineStatus) =>
+  match(status)
+    .returnType<ProgramStatus | undefined>()
+    .with(
+      'Starting up',
+      'Initializing',
+      'Pausing',
+      'Resuming',
+      'Unavailable',
+      'Running',
+      'Paused',
+      'ShuttingDown',
+      { PipelineError: P.any },
+      'Shutdown',
+      () => 'Success' as const
+    )
+    .with({ Queued: P.any }, () => 'Pending' as const)
+    .with({ 'Compiling SQL': P.any }, () => 'CompilingSql')
+    .with({ 'SQL compiled': P.any }, () => 'SqlCompiled')
+    .with({ 'Compiling binary': P.any }, () => 'CompilingRust')
+    .with(
+      { SqlWarning: P.any },
+      { SqlError: P.any },
+      { RustError: P.any },
+      { SystemError: P.any },
+      (programStatus) => programStatus
+    )
+    .exhaustive()
+
 const toPipelineThumb = (
   pipeline: Omit<ExtendedPipelineDescr, 'program_code' | 'udf_rust' | 'udf_toml'>
 ) => ({
@@ -110,7 +139,6 @@ const toExtendedPipeline = ({
   programUdfToml: pipeline.udf_toml ?? '',
   programConfig: pipeline.program_config,
   programInfo: pipeline.program_info,
-  programStatus: program_status as ProgramStatus,
   programStatusSince: pipeline.program_status_since,
   programVersion: pipeline.program_version,
   runtimeConfig: pipeline.runtime_config,
