@@ -2,8 +2,10 @@ import {
   getExtendedPipeline,
   patchPipeline,
   type ExtendedPipeline,
-  type Pipeline
+  type Pipeline,
+  type PipelineThumb
 } from '$lib/services/pipelineManager'
+import { untrack } from 'svelte'
 import invariant from 'tiny-invariant'
 
 export const writablePipeline = (
@@ -32,13 +34,17 @@ export const writablePipeline = (
   }
 }
 
+/**
+ * Refresh pipeline if the refreshVersion field changed
+ */
 export const useRefreshPipeline = (
-  pipeline: () => { current: ExtendedPipeline },
+  getPipeline: () => { current: ExtendedPipeline },
   set: (p: ExtendedPipeline) => void,
-  preloaded: () => ExtendedPipeline,
+  getPreloaded: () => ExtendedPipeline,
+  getPipelines: () => PipelineThumb[],
   onNotFound?: () => void
 ) => {
-  const pipelineName = $derived(pipeline().current.name)
+  const pipelineName = $derived(getPipeline().current.name)
   const reload = async () => {
     const requestedPipelineName = pipelineName
     let loaded = await getExtendedPipeline(requestedPipelineName, {
@@ -56,20 +62,29 @@ export const useRefreshPipeline = (
   }
 
   $effect(() => {
-    if (preloaded().name === pipelineName) {
+    if (getPreloaded().name === pipelineName) {
       return
     }
-    set(preloaded())
+    set(getPreloaded())
   })
 
-  const restartReload = () => {
-    const interval = setInterval(reload, 2000)
-    return () => {
-      clearInterval(interval)
-    }
-  }
-  $effect.pre(() => {
-    pipelineName
-    return restartReload()
+  $effect(() => {
+    const ps = getPipelines()
+    untrack(() => {
+      const pipeline = getPipeline().current
+      const thumb = ps.find((p) => p.name === pipeline.name)
+      if (!thumb) {
+        return
+      }
+      if (thumb.refreshVersion === pipeline.refreshVersion) {
+        set({
+          ...pipeline,
+          status: thumb.status,
+          programStatus: thumb.programStatus
+        })
+      } else {
+        reload()
+      }
+    })
   })
 }
