@@ -11,7 +11,7 @@ use size_of::SizeOf;
 
 use super::SpineCursor;
 use crate::dynamic::DynVec;
-use crate::trace::{Batch, BatchReader, Bounds, BoundsRef, Spine};
+use crate::trace::{Batch, BatchReader, Spine};
 use crate::NumEntries;
 
 #[derive(Clone, SizeOf)]
@@ -20,8 +20,6 @@ where
     B: Batch + Send + Sync,
 {
     batches: Vec<Arc<B>>,
-    #[size_of(skip)]
-    bounds: Bounds<B::Time>,
     #[size_of(skip)]
     factories: B::Factories,
 }
@@ -38,7 +36,6 @@ where
 {
     fn from(spine: &Spine<B>) -> Self {
         Self {
-            bounds: spine.bounds().to_owned(),
             batches: spine.merger.get_batches(),
             factories: spine.factories.clone(),
         }
@@ -94,10 +91,6 @@ where
         self.batches
             .iter()
             .fold(0, |acc, batch| acc + batch.approximate_byte_size())
-    }
-
-    fn bounds(&self) -> BoundsRef<'_, Self::Time> {
-        self.bounds.as_ref()
     }
 
     fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)

@@ -5,15 +5,13 @@ use std::{
 };
 
 use ouroboros::self_referencing;
-use ouroboros_impl_arc_merger_inner::Heads;
 
 use crate::{
     algebra::Lattice,
     dynamic::{DynDataTyped, DynWeightedPairs, Weight, WeightTrait},
     time::Timestamp,
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Bounds, Builder, Filter,
-        MergeCursor,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Filter, MergeCursor,
     },
 };
 
@@ -68,11 +66,7 @@ where
     }
 
     pub fn done(self) -> B {
-        let Heads {
-            batches, builder, ..
-        } = self.0.into_heads();
-        let bounds = Bounds::for_merge(batches.iter().map(|b| &**b));
-        builder.done_with_bounds(bounds)
+        self.0.into_heads().builder.done()
     }
 }
 
@@ -92,17 +86,12 @@ where
     C: MergeCursor<B::Key, B::Val, B::Time, B::R>,
     B: Batch,
 {
-    pub fn merge(
-        factories: &B::Factories,
-        mut builder: B::Builder,
-        cursors: Vec<C>,
-        bounds: Bounds<B::Time>,
-    ) -> B {
+    pub fn merge(factories: &B::Factories, mut builder: B::Builder, cursors: Vec<C>) -> B {
         let mut merger = Self::new(factories, cursors);
         let mut fuel = isize::MAX;
         merger.work(&mut builder, &B::Time::default(), &mut fuel);
         assert!(fuel > 0);
-        builder.done_with_bounds(bounds)
+        builder.done()
     }
 
     /// Creates a new merger for `batches`, using `key_filter` and

@@ -10,8 +10,8 @@ use crate::{
             file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher,
             vec::key_batch::VecKeyBuilder, FileKeyBatch, OrdKeyBatch,
         },
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
-        Builder, FileKeyBatchFactories, Filter, MergeCursor, OrdKeyBatchFactories, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
+        FileKeyBatchFactories, Filter, MergeCursor, OrdKeyBatchFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -270,13 +270,6 @@ where
         }
     }
 
-    fn bounds(&self) -> BoundsRef<'_, Self::Time> {
-        match &self.inner {
-            Inner::Vec(vec) => vec.bounds(),
-            Inner::File(file) => file.bounds(),
-        }
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         Self::Time: PartialEq<()>,
@@ -304,7 +297,7 @@ where
                 let mut file = FileKeyBuilder::with_capacity(&self.factories.file, 0);
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
-                    inner: Inner::File(file.done_with_bounds(vec.bounds().to_owned())),
+                    inner: Inner::File(file.done()),
                     factories: self.factories.clone(),
                 })
             }
@@ -457,12 +450,12 @@ where
         }
     }
 
-    fn done_with_bounds(self, bounds: Bounds<T>) -> FallbackKeyBatch<K, T, R> {
+    fn done(self) -> FallbackKeyBatch<K, T, R> {
         FallbackKeyBatch {
             factories: self.factories,
             inner: match self.inner {
-                BuilderInner::File(file) => Inner::File(file.done_with_bounds(bounds)),
-                BuilderInner::Vec(vec) => Inner::Vec(vec.done_with_bounds(bounds)),
+                BuilderInner::File(file) => Inner::File(file.done()),
+                BuilderInner::Vec(vec) => Inner::Vec(vec.done()),
             },
         }
     }

@@ -113,7 +113,7 @@ use std::{
 use textwrap::indent;
 use uuid::Uuid;
 
-impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
+impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine {
     fn from(value: &Spine<B>) -> Self {
         let mut batches = vec![];
         value.map_batches(|b| {
@@ -128,8 +128,6 @@ impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
         CommittedSpine {
             batches,
             merged: Vec::new(),
-            lower: value.lower.clone().into(),
-            upper: value.upper.clone().into(),
             effort: value.effort as u64,
             dirty: value.dirty,
         }
@@ -737,7 +735,7 @@ where
     }
 
     fn commit<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
-        let committed: CommittedSpine<B> = (self as &Self).into();
+        let committed: CommittedSpine = (self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         write_commit_metadata(
             Self::checkpoint_file(cid, &persistent_id),
@@ -759,9 +757,9 @@ where
     fn restore<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
         let pspine_path = Self::checkpoint_file(cid, persistent_id);
         let content = fs::read(pspine_path)?;
-        let archived = unsafe { rkyv::archived_root::<CommittedSpine<B>>(&content) };
+        let archived = unsafe { rkyv::archived_root::<CommittedSpine>(&content) };
 
-        let committed: CommittedSpine<B> = archived.deserialize(&mut rkyv::Infallible).unwrap();
+        let committed: CommittedSpine = archived.deserialize(&mut rkyv::Infallible).unwrap();
         self.lower = Antichain::from(committed.lower);
         self.upper = Antichain::from(committed.upper);
         self.effort = committed.effort as usize;

@@ -9,8 +9,8 @@ use crate::{
         Factory, Vector, WeightTrait,
     },
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher, Bounds, BoundsRef,
-        Builder, Cursor, Filter, Trace,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, Filter,
+        Trace,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -845,7 +845,7 @@ where
         }
     }
 
-    fn done_with_bounds(mut self, _bounds: Bounds<T>) -> TestBatch<K, V, T, R> {
+    fn done(mut self) -> TestBatch<K, V, T, R> {
         self.result.data.retain(|_, r| !r.is_zero());
         self.result
     }
@@ -1167,10 +1167,6 @@ where
 
     fn approximate_byte_size(&self) -> usize {
         self.size_of().total_bytes()
-    }
-
-    fn bounds(&self) -> BoundsRef<'_, T> {
-        todo!()
     }
 
     fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)

@@ -11,10 +11,9 @@ use crate::{
             Factories as FileFactories,
         },
     },
-    time::Antichain,
     trace::{
         ord::merge_batcher::MergeBatcher, Batch, BatchFactories, BatchLocation, BatchReader,
-        BatchReaderFactories, Bounds, BoundsRef, Builder, Cursor, WeightedItem,
+        BatchReaderFactories, Builder, Cursor, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
@@ -171,7 +170,6 @@ where
             (&'static DynDataTyped<T>, &'static R, ()),
         )>,
     >,
-    pub bounds: Bounds<T>,
 }
 
 impl<K, T, R> Debug for FileKeyBatch<K, T, R>
@@ -215,7 +213,6 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
-            bounds: self.bounds.clone(),
         }
     }
 }
@@ -281,10 +278,6 @@ where
         self.file.cache_stats()
     }
 
-    fn bounds(&self) -> BoundsRef<'_, T> {
-        self.bounds.as_ref()
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -338,10 +331,6 @@ where
         Ok(Self {
             factories: factories.clone(),
             file,
-            bounds: Bounds {
-                lower: Antichain::new(),
-                upper: Antichain::new(),
-            },
         })
     }
 }
@@ -619,11 +608,10 @@ where
         self.writer.write1((time, weight)).unwrap();
     }
 
-    fn done_with_bounds(self, bounds: Bounds<T>) -> FileKeyBatch<K, T, R> {
+    fn done(self) -> FileKeyBatch<K, T, R> {
         FileKeyBatch {
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap()),
-            bounds,
         }
     }
 }

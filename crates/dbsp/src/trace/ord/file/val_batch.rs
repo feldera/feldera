@@ -1,5 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
-use crate::trace::{BatchLocation, Bounds, BoundsRef};
+use crate::trace::BatchLocation;
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
@@ -10,7 +10,6 @@ use crate::{
         writer::Writer2,
         Factories as FileFactories,
     },
-    time::Antichain,
     trace::{
         ord::merge_batcher::MergeBatcher, Batch, BatchFactories, BatchReader, BatchReaderFactories,
         Builder, Cursor, WeightedItem,
@@ -210,7 +209,6 @@ where
     factories: FileValBatchFactories<K, V, T, R>,
     #[size_of(skip)]
     pub file: RawValBatch<K, V, T, R>,
-    pub bounds: Bounds<T>,
 }
 
 impl<K, V, T, R> Clone for FileValBatch<K, V, T, R>
@@ -224,7 +222,6 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
-            bounds: self.bounds.clone(),
         }
     }
 }
@@ -257,7 +254,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        writeln!(f, "bounds: {:?}\n", &self.bounds)
+        writeln!(f, "FileValBatch")
     }
 }
 
@@ -303,10 +300,6 @@ where
 
     fn cache_stats(&self) -> CacheStats {
         self.file.cache_stats()
-    }
-
-    fn bounds(&self) -> BoundsRef<'_, Self::Time> {
-        self.bounds.as_ref()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
@@ -363,10 +356,6 @@ where
         Ok(Self {
             factories: factories.clone(),
             file,
-            bounds: Bounds {
-                lower: Antichain::new(),
-                upper: Antichain::new(),
-            },
         })
     }
 }
@@ -663,11 +652,10 @@ where
         }
     }
 
-    fn done_with_bounds(self, bounds: Bounds<T>) -> FileValBatch<K, V, T, R> {
+    fn done(self) -> FileValBatch<K, V, T, R> {
         FileValBatch {
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap()),
-            bounds,
         }
     }
 
