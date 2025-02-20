@@ -65,7 +65,7 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH="$HOME/.cargo/bin:$PATH"
 
 ## Install Bun.js
-RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.0"
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.2"
 ENV PATH="$HOME/.bun/bin:$PATH"
 RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts
 
