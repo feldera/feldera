@@ -8,6 +8,7 @@ import {
 } from '$lib/functions/pipelineMetrics'
 import { isMetricsAvailable } from '$lib/functions/pipelines/status'
 import { untrack } from 'svelte'
+import { useToast } from './useToastNotification'
 
 let metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metrics data for better performance
 let getMetrics = $state<() => typeof metrics>(() => metrics)
@@ -21,6 +22,7 @@ export const useAggregatePipelineStats = (
   let pipelineStatus = $derived(pipeline.current.status)
 
   let metricsAvailable = $derived(isMetricsAvailable(pipelineStatus))
+  const { toastError } = useToast()
   const doFetch = (pipelineName: string) => {
     if (metricsAvailable === 'no') {
       metrics[pipelineName] = emptyPipelineMetrics
@@ -33,19 +35,24 @@ export const useAggregatePipelineStats = (
       return
     }
     let requestTimestamp = Date.now()
-    getPipelineStats(pipelineName).then((stats) => {
-      let responseTimestamp = Date.now()
-      metrics[pipelineName] = accumulatePipelineMetrics(
-        (requestTimestamp + responseTimestamp) / 2,
-        refetchMs,
-        keepMs
-      )(metrics[pipelineName], stats.status === 'not running' ? { status: null } : stats)
-      getMetrics = () => metrics
-      timeout = setTimeout(
-        () => doFetch(pipelineName),
-        Math.max(0, requestTimestamp + refetchMs - responseTimestamp)
-      )
-    })
+    return getPipelineStats(pipelineName)
+      .then((stats) => {
+        let responseTimestamp = Date.now()
+        metrics[pipelineName] = accumulatePipelineMetrics(
+          (requestTimestamp + responseTimestamp) / 2,
+          refetchMs,
+          keepMs
+        )(metrics[pipelineName], stats.status === 'not running' ? { status: null } : stats)
+        getMetrics = () => metrics
+      })
+      .catch(toastError)
+      .finally(() => {
+        let responseTimestamp = Date.now()
+        timeout = setTimeout(
+          () => doFetch(pipelineName),
+          Math.max(0, requestTimestamp + refetchMs - responseTimestamp)
+        )
+      })
   }
 
   let pipelineName = $derived(pipeline.current.name)
