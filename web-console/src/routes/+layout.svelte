@@ -10,8 +10,8 @@
   import { ToastProvider } from '@skeletonlabs/skeleton-svelte'
 
   // import type { Action } from 'svelte/action'
-  import 'virtual:feldera-material-icons-webfont.css'
-  import 'virtual:generic-icons-webfont.css'
+  import '$assets/fonts/feldera-material-icons.css'
+  import '$assets/fonts/generic-icons.css'
 
   // export const classList: Action<Element, string | string[]> = (node, classes) => {
   //   const tokens = Array.isArray(classes) ? classes : [classes]
