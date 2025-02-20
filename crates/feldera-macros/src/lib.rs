@@ -50,7 +50,7 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
     // Struct definition
     let struct_def = quote! {
         #[derive(
-            Default, Clone, Hash,
+            Default, Clone,
             serde::Serialize, serde::Deserialize,
             size_of::SizeOf, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize
         )]
@@ -77,8 +77,8 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
                 #(
                     #fields.hash(&mut hasher);
                 )*
-
-                Self(hasher.digest(), #(#fields),*)
+                let hash = hasher.digest();
+                Self(0x0, #(#fields),*)
             }
         }
     };
@@ -208,7 +208,7 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
         where
             #(#generics: #dbsp_crate::NumEntries,)*
         {
-            const CONST_NUM_ENTRIES: Option<usize> = Some(#num_elements);
+            const CONST_NUM_ENTRIES: Option<usize> = None;//Some(#num_elements);
 
             fn num_entries_shallow(&self) -> usize {
                 #num_elements
@@ -254,12 +254,12 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
                 let #name(hash, #(#fields),*) = self;
                 let #name(other_hash, #(#fields_of_other),*) = other;
 
-                if *hash != 0x0 && *other_hash != 0x0 && *hash != *other_hash {
+                /*if *hash != 0x0 && *other_hash != 0x0 && *hash != *other_hash {
                     return false;
                 }
-                else {
-                    #(#fields == #fields_of_other)&&*
-                }
+                else {*/
+                    #(#fields == #fields_of_other) &&*
+                //}
             }
         }
 
@@ -273,15 +273,14 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
                 if *hash != 0x0 && *hash_other != 0x0 && *hash == *hash_other {
                     return core::cmp::Ordering::Equal;
                 }*/
-
-                let mut result = Some(core::cmp::Ordering::Equal);
                 #(
-                    result = result.and_then(|ord| match ord {
-                        core::cmp::Ordering::Equal => #fields.partial_cmp(#fields_of_other),
-                        _ => return Some(ord)
-                    });
+                    match #fields.partial_cmp(#fields_of_other) {
+                        Some(core::cmp::Ordering::Equal) => (),
+                        not_equal => return not_equal
+                    };
                 )*
-                result
+
+                Some(core::cmp::Ordering::Equal)
             }
         }
 
@@ -290,21 +289,23 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
                 let #name(_hash, #(#fields),*) = self;
                 let #name(_hash_other, #(#fields_of_other),*) = other;
 
-                /*
-                if *hash != 0x0 && *hash_other != 0x0 && *hash == *hash_other {
-                    return core::cmp::Ordering::Equal;
-                }
-                */
-
-                let mut result = core::cmp::Ordering::Equal;
                 #(
-                    if result == core::cmp::Ordering::Equal {
-                        result = #fields.cmp(#fields_of_other);
-                    } else {
-                        return result;
-                    }
+                    match #fields.cmp(#fields_of_other) {
+                        core::cmp::Ordering::Equal => (),
+                        not_equal => return not_equal
+                    };
                 )*
-                result
+
+                core::cmp::Ordering::Equal
+            }
+        }
+
+        impl<#(#generics: std::hash::Hash),*> std::hash::Hash for #name<#(#generics),*> {
+            fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+                let #name(_hash, #(#fields),*) = self;
+                #(
+                    #fields.hash(state);
+                )*
             }
         }
 
@@ -324,10 +325,10 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
     });
 
     // Debug print
-    //let expanded_pretty = expanded.clone();
-    //let parsed_file: syn::File = syn::parse2(expanded_pretty).expect("Failed to parse");
-    //let formatted = prettyplease::unparse(&parsed_file);
-    //eprintln!("{}", formatted);
+    let expanded_pretty = expanded.clone();
+    let parsed_file: syn::File = syn::parse2(expanded_pretty).expect("Failed to parse");
+    let formatted = prettyplease::unparse(&parsed_file);
+    eprintln!("{}", formatted);
 
     expanded.into()
 }

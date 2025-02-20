@@ -411,12 +411,6 @@ public class ToRustVisitor extends CircuitVisitor {
         if (operator.is(DBSPSimpleOperator.class) &&
                 this.compiler.options.ioOptions.verbosity > 0) {
             DBSPSimpleOperator simple = operator.to(DBSPSimpleOperator.class);
-            this.builder.append("// ").newline()
-                    .append(simple.getOutputName())
-                    .append(".inspect(|batch| println!(\"")
-                    .append(simple.getOutputName())
-                    .append("={batch:?}\"));")
-                    .newline();
         }
     }
 
