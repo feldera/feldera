@@ -131,7 +131,7 @@
         <Tabs.Control
           value={tabName}
           base=""
-          classes="px-3 py-2"
+          classes="px-3 py-2 font-medium"
           labelBase=""
           translateX=""
           stateInactive="rounded hover:!bg-opacity-50 hover:bg-surface-100-900"
