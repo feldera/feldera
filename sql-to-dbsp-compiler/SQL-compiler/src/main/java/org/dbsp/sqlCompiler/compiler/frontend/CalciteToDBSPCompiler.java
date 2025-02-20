@@ -702,6 +702,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPTypeTuple pair = type.to(DBSPTypeTuple.class);
             indexType = pair.getFieldType(1);
         }
+        if (inputRowType.size() > 1) {
+            throw new UnimplementedException("UNNEST with multiple vectors", node);
+        }
         DBSPVariablePath data = new DBSPVariablePath(inputRowType.ref());
         DBSPType arrayElementType = data.deref().field(0).getType();
         DBSPClosureExpression getField0 = data.deref().field(0).closure(data);
