@@ -10,7 +10,7 @@ use crate::{
     circuit::metadata::{MetaItem, OperatorMeta},
     dynamic::{DynVec, Factory, Weight},
     storage::buffer_cache::CacheStats,
-    time::{Antichain, AntichainRef, Timestamp},
+    time::{Antichain, Timestamp},
     trace::{
         cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor,
         Filter, Trace,
@@ -51,7 +51,7 @@ mod snapshot;
 mod thread;
 
 use self::thread::{BackgroundThread, WorkerStatus};
-use super::BatchLocation;
+use super::{BatchLocation, Bounds, BoundsRef};
 use crate::circuit::metrics::{BATCHES_PER_LEVEL, COMPACTION_STALL_TIME, ONGOING_MERGES_PER_LEVEL};
 use list_merger::{ListMerger, ListMergerBuilder};
 
@@ -66,8 +66,8 @@ impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine<B
         CommittedSpine {
             batches,
             merged: Vec::new(),
-            lower: spine.lower.clone().into(),
-            upper: spine.upper.clone().into(),
+            lower: spine.bounds.lower.clone().into(),
+            upper: spine.bounds.upper.clone().into(),
             effort: 0,
             dirty: spine.dirty,
         }
@@ -674,8 +674,7 @@ where
 {
     factories: B::Factories,
 
-    lower: Antichain<B::Time>,
-    upper: Antichain<B::Time>,
+    bounds: Bounds<B::Time>,
     dirty: bool,
     key_filter: Option<Filter<B::Key>>,
     value_filter: Option<Filter<B::Val>>,
@@ -689,8 +688,7 @@ where
     B: Batch,
 {
     fn size_of_children(&self, context: &mut Context) {
-        self.lower.size_of_children(context);
-        self.upper.size_of_children(context);
+        self.bounds.size_of_children(context);
         self.merger.get_batches().size_of_with_context(context);
     }
 }
@@ -825,12 +823,8 @@ where
             .sum()
     }
 
-    fn lower(&self) -> AntichainRef<'_, Self::Time> {
-        self.lower.as_ref()
-    }
-
-    fn upper(&self) -> AntichainRef<'_, Self::Time> {
-        self.upper.as_ref()
+    fn bounds(&self) -> BoundsRef<'_, B::Time> {
+        self.bounds.as_ref()
     }
 
     fn cursor(&self) -> Self::Cursor<'_> {
@@ -1108,8 +1102,7 @@ where
 
         if !batch.is_empty() {
             self.dirty = true;
-            self.lower = self.lower.as_ref().meet(batch.lower());
-            self.upper = self.upper.as_ref().join(batch.upper());
+            self.bounds.merge(batch.bounds());
             self.merger.add_batch(Arc::new(batch));
         }
     }
@@ -1207,8 +1200,10 @@ where
         let committed: CommittedSpine<B> = archived
             .deserialize(&mut SharedDeserializeMap::new())
             .unwrap();
-        self.lower = Antichain::from(committed.lower);
-        self.upper = Antichain::from(committed.upper);
+        self.bounds = Bounds {
+            lower: Antichain::from(committed.lower),
+            upper: Antichain::from(committed.upper),
+        };
         self.dirty = committed.dirty;
         self.key_filter = None;
         self.value_filter = None;
@@ -1257,8 +1252,7 @@ where
     pub fn with_effort(factories: &B::Factories, _effort: usize) -> Self {
         Spine {
             factories: factories.clone(),
-            lower: Antichain::from_elem(B::Time::minimum()),
-            upper: Antichain::new(),
+            bounds: Bounds::for_fixed_time(&B::Time::default()),
             dirty: false,
             key_filter: None,
             value_filter: None,

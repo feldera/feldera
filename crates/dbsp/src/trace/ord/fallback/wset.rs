@@ -6,7 +6,6 @@ use crate::{
         WeightTrait, WeightTraitTyped,
     },
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
-    time::{Antichain, AntichainRef},
     trace::{
         cursor::DelegatingCursor,
         deserialize_wset,
@@ -16,7 +15,7 @@ use crate::{
             vec::wset_batch::{VecWSet, VecWSetBuilder, VecWSetFactories, VecWSetMerger},
         },
         serialize_wset, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories,
-        Builder, FileWSet, FileWSetFactories, Filter, Merger, WeightedItem,
+        Bounds, BoundsRef, Builder, FileWSet, FileWSetFactories, Filter, Merger, WeightedItem,
     },
     DBData, DBWeight, NumEntries,
 };
@@ -362,14 +361,8 @@ where
         }
     }
 
-    #[inline]
-    fn lower(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::new(&[()])
-    }
-
-    #[inline]
-    fn upper(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::empty()
+    fn bounds(&self) -> BoundsRef<'_, ()> {
+        BoundsRef::empty()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -679,7 +672,7 @@ where
         }
     }
 
-    fn done_with_bounds(self, bounds: (Antichain<()>, Antichain<()>)) -> FallbackWSet<K, R> {
+    fn done_with_bounds(self, bounds: Bounds<()>) -> FallbackWSet<K, R> {
         FallbackWSet {
             factories: self.factories,
             inner: match self.inner {

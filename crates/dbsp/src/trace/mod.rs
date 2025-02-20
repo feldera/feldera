@@ -423,11 +423,18 @@ where
     }
 
     /// All times in the batch are greater or equal to an element of `lower`.
-    fn lower(&self) -> AntichainRef<'_, Self::Time>;
+    fn lower(&self) -> AntichainRef<'_, Self::Time> {
+        self.bounds().lower
+    }
 
     /// All times in the batch are not greater or equal to any element of
     /// `upper`.
-    fn upper(&self) -> AntichainRef<'_, Self::Time>;
+    fn upper(&self) -> AntichainRef<'_, Self::Time> {
+        self.bounds().upper
+    }
+
+    /// Bounds for the batch's times.
+    fn bounds(&self) -> BoundsRef<'_, Self::Time>;
 
     /// A method that returns either true (possibly in the batch) or false
     /// (definitely not in the batch).
@@ -553,7 +560,7 @@ where
             }
             cursor.step_key();
         }
-        builder.done_with_bounds(bounds_for_fixed_time(timestamp))
+        builder.done_with_bounds(Bounds::for_fixed_time(timestamp))
     }
 
     /*
@@ -607,7 +614,7 @@ where
     /// Creates an empty batch.
     fn dyn_empty(factories: &Self::Factories) -> Self {
         Self::Builder::new_builder(factories)
-            .done_with_bounds(bounds_for_fixed_time(&Self::Time::default()))
+            .done_with_bounds(Bounds::for_fixed_time(&Self::Time::default()))
     }
 
     /// Returns elements from `self` that satisfy a predicate.
@@ -826,30 +833,122 @@ where
     where
         Output::Time: PartialEq<()>,
     {
-        self.done_with_bounds(bounds_for_fixed_time(&Output::Time::default()))
+        self.done_with_bounds(Bounds::empty())
     }
 
-    /// Completes building and returns the batch with lower bound `bounds.0` and
-    /// upper bound `bounds.1`.  The bounds must be correct to avoid violating
-    /// invariants in the output type.
-    fn done_with_bounds(self, bounds: (Antichain<Output::Time>, Antichain<Output::Time>))
-        -> Output;
+    /// Completes building and returns the batch with the given `bounds`, which
+    /// must be correct to avoid violating invariants in the output type.
+    fn done_with_bounds(self, bounds: Bounds<Output::Time>) -> Output;
 }
 
-/// Returns appropriate bounds for a batch in which all tuples have the given
-/// `time`.
-pub fn bounds_for_fixed_time<T>(time: &T) -> (Antichain<T>, Antichain<T>)
+/// Bounds for a batch.
+#[derive(Clone, Debug, SizeOf)]
+pub struct Bounds<T>
 where
     T: Timestamp,
 {
-    let lower = Antichain::from_elem(time.clone());
-    let time_next = time.advance(0);
-    let upper = if time_next <= *time {
-        Antichain::new()
-    } else {
-        Antichain::from_elem(time_next)
-    };
-    (lower, upper)
+    /// All times in the batch are greater or equal to an element of `lower`.
+    pub lower: Antichain<T>,
+
+    /// All times in the batch are not greater or equal to any element of
+    /// `upper`.
+    pub upper: Antichain<T>,
+}
+
+impl<T> Bounds<T>
+where
+    T: Timestamp,
+{
+    pub fn as_ref(&self) -> BoundsRef<T> {
+        BoundsRef {
+            lower: self.lower.as_ref(),
+            upper: self.upper.as_ref(),
+        }
+    }
+
+    pub fn empty() -> Self
+    where
+        T: PartialEq<()>,
+    {
+        Bounds {
+            lower: Antichain::from_elem(T::default()),
+            upper: Antichain::new(),
+        }
+    }
+
+    /// Returns appropriate bounds for a batch in which all tuples have the given
+    /// `time`.
+    pub fn for_fixed_time(time: &T) -> Self {
+        let lower = Antichain::from_elem(time.clone());
+        let time_next = time.advance(0);
+        let upper = if time_next <= *time {
+            Antichain::new()
+        } else {
+            Antichain::from_elem(time_next)
+        };
+        Self { lower, upper }
+    }
+
+    pub fn for_merge<'a, B, I>(batches: I) -> Self
+    where
+        B: BatchReader<Time = T>,
+        I: IntoIterator<Item = &'a B>,
+    {
+        let mut batches = batches.into_iter();
+        let Some(batch) = batches.next() else {
+            return Self::for_fixed_time(&B::Time::default());
+        };
+        let mut bounds = batch.bounds().to_owned();
+        for batch in batches {
+            bounds.merge(batch.bounds());
+        }
+        bounds
+    }
+
+    pub fn merge(&mut self, rhs: BoundsRef<T>) {
+        self.lower = self.lower.as_ref().meet(rhs.lower);
+        self.upper = self.upper.as_ref().join(rhs.upper);
+    }
+
+    pub fn combine(mut self, rhs: BoundsRef<T>) -> Self {
+        self.merge(rhs);
+        self
+    }
+}
+
+/// References to bounds for a batch.
+#[derive(Clone, Debug, SizeOf)]
+pub struct BoundsRef<'a, T>
+where
+    T: Timestamp,
+{
+    /// All times in the batch are greater or equal to an element of `lower`.
+    pub lower: AntichainRef<'a, T>,
+
+    /// All times in the batch are not greater or equal to any element of
+    /// `upper`.
+    pub upper: AntichainRef<'a, T>,
+}
+
+impl<T> BoundsRef<'_, T>
+where
+    T: Timestamp,
+{
+    pub fn to_owned(&self) -> Bounds<T> {
+        Bounds {
+            lower: self.lower.to_owned(),
+            upper: self.upper.to_owned(),
+        }
+    }
+}
+
+impl BoundsRef<'_, ()> {
+    pub fn empty() -> BoundsRef<'static, ()> {
+        BoundsRef {
+            lower: AntichainRef::new(&[()]),
+            upper: AntichainRef::empty(),
+        }
+    }
 }
 
 /// Batch builder that accepts a full tuple at a time.
@@ -964,16 +1063,13 @@ where
     where
         Output::Time: PartialEq<()>,
     {
-        self.done_with_bounds(bounds_for_fixed_time(&Output::Time::default()))
+        self.done_with_bounds(Bounds::empty())
     }
 
     /// Completes building and returns the batch with lower bound `bounds.0` and
     /// upper bound `bounds.1`.  The bounds must be correct to avoid violating
     /// invariants in the output type.
-    pub fn done_with_bounds(
-        mut self,
-        bounds: (Antichain<Output::Time>, Antichain<Output::Time>),
-    ) -> Output {
+    pub fn done_with_bounds(mut self, bounds: Bounds<Output::Time>) -> Output {
         if self.has_kv {
             let (k, v) = self.kv.split_mut();
             self.builder.push_val_mut(v);

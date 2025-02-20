@@ -5,8 +5,8 @@ use crate::{
     dynamic::{DynDataTyped, DynWeightedPairs, Weight, WeightTrait},
     time::Timestamp,
     trace::{
-        cursor::CursorList, ord::filter, Batch, BatchFactories, BatchReaderFactories, Builder,
-        Cursor, Filter,
+        cursor::CursorList, ord::filter, Batch, BatchFactories, BatchReaderFactories, Bounds,
+        Builder, Cursor, Filter,
     },
 };
 
@@ -185,17 +185,7 @@ where
     /// has not brought `fuel` to zero. Otherwise, the merge is still in
     /// progress.
     pub fn done(self) -> B {
-        let lower = self.batches[1..]
-            .iter()
-            .fold(self.batches[0].lower().to_owned(), |lower, batch| {
-                batch.lower().meet(lower.as_ref())
-            });
-        let upper = self.batches[1..]
-            .iter()
-            .fold(self.batches[0].upper().to_owned(), |upper, batch| {
-                batch.upper().join(upper.as_ref())
-            });
-
-        self.builder.done_with_bounds((lower, upper))
+        let bounds = Bounds::for_merge(self.batches.iter().map(|b| &**b));
+        self.builder.done_with_bounds(bounds)
     }
 }

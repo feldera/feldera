@@ -5,13 +5,12 @@ use crate::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         LeanVec, WeightTrait, WeightTraitTyped, WithFactory,
     },
-    time::{Antichain, AntichainRef},
     trace::{
         deserialize_wset,
         layers::{Builder as _, Cursor as _, Leaf, LeafCursor, LeafFactories, MergeBuilder, Trie},
         ord::merge_batcher::MergeBatcher,
         serialize_wset, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories,
-        Builder, Cursor, Deserializer, Filter, Merger, Serializer, WeightedItem,
+        Bounds, BoundsRef, Builder, Cursor, Deserializer, Filter, Merger, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -363,14 +362,8 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
         self.size_of().total_bytes()
     }
 
-    #[inline]
-    fn lower(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::new(&[()])
-    }
-
-    #[inline]
-    fn upper(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::empty()
+    fn bounds(&self) -> BoundsRef<'_, ()> {
+        BoundsRef::empty()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -730,7 +723,7 @@ where
         self.pushed_diff();
     }
 
-    fn done_with_bounds(self, _bounds: (Antichain<()>, Antichain<()>)) -> VecWSet<K, R> {
+    fn done_with_bounds(self, _bounds: Bounds<()>) -> VecWSet<K, R> {
         debug_assert_eq!(self.keys.len(), self.diffs.len());
         VecWSet {
             layer: Leaf::from_parts(&self.factories.layer_factories, self.keys, self.diffs),

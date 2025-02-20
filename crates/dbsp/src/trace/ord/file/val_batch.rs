@@ -1,5 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
-use crate::trace::BatchLocation;
+use crate::trace::{BatchLocation, Bounds, BoundsRef};
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
@@ -10,7 +10,7 @@ use crate::{
         writer::Writer2,
         Factories as FileFactories,
     },
-    time::{Antichain, AntichainRef},
+    time::Antichain,
     trace::{
         ord::merge_batcher::MergeBatcher, Batch, BatchFactories, BatchReader, BatchReaderFactories,
         Builder, Cursor, Filter, Merger, WeightedItem,
@@ -211,8 +211,7 @@ where
     factories: FileValBatchFactories<K, V, T, R>,
     #[size_of(skip)]
     pub file: RawValBatch<K, V, T, R>,
-    pub lower: Antichain<T>,
-    pub upper: Antichain<T>,
+    pub bounds: Bounds<T>,
 }
 
 impl<K, V, T, R> Clone for FileValBatch<K, V, T, R>
@@ -226,8 +225,7 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
-            lower: self.lower.clone(),
-            upper: self.upper.clone(),
+            bounds: self.bounds.clone(),
         }
     }
 }
@@ -260,7 +258,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        writeln!(f, "lower: {:?}, upper: {:?}\n", self.lower, self.upper)
+        writeln!(f, "bounds: {:?}\n", &self.bounds)
     }
 }
 
@@ -308,12 +306,8 @@ where
         self.file.cache_stats()
     }
 
-    fn lower(&self) -> AntichainRef<'_, T> {
-        self.lower.as_ref()
-    }
-
-    fn upper(&self) -> AntichainRef<'_, T> {
-        self.upper.as_ref()
+    fn bounds(&self) -> BoundsRef<'_, Self::Time> {
+        self.bounds.as_ref()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
@@ -375,8 +369,10 @@ where
         Ok(Self {
             factories: factories.clone(),
             file,
-            lower: Antichain::new(),
-            upper: Antichain::new(),
+            bounds: Bounds {
+                lower: Antichain::new(),
+                upper: Antichain::new(),
+            },
         })
     }
 }
@@ -394,8 +390,7 @@ where
     factories: FileValBatchFactories<K, V, T, R>,
     #[size_of(skip)]
     result: Option<RawValBatch<K, V, T, R>>,
-    lower: Antichain<T>,
-    upper: Antichain<T>,
+    bounds: Bounds<T>,
 }
 
 fn include<K: ?Sized>(x: &K, filter: &Option<Filter<K>>) -> bool {
@@ -733,8 +728,7 @@ where
         Self {
             factories: batch1.factories.clone(),
             result: None,
-            lower: batch1.lower().meet(batch2.lower()),
-            upper: batch1.upper().join(batch2.upper()),
+            bounds: batch1.bounds().to_owned().combine(batch2.bounds()),
         }
     }
 
@@ -746,8 +740,7 @@ where
                 // (which the trait documentation says is mandatory).
                 self.result.take().unwrap()
             },
-            lower: self.lower,
-            upper: self.upper,
+            bounds: self.bounds,
         }
     }
 
@@ -1059,15 +1052,11 @@ where
         }
     }
 
-    fn done_with_bounds(
-        self,
-        (lower, upper): (Antichain<T>, Antichain<T>),
-    ) -> FileValBatch<K, V, T, R> {
+    fn done_with_bounds(self, bounds: Bounds<T>) -> FileValBatch<K, V, T, R> {
         FileValBatch {
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap()),
-            lower,
-            upper,
+            bounds,
         }
     }
 

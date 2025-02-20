@@ -11,11 +11,11 @@ use crate::{
             Factories as FileFactories,
         },
     },
-    time::{Antichain, AntichainRef},
+    time::Antichain,
     trace::{
         ord::{filter, merge_batcher::MergeBatcher},
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Filter, Merger, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
+        Builder, Cursor, Filter, Merger, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
@@ -173,8 +173,7 @@ where
             (&'static DynDataTyped<T>, &'static R, ()),
         )>,
     >,
-    pub lower: Antichain<T>,
-    pub upper: Antichain<T>,
+    pub bounds: Bounds<T>,
 }
 
 impl<K, T, R> Debug for FileKeyBatch<K, T, R>
@@ -218,8 +217,7 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
-            lower: self.lower.clone(),
-            upper: self.upper.clone(),
+            bounds: self.bounds.clone(),
         }
     }
 }
@@ -285,12 +283,8 @@ where
         self.file.cache_stats()
     }
 
-    fn lower(&self) -> AntichainRef<'_, T> {
-        self.lower.as_ref()
-    }
-
-    fn upper(&self) -> AntichainRef<'_, T> {
-        self.upper.as_ref()
+    fn bounds(&self) -> BoundsRef<'_, T> {
+        self.bounds.as_ref()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
@@ -351,8 +345,10 @@ where
         Ok(Self {
             factories: factories.clone(),
             file,
-            lower: Antichain::new(),
-            upper: Antichain::new(),
+            bounds: Bounds {
+                lower: Antichain::new(),
+                upper: Antichain::new(),
+            },
         })
     }
 }
@@ -367,8 +363,7 @@ where
 {
     #[size_of(skip)]
     factories: FileKeyBatchFactories<K, T, R>,
-    lower: Antichain<T>,
-    upper: Antichain<T>,
+    bounds: Bounds<T>,
 
     // Position in first batch.
     lower1: usize,
@@ -551,8 +546,7 @@ where
     ) -> Self {
         FileKeyMerger {
             factories: batch1.factories.clone(),
-            lower: batch1.lower().meet(batch2.lower()),
-            upper: batch1.upper().join(batch2.upper()),
+            bounds: batch1.bounds().to_owned().combine(batch2.bounds()),
             lower1: 0,
             lower2: 0,
             writer: Writer2::new(
@@ -572,8 +566,7 @@ where
         FileKeyBatch {
             factories: self.factories.clone(),
             file: Arc::new(self.writer.into_reader().unwrap()),
-            lower: self.lower,
-            upper: self.upper,
+            bounds: self.bounds,
         }
     }
 
@@ -919,15 +912,11 @@ where
         self.writer.write1((time, weight)).unwrap();
     }
 
-    fn done_with_bounds(
-        self,
-        (lower, upper): (Antichain<T>, Antichain<T>),
-    ) -> FileKeyBatch<K, T, R> {
+    fn done_with_bounds(self, bounds: Bounds<T>) -> FileKeyBatch<K, T, R> {
         FileKeyBatch {
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap()),
-            lower,
-            upper,
+            bounds,
         }
     }
 }

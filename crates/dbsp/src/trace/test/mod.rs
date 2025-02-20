@@ -27,13 +27,13 @@ use crate::{
             assert_batch_cursors_eq, assert_batch_eq, assert_trace_eq, test_batch_sampling,
             test_trace_sampling, TestBatch, TestBatchFactories,
         },
-        Batch, BatchReader, BatchReaderFactories, Builder, Spine, Trace,
+        Batch, BatchReader, BatchReaderFactories, Bounds, Builder, Spine, Trace,
     },
     utils::{Tup2, Tup3, Tup4},
     DynZWeight, Runtime, ZWeight,
 };
 
-use super::{bounds_for_fixed_time, Filter};
+use super::Filter;
 use itertools::Itertools;
 
 pub mod test_batch;
@@ -368,7 +368,7 @@ where
     }
     // This use of `bounds_for_fixed_time` is clearly wrong but works for our
     // purposes.
-    builder.done_with_bounds(bounds_for_fixed_time(&0))
+    builder.done_with_bounds(Bounds::for_fixed_time(&0))
 }
 
 fn test_indexed_zset_trace_builder<B>(
@@ -408,7 +408,7 @@ where
     }
     // This use of `bounds_for_fixed_time` is clearly wrong but works for our
     // purposes.
-    builder.done_with_bounds(bounds_for_fixed_time(&0))
+    builder.done_with_bounds(Bounds::for_fixed_time(&0))
 }
 
 fn test_zset_trace_builder<B>(

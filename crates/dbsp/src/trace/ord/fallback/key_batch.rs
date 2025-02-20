@@ -4,7 +4,6 @@ use crate::{
         WeightTrait,
     },
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
-    time::{Antichain, AntichainRef},
     trace::{
         cursor::DelegatingCursor,
         ord::{
@@ -13,8 +12,8 @@ use crate::{
             vec::key_batch::{VecKeyBuilder, VecKeyMerger},
             FileKeyBatch, OrdKeyBatch,
         },
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
-        FileKeyBatchFactories, Filter, Merger, OrdKeyBatchFactories, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Bounds, BoundsRef,
+        Builder, FileKeyBatchFactories, Filter, Merger, OrdKeyBatchFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -283,17 +282,10 @@ where
         }
     }
 
-    fn lower(&self) -> AntichainRef<'_, T> {
+    fn bounds(&self) -> BoundsRef<'_, Self::Time> {
         match &self.inner {
-            Inner::Vec(vec) => vec.lower(),
-            Inner::File(file) => file.lower(),
-        }
-    }
-
-    fn upper(&self) -> AntichainRef<'_, T> {
-        match &self.inner {
-            Inner::Vec(vec) => vec.upper(),
-            Inner::File(file) => file.upper(),
+            Inner::Vec(vec) => vec.bounds(),
+            Inner::File(file) => file.bounds(),
         }
     }
 
@@ -329,9 +321,7 @@ where
                 let mut file = FileKeyBuilder::with_capacity(&self.factories.file, 0);
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
-                    inner: Inner::File(
-                        file.done_with_bounds((vec.lower().to_owned(), vec.upper().to_owned())),
-                    ),
+                    inner: Inner::File(file.done_with_bounds(vec.bounds().to_owned())),
                     factories: self.factories.clone(),
                 })
             }
@@ -617,7 +607,7 @@ where
         }
     }
 
-    fn done_with_bounds(self, bounds: (Antichain<T>, Antichain<T>)) -> FallbackKeyBatch<K, T, R> {
+    fn done_with_bounds(self, bounds: Bounds<T>) -> FallbackKeyBatch<K, T, R> {
         FallbackKeyBatch {
             factories: self.factories,
             inner: match self.inner {

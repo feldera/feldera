@@ -11,8 +11,7 @@ use size_of::SizeOf;
 
 use super::SpineCursor;
 use crate::dynamic::DynVec;
-use crate::time::{Antichain, AntichainRef};
-use crate::trace::{Batch, BatchReader, Spine};
+use crate::trace::{Batch, BatchReader, Bounds, BoundsRef, Spine};
 use crate::NumEntries;
 
 #[derive(Clone, SizeOf)]
@@ -22,9 +21,7 @@ where
 {
     batches: Vec<Arc<B>>,
     #[size_of(skip)]
-    lower: Antichain<B::Time>,
-    #[size_of(skip)]
-    upper: Antichain<B::Time>,
+    bounds: Bounds<B::Time>,
     #[size_of(skip)]
     factories: B::Factories,
 }
@@ -41,8 +38,7 @@ where
 {
     fn from(spine: &Spine<B>) -> Self {
         Self {
-            lower: spine.lower.clone(),
-            upper: spine.upper.clone(),
+            bounds: spine.bounds().to_owned(),
             batches: spine.merger.get_batches(),
             factories: spine.factories.clone(),
         }
@@ -100,12 +96,8 @@ where
             .fold(0, |acc, batch| acc + batch.approximate_byte_size())
     }
 
-    fn lower(&self) -> AntichainRef<'_, Self::Time> {
-        self.lower.as_ref()
-    }
-
-    fn upper(&self) -> AntichainRef<'_, Self::Time> {
-        self.upper.as_ref()
+    fn bounds(&self) -> BoundsRef<'_, Self::Time> {
+        self.bounds.as_ref()
     }
 
     fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)
