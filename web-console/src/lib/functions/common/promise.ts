@@ -28,6 +28,6 @@ export const closedIntervalAction = (action: () => Promise<void>, periodMs: numb
     }
   })
   return () => {
-    onTimeoutReject('Closed interval cancelled')
+    onTimeoutReject?.('Closed interval cancelled')
   }
 }
