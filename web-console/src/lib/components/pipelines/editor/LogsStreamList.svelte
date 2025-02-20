@@ -52,7 +52,7 @@
       },
       getCopyContent(slice) {
         if (slice === 'all') {
-          return logs.rows.map(stripANSI).join('\n')
+          return logs.rows.map(stripANSI).join('')
         }
         const result = logs.rows.slice(slice.start.row, slice.end.row + 1).map(stripANSI)
         result[0] = result[0].slice(slice.start.col)
@@ -60,7 +60,7 @@
           0,
           slice.end.col - (slice.start.row === slice.end.row ? slice.start.col : 0)
         )
-        return result.join('\n')
+        return result.join('')
       }
     }}
   >
