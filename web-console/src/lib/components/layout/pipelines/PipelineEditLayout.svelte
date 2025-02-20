@@ -230,7 +230,7 @@ example = "1.0"`
 <div class="flex h-full w-full flex-col">
   <AppHeader>
     {#snippet afterStart()}
-      <div class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 sm:flex-row">
+      <div class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 sm:flex-row sm:items-center">
         <PipelineBreadcrumbs
           class="-ml-3 py-1 pl-3"
           textClass="text-base"
@@ -267,8 +267,7 @@ example = "1.0"`
             </DoubleClickInput>
           {/snippet}
         </PipelineBreadcrumbs>
-        <PipelineStatus class="mt-0 h-6 sm:mt-1.5" status={pipeline.current.status}
-        ></PipelineStatus>
+        <PipelineStatus class="h-6 sm:mt-0.5" status={pipeline.current.status}></PipelineStatus>
       </div>
     {/snippet}
     {#snippet beforeEnd()}
@@ -286,7 +285,7 @@ example = "1.0"`
           ></CreatePipelineButton>
         </div>
         <BookADemo class="btn-icon preset-filled-surface-50-950"></BookADemo>
-        <Tooltip class="bg-white-dark rounded text-surface-950-50">Book a demo</Tooltip>
+        <Tooltip class="bg-white-dark z-10 rounded text-surface-950-50">Book a demo</Tooltip>
       {/if}
     {/snippet}
   </AppHeader>
@@ -407,7 +406,7 @@ example = "1.0"`
           {/snippet}
           {#snippet fileTab(text, onClick, isCurrent, isSaved)}
             <button
-              class=" flex flex-nowrap py-2 pl-2 pr-5 sm:pl-3 {isCurrent
+              class=" flex flex-nowrap py-2 pl-2 pr-5 font-medium sm:pl-3 {isCurrent
                 ? 'inset-y-2 border-b-2 pb-1.5 border-surface-950-50'
                 : ' rounded hover:!bg-opacity-50 hover:bg-surface-100-900'}"
               onclick={onClick}

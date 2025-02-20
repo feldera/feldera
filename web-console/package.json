@@ -19,7 +19,7 @@
     "test-ct-ui": "DISPLAY= bun playwright test -c playwright-ct.config.ts --ui-host=0.0.0.0",
     "test-report": "bun playwright show-report",
     "test-prepare": "git clone --depth 1 https://github.com/feldera/playwright-snapshots.git",
-    "build-icons": "bun run scripts/build-webfont.ts -- -s tmp/assets/icons/feldera-material-icons -d src/assets/fonts/ -n feldera-material-icons -p fd --fix && bun run scripts/build-webfont.ts -- -s src/assets/icons/generic -d src/assets/fonts/ -n generic-icons -p gc"
+    "build-icons": "bun run scripts/build-webfont.ts -- -s src/assets/icons/feldera-material-icons -d src/assets/fonts/ -n feldera-material-icons -p fd --fix && bun run scripts/build-webfont.ts -- -s src/assets/icons/generic -d src/assets/fonts/ -n generic-icons -p gc"
   },
   "devDependencies": {
     "@auth/sveltekit": "^1.7.4",

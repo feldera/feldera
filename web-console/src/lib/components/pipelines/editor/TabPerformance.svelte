@@ -24,12 +24,12 @@
   <div class="flex h-full flex-col gap-4 overflow-y-auto overflow-x-clip scrollbar">
     <div class="flex w-full flex-col gap-4">
       <table class="mt-2 w-full max-w-[1000px] table-fixed sm:mt-0">
-        <thead class="text-sm sm:text-base align-top">
+        <thead class="align-top text-sm sm:text-base">
           <tr>
-            <th class="w-3/12 text-start sm:w-1/6 font-semibold"> Records Ingested </th>
-            <th class="w-3/12 text-start sm:w-1/6 font-semibold"> Records Processed </th>
-            <th class="w-3/12 text-start sm:w-1/6 font-semibold"> Records Buffered </th>
-            <th class="w-7/12 text-start sm:w-2/6 font-semibold"> Last status update </th>
+            <th class="w-3/12 text-start font-semibold sm:w-1/6"> Records Ingested </th>
+            <th class="w-3/12 text-start font-semibold sm:w-1/6"> Records Processed </th>
+            <th class="w-3/12 text-start font-semibold sm:w-1/6"> Records Buffered </th>
+            <th class="w-7/12 text-start font-semibold sm:w-2/6"> Last status update </th>
           </tr>
         </thead>
         <tbody class="align-top">
@@ -84,11 +84,11 @@
       <table class="bg-white-dark table max-w-[1000px] rounded text-base">
         <thead>
           <tr>
-            <th class="text-center font-normal text-surface-600-400">Table</th>
-            <th class="text-center font-normal text-surface-600-400">Ingested records</th>
-            <th class="text-center font-normal text-surface-600-400">Ingested bytes</th>
-            <th class="text-center font-normal text-surface-600-400">Parse errors</th>
-            <th class="text-center font-normal text-surface-600-400">Transport errors</th>
+            <th class="font-normal text-surface-600-400">Table</th>
+            <th class="!text-end font-normal text-surface-600-400">Ingested records</th>
+            <th class="!text-end font-normal text-surface-600-400">Ingested bytes</th>
+            <th class="!text-end font-normal text-surface-600-400">Parse errors</th>
+            <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
           </tr>
         </thead>
         <tbody>
@@ -114,12 +114,12 @@
       <table class="bg-white-dark table max-w-[1200px] rounded text-base">
         <thead>
           <tr>
-            <th class="text-center font-normal text-surface-600-400">View</th>
-            <th class="text-center font-normal text-surface-600-400">Transmitted records</th>
-            <th class="text-center font-normal text-surface-600-400">Transmitted bytes</th>
-            <th class="text-center font-normal text-surface-600-400">Processed records</th>
-            <th class="text-center font-normal text-surface-600-400">Encode errors</th>
-            <th class="text-center font-normal text-surface-600-400">Transport errors</th>
+            <th class="font-normal text-surface-600-400">View</th>
+            <th class="!text-end font-normal text-surface-600-400">Transmitted records</th>
+            <th class="!text-end font-normal text-surface-600-400">Transmitted bytes</th>
+            <th class="!text-end font-normal text-surface-600-400">Processed records</th>
+            <th class="!text-end font-normal text-surface-600-400">Encode errors</th>
+            <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
           </tr>
         </thead>
         <tbody>

@@ -35,7 +35,7 @@
 </script>
 
 <div class="p-2">
-  <div class="h-4 w-4 flex-none rounded-full text-[0.66rem] uppercase {chipClass} {_class}"></div>
+  <div class="h-3 w-3 flex-none rounded-full text-[0.66rem] uppercase {chipClass} {_class}"></div>
 </div>
 <Tooltip
   class="pointer-events-none ml-2 whitespace-nowrap rounded bg-white text-surface-950-50 dark:bg-black"
