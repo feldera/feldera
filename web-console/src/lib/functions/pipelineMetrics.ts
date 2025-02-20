@@ -149,7 +149,14 @@ export const calcPipelineThroughput = (metrics: { global: GlobalMetricsTimestamp
     }
   })
 
-  const valueMax = series.length ? Math.max(...series.map((v) => v.value[1])) : 0
+  const avgN = Math.min(Math.ceil(series.length / 5), 4)
+  const valueMax = series.length
+    ? series
+        .slice()
+        .sort((a, b) => a.value[1] - b.value[1])
+        .slice(-avgN)
+        .reduce((acc, cur) => acc + cur.value[1], 0) / avgN
+    : 0
   const yMaxStep = Math.pow(10, Math.ceil(Math.log10(valueMax))) / 5
   const yMax = valueMax !== 0 ? Math.ceil((valueMax * 1.25) / yMaxStep) * yMaxStep : 100
   const yMin = 0
