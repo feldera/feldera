@@ -26,7 +26,9 @@
   let pipelineName = $derived(pipeline.current.name)
   let isIdle = $derived(isPipelineIdle(pipeline.current.status))
 
-  const reverseScroll = useReverseScrollContainer()
+  const reverseScroll = useReverseScrollContainer({
+    observeContentElement: (e) => e.firstElementChild!
+  })
 
   $effect.pre(() => {
     adhocQueries[pipelineName] ??= { queries: [{ query: '' }] }
