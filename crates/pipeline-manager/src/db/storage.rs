@@ -258,21 +258,21 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(), DBError>;
+    ) -> Result<PipelineId, DBError>;
 
     /// Sets deployment desired status to `Paused`.
     async fn set_deployment_desired_status_paused(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(), DBError>;
+    ) -> Result<PipelineId, DBError>;
 
     /// Sets deployment desired status to `Shutdown`.
     async fn set_deployment_desired_status_shutdown(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(), DBError>;
+    ) -> Result<PipelineId, DBError>;
 
     /// Transitions deployment status to `Provisioning`.
     async fn transit_deployment_status_to_provisioning(

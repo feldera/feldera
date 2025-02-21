@@ -3038,7 +3038,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(), DBError> {
+    ) -> Result<PipelineId, DBError> {
         let new_desired_status = PipelineDesiredStatus::Running;
         let mut pipeline = self
             .help_transit_deployment_desired_status(tenant_id, pipeline_name, &new_desired_status)
@@ -3048,14 +3048,14 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
-        Ok(())
+        Ok(pipeline.id)
     }
 
     async fn set_deployment_desired_status_paused(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(), DBError> {
+    ) -> Result<PipelineId, DBError> {
         let new_desired_status = PipelineDesiredStatus::Paused;
         let mut pipeline = self
             .help_transit_deployment_desired_status(tenant_id, pipeline_name, &new_desired_status)
@@ -3065,14 +3065,14 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
-        Ok(())
+        Ok(pipeline.id)
     }
 
     async fn set_deployment_desired_status_shutdown(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<(), DBError> {
+    ) -> Result<PipelineId, DBError> {
         let new_desired_status = PipelineDesiredStatus::Shutdown;
         let mut pipeline = self
             .help_transit_deployment_desired_status(tenant_id, pipeline_name, &new_desired_status)
@@ -3082,7 +3082,7 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
-        Ok(())
+        Ok(pipeline.id)
     }
 
     async fn transit_deployment_status_to_provisioning(

@@ -787,15 +787,14 @@ pub(crate) async fn post_pipeline_action(
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ManagerError> {
     let (pipeline_name, action) = path.into_inner();
-    let verb = match action.as_str() {
+    let pipeline_id = match action.as_str() {
         "start" => {
             state
                 .db
                 .lock()
                 .await
                 .set_deployment_desired_status_running(*tenant_id, &pipeline_name)
-                .await?;
-            "starting"
+                .await?
         }
         "pause" => {
             state
@@ -803,8 +802,7 @@ pub(crate) async fn post_pipeline_action(
                 .lock()
                 .await
                 .set_deployment_desired_status_paused(*tenant_id, &pipeline_name)
-                .await?;
-            "pausing"
+                .await?
         }
         "shutdown" => {
             state
@@ -812,16 +810,15 @@ pub(crate) async fn post_pipeline_action(
                 .lock()
                 .await
                 .set_deployment_desired_status_shutdown(*tenant_id, &pipeline_name)
-                .await?;
-            "shutting down"
+                .await?
         }
         _ => Err(ManagerError::from(ApiError::InvalidPipelineAction {
-            action: action.to_string(),
+            action: action.clone(),
         }))?,
     };
 
     info!(
-        "Accepted action: {verb} pipeline '{pipeline_name}' (tenant: {})",
+        "Accepted action: going to {action} pipeline {pipeline_id} (tenant: {})",
         *tenant_id
     );
     Ok(HttpResponse::Accepted().finish())
