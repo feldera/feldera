@@ -15,8 +15,20 @@ class cmpxtst_userdef_int_var_tbl(TstTable):
                       c3 var_type NOT NULL,
                       c4 var_type)"""
         self.data = [
-            {"id": 0, "c1": {"i1": 1, "i2": None}, "c2": {"i1": 5, "i2": 6}, "c3": {"v1": "hi", "v2": None}, "c4": {"v1": "hello", "v2": None}},
-            {"id": 1, "c1": {"i1": 1, "i2": 2}, "c2": {"i1": 5, "i2": None}, "c3": {"v1": "bye", "v2": None}, "c4": {"v1": "ciao", "v2": "adios"}},
+            {
+                "id": 0,
+                "c1": {"i1": 1, "i2": None},
+                "c2": {"i1": 5, "i2": 6},
+                "c3": {"v1": "hi", "v2": None},
+                "c4": {"v1": "hello", "v2": None},
+            },
+            {
+                "id": 1,
+                "c1": {"i1": 1, "i2": 2},
+                "c2": {"i1": 5, "i2": None},
+                "c3": {"v1": "bye", "v2": None},
+                "c4": {"v1": "ciao", "v2": "adios"},
+            },
         ]
 
 
@@ -24,8 +36,28 @@ class cmpxtst_userdef_field_access(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {'id': 0, 'i1': 1, 'i2': None, 'i10': 5, 'i20': 6, 'v1': 'hi', 'v2': None, 'v10': 'hello', 'v20': None},
-            {'id': 1, 'i1': 1, 'i2': 2, 'i10': 5, 'i20': None, 'v1': 'bye', 'v2': None, 'v10': 'ciao', 'v20': 'adios'},
+            {
+                "id": 0,
+                "i1": 1,
+                "i2": None,
+                "i10": 5,
+                "i20": 6,
+                "v1": "hi",
+                "v2": None,
+                "v10": "hello",
+                "v20": None,
+            },
+            {
+                "id": 1,
+                "i1": 1,
+                "i2": 2,
+                "i10": 5,
+                "i20": None,
+                "v1": "bye",
+                "v2": None,
+                "v10": "ciao",
+                "v20": "adios",
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW userdef_field_access AS SELECT
                       id,

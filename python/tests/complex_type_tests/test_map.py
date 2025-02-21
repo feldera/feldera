@@ -44,10 +44,7 @@ class cmpxtst_map_access_int_by_key(TstView):
 class cmpxtst_map_access_var_by_key(TstView):
     def __init__(self):
         # checked manually
-        self.data = [
-            {'id': 0, 'x': 'hi', 'a': None},
-            {'id': 1, 'x': None, 'a': 'bye'}
-        ]
+        self.data = [{"id": 0, "x": "hi", "a": None}, {"id": 1, "x": None, "a": "bye"}]
         self.sql = """CREATE MATERIALIZED VIEW map_access_by_key AS SELECT
                       id,
                       c3['x'] AS x,
