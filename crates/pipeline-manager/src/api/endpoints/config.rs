@@ -34,7 +34,16 @@ async fn get_config(
 ) -> Result<HttpResponse, ManagerError> {
     Ok(HttpResponse::Ok().json(json!({
         "telemetry": state._config.telemetry,
-        "version": env!("CARGO_PKG_VERSION"),
+        "edition": if cfg!(feature = "feldera-enterprise") {
+            "Enterprise"
+        } else {
+            "Open source"
+        },
+        "version": if cfg!(feature = "feldera-enterprise") {
+            env!("FELDERA_ENTERPRISE_VERSION")
+        } else {
+            env!("CARGO_PKG_VERSION")
+        },
         "revision": env!("FELDERA_PLATFORM_VERSION_SUFFIX")
     })))
 }
