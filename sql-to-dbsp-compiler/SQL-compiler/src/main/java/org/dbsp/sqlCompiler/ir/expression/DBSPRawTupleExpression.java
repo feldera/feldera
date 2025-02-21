@@ -65,6 +65,10 @@ public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
         this(node, fields.toArray(new DBSPExpression[0]));
     }
 
+    public static DBSPExpression none(DBSPTypeRawTuple type) {
+        return new DBSPRawTupleExpression(type);
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);

@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
@@ -276,6 +277,23 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             result = new DBSPFlatMapOperator(
                     operator.getNode(), function,
                     resultType.to(DBSPTypeZSet.class), input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPFlatMapIndexOperator operator) {
+        DBSPType resultType = this.transform(operator.outputType);
+        OutputPort input = this.mapped(operator.input());
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPSimpleOperator result = operator;
+        if (!resultType.sameType(operator.outputType)
+                || !input.equals(operator.input())
+                || function != operator.getFunction()) {
+            result = new DBSPFlatMapIndexOperator(
+                    operator.getNode(), function,
+                    resultType.to(DBSPTypeIndexedZSet.class), operator.isMultiset, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

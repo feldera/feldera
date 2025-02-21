@@ -1,0 +1,52 @@
+package org.dbsp.sqlCompiler.circuit.operator;
+
+import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+
+import javax.annotation.Nullable;
+import java.util.List;
+import java.util.Objects;
+
+public final class DBSPFlatMapIndexOperator extends DBSPUnaryOperator {
+    public DBSPFlatMapIndexOperator(CalciteObject node, DBSPExpression expression,
+                                    DBSPTypeIndexedZSet outputType, boolean isMultiset,
+                                    OutputPort input) {
+        super(node, "flat_map_index", expression, outputType, isMultiset, input);
+        // We use this operator in a very restricted way,
+        // to implement a MapIndex preceded or followed by a Filter.
+        // So the iterator is always over an Option().
+        this.checkArgumentFunctionType(expression, 0, input);
+    }
+
+    @Override
+    public void accept(CircuitVisitor visitor) {
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
+    }
+
+    @Override
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+        return new DBSPFlatMapIndexOperator(
+                this.getNode(), Objects.requireNonNull(expression),
+                outputType.to(DBSPTypeIndexedZSet.class), this.isMultiset, this.input())
+                .copyAnnotations(this);
+    }
+
+    @Override
+    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
+        if (force || this.inputsDiffer(newInputs))
+            return new DBSPFlatMapIndexOperator(
+                    this.getNode(), this.getFunction(),
+                    this.getOutputIndexedZSetType(), this.isMultiset, newInputs.get(0))
+                    .copyAnnotations(this);
+        return this;
+    }
+}

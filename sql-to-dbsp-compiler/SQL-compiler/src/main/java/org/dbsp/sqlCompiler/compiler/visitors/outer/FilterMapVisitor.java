@@ -1,7 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -60,36 +62,101 @@ public class FilterMapVisitor extends CircuitCloneWithGraphsVisitor {
     }
 
     @Override
-    public void postorder(DBSPFilterOperator operator) {
+    public void postorder(DBSPMapIndexOperator operator) {
         DBSPOperator in = this.mapped(operator.input()).node();
-        if (in.is(DBSPMapOperator.class) &&
+        if (in.is(DBSPFilterOperator.class) &&
                 (this.getGraph().getFanout(operator.input().node()) == 1)) {
             // Generate code for the function
-            // let tmp = map(...);
-            // if (filter(tmp)) {
-            //   Some(tmp)
+            // if (filter(input)) {
+            //   Some(map(input))
             // } else {
             //   None
             // }
-            DBSPMapOperator source = in.to(DBSPMapOperator.class);
-            DBSPClosureExpression map = source.getClosureFunction();
-            DBSPClosureExpression filter = operator.getClosureFunction();
-            DBSPLetStatement let = new DBSPLetStatement("tmp", map.body);
-            DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(this.compiler());
-            DBSPExpression tmp = let.getVarReference();
-            DBSPIfExpression ifexp = new DBSPIfExpression(
+            DBSPFilterOperator source = in.to(DBSPFilterOperator.class);
+            DBSPClosureExpression map = operator.getClosureFunction();
+            DBSPClosureExpression filter = source.getClosureFunction();
+            assert filter.parameters.length == 1;
+            DBSPParameter param = filter.parameters[0];
+
+            DBSPVariablePath newParam = param.getType().var();
+            DBSPType resultType = map.getResultType();
+            DBSPExpression cond = filter.call(newParam);
+            DBSPExpression ifTrue = map.call(newParam);
+            DBSPIfExpression ifExp = new DBSPIfExpression(
                     operator.getNode(),
                     cond,
-                    tmp.some(),
-                    tmp.getType().withMayBeNull(true).none());
-            DBSPBlockExpression block = new DBSPBlockExpression(Linq.list(let), ifexp);
-            DBSPClosureExpression function = block.closure(map.parameters);
+                    ifTrue.some(),
+                    resultType.withMayBeNull(true).none());
+            DBSPClosureExpression function = ifExp.closure(newParam);
             DBSPSimpleOperator result =
-                    new DBSPFlatMapOperator(source.getNode(),
-                            function, source.getOutputZSetType(),
+                    new DBSPFlatMapIndexOperator(source.getNode(),
+                            function, operator.getOutputIndexedZSetType(),
                             operator.isMultiset, source.inputs.get(0));
             this.map(operator, result);
             return;
+        }
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPFilterOperator operator) {
+        DBSPOperator in = this.mapped(operator.input()).node();
+        if (this.getGraph().getFanout(operator.input().node()) == 1) {
+            if (in.is(DBSPMapOperator.class)) {
+                // Generate code for the function
+                // let tmp = map(...);
+                // if (filter(tmp)) {
+                //   Some(tmp)
+                // } else {
+                //   None
+                // }
+                DBSPMapOperator source = in.to(DBSPMapOperator.class);
+                DBSPClosureExpression map = source.getClosureFunction();
+                DBSPClosureExpression filter = operator.getClosureFunction();
+                DBSPLetStatement let = new DBSPLetStatement("tmp", map.body);
+                DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(this.compiler());
+                DBSPExpression tmp = let.getVarReference();
+                DBSPIfExpression ifexp = new DBSPIfExpression(
+                        operator.getNode(),
+                        cond,
+                        tmp.some(),
+                        tmp.getType().withMayBeNull(true).none());
+                DBSPBlockExpression block = new DBSPBlockExpression(Linq.list(let), ifexp);
+                DBSPClosureExpression function = block.closure(map.parameters);
+                DBSPSimpleOperator result =
+                        new DBSPFlatMapOperator(source.getNode(),
+                                function, source.getOutputZSetType(),
+                                operator.isMultiset, source.inputs.get(0));
+                this.map(operator, result);
+                return;
+            } else if (in.is(DBSPMapIndexOperator.class)) {
+                // Generate code for the function
+                // let tmp = map_index(...);
+                // if (filter(tmp)) {
+                //   Some(tmp)
+                // } else {
+                //   None
+                // }
+                DBSPMapIndexOperator source = in.to(DBSPMapIndexOperator.class);
+                DBSPClosureExpression map = source.getClosureFunction();
+                DBSPClosureExpression filter = operator.getClosureFunction();
+                DBSPLetStatement let = new DBSPLetStatement("tmp", map.body);
+                DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(this.compiler());
+                DBSPExpression tmp = let.getVarReference();
+                DBSPIfExpression ifexp = new DBSPIfExpression(
+                        operator.getNode(),
+                        cond,
+                        tmp.some(),
+                        tmp.getType().withMayBeNull(true).none());
+                DBSPBlockExpression block = new DBSPBlockExpression(Linq.list(let), ifexp);
+                DBSPClosureExpression function = block.closure(map.parameters);
+                DBSPSimpleOperator result =
+                        new DBSPFlatMapIndexOperator(source.getNode(),
+                                function, source.getOutputIndexedZSetType(),
+                                operator.isMultiset, source.inputs.get(0));
+                this.map(operator, result);
+                return;
+            }
         }
         super.postorder(operator);
     }

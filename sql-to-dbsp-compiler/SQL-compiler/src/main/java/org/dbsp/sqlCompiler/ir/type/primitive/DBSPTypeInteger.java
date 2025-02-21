@@ -220,45 +220,57 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
         };
     }
 
+    byte checkOverflowI8(int value) {
+        if (value < -128 || value > 127)
+            throw new ArithmeticException("Overflow in I8 computation");
+        return (byte) value;
+    }
+
     @Override
     public DBSPExpression fold(DBSPBinaryExpression expression) {
-        DBSPLiteral ll = expression.left.as(DBSPLiteral.class);
-        DBSPLiteral rl = expression.left.as(DBSPLiteral.class);
-        if (ll == null || rl == null)
-            return expression;
-        if ((ll.isNull()) && expression.opcode.isStrict())
-            return ll;
-        if ((rl.isNull()) && expression.opcode.isStrict())
-            return ll;
-        switch (this.width) {
-            case 8: {
-                DBSPI8Literal left = expression.left.as(DBSPI8Literal.class);
-                DBSPI8Literal right = expression.right.as(DBSPI8Literal.class);
-                if (left == null || right == null)
-                    return expression;
-                assert left.value != null && right.value != null;
-                return switch (expression.opcode) {
-                    case SUB -> new DBSPI8Literal(left.getNode(), this, (byte)(left.value - right.value));
-                    case ADD -> new DBSPI8Literal(left.getNode(), this, (byte)(left.value + right.value));
-                    case MUL -> new DBSPI8Literal(left.getNode(), this, (byte)(left.value * right.value));
-                    default -> expression;
-                };
-            }
-            case 32: {
-                DBSPI32Literal left = expression.left.as(DBSPI32Literal.class);
-                DBSPI32Literal right = expression.right.as(DBSPI32Literal.class);
-                if (left == null || right == null)
-                    return expression;
-                assert left.value != null && right.value != null;
-                return switch (expression.opcode) {
-                    case SUB -> new DBSPI32Literal(left.getNode(), this, (left.value - right.value));
-                    case ADD -> new DBSPI32Literal(left.getNode(), this, (left.value + right.value));
-                    case MUL -> new DBSPI32Literal(left.getNode(), this, (left.value * right.value));
-                    default -> expression;
-                };
-            }
-            default:
+        try {
+            DBSPLiteral ll = expression.left.as(DBSPLiteral.class);
+            DBSPLiteral rl = expression.left.as(DBSPLiteral.class);
+            if (ll == null || rl == null)
                 return expression;
+            if ((ll.isNull()) && expression.opcode.isStrict())
+                return ll;
+            if ((rl.isNull()) && expression.opcode.isStrict())
+                return ll;
+            switch (this.width) {
+                case 8: {
+                    DBSPI8Literal left = expression.left.as(DBSPI8Literal.class);
+                    DBSPI8Literal right = expression.right.as(DBSPI8Literal.class);
+                    if (left == null || right == null)
+                        return expression;
+                    assert left.value != null && right.value != null;
+                    return switch (expression.opcode) {
+                        case SUB -> new DBSPI8Literal(left.getNode(), this, this.checkOverflowI8(left.value - right.value));
+                        case ADD -> new DBSPI8Literal(left.getNode(), this, this.checkOverflowI8(left.value + right.value));
+                        case MUL -> new DBSPI8Literal(left.getNode(), this, this.checkOverflowI8(left.value * right.value));
+                        case DIV -> new DBSPI8Literal(left.getNode(), this, this.checkOverflowI8(left.value / right.value));
+                        default -> expression;
+                    };
+                }
+                case 32: {
+                    DBSPI32Literal left = expression.left.as(DBSPI32Literal.class);
+                    DBSPI32Literal right = expression.right.as(DBSPI32Literal.class);
+                    if (left == null || right == null)
+                        return expression;
+                    assert left.value != null && right.value != null;
+                    return switch (expression.opcode) {
+                        case SUB -> new DBSPI32Literal(left.getNode(), this, Math.subtractExact(left.value, right.value));
+                        case ADD -> new DBSPI32Literal(left.getNode(), this, Math.addExact(left.value, right.value));
+                        case MUL -> new DBSPI32Literal(left.getNode(), this, Math.multiplyExact(left.value, right.value));
+                        case DIV -> new DBSPI32Literal(left.getNode(), this, Math.divideExact(left.value, right.value));
+                        default -> expression;
+                    };
+                }
+                default:
+                    return expression;
+            }
+        } catch (ArithmeticException ex) {
+            return expression;
         }
     }
 

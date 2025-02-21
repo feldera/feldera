@@ -74,6 +74,7 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
 
     /** A DBSPTupleExpression with value null */
     public static DBSPTupleExpression none(DBSPTypeTuple type) {
+        assert type.mayBeNull;
         return new DBSPTupleExpression(type);
     }
 

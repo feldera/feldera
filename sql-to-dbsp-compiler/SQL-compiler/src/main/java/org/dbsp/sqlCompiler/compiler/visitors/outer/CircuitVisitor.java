@@ -295,6 +295,10 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPUnaryOperator.class));
     }
 
+    public VisitDecision preorder(DBSPFlatMapIndexOperator node) {
+        return this.preorder(node.to(DBSPUnaryOperator.class));
+    }
+
     public VisitDecision preorder(DBSPHopOperator node) {
         return this.preorder(node.to(DBSPUnaryOperator.class));
     }
@@ -567,6 +571,10 @@ public abstract class CircuitVisitor
     }
 
     public void postorder(DBSPFlatMapOperator node) {
+        this.postorder(node.to(DBSPUnaryOperator.class));
+    }
+
+    public void postorder(DBSPFlatMapIndexOperator node) {
         this.postorder(node.to(DBSPUnaryOperator.class));
     }
 
