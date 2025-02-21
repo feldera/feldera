@@ -31,13 +31,13 @@ class cmpxtst_map_access_int_by_key(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "expr$1": 22, "expr$2": None},
-            {"id": 1, "expr$1": 33, "expr$2": 88},
+            {"id": 0, "val1": 22, "val2": None},
+            {"id": 1, "val1": 33, "val2": 88},
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_access_int_by_key AS SELECT
                       id,
-                      c1[1],
-                      c2[2]
+                      c1[1] AS val1,
+                      c2[2] AS val2
                       FROM map_int_var_tbl"""
 
 
@@ -45,11 +45,11 @@ class cmpxtst_map_access_var_by_key(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "expr$1": "hi", "expr$2": None},
-            {"id": 1, "expr$1": None, "expr$2": "bye"},
+            {'id': 0, 'x': 'hi', 'a': None},
+            {'id': 1, 'x': None, 'a': 'bye'}
         ]
         self.sql = """CREATE MATERIALIZED VIEW map_access_by_key AS SELECT
                       id,
-                      c3['x'],
-                      c3['a']
+                      c3['x'] AS x,
+                      c3['a'] AS a
                       FROM map_int_var_tbl"""
