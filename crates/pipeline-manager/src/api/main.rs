@@ -451,11 +451,20 @@ pub async fn run(
 Web console URL: {}
 API server URL: {}
 Documentation: https://docs.feldera.com/
-Version: {}{}
+Version: {} v{}{}
         ",
             url,
             url,
-            env!("CARGO_PKG_VERSION"),
+            if cfg!(feature = "feldera-enterprise") {
+                "Enterprise"
+            } else {
+                "Open source"
+            },
+            if cfg!(feature = "feldera-enterprise") {
+                env!("FELDERA_ENTERPRISE_VERSION")
+            } else {
+                env!("CARGO_PKG_VERSION")
+            },
             if env!("FELDERA_PLATFORM_VERSION_SUFFIX").is_empty() {
                 "".to_string()
             } else {

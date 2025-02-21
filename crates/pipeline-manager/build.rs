@@ -71,4 +71,18 @@ fn main() {
         env::var("FELDERA_PLATFORM_VERSION_SUFFIX").unwrap_or("".to_string());
     println!("cargo:rerun-if-env-changed=FELDERA_PLATFORM_VERSION_SUFFIX");
     println!("cargo:rustc-env=FELDERA_PLATFORM_VERSION_SUFFIX={platform_version_suffix}");
+
+    // Determine the enterprise version
+    let enterprise_version = env::var("FELDERA_ENTERPRISE_VERSION").unwrap_or(
+        {
+            if cfg!(feature = "feldera-enterprise") {
+                "unknown"
+            } else {
+                "not-applicable"
+            }
+        }
+        .to_string(),
+    );
+    println!("cargo:rerun-if-env-changed=FELDERA_ENTERPRISE_VERSION");
+    println!("cargo:rustc-env=FELDERA_ENTERPRISE_VERSION={enterprise_version}");
 }
