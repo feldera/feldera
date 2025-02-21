@@ -39,7 +39,6 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
 public class JoinConditionAnalyzer implements IWritesLogs {
     private final int leftTableColumnCount;
@@ -148,6 +147,8 @@ public class JoinConditionAnalyzer implements IWritesLogs {
 
         @SuppressWarnings("BooleanMethodIsAlwaysInverted")
         boolean checkOneSided(RexCall call) {
+            if (true) return false;
+
             CheckSide checker = new CheckSide(JoinConditionAnalyzer.this.leftTableColumnCount);
             checker.apply(call);
             if (!checker.oneSided()) {
