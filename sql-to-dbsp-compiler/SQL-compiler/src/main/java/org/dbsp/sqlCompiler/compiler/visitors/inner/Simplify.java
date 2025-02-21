@@ -547,6 +547,11 @@ public class Simplify extends InnerRewriteVisitor {
                             result = left;
                         }
                     }
+                    if (left.getType().is(IsNumericType.class) &&
+                            right.is(DBSPLiteral.class) &&
+                            result.is(DBSPBinaryExpression.class)) {
+                        result = left.getType().to(IsNumericType.class).fold(result.to(DBSPBinaryExpression.class));
+                    }
                 } else if (right.is(DBSPLiteral.class)) {
                     DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                     IHasZero iRightType = rightType.as(IHasZero.class);
@@ -566,8 +571,9 @@ public class Simplify extends InnerRewriteVisitor {
                         result = left;
                     }
                     if (left.getType().is(IsNumericType.class) &&
-                            right.is(DBSPLiteral.class)) {
-                        result = left.getType().to(IsNumericType.class).fold(expression);
+                            right.is(DBSPLiteral.class) &&
+                            result.is(DBSPBinaryExpression.class)) {
+                        result = left.getType().to(IsNumericType.class).fold(result.to(DBSPBinaryExpression.class));
                     }
                 } else if (right.is(DBSPLiteral.class)) {
                     DBSPLiteral rightLit = right.to(DBSPLiteral.class);
@@ -597,6 +603,11 @@ public class Simplify extends InnerRewriteVisitor {
                                 .multiply(leftLit.to(DBSPIntLiteral.class).getValue())
                                 .to(DBSPExpression.class);
                     }
+                    if (left.getType().is(IsNumericType.class) &&
+                            right.is(DBSPLiteral.class) &&
+                            result.is(DBSPBinaryExpression.class)) {
+                        result = left.getType().to(IsNumericType.class).fold(result.to(DBSPBinaryExpression.class));
+                    }
                 } else if (right.is(DBSPLiteral.class) && rightType.is(IsNumericType.class)) {
                     DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                     IsNumericType iRightType = rightType.to(IsNumericType.class);
@@ -622,6 +633,11 @@ public class Simplify extends InnerRewriteVisitor {
                     } else if (iRightType.isZero(rightLit)) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Division by zero",
                                 " Division by constant zero value.");
+                    }
+                    if (left.getType().is(IsNumericType.class) &&
+                            right.is(DBSPLiteral.class) &&
+                            result.is(DBSPBinaryExpression.class)) {
+                        result = left.getType().to(IsNumericType.class).fold(result.to(DBSPBinaryExpression.class));
                     }
                 }
             } else if (opcode == DBSPOpcode.MOD) {
