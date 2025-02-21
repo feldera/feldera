@@ -1831,6 +1831,36 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3589() {
+        // validated on Postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE tab0(pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER);
+                CREATE VIEW V AS SELECT pk FROM tab0 WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
+        ccs.step("""
+                INSERT INTO tab0 VALUES(0,91,79.43,'dlvog',97);
+                INSERT INTO tab0 VALUES(1,57,89.18,'yzohb',80);
+                INSERT INTO tab0 VALUES(2,73,81.93,'aqyub',40);
+                INSERT INTO tab0 VALUES(3,61,82.61,'daxlc',42);
+                INSERT INTO tab0 VALUES(4,76,101.91,'xhzcz',2);
+                INSERT INTO tab0 VALUES(5,39,11.85,'zshnl',81);
+                INSERT INTO tab0 VALUES(6,75,52.42,'zgvdj',49);
+                INSERT INTO tab0 VALUES(7,53,53.21,'wglqx',15);
+                INSERT INTO tab0 VALUES(8,67,2.2,'uaaon',98);
+                INSERT INTO tab0 VALUES(9,48,62.50,'noqzf',50);""", """
+                 c | weight
+                -------------
+                 0 | 1
+                 1 | 1
+                 2 | 1
+                 3 | 1
+                 4 | 1
+                 5 | 1
+                 6 | 1
+                 7 | 1
+                 9 | 1""");
+    }
+
+    @Test
     public void issue2391() {
         var ccs = this.getCCS("""
                 CREATE TABLE double_tbl(c1 DOUBLE, c2 DOUBLE NOT NULL);
