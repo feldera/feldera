@@ -70,7 +70,7 @@
     return match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
       .with('Shutdown', { SqlWarning: P.any }, () => ['_spacer_long', '_start_paused'])
-      .with('Starting up', 'Initializing', 'Pausing', 'Resuming', 'Unavailable', () => [
+      .with('Provisioning', 'Starting up', 'Pausing', 'Resuming', 'Unavailable', () => [
         '_shutdown',
         '_status_spinner'
       ])

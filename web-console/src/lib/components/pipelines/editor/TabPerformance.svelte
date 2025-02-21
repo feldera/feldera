@@ -51,9 +51,7 @@
                 ((d) => (d ? ` ${d}m` : ''))(d.minutes()) +
                 ((d) => (d ? ` ${d}s` : ''))(d.seconds()))(
                 Dayjs.duration(
-                  now.current.valueOf() -
-                    new Date(pipeline.current.deploymentStatusSince).valueOf() +
-                    3600
+                  now.current.valueOf() - new Date(pipeline.current.deploymentStatusSince).valueOf()
                 )
               )}
               since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}

@@ -6,7 +6,10 @@
       rows: string[]
       rowBoundaries: number[]
       totalSkippedBytes: number
-      stream: { open: ReadableStream<Uint8Array>; stop: () => void } | { closed: {} }
+      stream:
+        | { open: ReadableStream<Uint8Array>; stop: () => void }
+        | { closed: {} }
+        | { closed: {}; cancelRetry: () => void; retryAtTimestamp: number }
     }
   > = {}
   let getStreams = $state(() => streams)
@@ -27,13 +30,22 @@
     pushAsCircularBuffer,
     SplitNewlineTransformStream
   } from '$lib/functions/pipelines/changeStream'
-  import { pipelineLogsStream, type ExtendedPipeline } from '$lib/services/pipelineManager'
+  import {
+    pipelineLogsStream,
+    type ExtendedPipeline,
+    type PipelineStatus
+  } from '$lib/services/pipelineManager'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { untrack } from 'svelte'
+  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
+  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+  import Dayjs from 'dayjs'
+  import { unionName, type NamesInUnion } from '$lib/functions/common/union'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   let pipelineName = $derived(pipeline.current.name)
-  let pipelineStatus = $derived(pipeline.current.status)
+
+  let pipelineStatusName = $derived(unionName(pipeline.current.status))
 
   $effect.pre(() => {
     if (!streams[pipelineName]) {
@@ -60,15 +72,21 @@
     }
   })
   const bufferSize = 10000
+  const areLogsAbsent = (pipelineStatusName: NamesInUnion<PipelineStatus>) =>
+    ['Shutdown', 'ShuttingDown', 'PipelineError'].includes(pipelineStatusName)
+  const areLogsExpected = (pipelineStatusName: NamesInUnion<PipelineStatus>) =>
+    ['Provisioning', 'Starting up', 'Running', 'Pausing', 'Paused', 'Resuming'].includes(
+      pipelineStatusName
+    )
   const startStream = (pipelineName: string) => {
     if ('open' in streams[pipelineName].stream) {
       return
     }
     pipelineLogsStream(pipelineName).then((result) => {
       if (result instanceof Error) {
+        tryRestartStream(pipelineName, 5000)
         return
       }
-      const startTimestamp = Date.now()
       const { cancel } = parseCancellable(
         result,
         {
@@ -82,14 +100,10 @@
           },
           onParseEnded: (reason) => {
             streams[pipelineName].stream = { closed: {} }
-            if (
-              reason === 'cancelled' ||
-              (typeof pipeline.current.status === 'string' &&
-                ['Shutdown', 'ShuttingDown'].includes(pipeline.current.status))
-            ) {
+            if (reason === 'cancelled' || areLogsAbsent(pipelineStatusName)) {
               return
             }
-            tryRestartStream(pipelineName, startTimestamp)
+            tryRestartStream(pipelineName, 5000)
           },
           onBytesSkipped(bytes) {
             streams[pipelineName].totalSkippedBytes += bytes
@@ -107,30 +121,35 @@
         rowBoundaries: [],
         totalSkippedBytes: 0
       }
+      getStreams = () => streams
     })
   }
 
   // Start stream unless it ended less than retryAllowedSinceDelayMs ago
-  const tryRestartStream = (pipelineName: string, startTimestamp: number) => {
-    const retryAllowedSinceDelayMs = 2000
-    if (startTimestamp + retryAllowedSinceDelayMs > Date.now()) {
+  const tryRestartStream = (pipelineName: string, delayMs: number) => {
+    if ('cancelRetry' in streams[pipelineName].stream) {
       return
     }
-    startStream(pipelineName)
+    const timeout = setTimeout(() => startStream(pipelineName), delayMs)
+    streams[pipelineName].stream = {
+      closed: {},
+      cancelRetry: () => {
+        clearTimeout(timeout)
+        streams[pipelineName].stream = { closed: {} }
+      },
+      retryAtTimestamp: Date.now() + delayMs
+    }
   }
 
-  $effect(() => {
-    pipelineStatus
-    if ('open' in streams[pipelineName]) {
-      return
-    }
+  $effect.pre(() => {
+    pipelineStatusName
     untrack(() => {
-      if (
-        (typeof pipelineStatus === 'string' &&
-          ['Initializing', 'Running', 'Paused'].includes(pipelineStatus)) ||
-        (typeof pipelineStatus === 'object' && 'PipelineError' in pipelineStatus)
-      ) {
+      if ('cancelRetry' in streams[pipelineName].stream) {
+        streams[pipelineName].stream.cancelRetry()
+      }
+      if (areLogsExpected(pipelineStatusName)) {
         startStream(pipelineName)
+        return
       }
     })
   })
@@ -150,8 +169,32 @@
       pipelineActionCallbacks.remove('', 'delete', dropLogHistory)
     }
   })
+  let stream = $derived(getStreams()[pipelineName].stream)
+  const now = useInterval(() => new Date(), 1000, 1000 - (Date.now() % 1000))
 </script>
 
-{#key pipelineName}
-  <LogsStreamList logs={getStreams()[pipelineName]}></LogsStreamList>
-{/key}
+<div class="relative flex h-full flex-1 flex-col rounded">
+  {#if 'closed' in stream}
+    {#if 'retryAtTimestamp' in stream && pipelineStatusName !== 'Provisioning' && pipelineStatusName !== 'Starting up'}
+      <WarningBanner>
+        {@const seconds = Math.floor(
+          Dayjs.duration(stream.retryAtTimestamp - now.current.valueOf()).asSeconds()
+        )}
+        Connection to logs stream lost.
+        {#if seconds > 0}Retrying in
+          {seconds}s
+        {:else}
+          Retrying...
+        {/if}
+      </WarningBanner>
+    {:else if getStreams()[pipelineName].rows.length && areLogsAbsent(pipelineStatusName)}
+      <WarningBanner>
+        Displaying log history from the last pipeline run. When the pipeline is started again this
+        history will be erased
+      </WarningBanner>
+    {/if}
+  {/if}
+  {#key pipelineName}
+    <LogsStreamList logs={getStreams()[pipelineName]}></LogsStreamList>
+  {/key}
+</div>

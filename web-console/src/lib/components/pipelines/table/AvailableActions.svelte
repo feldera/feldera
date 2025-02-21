@@ -38,8 +38,7 @@
         ]
       )
       .with('Shutdown', { SqlWarning: P.any }, () => ['start', 'delete'])
-      .with('Initializing', () => ['shutdown', 'delete'])
-      .with('Starting up', () => ['shutdown', 'delete'])
+      .with('Provisioning', 'Starting up', () => ['shutdown', 'delete'])
       .with('Running', () => ['shutdown', 'pause'])
       .with('Pausing', () => ['shutdown', 'delete'])
       .with('Paused', () => ['shutdown', 'start'])
