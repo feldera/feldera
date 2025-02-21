@@ -5,8 +5,8 @@ import { P, match } from 'ts-pattern'
 export const getPipelineStatusLabel = (status: PipelineStatus) => {
   return match(status)
     .with('Shutdown', { SqlWarning: P.any }, () => 'Ready To Start')
+    .with('Provisioning', () => 'Provisioning')
     .with('Starting up', () => 'Starting up')
-    .with('Initializing', () => 'Initializing')
     .with('Paused', () => 'Paused')
     .with('Running', () => 'Running')
     .with('Pausing', () => 'Pausing')
@@ -27,8 +27,8 @@ export const getPipelineStatusLabel = (status: PipelineStatus) => {
 export const getDeploymentStatusLabel = (status: PipelineStatus) => {
   return match(status)
     .with('Shutdown', { SqlWarning: P.any }, () => '')
+    .with('Provisioning', () => 'Provisioning')
     .with('Starting up', () => 'Starting up')
-    .with('Initializing', () => 'Initializing')
     .with('Paused', () => 'Paused')
     .with('Running', () => 'Running')
     .with('Pausing', () => 'Pausing')
@@ -52,8 +52,8 @@ export const getDeploymentStatusLabel = (status: PipelineStatus) => {
 export const isPipelineIdle = (status: PipelineStatus) => {
   return match(status)
     .with('Shutdown', { SqlWarning: P.any }, () => true)
+    .with('Provisioning', () => false)
     .with('Starting up', () => false)
-    .with('Initializing', () => false)
     .with('Paused', () => false)
     .with('Running', () => false)
     .with('Pausing', () => false)
@@ -77,8 +77,8 @@ export const isPipelineIdle = (status: PipelineStatus) => {
 export const isPipelineEditable = (status: PipelineStatus) => {
   return match(status)
     .with('Shutdown', { SqlWarning: P.any }, () => true)
+    .with('Provisioning', () => false)
     .with('Starting up', () => false)
-    .with('Initializing', () => false)
     .with('Paused', () => false)
     .with('Running', () => false)
     .with('Pausing', () => false)
@@ -102,8 +102,8 @@ export const isPipelineEditable = (status: PipelineStatus) => {
 export const isMetricsAvailable = (status: PipelineStatus) => {
   return match(status)
     .with('Shutdown', { SqlWarning: P.any }, () => 'no' as const)
+    .with('Provisioning', () => 'no' as const)
     .with('Starting up', () => 'no' as const)
-    .with('Initializing', () => 'no' as const)
     .with('Paused', () => 'yes' as const)
     .with('Running', () => 'yes' as const)
     .with('Pausing', () => 'yes' as const)
