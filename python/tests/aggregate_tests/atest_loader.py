@@ -22,7 +22,7 @@ def register_tests_in_module(module, ta: TstAccumulator, class_name: str):
                     print(f"Registering {name}")
 
 
-def run(class_name:str, dir_name):
+def run(class_name: str, dir_name):
     """Find all tests loaded by the current module and register them"""
     ta = TstAccumulator()
     loaded = []
