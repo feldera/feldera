@@ -1,0 +1,7 @@
+// This file contains a list of buggy tests to skip
+// test/random/expr/slt_good_101.test: test 5863, division by zero
+SELECT DISTINCT ( + + 88 ) + 69 + - - 22 / - + 0 * - 93 * CASE - CASE ( - COUNT ( * ) ) WHEN - 77 * - 44 - COUNT ( * ) + + 99 THEN - MIN ( - 30 ) WHEN - 30 THEN NULL WHEN + ( + 80 ) + + 33 / + COALESCE ( - - 93, - MAX ( DISTINCT 58 ) ) + - 99 * + 90 THEN - + COUNT ( * ) - AVG ( DISTINCT - 74 ) / 10 ELSE NULL END WHEN 16 THEN 3 END * + 78
+// test/random/expr/slt_good_103.test: test 7216, multiply with overflow
+SELECT DISTINCT - 96 * + 47 * ( + - 98 ) * + - 98 * 33 * + 9 * CASE MIN ( - 85 ) WHEN - + 96 * - COUNT ( * ) + 81 + + COUNT ( * ) * - 37 THEN - 69 * 58 WHEN + COALESCE ( + 16, 36 * + 30 ) THEN NULL END * - + CAST ( - + 95 AS INTEGER ) * - 33
+// test/random/expr/slt_good_102.test: test 197, division by zero
+SELECT ALL CASE - 6 WHEN + 70 + ( 81 ) THEN NULL WHEN COALESCE ( - 22, - + COALESCE ( - 64, + 65 / 49 + - + 62, - - NULLIF ( + 57, COUNT ( ALL - CASE 58 WHEN + 17 - 80 THEN 72 * - 40 + 54 * + 58 WHEN - CAST ( NULL AS INTEGER ) THEN NULL WHEN - 59 + 45 / + COALESCE ( 54 / 88, CAST ( NULL AS INTEGER ) * - 22 + - 58 * + 98 ) THEN - 18 / 20 ELSE NULL END ) * 3 ) ) * - MAX ( DISTINCT + 46 * - 27 ), AVG ( ALL 22 ) ) THEN NULL WHEN 23 THEN 42 - + MAX ( 52 ) END

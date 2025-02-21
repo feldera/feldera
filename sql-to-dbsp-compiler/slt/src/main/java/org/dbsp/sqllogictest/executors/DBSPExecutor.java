@@ -60,6 +60,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -196,8 +197,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             this.writeCodeToFile(compiler, Linq.list(inputFunction), codeGenerated);
             this.startTest();
             if (this.execute) {
-                String[] extraArgs = new String[0];
-                Utilities.compileAndTestRust(Main.getAbsoluteRustDirectory(), true, extraArgs);
+                Utilities.compileAndTestRust(Main.getAbsoluteRustDirectory(), true);
             }
             this.queriesToRun.clear();
             System.out.println(elapsedTime(queryNo));
@@ -290,6 +290,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         compiler.submitStatementForCompilation(dbspQuery);
         compiler.throwIfErrorsOccurred();
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        assert circuit != null;
         circuit.setName("circuit" + suffix);
         DBSPNode.done();
 
@@ -310,7 +311,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         }
 
         return createTesterCode(
-                    "tester" + suffix, circuit, outputNumber,
+                    "tester" + suffix, origQuery, circuit, outputNumber,
                     gen.getInputFunction(),
                     compiler.getTableContents(),
                     expectedOutput, testQuery.outputDescription);
@@ -416,15 +417,16 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     /**
      * Generates a Rust function which tests a DBSP circuit.
      * @param name        Name of the generated function.
+     * @param query       Query that is being tested.
      * @param circuit     DBSP circuit that will be tested.
      * @param output      Expected data from the circuit.
      * @param description Description of the expected outputs.
      * @param outputNumber  Position of data output in output vector.
      * @return The code for a function that runs the circuit with the specified
-     * input and tests the produced output.
-     */
+     * input and tests the produced output. */
     static ProgramAndTester createTesterCode(
             String name,
+            String query,
             DBSPCircuit circuit,
             int outputNumber,
             DBSPFunction inputGeneratingFunction,
@@ -432,6 +434,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             @Nullable DBSPZSetExpression output,
             SqlTestQueryOutputDescription description) {
         List<DBSPStatement> list = new ArrayList<>();
+        DBSPComment comment = new DBSPComment(query);
+        list.add(comment);
         DBSPExpression arg = new DBSPApplyExpression(
                 "CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(2)); // workers
         DBSPLetStatement cas = new DBSPLetStatement("circ",
