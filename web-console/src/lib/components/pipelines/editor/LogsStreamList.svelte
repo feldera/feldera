@@ -21,69 +21,66 @@
   let virtualizer: VirtualizerHandle = $state()!
 </script>
 
-<div class="relative flex h-full flex-1 flex-col rounded">
-  {#if logs.totalSkippedBytes}
-    <WarningBanner>
-      Receiving logs faster than can be displayed. Skipping some logs to keep up, {humanSize(
-        logs.totalSkippedBytes
-      )} in total.
-    </WarningBanner>
-  {/if}
-  <!-- <ReverseScrollList items={logs.rows} class="bg-white-dark pl-2 scrollbar">
+{#if logs.totalSkippedBytes}
+  <WarningBanner>
+    Receiving logs faster than can be displayed. Skipping some logs to keep up, {humanSize(
+      logs.totalSkippedBytes
+    )} in total.
+  </WarningBanner>
+{/if}
+<!-- <ReverseScrollList items={logs.rows} class="bg-white-dark pl-2 scrollbar">
     {#snippet item(value, i)}
       <div class="whitespace-pre-wrap" style="font-family: {theme.config.monospaceFontFamily};"> -->
-  <!-- TODO: Re-enable line numbers when they get reported by backend -->
-  <!-- <span class="select-none font-bold">{(i + 1).toFixed().padStart(5, ' ')}&nbsp;&nbsp;</span> -->
-  <!-- {@html value}
+<!-- TODO: Re-enable line numbers when they get reported by backend -->
+<!-- <span class="select-none font-bold">{(i + 1).toFixed().padStart(5, ' ')}&nbsp;&nbsp;</span> -->
+<!-- {@html value}
       </div>
     {/snippet}
   </ReverseScrollList> -->
-  <div
-    role="textbox"
-    class="bg-white-dark h-full w-full overflow-y-auto whitespace-pre-wrap rounded pl-2 scrollbar"
-    style="font-family: {theme.config.monospaceFontFamily}; user-select: contain;"
-    tabindex={99}
-    use:reverseScroll.action
-    use:selectScope
-    use:virtualSelect={{
-      getRoot: (node) => node.firstElementChild!,
-      getRootChildrenOffset: (root) => {
-        const num = parseInt(
-          root.children.item(0)!.children.item(0)!.getAttribute('data-rowindex')!
-        )
-        return num
-      },
-      getCopyContent(slice) {
-        if (slice === 'all') {
-          return logs.rows.map(stripANSI).join('')
-        }
-        const result = logs.rows.slice(slice.start.row, slice.end.row + 1).map(stripANSI)
-        result[0] = result[0].slice(slice.start.col)
-        result[result.length - 1] = result[result.length - 1].slice(
-          0,
-          slice.end.col - (slice.start.row === slice.end.row ? slice.start.col : 0)
-        )
-        return result.join('')
+<div
+  role="textbox"
+  class="bg-white-dark h-full w-full overflow-y-auto whitespace-pre-wrap rounded pl-2 scrollbar"
+  style="font-family: {theme.config.monospaceFontFamily}; user-select: contain;"
+  tabindex={99}
+  use:reverseScroll.action
+  use:selectScope
+  use:virtualSelect={{
+    getRoot: (node) => node.firstElementChild!,
+    getRootChildrenOffset: (root) => {
+      const num = parseInt(root.children.item(0)!.children.item(0)!.getAttribute('data-rowindex')!)
+      return num
+    },
+    getCopyContent(slice) {
+      if (slice === 'all') {
+        return logs.rows.map(stripANSI).join('')
       }
-    }}
-  >
-    <Virtualizer data={logs.rows} getKey={(_, i) => i + logs.firstRowIndex} bind:this={virtualizer}>
-      {#snippet children(value, index)}
-        <div data-rowindex={index}>
-          <!-- <span class="select-none font-bold">{(index + 1).toFixed().padStart(5, ' ')}&nbsp;&nbsp;</span> -->
-          <AnsiDecoratedText {value}></AnsiDecoratedText>
-        </div>
-      {/snippet}
-    </Virtualizer>
-  </div>
+      const result = logs.rows.slice(slice.start.row, slice.end.row + 1).map(stripANSI)
+      result[0] = result[0].slice(slice.start.col)
+      result[result.length - 1] = result[result.length - 1].slice(
+        0,
+        slice.end.col - (slice.start.row === slice.end.row ? slice.start.col : 0)
+      )
+      return result.join('')
+    }
+  }}
+>
+  <Virtualizer data={logs.rows} getKey={(_, i) => i + logs.firstRowIndex} bind:this={virtualizer}>
+    {#snippet children(value, index)}
+      <div data-rowindex={index}>
+        <!-- <span class="select-none font-bold">{(index + 1).toFixed().padStart(5, ' ')}&nbsp;&nbsp;</span> -->
+        <AnsiDecoratedText {value}></AnsiDecoratedText>
+      </div>
+    {/snippet}
+  </Virtualizer>
+</div>
 
-  <!-- <SvelteVirtualList items={logs.rows} containerClass="scrollbar" viewportClass="virtual-list-viewport bg-white-dark " bufferSize={1000}>
+<!-- <SvelteVirtualList items={logs.rows} containerClass="scrollbar" viewportClass="virtual-list-viewport bg-white-dark " bufferSize={1000}>
     {#snippet renderItem(item, i)}
       <span class="select-none font-bold">{(i + 1).toFixed().padStart(5, ' ')}&nbsp;&nbsp;</span>
       {@html item}
     {/snippet}
   </SvelteVirtualList> -->
-  <!-- <div
+<!-- <div
     role="textbox"
     use:reverseScroll.action
     use:selectScope
@@ -98,7 +95,7 @@
       </div>
     {/each}
   </div> -->
-  <!-- <div
+<!-- <div
     role="textbox"
     use:reverseScroll.action
     use:selectScope
@@ -108,5 +105,4 @@
   >
     {@html logs.rows}
   </div> -->
-  <ScrollDownFab {reverseScroll}></ScrollDownFab>
-</div>
+<ScrollDownFab {reverseScroll}></ScrollDownFab>
