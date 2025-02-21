@@ -88,6 +88,7 @@ public class Main {
     public static void main(String[] argv) throws IOException, ClassNotFoundException {
         Class.forName("org.hsqldb.jdbcDriver");
         List<String> files = Linq.list(
+                // "test/random/expr/slt_good_102.test"
                 /*
                 "select1.test"
                 "select2.test",
@@ -113,7 +114,7 @@ public class Main {
 
         String[] args = {
                 "-v", "-x", "-inc",
-                "-e", "hybrid",      // executor
+                "-e", "hybrid", "-b", "slt/skip.txt",
         };
         if (argv.length > 0) {
             args = argv;
@@ -124,6 +125,7 @@ public class Main {
             args = a.toArray(new String[0]);
         }
         System.out.println(Arrays.toString(args));
+        System.out.println("WD: " + System.getProperty("user.dir"));
         OptionsParser parser = new OptionsParser(true, System.out, System.err);
         // Used for debugging: how many tests to skip from the first file
         AtomicReference<Integer> skip = new AtomicReference<>();
