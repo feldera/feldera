@@ -7,7 +7,7 @@ pub mod cursor_list;
 pub mod cursor_pair;
 mod reverse;
 
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData};
 
 pub use cursor_empty::CursorEmpty;
 pub use cursor_group::CursorGroup;
@@ -17,6 +17,8 @@ pub use reverse::ReverseKeyCursor;
 use size_of::SizeOf;
 
 use crate::dynamic::Factory;
+
+use super::Filter;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 enum Direction {
@@ -464,6 +466,273 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.0.fast_forward_vals()
+    }
+}
+
+/// Specialized cursor for merging.
+///
+/// A [MergeCursor] provides a subset of the operations of a [Cursor], which are
+/// just the operations needed for moving forward and reading data. This makes
+/// it easy to implement specialized versions of merge cursors for filtered and
+/// unfiltered operation, and for prefetching.
+pub trait MergeCursor<K, V, T, R>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+{
+    fn key_valid(&self) -> bool;
+    fn val_valid(&self) -> bool;
+    fn get_key(&self) -> Option<&K> {
+        self.key_valid().then(|| self.key())
+    }
+    fn get_val(&self) -> Option<&V> {
+        self.val_valid().then(|| self.val())
+    }
+    fn key(&self) -> &K;
+    fn val(&self) -> &V;
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R));
+    fn weight(&mut self) -> &R
+    where
+        T: PartialEq<()>;
+    fn step_key(&mut self);
+    fn step_val(&mut self);
+
+    fn has_mut(&self) -> bool {
+        false
+    }
+    fn key_mut(&mut self) -> &mut K {
+        unimplemented!("used key_mut() on batch that does not support it")
+    }
+    fn val_mut(&mut self) -> &mut V {
+        unimplemented!("used val_mut() on batch that does not support it")
+    }
+    fn weight_mut(&mut self) -> &mut R
+    where
+        T: PartialEq<()>,
+    {
+        unimplemented!("used weight_mut() on batch that does not support it")
+    }
+}
+
+impl<K, V, T, R, C> MergeCursor<K, V, T, R> for Box<C>
+where
+    C: MergeCursor<K, V, T, R> + ?Sized,
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+{
+    fn key_valid(&self) -> bool {
+        (**self).key_valid()
+    }
+
+    fn val_valid(&self) -> bool {
+        (**self).val_valid()
+    }
+
+    fn key(&self) -> &K {
+        (**self).key()
+    }
+
+    fn val(&self) -> &V {
+        (**self).val()
+    }
+
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
+        (**self).map_times(logic)
+    }
+
+    fn weight(&mut self) -> &R
+    where
+        T: PartialEq<()>,
+    {
+        (**self).weight()
+    }
+
+    fn step_key(&mut self) {
+        (**self).step_key()
+    }
+
+    fn step_val(&mut self) {
+        (**self).step_val()
+    }
+
+    fn has_mut(&self) -> bool {
+        (**self).has_mut()
+    }
+
+    fn key_mut(&mut self) -> &mut K {
+        (**self).key_mut()
+    }
+
+    fn val_mut(&mut self) -> &mut V {
+        (**self).val_mut()
+    }
+
+    fn weight_mut(&mut self) -> &mut R
+    where
+        T: PartialEq<()>,
+    {
+        (**self).weight_mut()
+    }
+}
+
+pub struct FilteredMergeCursor<K, V, T, R, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+    C: MergeCursor<K, V, T, R>,
+{
+    cursor: C,
+    key_filter: Option<Filter<K>>,
+    value_filter: Option<Filter<V>>,
+    phantom: PhantomData<(T, Box<R>)>,
+}
+
+impl<K, V, T, R, C> FilteredMergeCursor<K, V, T, R, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+    C: MergeCursor<K, V, T, R>,
+{
+    pub fn new(
+        mut cursor: C,
+        key_filter: Option<Filter<K>>,
+        value_filter: Option<Filter<V>>,
+    ) -> Self {
+        Self::skip_filtered_keys(&mut cursor, &key_filter, &value_filter);
+        Self {
+            cursor,
+            key_filter,
+            value_filter,
+            phantom: PhantomData,
+        }
+    }
+
+    fn skip_filtered_keys(
+        cursor: &mut C,
+        key_filter: &Option<Filter<K>>,
+        value_filter: &Option<Filter<V>>,
+    ) {
+        while let Some(key) = cursor.get_key() {
+            if Filter::include(key_filter, key) && Self::skip_filtered_values(cursor, value_filter)
+            {
+                return;
+            }
+            cursor.step_key();
+        }
+    }
+
+    fn skip_filtered_values(cursor: &mut C, value_filter: &Option<Filter<V>>) -> bool {
+        while let Some(val) = cursor.get_val() {
+            if Filter::include(value_filter, val) {
+                return true;
+            }
+            cursor.step_val();
+        }
+        false
+    }
+}
+
+impl<K, V, T, R, C> MergeCursor<K, V, T, R> for FilteredMergeCursor<K, V, T, R, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+    C: MergeCursor<K, V, T, R>,
+{
+    fn key_valid(&self) -> bool {
+        self.cursor.key_valid()
+    }
+    fn val_valid(&self) -> bool {
+        self.cursor.val_valid()
+    }
+    fn key(&self) -> &K {
+        self.cursor.key()
+    }
+    fn val(&self) -> &V {
+        self.cursor.val()
+    }
+    fn step_key(&mut self) {
+        self.cursor.step_key();
+        Self::skip_filtered_keys(&mut self.cursor, &self.key_filter, &self.value_filter);
+    }
+    fn step_val(&mut self) {
+        self.cursor.step_val();
+        Self::skip_filtered_values(&mut self.cursor, &self.value_filter);
+    }
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
+        self.cursor.map_times(logic);
+    }
+    fn weight(&mut self) -> &R
+    where
+        T: PartialEq<()>,
+    {
+        self.cursor.weight()
+    }
+}
+
+pub struct UnfilteredMergeCursor<K, V, T, R, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+    C: Cursor<K, V, T, R>,
+{
+    cursor: C,
+    phantom: PhantomData<(Box<K>, Box<V>, T, Box<R>)>,
+}
+
+impl<K, V, T, R, C> UnfilteredMergeCursor<K, V, T, R, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+    C: Cursor<K, V, T, R>,
+{
+    pub fn new(cursor: C) -> Self {
+        Self {
+            cursor,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<K, V, T, R, C> MergeCursor<K, V, T, R> for UnfilteredMergeCursor<K, V, T, R, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+    C: Cursor<K, V, T, R>,
+{
+    fn key_valid(&self) -> bool {
+        self.cursor.key_valid()
+    }
+    fn val_valid(&self) -> bool {
+        self.cursor.val_valid()
+    }
+    fn val(&self) -> &V {
+        self.cursor.val()
+    }
+    fn key(&self) -> &K {
+        self.cursor.key()
+    }
+    fn step_key(&mut self) {
+        self.cursor.step_key()
+    }
+    fn step_val(&mut self) {
+        self.cursor.step_val()
+    }
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
+        self.cursor.map_times(logic);
+    }
+    fn weight(&mut self) -> &R
+    where
+        T: PartialEq<()>,
+    {
+        self.cursor.weight()
     }
 }
 

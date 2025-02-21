@@ -10,10 +10,10 @@ use crate::{
     circuit::metadata::{MetaItem, OperatorMeta},
     dynamic::{DynVec, Factory, Weight},
     storage::buffer_cache::CacheStats,
-    time::{Antichain, AntichainRef, Timestamp},
+    time::Timestamp,
     trace::{
-        cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor,
-        Filter, Trace,
+        cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Builder,
+        Cursor, Filter, Trace,
     },
     Error, NumEntries, Runtime,
 };
@@ -22,6 +22,7 @@ use crate::storage::file::to_bytes;
 use crate::storage::write_commit_metadata;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
+use list_merger::ArcMerger;
 use metrics::{counter, gauge};
 use ouroboros::self_referencing;
 use rand::Rng;
@@ -53,7 +54,7 @@ mod thread;
 use self::thread::{BackgroundThread, WorkerStatus};
 use super::BatchLocation;
 use crate::circuit::metrics::{BATCHES_PER_LEVEL, COMPACTION_STALL_TIME, ONGOING_MERGES_PER_LEVEL};
-use list_merger::{ListMerger, ListMergerBuilder};
+pub use list_merger::ListMerger;
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
@@ -61,13 +62,11 @@ pub(crate) const MAX_LEVELS: usize = 9;
 /// Levels as &'static str for metrics
 pub(crate) const LEVELS_AS_STR: [&str; MAX_LEVELS] = ["0", "1", "2", "3", "4", "5", "6", "7", "8"];
 
-impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine<B> {
+impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine {
     fn from((batches, spine): (Vec<String>, &Spine<B>)) -> Self {
         CommittedSpine {
             batches,
             merged: Vec::new(),
-            lower: spine.lower.clone().into(),
-            upper: spine.upper.clone().into(),
             effort: 0,
             dirty: spine.dirty,
         }
@@ -543,7 +542,7 @@ where
 
     fn run(
         stored_fuel: &mut [isize; MAX_LEVELS],
-        mergers: &mut [Option<ListMerger<B>>; MAX_LEVELS],
+        mergers: &mut [Option<ArcMerger<B>>; MAX_LEVELS],
         state: &Arc<Mutex<SharedState<B>>>,
         idle: &Arc<Condvar>,
         no_backpressure: &Arc<Condvar>,
@@ -563,7 +562,7 @@ where
                     stored_fuel[level].max(10_000)
                 };
                 let mut fuel = starting_fuel;
-                merger.work(&key_filter, &value_filter, &frontier, &mut fuel);
+                merger.work(&frontier, &mut fuel);
                 let fuel_consumed = starting_fuel - fuel;
                 stored_fuel[level] = (stored_fuel[level] - fuel_consumed).max(0);
                 stored_fuel[level + 1] += fuel_consumed;
@@ -591,11 +590,15 @@ where
         for (level, batches) in start_merges {
             gauge!(ONGOING_MERGES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => ident)
                 .set(batches.len() as f64);
-
-            let merger = ListMergerBuilder::with_capacity(batches.len())
-                .with_batches(batches)
-                .build();
-            mergers[level] = Some(merger);
+            let factories = batches[0].factories();
+            let builder = B::Builder::for_merge(&factories, &batches, None);
+            mergers[level] = Some(ArcMerger::new(
+                &factories,
+                builder,
+                batches,
+                &key_filter,
+                &value_filter,
+            ));
         }
 
         let state = state.lock().unwrap();
@@ -674,8 +677,6 @@ where
 {
     factories: B::Factories,
 
-    lower: Antichain<B::Time>,
-    upper: Antichain<B::Time>,
     dirty: bool,
     key_filter: Option<Filter<B::Key>>,
     value_filter: Option<Filter<B::Val>>,
@@ -689,8 +690,6 @@ where
     B: Batch,
 {
     fn size_of_children(&self, context: &mut Context) {
-        self.lower.size_of_children(context);
-        self.upper.size_of_children(context);
         self.merger.get_batches().size_of_with_context(context);
     }
 }
@@ -823,14 +822,6 @@ where
             .iter()
             .map(|batch| batch.approximate_byte_size())
             .sum()
-    }
-
-    fn lower(&self) -> AntichainRef<'_, Self::Time> {
-        self.lower.as_ref()
-    }
-
-    fn upper(&self) -> AntichainRef<'_, Self::Time> {
-        self.upper.as_ref()
     }
 
     fn cursor(&self) -> Self::Cursor<'_> {
@@ -1104,12 +1095,8 @@ where
     }
 
     fn insert(&mut self, batch: Self::Batch) {
-        assert!(batch.lower() != batch.upper());
-
         if !batch.is_empty() {
             self.dirty = true;
-            self.lower = self.lower.as_ref().meet(batch.lower());
-            self.upper = self.upper.as_ref().join(batch.upper());
             self.merger.add_batch(Arc::new(batch));
         }
     }
@@ -1180,7 +1167,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        let committed: CommittedSpine<B> = (ids, self as &Self).into();
+        let committed: CommittedSpine = (ids, self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         write_commit_metadata(
             Self::checkpoint_file(base, persistent_id),
@@ -1202,13 +1189,11 @@ where
     fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         let pspine_path = Self::checkpoint_file(base, persistent_id);
         let content = fs::read(pspine_path)?;
-        let archived = unsafe { rkyv::archived_root::<CommittedSpine<B>>(&content) };
+        let archived = unsafe { rkyv::archived_root::<CommittedSpine>(&content) };
 
-        let committed: CommittedSpine<B> = archived
+        let committed: CommittedSpine = archived
             .deserialize(&mut SharedDeserializeMap::new())
             .unwrap();
-        self.lower = Antichain::from(committed.lower);
-        self.upper = Antichain::from(committed.upper);
         self.dirty = committed.dirty;
         self.key_filter = None;
         self.value_filter = None;
@@ -1257,8 +1242,6 @@ where
     pub fn with_effort(factories: &B::Factories, _effort: usize) -> Self {
         Spine {
             factories: factories.clone(),
-            lower: Antichain::from_elem(B::Time::minimum()),
-            upper: Antichain::new(),
             dirty: false,
             key_filter: None,
             value_filter: None,

@@ -3,14 +3,12 @@ use crate::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         LeanVec, WeightTrait, WithFactory,
     },
-    time::{Antichain, AntichainRef},
     trace::{
         layers::{
-            Builder as _, Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
-            MergeBuilder, OrdOffset, Trie,
+            Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, Merger, Serializer, WeightedItem,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Serializer, WeightedItem,
     },
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
@@ -154,8 +152,6 @@ where
 {
     /// Where all the dataz is.
     pub layer: VecKeyBatchLayer<K, T, R, O>,
-    pub lower: Antichain<T>,
-    pub upper: Antichain<T>,
     #[size_of(skip)]
     factories: VecKeyBatchFactories<K, T, R>,
 }
@@ -170,8 +166,6 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VecKeyBatch")
             .field("layer", &self.layer)
-            .field("lower", &self.lower)
-            .field("upper", &self.upper)
             .finish()
     }
 }
@@ -230,8 +224,6 @@ where
     fn clone(&self) -> Self {
         Self {
             layer: self.layer.clone(),
-            lower: self.lower.clone(),
-            upper: self.upper.clone(),
             factories: self.factories.clone(),
         }
     }
@@ -318,14 +310,6 @@ where
         self.size_of().total_bytes()
     }
 
-    fn lower(&self) -> AntichainRef<'_, T> {
-        self.lower.as_ref()
-    }
-
-    fn upper(&self) -> AntichainRef<'_, T> {
-        self.upper.as_ref()
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         Self::Time: PartialEq<()>,
@@ -344,8 +328,6 @@ where
 {
     type Batcher = MergeBatcher<Self>;
     type Builder = VecKeyBuilder<K, T, R, O>;
-    type Merger = VecKeyMerger<K, T, R, O>;
-
     fn checkpoint_path(&self) -> Option<PathBuf> {
         unimplemented!()
     }
@@ -353,108 +335,6 @@ where
     /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self {
         Self::from_tuples(time, keys)
     }*/
-
-    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
-        Self::Merger::new_merger(self, other, dst_hint)
-    }
-}
-
-/// State for an in-progress merge.
-#[derive(SizeOf)]
-pub struct VecKeyMerger<K, T, R, O = usize>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    // first batch, and position therein.
-    lower1: usize,
-    upper1: usize,
-    // second batch, and position therein.
-    lower2: usize,
-    upper2: usize,
-    // result that we are currently assembling.
-    result: <VecKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder,
-    lower: Antichain<T>,
-    upper: Antichain<T>,
-    #[size_of(skip)]
-    factories: VecKeyBatchFactories<K, T, R>,
-}
-
-impl<K, T, R, O> Merger<K, DynUnit, T, R, VecKeyBatch<K, T, R, O>> for VecKeyMerger<K, T, R, O>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    fn new_merger(
-        batch1: &VecKeyBatch<K, T, R, O>,
-        batch2: &VecKeyBatch<K, T, R, O>,
-        _dst_hint: Option<BatchLocation>,
-    ) -> Self {
-        // Leonid: we do not require batch bounds to grow monotonically.
-        //assert!(batch1.upper() == batch2.lower());
-
-        VecKeyMerger {
-            lower1: 0,
-            upper1: batch1.layer.keys(),
-            lower2: 0,
-            upper2: batch2.layer.keys(),
-            result: <<VecKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
-            lower: batch1.lower().meet(batch2.lower()),
-            upper: batch1.upper().join(batch2.upper()),
-            factories: batch1.factories.clone(),
-        }
-    }
-
-    fn done(self) -> VecKeyBatch<K, T, R, O> {
-        assert!(self.lower1 == self.upper1);
-        assert!(self.lower2 == self.upper2);
-
-        VecKeyBatch {
-            layer: self.result.done(),
-            lower: self.lower,
-            upper: self.upper,
-            factories: self.factories,
-        }
-    }
-
-    fn work(
-        &mut self,
-        source1: &VecKeyBatch<K, T, R, O>,
-        source2: &VecKeyBatch<K, T, R, O>,
-        key_filter: &Option<Filter<K>>,
-        _value_filter: &Option<Filter<DynUnit>>,
-        frontier: &T,
-        fuel: &mut isize,
-    ) {
-        let advance_func = |t: &mut DynDataTyped<T>| t.join_assign(frontier);
-
-        let time_map_func = if frontier == &T::minimum() {
-            None
-        } else {
-            Some(&advance_func as &dyn Fn(&mut DynDataTyped<T>))
-        };
-
-        if let Some(key_filter) = key_filter {
-            self.result.push_merge_retain_keys_fueled(
-                (&source1.layer, &mut self.lower1, self.upper1),
-                (&source2.layer, &mut self.lower2, self.upper2),
-                &key_filter.filter_func,
-                time_map_func,
-                fuel,
-            );
-        } else {
-            self.result.push_merge_fueled(
-                (&source1.layer, &mut self.lower1, self.upper1),
-                (&source2.layer, &mut self.lower2, self.upper2),
-                time_map_func,
-                fuel,
-            );
-        }
-    }
 }
 
 /// A cursor for navigating a single layer.
@@ -729,10 +609,7 @@ where
         self.diffs.push_val(weight);
     }
 
-    fn done_with_bounds(
-        self,
-        (lower, upper): (Antichain<T>, Antichain<T>),
-    ) -> VecKeyBatch<K, T, R, O> {
+    fn done(self) -> VecKeyBatch<K, T, R, O> {
         VecKeyBatch {
             layer: Layer::from_parts(
                 &self.factories.layer_factories,
@@ -745,8 +622,6 @@ where
                 ),
             ),
             factories: self.factories,
-            lower,
-            upper,
         }
     }
 }

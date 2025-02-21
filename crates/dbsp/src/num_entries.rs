@@ -7,6 +7,7 @@ use std::{
         NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize,
     },
     rc::Rc,
+    sync::Arc,
 };
 
 /// Trait to report object size as the number of entries.
@@ -41,6 +42,21 @@ where
     #[inline]
     fn num_entries_deep(&self) -> usize {
         T::num_entries_deep(self)
+    }
+}
+
+impl<T> NumEntries for Arc<T>
+where
+    T: NumEntries,
+{
+    const CONST_NUM_ENTRIES: Option<usize> = T::CONST_NUM_ENTRIES;
+
+    fn num_entries_shallow(&self) -> usize {
+        (**self).num_entries_shallow()
+    }
+
+    fn num_entries_deep(&self) -> usize {
+        (**self).num_entries_deep()
     }
 }
 

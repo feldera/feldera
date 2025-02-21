@@ -1,5 +1,5 @@
 use crate::{
-    trace::{merge_untimed_batches, Batch},
+    trace::{merge_batches, Batch},
     OutputHandle,
 };
 
@@ -9,6 +9,6 @@ where
 {
     /// See [`OutputHandle::consolidate`].
     pub fn dyn_consolidate(&self, factories: &T::Factories) -> T {
-        merge_untimed_batches(factories, self.take_from_all())
+        merge_batches(factories, self.take_from_all(), &None, &None)
     }
 }

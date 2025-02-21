@@ -5,13 +5,12 @@ use crate::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         LeanVec, WeightTrait, WeightTraitTyped, WithFactory,
     },
-    time::{Antichain, AntichainRef},
     trace::{
         deserialize_wset,
-        layers::{Builder as _, Cursor as _, Leaf, LeafCursor, LeafFactories, MergeBuilder, Trie},
+        layers::{Cursor as _, Leaf, LeafCursor, LeafFactories, Trie},
         ord::merge_batcher::MergeBatcher,
-        serialize_wset, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories,
-        Builder, Cursor, Deserializer, Filter, Merger, Serializer, WeightedItem,
+        serialize_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Deserializer, Filter, MergeCursor, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -20,7 +19,6 @@ use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
-    cmp::max,
     fmt::{self, Debug, Display},
     ops::Neg,
 };
@@ -340,6 +338,19 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
         }
     }
 
+    fn consuming_cursor(
+        &mut self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn crate::trace::MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_>
+    {
+        if key_filter.is_none() && value_filter.is_none() {
+            Box::new(VecWSetConsumingCursor::new(self))
+        } else {
+            self.merge_cursor(key_filter, value_filter)
+        }
+    }
+
     /*
     #[inline]
     fn consumer(self) -> Self::Consumer {
@@ -363,16 +374,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
         self.size_of().total_bytes()
     }
 
-    #[inline]
-    fn lower(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::new(&[()])
-    }
-
-    #[inline]
-    fn upper(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::empty()
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -384,85 +385,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Batch for VecWSet<K, R> {
     type Batcher = MergeBatcher<Self>;
     type Builder = VecWSetBuilder<K, R>;
-    type Merger = VecWSetMerger<K, R>;
 
     /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self {
         Self::from_tuples(time, keys)
     }*/
-
-    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
-        VecWSetMerger::new_merger(self, other, dst_hint)
-    }
-}
-
-/// State for an in-progress merge.
-#[derive(SizeOf)]
-pub struct VecWSetMerger<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
-    // result that we are currently assembling.
-    result: <Leaf<K, R> as Trie>::MergeBuilder,
-    #[size_of(skip)]
-    factories: VecWSetFactories<K, R>,
-    // item_factory: &'static WeightedFactory<K, R>,
-    // batch_item_factory: &'static BatchItemFactory<K, (), K, R>,
-}
-
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Merger<K, DynUnit, (), R, VecWSet<K, R>>
-    for VecWSetMerger<K, R>
-where
-    Self: SizeOf,
-{
-    fn new_merger(
-        batch1: &VecWSet<K, R>,
-        batch2: &VecWSet<K, R>,
-        _dst_hint: Option<BatchLocation>,
-    ) -> Self {
-        Self {
-            result: <<Leaf<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
-                &batch1.layer,
-                &batch2.layer,
-            ),
-            factories: batch1.factories.clone(),
-            // item_factory: batch1.weighted_item_factory,
-            // batch_item_factory: batch1.batch_item_factory,
-        }
-    }
-
-    fn done(self) -> VecWSet<K, R> {
-        VecWSet {
-            layer: self.result.done(),
-            factories: self.factories,
-            // weighted_item_factory: self.item_factory,
-            // batch_item_factory: self.batch_item_factory,
-        }
-    }
-
-    fn work(
-        &mut self,
-        source1: &VecWSet<K, R>,
-        source2: &VecWSet<K, R>,
-        key_filter: &Option<Filter<K>>,
-        _value_filter: &Option<Filter<DynUnit>>,
-        _frontier: &(),
-        fuel: &mut isize,
-    ) {
-        let initial_size = self.result.keys();
-
-        if let Some(key_filter) = key_filter {
-            self.result.push_merge_retain_keys(
-                source1.layer.cursor(),
-                source2.layer.cursor(),
-                &key_filter.filter_func,
-                None,
-            );
-        } else {
-            self.result
-                .push_merge(source1.layer.cursor(), source2.layer.cursor(), None);
-        }
-        let effort = self.result.keys() - initial_size;
-        *fuel -= effort as isize;
-
-        *fuel = max(*fuel, 1);
-    }
 }
 
 /// A cursor for navigating a single layer.
@@ -730,12 +656,94 @@ where
         self.pushed_diff();
     }
 
-    fn done_with_bounds(self, _bounds: (Antichain<()>, Antichain<()>)) -> VecWSet<K, R> {
+    fn done(self) -> VecWSet<K, R> {
         debug_assert_eq!(self.keys.len(), self.diffs.len());
         VecWSet {
             layer: Leaf::from_parts(&self.factories.layer_factories, self.keys, self.diffs),
             factories: self.factories,
         }
+    }
+}
+
+/// A cursor for consuming a [VecWSet].
+struct VecWSetConsumingCursor<'a, K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    wset: &'a mut VecWSet<K, R>,
+    index: usize,
+    val_valid: bool,
+    value: Box<DynUnit>,
+}
+
+impl<'a, K, R> VecWSetConsumingCursor<'a, K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn new(wset: &'a mut VecWSet<K, R>) -> Self {
+        let val_valid = !wset.is_empty();
+        let value = wset.factories.val_factory().default_box();
+        Self {
+            wset,
+            index: 0,
+            val_valid,
+            value,
+        }
+    }
+}
+
+impl<K, R> MergeCursor<K, DynUnit, (), R> for VecWSetConsumingCursor<'_, K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn key_valid(&self) -> bool {
+        self.index < self.wset.layer.keys.len()
+    }
+    fn val_valid(&self) -> bool {
+        self.val_valid
+    }
+    fn key(&self) -> &K {
+        self.wset.layer.keys.index(self.index)
+    }
+
+    fn val(&self) -> &DynUnit {
+        ().erase()
+    }
+
+    fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
+        logic(&(), &self.wset.layer.diffs[self.index])
+    }
+
+    fn weight(&mut self) -> &R {
+        &self.wset.layer.diffs[self.index]
+    }
+
+    fn has_mut(&self) -> bool {
+        true
+    }
+
+    fn key_mut(&mut self) -> &mut K {
+        &mut self.wset.layer.keys[self.index]
+    }
+
+    fn val_mut(&mut self) -> &mut DynUnit {
+        &mut *self.value
+    }
+
+    fn weight_mut(&mut self) -> &mut R {
+        &mut self.wset.layer.diffs[self.index]
+    }
+
+    fn step_key(&mut self) {
+        self.index += 1;
+        self.val_valid = self.key_valid();
+    }
+
+    fn step_val(&mut self) {
+        self.val_valid = false;
     }
 }
 

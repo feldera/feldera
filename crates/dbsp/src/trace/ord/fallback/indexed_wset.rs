@@ -2,32 +2,27 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     dynamic::{DataTrait, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
-    time::{Antichain, AntichainRef},
     trace::{
         cursor::DelegatingCursor,
+        merge_batches_by_reference,
         ord::{
-            file::indexed_wset_batch::{FileIndexedWSetBuilder, FileIndexedWSetMerger},
+            file::indexed_wset_batch::FileIndexedWSetBuilder,
             merge_batcher::MergeBatcher,
-            vec::indexed_wset_batch::{
-                VecIndexedWSet, VecIndexedWSetBuilder, VecIndexedWSetMerger,
-            },
+            vec::indexed_wset_batch::{VecIndexedWSet, VecIndexedWSetBuilder},
         },
         Batch, BatchLocation, BatchReader, Builder, FileIndexedWSet, FileIndexedWSetFactories,
-        Filter, Merger,
+        Filter, MergeCursor,
     },
     DBWeight, NumEntries,
 };
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
+use std::fmt::{self, Debug};
 use std::path::Path;
-use std::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
 use std::{ops::Neg, path::PathBuf};
 
-use super::utils::{copy_to_builder, pick_merge_destination, GenericMerger};
+use super::utils::{copy_to_builder, pick_merge_destination};
 
 pub type FallbackIndexedWSetFactories<K, V, R> = FileIndexedWSetFactories<K, V, R>;
 
@@ -53,26 +48,6 @@ where
 {
     Vec(VecIndexedWSet<K, V, R>),
     File(FileIndexedWSet<K, V, R>),
-}
-
-impl<K, V, R> Inner<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn as_file(&self) -> Option<&FileIndexedWSet<K, V, R>> {
-        match self {
-            Inner::Vec(_vec) => None,
-            Inner::File(file) => Some(file),
-        }
-    }
-    fn as_vec(&self) -> Option<&VecIndexedWSet<K, V, R>> {
-        match self {
-            Inner::Vec(vec) => Some(vec),
-            Inner::File(_file) => None,
-        }
-    }
 }
 
 impl<K, V, R> Debug for FallbackIndexedWSet<K, V, R>
@@ -193,7 +168,7 @@ where
     #[inline]
     fn add_assign_by_ref(&mut self, rhs: &Self) {
         if !rhs.is_empty() {
-            *self = self.merge(rhs, &None, &None);
+            *self = merge_batches_by_reference(&self.factories, [self as &Self, rhs], &None, &None);
         }
     }
 }
@@ -206,7 +181,7 @@ where
 {
     #[inline]
     fn add_by_ref(&self, rhs: &Self) -> Self {
-        self.merge(rhs, &None, &None)
+        merge_batches_by_reference(&self.factories, [self, rhs], &None, &None)
     }
 }
 
@@ -236,6 +211,28 @@ where
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
         })
+    }
+
+    fn merge_cursor(
+        &self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        match &self.inner {
+            Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),
+            Inner::File(file) => file.merge_cursor(key_filter, value_filter),
+        }
+    }
+
+    fn consuming_cursor(
+        &mut self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<Filter<Self::Val>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        match &mut self.inner {
+            Inner::Vec(vec) => vec.consuming_cursor(key_filter, value_filter),
+            Inner::File(file) => file.consuming_cursor(key_filter, value_filter),
+        }
     }
 
     #[inline]
@@ -277,16 +274,6 @@ where
         }
     }
 
-    #[inline]
-    fn lower(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::new(&[()])
-    }
-
-    #[inline]
-    fn upper(&self) -> AntichainRef<'_, ()> {
-        AntichainRef::empty()
-    }
-
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -306,11 +293,6 @@ where
 {
     type Batcher = MergeBatcher<Self>;
     type Builder = FallbackIndexedWSetBuilder<K, V, R>;
-    type Merger = FallbackIndexedWSetMerger<K, V, R>;
-
-    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
-        FallbackIndexedWSetMerger::new_merger(self, other, dst_hint)
-    }
 
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
@@ -338,143 +320,6 @@ where
             factories: factories.clone(),
             inner: Inner::File(FileIndexedWSet::from_path(factories, path)?),
         })
-    }
-}
-
-/// State for an in-progress merge.
-#[derive(SizeOf)]
-pub struct FallbackIndexedWSetMerger<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    #[size_of(skip)]
-    factories: FallbackIndexedWSetFactories<K, V, R>,
-    inner: MergerInner<K, V, R>,
-}
-
-#[derive(SizeOf)]
-enum MergerInner<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    AllFile(FileIndexedWSetMerger<K, V, R>),
-    AllVec(VecIndexedWSetMerger<K, V, R>),
-    ToVec(GenericMerger<K, V, (), R, VecIndexedWSet<K, V, R>>),
-    ToFile(GenericMerger<K, V, (), R, FileIndexedWSet<K, V, R>>),
-}
-
-impl<K, V, R> Merger<K, V, (), R, FallbackIndexedWSet<K, V, R>>
-    for FallbackIndexedWSetMerger<K, V, R>
-where
-    Self: SizeOf,
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    #[inline]
-    fn new_merger(
-        batch1: &FallbackIndexedWSet<K, V, R>,
-        batch2: &FallbackIndexedWSet<K, V, R>,
-        dst_hint: Option<BatchLocation>,
-    ) -> Self {
-        Self {
-            factories: batch1.factories.clone(),
-            inner: match (
-                pick_merge_destination([batch1, batch2], dst_hint),
-                &batch1.inner,
-                &batch2.inner,
-            ) {
-                (BatchLocation::Memory, Inner::Vec(vec1), Inner::Vec(vec2)) => {
-                    MergerInner::AllVec(VecIndexedWSetMerger::new_merger(vec1, vec2, dst_hint))
-                }
-                (BatchLocation::Memory, _, _) => MergerInner::ToVec(GenericMerger::new(
-                    &batch1.factories.vec_indexed_wset_factory,
-                    None,
-                    batch1,
-                    batch2,
-                )),
-                (BatchLocation::Storage, Inner::File(file1), Inner::File(file2)) => {
-                    MergerInner::AllFile(FileIndexedWSetMerger::new_merger(file1, file2, dst_hint))
-                }
-                (BatchLocation::Storage, _, _) => {
-                    MergerInner::ToFile(GenericMerger::new(&batch1.factories, None, batch1, batch2))
-                }
-            },
-        }
-    }
-
-    #[inline]
-    fn done(self) -> FallbackIndexedWSet<K, V, R> {
-        FallbackIndexedWSet {
-            factories: self.factories,
-            inner: match self.inner {
-                MergerInner::AllFile(merger) => Inner::File(merger.done()),
-                MergerInner::AllVec(merger) => Inner::Vec(merger.done()),
-                MergerInner::ToVec(merger) => Inner::Vec(merger.done()),
-                MergerInner::ToFile(merger) => Inner::File(merger.done()),
-            },
-        }
-    }
-
-    fn work(
-        &mut self,
-        source1: &FallbackIndexedWSet<K, V, R>,
-        source2: &FallbackIndexedWSet<K, V, R>,
-        key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<V>>,
-        _frontier: &(),
-        fuel: &mut isize,
-    ) {
-        match &mut self.inner {
-            MergerInner::AllFile(merger) => merger.work(
-                source1.inner.as_file().unwrap(),
-                source2.inner.as_file().unwrap(),
-                key_filter,
-                value_filter,
-                &(),
-                fuel,
-            ),
-            MergerInner::AllVec(merger) => merger.work(
-                source1.inner.as_vec().unwrap(),
-                source2.inner.as_vec().unwrap(),
-                key_filter,
-                value_filter,
-                &(),
-                fuel,
-            ),
-            MergerInner::ToVec(merger) => match (&source1.inner, &source2.inner) {
-                (Inner::File(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, &(), fuel)
-                }
-                (Inner::Vec(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, &(), fuel)
-                }
-                (Inner::File(a), Inner::Vec(b)) => {
-                    merger.work(a, b, key_filter, value_filter, &(), fuel)
-                }
-                (Inner::Vec(a), Inner::Vec(b)) => {
-                    merger.work(a, b, key_filter, value_filter, &(), fuel)
-                }
-            },
-            MergerInner::ToFile(merger) => match (&source1.inner, &source2.inner) {
-                (Inner::File(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, &(), fuel)
-                }
-                (Inner::Vec(a), Inner::File(b)) => {
-                    merger.work(a, b, key_filter, value_filter, &(), fuel)
-                }
-                (Inner::File(a), Inner::Vec(b)) => {
-                    merger.work(a, b, key_filter, value_filter, &(), fuel)
-                }
-                (Inner::Vec(a), Inner::Vec(b)) => {
-                    merger.work(a, b, key_filter, value_filter, &(), fuel)
-                }
-            },
-        }
     }
 }
 
@@ -520,15 +365,19 @@ where
         }
     }
 
-    fn for_merge<B, AR>(factories: &FallbackIndexedWSetFactories<K, V, R>, batches: &[AR]) -> Self
+    fn for_merge<'a, B, I>(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        batches: I,
+        location: Option<BatchLocation>,
+    ) -> Self
     where
         B: BatchReader,
-        AR: Deref<Target = B>,
+        I: IntoIterator<Item = &'a B> + Clone,
     {
-        let cap = batches.iter().map(|b| b.deref().len()).sum();
+        let cap = batches.clone().into_iter().map(|b| b.len()).sum();
         Self {
             factories: factories.clone(),
-            inner: match pick_merge_destination(batches.iter().map(Deref::deref), None) {
+            inner: match pick_merge_destination(batches, location) {
                 BatchLocation::Memory => BuilderInner::Vec(VecIndexedWSetBuilder::with_capacity(
                     &factories.vec_indexed_wset_factory,
                     cap,
@@ -603,15 +452,12 @@ where
         }
     }
 
-    fn done_with_bounds(
-        self,
-        bounds: (Antichain<()>, Antichain<()>),
-    ) -> FallbackIndexedWSet<K, V, R> {
+    fn done(self) -> FallbackIndexedWSet<K, V, R> {
         FallbackIndexedWSet {
             factories: self.factories,
             inner: match self.inner {
-                BuilderInner::File(file) => Inner::File(file.done_with_bounds(bounds)),
-                BuilderInner::Vec(vec) => Inner::Vec(vec.done_with_bounds(bounds)),
+                BuilderInner::File(file) => Inner::File(file.done()),
+                BuilderInner::Vec(vec) => Inner::Vec(vec.done()),
             },
         }
     }

@@ -33,7 +33,7 @@ use crate::{
     DynZWeight, Runtime, ZWeight,
 };
 
-use super::{bounds_for_fixed_time, Filter};
+use super::Filter;
 use itertools::Itertools;
 
 pub mod test_batch;
@@ -366,9 +366,7 @@ where
         }
         builder.push_key(key);
     }
-    // This use of `bounds_for_fixed_time` is clearly wrong but works for our
-    // purposes.
-    builder.done_with_bounds(bounds_for_fixed_time(&0))
+    builder.done()
 }
 
 fn test_indexed_zset_trace_builder<B>(
@@ -406,9 +404,7 @@ where
         builder.push_val(&());
         builder.push_key(key);
     }
-    // This use of `bounds_for_fixed_time` is clearly wrong but works for our
-    // purposes.
-    builder.done_with_bounds(bounds_for_fixed_time(&0))
+    builder.done()
 }
 
 fn test_zset_trace_builder<B>(

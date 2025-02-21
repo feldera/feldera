@@ -7,16 +7,14 @@ pub use fallback::{
     indexed_wset::{
         FallbackIndexedWSet, FallbackIndexedWSet as OrdIndexedWSet, FallbackIndexedWSetBuilder,
         FallbackIndexedWSetBuilder as OrdIndexedWSetBuilder, FallbackIndexedWSetFactories,
-        FallbackIndexedWSetFactories as OrdIndexedWSetFactories, FallbackIndexedWSetMerger,
-        FallbackIndexedWSetMerger as OrdIndexedWSetMerger,
+        FallbackIndexedWSetFactories as OrdIndexedWSetFactories,
     },
     key_batch::{FallbackKeyBatch, FallbackKeyBatchFactories},
     val_batch::{FallbackValBatch, FallbackValBatchFactories},
     wset::{
         FallbackWSet, FallbackWSet as OrdWSet, FallbackWSetBuilder,
         FallbackWSetBuilder as OrdWSetBuilder, FallbackWSetFactories,
-        FallbackWSetFactories as OrdWSetFactories, FallbackWSetMerger,
-        FallbackWSetMerger as OrdWSetMerger,
+        FallbackWSetFactories as OrdWSetFactories,
     },
 };
 pub use file::{
@@ -29,12 +27,3 @@ pub use vec::{
     VecValBatch as OrdValBatch, VecValBatchFactories, VecValBatchFactories as OrdValBatchFactories,
     VecWSet, VecWSetFactories,
 };
-
-use super::Filter;
-
-pub(crate) fn filter<T>(f: &Option<Filter<T>>, t: &T) -> bool
-where
-    T: ?Sized,
-{
-    f.as_ref().map_or(true, |f| (f.filter_func)(t))
-}
