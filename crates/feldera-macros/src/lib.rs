@@ -254,12 +254,12 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
                 let #name( #(#fields),*, hash) = self;
                 let #name( #(#fields_of_other),*, other_hash) = other;
 
-                //if *hash != 0x0 && *other_hash != 0x0 && *hash != *other_hash {
-                //    return false;
-                //}
-                //else {
+                if *hash != 0x0 && *other_hash != 0x0 && *hash != *other_hash {
+                    return false;
+                }
+                else {
                     #(#fields == #fields_of_other) &&*
-                //}
+                }
             }
         }
 
