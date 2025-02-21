@@ -161,6 +161,9 @@ pub enum JsonUpdateFormat {
 
     #[serde(rename = "raw")]
     Raw,
+
+    #[serde(rename = "redis")]
+    Redis,
 }
 
 impl Display for JsonUpdateFormat {
@@ -171,6 +174,7 @@ impl Display for JsonUpdateFormat {
             JsonUpdateFormat::Debezium => write!(f, "debezium"),
             JsonUpdateFormat::Snowflake => write!(f, "snowflake"),
             JsonUpdateFormat::Raw => write!(f, "raw"),
+            JsonUpdateFormat::Redis => write!(f, "redis"),
         }
     }
 }

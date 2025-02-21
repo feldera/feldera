@@ -11,13 +11,14 @@ categories = ["database", "api-bindings", "network-programming"]
 publish = false
 
 [features]
-default = ["with-kafka", "with-deltalake", "with-iceberg", "with-avro", "with-nexmark", "with-pubsub"]
+default = ["with-kafka", "with-deltalake", "with-iceberg", "with-avro", "with-nexmark", "with-pubsub", "with-redis"]
 with-kafka = ["rdkafka"]
 with-deltalake = ["deltalake"]
 with-iceberg = ["feldera-iceberg"]
 with-pubsub = ["google-cloud-pubsub", "google-cloud-gax"]
 with-avro = ["apache-avro", "schema_registry_converter", "feldera-adapterlib/with-avro"]
 with-nexmark = ["dbsp_nexmark"]
+with-redis = ["redis", "r2d2"]
 # Run delta table tests against an S3 bucket.  Requires S3 authentication key
 # to be provided via an environment variable.
 delta-s3-test = []
@@ -117,6 +118,8 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 comfy-table = "7.1.3"
 tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"]}
 num-bigint = "0.4.6"
+redis = { version = "0.28.2", features = ["r2d2"], optional = true }
+r2d2 = { version = "0.8.10", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = "0.1.0"

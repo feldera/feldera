@@ -203,6 +203,16 @@ impl OutputFormat for ParquetOutputFormat {
             ));
         }
 
+        if matches!(
+            config.transport,
+            feldera_types::config::TransportConfig::RedisOutput(_)
+        ) {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "'parquet' format not supported with Redis connector",
+            ));
+        }
+
         let config = ParquetEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
             .map_err(|e| {
                 ControllerError::encoder_config_parse_error(
