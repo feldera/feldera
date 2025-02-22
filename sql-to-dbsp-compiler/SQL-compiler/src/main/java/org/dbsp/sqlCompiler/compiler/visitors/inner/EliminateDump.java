@@ -32,7 +32,7 @@ public class EliminateDump extends InnerRewriteVisitor {
         DBSPExpression result = new DBSPApplyExpression(function, type, arguments);
         DBSPPathExpression path = function.as(DBSPPathExpression.class);
         if (path != null) {
-            String functionName = path.path.toString();
+            String functionName = path.path.asString();
             if (functionName.startsWith("dump")) {
                 // dump(prefix, tuple) -> { print(prefix);
                 //                          print(": (")

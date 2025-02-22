@@ -50,8 +50,14 @@ public class DBSPTypeSemigroup extends DBSPTypeUser {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        for (DBSPType type: this.typeArgs)
+        visitor.startArrayProperty("typeArgs");
+        int index = 0;
+        for (DBSPType type: this.typeArgs) {
+            visitor.propertyIndex(index);
+            index++;
             type.accept(visitor);
+        }
+        visitor.endArrayProperty("typeArgs");
         visitor.pop(this);
         visitor.postorder(this);
     }

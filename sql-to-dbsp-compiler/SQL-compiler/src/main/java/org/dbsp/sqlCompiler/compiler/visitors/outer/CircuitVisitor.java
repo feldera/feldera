@@ -81,6 +81,18 @@ public abstract class CircuitVisitor
         return this.current.get(this.current.size() - 2).to(ICircuit.class);
     }
 
+    /** Property of a node that is being visited */
+    public void property(String property) {}
+
+    /** Property that has an array of values */
+    public void startArrayProperty(String property) {}
+
+    /** End a property that has an array of values */
+    public void endArrayProperty(String property) {}
+
+    /** Index of a property that has an array or list value */
+    public void propertyIndex(int index) {}
+
     /** Override to initialize before visiting any node. */
     public Token startVisit(IDBSPOuterNode node) {
         if (node.is(DBSPCircuit.class))

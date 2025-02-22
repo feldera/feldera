@@ -24,7 +24,9 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
@@ -59,6 +61,15 @@ public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
         if (o == null)
             return false;
         return this.tupleType == o.tupleType;
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
+        visitor.push(this);
+        visitor.pop(this);
+        visitor.postorder(this);
     }
 
     @Override

@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
@@ -31,6 +32,18 @@ public abstract class DBSPOperatorWithError extends DBSPOperator {
         this.error = error;
         this.outputStreamType = new DBSPTypeStream(this.outputType);
         this.errorStreamType = new DBSPTypeStream(this.errorType);
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        visitor.property("outputType");
+        this.outputType.accept(visitor);
+        visitor.property("errorType");
+        this.errorType.accept(visitor);
+        visitor.property("function");
+        this.function.accept(visitor);
+        visitor.property("error");
+        this.error.accept(visitor);
     }
 
     @Override

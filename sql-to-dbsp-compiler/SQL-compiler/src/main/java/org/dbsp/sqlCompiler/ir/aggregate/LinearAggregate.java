@@ -113,8 +113,11 @@ public class LinearAggregate extends AggregateBase {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("map");
         this.map.accept(visitor);
+        visitor.property("postProcess");
         this.postProcess.accept(visitor);
+        visitor.property("emptySetResult");
         this.emptySetResult.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

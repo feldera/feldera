@@ -132,8 +132,14 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        for (DBSPType type: this.tupFields)
+        visitor.startArrayProperty("tupFields");
+        int index = 0;
+        for (DBSPType type: this.tupFields) {
+            visitor.propertyIndex(index);
+            index++;
             type.accept(visitor);
+        }
+        visitor.endArrayProperty("tupFields");
         visitor.pop(this);
         visitor.postorder(this);
     }

@@ -317,7 +317,7 @@ public class TypeCompiler implements ICompilerComponent {
                     if (precision == RelDataType.PRECISION_NOT_SPECIFIED)
                         //noinspection ReassignedVariable,DataFlowIssue
                         precision = DBSPTypeString.UNLIMITED_PRECISION;
-                    return new DBSPTypeString(node, precision, tn.equals(SqlTypeName.CHAR), nullable);
+                    return DBSPTypeString.create(node, precision, tn.equals(SqlTypeName.CHAR), nullable);
                 }
                 case VARBINARY:
                 case BINARY: {

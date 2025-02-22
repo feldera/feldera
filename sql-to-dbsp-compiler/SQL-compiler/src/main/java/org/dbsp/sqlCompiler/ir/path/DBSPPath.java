@@ -54,8 +54,14 @@ public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        for (DBSPPathSegment path: this.components)
+        visitor.startArrayProperty("components");
+        int index = 0;
+        for (DBSPPathSegment path: this.components) {
+            visitor.propertyIndex(index);
+            index++;
             path.accept(visitor);
+        }
+        visitor.endArrayProperty("components");
         visitor.pop(this);
         visitor.postorder(this);
     }
@@ -80,5 +86,17 @@ public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
             if (!this.components[i].equivalent(other.components[i]))
                 return false;
         return true;
+    }
+
+    public String asString() {
+        StringBuilder builder = new StringBuilder();
+        boolean first = true;
+        for (var segment: this.components) {
+            if (!first)
+                builder.append("::");
+            first = false;
+            builder.append(segment.asString());
+        }
+        return builder.toString();
     }
 }

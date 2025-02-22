@@ -25,7 +25,9 @@ public final class DBSPQuestionExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("source");
         this.source.accept(visitor);
+        visitor.property("type");
         this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

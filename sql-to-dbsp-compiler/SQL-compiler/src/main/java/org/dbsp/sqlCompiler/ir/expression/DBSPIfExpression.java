@@ -58,9 +58,13 @@ public final class DBSPIfExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
         this.type.accept(visitor);
+        visitor.property("condition");
         this.condition.accept(visitor);
+        visitor.property("positive");
         this.positive.accept(visitor);
+        visitor.property("negative");
         this.negative.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

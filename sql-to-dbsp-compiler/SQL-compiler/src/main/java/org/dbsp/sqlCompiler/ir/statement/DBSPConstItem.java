@@ -37,9 +37,12 @@ public final class DBSPConstItem extends DBSPItem implements IHasType {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
         this.type.accept(visitor);
-        if (this.expression != null)
+        if (this.expression != null) {
+            visitor.property("expression");
             this.expression.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }

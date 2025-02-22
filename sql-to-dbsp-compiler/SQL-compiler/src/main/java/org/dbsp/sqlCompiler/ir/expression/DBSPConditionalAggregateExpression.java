@@ -57,11 +57,16 @@ public final class DBSPConditionalAggregateExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
         this.type.accept(visitor);
+        visitor.property("left");
         this.left.accept(visitor);
+        visitor.property("right");
         this.right.accept(visitor);
-        if (this.condition != null)
+        if (this.condition != null) {
+            visitor.property("condition");
             this.condition.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }

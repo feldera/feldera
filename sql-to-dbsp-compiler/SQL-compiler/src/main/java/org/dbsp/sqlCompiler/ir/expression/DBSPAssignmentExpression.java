@@ -45,7 +45,9 @@ public final class DBSPAssignmentExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("left");
         this.left.accept(visitor);
+        visitor.property("right");
         this.right.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

@@ -34,4 +34,6 @@ public abstract class DBSPPathSegment extends DBSPNode implements IDBSPInnerNode
     }
 
     public abstract boolean equivalent(DBSPPathSegment component);
+
+    public abstract String asString();
 }

@@ -50,6 +50,7 @@ public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("elementType");
         this.elementType.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

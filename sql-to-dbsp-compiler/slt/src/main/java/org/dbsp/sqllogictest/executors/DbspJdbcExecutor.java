@@ -110,8 +110,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                         break;
                     case VARCHAR:
                     case LONGVARCHAR:
-                        colTypes[i1] = new DBSPTypeString(
-                                CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, nullable);
+                        colTypes[i1] = DBSPTypeString.varchar(nullable);
                         break;
                     default:
                         throw new RuntimeException("Unexpected column type " + columnType);
@@ -138,8 +137,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                     } else {
                         String s = rs.getString(i + 1);
                         if (s == null)
-                            exp = DBSPLiteral.none(new DBSPTypeString(
-                                    CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, true));
+                            exp = DBSPLiteral.none(DBSPTypeString.varchar(true));
                         else
                             exp = new DBSPStringLiteral(s, StandardCharsets.UTF_8, type);
                     }

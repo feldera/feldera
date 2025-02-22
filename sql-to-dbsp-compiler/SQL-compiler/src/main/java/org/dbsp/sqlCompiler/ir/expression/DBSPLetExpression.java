@@ -53,8 +53,11 @@ public class DBSPLetExpression extends DBSPExpression implements IDBSPDeclaratio
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("variable");
         this.variable.accept(visitor);
+        visitor.property("initializer");
         this.initializer.accept(visitor);
+        visitor.property("consumer");
         this.consumer.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

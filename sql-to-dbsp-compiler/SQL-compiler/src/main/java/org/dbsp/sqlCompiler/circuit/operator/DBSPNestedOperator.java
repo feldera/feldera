@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -108,12 +109,20 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         visitor.push(this);
         VisitDecision decision = visitor.preorder(this);
         if (!decision.stop()) {
-            for (DBSPOperator op : this.allOperators)
+            visitor.startArrayProperty("allOperators");
+            int index = 0;
+            for (DBSPOperator op : this.allOperators) {
+                visitor.propertyIndex(index++);
                 op.accept(visitor);
+            }
+            visitor.endArrayProperty("allOperators");
             visitor.postorder(this);
         }
         visitor.pop(this);
     }
+
+    @Override
+    public void accept(InnerVisitor visitor) {}
 
     @Override
     public boolean equivalent(DBSPOperator other) {

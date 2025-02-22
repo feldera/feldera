@@ -92,6 +92,14 @@ public final class DBSPGeoPointConstructor
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        if (this.left != null) {
+            visitor.property("left");
+            this.left.accept(visitor);
+        }
+        if (this.right != null) {
+            visitor.property("right");
+            this.right.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }

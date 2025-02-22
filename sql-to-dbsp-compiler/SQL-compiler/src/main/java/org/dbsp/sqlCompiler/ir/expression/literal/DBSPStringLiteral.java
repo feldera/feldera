@@ -74,7 +74,7 @@ public final class DBSPStringLiteral extends DBSPLiteral {
     }
 
     public DBSPStringLiteral(@Nullable String value, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, nullable), value, StandardCharsets.UTF_8);
+        this(CalciteObject.EMPTY, DBSPTypeString.varchar(nullable), value, StandardCharsets.UTF_8);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

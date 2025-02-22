@@ -92,6 +92,7 @@ public class DBSPTypeStruct extends DBSPType {
             VisitDecision decision = visitor.preorder(this);
             if (decision.stop()) return;
             visitor.push(this);
+            visitor.property("type");
             this.type.accept(visitor);
             visitor.pop(this);
             visitor.postorder(this);
@@ -219,8 +220,14 @@ public class DBSPTypeStruct extends DBSPType {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        for (Field f: this.fields.values())
+        visitor.startArrayProperty("fields");
+        int index = 0;
+        for (Field f: this.fields.values()) {
+            visitor.propertyIndex(index);
+            index++;
             f.accept(visitor);
+        }
+        visitor.endArrayProperty("fields");
         visitor.pop(this);
         visitor.postorder(this);
     }

@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -14,6 +15,11 @@ public final class DBSPDeclaration extends DBSPNode implements IDBSPOuterNode {
     public DBSPDeclaration(DBSPItem item) {
         super(item.getNode());
         this.item = item;
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        this.item.accept(visitor);
     }
 
     @Override

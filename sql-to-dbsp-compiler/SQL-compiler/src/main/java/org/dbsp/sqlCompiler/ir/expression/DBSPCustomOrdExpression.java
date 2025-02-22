@@ -26,9 +26,12 @@ public final class DBSPCustomOrdExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("source");
         this.source.accept(visitor);
+        visitor.property("comparator");
         this.comparator.accept(visitor);
-        this.getType().accept(visitor);
+        visitor.property("type");
+        this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }

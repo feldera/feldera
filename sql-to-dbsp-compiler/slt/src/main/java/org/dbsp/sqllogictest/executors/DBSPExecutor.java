@@ -529,9 +529,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             if (description.hash == null)
                 throw new RuntimeException("Expected hash to be supplied");
             String hash = isVector ? "hash_vectors" : "hash";
-            DBSPVariablePath var = new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).var();
+            DBSPVariablePath var = DBSPTypeString.varchar(false).var();
             list.add(new DBSPLetStatement(var.variable,
-                    new DBSPApplyExpression(hash, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false),
+                    new DBSPApplyExpression(hash, DBSPTypeString.varchar(false),
                             outputStatement.getVarReference().borrow(),
                             columnTypes,
                             sort)));

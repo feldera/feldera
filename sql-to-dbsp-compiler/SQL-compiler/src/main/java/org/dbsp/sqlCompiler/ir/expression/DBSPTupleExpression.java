@@ -145,10 +145,17 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
         this.type.accept(visitor);
         if (this.fields != null) {
-            for (DBSPExpression expression : this.fields)
+            visitor.startArrayProperty("fields");
+            int index = 0;
+            for (DBSPExpression expression : this.fields) {
+                visitor.propertyIndex(index);
+                index++;
                 expression.accept(visitor);
+            }
+            visitor.endArrayProperty("fields");
         }
         visitor.pop(this);
         visitor.postorder(this);

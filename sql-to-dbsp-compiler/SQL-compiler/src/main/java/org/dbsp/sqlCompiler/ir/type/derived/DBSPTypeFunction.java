@@ -67,9 +67,16 @@ public class DBSPTypeFunction extends DBSPType {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("resultType");
         this.resultType.accept(visitor);
-        for (DBSPType arg: this.parameterTypes)
+        visitor.startArrayProperty("parameterTypes");
+        int index = 0;
+        for (DBSPType arg: this.parameterTypes) {
+            visitor.propertyIndex(index);
+            index++;
             arg.accept(visitor);
+        }
+        visitor.endArrayProperty("parameterTypes");
         visitor.pop(this);
         visitor.postorder(this);
     }

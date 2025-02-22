@@ -23,9 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir;
 
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
 /** IR nodes for the outer language: circuits, operators, declarations. */
 public interface IDBSPOuterNode extends IDBSPNode {
     void accept(CircuitVisitor visitor);
+    /** Run the inner visitor on all fields that are relevant */
+    void accept(InnerVisitor visitor);
 }

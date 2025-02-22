@@ -24,6 +24,7 @@ public final class DBSPSomeExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("expression");
         this.expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

@@ -99,9 +99,17 @@ public final class DBSPClosureExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
         this.type.accept(visitor);
-        for (DBSPParameter param: this.parameters)
+        visitor.startArrayProperty("parameters");
+        int index = 0;
+        for (DBSPParameter param: this.parameters) {
+            visitor.propertyIndex(index);
+            index++;
             param.accept(visitor);
+        }
+        visitor.endArrayProperty("parameters");
+        visitor.property("body");
         this.body.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
