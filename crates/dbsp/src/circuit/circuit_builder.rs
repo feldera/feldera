@@ -53,15 +53,15 @@ use crate::{
 use anyhow::Error as AnyError;
 use serde::Serialize;
 use std::{
-    any::type_name_of_val,
+    any::{type_name_of_val, Any},
     borrow::Cow,
     cell::{Ref, RefCell, RefMut},
-    collections::BTreeMap,
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::{self, Debug, Display, Write},
     future::Future,
     iter::repeat,
     marker::PhantomData,
+    mem::transmute,
     ops::Deref,
     panic::Location,
     path::Path,
@@ -771,6 +771,20 @@ where
             .cache_get_or_insert_with(ExportId::new(self.stream_id()), || unimplemented!())
             .clone()
     }
+
+    pub fn set_label(&self, key: &str, val: &str) {
+        self.circuit
+            .root_circuit()
+            .map_node_mut(&self.origin_node_id, &mut |node| node.set_label(key, val));
+    }
+
+    pub fn get_label(&self, key: &str) -> Option<String> {
+        self.circuit
+            .root_circuit()
+            .map_node(&self.origin_node_id, &mut |node| {
+                node.get_label(key).map(str::to_string)
+            })
+    }
 }
 
 impl<C, D> Stream<C, D> {
@@ -922,6 +936,14 @@ pub trait Node {
 
     /// Get the label associated with the given key.
     fn get_label(&self, key: &str) -> Option<&str>;
+
+    fn map_child(&self, _path: &[NodeId], _f: &mut dyn FnMut(&dyn Node)) {
+        panic!("map_child: not a circuit node")
+    }
+
+    fn map_child_mut(&self, _path: &[NodeId], _f: &mut dyn FnMut(&mut dyn Node)) {
+        panic!("map_child_mut: not a circuit node")
+    }
 }
 
 /// Globally unique id of a stream.
@@ -1281,6 +1303,8 @@ pub trait Circuit: WithClock + Clone + 'static {
 
     /// Returns the parent circuit of `self`.
     fn parent(&self) -> Self::Parent;
+
+    fn root_circuit(&self) -> RootCircuit;
 
     fn edges(&self) -> Ref<'_, [Edge]>;
 
@@ -1916,6 +1940,7 @@ where
     P: WithClock,
 {
     parent: P,
+    root: Option<RootCircuit>,
     root_scope: Scope,
     // Circuit's node id within the parent circuit.
     node_id: NodeId,
@@ -1934,6 +1959,7 @@ where
 {
     fn new(
         parent: P,
+        root: Option<RootCircuit>,
         root_scope: Scope,
         node_id: NodeId,
         global_node_id: GlobalNodeId,
@@ -1943,6 +1969,7 @@ where
     ) -> Self {
         Self {
             parent,
+            root,
             root_scope,
             node_id,
             global_node_id,
@@ -2185,6 +2212,7 @@ impl RootCircuit {
         Self {
             inner: Rc::new(CircuitInner::new(
                 (),
+                None,
                 0,
                 NodeId::root(),
                 GlobalNodeId::root(),
@@ -2256,6 +2284,26 @@ impl RootCircuit {
     pub fn unregister_scheduler_event_handler(&self, name: &str) -> bool {
         self.inner().unregister_scheduler_event_handler(name)
     }
+
+    pub(crate) fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T {
+        let path = id.path();
+        let mut result: Option<T> = None;
+
+        self.map_node_inner(path, &mut |node| result = Some(f(node)));
+        result.unwrap()
+    }
+
+    pub(crate) fn map_node_mut<T>(
+        &self,
+        id: &GlobalNodeId,
+        f: &mut dyn FnMut(&mut dyn Node) -> T,
+    ) -> T {
+        let path = id.path();
+        let mut result: Option<T> = None;
+
+        self.map_node_mut_inner(path, &mut |node| result = Some(f(node)));
+        result.unwrap()
+    }
 }
 
 impl<P> ChildCircuit<P>
@@ -2270,9 +2318,12 @@ where
         let root_scope = parent.root_scope() + 1;
         let last_stream_id = parent.last_stream_id();
 
+        let root = parent.root_circuit();
+
         ChildCircuit {
             inner: Rc::new(CircuitInner::new(
                 parent,
+                Some(root),
                 root_scope,
                 id,
                 global_node_id,
@@ -2385,6 +2436,26 @@ where
     pub(super) fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
         self.inner().log_scheduler_event(event);
     }
+
+    pub(crate) fn map_node_inner(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
+        let nodes = self.inner().nodes.borrow();
+        let node = nodes[path[0].0].borrow();
+        if path.len() == 1 {
+            f(node.as_ref())
+        } else {
+            node.map_child(&path[1..], &mut |node| f(node));
+        }
+    }
+
+    pub(crate) fn map_node_mut_inner(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
+        let nodes = self.inner().nodes.borrow();
+        let mut node = nodes[path[0].0].borrow_mut();
+        if path.len() == 1 {
+            f(node.as_mut())
+        } else {
+            node.map_child_mut(&path[1..], &mut |node| f(node));
+        }
+    }
 }
 
 impl<P> Circuit for ChildCircuit<P>
@@ -2395,6 +2466,14 @@ where
 
     fn parent(&self) -> P {
         self.inner().parent.clone()
+    }
+
+    fn root_circuit(&self) -> RootCircuit {
+        if <dyn Any>::is::<RootCircuit>(self) {
+            unsafe { transmute::<&Self, &RootCircuit>(self) }.clone()
+        } else {
+            self.inner().root.as_ref().unwrap().clone()
+        }
     }
 
     fn edges(&self) -> Ref<'_, [Edge]> {
@@ -4997,6 +5076,14 @@ where
 
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn map_child(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
+        self.circuit.map_node_inner(path, f);
+    }
+
+    fn map_child_mut(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
+        self.circuit.map_node_mut_inner(path, f);
     }
 }
 
