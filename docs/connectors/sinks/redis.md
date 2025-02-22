@@ -4,18 +4,14 @@
 Redis support is an experimental feature of Feldera.
 :::
 
-Feldera can output data from a SQL table or view to Redis.
+Feldera allows you to output data from an SQL view to Redis.
 
-- The Redis connector uses the Rust [redis](https://docs.rs/redis/latest/redis/)
-  crate.
-- The Redis connector commits transactions to the given Redis instance.
-- For every insertion in the view, this connector `SET`s the `key` with
-  a JSON serialized string representing the values in this row.
-- For every deletion to the view, this connector performs a `DEL` operation
-  on the `key`.
+- The user configures the Redis connector with a subset of columns that serve as a unique key for the view.
+
+- The connector stores each row from the view in Redis, using the specified columns as the Redis key.
 
 :::warning
-You must ensure that `key` is unique, or else it will be overridden.
+You must ensure that the selected columns form a **unique key**. Using a non-unique key can lead to **data loss**.
 :::
 
 ## Configuration
