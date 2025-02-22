@@ -43,10 +43,6 @@ impl<T1, T2> Tup2<T1, T2> {
         T1: core::hash::Hash,
         T2: core::hash::Hash,
     {
-        let mut hasher = xxhash_rust::xxh3::Xxh3Default::new();
-        t0.hash(&mut hasher);
-        t1.hash(&mut hasher);
-        let hash = hasher.digest();
         Self(t0, t1)
     }
 }

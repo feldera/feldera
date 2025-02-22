@@ -20,7 +20,7 @@ use crate::{
 ///
 /// This trait is object safe and can be invoked via dynamic dispatch.
 pub trait Data:
-    Comparable + Clonable + SerializeDyn + DeserializableDyn + Send + Sync + Debug + AsAny + SizeOf
+Comparable + Clonable + SerializeDyn + DeserializableDyn + Send + Sync + Debug + AsAny + SizeOf
 {
     /// Compute a hash of the object using default hasher and seed.
     fn default_hash(&self) -> u64;
@@ -41,10 +41,10 @@ pub trait Data:
 /// The base trait for trait objects that DBSP can compute on.
 pub trait DataTrait: Data + Hash + DowncastTrait + ClonableTrait + ArchiveTrait + Eq + Ord {}
 
-impl<Trait: ?Sized> DataTrait for Trait where
-    Trait: Data + Hash + DowncastTrait + ClonableTrait + ArchiveTrait + Eq + Ord
-{
-}
+impl<Trait: ?Sized> DataTrait for Trait
+where
+    Trait: Data + Hash + DowncastTrait + ClonableTrait + ArchiveTrait + Eq + Ord,
+{}
 
 // `DynData` is a type alias for `dyn Data`.
 //
@@ -115,12 +115,12 @@ pub trait DataTyped: Data {
 /// Such trait objects can be dereferenced into their concrete types.
 ///
 /// See [`DynZWeight`](`crate::DynZWeight`) for an example of such a trait object.
-pub trait DataTraitTyped: DataTyped + DataTrait + DerefMut<Target = Self::Type> {}
+pub trait DataTraitTyped: DataTyped + DataTrait + DerefMut<Target=Self::Type> {}
 
-impl<Trait: ?Sized> DataTraitTyped for Trait where
-    Trait: DataTyped + DataTrait + DerefMut<Target = Self::Type>
-{
-}
+impl<Trait: ?Sized> DataTraitTyped for Trait
+where
+    Trait: DataTyped + DataTrait + DerefMut<Target=Self::Type>,
+{}
 
 impl<T: DBData> DataTyped for T {
     type Type = T;

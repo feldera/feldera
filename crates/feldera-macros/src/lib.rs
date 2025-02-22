@@ -298,13 +298,11 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
 
         impl<#(#generics: std::hash::Hash),*> std::hash::Hash for #name<#(#generics),*> {
             fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-                let #name( #(#fields),*, _hash ) = self;
-                #(
-                    #fields.hash(state);
-                )*
+                let #name( #(#fields),*, hash_code ) = self;
+                assert!(*hash_code != 0x0, "Hash code not set for tuple");
+                hash_code.hash(state);
             }
         }
-
     };
 
     expanded.extend(quote! {
