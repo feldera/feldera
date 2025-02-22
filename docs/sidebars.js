@@ -297,6 +297,11 @@ const sidebars = {
                                 },
                                 {
                                     type: 'doc',
+                                    id: 'connectors/sinks/redis',
+                                    label: 'Redis'
+                                },
+                                {
+                                    type: 'doc',
                                     id: 'connectors/sinks/snowflake',
                                     label: 'Snowflake (experimental)'
                                 }
