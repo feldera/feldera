@@ -56,6 +56,7 @@ use std::{
     any::type_name_of_val,
     borrow::Cow,
     cell::{Ref, RefCell, RefMut},
+    collections::BTreeMap,
     collections::HashMap,
     fmt::{self, Debug, Display, Write},
     future::Future,
@@ -915,6 +916,12 @@ pub trait Node {
     fn fingerprint(&self, fip: &mut Fingerprinter) {
         fip.hash(type_name_of_val(self));
     }
+
+    /// Tag the node with a text label.
+    fn set_label(&mut self, key: &str, value: &str);
+
+    /// Get the label associated with the given key.
+    fn get_label(&self, key: &str) -> Option<&str>;
 }
 
 /// Globally unique id of a stream.
@@ -3320,6 +3327,7 @@ where
     operator: Op,
     parent_stream: Stream<C::Parent, I>,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, O, Op> ImportNode<C, I, O, Op>
@@ -3335,6 +3343,7 @@ where
             operator,
             parent_stream,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -3425,12 +3434,21 @@ where
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 struct SourceNode<C, O, Op> {
     id: GlobalNodeId,
     operator: Op,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, O, Op> SourceNode<C, O, Op>
@@ -3443,6 +3461,7 @@ where
             id: circuit.global_node_id().child(id),
             operator,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -3521,6 +3540,14 @@ where
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 struct UnaryNode<C, I, O, Op> {
@@ -3528,6 +3555,7 @@ struct UnaryNode<C, I, O, Op> {
     operator: Op,
     input_stream: Stream<C, I>,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, O, Op> UnaryNode<C, I, O, Op>
@@ -3541,6 +3569,7 @@ where
             operator,
             input_stream,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -3631,12 +3660,21 @@ where
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 struct SinkNode<C, I, Op> {
     id: GlobalNodeId,
     operator: Op,
     input_stream: Stream<C, I>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, Op> SinkNode<C, I, Op>
@@ -3649,6 +3687,7 @@ where
             id: circuit.global_node_id().child(id),
             operator,
             input_stream,
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -3733,6 +3772,14 @@ where
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 struct BinarySinkNode<C, I1, I2, Op> {
@@ -3742,6 +3789,7 @@ struct BinarySinkNode<C, I1, I2, Op> {
     input_stream2: Stream<C, I2>,
     // `true` if both input streams are aliases of the same stream.
     is_alias: bool,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I1, I2, Op> BinarySinkNode<C, I1, I2, Op>
@@ -3765,6 +3813,7 @@ where
             input_stream1,
             input_stream2,
             is_alias,
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -3893,6 +3942,14 @@ where
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 struct BinaryNode<C, I1, I2, O, Op> {
@@ -3903,6 +3960,7 @@ struct BinaryNode<C, I1, I2, O, Op> {
     output_stream: Stream<C, O>,
     // `true` if both input streams are aliases of the same stream.
     is_alias: bool,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I1, I2, O, Op> BinaryNode<C, I1, I2, O, Op>
@@ -3925,6 +3983,7 @@ where
             input_stream2,
             is_alias,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -4053,6 +4112,14 @@ where
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 struct TernaryNode<C, I1, I2, I3, O, Op> {
@@ -4062,6 +4129,7 @@ struct TernaryNode<C, I1, I2, I3, O, Op> {
     input_stream2: Stream<C, I2>,
     input_stream3: Stream<C, I3>,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I1, I2, I3, O, Op> TernaryNode<C, I1, I2, I3, O, Op>
@@ -4089,6 +4157,7 @@ where
             // is_alias1,
             // is_alias2,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -4187,6 +4256,14 @@ where
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 struct QuaternaryNode<C, I1, I2, I3, I4, O, Op> {
@@ -4197,6 +4274,7 @@ struct QuaternaryNode<C, I1, I2, I3, I4, O, Op> {
     input_stream3: Stream<C, I3>,
     input_stream4: Stream<C, I4>,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
     // // `true` if `input_stream1` is an alias to `input_stream2`, `input_stream3` or
     // // `input_stream4`.
     // is_alias1: bool,
@@ -4241,6 +4319,7 @@ where
             // is_alias2,
             // is_alias3,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -4342,6 +4421,14 @@ where
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 struct NaryNode<C, I, O, Op>
@@ -4356,6 +4443,7 @@ where
     // // Streams that are aliases.
     // aliases: Vec<usize>,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, O, Op> NaryNode<C, I, O, Op>
@@ -4387,6 +4475,7 @@ where
             input_streams,
             //aliases,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -4482,6 +4571,14 @@ where
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 // The output half of a feedback node.  We implement a feedback node using a
@@ -4498,6 +4595,7 @@ where
     output_stream: Stream<C, O>,
     export_stream: Option<Stream<C::Parent, O>>,
     phantom_input: PhantomData<I>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, O, Op> FeedbackOutputNode<C, I, O, Op>
@@ -4512,6 +4610,7 @@ where
             output_stream: Stream::new(circuit.clone(), id),
             export_stream: None,
             phantom_input: PhantomData,
+            labels: BTreeMap::new(),
         }
     }
 
@@ -4610,6 +4709,14 @@ where
             .borrow_mut()
             .restore(base, &self.global_id().persistent_id())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 /// The input half of a feedback node
@@ -4619,6 +4726,7 @@ struct FeedbackInputNode<C, I, O, Op> {
     operator: Rc<RefCell<Op>>,
     input_stream: Stream<C, I>,
     phantom_output: PhantomData<O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, O, Op> FeedbackInputNode<C, I, O, Op>
@@ -4632,6 +4740,7 @@ where
             operator,
             input_stream,
             phantom_output: PhantomData,
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -4720,6 +4829,14 @@ where
         // See comment in `commit`.
         Ok(())
     }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
 }
 
 /// Input connector of a feedback operator.
@@ -4789,6 +4906,7 @@ where
     id: GlobalNodeId,
     circuit: ChildCircuit<P>,
     executor: Box<dyn Executor<ChildCircuit<P>>>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<P> Drop for ChildNode<P>
@@ -4814,6 +4932,7 @@ where
             id: circuit.global_node_id(),
             circuit,
             executor: Box::new(executor) as Box<dyn Executor<ChildCircuit<P>>>,
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -4870,6 +4989,14 @@ where
 
     fn restore(&mut self, _base: &Path) -> Result<(), DbspError> {
         Ok(())
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
