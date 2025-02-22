@@ -29,6 +29,10 @@ pub mod operator_traits;
 pub mod schedule;
 pub mod tokio;
 pub mod trace;
+mod dot;
+
+#[cfg(test)]
+mod replay_tests;
 
 pub use circuit_builder::{
     ChildCircuit, Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId,

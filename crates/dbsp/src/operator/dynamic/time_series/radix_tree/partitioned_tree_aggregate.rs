@@ -202,6 +202,7 @@ where
     /// [`Stream::partitioned_rolling_aggregate`].
     pub fn partitioned_tree_aggregate<TS, V, Acc, Out>(
         &self,
+        persistent_id: Option<&str>,
         factories: &OrdPartitionedTreeAggregateFactories<TS, V, Z, Acc>,
         aggregator: &dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>,
     ) -> OrdPartitionedRadixTreeStream<Z::Key, TS, Acc>
@@ -213,6 +214,7 @@ where
         Out: DataTrait + ?Sized,
     {
         self.partitioned_tree_aggregate_generic::<TS, V, Acc, Out, OrdPartitionedRadixTree<Z::Key, TS, Acc>>(
+            persistent_id,
             factories,
             aggregator,
         )
@@ -225,6 +227,7 @@ where
     /// [`Stream::partitioned_rolling_aggregate`].
     pub fn partitioned_tree_aggregate_generic<TS, V, Acc, Out, O>(
         &self,
+        persistent_id: Option<&str>,
         factories: &PartitionedTreeAggregateFactories<TS, V, Z, O, Acc>,
         aggregator: &dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>,
     ) -> Stream<RootCircuit, O>
@@ -266,8 +269,11 @@ where
                 // over a bounded range of keys.
                 let bounds = <TraceBounds<O::Key, O::Val>>::unbounded();
 
-                let feedback = circuit
-                    .add_integrate_trace_feedback::<Spine<O>>(&factories.output_factories, bounds);
+                let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(
+                    persistent_id,
+                    &factories.output_factories,
+                    bounds,
+                );
 
                 let output = circuit
                     .add_ternary_operator(
@@ -604,6 +610,7 @@ mod test {
 
             let aggregate: Stream<_, OrdPartitionedRadixTree<DynData/*<u64>*/, u64, DynData/*<u64>*/>> =
                 input.partitioned_tree_aggregate::<u64, DynData/*<u64>*/, DynData/*<u64>*/, DynData/*<u64>*/>(
+                    None,
                     &OrdPartitionedTreeAggregateFactories::new::<u64, u64, u64>(),
                     &DynAggregatorImpl::new(aggregator),
                 );

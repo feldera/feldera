@@ -289,11 +289,33 @@ impl Catalog {
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
+        self.register_output_zset_persistent(None, stream, schema)
+    }
+
+    /// Add an output stream of Z-sets to the catalog.
+    pub fn register_output_zset_persistent<Z, D>(
+        &mut self,
+        persistent_id: Option<&str>,
+        stream: Stream<RootCircuit, Z>,
+        schema: &str,
+    ) where
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<Z::Key>
+            + Clone
+            + Debug
+            + Send
+            + Sync
+            + 'static,
+        Z: ZSet + Debug + Send + Sync,
+        Z::InnerBatch: Send,
+        Z::Key: Sync + From<D>,
+    {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
         // Create handle for the stream itself.
-        let delta_handle = stream.output();
+        let delta_handle = stream.output_persistent(persistent_id);
 
         let handles = OutputCollectionHandles {
             key_schema: None,
@@ -325,6 +347,26 @@ impl Catalog {
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
+        self.register_materialized_output_zset_persistent(None, stream, schema)
+    }
+
+    pub fn register_materialized_output_zset_persistent<Z, D>(
+        &mut self,
+        persistent_id: Option<&str>,
+        stream: Stream<RootCircuit, Z>,
+        schema: &str,
+    ) where
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<Z::Key>
+            + Clone
+            + Debug
+            + Send
+            + 'static,
+        Z: ZSet + Debug + Send + Sync,
+        Z::InnerBatch: Send,
+        Z::Key: Sync + From<D>,
+    {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
@@ -336,7 +378,7 @@ impl Catalog {
         let stream = stream.shard();
 
         // Create handle for the stream itself.
-        let delta_handle = stream.output();
+        let delta_handle = stream.output_persistent(persistent_id);
 
         let integrate_handle = stream
             .integrate_trace()
@@ -420,18 +462,45 @@ impl Catalog {
         K: DBData + Send + Sync + From<KD> + Default,
         V: DBData + Send + Sync + From<VD> + Default,
     {
+        self.register_materialized_output_map_persistent(None, stream, schema)
+    }
+
+    pub fn register_materialized_output_map_persistent<K, KD, V, VD>(
+        &mut self,
+        persistent_id: Option<&str>,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        schema: &str,
+    ) where
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Default
+            + Debug
+            + Clone
+            + Send
+            + 'static,
+        K: DBData + Send + Sync + From<KD> + Default,
+        V: DBData + Send + Sync + From<VD> + Default,
+    {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
-        // Create handle for the stream itself.
-        let delta_handle = stream.map(|(_k, v)| v.clone()).output();
-
-        // Improve the odds that `integrate_trace` below reuses the trace of `stream`
-        // if one exists.
         let stream = stream.try_sharded_version();
 
-        let integrate_handle = stream
-            .map(|(_k, v)| v.clone())
+        // Create handle for the stream itself.
+        let delta = stream.map(|(_k, v)| v.clone()).set_persistent_id(
+            stream
+                .get_persistent_id()
+                .map(|name| format!("{name}.values"))
+                .as_deref(),
+        );
+
+        let delta_handle = delta.output_persistent(persistent_id);
+
+        let integrate_handle = delta
             .integrate_trace()
             .apply(|s| TypedBatch::<V, (), ZWeight, _>::new(s.ro_snapshot()))
             .output();

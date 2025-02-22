@@ -592,8 +592,10 @@ where
             let left = self.dyn_shard(&factories.left_factories);
             let right = other.dyn_shard(&factories.right_factories);
 
-            let left_trace = left.dyn_trace(&factories.left_trace_factories);
-            let right_trace = right.dyn_trace(&factories.right_trace_factories);
+            let left_trace =
+                left.dyn_trace(&factories.left_trace_factories, &factories.left_factories);
+            let right_trace =
+                right.dyn_trace(&factories.right_trace_factories, &factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
                 JoinTrace::new(

@@ -38,7 +38,7 @@ use std::{
 use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
 
-use super::dbsp_handle::Layout;
+use super::dbsp_handle::{CircuitStorageConfig, Layout, Mode};
 use super::CircuitConfig;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -242,7 +242,12 @@ struct RuntimeStorage {
 
 struct RuntimeInner {
     layout: Layout,
+<<<<<<< HEAD
     storage: Option<RuntimeStorage>,
+=======
+    mode: Mode,
+    storage: Option<CircuitStorageConfig>,
+>>>>>>> 66ff4be26 (set_label/get_label)
     store: LocalStore,
     kill_signal: AtomicBool,
     background_threads: Mutex<Vec<JoinHandle<()>>>,
@@ -359,7 +364,12 @@ impl RuntimeInner {
 
         Ok(Self {
             layout: config.layout,
+<<<<<<< HEAD
             storage,
+=======
+            mode: config.mode,
+            storage: config.storage,
+>>>>>>> 66ff4be26 (set_label/get_label)
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
             background_threads: Mutex::new(Vec::new()),
@@ -591,6 +601,12 @@ impl Runtime {
     /// multihost runtime, this is a global index across all hosts.
     pub fn worker_index() -> usize {
         WORKER_INDEX.get()
+    }
+
+    pub fn mode() -> Mode {
+        RUNTIME
+            .with(|rt| Some(rt.borrow().as_ref()?.inner().mode.clone()))
+            .unwrap_or_default()
     }
 
     /// Returns the worker index as a string.
@@ -868,7 +884,7 @@ mod tests {
     use super::Runtime;
     use crate::{
         circuit::{
-            dbsp_handle::CircuitStorageConfig,
+            dbsp_handle::{CircuitStorageConfig, Mode},
             schedule::{DynamicScheduler, Scheduler},
             CircuitConfig, Layout,
         },
@@ -892,6 +908,7 @@ mod tests {
         let path_clone = path.clone();
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
+            mode: Mode::Ephemeral,
             pin_cpus: Vec::new(),
             storage: Some(
                 CircuitStorageConfig::for_config(

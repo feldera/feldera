@@ -25,6 +25,15 @@ pub enum StorageError {
     #[error("Couldn't find the specified checkpoint ({0:?}).")]
     CheckpointNotFound(Uuid),
 
+    /// The operator wasn't assigned a persistent ID when the circuit was constructed.
+    #[error("Internal error: operator {0} has not been assigned a persisten id.")]
+    NoPersistentId(String),
+
+    /// No checkpoint of the operator's state was found inside the pipeline's checkpoint.
+    /// This indicates that the operator wasn't part of the pipeline before the checkpoint.
+    #[error("Checkpoint for operator with persistent id {0} not found.")]
+    OperatorCheckpointNotFound(String),
+
     /// Cannot perform operation because storage is not enabled.
     #[error("Cannot perform operation because storage is not enabled.")]
     StorageDisabled,

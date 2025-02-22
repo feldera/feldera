@@ -4,14 +4,20 @@ use crate::{
     algebra::{IndexedZSet, NegByRef, ZBatchReader},
     circuit::{
         operator_traits::{Operator, TernaryOperator},
-        Circuit, OwnershipPreference, Scope, Stream,
+        Circuit, GlobalNodeId, OwnershipPreference, Scope, Stream,
     },
     dynamic::{
         rkyv::{DeserializableDyn, SerializeDyn},
         ClonableTrait, DataTrait, DynData, WeightTrait,
     },
-    operator::dynamic::{trace::TraceBound, MonoIndexedZSet},
-    storage::file::{to_bytes, with_serializer},
+    operator::{
+        dynamic::{trace::TraceBound, MonoIndexedZSet},
+        require_persistent_id,
+    },
+    storage::{
+        file::{to_bytes, with_serializer},
+        write_commit_metadata,
+    },
     trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, SpineSnapshot},
     Error, RootCircuit, Runtime,
 };
@@ -86,6 +92,8 @@ where
     B: IndexedZSet,
     T: ZBatchReader,
 {
+    // For error reporting.
+    global_id: GlobalNodeId,
     factories: B::Factories,
     left_inclusive: bool,
     right_inclusive: bool,
@@ -102,6 +110,7 @@ where
 {
     pub fn new(factories: &B::Factories, (left_inclusive, right_inclusive): (bool, bool)) -> Self {
         Self {
+            global_id: GlobalNodeId::root(),
             factories: factories.clone(),
             left_inclusive,
             right_inclusive,
@@ -125,6 +134,10 @@ where
         Cow::from("Window")
     }
 
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.global_id = global_id.clone();
+    }
+
     fn clock_start(&mut self, _scope: Scope) {
         self.window = None;
     }
@@ -135,8 +148,9 @@ where
         panic!("'Window' operator used in fixedpoint iteration")
     }
 
-    fn commit(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
-        let window_path = Self::checkpoint_file(base, persistent_id);
+    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+        let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
+
         let committed: CommittedWindow = (self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         Runtime::storage_backend()
@@ -145,7 +159,9 @@ where
         Ok(())
     }
 
-    fn restore(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+        let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
+
         let window_path = Self::checkpoint_file(base, persistent_id);
         let content = Runtime::storage_backend().unwrap().read(&window_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedWindow>(&content) };
@@ -161,6 +177,11 @@ where
             (boxed_a, boxed_b)
         });
 
+        Ok(())
+    }
+
+    fn clear_state(&mut self) -> Result<(), Error> {
+        self.window = None;
         Ok(())
     }
 }

@@ -3,7 +3,7 @@ use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
 use crate::{
     circuit::runtime::RuntimeHandle, profile::Profiler, Error as DbspError, RootCircuit, Runtime,
-    RuntimeError, SchedulerError,
+    RuntimeError,
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
@@ -209,6 +209,25 @@ impl Display for LayoutError {
 
 impl StdError for LayoutError {}
 
+/// DBSP circuit execution mode.
+#[derive(Clone, Default)]
+pub enum Mode {
+    /// Operators in the circuit have persistent id's.
+    ///
+    /// In this mode, operators are assigned persistent id's by the compiler. These id's
+    /// are preserved across circuit restarts for parts of the circuit that remain
+    /// unmodified.  This allows the circuit to partially or completely restore its state from
+    /// a checkpoint.
+    Persistent,
+
+    /// Circuit operators are assigned ephemeral id's.
+    ///
+    /// In this mode, operators are not assigned persistent id's. The circuit can only
+    /// restore its state from a checkpoint if the entire circuit is unmodified.
+    #[default]
+    Ephemeral,
+}
+
 /// A config for instantiating a multithreaded/multihost runtime to execute
 /// circuits.
 ///
@@ -222,6 +241,8 @@ pub struct CircuitConfig {
 
     /// Optionally, CPU numbers for pinning the worker threads.
     pub pin_cpus: Vec<usize>,
+
+    pub mode: Mode,
 
     /// Storage configuration. If present, then storage is enabled..
     pub storage: Option<CircuitStorageConfig>,
@@ -282,8 +303,14 @@ impl CircuitConfig {
         Self {
             layout: Layout::new_solo(n),
             pin_cpus: Vec::new(),
+            mode: Mode::Ephemeral,
             storage: None,
         }
+    }
+
+    pub fn with_mode(mut self, mode: Mode) -> Self {
+        self.mode = mode;
+        self
     }
 }
 
@@ -402,7 +429,10 @@ impl Runtime {
                         let _guard = span.set_local_parent();
                         let _worker_span = LocalSpan::enter_with_local_parent("worker-step")
                             .with_property(|| ("worker", worker_index_str));
-                        let status = circuit.step().map(|_| Response::Unit);
+                        let status = circuit
+                            .step()
+                            .map(|_| Response::Unit)
+                            .map_err(DbspError::Scheduler);
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
@@ -416,6 +446,7 @@ impl Runtime {
                         }
                     }
                     Ok(Command::DumpProfile { runtime_elapsed }) => {
+                        println!("DumpProfile received");
                         if status_sender
                             .send(Ok(Response::ProfileDump(
                                 profiler.dump_profile(runtime_elapsed),
@@ -434,17 +465,14 @@ impl Runtime {
                         }
                     }
                     Ok(Command::Commit(base)) => {
-                        circuit.commit(&base).expect("commit failed");
-                        if status_sender.send(Ok(Response::CheckpointCreated)).is_err() {
+                        let response = circuit.commit(&base).map(|_| Response::CheckpointCreated);
+                        if status_sender.send(response).is_err() {
                             return;
                         }
                     }
                     Ok(Command::Restore(base)) => {
-                        circuit.restore(&base).expect("restore failed");
-                        if status_sender
-                            .send(Ok(Response::CheckpointRestored))
-                            .is_err()
-                        {
+                        let result = circuit.restore(&base).map(|_| Response::CheckpointRestored);
+                        if status_sender.send(result).is_err() {
                             return;
                         }
                     }
@@ -551,7 +579,7 @@ pub struct DBSPHandle {
     command_senders: Vec<Sender<Command>>,
 
     /// Channels used to receive command completion status from workers.
-    status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
+    status_receivers: Vec<Receiver<Result<Response, DbspError>>>,
 
     /// For creating checkpoints, if we can.
     checkpointer: Option<Checkpointer>,
@@ -562,7 +590,7 @@ impl DBSPHandle {
         backend: Option<Arc<dyn StorageBackend>>,
         runtime: RuntimeHandle,
         command_senders: Vec<Sender<Command>>,
-        status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
+        status_receivers: Vec<Receiver<Result<Response, DbspError>>>,
         fingerprint: u64,
     ) -> Result<Self, DbspError> {
         let checkpointer = backend
@@ -641,7 +669,7 @@ impl DBSPHandle {
                 }
                 Ok(Err(e)) => {
                     let _ = self.kill_inner();
-                    return Err(DbspError::Scheduler(e));
+                    return Err(e);
                 }
                 Ok(Ok(resp)) => handler(worker, resp),
             }
@@ -832,7 +860,7 @@ pub(crate) mod tests {
     use std::time::Duration;
     use std::{fs, vec};
 
-    use super::CircuitStorageConfig;
+    use super::{CircuitStorageConfig, Mode};
     use crate::circuit::checkpointer::Checkpointer;
     use crate::circuit::{CircuitConfig, Layout};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
@@ -1093,6 +1121,7 @@ pub(crate) mod tests {
         let temp = tempdir().expect("Can't create temp dir for storage");
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
+            mode: Mode::Ephemeral,
             pin_cpus: Vec::new(),
             storage: Some(
                 CircuitStorageConfig::for_config(

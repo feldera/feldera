@@ -7,7 +7,8 @@ use crate::{
     declare_trait_object,
     dynamic::{ClonableTrait, Data, DataTrait, DynOpt, DynPairs, Erase, Factory, WithFactory},
     operator::dynamic::trace::{
-        DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace,
+        register_trace_replay_sources, DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine,
+        Z1Trace,
     },
     trace::{
         cursor::Cursor, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Filter,
@@ -184,6 +185,7 @@ where
     /// collection.
     pub fn input_upsert<B>(
         &self,
+        persistent_id: Option<&str>,
         factories: &InputUpsertFactories<<C as WithClock>::Time, B>,
         patch_func: PatchFunc<V, U>,
     ) -> Stream<C, B>
@@ -191,6 +193,11 @@ where
         B: IndexedZSet<Key = K, Val = V>,
     {
         let circuit = self.circuit();
+
+        assert!(
+            self.is_sharded(),
+            "input_upsert operator applied to a non-sharded collection"
+        );
 
         // We build the following circuit to implement the upsert semantics.
         // The collection is accumulated into a trace using integrator
@@ -214,14 +221,22 @@ where
         circuit.region("input_upsert", || {
             let bounds = <TraceBounds<K, V>>::unbounded();
 
-            let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
+            let z1 = Z1Trace::new(
                 &factories.trace_factories,
+                &factories.batch_factories,
                 false,
                 circuit.root_scope(),
                 bounds.clone(),
-            ));
+            );
 
-            local.mark_sharded_if(self);
+            let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
+                persistent_id
+                    .map(|name| format!("{name}.integral"))
+                    .as_deref(),
+                z1,
+            );
+
+            delayed_trace.mark_sharded();
 
             let delta = circuit
                 .add_binary_operator(
@@ -232,27 +247,28 @@ where
                         bounds.clone(),
                         patch_func,
                     ),
-                    &local,
-                    &self.try_sharded_version(),
+                    &delayed_trace,
+                    &self,
                 )
                 .mark_distinct();
-            delta.mark_sharded_if(self);
+            delta.mark_sharded();
+            let replay_stream = z1feedback.operator_mut().set_delta_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<ValSpine<B, C>, B, C>>::new(
                     &factories.trace_factories,
                     circuit.clone(),
                 ),
-                (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                (
-                    &delta.try_sharded_version(),
-                    OwnershipPreference::PREFER_OWNED,
-                ),
+                (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                (&delta, OwnershipPreference::PREFER_OWNED),
             );
-            trace.mark_sharded_if(self);
+            trace.mark_sharded();
 
             z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
-            circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), local);
+
+            register_trace_replay_sources(circuit, &delta, &replay_stream);
+
+            circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
             circuit.cache_insert(TraceId::new(delta.stream_id()), trace);
             circuit.cache_insert(BoundsId::<B>::new(delta.stream_id()), bounds);
             delta
