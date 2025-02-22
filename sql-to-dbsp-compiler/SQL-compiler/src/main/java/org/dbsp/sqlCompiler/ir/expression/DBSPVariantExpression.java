@@ -55,8 +55,10 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue 
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        if (this.value != null)
+        if (this.value != null) {
+            visitor.property("value");
             this.value.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }

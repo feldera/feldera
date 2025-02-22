@@ -100,9 +100,12 @@ public final class DBSPLetStatement extends DBSPStatement implements IDBSPDeclar
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
         this.type.accept(visitor);
-        if (this.initializer != null)
+        if (this.initializer != null) {
+            visitor.property("initializer");
             this.initializer.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }

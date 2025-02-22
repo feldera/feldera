@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
@@ -603,6 +604,16 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 CREATE VIEW V AS SELECT * FROM T;
                 CREATE INDEX IX ON V(id, v);""";
         this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void serializationTest() {
+        var cc = this.getCC("""
+                CREATE TABLE tab0(pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER);
+                CREATE VIEW V AS SELECT pk FROM tab0
+                WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
+        ToJsonOuterVisitor visitor = new ToJsonOuterVisitor(cc.compiler, 1);
+        visitor.apply(cc.getCircuit());
     }
 
     @Test @Ignore("To be invoked manually every time a new function is added")

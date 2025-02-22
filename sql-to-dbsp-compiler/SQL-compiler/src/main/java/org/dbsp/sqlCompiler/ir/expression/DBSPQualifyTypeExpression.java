@@ -51,10 +51,18 @@ public final class DBSPQualifyTypeExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
         this.type.accept(visitor);
+        visitor.property("expression");
         this.expression.accept(visitor);
-        for (DBSPType type: this.types)
+        visitor.startArrayProperty("types");
+        int index = 0;
+        for (DBSPType type: this.types) {
+            visitor.propertyIndex(index);
+            index++;
             type.accept(visitor);
+        }
+        visitor.endArrayProperty("types");
         visitor.pop(this);
         visitor.postorder(this);
     }

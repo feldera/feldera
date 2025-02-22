@@ -23,8 +23,6 @@ import java.util.List;
 public final class DBSPAggregate extends DBSPNode
         implements IDBSPInnerNode, IDBSPDeclaration // Declares the row variable
 {
-    // Should this class be split into two classes for linear/non-linear?
-
     public final DBSPVariablePath rowVar;
     /** Component aggregates, must all be linear or non-linear */
     public final List<AggregateBase> aggregates;
@@ -61,7 +59,10 @@ public final class DBSPAggregate extends DBSPNode
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("aggregates");
+        int index = 0;
         for (AggregateBase impl : this.aggregates) {
+            visitor.propertyIndex(index++);
             impl.accept(visitor);
         }
         visitor.pop(this);

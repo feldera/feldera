@@ -124,13 +124,23 @@ public final class DBSPFlatmap extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("inputElementType");
         this.inputElementType.accept(visitor);
-        if (this.ordinalityIndexType != null)
+        if (this.ordinalityIndexType != null) {
+            visitor.property("ordinalityIndexType");
             this.ordinalityIndexType.accept(visitor);
-        if (this.rightProjections != null) {
-            for (DBSPClosureExpression proj: this.rightProjections)
-                proj.accept(visitor);
         }
+        if (this.rightProjections != null) {
+            visitor.startArrayProperty("rightProjections");
+            int index = 0;
+            for (DBSPClosureExpression proj: this.rightProjections) {
+                visitor.propertyIndex(index);
+                index++;
+                proj.accept(visitor);
+            }
+            visitor.endArrayProperty("rightProjections");
+        }
+        visitor.property("type");
         this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

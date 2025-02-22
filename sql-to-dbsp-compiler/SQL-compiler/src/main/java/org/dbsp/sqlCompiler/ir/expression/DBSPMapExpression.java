@@ -103,12 +103,20 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
         visitor.push(this);
         if (this.keys != null) {
             assert this.values != null;
+            visitor.startArrayProperty("keys");
             for (int i = 0; i < this.keys.size(); i++) {
+                visitor.propertyIndex(i);
                 DBSPExpression key = this.keys.get(i);
                 key.accept(visitor);
+            }
+            visitor.endArrayProperty("keys");
+            visitor.startArrayProperty("values");
+            for (int i = 0; i < this.keys.size(); i++) {
+                visitor.propertyIndex(i);
                 DBSPExpression value = this.values.get(i);
                 value.accept(visitor);
             }
+            visitor.endArrayProperty("values");
         }
         visitor.pop(this);
         visitor.postorder(this);

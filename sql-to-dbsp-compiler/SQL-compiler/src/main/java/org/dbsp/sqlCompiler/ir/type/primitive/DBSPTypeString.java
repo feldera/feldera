@@ -44,14 +44,25 @@ public class DBSPTypeString extends DBSPTypeBaseType implements IHasPrecision {
      * This is the size specified by CHAR or VARCHAR. */
     public final int precision;
 
-    public DBSPTypeString(CalciteObject node, int precision, boolean fixed, boolean mayBeNull) {
+    private static final DBSPTypeString VARCHAR = new DBSPTypeString(CalciteObject.EMPTY, UNLIMITED_PRECISION, false, false);
+    private static final DBSPTypeString VARCHAR_NULLABLE = new DBSPTypeString(CalciteObject.EMPTY, UNLIMITED_PRECISION, false, true);
+
+    private DBSPTypeString(CalciteObject node, int precision, boolean fixed, boolean mayBeNull) {
         super(node, STRING, mayBeNull);
         this.precision = precision;
         this.fixed = fixed;
     }
 
+    public static DBSPTypeString create(CalciteObject node, int precision, boolean fixed, boolean mayBeNull) {
+        if (node.isEmpty() && precision == UNLIMITED_PRECISION && !fixed)
+            return varchar(mayBeNull);
+        return new DBSPTypeString(node, precision, fixed, mayBeNull);
+    }
+
     public static DBSPTypeString varchar(boolean mayBeNull) {
-        return new DBSPTypeString(CalciteObject.EMPTY, UNLIMITED_PRECISION, false, mayBeNull);
+        if (mayBeNull)
+            return VARCHAR_NULLABLE;
+        return VARCHAR;
     }
 
     @Override

@@ -53,10 +53,18 @@ public final class DBSPBlockExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        for (DBSPStatement stat: this.contents)
+        visitor.startArrayProperty("contents");
+        int index = 0;
+        for (DBSPStatement stat: this.contents) {
+            visitor.propertyIndex(index);
+            index++;
             stat.accept(visitor);
-        if (this.lastExpression != null)
+        }
+        visitor.endArrayProperty("contents");
+        if (this.lastExpression != null) {
+            visitor.property("lastExpression");
             this.lastExpression.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }

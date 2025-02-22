@@ -34,29 +34,34 @@ import java.util.stream.Stream;
 public class IndentStream implements IIndentStream {
     private Appendable stream;
     int indent = 0;
-    static final int amount = 4;
+    int amount = 4;
     boolean emitIndent = false;
 
     public IndentStream(Appendable appendable) {
         this.stream = appendable;
     }
 
-    /**
-     * Set the output stream.
-     * @return The previous output stream.
-     */
+    /** Set the output stream.
+     * @return The previous output stream. */
     public Appendable setOutputStream(Appendable appendable) {
         Appendable result = this.stream;
         this.stream = appendable;
         return result;
     }
 
+    /** Set the indent amount.  If less or equal to 0, newline will have no effect. */
+    public void setIndentAmount(int amount) {
+        this.amount = amount;
+    }
+
     @Override
     public IIndentStream appendChar(char c) {
         try {
             if (c == '\n') {
-                this.stream.append(c);
-                this.emitIndent = true;
+                if (this.amount > 0) {
+                    this.stream.append(c);
+                    this.emitIndent = true;
+                }
                 return this;
             }
             if (this.emitIndent && !Character.isSpaceChar(c)) {
@@ -260,13 +265,13 @@ public class IndentStream implements IIndentStream {
 
     @Override
     public IIndentStream increase() {
-        this.indent += amount;
+        this.indent += Math.max(this.amount, 0);
         return this.newline();
     }
 
     @Override
     public IIndentStream decrease() {
-        this.indent -= amount;
+        this.indent -= Math.max(this.amount, 0);
         if (this.indent < 0)
             throw new RuntimeException("Negative indent");
         return this;

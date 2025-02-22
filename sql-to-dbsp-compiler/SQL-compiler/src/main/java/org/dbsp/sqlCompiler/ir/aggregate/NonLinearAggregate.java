@@ -121,11 +121,17 @@ public class NonLinearAggregate extends AggregateBase {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("semigroup");
         this.semigroup.accept(visitor);
+        visitor.property("zero");
         this.zero.accept(visitor);
+        visitor.property("increment");
         this.increment.accept(visitor);
-        if (this.postProcess != null)
+        if (this.postProcess != null) {
+            visitor.property("postProcess");
             this.postProcess.accept(visitor);
+        }
+        visitor.property("emptySetResult");
         this.emptySetResult.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

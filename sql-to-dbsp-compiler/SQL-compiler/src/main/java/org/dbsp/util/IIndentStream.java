@@ -56,4 +56,15 @@ public interface IIndentStream {
     /** Increase indentation and emit a newline. */
     IIndentStream increase();
     IIndentStream decrease();
+    default IIndentStream appendJsonLabelAndColon(String label) {
+        return this.append("\"").append(Utilities.escapeDoubleQuotes(label)).append("\": ");
+    }
+
+    /** Given data composed of multiple lines, append each line
+     * indented with the current amount */
+    default IIndentStream appendIndentedStrings(String data) {
+        String[] lines = data.split(System.lineSeparator());
+        this.join(System.lineSeparator(), lines);
+        return this;
+    }
 }

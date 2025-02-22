@@ -79,11 +79,20 @@ public final class DBSPFunction extends DBSPNode implements IHasType, IDBSPDecla
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("returnType");
         this.returnType.accept(visitor);
-        for (DBSPParameter argument: this.parameters)
+        visitor.startArrayProperty("parameters");
+        int index = 0;
+        for (DBSPParameter argument: this.parameters) {
+            visitor.propertyIndex(index);
+            index++;
             argument.accept(visitor);
-        if (this.body != null)
+        }
+        visitor.endArrayProperty("parameters");
+        if (this.body != null) {
+            visitor.property("body");
             this.body.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }

@@ -25,6 +25,7 @@ public final class DBSPDirectComparatorExpression extends DBSPComparatorExpressi
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("source");
         this.source.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

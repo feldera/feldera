@@ -48,7 +48,7 @@ public abstract class DBSPApplyBaseExpression extends DBSPExpression {
         DBSPPathExpression pe = this.function.as(DBSPPathExpression.class);
         if (pe == null)
             return null;
-        return pe.path.toString();
+        return pe.path.asString();
     }
 
     protected DBSPApplyBaseExpression(

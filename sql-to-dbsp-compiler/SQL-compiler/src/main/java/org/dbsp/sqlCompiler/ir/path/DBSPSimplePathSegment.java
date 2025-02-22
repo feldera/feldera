@@ -41,13 +41,23 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
         this.genericArgs = genericArgs;
     }
 
+    public String asString() {
+        return this.identifier;
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        for (DBSPType arg: this.genericArgs)
+        visitor.startArrayProperty("genericArgs");
+        int index = 0;
+        for (DBSPType arg: this.genericArgs) {
+            visitor.propertyIndex(index);
+            index++;
             arg.accept(visitor);
+        }
+        visitor.endArrayProperty("genericArgs");
         visitor.pop(this);
         visitor.postorder(this);
     }

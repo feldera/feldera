@@ -55,7 +55,9 @@ public final class DBSPUnaryExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
         this.type.accept(visitor);
+        visitor.property("source");
         this.source.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

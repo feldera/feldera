@@ -122,8 +122,14 @@ public final class DBSPArrayExpression extends DBSPExpression
         if (decision.stop()) return;
         visitor.push(this);
         if (this.data != null) {
-            for (DBSPExpression expr : this.data)
+            visitor.startArrayProperty("data");
+            int index = 0;
+            for (DBSPExpression expr : this.data) {
+                visitor.propertyIndex(index);
+                index++;
                 expr.accept(visitor);
+            }
+            visitor.endArrayProperty("data");
         }
         visitor.pop(this);
         visitor.postorder(this);

@@ -299,16 +299,14 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testConcatNull() {
         String query = "SELECT T.COL4 || NULL FROM T";
-        DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(
-                new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, true)));
+        DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeString.varchar(true)));
         this.testQuery(query, new DBSPZSetExpression(lit, lit));
     }
 
     @Test
     public void testConcatNull2() {
         String query = "SELECT CONCAT(T.COL4, NULL) FROM T";
-        DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(
-                new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, true)));
+        DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeString.varchar(true)));
         this.testQuery(query, new DBSPZSetExpression(lit, lit));
     }
 

@@ -217,6 +217,18 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         }
     }
 
+    /** Used to indicate property that is being visited */
+    public void property(String name) {}
+
+    /** For properties that are lists or arrays, the index of the property being visited. */
+    public void propertyIndex(int index) {}
+
+    /** Property that has an array of values */
+    public void startArrayProperty(String property) {}
+
+    /** End a property that has an array of values */
+    public void endArrayProperty(String property) {}
+
     public void pop(IDBSPInnerNode node) {
         IDBSPInnerNode last = Utilities.removeLast(this.context);
         if (node != last)

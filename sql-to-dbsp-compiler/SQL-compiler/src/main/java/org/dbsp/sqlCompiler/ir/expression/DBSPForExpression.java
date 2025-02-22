@@ -50,7 +50,9 @@ public final class DBSPForExpression extends DBSPExpression implements IDBSPDecl
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("iterated");
         this.iterated.accept(visitor);
+        visitor.property("block");
         this.block.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

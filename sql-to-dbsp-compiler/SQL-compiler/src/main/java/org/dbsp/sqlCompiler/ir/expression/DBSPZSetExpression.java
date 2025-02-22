@@ -205,8 +205,14 @@ public final class DBSPZSetExpression extends DBSPExpression
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        for (DBSPExpression expr: this.data.keySet())
+        visitor.startArrayProperty("data");
+        int index = 0;
+        for (DBSPExpression expr: this.data.keySet()) {
+            visitor.propertyIndex(index);
+            index++;
             expr.accept(visitor);
+        }
+        visitor.endArrayProperty("data");
         visitor.pop(this);
         visitor.postorder(this);
     }

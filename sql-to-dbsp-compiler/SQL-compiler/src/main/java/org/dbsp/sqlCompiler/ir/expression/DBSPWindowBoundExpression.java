@@ -41,6 +41,7 @@ public class DBSPWindowBoundExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("representation");
         this.representation.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

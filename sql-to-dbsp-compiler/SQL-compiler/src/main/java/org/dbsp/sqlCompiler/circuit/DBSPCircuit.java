@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -206,14 +207,29 @@ public final class DBSPCircuit extends DBSPNode
     }
 
     @Override
+    public void accept(InnerVisitor visitor) {}
+
+    @Override
     public void accept(CircuitVisitor visitor) {
         visitor.push(this);
         VisitDecision decision = visitor.preorder(this);
         if (!decision.stop()) {
-            for (DBSPDeclaration decl: this.declarations)
+            visitor.startArrayProperty("declarations");
+            int index = 0;
+            for (DBSPDeclaration decl: this.declarations) {
+                visitor.propertyIndex(index);
+                index++;
                 decl.accept(visitor);
-            for (DBSPOperator op : this.allOperators)
+            }
+            visitor.endArrayProperty("declarations");
+            index = 0;
+            visitor.startArrayProperty("allOperators");
+            for (DBSPOperator op : this.allOperators) {
+                visitor.propertyIndex(index);
+                index++;
                 op.accept(visitor);
+            }
+            visitor.endArrayProperty("allOperators");
             visitor.postorder(this);
         }
         visitor.pop(this);

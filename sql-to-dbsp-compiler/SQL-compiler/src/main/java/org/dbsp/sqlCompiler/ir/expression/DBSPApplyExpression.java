@@ -59,10 +59,18 @@ public final class DBSPApplyExpression extends DBSPApplyBaseExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
         this.type.accept(visitor);
+        visitor.property("function");
         this.function.accept(visitor);
-        for (DBSPExpression arg: this.arguments)
+        visitor.startArrayProperty("arguments");
+        int index = 0;
+        for (DBSPExpression arg: this.arguments) {
+            visitor.propertyIndex(index);
             arg.accept(visitor);
+            index++;
+        }
+        visitor.endArrayProperty("arguments");
         visitor.pop(this);
         visitor.postorder(this);
     }

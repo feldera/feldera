@@ -75,7 +75,9 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("keyType");
         this.keyType.accept(visitor);
+        visitor.property("elementType");
         this.elementType.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

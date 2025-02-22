@@ -70,7 +70,14 @@ public final class DBSPSortExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("comparator");
         this.comparator.accept(visitor);
+        if (this.limit != null) {
+            visitor.property("limit");
+            this.limit.accept(visitor);
+        }
+        visitor.property("elementType");
+        this.elementType.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }

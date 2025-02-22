@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -32,7 +33,8 @@ import java.util.Objects;
  * to a Rust method starting with "stream_*".
  * Some operators compute correctly both over deltas and aver whole sets, e.g. Map.
  */
-public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasType, IDBSPOuterNode {
+public abstract class DBSPSimpleOperator extends DBSPOperator
+        implements IHasType, IDBSPOuterNode {
     /** Operation that is invoked on inputs; corresponds to a DBSP operator name, e.g., join. */
     public final String operation;
     /** Computation invoked by the operator, usually a closure. */
@@ -65,6 +67,16 @@ public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasTyp
                 !outputType.is(DBSPTypeIndexedZSet.class))
             throw new InternalCompilerError("Operator " + operation +
                     " output type is unexpected " + outputType);
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        visitor.property("outputType");
+        this.outputType.accept(visitor);
+        if (this.function != null) {
+            visitor.property("function");
+            this.function.accept(visitor);
+        }
     }
 
     public DBSPType outputType() {

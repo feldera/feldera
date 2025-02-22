@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -69,5 +70,13 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
         if (!decision.stop())
             visitor.postorder(this);
         visitor.pop(this);
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        visitor.property("comparator");
+        this.comparator.accept(visitor);
+        visitor.property("projection");
+        this.projection.accept(visitor);
     }
 }

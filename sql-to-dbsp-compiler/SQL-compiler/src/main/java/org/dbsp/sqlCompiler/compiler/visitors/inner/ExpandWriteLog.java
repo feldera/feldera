@@ -48,7 +48,7 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
         DBSPExpression result = new DBSPApplyExpression(function, type, arguments);
         if (function.is(DBSPPathExpression.class)) {
             DBSPPathExpression func = function.to(DBSPPathExpression.class);
-            String path = func.toString();
+            String path = func.path.asString();
             if (path.equalsIgnoreCase("writelog")) {
                 List<DBSPStatement> statements = new ArrayList<>();
                 DBSPExpression format = arguments[0];
@@ -63,8 +63,7 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
                     DBSPExpression castToStr = null;
                     for (String part: parts) {
                         if (castToStr == null) {
-                            DBSPTypeString stringType = new DBSPTypeString(
-                                    CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, type.mayBeNull);
+                            DBSPTypeString stringType = DBSPTypeString.varchar(type.mayBeNull);
                             castToStr = arguments[1].cast(stringType, false);
                             // do not print argument first time around the loop
                         } else {
