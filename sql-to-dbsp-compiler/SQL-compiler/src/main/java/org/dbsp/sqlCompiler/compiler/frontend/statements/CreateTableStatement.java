@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
+import org.dbsp.util.Properties;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -43,7 +43,7 @@ public class CreateTableStatement extends CreateRelationStatement {
                                 ProgramIdentifier tableName,
                                 List<RelColumnMetadata> columns,
                                 List<ForeignKey> foreignKeys,
-                                @Nullable PropertyList properties) {
+                                @Nullable Properties properties) {
         super(node, tableName, columns, properties);
         this.foreignKeys = foreignKeys;
     }

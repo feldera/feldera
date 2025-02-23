@@ -40,7 +40,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
@@ -87,11 +86,6 @@ public class TypeCompiler implements ICompilerComponent {
     public static DBSPTypeIndexedZSet makeIndexedZSet(
             DBSPType keyType, DBSPType elementType) {
         return new DBSPTypeIndexedZSet(elementType.getNode(), keyType, elementType);
-    }
-
-    public static DBSPTypeIndexedZSet makeIndexedZSet(DBSPTypeRawTuple kvType) {
-        assert kvType.size() == 2;
-        return new DBSPTypeIndexedZSet(kvType.getNode(), kvType.tupFields[0], kvType.tupFields[1]);
     }
 
     /**
@@ -328,9 +322,9 @@ public class TypeCompiler implements ICompilerComponent {
                     return new DBSPTypeBinary(node, precision, nullable);
                 }
                 case NULL:
-                    return new DBSPTypeNull(CalciteObject.EMPTY);
+                    return DBSPTypeNull.INSTANCE;
                 case SYMBOL:
-                    return new DBSPTypeKeyword();
+                    return DBSPTypeKeyword.INSTANCE;
                 case ARRAY: {
                     RelDataType ct = Objects.requireNonNull(dt.getComponentType());
                     DBSPType elementType = this.convertType(ct, asStruct);
@@ -386,9 +380,9 @@ public class TypeCompiler implements ICompilerComponent {
                 case INTERVAL_SECOND:
                     return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.SECONDS, nullable);
                 case GEOMETRY:
-                    return new DBSPTypeGeoPoint(node, nullable);
+                    return DBSPTypeGeoPoint.create(node, nullable);
                 case TIMESTAMP:
-                    return new DBSPTypeTimestamp(node, nullable);
+                    return DBSPTypeTimestamp.create(node, nullable);
                 case DATE:
                     return new DBSPTypeDate(node, nullable);
                 case TIME:
@@ -396,7 +390,7 @@ public class TypeCompiler implements ICompilerComponent {
                 case UUID:
                     return new DBSPTypeUuid(node, nullable);
                 case VARIANT:
-                    return new DBSPTypeVariant(node, nullable);
+                    return DBSPTypeVariant.create(node, nullable);
                 default:
                     break;
             }

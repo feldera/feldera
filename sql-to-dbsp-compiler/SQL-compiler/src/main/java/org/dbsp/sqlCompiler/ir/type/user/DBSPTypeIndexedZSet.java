@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -81,5 +83,12 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
         this.elementType.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeIndexedZSet fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType keyType = fromJsonInner(node, "keyType", decoder, DBSPType.class);
+        DBSPType elementType = fromJsonInner(node, "elementType", decoder, DBSPType.class);
+        return new DBSPTypeIndexedZSet(CalciteObject.EMPTY, keyType, elementType);
     }
 }

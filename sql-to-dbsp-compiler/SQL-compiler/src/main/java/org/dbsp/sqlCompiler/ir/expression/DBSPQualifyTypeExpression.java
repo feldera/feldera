@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -32,6 +34,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+
+import java.util.List;
 
 /** An expression qualified with a type.
  * expression::type */
@@ -95,5 +99,12 @@ public final class DBSPQualifyTypeExpression extends DBSPExpression {
             return false;
         return context.equivalent(this.expression, otherExpression.expression) &&
                 DBSPTypeSemigroup.sameTypes(this.types, otherExpression.types);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPQualifyTypeExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
+        List<DBSPType> types = fromJsonInnerList(node, "types", decoder, DBSPType.class);
+        return new DBSPQualifyTypeExpression(expression, types.toArray(new DBSPType[0]));
     }
 }

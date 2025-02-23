@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -58,4 +60,13 @@ public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator {
     }
 
     // equivalent inherited from base class
+
+    @SuppressWarnings("unused")
+    public static DBSPJoinIndexOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        return new DBSPJoinIndexOperator(
+                CalciteObject.EMPTY, info.getIndexedZsetType(), info.getFunction(),
+                info.isMultiset(), info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPJoinIndexOperator.class);
+    }
 }

@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** An expression of the form &expression.
  * Should not appear in the generated code from SQL, only in the
@@ -88,5 +91,12 @@ public final class DBSPBorrowExpression extends DBSPExpression {
             return false;
         return this.mut == otherExpression.mut &&
                 context.equivalent(this.expression, otherExpression.expression);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPBorrowExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
+        boolean mut = Utilities.getBooleanProperty(node, "mut");
+        return new DBSPBorrowExpression(expression, mut);
     }
 }

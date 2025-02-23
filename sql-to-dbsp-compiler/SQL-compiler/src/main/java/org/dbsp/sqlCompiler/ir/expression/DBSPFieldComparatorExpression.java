@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -30,6 +32,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** A comparator that looks at the field of a tuple.
  * A comparator takes a field of a tuple and compares tuples on the specified field.
@@ -96,5 +99,13 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
         return this.ascending == otherExpression.ascending &&
                 this.fieldNo == otherExpression.fieldNo &&
                 this.source.equivalent(context, otherExpression.source);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPFieldComparatorExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPComparatorExpression source = fromJsonInner(node, "source", decoder, DBSPComparatorExpression.class);
+        int fieldNo = Utilities.getIntProperty(node, "fieldNo");
+        boolean ascending = Utilities.getBooleanProperty(node, "ascending");
+        return new DBSPFieldComparatorExpression(CalciteObject.EMPTY, source, fieldNo, ascending);
     }
 }

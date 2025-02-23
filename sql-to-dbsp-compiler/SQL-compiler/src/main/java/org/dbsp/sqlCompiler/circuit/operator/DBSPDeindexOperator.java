@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -51,4 +53,10 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator {
     }
 
     // equivalent inherited from base class
+
+    @SuppressWarnings("unused")
+    public static DBSPDeindexOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        return new DBSPDeindexOperator(CalciteObject.EMPTY, info.getInput(0));
+    }
 }

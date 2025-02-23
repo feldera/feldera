@@ -1,16 +1,20 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -70,5 +74,16 @@ public final class DBSPSourceMultisetOperator
                 .replace("Operator", "")
                 + " " + this.tableName
                 + " " + this.getIdString();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPSourceMultisetOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType originalRowType = DBSPNode.fromJsonInner(node, "originalRowType", decoder, DBSPType.class);
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
+        TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
+        return new DBSPSourceMultisetOperator(CalciteObject.EMPTY, CalciteObject.EMPTY,
+                info.getZsetType(), originalRowType.to(DBSPTypeStruct.class), metadata, name, null)
+                .addAnnotations(info.annotations(), DBSPSourceMultisetOperator.class);
     }
 }

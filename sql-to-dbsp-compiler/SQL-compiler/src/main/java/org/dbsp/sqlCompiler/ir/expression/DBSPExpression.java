@@ -23,8 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -273,5 +275,9 @@ public abstract class DBSPExpression
         if (repeated.hasDuplicate())
             return this.deepCopy();
         return this;
+    }
+
+    public static DBSPType getJsonType(JsonNode node, JsonDecoder decoder) {
+        return DBSPNode.fromJsonInner(node, "type", decoder, DBSPType.class);
     }
 }

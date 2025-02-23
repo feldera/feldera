@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -46,5 +48,11 @@ public final class NoExpression extends DBSPExpression {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("[NO]:").append(this.type);
+    }
+
+    @SuppressWarnings("unused")
+    public static NoExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType type = getJsonType(node, decoder);
+        return new NoExpression(type);
     }
 }

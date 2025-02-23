@@ -1,11 +1,14 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Utilities;
 
 /** Representation of an aggregate that is a call to a Min or Max function.
  * In some cases this will be treated as a NonLinearAggregate, in other cases
@@ -47,9 +50,19 @@ public class MinMaxAggregate extends NonLinearAggregate {
         visitor.postorder(this);
     }
 
-
     @Override
     public boolean compatible(AggregateBase other) {
         return other.is(MinMaxAggregate.class);
+    }
+
+    @SuppressWarnings("unused")
+    public static MinMaxAggregate fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression zero = fromJsonInner(node, "zero", decoder, DBSPExpression.class);
+        DBSPClosureExpression increment = fromJsonInner(node, "increment", decoder, DBSPClosureExpression.class);
+        DBSPExpression emptySetResult = fromJsonInner(node, "emptySetResult", decoder, DBSPExpression.class);
+        DBSPType semigroup = fromJsonInner(node, "semigroup", decoder, DBSPType.class);
+        DBSPExpression aggregatedValue = fromJsonInner(node, "aggregatedValue", decoder, DBSPExpression.class);
+        boolean isMin = Utilities.getBooleanProperty(node, "isMin");
+        return new MinMaxAggregate(CalciteObject.EMPTY, zero, increment, emptySetResult, semigroup, aggregatedValue, isMin);
     }
 }

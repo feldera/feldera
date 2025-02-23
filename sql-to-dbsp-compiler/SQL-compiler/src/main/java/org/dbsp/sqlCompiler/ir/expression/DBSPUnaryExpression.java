@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -35,19 +37,19 @@ import org.dbsp.util.IIndentStream;
 /** Unary operation */
 public final class DBSPUnaryExpression extends DBSPExpression {
     public final DBSPExpression source;
-    public final DBSPOpcode operation;
+    public final DBSPOpcode opcode;
 
     @SuppressWarnings("ConstantConditions")
-    public DBSPUnaryExpression(CalciteObject node, DBSPType type, DBSPOpcode operation, DBSPExpression operand) {
+    public DBSPUnaryExpression(CalciteObject node, DBSPType type, DBSPOpcode opcode, DBSPExpression operand) {
         super(node, type);
-        this.operation = operation;
+        this.opcode = opcode;
         this.source = operand;
         if (this.source == null)
             throw new InternalCompilerError("Null operand", node);
     }
 
     public DBSPUnaryExpression replaceSource(DBSPExpression source) {
-        return new DBSPUnaryExpression(this.getNode(), this.type, this.operation, source);
+        return new DBSPUnaryExpression(this.getNode(), this.type, this.opcode, source);
     }
 
     @Override
@@ -69,14 +71,14 @@ public final class DBSPUnaryExpression extends DBSPExpression {
         if (o == null)
             return false;
         return this.source == o.source &&
-                this.operation == o.operation &&
+                this.opcode == o.opcode &&
                 this.hasSameType(o);
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("(")
-                .append(this.operation.toString())
+                .append(this.opcode.toString())
                 .append(this.source.getType().mayBeNull ? "? " : " ")
                 .append(this.source)
                 .append(")");
@@ -84,7 +86,7 @@ public final class DBSPUnaryExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPUnaryExpression(this.getNode(), this.getType(), this.operation, this.source.deepCopy());
+        return new DBSPUnaryExpression(this.getNode(), this.getType(), this.opcode, this.source.deepCopy());
     }
 
     @Override
@@ -92,7 +94,15 @@ public final class DBSPUnaryExpression extends DBSPExpression {
         DBSPUnaryExpression otherExpression = other.as(DBSPUnaryExpression.class);
         if (otherExpression == null)
             return false;
-        return this.operation == otherExpression.operation &&
+        return this.opcode == otherExpression.opcode &&
                 context.equivalent(this.source, otherExpression.source);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPUnaryExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType type = getJsonType(node, decoder);
+        DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
+        DBSPOpcode opcode = DBSPOpcode.fromJson(node);
+        return new DBSPUnaryExpression(CalciteObject.EMPTY, type, opcode, source);
     }
 }

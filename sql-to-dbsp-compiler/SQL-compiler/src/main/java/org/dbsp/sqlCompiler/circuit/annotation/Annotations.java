@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.annotation;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.util.JsonStream;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
@@ -13,8 +15,19 @@ public class Annotations {
         this.annotations = new ArrayList<>();
     }
 
-    public Annotations(Annotations other) {
-        this.annotations = new ArrayList<>(other.annotations);
+    public static Annotations fromJson(JsonNode annotations) {
+        Annotations result = new Annotations();
+        try {
+            var it = annotations.elements();
+            while (it.hasNext()) {
+                JsonNode annotation = it.next();
+                Annotation anno = Annotation.fromJson(annotation);
+                result.add(anno);
+            }
+        } catch (ClassNotFoundException ex) {
+            throw new RuntimeException(ex);
+        }
+        return result;
     }
 
     public void replace(Annotations annotations) {
@@ -49,5 +62,16 @@ public class Annotations {
     @Override
     public String toString() {
         return this.annotations.toString();
+    }
+
+    public void asJson(JsonStream stream) {
+        stream.beginArray();
+        for (Annotation annotation: this.annotations)
+            annotation.asJson(stream);
+        stream.endArray();
+    }
+
+    public void add(Annotations annotations) {
+        this.annotations.addAll(annotations.annotations);
     }
 }

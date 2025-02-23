@@ -1,8 +1,11 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
+import org.dbsp.sqlCompiler.compiler.ViewMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -13,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -78,5 +82,16 @@ public final class DBSPViewDeclarationOperator
                 .replace("Operator", "")
                 + " " + this.tableName
                 + " " + this.getIdString();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPViewDeclarationOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        ProgramIdentifier viewName = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
+        CommonInfo info = commonInfoFromJson(node, decoder);
+        DBSPTypeStruct originalRowType = fromJsonInner(node, "originalRowType", decoder, DBSPTypeStruct.class);
+        TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
+        return new DBSPViewDeclarationOperator(CalciteObject.EMPTY, CalciteObject.EMPTY,
+                info.getZsetType(), originalRowType, metadata, viewName)
+                .addAnnotations(info.annotations(), DBSPViewDeclarationOperator.class);
     }
 }

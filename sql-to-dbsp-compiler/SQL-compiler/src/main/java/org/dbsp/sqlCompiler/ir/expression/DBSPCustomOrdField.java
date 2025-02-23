@@ -1,5 +1,8 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -8,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** An expression of the form '(*expression).0.field' or
  * Some((*expression).0.field), where
@@ -85,5 +89,12 @@ public final class DBSPCustomOrdField extends DBSPExpression {
             return false;
         return context.equivalent(this.expression, otherExpression.expression) &&
                 this.fieldNo == otherExpression.fieldNo;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPCustomOrdField fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
+        int fieldNo = Utilities.getIntProperty(node, "fieldNo");
+        return new DBSPCustomOrdField(expression, fieldNo);
     }
 }

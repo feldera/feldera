@@ -1,5 +1,7 @@
 package org.dbsp.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import java.util.List;
 
 /** Identity shuffle */
@@ -18,7 +20,7 @@ public class IdShuffle implements Shuffle {
     @Override
     public <T> List<T> shuffle(List<T> data) {
         assert data.size() <= this.inputLength :
-            "Shuffling " + data.size() + " more than expected " + this.inputLength;
+                "Shuffling " + data.size() + " more than expected " + this.inputLength;
         return data;
     }
 
@@ -40,5 +42,19 @@ public class IdShuffle implements Shuffle {
     @Override
     public boolean isIdentityPermutation() {
         return true;
+    }
+
+    @Override
+    public void asJson(JsonStream stream) {
+        stream.beginObject()
+                .appendClass(this)
+                .label("inputLength")
+                .append(this.inputLength)
+                .endObject();
+    }
+
+    public static IdShuffle fromJson(JsonNode node) {
+        int inputLength = Utilities.getIntProperty(node, "inputLength");
+        return new IdShuffle(inputLength);
     }
 }

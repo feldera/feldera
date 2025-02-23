@@ -1,5 +1,7 @@
 package org.dbsp.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -72,5 +74,27 @@ public class ExplicitShuffle implements Shuffle {
     @Override
     public String toString() {
         return this.indexes.toString();
+    }
+
+    @Override
+    public void asJson(JsonStream stream) {
+        stream.beginObject()
+                .appendClass(this)
+                .label("inputLength")
+                .append(this.inputLength)
+                .label("indexes")
+                .beginArray();
+        for (int index: this.indexes)
+            stream.append(index);
+        stream.endArray()
+                .endObject();
+    }
+
+    public static ExplicitShuffle fromJson(JsonNode node) {
+        int inputLength = Utilities.getIntProperty(node, "inputLength");
+        List<Integer> indexes = Linq.list(Linq.map(
+                Utilities.getProperty(node, "indexes").elements(),
+                JsonNode::asInt));
+        return new ExplicitShuffle(inputLength, indexes);
     }
 }

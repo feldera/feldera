@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -16,6 +18,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -242,5 +245,22 @@ public final class DBSPFlatmap extends DBSPExpression {
                 .append("::new(")
                 .join(", ", expressions)
                 .append(")} )}");
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPFlatmap fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPTypeTuple inputElementType = fromJsonInner(node, "inputElementType", decoder, DBSPTypeTuple.class);
+        DBSPClosureExpression collectionExpression = fromJsonInner(node, "collectionExpression", decoder, DBSPClosureExpression.class);
+        List<Integer> leftInputIndexes = Linq.list(Linq.map(
+                        Utilities.getProperty(node, "leftInputIndexes").elements(),
+                        JsonNode::asInt));
+        DBSPTypeFunction resultElementTYpe = fromJsonInner(node, "resultElementType", decoder, DBSPTypeFunction.class);
+        List<DBSPClosureExpression> rightProjections = null;
+        if (node.has("rightProjections"))
+            rightProjections = fromJsonInnerList(node, "rightProjections", decoder, DBSPClosureExpression.class);
+        DBSPType ordinalityIndexType = fromJsonInner(node, "ordinalityIndexType", decoder, DBSPType.class);
+        Shuffle shuffle = Shuffle.fromJson(Utilities.getProperty(node, "shuffle"));
+        return new DBSPFlatmap(CalciteObject.EMPTY, resultElementTYpe, inputElementType,
+                collectionExpression, leftInputIndexes, rightProjections, ordinalityIndexType, shuffle);
     }
 }

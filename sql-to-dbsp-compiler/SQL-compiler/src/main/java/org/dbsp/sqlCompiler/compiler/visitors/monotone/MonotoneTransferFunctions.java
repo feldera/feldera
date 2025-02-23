@@ -745,8 +745,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     public void postorder(DBSPUnaryExpression expression) {
         MonotoneExpression source = this.get(expression.source);
         DBSPExpression reduced = null;
-        if ((expression.operation == DBSPOpcode.UNARY_PLUS ||
-                expression.operation == DBSPOpcode.TYPEDBOX) &&
+        if ((expression.opcode == DBSPOpcode.UNARY_PLUS ||
+                expression.opcode == DBSPOpcode.TYPEDBOX) &&
             source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
             if (this.positiveExpressions.contains(expression.source))

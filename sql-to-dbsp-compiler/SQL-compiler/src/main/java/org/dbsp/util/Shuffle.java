@@ -1,5 +1,8 @@
 package org.dbsp.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+
 import java.util.List;
 
 /** Interface describing an operator which shuffles the elements from a list.
@@ -22,4 +25,17 @@ public interface Shuffle {
 
     /** True if this shuffle is an identity permutation */
     boolean isIdentityPermutation();
+
+    /** Append a description of the shuffle as a JSON object */
+    void asJson(JsonStream stream);
+
+    static Shuffle fromJson(JsonNode node) {
+        String type = Utilities.getStringProperty(node, "class");
+        if (type.equals("IdShuffle"))
+            return IdShuffle.fromJson(node);
+        else if (type.equals("ExplicitShuffle"))
+            return ExplicitShuffle.fromJson(node);
+        else
+            throw new UnimplementedException();
+    }
 }

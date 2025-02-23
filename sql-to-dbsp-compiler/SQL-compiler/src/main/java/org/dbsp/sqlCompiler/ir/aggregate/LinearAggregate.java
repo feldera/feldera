@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -171,5 +173,13 @@ public class LinearAggregate extends AggregateBase {
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         return false;
+    }
+
+    @SuppressWarnings("unused")
+    public static LinearAggregate fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPClosureExpression map = fromJsonInner(node, "map", decoder, DBSPClosureExpression.class);
+        DBSPClosureExpression postProcess = fromJsonInner(node, "postProcess", decoder, DBSPClosureExpression.class);
+        DBSPExpression emptySetResult = fromJsonInner(node, "emptySetResult", decoder, DBSPExpression.class);
+        return new LinearAggregate(CalciteObject.EMPTY, map, postProcess, emptySetResult);
     }
 }

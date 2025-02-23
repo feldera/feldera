@@ -149,6 +149,7 @@ import org.dbsp.util.ICastable;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Properties;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -159,7 +160,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Properties;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -187,7 +187,6 @@ public class SqlToRelCompiler implements IWritesLogs {
     private final SqlParser.Config parserConfig;
     private final Catalog calciteCatalog;
     public final RelOptCluster cluster;
-    public final RelDataTypeFactory typeFactory;
     private final SqlToRelConverter.Config converterConfig;
     /** Perform additional type validation in top of the Calcite rules. */
     @Nullable
@@ -237,7 +236,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         // This influences function name lookup.
         // We want that to be case-insensitive.
         // Notice that this does NOT affect the parser, only the validator.
-        Properties connConfigProp = new Properties();
+        java.util.Properties connConfigProp = new java.util.Properties();
         connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), String.valueOf(false));
         this.udt = new HashMap<>();
         this.connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
@@ -248,7 +247,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .withUnquotedCasing(unquotedCasing)
                 .withQuotedCasing(Casing.UNCHANGED)
                 .withConformance(SqlConformanceEnum.LENIENT);
-        this.typeFactory = new SqlTypeFactoryImpl(TYPE_SYSTEM);
         this.calciteCatalog = new Catalog("schema");
         this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
         this.rootSchema.add(calciteCatalog.schemaName, this.calciteCatalog);
@@ -273,7 +271,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         // We use a series of planner stages later to perform the real optimizations.
         RelOptPlanner planner = new HepPlanner(new HepProgramBuilder().build());
         planner.setExecutor(RexUtil.EXECUTOR);
-        this.cluster = RelOptCluster.create(planner, new RexBuilder(this.typeFactory));
+        this.cluster = RelOptCluster.create(planner, new RexBuilder(TYPE_FACTORY));
         this.converterConfig = SqlToRelConverter.config()
                 // Calcite recommends not using withExpand, but there are no
                 // rules to decorrelate some queries that withExpand will produce,
@@ -297,7 +295,6 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.options = source.options;
         this.parserConfig = source.parserConfig;
         this.cluster = source.cluster;
-        this.typeFactory = source.typeFactory;
         this.converterConfig = source.converterConfig;
         this.connectionConfig = source.connectionConfig;
         this.errorReporter = source.errorReporter;
@@ -348,6 +345,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         @Override
         public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
     };
+
+    public static final RelDataTypeFactory TYPE_FACTORY = new SqlTypeFactoryImpl(TYPE_SYSTEM);
 
     /** Invoked when front-end compilation is finished, to do additional validation */
     public void endCompilation(IErrorReporter reporter) {
@@ -491,11 +490,11 @@ public class SqlToRelCompiler implements IWritesLogs {
         validatorConfig = validatorConfig.withConformance(new Conformance(validatorConfig.conformance()));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
                 CalciteSchema.from(this.rootSchema), Collections.singletonList(calciteCatalog.schemaName),
-                this.typeFactory, connectionConfig);
+                TYPE_FACTORY, connectionConfig);
         this.validator = SqlValidatorUtil.newValidator(
                 newOperatorTable,
                 catalogReader,
-                this.typeFactory,
+                TYPE_FACTORY,
                 validatorConfig
         );
         this.converter = new SqlToRelConverter(
@@ -632,7 +631,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             // there is sets the nullability of all record fields.
             return new RelRecordType(type.getStructKind(), type.getFieldList(), true);
         }
-        return this.typeFactory.createTypeWithNullability(type, true);
+        return TYPE_FACTORY.createTypeWithNullability(type, true);
     }
 
     private RelDataType deriveType(SqlDataTypeSpec typeSpec) {
@@ -669,7 +668,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             // Don't need 'collectionType', but there is no other way to check whether the typeName is for an ARRAY
             RelDataType collectionType = collection.deriveType(this.getValidator());
             if (collectionType.getSqlTypeName() == SqlTypeName.ARRAY) {
-                RelDataType result = this.typeFactory.createArrayType(elementType, -1);
+                RelDataType result = TYPE_FACTORY.createArrayType(elementType, -1);
                 if (typeSpec.getNullable() != null && typeSpec.getNullable())
                     result = this.createNullableType(result);
                 return result;
@@ -686,7 +685,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 // Nullability *can* be specified for ROW fields!
                 fields.add(elementType);
             }
-            RelDataType result = this.typeFactory.createStructType(
+            RelDataType result = TYPE_FACTORY.createStructType(
                     fields,
                     fieldNames.stream()
                             .map(SqlIdentifier::toString)
@@ -701,7 +700,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             RelDataType valueType = this.specToRel(value, false);
             // keyType = this.createNullableType(keyType);
             valueType = this.createNullableType(valueType);
-            RelDataType result = this.typeFactory.createMapType(keyType, valueType);
+            RelDataType result = TYPE_FACTORY.createMapType(keyType, valueType);
             if (typeSpec.getNullable() != null && typeSpec.getNullable())
                 result = this.createNullableType(result);
             return result;
@@ -721,7 +720,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         result = this.deriveType(spec);
         if (neverNullable) {
-            result = this.typeFactory.createTypeWithNullability(result, false);
+            result = TYPE_FACTORY.createTypeWithNullability(result, false);
         }
         if (typeSpec instanceof SqlUserDefinedTypeNameSpec udtObject) {
             if (result.isStruct()) {
@@ -1561,10 +1560,14 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
         List<RelColumnMetadata> cols = this.createTableColumnsMetadata(ct, ct.name, sources);
         @Nullable PropertyList properties = this.createProperties(ct.tableProperties);
-        if (properties != null)
+        Properties props = null;
+        if (properties != null) {
             properties.checkDuplicates(this.errorReporter);
+            properties.checkKnownProperties(this::validateTableProperty);
+            props = new Properties(properties);
+        }
         List<ForeignKey> fk = this.createForeignKeys(ct);
-        CreateTableStatement table = new CreateTableStatement(node, tableName, cols, fk, properties);
+        CreateTableStatement table = new CreateTableStatement(node, tableName, cols, fk, props);
         boolean success = this.calciteCatalog.addTable(table, this.errorReporter);
         if (!success)
             return null;
@@ -1580,7 +1583,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     RelDataType type = this.specToRel(attr.dataType, false);
                     return new MapEntry<>(name, type);
                 });
-        RelDataType structType = this.typeFactory.createStructType(parameters);
+        RelDataType structType = TYPE_FACTORY.createStructType(parameters);
         SqlDataTypeSpec retType = decl.getReturnType();
         RelDataType returnType = this.specToRel(retType, false);
         Boolean nullableResult = retType.getNullable();
@@ -1595,6 +1598,53 @@ public class SqlToRelCompiler implements IWritesLogs {
     RelRoot sqlToRel(SqlNode node) {
         SqlToRelConverter converter = this.getConverter();
         return converter.convertQuery(node, true, true);
+    }
+
+    void validateViewProperty(SqlFragment key, SqlFragment value) {
+        CalciteObject node = CalciteObject.create(key.getParserPosition());
+        String keyString = key.getString();
+        switch (keyString) {
+            case CreateViewStatement.EMIT_FINAL:
+                // Actual value validated elsewhere
+                break;
+            case "rust":
+            case "connectors":
+                this.validateConnectorsProperty(node, key, value);
+                break;
+            default:
+                throw new CompilationError("Unknown property " + Utilities.singleQuote(keyString), node);
+        }
+    }
+
+    void validateBooleanProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
+        String vs = value.getString();
+        if (vs.equalsIgnoreCase("true") || vs.equalsIgnoreCase("false"))
+            return;
+        throw new CompilationError("Expected a boolean value for property " +
+                Utilities.singleQuote(key.getString()), node);
+    }
+
+    @SuppressWarnings("unused")
+    void validateConnectorsProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
+        // Nothing right now.
+        // This is validated by the pipeline_manager, and it's relatively fast.
+        // Checking that this is legal JSON may make interactive editing of the SQL program annoying.
+    }
+
+    void validateTableProperty(SqlFragment key, SqlFragment value) {
+        CalciteObject node = CalciteObject.create(key.getParserPosition());
+        String keyString = key.getString();
+        switch (key.getString()) {
+            case "materialized":
+            case "append_only":
+                this.validateBooleanProperty(node, key, value);
+                break;
+            case "connectors":
+                this.validateConnectorsProperty(node, key, value);
+                break;
+            default:
+                throw new CompilationError("Unknown property " + Utilities.singleQuote(keyString), node);
+        }
     }
 
     @Nullable
@@ -1613,10 +1663,13 @@ public class SqlToRelCompiler implements IWritesLogs {
         RelRoot relRoot = this.sqlToRel(query);
         List<RelColumnMetadata> columns = this.createViewColumnsMetadata(CalciteObject.create(node),
                 cv.name, relRoot, cv.columnList, cv.viewKind, lateness, sources);
+        ProgramIdentifier viewName = Utilities.toIdentifier(cv.name);
         if (columns == null)
             // error
             return null;
         @Nullable PropertyList viewProperties = this.createProperties(cv.viewProperties);
+        int emitFinal = -1;
+        Properties props = null;
         if (viewProperties != null) {
             viewProperties.checkDuplicates(this.errorReporter);
             SqlFragment materialized = viewProperties.getPropertyValue("materialized");
@@ -1626,6 +1679,39 @@ public class SqlToRelCompiler implements IWritesLogs {
                         "The 'materialized' property for views is not used, " +
                                 "please use 'CREATE MATERIALIZED VIEW' instead");
             }
+
+            SqlFragment val = viewProperties.getPropertyValue(CreateViewStatement.EMIT_FINAL);
+            if (val != null) {
+                try {
+                    int index = Integer.parseInt(val.getString());
+                    if (index < 0 || index >= columns.size())
+                        this.errorReporter.reportError(
+                                new SourcePositionRange(val.getParserPosition()),
+                                "Illegal column number",
+                                "View " + viewName.singleQuote() +
+                            " does not have a column with number " + index);
+                } catch (NumberFormatException ignored) {
+                    ProgramIdentifier canonical =
+                            new ProgramIdentifier(options.canonicalName(
+                                    val.getString(), false), false);
+                    for (int i = 0; i < columns.size(); i++) {
+                        if (columns.get(i).getName().equals(canonical)) {
+                            emitFinal = i;
+                            break;
+                        }
+                    }
+                    if (emitFinal < 0) {
+                        this.errorReporter.reportError(
+                                new SourcePositionRange(val.getParserPosition()),
+                                "Illegal column name",
+                                "Column " + canonical.singleQuote() +
+                                        " not found in " + viewName.singleQuote());
+                    }
+                }
+            }
+
+            viewProperties.checkKnownProperties(this::validateViewProperty);
+            props = new Properties(viewProperties);
         }
 
         // Convert plan to use checked arithmetic
@@ -1637,7 +1723,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         RelNode optimized = this.optimize(relRoot.rel);
         relRoot = relRoot.withRel(optimized);
         CreateViewStatement view = new CreateViewStatement(node,
-                Utilities.toIdentifier(cv.name), columns, cv, relRoot, viewProperties);
+                viewName, columns, cv, relRoot, emitFinal, props);
         // From Calcite's point of view we treat this view just as another table.
         boolean success = this.calciteCatalog.addTable(view, this.errorReporter);
         if (!success)
@@ -1778,7 +1864,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     if (typeSpec.getNullable() != null && typeSpec.getNullable()) {
                         // This is tricky, because it is not using the typeFactory that is
                         // the lambda argument above, but hopefully it should be the same
-                        assert typeFactory == this.typeFactory;
+                        assert typeFactory == TYPE_FACTORY;
                         type = this.createNullableType(type);
                     }
                     builder.add(attributeDef.name.getSimple(), type);
@@ -1791,7 +1877,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         };
         ProgramIdentifier typeName = Utilities.toIdentifier(ct.name);
         this.rootSchema.add(typeName.name(), proto);
-        RelDataType relDataType = proto.apply(this.typeFactory);
+        RelDataType relDataType = proto.apply(TYPE_FACTORY);
         CreateTypeStatement result = new CreateTypeStatement(node, ct, typeName, relDataType);
         boolean success = this.calciteCatalog.addType(typeName, this.errorReporter, result);
         if (!success)

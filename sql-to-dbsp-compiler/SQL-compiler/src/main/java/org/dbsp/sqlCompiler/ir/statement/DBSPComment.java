@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -11,6 +13,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 @NonCoreIR
 public final class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
@@ -62,5 +65,11 @@ public final class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
     @Override
     public EquivalenceResult equivalent(EquivalenceContext context, DBSPStatement other) {
         throw new UnsupportedException(this.getNode());
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPComment fromJson(JsonNode node, JsonDecoder decoder) {
+        String comment = Utilities.getStringProperty(node, "comment");
+        return new DBSPComment(comment);
     }
 }

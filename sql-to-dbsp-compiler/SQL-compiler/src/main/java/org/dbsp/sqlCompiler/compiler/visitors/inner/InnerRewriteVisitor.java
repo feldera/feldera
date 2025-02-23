@@ -290,7 +290,7 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPTypeVariant type) {
         this.push(type);
         this.pop(type);
-        DBSPType result = new DBSPTypeVariant(type.getNode(), type.mayBeNull);
+        DBSPType result = DBSPTypeVariant.create(type.getNode(), type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -487,8 +487,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPExpression result = new DBSPDoubleLiteral(
-                expression.getNode(), type, expression.value, expression.raw);
+        DBSPExpression result = new DBSPDoubleLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -499,7 +498,7 @@ public abstract class InnerRewriteVisitor
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
         DBSPExpression result = new DBSPRealLiteral(
-                expression.getNode(), type, expression.value, expression.raw);
+                expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -618,9 +617,8 @@ public abstract class InnerRewriteVisitor
     @Override
     public VisitDecision preorder(DBSPNullLiteral expression) {
         this.push(expression);
-        DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPExpression result = new DBSPNullLiteral(expression.getNode(), type, null);
+        DBSPExpression result = DBSPNullLiteral.INSTANCE;
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -1186,7 +1184,7 @@ public abstract class InnerRewriteVisitor
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
         DBSPExpression result = new DBSPUnaryExpression(expression.getNode(), type,
-                    expression.operation, source);
+                    expression.opcode, source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

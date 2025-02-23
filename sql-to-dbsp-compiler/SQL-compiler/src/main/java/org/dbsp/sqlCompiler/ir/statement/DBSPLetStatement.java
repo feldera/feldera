@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.statement;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -32,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
@@ -137,5 +140,17 @@ public final class DBSPLetStatement extends DBSPStatement implements IDBSPDeclar
     @Override
     public DBSPType getType() {
         return this.type;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPLetStatement fromJson(JsonNode node, JsonDecoder decoder) {
+        String variable = Utilities.getStringProperty(node, "variable");
+        boolean mutable = Utilities.getBooleanProperty(node, "mutable");
+        DBSPType type = fromJsonInner(node, "type", decoder, DBSPType.class);
+        if (node.has("initializer")) {
+            DBSPExpression initializer = fromJsonInner(node, "initializer", decoder, DBSPExpression.class);
+            return new DBSPLetStatement(variable, initializer, mutable);
+        }
+        return new DBSPLetStatement(variable, type, mutable);
     }
 }

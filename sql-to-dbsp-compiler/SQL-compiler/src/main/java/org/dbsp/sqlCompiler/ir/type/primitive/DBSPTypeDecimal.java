@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -33,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
@@ -159,5 +162,13 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
     public String toString() {
         return "DECIMAL(" + this.precision + ", " + this.scale + ")" +
                 (this.mayBeNull ? "?" : "");
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeDecimal fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        int scale = Utilities.getIntProperty(node, "scale");
+        int precision = Utilities.getIntProperty(node, "precision");
+        return new DBSPTypeDecimal(CalciteObject.EMPTY, precision, scale, mayBeNull);
     }
 }

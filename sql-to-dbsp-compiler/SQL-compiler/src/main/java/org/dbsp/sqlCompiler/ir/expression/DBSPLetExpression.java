@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -91,5 +93,13 @@ public class DBSPLetExpression extends DBSPExpression implements IDBSPDeclaratio
     @Override
     public String getName() {
         return this.variable.variable;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPLetExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPVariablePath variable = fromJsonInner(node, "variable", decoder, DBSPVariablePath.class);
+        DBSPExpression initializer = fromJsonInner(node, "initializer", decoder, DBSPExpression.class);
+        DBSPExpression consumer = fromJsonInner(node, "consumer", decoder, DBSPExpression.class);
+        return new DBSPLetExpression(variable, initializer, consumer);
     }
 }

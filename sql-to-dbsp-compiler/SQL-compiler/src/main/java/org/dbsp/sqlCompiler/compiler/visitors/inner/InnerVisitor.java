@@ -901,6 +901,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPTypeBaseType) node);
     }
 
+    public void postorder(DBSPTypeMonthsInterval node) {
+        this.postorder((DBSPTypeBaseType) node);
+    }
+
     public void postorder(DBSPTypeGeo node) {
         this.postorder((DBSPTypeBaseType) node);
     }
@@ -989,6 +993,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
 
     public void postorder(DBSPTypeStruct node) {
         this.postorder((DBSPType) node);
+    }
+
+    public void postorder(DBSPTypeStruct.Field node) {
+        this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(DBSPTypeStr node) {
@@ -1317,6 +1325,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPIntervalMillisLiteral node) {
+        this.postorder((DBSPLiteral) node);
+    }
+
+    public void postorder(DBSPIntervalMonthsLiteral node) {
         this.postorder((DBSPLiteral) node);
     }
 

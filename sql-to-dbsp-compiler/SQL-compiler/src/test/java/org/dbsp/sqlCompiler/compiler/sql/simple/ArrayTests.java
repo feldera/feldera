@@ -325,7 +325,7 @@ public class ArrayTests extends BaseSQLTests {
     public void testElementNull() {
         this.testQuery("", "SELECT ELEMENT(NULL)", new InputOutputChange(new Change(),
                 new Change(new DBSPZSetExpression(
-                        new DBSPTupleExpression(new DBSPNullLiteral())))).toStream());
+                        new DBSPTupleExpression(DBSPNullLiteral.INSTANCE)))).toStream());
     }
 
     @Test

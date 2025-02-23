@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -11,12 +13,26 @@ import org.dbsp.util.IIndentStream;
 
 /** Represents a SQL VARIANT type: dynamically-typed values. */
 public class DBSPTypeVariant extends DBSPTypeBaseType {
-    public DBSPTypeVariant(CalciteObject node, boolean mayBeNull) {
+    DBSPTypeVariant(CalciteObject node, boolean mayBeNull) {
         super(node, DBSPTypeCode.VARIANT, mayBeNull);
     }
 
-    public DBSPTypeVariant(boolean mayBeNull) {
+    public static final DBSPTypeVariant INSTANCE = new DBSPTypeVariant(false);
+    public static final DBSPTypeVariant INSTANCE_NULLABLE = new DBSPTypeVariant(true);
+
+    DBSPTypeVariant(boolean mayBeNull) {
         this(CalciteObject.EMPTY, mayBeNull);
+    }
+
+    public static DBSPTypeVariant create(CalciteObject node, boolean mayBeNull) {
+        if (node.isEmpty()) {
+            return mayBeNull ? INSTANCE_NULLABLE : INSTANCE;
+        }
+        return new DBSPTypeVariant(node, mayBeNull);
+    }
+
+    public static DBSPTypeVariant create(boolean mayBeNull) {
+        return mayBeNull ? INSTANCE_NULLABLE : INSTANCE;
     }
 
     @Override
@@ -55,5 +71,11 @@ public class DBSPTypeVariant extends DBSPTypeBaseType {
     @Override
     public boolean hasCopy() {
         return false;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeVariant fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = fromJsonMayBeNull(node);
+        return DBSPTypeVariant.create(mayBeNull);
     }
 }

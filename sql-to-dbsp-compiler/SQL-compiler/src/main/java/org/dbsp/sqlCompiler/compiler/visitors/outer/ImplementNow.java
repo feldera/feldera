@@ -95,7 +95,7 @@ public class ImplementNow extends Passes {
         }
 
         static DBSPTypeTimestamp timestampType() {
-            return new DBSPTypeTimestamp(CalciteObject.EMPTY, false);
+            return DBSPTypeTimestamp.INSTANCE;
         }
 
         @Override
@@ -518,7 +518,7 @@ public class ImplementNow extends Passes {
                 if (expression.is(DBSPUnaryExpression.class)) {
                     DBSPUnaryExpression unary = expression.to(DBSPUnaryExpression.class);
                     // If the filter is wrap_bool(expression), analyze expression
-                    if (unary.operation == DBSPOpcode.WRAP_BOOL)
+                    if (unary.opcode == DBSPOpcode.WRAP_BOOL)
                         expression = unary.source;
                 }
                 this.analyzeConjunction(expression);
@@ -826,7 +826,7 @@ public class ImplementNow extends Passes {
 
                 DBSPDifferentiateOperator dNow = new DBSPDifferentiateOperator(circuit.getNode(), now.outputPort());
                 now = dNow;
-                dNow.annotations.add(new NoInc());
+                dNow.annotations.add(NoInc.INSTANCE);
             }
             this.addOperator(now);
             this.map(now.outputPort(), now.outputPort(), false);
@@ -838,7 +838,7 @@ public class ImplementNow extends Passes {
             this.nowIndexed = new DBSPMapIndexOperator(
                     node, indexFunction.closure(var),
                     TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), new DBSPTypeTuple(timestamp)), now.outputPort());
-            this.nowIndexed.addAnnotation(new AlwaysMonotone());
+            this.nowIndexed.addAnnotation(AlwaysMonotone.INSTANCE, DBSPSimpleOperator.class);
             this.addOperator(this.nowIndexed);
             return VisitDecision.CONTINUE;
         }

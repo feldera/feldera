@@ -136,7 +136,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 if (!RemoveIdentityOperators.isIdentityFunction(split.left)) {
                     // Identical index operators on both sides
                     DBSPSimpleOperator leftIndex = new DBSPMapIndexOperator(operator.getNode(),
-                            split.left, left).addAnnotation(new IsProjection(size));
+                            split.left, left).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
                     this.addOperator(leftIndex);
                     leftPort = leftIndex.outputPort();
                 }
@@ -147,7 +147,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 DBSPClosureExpression closure = keysOnly(join.right().getOutputIndexedZSetType());
                 if (!RemoveIdentityOperators.isIdentityFunction(closure)) {
                     DBSPSimpleOperator rightIndex = new DBSPMapIndexOperator(operator.getNode(),
-                            closure, right).addAnnotation(new IsProjection(size));
+                            closure, right).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
                     this.addOperator(rightIndex);
                     rightPort = rightIndex.outputPort();
                 }

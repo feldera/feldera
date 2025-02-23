@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -57,5 +59,11 @@ public final class DBSPStructWithHelperItem extends DBSPItem implements IHasType
     public EquivalenceResult equivalent(EquivalenceContext context, DBSPStatement other) {
         // Since this is NonCoreIR we leave this for later
         return new EquivalenceResult(false, context);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPStructWithHelperItem fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPTypeStruct type = fromJsonInner(node, "type", decoder, DBSPTypeStruct.class);
+        return new DBSPStructWithHelperItem(type);
     }
 }

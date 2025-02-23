@@ -141,7 +141,7 @@ public class TimeTests extends BaseSQLTests {
                     FROM T
                 """;
         this.testQuery(query, new DBSPTimestampLiteral(
-                CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, true), 100L));
+                CalciteObject.EMPTY, DBSPTypeTimestamp.NULLABLE_INSTANCE, 100L));
     }
 
     @Test

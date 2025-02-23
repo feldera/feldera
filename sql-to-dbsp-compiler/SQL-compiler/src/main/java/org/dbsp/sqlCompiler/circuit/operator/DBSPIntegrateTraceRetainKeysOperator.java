@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -8,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -101,4 +104,12 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     }
 
     // equivalent inherited from parent
+
+    @SuppressWarnings("unused")
+    public static DBSPIntegrateTraceRetainKeysOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
+        return new DBSPIntegrateTraceRetainKeysOperator(CalciteObject.EMPTY,
+                info.getFunction(), info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPIntegrateTraceRetainKeysOperator.class);
+    }
 }

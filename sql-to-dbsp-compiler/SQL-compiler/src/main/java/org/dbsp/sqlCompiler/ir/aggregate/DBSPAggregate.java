@@ -1,6 +1,9 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.apache.avro.data.Json;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -143,5 +146,12 @@ public final class DBSPAggregate extends DBSPNode
         context.rightDeclaration.substitute(other.rowVar.variable, other);
         context.leftToRight.substitute(this, other);
         return context.equivalent(this.aggregates, other.aggregates);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPAggregate fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPVariablePath rowVar = fromJsonInner(node, "rowVar", decoder, DBSPVariablePath.class);
+        List<AggregateBase> aggregates = fromJsonInnerList(node, "aggregates", decoder, AggregateBase.class);
+        return new DBSPAggregate(CalciteObject.EMPTY, rowVar, aggregates);
     }
 }

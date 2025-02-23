@@ -54,7 +54,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPTypeTuple tuple = source.getType().to(DBSPTypeTuple.class);
             DBSPTypeMap type = new DBSPTypeMap(
                     DBSPTypeString.varchar(false),
-                    new DBSPTypeVariant(false),
+                    DBSPTypeVariant.create(false),
                     source.getType().mayBeNull);
 
             if (tuple.originalStruct == null) {
@@ -71,7 +71,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 DBSPExpression field = source.field(i).simplify();
                 if (!field.getType().hasCopy())
                     field = field.applyCloneIfNeeded();
-                DBSPExpression rec = field.cast(new DBSPTypeVariant(false), false);
+                DBSPExpression rec = field.cast(DBSPTypeVariant.create(false), false);
                 values.add(rec);
             }
             expression = new DBSPMapExpression(type, keys, values);
@@ -86,15 +86,15 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPVariablePath var = elementType.ref().var();
             // This expression may need to be recursively converted
             DBSPExpression converter = var.deref()
-                    .applyCloneIfNeeded().cast(new DBSPTypeVariant(false), false)
+                    .applyCloneIfNeeded().cast(DBSPTypeVariant.create(false), false)
                     .closure(var);
             expression = new DBSPBinaryExpression(source.getNode(),
-                    new DBSPTypeArray(new DBSPTypeVariant(false), vecType.mayBeNull),
+                    new DBSPTypeArray(DBSPTypeVariant.create(false), vecType.mayBeNull),
                     DBSPOpcode.ARRAY_CONVERT, source, converter);
         } else {
             return null;
         }
-        return new DBSPCastExpression(source.getNode(), expression, new DBSPTypeVariant(mayBeNull), false);
+        return new DBSPCastExpression(source.getNode(), expression, DBSPTypeVariant.create(mayBeNull), false);
     }
 
     DBSPExpression convertToStruct(DBSPExpression source, DBSPTypeTuple type) {
@@ -111,7 +111,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             } else {
                 index = new DBSPBinaryExpression(
                         // Result of index is always nullable
-                        source.getNode(), new DBSPTypeVariant(true),
+                        source.getNode(), DBSPTypeVariant.create(true),
                         DBSPOpcode.VARIANT_INDEX, source.applyCloneIfNeeded(),
                         new DBSPStringLiteral(fieldName.toString()));
             }
@@ -134,7 +134,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 return null;
             } else {
                 // Convert to a Vector of VARIANT, and then...
-                DBSPTypeArray vecVType = new DBSPTypeArray(new DBSPTypeVariant(false), sourceType.mayBeNull);
+                DBSPTypeArray vecVType = new DBSPTypeArray(DBSPTypeVariant.create(false), sourceType.mayBeNull);
                 DBSPExpression vecV = source.cast(vecVType, safe);
                 // ...convert each element recursively to the target element type
                 DBSPVariablePath var = vecVType.getElementType().ref().var();

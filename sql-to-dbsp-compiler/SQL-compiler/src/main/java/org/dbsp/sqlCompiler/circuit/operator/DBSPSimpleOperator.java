@@ -1,13 +1,15 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -19,6 +21,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -187,11 +190,6 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
      */
     public abstract DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force);
 
-    public DBSPSimpleOperator addAnnotation(Annotation annotation) {
-        this.annotations.add(annotation);
-        return this;
-    }
-
     @Override
     public String toString() {
         return this.getClass()
@@ -289,5 +287,45 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     @Override
     public DBSPType streamType(int outputNumber) {
         return this.outputStreamType;
+    }
+
+    record CommonInfo(
+            @Nullable DBSPExpression function,
+            DBSPType outputType,
+            boolean isMultiset,
+            List<OutputPort> inputs,
+            Annotations annotations) {
+        public DBSPExpression getFunction() {
+            return Objects.requireNonNull(this.function);
+        }
+
+        public DBSPClosureExpression getClosureFunction() {
+            return this.getFunction().to(DBSPClosureExpression.class);
+        }
+
+        public DBSPTypeZSet getZsetType() {
+            return this.outputType.to(DBSPTypeZSet.class);
+        }
+
+        public DBSPTypeIndexedZSet getIndexedZsetType() {
+            return this.outputType.to(DBSPTypeIndexedZSet.class);
+        }
+
+        public OutputPort getInput(int index) {
+            return this.inputs.get(index);
+        }
+    }
+
+    static CommonInfo commonInfoFromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType outputType = fromJsonInner(node, "outputType", decoder, DBSPType.class);
+        DBSPExpression function = null;
+        if (node.has("function"))
+            function = fromJsonInner(node, "function", decoder, DBSPExpression.class);
+        boolean isMultiset = Utilities.getBooleanProperty(node, "isMultiset");
+        List<OutputPort> inputs = Linq.list(Linq.map(
+                Utilities.getProperty(node, "inputs").elements(),
+                e -> OutputPort.fromJson(e, decoder)));
+        Annotations annotations = Annotations.fromJson(Utilities.getProperty(node, "annotations"));
+        return new CommonInfo(function, outputType, isMultiset, inputs, annotations);
     }
 }

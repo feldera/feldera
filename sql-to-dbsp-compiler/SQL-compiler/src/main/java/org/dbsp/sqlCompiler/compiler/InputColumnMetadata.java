@@ -1,17 +1,23 @@
 package org.dbsp.sqlCompiler.compiler;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
+import org.dbsp.util.IJson;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
 /** Metadata describing an input table column. */
 public class InputColumnMetadata
-        implements IHasLateness, IHasWatermark, IHasSourcePositionRange, IHasType {
+        implements IHasLateness, IHasWatermark, IHasSourcePositionRange, IHasType, IJson {
     public final CalciteObject node;
     /** Column name. */
     public final ProgramIdentifier name;
@@ -71,5 +77,46 @@ public class InputColumnMetadata
     @Override
     public DBSPExpression getWatermark() {
         return this.watermark;
+    }
+
+    @Override
+    public void asJson(ToJsonInnerVisitor visitor) {
+        visitor.stream.beginObject()
+                .label("name");
+        this.name.asJson(visitor);
+        visitor.stream.label("type");
+        this.type.accept(visitor);
+        visitor.stream.label("isPrimaryKey")
+                        .append(this.isPrimaryKey);
+        if (this.lateness != null) {
+            visitor.stream.label("lateness");
+            this.lateness.accept(visitor);
+        }
+        if (this.watermark != null) {
+            visitor.stream.label("watermark");
+            this.watermark.accept(visitor);
+        }
+        if (this.defaultValue != null) {
+            visitor.stream.label("defaultValue");
+            this.defaultValue.accept(visitor);
+        }
+        visitor.stream.endObject();
+    }
+
+    public static InputColumnMetadata fromJson(JsonNode node, JsonDecoder decoder) {
+        ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "name"));
+        DBSPType type = DBSPNode.fromJsonInner(node, "type", decoder, DBSPType.class);
+        boolean isPrimaryKey = Utilities.getBooleanProperty(node, "isPrimaryKey");
+        DBSPExpression lateness = null;
+        if (node.has("lateness"))
+            lateness = DBSPNode.fromJsonInner(node, "lateness", decoder, DBSPExpression.class);
+        DBSPExpression watermark = null;
+        if (node.has("watermark"))
+            watermark = DBSPNode.fromJsonInner(node, "watermark", decoder, DBSPExpression.class);
+        DBSPExpression defaultValue = null;
+        if (node.has("defaultValue"))
+            lateness = DBSPNode.fromJsonInner(node, "defaultValue", decoder, DBSPExpression.class);
+        return new InputColumnMetadata(CalciteObject.EMPTY, name, type, isPrimaryKey,
+                lateness, watermark, defaultValue, SourcePositionRange.INVALID);
     }
 }

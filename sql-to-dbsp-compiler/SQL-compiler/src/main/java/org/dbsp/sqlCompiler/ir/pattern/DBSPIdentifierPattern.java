@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 @NonCoreIR
 public final class DBSPIdentifierPattern extends DBSPPattern {
@@ -66,5 +69,12 @@ public final class DBSPIdentifierPattern extends DBSPPattern {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.mutable ? "mut " : "")
                 .append(this.identifier);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPIdentifierPattern fromJson(JsonNode node, JsonDecoder decoder) {
+        String identifier = Utilities.getStringProperty(node, "identifier");
+        boolean mutable = Utilities.getBooleanProperty(node, "mutable");
+        return new DBSPIdentifierPattern(identifier, mutable);
     }
 }

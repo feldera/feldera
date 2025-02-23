@@ -6,6 +6,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
+import java.lang.module.FindException;
+
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.RESULT;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
@@ -24,8 +26,14 @@ public class DBSPTypeResult extends DBSPTypeUser {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        for (DBSPType type: this.typeArgs)
+        visitor.startArrayProperty("typeArgs");
+        int index = 0;
+        for (DBSPType type: this.typeArgs) {
+            visitor.propertyIndex(index);
+            index++;
             type.accept(visitor);
+        }
+        visitor.endArrayProperty("typeArgs");
         visitor.pop(this);
         visitor.postorder(this);
     }

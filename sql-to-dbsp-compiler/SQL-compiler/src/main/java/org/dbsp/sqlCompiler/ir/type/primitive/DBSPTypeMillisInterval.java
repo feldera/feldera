@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -33,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
+import org.dbsp.util.Utilities;
 
 import java.util.Objects;
 
@@ -119,5 +122,12 @@ public class DBSPTypeMillisInterval
     @Override
     public String baseTypeWithSuffix() {
         return this.shortName() + "_" + this.units.name() + this.nullableSuffix();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeMillisInterval fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        Units units = Units.valueOf(Utilities.getStringProperty(node, "units"));
+        return new DBSPTypeMillisInterval(CalciteObject.EMPTY, units, mayBeNull);
     }
 }

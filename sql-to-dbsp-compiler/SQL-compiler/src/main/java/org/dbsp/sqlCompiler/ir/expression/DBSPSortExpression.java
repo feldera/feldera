@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -113,5 +115,16 @@ public final class DBSPSortExpression extends DBSPExpression {
             return false;
         return this.comparator.equivalent(context, otherExpression.comparator) &&
                 EquivalenceContext.equiv(this.limit, otherExpression.limit);
+    }
+
+
+    @SuppressWarnings("unused")
+    public static DBSPSortExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPComparatorExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPComparatorExpression.class);
+        DBSPType elementType = fromJsonInner(node, "elementType", decoder, DBSPType.class);
+        DBSPExpression limit = null;
+        if (node.has("limit"))
+            limit = fromJsonInner(node, "limit", decoder, DBSPExpression.class);
+        return new DBSPSortExpression(CalciteObject.EMPTY, elementType, comparator, limit);
     }
 }

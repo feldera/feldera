@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -121,6 +124,8 @@ public final class DBSPArrayExpression extends DBSPExpression
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
+        this.type.accept(visitor);
         if (this.data != null) {
             visitor.startArrayProperty("data");
             int index = 0;
@@ -215,5 +220,14 @@ public final class DBSPArrayExpression extends DBSPExpression
         }
         builder.append("]");
         return builder.toString();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPArrayExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType type = DBSPNode.fromJsonInner(node, "type", decoder, DBSPType.class);
+        List<DBSPExpression> data = null;
+        if (node.has("data"))
+            data = DBSPNode.fromJsonInnerList(node, "data", decoder, DBSPExpression.class);
+        return new DBSPArrayExpression(CalciteObject.EMPTY, type, data);
     }
 }

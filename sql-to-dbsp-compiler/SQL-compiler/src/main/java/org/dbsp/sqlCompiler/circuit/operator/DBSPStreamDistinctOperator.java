@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -52,5 +54,12 @@ public final class DBSPStreamDistinctOperator extends DBSPUnaryOperator {
             return new DBSPStreamDistinctOperator(
                     this.getNode(), newInputs.get(0)).copyAnnotations(this);
         return this;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPStreamDistinctOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = commonInfoFromJson(node, decoder);
+        return new DBSPStreamDistinctOperator(CalciteObject.EMPTY, info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPStreamDistinctOperator.class);
     }
 }

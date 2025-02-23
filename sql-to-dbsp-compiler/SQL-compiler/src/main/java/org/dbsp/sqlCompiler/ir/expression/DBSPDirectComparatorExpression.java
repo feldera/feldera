@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -7,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** A comparator that compares two values directly.
  * It takes a direction, indicating whether the sort is ascending or descending. */
@@ -67,5 +70,12 @@ public final class DBSPDirectComparatorExpression extends DBSPComparatorExpressi
             return false;
         return this.ascending == otherExpression.ascending &&
                 this.source.equivalent(context, otherExpression.source);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPDirectComparatorExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPComparatorExpression source = fromJsonInner(node, "source", decoder, DBSPComparatorExpression.class);
+        boolean ascending = Utilities.getBooleanProperty(node, "ascending");
+        return new DBSPDirectComparatorExpression(CalciteObject.EMPTY, source, ascending);
     }
 }

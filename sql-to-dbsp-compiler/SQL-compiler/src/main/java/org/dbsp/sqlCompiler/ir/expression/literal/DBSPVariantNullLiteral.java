@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -14,7 +16,7 @@ import javax.annotation.Nullable;
 /** The Variant.null value, the only value of native type VARIANT */
 public class DBSPVariantNullLiteral extends DBSPLiteral {
     private DBSPVariantNullLiteral() {
-        super(CalciteObject.EMPTY, new DBSPTypeVariant(CalciteObject.EMPTY, false), false);
+        super(CalciteObject.EMPTY, DBSPTypeVariant.INSTANCE, false);
         assert type.is(DBSPTypeVariant.class);
     }
 
@@ -63,5 +65,10 @@ public class DBSPVariantNullLiteral extends DBSPLiteral {
     /** The variant object representing the null literal */
     public static DBSPLiteral nullVariant() {
         return DBSPVariantNullLiteral.INSTANCE;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPVariantNullLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        return INSTANCE;
     }
 }

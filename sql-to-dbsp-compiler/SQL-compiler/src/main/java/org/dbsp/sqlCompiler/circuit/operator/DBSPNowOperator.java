@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -20,7 +22,7 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
     static DBSPExpression createFunction(CalciteObject node) {
         return new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPApplyExpression(
-                        "now", new DBSPTypeTimestamp(node, false))));
+                        "now", DBSPTypeTimestamp.create(node, false))));
     }
 
     public DBSPNowOperator(CalciteObject node) {
@@ -46,5 +48,12 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         return this;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPNowOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = commonInfoFromJson(node, decoder);
+        return new DBSPNowOperator(CalciteObject.EMPTY)
+                .addAnnotations(info.annotations(), DBSPNowOperator.class);
     }
 }

@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
+import org.dbsp.util.Properties;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -47,15 +48,16 @@ public class CreateViewStatement extends CreateRelationStatement {
     /** Compiled and optimized query. */
     private final RelRoot compiled;
     public final SqlCreateView createView;
+    final int emitFinal;
     public static final String EMIT_FINAL = "emit_final";
-    public static final int NO_COLUMN = -1;
 
     public CreateViewStatement(ParsedStatement node, ProgramIdentifier tableName,
                                List<RelColumnMetadata> columns, SqlCreateView createView,
-                               RelRoot compiled, @Nullable PropertyList properties) {
+                               RelRoot compiled, int emitFinal, @Nullable Properties properties) {
         super(node, tableName, columns, properties);
         this.createView = createView;
         this.compiled = compiled;
+        this.emitFinal = emitFinal;
     }
 
     public RelNode getRelNode() {
@@ -80,28 +82,7 @@ public class CreateViewStatement extends CreateRelationStatement {
     }
 
     /** Column number specified by "emit_final" annotation.  -1 if no such annotation */
-    public int emitFinalColumn(DBSPCompiler compiler) {
-        if (this.properties == null)
-            return NO_COLUMN;
-        SqlFragment val = this.properties.getPropertyValue(EMIT_FINAL);
-        if (val == null)
-            return NO_COLUMN;
-        try {
-            int index = Integer.parseInt(val.getString());
-            if (index >= 0 && index < this.columns.size())
-                return index;
-            throw new CompilationError("View " + relationName.singleQuote() +
-                    " does not have a column with number " + index,
-                    CalciteObject.create(val.getParserPosition()));
-        } catch (NumberFormatException ignored) {}
-
-        ProgramIdentifier canonical = compiler.canonicalName(val.getString(), false);
-        int index = this.getColumnIndex(canonical);
-        if (index < 0) {
-            throw new CompilationError("Column " + canonical.singleQuote() +
-                    " not found in " + relationName.singleQuote(),
-                    CalciteObject.create(val.getParserPosition()));
-        }
-        return index;
+    public int emitFinalColumn() {
+        return this.emitFinal;
     }
 }

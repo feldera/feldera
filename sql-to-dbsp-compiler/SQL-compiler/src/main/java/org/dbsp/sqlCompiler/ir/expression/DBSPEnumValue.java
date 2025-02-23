@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -31,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
@@ -83,5 +86,12 @@ public final class DBSPEnumValue extends DBSPExpression {
             return false;
         return this.enumName.equals(otherExpression.enumName) &&
                 this.constructor.equals(otherExpression.constructor);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPEnumValue fromJson(JsonNode node, JsonDecoder decoder) {
+        String enumName = Utilities.getStringProperty(node, "enumName");
+        String constructor = Utilities.getStringProperty(node, "constructor");
+        return new DBSPEnumValue(enumName, constructor);
     }
 }
