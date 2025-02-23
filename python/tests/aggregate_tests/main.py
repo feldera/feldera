@@ -1,7 +1,7 @@
 ## Add here import statements for all files with tests
 
 from tests.aggregate_tests.aggtst_base import *  # noqa: F403
-from tests.aggregate_tests.atest_loader import *  # noqa: F403
+from tests.aggregate_tests.atest_loader import run  # noqa: F403
 from tests.aggregate_tests.test_array import *  # noqa: F403
 from tests.aggregate_tests.test_arg_max import *  # noqa: F403
 from tests.aggregate_tests.test_arg_min import *  # noqa: F403
