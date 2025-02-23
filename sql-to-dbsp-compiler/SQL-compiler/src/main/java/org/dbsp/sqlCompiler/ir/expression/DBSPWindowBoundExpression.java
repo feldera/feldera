@@ -1,11 +1,14 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** An expression that represents a window bound.
  * This is only used in DBSPPartitionedRollingAggregateOperator
@@ -63,5 +66,12 @@ public class DBSPWindowBoundExpression extends DBSPExpression {
                 .append("(")
                 .append(this.representation)
                 .append(")");
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPWindowBoundExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression representation = fromJsonInner(node, "representation", decoder, DBSPExpression.class);
+        boolean isPreceding = Utilities.getBooleanProperty(node, "isPreceding");
+        return new DBSPWindowBoundExpression(CalciteObject.EMPTY, isPreceding, representation);
     }
 }

@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.path;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -32,6 +34,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+
+import java.util.List;
 
 public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
     public final DBSPPathSegment[] components;
@@ -98,5 +102,11 @@ public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
             builder.append(segment.asString());
         }
         return builder.toString();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPPath fromJson(JsonNode node, JsonDecoder decoder) {
+        List<DBSPSimplePathSegment> components = fromJsonInnerList(node, "components", decoder, DBSPSimplePathSegment.class);
+        return new DBSPPath(components.toArray(new DBSPSimplePathSegment[0]));
     }
 }

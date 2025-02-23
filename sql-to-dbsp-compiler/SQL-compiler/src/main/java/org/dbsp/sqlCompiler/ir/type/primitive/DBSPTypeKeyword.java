@@ -32,15 +32,15 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 
 import java.util.Objects;
 
-/**
- * This corresponds to the Calcite 'SYMBOL' type,
+/** This corresponds to the Calcite 'SYMBOL' type,
  * which is the type of various keywords that appear in SQL expressions.
- * It should never surface in code.
- */
+ * It should never surface in code. */
 public class DBSPTypeKeyword extends DBSPTypeBaseType {
-    public DBSPTypeKeyword() {
+    DBSPTypeKeyword() {
         super(CalciteObject.EMPTY, DBSPTypeCode.KEYWORD, false);
     }
+
+    public static final DBSPTypeKeyword INSTANCE = new DBSPTypeKeyword();
 
     @Override
     public void accept(InnerVisitor visitor) {

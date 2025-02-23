@@ -23,9 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -77,5 +80,12 @@ public final class DBSPPathExpression extends DBSPExpression {
         if (otherExpression == null)
             return false;
         return this.path.equivalent(otherExpression.path);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPPathExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType type = getJsonType(node, decoder);
+        DBSPPath path = DBSPNode.fromJsonInner(node, "path", decoder, DBSPPath.class);
+        return new DBSPPathExpression(type, path);
     }
 }

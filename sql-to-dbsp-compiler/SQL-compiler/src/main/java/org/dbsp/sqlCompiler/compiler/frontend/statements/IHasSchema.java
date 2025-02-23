@@ -6,12 +6,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.externalize.RelJson;
+import org.apache.calcite.rel.externalize.RelJsonReader;
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rel.type.RelDataTypeFieldImpl;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.util.JsonBuilder;
 import org.dbsp.sqlCompiler.compiler.IHasCalciteObject;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -21,6 +28,8 @@ import org.dbsp.util.ICastable;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 /** An interface implemented by objects which have a name and a schema */
@@ -48,6 +57,81 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
         return this.getColumnIndex(ident);
     }
 
+    /** A reduced version of IHasSchema which contains only information that can be obtained from
+     * deserializing JSON */
+    class AbstractIHasSchema implements IHasSchema {
+        final ProgramIdentifier name;
+        final List<RelColumnMetadata> columns;
+        @Nullable final PropertyList properties;
+
+        public AbstractIHasSchema(ProgramIdentifier name, List<RelColumnMetadata> columns, @Nullable PropertyList properties) {
+            this.name = name;
+            this.columns = columns;
+            this.properties = properties;
+            for (RelColumnMetadata c: columns)
+                assert c != null;
+        }
+
+        @Override
+        public ProgramIdentifier getName() {
+            return this.name;
+        }
+
+        @Override
+        public List<RelColumnMetadata> getColumns() {
+            return this.columns;
+        }
+
+        @Nullable
+        @Override
+        public PropertyList getProperties() {
+            return this.properties;
+        }
+
+        @Override
+        public CalciteObject getNode() {
+            return CalciteObject.EMPTY;
+        }
+
+        public static AbstractIHasSchema fromJson(JsonNode node) {
+            // The inverse of the asJson function
+            String name = Utilities.getStringProperty(node, "name");
+            boolean caseSensitive = Utilities.getBooleanProperty(node, "case_sensitive");
+            ProgramIdentifier pi = new ProgramIdentifier(name, caseSensitive);
+            PropertyList properties = null;
+            if (node.has("properties")) {
+                properties = PropertyList.fromJson(Utilities.getProperty(node, "properties"));
+            }
+            List<RelColumnMetadata> columns = new ArrayList<>();
+            var it = Utilities.getProperty(node, "fields").elements();
+            int index = 0;
+            while (it.hasNext()) {
+                var col = IHasSchema.relMetaFromJson(it.next(), index);
+                index++;
+                columns.add(col);
+            }
+            return new AbstractIHasSchema(pi, columns, properties);
+        }
+    }
+
+    // Inverse of asJson below
+    static RelColumnMetadata relMetaFromJson(JsonNode node, int index) {
+        try {
+            String name = Utilities.getStringProperty(node, "name");
+            boolean caseSensitive = Utilities.getBooleanProperty(node, "case_sensitive");
+            boolean isPrimaryKey = node.has("primary_key");
+            JsonNode jsonType = Utilities.getProperty(node, "columntype");
+            String json = Utilities.deterministicObjectMapper().writeValueAsString(jsonType);
+            RelDataType type = RelJsonReader.readType(SqlToRelCompiler.TYPE_FACTORY, json);
+            RelDataTypeField field = new RelDataTypeFieldImpl(name, index, type);
+            // Do we need lateness, watermark, etc?
+            return new RelColumnMetadata(CalciteObject.EMPTY, field, isPrimaryKey, caseSensitive,
+                    null, null, null, SourcePositionRange.INVALID);
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
     default JsonNode asJson() {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ObjectNode result = mapper.createObjectNode();
@@ -67,7 +151,6 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             Object object = RelJson.create().withJsonBuilder(new JsonBuilder())
                     .toJson(col.getType());
             try {
-                // Is there a better way to do this?
                 String json = mapper.writeValueAsString(object);
                 JsonNode repr = mapper.readTree(json);
                 column.set("columntype", repr);

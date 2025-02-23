@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 
@@ -49,6 +50,13 @@ public abstract class DBSPSourceTableOperator
         if (!this.sourceName.isEmpty() && this.sourceName.getPositionRange().isValid())
             return this.sourceName.getPositionRange();
         return this.getNode().getPositionRange();
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        visitor.property("originalRowType");
+        this.originalRowType.accept(visitor);
+        super.accept(visitor);
     }
 
     @Override

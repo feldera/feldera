@@ -23,12 +23,14 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -57,7 +59,7 @@ import java.util.Set;
 /** A DBSP circuit. */
 public final class DBSPCircuit extends DBSPNode
         implements IDBSPOuterNode, IWritesLogs, ICircuit, DiGraph<DBSPOperator> {
-    public final List<DBSPDeclaration> declarations = new ArrayList<>();
+    public final List<DBSPDeclaration> declarations;
     public final LinkedHashMap<ProgramIdentifier, DBSPSourceTableOperator> sourceOperators = new LinkedHashMap<>();
     public final LinkedHashMap<ProgramIdentifier, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
     public final LinkedHashMap<ProgramIdentifier, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
@@ -70,7 +72,17 @@ public final class DBSPCircuit extends DBSPNode
 
     public DBSPCircuit(ProgramMetadata metadata) {
         super(CalciteObject.EMPTY);
+        this.declarations = new ArrayList<>();
         this.metadata = metadata;
+    }
+
+    private DBSPCircuit(ProgramMetadata metadata, List<DBSPDeclaration> declarations, List<DBSPOperator> allOperators) {
+        super(CalciteObject.EMPTY);
+        this.metadata = metadata;
+        this.declarations = declarations;
+        for (DBSPOperator op: allOperators) {
+            this.addOperator(op);
+        }
     }
 
     /** Use a stable sort to resort the operators in the circuit.
@@ -272,5 +284,15 @@ public final class DBSPCircuit extends DBSPNode
 
     public ProgramMetadata getMetadata() {
         return this.metadata;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPCircuit fromJson(JsonNode node, JsonDecoder decoder) {
+        List<DBSPDeclaration> declarations =
+                fromJsonOuterList(node, "declarations", decoder, DBSPDeclaration.class);
+        List<DBSPOperator> operators =
+                fromJsonOuterList(node, "allOperators", decoder, DBSPOperator.class);
+        ProgramMetadata metadata = ProgramMetadata.fromJson(Utilities.getProperty(node, "metadata"));
+        return new DBSPCircuit(metadata, declarations, operators);
     }
 }

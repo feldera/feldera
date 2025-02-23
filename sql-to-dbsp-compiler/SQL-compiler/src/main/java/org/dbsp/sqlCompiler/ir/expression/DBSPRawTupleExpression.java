@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -148,5 +151,19 @@ public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
         if (otherExpression.fields == null)
             return false;
         return context.equivalent(this.fields, otherExpression.fields);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPRawTupleExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPTypeRawTuple type = fromJsonInner(node, "type", decoder, DBSPTypeRawTuple.class);
+        DBSPExpression[] fields = null;
+        if (node.has("fields")) {
+            List<DBSPExpression> f = fromJsonInnerList(node, "fields", decoder, DBSPExpression.class);
+            fields = f.toArray(new DBSPExpression[0]);
+            return new DBSPRawTupleExpression(
+                    CalciteObject.EMPTY, type, fields);
+        } else {
+            return new DBSPRawTupleExpression(type);
+        }
     }
 }

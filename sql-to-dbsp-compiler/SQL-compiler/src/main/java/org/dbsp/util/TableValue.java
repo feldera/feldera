@@ -98,7 +98,7 @@ public class TableValue {
             ToCsvVisitor.toCsv(compiler, file, tables[i].contents);
             fields[i] = new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
                     tables[i].contents.getType(),
-                    new DBSPStrLiteral(fileName));
+                    new DBSPStrLiteral(fileName, false));
         }
         DBSPRawTupleExpression result = new DBSPRawTupleExpression(fields);
         return new DBSPFunction(name, new ArrayList<>(),

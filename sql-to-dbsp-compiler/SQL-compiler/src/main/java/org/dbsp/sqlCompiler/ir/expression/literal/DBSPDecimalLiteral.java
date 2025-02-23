@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -34,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
@@ -123,5 +126,16 @@ public final class DBSPDecimalLiteral extends DBSPLiteral implements IsNumericLi
     public boolean gt0() {
         assert this.value != null;
         return this.value.compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPDecimalLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        BigDecimal value = null;
+        if (node.has("value")) {
+            String encoded = Utilities.getStringProperty(node, "value");
+            value = new BigDecimal(encoded);
+        }
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPDecimalLiteral(CalciteObject.EMPTY, type, value);
     }
 }

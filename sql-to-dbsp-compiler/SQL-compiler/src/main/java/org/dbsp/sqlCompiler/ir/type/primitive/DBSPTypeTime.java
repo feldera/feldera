@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.calcite.util.TimeString;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -86,5 +88,11 @@ public class DBSPTypeTime extends DBSPTypeBaseType implements IsDateType, IsTime
     public DBSPExpression getMaxValue() {
         return new DBSPTimeLiteral(this.getNode(), this, new TimeString(23, 59, 59)
                 .withNanos(999999999));
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeTime fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        return new DBSPTypeTime(CalciteObject.EMPTY, mayBeNull);
     }
 }

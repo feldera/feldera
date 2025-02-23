@@ -1,10 +1,15 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
@@ -37,6 +42,13 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
     }
 
     @Override
+    public void accept(InnerVisitor visitor) {
+        super.accept(visitor);
+        visitor.property("init");
+        this.init.accept(visitor);
+    }
+
+    @Override
     public void accept(CircuitVisitor visitor) {
         visitor.push(this);
         VisitDecision decision = visitor.preorder(this);
@@ -53,5 +65,15 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
         if (otherOperator == null)
             return false;
         return this.init.equivalent(otherOperator.init);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPChainAggregateOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        DBSPClosureExpression init = fromJsonInner(node, "init", decoder, DBSPClosureExpression.class);
+        return new DBSPChainAggregateOperator(
+                CalciteObject.EMPTY, init, info.getClosureFunction(),
+                info.outputType(), info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPChainAggregateOperator.class);
     }
 }

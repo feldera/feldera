@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -12,6 +14,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -50,6 +53,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
 
     @Override
     public void accept(InnerVisitor visitor) {
+        super.accept(visitor);
         visitor.property("limit");
         this.limit.accept(visitor);
         if (this.outputProducer != null) {
@@ -116,5 +120,19 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
         if (!decision.stop())
             visitor.postorder(this);
         visitor.pop(this);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPIndexedTopKOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = commonInfoFromJson(node, decoder);
+        DBSPExpression limit = fromJsonInner(node, "limit", decoder, DBSPExpression.class);
+        TopKNumbering numbering = TopKNumbering.valueOf(Utilities.getStringProperty(node, "numbering"));
+        DBSPClosureExpression outputProducer = null;
+        if (node.has("outputProducer"))
+            outputProducer = fromJsonInner(node, "outputProducer", decoder, DBSPClosureExpression.class);
+        return new DBSPIndexedTopKOperator(CalciteObject.EMPTY, numbering,
+                info.getFunction().to(DBSPComparatorExpression.class),
+                limit, outputProducer, info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPIndexedTopKOperator.class);
     }
 }

@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -35,13 +37,15 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPUSizeLiteral extends DBSPLiteral implements IsNumericLiteral {
     @Nullable
-    public final Long value;
+    public final BigInteger value;
 
     @Override
     public boolean sameValue(@Nullable ISameValue o) {
@@ -51,17 +55,21 @@ public final class DBSPUSizeLiteral extends DBSPLiteral implements IsNumericLite
         return Objects.equals(value, that.value);
     }
 
-    public DBSPUSizeLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
+    public DBSPUSizeLiteral(CalciteObject node, DBSPType type, @Nullable BigInteger value) {
         super(node, type, value == null);
-        if (value != null && value < 0)
+        if (value != null && value.compareTo(BigInteger.ZERO) < 0)
             throw new CompilationError("Negative value for usize literal " + value);
         this.value = value;
+    }
+
+    public DBSPUSizeLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
+        this(node, type, value == null ? null : BigInteger.valueOf(value));
     }
 
     @Override
     public boolean gt0() {
         assert this.value != null;
-        return this.value > 0;
+        return this.value.compareTo(BigInteger.ZERO) > 0;
     }
 
     public DBSPUSizeLiteral(long value) {
@@ -69,7 +77,7 @@ public final class DBSPUSizeLiteral extends DBSPLiteral implements IsNumericLite
     }
 
     public DBSPUSizeLiteral(@Nullable Long value, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeUSize(CalciteObject.EMPTY, nullable), value);
+        this(CalciteObject.EMPTY, DBSPTypeUSize.create(nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
         if (value != null && value < 0)
@@ -92,7 +100,8 @@ public final class DBSPUSizeLiteral extends DBSPLiteral implements IsNumericLite
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPUSizeLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull);
+        return new DBSPUSizeLiteral(this.getNode(), this.getType().withMayBeNull(mayBeNull),
+                this.checkIfNull(this.value, mayBeNull));
     }
 
     @Override
@@ -118,5 +127,14 @@ public final class DBSPUSizeLiteral extends DBSPLiteral implements IsNumericLite
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPUSizeLiteral(this.getNode(), this.type, this.value);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPUSizeLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        BigInteger value = null;
+        if (node.has("value"))
+            value = new BigInteger(Utilities.getStringProperty(node, "value"));
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPUSizeLiteral(CalciteObject.EMPTY, type, value);
     }
 }

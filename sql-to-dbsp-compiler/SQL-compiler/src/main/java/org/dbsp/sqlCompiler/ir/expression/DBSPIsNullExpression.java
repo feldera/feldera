@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
 
@@ -81,5 +84,11 @@ public final class DBSPIsNullExpression extends DBSPExpression {
         if (otherExpression == null)
             return false;
         return context.equivalent(this.expression, otherExpression.expression);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPIsNullExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
+        return new DBSPIsNullExpression(CalciteObject.EMPTY, expression);
     }
 }

@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -7,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** This is the dual of the UnsignedWrapExpression: it unwraps an unsigned number */
 public final class DBSPUnsignedUnwrapExpression extends DBSPExpression {
@@ -30,6 +33,8 @@ public final class DBSPUnsignedUnwrapExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
+        this.type.accept(visitor);
         visitor.property("source");
         this.source.accept(visitor);
         visitor.pop(this);
@@ -82,5 +87,14 @@ public final class DBSPUnsignedUnwrapExpression extends DBSPExpression {
 
     public DBSPExpression replaceSource(DBSPExpression source) {
         return new DBSPUnsignedUnwrapExpression(this.getNode(), source, this.type, this.ascending, this.nullsLast);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPUnsignedUnwrapExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
+        DBSPType type = getJsonType(node, decoder);
+        boolean ascending = Utilities.getBooleanProperty(node, "ascending");
+        boolean nullsLast = Utilities.getBooleanProperty(node, "nullsLast");
+        return new DBSPUnsignedUnwrapExpression(CalciteObject.EMPTY, source, type, ascending, nullsLast);
     }
 }

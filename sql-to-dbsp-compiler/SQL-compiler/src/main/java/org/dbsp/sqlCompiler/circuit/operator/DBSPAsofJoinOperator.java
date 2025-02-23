@@ -1,8 +1,11 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -12,6 +15,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -83,6 +87,17 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
+    public void accept(InnerVisitor visitor) {
+        super.accept(visitor);
+        visitor.property("leftTimestamp");
+        this.leftTimestamp.accept(visitor);
+        visitor.property("rightTimestamp");
+        this.rightTimestamp.accept(visitor);
+        visitor.property("comparator");
+        this.comparator.accept(visitor);
+    }
+
+    @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPAsofJoinOperator(this.getNode(),
                 outputType.to(DBSPTypeZSet.class), Objects.requireNonNull(expression),
@@ -135,5 +150,19 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
         return this.leftTimestamp.equivalent(otherOperator.leftTimestamp) &&
                 this.rightTimestamp.equivalent(otherOperator.rightTimestamp) &&
                 this.comparator.equivalent(otherOperator.comparator);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPAsofJoinOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        DBSPClosureExpression leftTimestamp = fromJsonInner(node, "leftTimestamp", decoder, DBSPClosureExpression.class);
+        DBSPClosureExpression rightTimestamp = fromJsonInner(node, "rightTimestamp", decoder, DBSPClosureExpression.class);
+        DBSPComparatorExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPComparatorExpression.class);
+        boolean isLeft = Utilities.getBooleanProperty(node, "isLeft");
+        return new DBSPAsofJoinOperator(
+                CalciteObject.EMPTY, info.getZsetType(), info.getFunction(),
+                leftTimestamp, rightTimestamp, comparator,
+                info.isMultiset(), isLeft, info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPAsofJoinOperator.class);
     }
 }

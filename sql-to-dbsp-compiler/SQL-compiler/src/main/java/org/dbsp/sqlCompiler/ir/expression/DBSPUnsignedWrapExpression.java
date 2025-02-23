@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -9,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** An unsigned wrap expression just wraps a signed integer into an unsigned one
  * preserving order. */
@@ -132,4 +135,13 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
     public DBSPExpression replaceSource(DBSPExpression source) {
         return new DBSPUnsignedWrapExpression(this.getNode(), source, this.ascending, this.nullsLast);
     }
+
+    @SuppressWarnings("unused")
+    public static DBSPUnsignedWrapExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
+        boolean ascending = Utilities.getBooleanProperty(node, "ascending");
+        boolean nullsLast = Utilities.getBooleanProperty(node, "nullsLast");
+        return new DBSPUnsignedWrapExpression(CalciteObject.EMPTY, source, ascending, nullsLast);
+    }
 }
+

@@ -217,7 +217,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPApplyOperator result = new DBSPApplyOperator(source.node().getNode(), cond.closure(var),
                 source.simpleNode().outputPort(), "(" + source.node().getDerivedFrom() + ")");
         this.addOperator(result);
-        result.addAnnotation(new Waterline());
+        result.addAnnotation(Waterline.INSTANCE, DBSPApplyOperator.class);
         return result.outputPort();
     }
 
@@ -255,7 +255,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         function.call(l1.borrow(), r1.borrow()), min));
         DBSPApply2Operator result = new DBSPApply2Operator(
                 left.node().getNode(), cond.closure(leftVar, rightVar), left, right);
-        result.addAnnotation(new Waterline());
+        result.addAnnotation(Waterline.INSTANCE, DBSPApply2Operator.class);
         this.addOperator(result);
         return result.outputPort();
     }
@@ -673,7 +673,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     void addJoinAnnotations(DBSPBinaryOperator operator) {
         KeyPropagation.JoinDescription info = this.joinInformation.apply(operator);
         if (info != null)
-            operator.addAnnotation(new NoIntegrator(info.leftIsKey(), !info.leftIsKey()));
+            operator.addAnnotation(new NoIntegrator(info.leftIsKey(), !info.leftIsKey()), DBSPBinaryOperator.class);
     }
 
     @Override
@@ -1362,7 +1362,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         eq.not(),
                         var.deref().applyClone()).closure(var),
                 waterline.outputPort(), null);
-        extend.addAnnotation(new Waterline());
+        extend.addAnnotation(Waterline.INSTANCE, DBSPSimpleOperator.class);
         this.addOperator(extend);
 
         this.markBound(operator.outputPort(), extend.outputPort());

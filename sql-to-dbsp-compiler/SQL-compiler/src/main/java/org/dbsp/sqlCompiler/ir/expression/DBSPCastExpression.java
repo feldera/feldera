@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -30,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** This class does not correspond to any Rust primitive construct.
  * It is compiled into a function invocation, depending on the involved types.
@@ -96,5 +99,13 @@ public final class DBSPCastExpression extends DBSPExpression {
         return context.equivalent(this.source, otherExpression.source) &&
                 this.safe == otherExpression.safe &&
                 this.hasSameType(other);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPCastExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
+        boolean safe = Utilities.getBooleanProperty(node, "safe");
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPCastExpression(CalciteObject.EMPTY, source, type, safe);
     }
 }

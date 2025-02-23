@@ -23,15 +23,17 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -75,5 +77,19 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
                     this.getNode(), this.viewName, this.query, this.originalRowType,
                     this.metadata, newInputs.get(0)).copyAnnotations(this);
         return this;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPSinkOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        ProgramIdentifier viewName = ProgramIdentifier.fromJson(Utilities.getProperty(node, "viewName"));
+        String queryOrViewName = "";
+        if (node.has("query"))
+            queryOrViewName = Utilities.getStringProperty(node, "query");
+        CommonInfo info = commonInfoFromJson(node, decoder);
+        DBSPType originalRowType = fromJsonInner(node, "originalRowType", decoder, DBSPType.class);
+        ViewMetadata metadata = ViewMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
+        return new DBSPSinkOperator(CalciteObject.EMPTY, viewName, queryOrViewName,
+                originalRowType, metadata, info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPSinkOperator.class);
     }
 }

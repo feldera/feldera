@@ -1,11 +1,15 @@
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
+
+import java.util.List;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.MAP;
 
@@ -65,4 +69,12 @@ public class DBSPTypeMap extends DBSPTypeUser {
     }
 
     // sameType and hashCode inherited from TypeUser.
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeMap fromJson(JsonNode node, JsonDecoder decoder) {
+        List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
+        assert typeArgs.size() == 2;
+        boolean mayBeNull = fromJsonMayBeNull(node);
+        return new DBSPTypeMap(typeArgs.get(0), typeArgs.get(1), mayBeNull);
+    }
 }

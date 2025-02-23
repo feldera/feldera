@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -12,6 +14,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.math.BigInteger;
@@ -26,10 +29,6 @@ public final class DBSPU128Literal extends DBSPIntLiteral implements IsNumericLi
         if (value != null && value.compareTo(BigInteger.ZERO) < 0)
             throw new CompilationError("Negative value for u128 literal " + value);
         this.value = value;
-    }
-
-    public DBSPU128Literal(BigInteger value) {
-        this(value, false);
     }
 
     public DBSPU128Literal(CalciteObject node, @Nullable BigInteger value, boolean nullable) {
@@ -103,5 +102,14 @@ public final class DBSPU128Literal extends DBSPIntLiteral implements IsNumericLi
     @Override @Nullable
     public BigInteger getValue() {
         return this.value;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPU128Literal fromJson(JsonNode node, JsonDecoder decoder) {
+        BigInteger value = null;
+        if (node.has("value"))
+            value = new BigInteger(Utilities.getStringProperty(node, "value"));
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPU128Literal(CalciteObject.EMPTY, type, value);
     }
 }

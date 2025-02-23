@@ -13,6 +13,10 @@ public class SqlFragmentIdentifier implements SqlFragment {
         this.identifier = identifier;
     }
 
+    public SqlFragmentIdentifier(String str) {
+        this.identifier = new SqlIdentifier(str, SqlParserPos.ZERO);
+    }
+
     @Override
     public String getString() {
         return this.identifier.toString();

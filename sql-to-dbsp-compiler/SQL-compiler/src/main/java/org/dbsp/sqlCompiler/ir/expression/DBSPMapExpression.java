@@ -1,11 +1,14 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
@@ -101,6 +104,8 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
+        this.type.accept(visitor);
         if (this.keys != null) {
             assert this.values != null;
             visitor.startArrayProperty("keys");
@@ -206,5 +211,17 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
             return false;
         return context.equivalent(this.keys, otherExpression.keys) &&
                 context.equivalent(this.values, otherExpression.values);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPMapExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPTypeMap type = DBSPNode.fromJsonInner(node, "type", decoder, DBSPTypeMap.class);
+        List<DBSPExpression> keys = null;
+        if (node.has("keys"))
+            keys = DBSPNode.fromJsonInnerList(node, "keys", decoder, DBSPExpression.class);
+        List<DBSPExpression> values = null;
+        if (node.has("values"))
+            values = DBSPNode.fromJsonInnerList(node, "values", decoder, DBSPExpression.class);
+        return new DBSPMapExpression(type, keys, values);
     }
 }

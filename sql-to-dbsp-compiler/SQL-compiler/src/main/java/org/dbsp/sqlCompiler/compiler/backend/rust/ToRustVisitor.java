@@ -707,7 +707,7 @@ public class ToRustVisitor extends CircuitVisitor {
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
             JsonNode j = tableDescription.asJson();
             j = this.stripConnectors(j);
-            DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), false, true);
+            DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
                     .append(operator.getOutputName())
@@ -799,7 +799,7 @@ public class ToRustVisitor extends CircuitVisitor {
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
             JsonNode j = tableDescription.asJson();
             j = this.stripConnectors(j);
-            DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), false, true);
+            DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
             String registerFunction = operator.metadata.materialized ?
                     "register_materialized_input_map" : "register_input_map";
             this.builder.append("catalog.")
@@ -995,7 +995,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 IHasSchema description = this.metadata.getViewDescription(operator.viewName);
                 JsonNode j = description.asJson();
                 j = this.stripConnectors(j);
-                DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), false, true);
+                DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
                 String registerFunction = switch (operator.metadata.viewKind) {
                     case MATERIALIZED -> "register_materialized_output_zset";
                     case LOCAL -> throw new InternalCompilerError("Sink operator for local view " + operator);
@@ -1260,7 +1260,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 }
                 this.builder.append(">(");
         DBSPExpression cast = operator.limit.cast(
-                new DBSPTypeUSize(CalciteObject.EMPTY, operator.limit.getType().mayBeNull), false);
+                DBSPTypeUSize.create(operator.limit.getType().mayBeNull), false);
         cast.accept(this.innerVisitor);
         if (operator.outputProducer != null) {
             if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER) {

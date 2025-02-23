@@ -1,9 +1,15 @@
 package org.dbsp.sqlCompiler.compiler.frontend.parser;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.MapEntry;
+import org.apache.calcite.sql.SqlCharStringLiteral;
+import org.apache.calcite.sql.SqlLiteral;
+import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
+import org.dbsp.util.IJson;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -18,7 +24,7 @@ import java.util.function.BiConsumer;
 /** A list of properties and associated values.  Both are just SqlFragments.
  * The list can contain duplicate properties, but there is a utility method
  * to check for that if needed. */
-public class PropertyList implements Iterable<Map.Entry<SqlFragment, SqlFragment>> {
+public class PropertyList implements Iterable<Map.Entry<SqlFragment, SqlFragment>>, IJson {
     final List<Map.Entry<SqlFragment, SqlFragment>> propertyValue;
 
     public PropertyList() {
@@ -87,5 +93,27 @@ public class PropertyList implements Iterable<Map.Entry<SqlFragment, SqlFragment
             prop.set("value_position", entry.getValue().getSourcePosition().asJson());
         }
         return properties;
+    }
+
+    @Override
+    public void asJson(ToJsonInnerVisitor visitor) {
+        IJson.toJsonStream(asJson(), visitor.stream);
+    }
+
+    public static PropertyList fromJson(JsonNode node) {
+        PropertyList result = new PropertyList();
+        var it = node.elements();
+        while (it.hasNext()) {
+            var e = it.next();
+            String key = e.fieldNames().next();
+            // Ignore parser position
+            SqlCharStringLiteral lit = SqlLiteral.createCharString(key, SqlParserPos.ZERO);
+            String value = Utilities.getStringProperty(e, "value");
+            SqlCharStringLiteral val = SqlLiteral.createCharString(value, SqlParserPos.ZERO);
+            SqlFragment keyFrag = new SqlFragmentCharacterString(lit);
+            SqlFragment valueFrag = new SqlFragmentCharacterString(val);
+            result.addProperty(keyFrag, valueFrag);
+        }
+        return result;
     }
 }

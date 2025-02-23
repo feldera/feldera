@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -15,6 +17,13 @@ import java.util.UUID;
 public class DBSPTypeUuid extends DBSPTypeBaseType {
     public DBSPTypeUuid(CalciteObject node, boolean mayBeNull) {
         super(node, DBSPTypeCode.UUID, mayBeNull);
+    }
+
+    public static final DBSPTypeUuid INSTANCE = new DBSPTypeUuid(CalciteObject.EMPTY, false);
+    public static final DBSPTypeUuid NULLABLE_INSTANCE = new DBSPTypeUuid(CalciteObject.EMPTY, true);
+
+    public static DBSPTypeUuid create(boolean mayBeNull) {
+        return mayBeNull ? NULLABLE_INSTANCE : INSTANCE;
     }
 
     @Override
@@ -53,5 +62,11 @@ public class DBSPTypeUuid extends DBSPTypeBaseType {
     @Override
     public boolean hasCopy() {
         return false;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeUuid fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        return DBSPTypeUuid.create(mayBeNull);
     }
 }

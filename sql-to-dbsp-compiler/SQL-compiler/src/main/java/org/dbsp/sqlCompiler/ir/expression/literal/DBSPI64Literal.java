@@ -23,16 +23,20 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.math.BigInteger;
@@ -140,5 +144,14 @@ public final class DBSPI64Literal extends DBSPIntLiteral implements IsNumericLit
         if (this.value == null)
             return null;
         return BigInteger.valueOf(this.value);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPI64Literal fromJson(JsonNode node, JsonDecoder decoder) {
+        Long value = null;
+        if (node.has("value"))
+            value = Utilities.getLongProperty(node, "value");
+        DBSPType type = DBSPNode.fromJsonInner(node, "type", decoder, DBSPType.class);
+        return new DBSPI64Literal(CalciteObject.EMPTY, type, value);
     }
 }

@@ -14,7 +14,7 @@ import javax.annotation.Nullable;
 /** The Variant.null value, the only value of native type VARIANT */
 public class DBSPVariantNullLiteral extends DBSPLiteral {
     private DBSPVariantNullLiteral() {
-        super(CalciteObject.EMPTY, new DBSPTypeVariant(CalciteObject.EMPTY, false), false);
+        super(CalciteObject.EMPTY, DBSPTypeVariant.INSTANCE, false);
         assert type.is(DBSPTypeVariant.class);
     }
 

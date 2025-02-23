@@ -297,7 +297,7 @@ public class RecursiveComponents extends Passes {
             DBSPNestedOperator block;
             if (!this.components.containsKey(myComponent)) {
                 block = new DBSPNestedOperator(operator.getNode());
-                block.addAnnotation(new Recursive());
+                block.addAnnotation(Recursive.INSTANCE, DBSPNestedOperator.class);
                 this.toAdd.add(block);
                 Utilities.putNew(this.components, myComponent, block);
             } else {

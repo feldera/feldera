@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.derived;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -183,5 +185,12 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
 
     public String getName() {
         return this.code.rustName + this.tupFields.length;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeTuple fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        List<DBSPType> fields = fromJsonInnerList(node, "tupFields", decoder, DBSPType.class);
+        return new DBSPTypeTuple(CalciteObject.EMPTY, mayBeNull, fields);
     }
 }

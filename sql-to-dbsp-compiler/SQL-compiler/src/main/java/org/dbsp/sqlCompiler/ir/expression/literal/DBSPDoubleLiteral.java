@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -33,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -49,28 +52,20 @@ public final class DBSPDoubleLiteral extends DBSPFPLiteral implements IsNumericL
         this(value, false);
     }
 
-    public DBSPDoubleLiteral(@Nullable Double f, boolean nullable) {
-        this(f, nullable, false);
-    }
-
-    public DBSPDoubleLiteral(CalciteObject node, DBSPType type, @Nullable Double value, boolean raw) {
-        super(node, type, value, raw);
+    public DBSPDoubleLiteral(CalciteObject node, DBSPType type, @Nullable Double value) {
+        super(node, type, value);
         this.value = value;
     }
 
-    DBSPDoubleLiteral(@Nullable Double f, boolean nullable, boolean raw) {
-        this(CalciteObject.EMPTY, new DBSPTypeDouble(CalciteObject.EMPTY,nullable), f, raw);
+    public DBSPDoubleLiteral(@Nullable Double f, boolean nullable) {
+        this(CalciteObject.EMPTY, new DBSPTypeDouble(CalciteObject.EMPTY,nullable), f);
         if (f == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
 
-    public DBSPDoubleLiteral raw() {
-        return new DBSPDoubleLiteral(this.value, this.getType().mayBeNull, true);
-    }
-
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPDoubleLiteral(this.getNode(), this.type, this.value, this.raw);
+        return new DBSPDoubleLiteral(this.getNode(), this.type, this.value);
     }
 
     @Override
@@ -84,7 +79,7 @@ public final class DBSPDoubleLiteral extends DBSPFPLiteral implements IsNumericL
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPDoubleLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull, this.raw);
+        return new DBSPDoubleLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }
 
     @Override
@@ -131,5 +126,15 @@ public final class DBSPDoubleLiteral extends DBSPFPLiteral implements IsNumericL
         if (!result.contains("e"))
             result += "e0";
         return result;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPDoubleLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        Long value = null;
+        if (node.has("value"))
+            value = Utilities.getLongProperty(node, "value");
+        @Nullable Double val = (value != null) ? Double.longBitsToDouble(value) : null;
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPDoubleLiteral(CalciteObject.EMPTY, type, val);
     }
 }

@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -94,5 +96,10 @@ public class DBSPTypeAny extends DBSPType {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("_");
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeAny fromJson(JsonNode node, JsonDecoder decoder) {
+        return DBSPTypeAny.INSTANCE;
     }
 }

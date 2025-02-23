@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -82,5 +84,12 @@ public final class DBSPAssignmentExpression extends DBSPExpression {
             return false;
         return context.equivalent(this.left, otherExpression.left) &&
                 context.equivalent(this.right, otherExpression.right);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPAssignmentExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression left = fromJsonInner(node, "left", decoder, DBSPExpression.class);
+        DBSPExpression right = fromJsonInner(node, "right", decoder, DBSPExpression.class);
+        return new DBSPAssignmentExpression(left, right);
     }
 }

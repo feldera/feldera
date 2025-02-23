@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -8,7 +9,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.util.IIndentStream;
 
@@ -16,17 +16,11 @@ import javax.annotation.Nullable;
 
 /** A literal with type NULL, the only value of this type. */
 public final class DBSPNullLiteral extends DBSPLiteral {
-    public DBSPNullLiteral(CalciteObject node, DBSPType type, @Nullable Object value) {
-        super(node, type, true);
-        if (value != null)
-            throw new InternalCompilerError("Value must be null", this);
-        if (!this.getType().sameType(new DBSPTypeNull(CalciteObject.EMPTY)))
-            throw new InternalCompilerError("Type must be NULL", this);
+    DBSPNullLiteral() {
+        super(CalciteObject.EMPTY, DBSPTypeNull.INSTANCE, true);
     }
 
-    public DBSPNullLiteral() {
-        this(CalciteObject.EMPTY, new DBSPTypeNull(CalciteObject.EMPTY), null);
-    }
+    public static final DBSPNullLiteral INSTANCE = new DBSPNullLiteral();
 
     public static final String NULL = "NULL";
 
@@ -64,11 +58,16 @@ public final class DBSPNullLiteral extends DBSPLiteral {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPNullLiteral(this.getNode(), this.getType(), null);
+        return this;
     }
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         return other.is(DBSPNullLiteral.class);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPNullLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        return INSTANCE;
     }
 }

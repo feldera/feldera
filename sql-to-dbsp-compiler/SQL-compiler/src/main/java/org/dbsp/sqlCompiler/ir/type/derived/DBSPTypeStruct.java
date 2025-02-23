@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.derived;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -36,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
@@ -114,6 +117,14 @@ public class DBSPTypeStruct extends DBSPType {
                     .append(this.name.name())
                     .append(": ")
                     .append(this.type);
+        }
+
+        @SuppressWarnings("unused")
+        public static Field fromJson(JsonNode node, JsonDecoder decoder) {
+            int index = Utilities.getIntProperty(node, "index");
+            ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "name"));
+            DBSPType type = DBSPTypeStruct.fromJsonInner(node, "type", decoder, DBSPType.class);
+            return new Field(CalciteObject.EMPTY, name, index, type);
         }
     }
 
@@ -275,5 +286,14 @@ public class DBSPTypeStruct extends DBSPType {
     /** Generate a tuple type by ignoring the struct and field names, recursively. */
     public DBSPType toTupleDeep() {
         return toTupleDeep(this);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeStruct fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "name"));
+        String sanitizedName = Utilities.getStringProperty(node, "sanitizedName");
+        List<DBSPTypeStruct.Field> fields = fromJsonInnerList(node, "fields", decoder, DBSPTypeStruct.Field.class);
+        return new DBSPTypeStruct(CalciteObject.EMPTY, name, sanitizedName, fields, mayBeNull);
     }
 }

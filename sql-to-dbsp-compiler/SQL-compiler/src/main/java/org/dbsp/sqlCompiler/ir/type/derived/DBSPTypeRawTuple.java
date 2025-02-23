@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.derived;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -147,5 +149,13 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
         return builder.append("(")
                 .intercalateI(", ", this.tupFields)
                 .append(")");
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeRawTuple fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        List<DBSPType> fields = fromJsonInnerList(node, "tupFields", decoder, DBSPType.class);
+        return new DBSPTypeRawTuple(CalciteObject.EMPTY, DBSPTypeCode.RAW_TUPLE,
+                mayBeNull, fields.toArray(new DBSPType[0]));
     }
 }

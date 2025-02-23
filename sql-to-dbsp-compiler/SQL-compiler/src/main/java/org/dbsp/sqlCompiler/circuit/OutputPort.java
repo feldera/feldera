@@ -1,10 +1,15 @@
 package org.dbsp.sqlCompiler.circuit;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Utilities;
 import org.dbsp.util.graph.Port;
 
 /** An output port of an operator. */
@@ -24,6 +29,12 @@ public class OutputPort {
 
     public OutputPort(Port<DBSPOperator> dest) {
         this(dest.node(), dest.port());
+    }
+
+    public static OutputPort fromJson(JsonNode node, JsonDecoder decoder) {
+        int outputNumber = Utilities.getIntProperty(node, "outputNumber");
+        DBSPOperator operator = DBSPNode.fromJsonOuter(node, "operator", decoder, DBSPOperator.class);
+        return new OutputPort(operator, outputNumber);
     }
 
     public DBSPOperator node() {
@@ -101,5 +112,13 @@ public class OutputPort {
 
     public boolean isSimpleNode() {
         return this.node().is(DBSPSimpleOperator.class);
+    }
+
+    public void asJson(ToJsonOuterVisitor visitor) {
+        visitor.stream.beginObject()
+                .label("outputNumber").append(this.outputNumber)
+                .label("operator");
+        this.operator.accept(visitor);
+        visitor.stream.endObject();
     }
 }

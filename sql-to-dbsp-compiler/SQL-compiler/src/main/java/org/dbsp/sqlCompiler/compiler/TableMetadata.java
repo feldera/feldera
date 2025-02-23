@@ -1,7 +1,12 @@
 package org.dbsp.sqlCompiler.compiler;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.util.IJson;
+import org.dbsp.util.JsonStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -12,7 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 /** Metadata describing an input table. */
-public class TableMetadata {
+public class TableMetadata implements IJson {
     public final ProgramIdentifier tableName;
     final LinkedHashMap<ProgramIdentifier, InputColumnMetadata> columnMetadata;
     final List<ProgramIdentifier> columnNames;
@@ -82,5 +87,41 @@ public class TableMetadata {
 
     public boolean isAppendOnly() {
         return this.changes == TableChanges.AppendOnly;
+    }
+
+    @Override
+    public void asJson(ToJsonInnerVisitor visitor) {
+        JsonStream stream = visitor.stream;
+        stream.beginObject();
+        stream.label("tableName");
+        this.tableName.asJson(visitor);
+        stream.label("materialized").append(this.materialized);
+        stream.label("changes").append(this.changes.toString());
+        stream.label("foreignKeys");
+        stream.beginArray();
+        for (ForeignKey key: this.foreignKeys)
+            key.asJson(visitor);
+        stream.endArray();
+        stream.label("columnMetadata");
+        stream.beginArray();
+        for (InputColumnMetadata col: this.columnMetadata.values())
+            col.asJson(visitor);
+        stream.endArray();
+        stream.endObject();
+    }
+
+    public static TableMetadata fromJson(JsonNode node, JsonDecoder decoder) {
+        ProgramIdentifier tableName = ProgramIdentifier.fromJson(
+                Utilities.getProperty(node, "tableName"));
+        boolean materialized = Utilities.getBooleanProperty(node, "materialized");
+        String changesS = Utilities.getStringProperty(node, "changes");
+        TableChanges changes = TableChanges.valueOf(changesS);
+        JsonNode fk = Utilities.getProperty(node, "foreignKeys");
+        List<ForeignKey> foreignKeys = Linq.list(Linq.map(fk.elements(), ForeignKey::fromJson));
+        JsonNode cm = Utilities.getProperty(node, "columnMetadata");
+        List<InputColumnMetadata> columnMetadata =
+                Linq.list(Linq.map(cm.elements(), e -> InputColumnMetadata.fromJson(e, decoder)));
+        return new TableMetadata(
+                tableName, columnMetadata, foreignKeys, materialized, changes == TableChanges.AppendOnly);
     }
 }

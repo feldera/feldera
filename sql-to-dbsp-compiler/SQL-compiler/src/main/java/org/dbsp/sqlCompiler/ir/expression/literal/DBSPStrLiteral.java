@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -48,11 +50,11 @@ public final class DBSPStrLiteral extends DBSPLiteral {
     }
 
     public DBSPStrLiteral(String value) {
-        this(value, false, false);
+        this(value, false);
     }
 
-    public DBSPStrLiteral(String value, boolean nullable, boolean raw) {
-        this(CalciteObject.EMPTY, new DBSPTypeStr(CalciteObject.EMPTY, nullable), value, raw);
+    public DBSPStrLiteral(String value, boolean raw) {
+        this(CalciteObject.EMPTY, DBSPTypeStr.INSTANCE, value, raw);
     }
 
     @Override
@@ -98,5 +100,13 @@ public final class DBSPStrLiteral extends DBSPLiteral {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPStrLiteral(this.getNode(), this.type, this.value, this.raw);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPStrLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        String value = Utilities.getStringProperty(node, "value");
+        DBSPType type = getJsonType(node, decoder);
+        boolean raw = Utilities.getBooleanProperty(node, "raw");
+        return new DBSPStrLiteral(CalciteObject.EMPTY, type, value, raw);
     }
 }

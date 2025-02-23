@@ -46,11 +46,11 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
             if (isRaw) {
                 result = new DBSPMapIndexOperator(
                         operator.getNode(), projection, replace.outputPort())
-                        .addAnnotation(new IsProjection(size));
+                        .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             } else {
                 result = new DBSPMapOperator(
                         operator.getNode(), projection, replace.outputPort())
-                        .addAnnotation(new IsProjection(size));
+                        .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             }
             this.addOperator(result);
             Utilities.putNew(this.narrowed, operator, result.outputPort());
@@ -92,7 +92,8 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
             DBSPClosureExpression projection = this.fcp.inputProjection.get(operator);
             int size = source.outputType().getToplevelFieldCount();
             DBSPSimpleOperator result = new DBSPMapOperator(
-                    operator.getNode(), projection, source).addAnnotation(new IsProjection(size));
+                    operator.getNode(), projection, source)
+                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.map(operator, result);
             return;
         }
@@ -109,7 +110,8 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
             DBSPClosureExpression projection = this.fcp.inputProjection.get(operator);
             int size = source.outputType().getToplevelFieldCount();
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    operator.getNode(), projection, source).addAnnotation(new IsProjection(size));
+                    operator.getNode(), projection, source)
+                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.map(operator, result);
             return;
         }

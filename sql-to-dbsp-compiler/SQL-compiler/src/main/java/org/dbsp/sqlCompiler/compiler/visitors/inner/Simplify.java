@@ -431,8 +431,8 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
         DBSPExpression result = new DBSPUnaryExpression(
-                expression.getNode(), type, expression.operation, source);
-        if (expression.operation == DBSPOpcode.NEG) {
+                expression.getNode(), type, expression.opcode, source);
+        if (expression.opcode == DBSPOpcode.NEG) {
             if (source.is(DBSPLiteral.class)) {
                 DBSPLiteral lit = source.to(DBSPLiteral.class);
                 if (lit.is(IsNumericLiteral.class)) {
@@ -443,7 +443,7 @@ public class Simplify extends InnerRewriteVisitor {
                     }
                 }
             }
-        } else if (expression.operation == DBSPOpcode.WRAP_BOOL) {
+        } else if (expression.opcode == DBSPOpcode.WRAP_BOOL) {
             // wrap_bool(cast_to_bn_b(expression)) => expression
             if (source.is(DBSPCastExpression.class)) {
                 DBSPCastExpression cast = source.to(DBSPCastExpression.class);
@@ -452,7 +452,7 @@ public class Simplify extends InnerRewriteVisitor {
                     result = cast.source;
                 }
             }
-        } else if (expression.operation == DBSPOpcode.NOT) {
+        } else if (expression.opcode == DBSPOpcode.NOT) {
             if (source.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral b = source.to(DBSPBoolLiteral.class);
                 if (b.value == null)
@@ -462,7 +462,7 @@ public class Simplify extends InnerRewriteVisitor {
             } else if (source.is(DBSPUnaryOperator.class)) {
                 // !!e = e, true in ternary logic too
                 DBSPUnaryExpression unarySource = source.to(DBSPUnaryExpression.class);
-                if (unarySource.operation == DBSPOpcode.NOT) {
+                if (unarySource.opcode == DBSPOpcode.NOT) {
                     result = unarySource.source;
                 }
             }

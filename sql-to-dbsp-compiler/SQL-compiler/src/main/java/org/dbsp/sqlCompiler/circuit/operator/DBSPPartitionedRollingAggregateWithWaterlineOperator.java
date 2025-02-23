@@ -23,10 +23,13 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -113,5 +116,35 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         if (!decision.stop())
             visitor.postorder(this);
         visitor.pop(this);
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        super.accept(visitor);
+        visitor.property("partitioningFunction");
+        this.partitioningFunction.accept(visitor);
+        if (this.aggregate != null) {
+            visitor.property("aggregate");
+            this.aggregate.accept(visitor);
+        }
+        visitor.property("lower");
+        this.lower.accept(visitor);
+        visitor.property("upper");
+        this.upper.accept(visitor);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPPartitionedRollingAggregateWithWaterlineOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        DBSPExpression partitioningFunction = fromJsonInner(node, "partitioningFunction", decoder, DBSPExpression.class);
+        DBSPAggregate aggregate = null;
+        if (node.has("aggregate"))
+            aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregate.class);
+        DBSPWindowBoundExpression lower = fromJsonInner(node, "lower", decoder, DBSPWindowBoundExpression.class);
+        DBSPWindowBoundExpression upper = fromJsonInner(node, "upper", decoder, DBSPWindowBoundExpression.class);
+        return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
+                CalciteObject.EMPTY, partitioningFunction, info.function(),
+                aggregate, lower, upper, info.getIndexedZsetType(), info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
     }
 }

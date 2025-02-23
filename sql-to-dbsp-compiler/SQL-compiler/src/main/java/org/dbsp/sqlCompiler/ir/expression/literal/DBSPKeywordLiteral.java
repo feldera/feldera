@@ -47,7 +47,7 @@ public final class DBSPKeywordLiteral extends DBSPLiteral {
     }
 
     public DBSPKeywordLiteral(CalciteObject node, String keyword) {
-        super(node, new DBSPTypeKeyword(), false);
+        super(node, DBSPTypeKeyword.INSTANCE, false);
         this.keyword = keyword.toLowerCase();
         switch (keyword.toLowerCase()) {
             case "dow":

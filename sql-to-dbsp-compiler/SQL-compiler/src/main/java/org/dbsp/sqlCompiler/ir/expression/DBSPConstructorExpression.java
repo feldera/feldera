@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -30,6 +32,8 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+
+import java.util.List;
 
 /** Invocation of a Rust constructor with some arguments. */
 public final class DBSPConstructorExpression extends DBSPExpression {
@@ -95,5 +99,13 @@ public final class DBSPConstructorExpression extends DBSPExpression {
             return false;
         return context.equivalent(this.function, otherExpression.function)
                 && context.equivalent(this.arguments, otherExpression.arguments);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPConstructorExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType returnType = getJsonType(node, decoder);
+        DBSPExpression function = fromJsonInner(node, "function", decoder, DBSPExpression.class);
+        List<DBSPExpression> arguments = fromJsonInnerList(node, "arguments", decoder, DBSPExpression.class);
+        return new DBSPConstructorExpression(function, returnType, arguments.toArray(new DBSPExpression[0]));
     }
 }

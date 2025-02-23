@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.calcite.util.DateString;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -85,5 +87,11 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsDateType, IsTime
     @Override
     public int hashCode() {
         return Objects.hash(this.mayBeNull, 3);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeDate fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        return new DBSPTypeDate(CalciteObject.EMPTY, mayBeNull);
     }
 }

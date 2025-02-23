@@ -237,11 +237,11 @@ public class TableParser {
             result = switch (fieldType.code) {
                 case DOUBLE -> {
                     double value = Double.parseDouble(trimmed);
-                    yield new DBSPDoubleLiteral(CalciteObject.EMPTY, fieldType, value, false);
+                    yield new DBSPDoubleLiteral(CalciteObject.EMPTY, fieldType, value);
                 }
                 case REAL -> {
                     float value = Float.parseFloat(trimmed);
-                    yield new DBSPRealLiteral(CalciteObject.EMPTY, fieldType, value, false);
+                    yield new DBSPRealLiteral(CalciteObject.EMPTY, fieldType, value);
                 }
                 case DECIMAL -> {
                     BigDecimal value = new BigDecimal(trimmed);

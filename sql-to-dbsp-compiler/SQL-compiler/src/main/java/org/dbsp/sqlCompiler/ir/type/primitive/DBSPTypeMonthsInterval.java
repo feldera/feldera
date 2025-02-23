@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -34,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
+import org.dbsp.util.Utilities;
 
 import java.util.Objects;
 
@@ -115,7 +118,7 @@ public class DBSPTypeMonthsInterval
 
     @Override
     public String toString() {
-        String builder = "LongInterval(" +
+        return "LongInterval(" +
                 switch (this.units) {
                     case YEARS_TO_MONTHS, YEARS -> "Y";
                     default -> "";
@@ -126,6 +129,12 @@ public class DBSPTypeMonthsInterval
                     default -> "";
                 } +
                 ")";
-        return builder;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeMonthsInterval fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        Units units = Units.valueOf(Utilities.getStringProperty(node, "units"));
+        return new DBSPTypeMonthsInterval(CalciteObject.EMPTY, units, mayBeNull);
     }
 }

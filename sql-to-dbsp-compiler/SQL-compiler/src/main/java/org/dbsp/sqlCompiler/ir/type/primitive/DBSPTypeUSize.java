@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -39,16 +41,22 @@ import java.util.Objects;
 /** Represents the usize Rust type. */
 public class DBSPTypeUSize extends DBSPTypeBaseType
         implements IsNumericType {
-    @SuppressWarnings("SameParameterValue")
-    public DBSPTypeUSize(CalciteObject node, boolean mayBeNull) {
-        super(node, DBSPTypeCode.USIZE, mayBeNull);
+    DBSPTypeUSize(boolean mayBeNull) {
+        super(CalciteObject.EMPTY, DBSPTypeCode.USIZE, mayBeNull);
     }
+
+    public static DBSPTypeUSize create(boolean mayBeNull) {
+        if (mayBeNull)
+            return INSTANCE_NULLABLE;
+        return INSTANCE;
+    }
+
+    public static final DBSPTypeUSize INSTANCE = new DBSPTypeUSize(false);
+    public static final DBSPTypeUSize INSTANCE_NULLABLE = new DBSPTypeUSize(true);
 
     @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
-        if (this.mayBeNull != mayBeNull)
-            return new DBSPTypeUSize(this.getNode(), mayBeNull);
-        return this;
+        return DBSPTypeUSize.create(mayBeNull);
     }
 
     @Override
@@ -102,5 +110,11 @@ public class DBSPTypeUSize extends DBSPTypeBaseType
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeUSize fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPTypeUSize.fromJsonMayBeNull(node);
+        return DBSPTypeUSize.create(mayBeNull);
     }
 }

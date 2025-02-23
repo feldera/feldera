@@ -1,11 +1,15 @@
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
+
+import java.util.List;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ARRAY;
 
@@ -60,4 +64,12 @@ public class DBSPTypeArray extends DBSPTypeUser implements ICollectionType {
     }
 
     // sameType and hashCode inherited from TypeUser.
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeArray fromJson(JsonNode node, JsonDecoder decoder) {
+        List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
+        assert typeArgs.size() == 1;
+        boolean mayBeNull = fromJsonMayBeNull(node);
+        return new DBSPTypeArray(typeArgs.get(0), mayBeNull);
+    }
 }

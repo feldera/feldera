@@ -1,5 +1,8 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -9,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
@@ -37,10 +41,6 @@ public final class DBSPUuidLiteral extends DBSPLiteral {
 
     public DBSPUuidLiteral() {
         this(null, true);
-    }
-
-    public DBSPUuidLiteral(UUID value) {
-        this(value, false);
     }
 
     public DBSPUuidLiteral(@Nullable UUID u, boolean nullable) {
@@ -96,5 +96,15 @@ public final class DBSPUuidLiteral extends DBSPLiteral {
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPUuidLiteral fromJson(JsonNode node, JsonDecoder decoder) throws JsonProcessingException {
+        UUID value = null;
+        if (node.has("value")) {
+            value = UUID.fromString(Utilities.getStringProperty(node, "value"));
+        }
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPUuidLiteral(CalciteObject.EMPTY, type, value);
     }
 }

@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.util.Utilities;
 
 /** This enum encodes the various opcodes for unary and
  * binary operations used in the IR of the SQL compiler. */
@@ -118,5 +120,9 @@ public enum DBSPOpcode {
                  ADD, TYPEDBOX, IS_TRUE, IS_FALSE, NOT, UNARY_PLUS -> true;
             default -> throw new UnimplementedException();
         };
+    }
+
+    public static DBSPOpcode fromJson(JsonNode node) {
+        return DBSPOpcode.valueOf(Utilities.getStringProperty(node, "opcode"));
     }
 }

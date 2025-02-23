@@ -1,8 +1,11 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -63,6 +66,15 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
     }
 
     @Override
+    public void accept(InnerVisitor visitor) {
+        super.accept(visitor);
+        visitor.property("init");
+        this.init.accept(visitor);
+        visitor.property("extractTs");
+        this.extractTs.accept(visitor);
+    }
+
+    @Override
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;
@@ -70,5 +82,16 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
         if (otherOperator == null)
             return false;
         return this.init.equivalent(otherOperator.init);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPWaterlineOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        DBSPClosureExpression init = fromJsonInner(node, "init", decoder, DBSPClosureExpression.class);
+        DBSPClosureExpression extractTs = fromJsonInner(node, "extractTs", decoder, DBSPClosureExpression.class);
+        return new DBSPWaterlineOperator(
+                CalciteObject.EMPTY, init, extractTs, info.getClosureFunction(),
+                info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPWaterlineOperator.class);
     }
 }

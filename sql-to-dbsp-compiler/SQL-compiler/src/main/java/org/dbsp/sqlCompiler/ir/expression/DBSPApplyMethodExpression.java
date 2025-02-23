@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -32,6 +34,8 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+
+import java.util.List;
 
 /** Method application expression. */
 public final class DBSPApplyMethodExpression extends DBSPApplyBaseExpression {
@@ -68,12 +72,13 @@ public final class DBSPApplyMethodExpression extends DBSPApplyBaseExpression {
         this.self.accept(visitor);
         visitor.property("function");
         this.function.accept(visitor);
-        visitor.property("arguments");
+        visitor.startArrayProperty("arguments");
         int index = 0;
         for (DBSPExpression arg: this.arguments) {
             visitor.propertyIndex(index++);
             arg.accept(visitor);
         }
+        visitor.endArrayProperty("arguments");
         visitor.pop(this);
         visitor.postorder(this);
     }
@@ -120,5 +125,14 @@ public final class DBSPApplyMethodExpression extends DBSPApplyBaseExpression {
         return context.equivalent(this.self, otherExpression.self) &&
                 context.equivalent(this.function, otherExpression.function) &&
                 context.equivalent(this.arguments, otherExpression.arguments);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPApplyMethodExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType returnType = getJsonType(node, decoder);
+        DBSPExpression self = fromJsonInner(node, "self", decoder, DBSPExpression.class);
+        DBSPExpression function = fromJsonInner(node, "function", decoder, DBSPExpression.class);
+        List<DBSPExpression> arguments = fromJsonInnerList(node, "arguments", decoder, DBSPExpression.class);
+        return new DBSPApplyMethodExpression(function, returnType, self, arguments.toArray(new DBSPExpression[0]));
     }
 }

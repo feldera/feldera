@@ -1,9 +1,12 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -80,8 +83,37 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
+    public void accept(InnerVisitor visitor) {
+        super.accept(visitor);
+        if (this.filter != null) {
+            visitor.property("filter");
+            this.filter.accept(visitor);
+        }
+        if (this.map != null) {
+            visitor.property("map");
+            this.map.accept(visitor);
+        }
+    }
+
+    @Override
     public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
         return new DBSPJoinFilterMapOperator(this.getNode(), this.getOutputZSetType(), function,
                 this.filter, this.map, this.isMultiset, left, right);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPJoinFilterMapOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        DBSPExpression filter = null;
+        if (node.has("filter"))
+            filter = fromJsonInner(node, "filter", decoder, DBSPExpression.class);
+        DBSPExpression map = null;
+        if (node.has("map"))
+            map = fromJsonInner(node, "map", decoder, DBSPExpression.class);
+        return new DBSPJoinFilterMapOperator(
+                CalciteObject.EMPTY, info.getZsetType(), info.getFunction(),
+                filter, map,
+                info.isMultiset(), info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPJoinFilterMapOperator.class);
     }
 }

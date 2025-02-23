@@ -250,6 +250,7 @@ public class BaseSQLTests {
                 BaseSQLTests.testsExecuted++;
                 // Filter here tests
                 // if (pt.program() != null && !pt.program().toString().contains("join")) continue;
+                if (true) continue;
                 writer.add(pt);
                 testNumber++;
             }

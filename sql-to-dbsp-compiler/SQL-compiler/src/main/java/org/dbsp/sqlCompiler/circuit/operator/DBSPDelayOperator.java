@@ -1,8 +1,11 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -49,5 +52,12 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator {
             return false;
         DBSPDelayOperator otherOperator = other.as(DBSPDelayOperator.class);
         return otherOperator != null;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPDelayOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = commonInfoFromJson(node, decoder);
+        return new DBSPDelayOperator(CalciteObject.EMPTY, info.function(), info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPDelayOperator.class);
     }
 }

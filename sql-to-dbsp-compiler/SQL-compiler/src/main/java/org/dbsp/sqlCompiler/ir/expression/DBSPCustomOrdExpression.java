@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -66,5 +68,12 @@ public final class DBSPCustomOrdExpression extends DBSPExpression {
             return false;
         return context.equivalent(this.source, otherExpression.source) &&
                 context.equivalent(this.comparator, otherExpression.comparator);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPCustomOrdExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
+        DBSPComparatorExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPComparatorExpression.class);
+        return new DBSPCustomOrdExpression(CalciteObject.EMPTY, source, comparator);
     }
 }

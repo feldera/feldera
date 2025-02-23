@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** Represents an expression of the form e.clone(). */
 public final class DBSPCloneExpression extends DBSPExpression {
@@ -78,5 +81,11 @@ public final class DBSPCloneExpression extends DBSPExpression {
         if (otherExpression == null)
             return false;
         return context.equivalent(this.expression, otherExpression.expression);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPCloneExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
+        return new DBSPCloneExpression(CalciteObject.EMPTY, expression);
     }
 }

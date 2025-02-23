@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.path;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -30,6 +32,9 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
+
+import java.util.List;
 
 public class DBSPSimplePathSegment extends DBSPPathSegment {
     public final String identifier;
@@ -39,6 +44,8 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
         super(CalciteObject.EMPTY);
         this.identifier = identifier;
         this.genericArgs = genericArgs;
+        for (DBSPType type: genericArgs)
+            assert type != null;
     }
 
     public String asString() {
@@ -52,7 +59,7 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
         visitor.push(this);
         visitor.startArrayProperty("genericArgs");
         int index = 0;
-        for (DBSPType arg: this.genericArgs) {
+        for (DBSPType arg : this.genericArgs) {
             visitor.propertyIndex(index);
             index++;
             arg.accept(visitor);
@@ -76,8 +83,8 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
         builder.append(this.identifier);
         if (this.genericArgs.length > 0)
             builder.append("<")
-                .join(", ", this.genericArgs)
-                .append(">");
+                    .join(", ", this.genericArgs)
+                    .append(">");
         return builder;
     }
 
@@ -94,5 +101,12 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
             if (!this.genericArgs[i].sameType(otherSegment.genericArgs[i]))
                 return false;
         return true;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPSimplePathSegment fromJson(JsonNode node, JsonDecoder decoder) {
+        String identifier = Utilities.getStringProperty(node, "identifier");
+        List<DBSPType> genericArgs = fromJsonInnerList(node, "genericArgs", decoder, DBSPType.class);
+        return new DBSPSimplePathSegment(identifier, genericArgs.toArray(new DBSPType[0]));
     }
 }

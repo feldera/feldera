@@ -1,18 +1,24 @@
 package org.dbsp.sqlCompiler.compiler;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
+import org.dbsp.util.IJson;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
 
 /** Metadata for a column belonging to a view */
 public class ViewColumnMetadata
-        implements IHasLateness, IHasSourcePositionRange, IHasType {
+        implements IHasLateness, IHasSourcePositionRange, IHasType, IJson {
     public final ProgramIdentifier viewName;
     /** Initially the column type is unknown, but it is filled in later */
     @Nullable
@@ -57,5 +63,20 @@ public class ViewColumnMetadata
     @Override
     public DBSPType getType() {
         return Objects.requireNonNull(this.type);
+    }
+
+    public static ViewColumnMetadata fromJson(JsonNode node, JsonDecoder decoder) {
+        ProgramIdentifier viewName = ProgramIdentifier.fromJson(Utilities.getProperty(node, "viewName"));
+        DBSPType type = DBSPNode.fromJsonInner(node, "type", decoder, DBSPType.class);
+        ProgramIdentifier columnName = ProgramIdentifier.fromJson(Utilities.getProperty(node, "columnName"));
+        DBSPExpression lateness = null;
+        if (node.has("lateness"))
+            lateness = DBSPNode.fromJsonInner(node, "lateness", decoder, DBSPExpression.class);
+        return new ViewColumnMetadata(CalciteObject.EMPTY, viewName, columnName, type, lateness);
+    }
+
+    @Override
+    public void asJson(ToJsonInnerVisitor visitor) {
+        // TODO
     }
 }

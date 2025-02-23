@@ -160,7 +160,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             }
             OutputPort source = this.mapped(operator.input());
             DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getNode(), projection, source)
-                    .addAnnotation(new IsProjection(size));
+                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.addOperator(adjust);
 
             DBSPSimpleOperator result = new DBSPMapOperator(
@@ -180,7 +180,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             OutputPort source = this.mapped(operator.input());
             DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(2));
             DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getNode(), projection, source)
-                    .addAnnotation(new IsProjection(size));
+                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.addOperator(adjust);
             DBSPSimpleOperator result = new DBSPMapOperator(
                     operator.getNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
@@ -218,7 +218,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             }
 
             DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getNode(), projection, source)
-                    .addAnnotation(new IsProjection(size));
+                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.addOperator(adjust);
 
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
@@ -239,7 +239,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             DBSPClosureExpression compressed = rw.rewriteClosure(closure);
             OutputPort source = this.mapped(operator.input());
             DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getNode(), projection, source)
-                    .addAnnotation(new IsProjection(size));
+                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.addOperator(adjust);
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
                     operator.getNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());

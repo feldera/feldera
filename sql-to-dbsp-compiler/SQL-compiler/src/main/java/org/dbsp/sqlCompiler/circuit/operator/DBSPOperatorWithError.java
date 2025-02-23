@@ -36,14 +36,14 @@ public abstract class DBSPOperatorWithError extends DBSPOperator {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        visitor.property("outputType");
-        this.outputType.accept(visitor);
         visitor.property("errorType");
         this.errorType.accept(visitor);
-        visitor.property("function");
-        this.function.accept(visitor);
         visitor.property("error");
         this.error.accept(visitor);
+        visitor.property("outputType");
+        this.outputType.accept(visitor);
+        visitor.property("function");
+        this.function.accept(visitor);
     }
 
     @Override

@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -32,6 +34,8 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+
+import java.util.List;
 
 /** Function application expression.
  * Note: the type of the expression is the type of the result returned by the function. */
@@ -65,7 +69,7 @@ public final class DBSPApplyExpression extends DBSPApplyBaseExpression {
         this.function.accept(visitor);
         visitor.startArrayProperty("arguments");
         int index = 0;
-        for (DBSPExpression arg: this.arguments) {
+        for (DBSPExpression arg : this.arguments) {
             visitor.propertyIndex(index);
             arg.accept(visitor);
             index++;
@@ -110,5 +114,13 @@ public final class DBSPApplyExpression extends DBSPApplyBaseExpression {
             return false;
         return context.equivalent(this.function, otherExpression.function) &&
                 context.equivalent(this.arguments, otherExpression.arguments);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPApplyExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType returnType = getJsonType(node, decoder);
+        DBSPExpression function = fromJsonInner(node, "function", decoder, DBSPExpression.class);
+        List<DBSPExpression> arguments = fromJsonInnerList(node, "arguments", decoder, DBSPExpression.class);
+        return new DBSPApplyExpression(function, returnType, arguments.toArray(new DBSPExpression[0]));
     }
 }

@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -33,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.IsIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.math.BigInteger;
@@ -56,10 +59,6 @@ public final class DBSPIntervalMonthsLiteral
 
     public DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units units, int value, boolean mayBeNull) {
         this(CalciteObject.EMPTY, new DBSPTypeMonthsInterval(CalciteObject.EMPTY, units, mayBeNull), value);
-    }
-
-    public DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units units) {
-        this(CalciteObject.EMPTY, new DBSPTypeMonthsInterval(CalciteObject.EMPTY, units,true), null);
     }
 
     @Override
@@ -133,5 +132,15 @@ public final class DBSPIntervalMonthsLiteral
         if (this.value == null)
             return DBSPNullLiteral.NULL;
         return "INTERVAL " + this.value + " MONTHS";
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPIntervalMonthsLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        Integer value = null;
+        if (node.has("value")) {
+            value = Utilities.getIntProperty(node, "value");
+        }
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPIntervalMonthsLiteral(CalciteObject.EMPTY, type, value);
     }
 }

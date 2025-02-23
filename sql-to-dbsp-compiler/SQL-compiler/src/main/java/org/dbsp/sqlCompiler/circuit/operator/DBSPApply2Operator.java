@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -59,5 +61,13 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
         if (!decision.stop())
             visitor.postorder(this);
         visitor.pop(this);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPApply2Operator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        return new DBSPApply2Operator(
+                CalciteObject.EMPTY, info.getClosureFunction(), info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPApply2Operator.class);
     }
 }

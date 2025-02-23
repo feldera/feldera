@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.calcite.util.TimestampString;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -56,15 +58,15 @@ public final class DBSPTimestampLiteral extends DBSPLiteral {
     }
 
     public DBSPTimestampLiteral(long value, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, mayBeNull), value);
+        this(CalciteObject.EMPTY, DBSPTypeTimestamp.create(mayBeNull), value);
     }
 
     public DBSPTimestampLiteral() {
-        this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, true), (Long)null);
+        this(CalciteObject.EMPTY, DBSPTypeTimestamp.NULLABLE_INSTANCE, (Long)null);
     }
 
     public DBSPTimestampLiteral(String string, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, mayBeNull), createTimestampString(string));
+        this(CalciteObject.EMPTY, DBSPTypeTimestamp.create(mayBeNull), createTimestampString(string));
     }
 
     private static final String INSTANT_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
@@ -137,5 +139,14 @@ public final class DBSPTimestampLiteral extends DBSPLiteral {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPTimestampLiteral(this.getNode(), this.type, this.value);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTimestampLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        Long value = null;
+        if (node.has("value"))
+            value = Utilities.getLongProperty(node, "value");
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPTimestampLiteral(CalciteObject.EMPTY, type, value);
     }
 }

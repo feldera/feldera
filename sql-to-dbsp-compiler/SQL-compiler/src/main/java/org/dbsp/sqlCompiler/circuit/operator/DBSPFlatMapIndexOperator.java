@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -48,5 +50,13 @@ public final class DBSPFlatMapIndexOperator extends DBSPUnaryOperator {
                     this.getOutputIndexedZSetType(), this.isMultiset, newInputs.get(0))
                     .copyAnnotations(this);
         return this;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPFlatMapIndexOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        return new DBSPFlatMapIndexOperator(CalciteObject.EMPTY, info.getFunction(),
+                info.getIndexedZsetType(), info.isMultiset(), info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPFlatMapIndexOperator.class);
     }
 }

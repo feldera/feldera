@@ -82,7 +82,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         }
 
         if (flatmap.ordinalityIndexType != null) {
-            eType = new DBSPTypeRawTuple(new DBSPTypeUSize(CalciteObject.EMPTY, false), eType);
+            eType = new DBSPTypeRawTuple(DBSPTypeUSize.INSTANCE, eType);
             // e.0 is usize, from the Rust library, so we do arithmetic using usize
             // and convert at the end.
         }
@@ -92,7 +92,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression e0plus1 = null;
         if (flatmap.ordinalityIndexType != null) {
             e0plus1 = new DBSPBinaryExpression(flatmap.getNode(),
-                    new DBSPTypeUSize(CalciteObject.EMPTY, false), DBSPOpcode.ADD,
+                    DBSPTypeUSize.INSTANCE, DBSPOpcode.ADD,
                     e.field(0),
                     new DBSPUSizeLiteral(1)).cast(flatmap.ordinalityIndexType, false);
         }

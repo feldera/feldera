@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -38,8 +40,21 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIMESTAMP;
 
 public class DBSPTypeTimestamp extends DBSPTypeBaseType
         implements IsDateType, IsTimeRelatedType {
-    public DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
+    DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
         super(node, TIMESTAMP, mayBeNull);
+    }
+
+    public static final DBSPTypeTimestamp INSTANCE = new DBSPTypeTimestamp(CalciteObject.EMPTY, false);
+    public static final DBSPTypeTimestamp NULLABLE_INSTANCE = new DBSPTypeTimestamp(CalciteObject.EMPTY, true);
+
+    public static DBSPTypeTimestamp create(CalciteObject node, boolean mayBeNull) {
+        if (node.isEmpty())
+            return mayBeNull ? NULLABLE_INSTANCE : INSTANCE;
+        return new DBSPTypeTimestamp(node, mayBeNull);
+    }
+
+    public static DBSPTypeTimestamp create(boolean mayBeNull) {
+        return create(CalciteObject.EMPTY, mayBeNull);
     }
 
     @Override
@@ -72,7 +87,7 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
     public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
-        return new DBSPTypeTimestamp(this.getNode(), mayBeNull);
+        return DBSPTypeTimestamp.create(this.getNode(), mayBeNull);
     }
 
     @Override
@@ -85,5 +100,11 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
         if (!super.sameNullability(other))
             return false;
         return other.is(DBSPTypeTimestamp.class);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeTimestamp fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        return DBSPTypeTimestamp.create(mayBeNull);
     }
 }

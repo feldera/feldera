@@ -1010,7 +1010,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                 // Create external tables table
                 JdbcTableScan jscan = (JdbcTableScan) scan;
-                RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.sqlToRelCompiler.typeFactory);
+                RelDataType tableRowType = jscan.jdbcTable.getRowType(SqlToRelCompiler.TYPE_FACTORY);
                 DBSPTypeStruct originalRowType = this.convertType(tableRowType, true)
                         .to(DBSPTypeStruct.class)
                         .rename(tableName);
@@ -3214,7 +3214,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.addOperator(agg);
 
         if (limit != null)
-            limit = limit.cast(new DBSPTypeUSize(node, false), false);
+            limit = limit.cast(DBSPTypeUSize.INSTANCE, false);
         DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator, limit);
         DBSPSimpleOperator result = new DBSPMapOperator(
                 node, sorter, this.makeZSet(arrayType), agg.outputPort());

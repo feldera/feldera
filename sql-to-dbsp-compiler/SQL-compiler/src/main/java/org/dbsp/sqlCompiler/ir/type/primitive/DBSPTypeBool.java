@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -89,5 +91,11 @@ public class DBSPTypeBool extends DBSPTypeBaseType implements IsBoundedType {
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeBool fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        return DBSPTypeBool.create(mayBeNull);
     }
 }

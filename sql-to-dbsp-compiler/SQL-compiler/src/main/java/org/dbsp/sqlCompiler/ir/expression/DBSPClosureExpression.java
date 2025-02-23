@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -38,6 +40,8 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Maybe;
+
+import java.util.List;
 
 import static org.dbsp.util.Maybe.*;
 
@@ -210,5 +214,14 @@ public final class DBSPClosureExpression extends DBSPExpression {
                     new DBSPLetExpression(var, before.body, this.body));
             return newBody.closure(before.parameters);
         }
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPClosureExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        // Need to read the type even if we don't use it, to populate the cache
+        fromJsonInner(node, "type", decoder, DBSPType.class);
+        DBSPExpression body = fromJsonInner(node, "body", decoder, DBSPExpression.class);
+        List<DBSPParameter> parameters = fromJsonInnerList(node, "parameters", decoder, DBSPParameter.class);
+        return new DBSPClosureExpression(CalciteObject.EMPTY, body, parameters.toArray(new DBSPParameter[0]));
     }
 }

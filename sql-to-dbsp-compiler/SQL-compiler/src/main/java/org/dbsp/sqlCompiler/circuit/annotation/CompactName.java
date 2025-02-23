@@ -1,6 +1,9 @@
 package org.dbsp.sqlCompiler.circuit.annotation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.util.JsonStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -27,5 +30,20 @@ public class CompactName extends Annotation {
             return name.get(0).to(CompactName.class).name;
         }
         return null;
+    }
+
+    public static CompactName fromJson(JsonNode node) {
+        String name = Utilities.getStringProperty(node, "name");
+        return new CompactName(name);
+    }
+
+    @Override
+    public void asJson(JsonStream stream) {
+        stream.beginObject();
+        stream.label("class");
+        stream.append(this.getClass().getSimpleName());
+        stream.label("name");
+        stream.append(this.name);
+        stream.endObject();
     }
 }

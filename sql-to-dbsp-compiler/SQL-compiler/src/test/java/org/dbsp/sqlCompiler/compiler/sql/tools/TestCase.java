@@ -193,7 +193,7 @@ public class TestCase {
                                 new DBSPApplyExpression("must_equal",
                                         new DBSPTypeBool(CalciteObject.EMPTY, false),
                                         actual.borrow(), expected.borrow()),
-                                new DBSPStrLiteral(message, false, true)).toStatement();
+                                new DBSPStrLiteral(message, true)).toStatement();
                 list.add(compare);
             }
             pair++;

@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -54,5 +56,11 @@ public class DBSPStaticExpression extends DBSPExpression {
 
     public String getName() {
         return "STATIC" + this.getId();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPStaticExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression initializer = fromJsonInner(node, "initializer", decoder, DBSPExpression.class);
+        return new DBSPStaticExpression(CalciteObject.EMPTY, initializer);
     }
 }

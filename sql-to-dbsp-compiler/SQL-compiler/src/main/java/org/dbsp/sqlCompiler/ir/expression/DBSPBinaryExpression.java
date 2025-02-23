@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -55,6 +57,8 @@ public final class DBSPBinaryExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
+        this.type.accept(visitor);
         visitor.property("left");
         this.left.accept(visitor);
         visitor.property("right");
@@ -99,5 +103,14 @@ public final class DBSPBinaryExpression extends DBSPExpression {
         return this.opcode == otherExpression.opcode &&
                 context.equivalent(this.left, otherExpression.left) &&
                 context.equivalent(this.right, otherExpression.right);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPBinaryExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType type = getJsonType(node, decoder);
+        DBSPExpression left = fromJsonInner(node, "left", decoder, DBSPExpression.class);
+        DBSPExpression right = fromJsonInner(node, "right", decoder, DBSPExpression.class);
+        DBSPOpcode code = DBSPOpcode.fromJson(node);
+        return new DBSPBinaryExpression(CalciteObject.EMPTY, type, code, left, right);
     }
 }

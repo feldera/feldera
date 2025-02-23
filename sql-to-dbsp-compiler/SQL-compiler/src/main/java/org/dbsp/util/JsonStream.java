@@ -25,7 +25,12 @@ public class JsonStream {
 
     public JsonStream append(String string) {
         this.value();
-        this.stream.append(Utilities.doubleQuote(string));
+        try {
+            string = Utilities.deterministicObjectMapper().writeValueAsString(string);
+            this.stream.append(string);
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
         return this;
     }
 
@@ -87,12 +92,13 @@ public class JsonStream {
         this.stream.append("[");
     }
 
-    public void endArray() {
+    public JsonStream endArray() {
         Context last = Utilities.removeLast(this.context);
         assert last.is(InArray.class);
         if (last.index != 0)
             this.stream.newline().decrease();
         this.stream.append("]");
+        return this;
     }
 
     public JsonStream beginObject() {

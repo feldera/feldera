@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -81,4 +83,12 @@ public final class DBSPIntegrateTraceRetainValuesOperator
     }
 
     // equivalent inherited from parent
+
+    @SuppressWarnings("unused")
+    public static DBSPIntegrateTraceRetainValuesOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
+        return new DBSPIntegrateTraceRetainValuesOperator(CalciteObject.EMPTY,
+                info.getFunction(), info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPIntegrateTraceRetainValuesOperator.class);
+    }
 }

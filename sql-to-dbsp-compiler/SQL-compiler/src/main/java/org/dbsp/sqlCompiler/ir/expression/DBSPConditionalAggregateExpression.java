@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -93,5 +95,17 @@ public final class DBSPConditionalAggregateExpression extends DBSPExpression {
             builder.append(", ")
                     .append(this.condition);
         return builder.append(")");
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPConditionalAggregateExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression left = fromJsonInner(node, "left", decoder, DBSPExpression.class);
+        DBSPExpression right = fromJsonInner(node, "right", decoder, DBSPExpression.class);
+        DBSPType type = getJsonType(node, decoder);
+        DBSPExpression condition = null;
+        if (node.has("condition"))
+            condition = fromJsonInner(node, "condition", decoder, DBSPExpression.class);
+        DBSPOpcode code = DBSPOpcode.fromJson(node);
+        return new DBSPConditionalAggregateExpression(CalciteObject.EMPTY, code, type, left, right, condition);
     }
 }

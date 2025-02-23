@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -56,7 +58,7 @@ public final class DBSPGeoPointConstructor
     }
 
     public DBSPGeoPointConstructor() {
-        super(CalciteObject.EMPTY, new DBSPTypeGeoPoint(CalciteObject.EMPTY, true));
+        super(CalciteObject.EMPTY, DBSPTypeGeoPoint.NULLABLE_INSTANCE);
         this.left = null;
         this.right = null;
     }
@@ -92,6 +94,8 @@ public final class DBSPGeoPointConstructor
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
+        this.type.accept(visitor);
         if (this.left != null) {
             visitor.property("left");
             this.left.accept(visitor);
@@ -139,5 +143,17 @@ public final class DBSPGeoPointConstructor
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.left, this.right);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPGeoPointConstructor fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType type = getJsonType(node, decoder);
+        DBSPExpression left = null;
+        if (node.has("left"))
+            left = fromJsonInner(node, "left", decoder, DBSPExpression.class);
+        DBSPExpression right = null;
+        if (node.has("right"))
+            right = fromJsonInner(node, "right", decoder, DBSPExpression.class);
+        return new DBSPGeoPointConstructor(CalciteObject.EMPTY, left, right, type);
     }
 }

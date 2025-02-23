@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -33,8 +35,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPISizeLiteral extends DBSPLiteral implements IsNumericLiteral {
@@ -119,5 +123,14 @@ public final class DBSPISizeLiteral extends DBSPLiteral implements IsNumericLite
     @Override
     public String toSqlString() {
         throw new InternalCompilerError("unreachable");
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPISizeLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        Long value = null;
+        if (node.has("value"))
+            value = Utilities.getLongProperty(node, "value");
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPISizeLiteral(CalciteObject.EMPTY, type, value);
     }
 }

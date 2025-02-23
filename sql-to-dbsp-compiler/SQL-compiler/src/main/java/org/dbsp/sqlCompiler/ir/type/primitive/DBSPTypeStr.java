@@ -23,6 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -37,13 +40,15 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STR;
 
 @NonCoreIR
 public class DBSPTypeStr extends DBSPTypeBaseType {
-    public DBSPTypeStr(CalciteObject node, boolean mayBeNull) { super(node, STR, mayBeNull); }
+    DBSPTypeStr() { super(CalciteObject.EMPTY, STR, false); }
+
+    public static final DBSPTypeStr INSTANCE = new DBSPTypeStr();
 
     @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
-        if (this.mayBeNull == mayBeNull)
-            return this;
-        return new DBSPTypeStr(this.getNode(), mayBeNull);
+        if (mayBeNull)
+            throw new UnimplementedException();
+        return this;
     }
 
     @Override
@@ -70,5 +75,10 @@ public class DBSPTypeStr extends DBSPTypeBaseType {
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeStr fromJson(JsonNode node, JsonDecoder decoder) {
+        return DBSPTypeStr.INSTANCE;
     }
 }

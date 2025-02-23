@@ -1,8 +1,12 @@
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+
+import java.util.List;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
@@ -45,4 +49,12 @@ public class DBSPTypeBTreeMap extends DBSPTypeUser {
     }
 
     // sameType and hashCode inherited from TypeUser.
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeBTreeMap fromJson(JsonNode node, JsonDecoder decoder) {
+        List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
+        assert typeArgs.size() == 2;
+        boolean mayBeNull = fromJsonMayBeNull(node);
+        return new DBSPTypeBTreeMap(typeArgs.get(0), typeArgs.get(1), mayBeNull);
+    }
 }

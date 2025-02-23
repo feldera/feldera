@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.derived;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -33,6 +35,7 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.FUNCTION;
@@ -115,5 +118,12 @@ public class DBSPTypeFunction extends DBSPType {
                 .join(", ", this.parameterTypes)
                 .append("| -> ")
                 .append(this.resultType);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeFunction fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType resultType = fromJsonInner(node, "resultType", decoder, DBSPType.class);
+        List<DBSPType> params = fromJsonInnerList(node, "parameterTypes", decoder, DBSPType.class);
+        return new DBSPTypeFunction(resultType, params.toArray(new DBSPType[0]));
     }
 }

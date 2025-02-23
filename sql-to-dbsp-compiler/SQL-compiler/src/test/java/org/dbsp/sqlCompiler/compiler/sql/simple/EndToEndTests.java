@@ -278,7 +278,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testNull() {
         String query = "SELECT NULL";
-        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(new DBSPNullLiteral()));
+        DBSPZSetExpression result = new DBSPZSetExpression(new DBSPTupleExpression(DBSPNullLiteral.INSTANCE));
         this.testConstantOutput(query, result);
     }
 
@@ -569,7 +569,7 @@ public class EndToEndTests extends BaseSQLTests {
                         new DBSPGeoPointConstructor(CalciteObject.EMPTY,
                                 new DBSPDoubleLiteral(0),
                                 new DBSPDoubleLiteral(0),
-                                new DBSPTypeGeoPoint(CalciteObject.EMPTY, false)).some())));
+                                DBSPTypeGeoPoint.INSTANCE).some())));
     }
 
     @Test

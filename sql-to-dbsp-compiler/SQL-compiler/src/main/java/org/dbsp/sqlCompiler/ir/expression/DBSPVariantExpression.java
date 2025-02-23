@@ -28,17 +28,17 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue 
     }
 
     public DBSPVariantExpression(boolean mayBeNull) {
-        super(CalciteObject.EMPTY, new DBSPTypeVariant(CalciteObject.EMPTY, mayBeNull));
+        super(CalciteObject.EMPTY, DBSPTypeVariant.create(mayBeNull));
         this.isSqlNull = true;
         this.value = null;
     }
 
     public DBSPVariantExpression(@Nullable DBSPExpression value, boolean mayBeNull) {
-        this(value, new DBSPTypeVariant(CalciteObject.EMPTY, mayBeNull));
+        this(value, DBSPTypeVariant.create(mayBeNull));
     }
 
     public DBSPVariantExpression(@Nullable DBSPExpression value) {
-        this(value, new DBSPTypeVariant(CalciteObject.EMPTY, false));
+        this(value, DBSPTypeVariant.create(false));
     }
 
     /** The value representing the SQL NULL */

@@ -1,18 +1,21 @@
 package org.dbsp.sqlCompiler.compiler;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
+import org.dbsp.util.IJson;
 import org.dbsp.util.Utilities;
 
 import java.util.LinkedHashMap;
 
 /** Represents metadata about the compiled program.
  * Contains a description of all input tables and all views. */
-public class ProgramMetadata {
+public class ProgramMetadata implements IJson {
     final LinkedHashMap<ProgramIdentifier, IHasSchema> inputTables;
     final LinkedHashMap<ProgramIdentifier, IHasSchema> outputViews;
 
@@ -64,5 +67,27 @@ public class ProgramMetadata {
 
     public void addView(IHasSchema description) {
         this.outputViews.put(description.getName(), description);
+    }
+
+    public static ProgramMetadata fromJson(JsonNode node) {
+        ProgramMetadata result = new ProgramMetadata();
+        var it = Utilities.getProperty(node, "inputs").elements();
+        while (it.hasNext()) {
+            JsonNode tbl = it.next();
+            IHasSchema sch = IHasSchema.AbstractIHasSchema.fromJson(tbl);
+            result.addTable(sch);
+        }
+        it = Utilities.getProperty(node, "outputs").elements();
+        while (it.hasNext()) {
+            JsonNode tbl = it.next();
+            IHasSchema sch = IHasSchema.AbstractIHasSchema.fromJson(tbl);
+            result.addView(sch);
+        }
+        return result;
+    }
+
+    @Override
+    public void asJson(ToJsonInnerVisitor visitor) {
+        IJson.toJsonStream(this.asJson(), visitor.stream);
     }
 }

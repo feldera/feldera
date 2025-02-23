@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -40,6 +41,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -211,4 +213,8 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     /** Number of fields in the type.  Note: containers have size 1.
      * RAW tuples have the sum of the fields, while regular tuples have the count of the fields. */
     public abstract int getToplevelFieldCount();
+
+    protected static boolean fromJsonMayBeNull(JsonNode node) {
+        return Utilities.getBooleanProperty(node, "mayBeNull");
+    }
 }
