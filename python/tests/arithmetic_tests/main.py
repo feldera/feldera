@@ -1,7 +1,7 @@
 ## Add here import statements for all files with tests
 
 from tests.aggregate_tests.aggtst_base import *  # noqa: F403
-from tests.aggregate_tests.atest_loader import *  # noqa: F403
+from tests.aggregate_tests.atest_loader import run  # noqa: F403
 from tests.arithmetic_tests.test_tables import *  # noqa: F403
 from tests.arithmetic_tests.test_date import *  # noqa: F403
 from tests.arithmetic_tests.test_interval import *  # noqa: F403
