@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.circuit;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -19,6 +21,7 @@ public final class DBSPDeclaration extends DBSPNode implements IDBSPOuterNode {
 
     @Override
     public void accept(InnerVisitor visitor) {
+        visitor.property("item");
         this.item.accept(visitor);
     }
 
@@ -34,5 +37,11 @@ public final class DBSPDeclaration extends DBSPNode implements IDBSPOuterNode {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return this.item.toString(builder);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPDeclaration fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPItem item = fromJsonInner(node, "item", decoder, DBSPItem.class);
+        return new DBSPDeclaration(item);
     }
 }

@@ -54,9 +54,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
@@ -394,53 +392,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
     }
 
-    void validateViewProperty(SqlFragment key, SqlFragment value) {
-        CalciteObject node = CalciteObject.create(key.getParserPosition());
-        String keyString = key.getString();
-        switch (keyString) {
-            case CreateViewStatement.EMIT_FINAL:
-                // Actual value validated elsewhere
-                break;
-            case "rust":
-            case "connectors":
-                this.validateConnectorsProperty(node, key, value);
-                break;
-            default:
-                throw new CompilationError("Unknown property " + Utilities.singleQuote(keyString), node);
-        }
-    }
-
-    void validateBooleanProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
-        String vs = value.getString();
-        if (vs.equalsIgnoreCase("true") || vs.equalsIgnoreCase("false"))
-            return;
-        throw new CompilationError("Expected a boolean value for property " +
-                Utilities.singleQuote(key.getString()), node);
-    }
-
-    @SuppressWarnings("unused")
-    void validateConnectorsProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
-        // Nothing right now.
-        // This is validated by the pipeline_manager, and it's relatively fast.
-        // Checking that this is legal JSON may make interactive editing of the SQL program annoying.
-    }
-
-    void validateTableProperty(SqlFragment key, SqlFragment value) {
-        CalciteObject node = CalciteObject.create(key.getParserPosition());
-        String keyString = key.getString();
-        switch (key.getString()) {
-            case "materialized":
-            case "append_only":
-                this.validateBooleanProperty(node, key, value);
-                break;
-            case "connectors":
-                this.validateConnectorsProperty(node, key, value);
-                break;
-            default:
-                throw new CompilationError("Unknown property " + Utilities.singleQuote(keyString), node);
-        }
-    }
-
     List<ParsedStatement> runParser() {
         // Parse using Calcite
         List<ParsedStatement> parsed = new ArrayList<>();
@@ -612,16 +563,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
                 if (fe.is(CreateViewStatement.class)) {
                     CreateViewStatement cv = fe.to(CreateViewStatement.class);
-                    PropertyList properties = cv.getProperties();
-                    if (properties != null)
-                        properties.checkKnownProperties(this::validateViewProperty);
                     currentViewPosition = cv.createView.getParserPosition();
                     Utilities.putNew(this.views, cv.getName(), cv);
                 } else if (fe.is(CreateTableStatement.class)) {
                     CreateTableStatement ct = fe.to(CreateTableStatement.class);
-                    PropertyList properties = ct.getProperties();
-                    if (properties != null)
-                        properties.checkKnownProperties(this::validateTableProperty);
                     foreignKeys.addAll(ct.foreignKeys);
                 } else if (fe.is(CreateIndexStatement.class)) {
                     CreateIndexStatement ct = fe.to(CreateIndexStatement.class);

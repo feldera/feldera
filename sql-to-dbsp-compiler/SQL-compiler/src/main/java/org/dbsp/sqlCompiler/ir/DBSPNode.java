@@ -23,9 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -167,5 +170,43 @@ public abstract class DBSPNode
 
     public SourcePositionRange getSourcePosition() {
         return this.node.getPositionRange();
+    }
+
+    public static <T extends IDBSPInnerNode> T fromJsonInner(
+            JsonNode node, String property, JsonDecoder decoder, Class<T> clazz) {
+        JsonNode prop = Utilities.getProperty(node, property);
+        return decoder.decodeInner(prop, clazz);
+    }
+
+    public static <T extends IDBSPOuterNode> T fromJsonOuter(
+            JsonNode node, String property, JsonDecoder decoder, Class<T> clazz) {
+        JsonNode prop = Utilities.getProperty(node, property);
+        return decoder.decodeOuter(prop, clazz);
+    }
+
+    public static <T extends IDBSPInnerNode> List<T> fromJsonInnerList(
+            JsonNode node, JsonDecoder decoder, Class<T> clazz) {
+        assert node.isArray(): "Node is not an array " + Utilities.toDepth(node, 1);
+        return Linq.list(Linq.map(
+                node.elements(), e -> decoder.decodeInner(e, clazz)));
+    }
+
+    public static <T extends IDBSPInnerNode> List<T> fromJsonInnerList(
+            JsonNode node, String property, JsonDecoder decoder, Class<T> clazz) {
+        JsonNode prop = Utilities.getProperty(node, property);
+        return fromJsonInnerList(prop, decoder, clazz);
+    }
+
+    public static <T extends IDBSPOuterNode> List<T> fromJsonOuterList(
+            JsonNode node, JsonDecoder decoder, Class<T> clazz) {
+        assert node.isArray(): "Node is not an array " + Utilities.toDepth(node, 1);
+        return Linq.list(Linq.map(
+                node.elements(), e -> decoder.decodeOuter(e, clazz)));
+    }
+
+    public static <T extends IDBSPOuterNode> List<T> fromJsonOuterList(
+            JsonNode node, String property, JsonDecoder decoder, Class<T> clazz) {
+        JsonNode prop = Utilities.getProperty(node, property);
+        return fromJsonOuterList(prop, decoder, clazz);
     }
 }

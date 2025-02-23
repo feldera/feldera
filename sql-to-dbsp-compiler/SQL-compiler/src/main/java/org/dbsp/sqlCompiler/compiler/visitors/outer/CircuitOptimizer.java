@@ -139,6 +139,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new ExpandJoins(compiler));
         passes.add(new CSE(compiler));
         passes.add(new RemoveViewOperators(compiler, true));
+        // passes.add(new TestSerialize(compiler));
         passes.add(new CompactNames(compiler));
         return new Passes("CircuitOptimizer", compiler, passes);
     }

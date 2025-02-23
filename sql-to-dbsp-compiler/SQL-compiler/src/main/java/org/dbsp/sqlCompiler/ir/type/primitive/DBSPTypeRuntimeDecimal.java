@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -98,5 +100,11 @@ public class DBSPTypeRuntimeDecimal extends DBSPTypeBaseType implements IsNumeri
     @Override
     public DBSPExpression getMinValue() {
         return DBSPTypeDecimal.getDefault().getMinValue();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeRuntimeDecimal fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPTypeUSize.fromJsonMayBeNull(node);
+        return new DBSPTypeRuntimeDecimal(CalciteObject.EMPTY, mayBeNull);
     }
 }

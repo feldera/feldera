@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -229,5 +231,17 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
     @Override
     public DBSPBaseTupleExpression fromFields(List<DBSPExpression> fields) {
         return new DBSPTupleExpression(this.getNode(), fields);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTupleExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType type = getJsonType(node, decoder);
+        List<DBSPExpression> fields = null;
+        if (node.has("fields"))
+            fields = fromJsonInnerList(node, "fields", decoder, DBSPExpression.class);
+        if (fields != null)
+            return new DBSPTupleExpression(CalciteObject.EMPTY, type.to(DBSPTypeTuple.class), fields);
+        else
+            return new DBSPTupleExpression(type.to(DBSPTypeTuple.class));
     }
 }

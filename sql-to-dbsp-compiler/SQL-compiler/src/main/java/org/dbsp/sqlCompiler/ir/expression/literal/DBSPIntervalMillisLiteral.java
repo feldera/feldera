@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -33,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.IsIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.math.BigInteger;
@@ -76,8 +79,6 @@ public final class DBSPIntervalMillisLiteral
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        visitor.property("type");
-        this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }
@@ -135,5 +136,15 @@ public final class DBSPIntervalMillisLiteral
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPIntervalMillisLiteral(this.getNode(), this.type, this.value);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPIntervalMillisLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        Long value = null;
+        if (node.has("value")) {
+            value = Utilities.getLongProperty(node, "value");
+        }
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPIntervalMillisLiteral(CalciteObject.EMPTY, type, value);
     }
 }

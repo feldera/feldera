@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -44,6 +46,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.util.Utilities;
 
 import java.math.BigInteger;
 import java.util.Objects;
@@ -306,5 +309,13 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeInteger fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        int width = Utilities.getIntProperty(node, "width");
+        boolean signed = Utilities.getBooleanProperty(node, "signed");
+        return new DBSPTypeInteger(CalciteObject.EMPTY, width, signed, mayBeNull);
     }
 }

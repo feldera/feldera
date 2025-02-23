@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -69,5 +72,14 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
                     this.incremental, this.isMultiset)
                     .copyAnnotations(this);
         return this;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPConstantOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        boolean incremental = Utilities.getBooleanProperty(node, "incremental");
+        return new DBSPConstantOperator(
+                CalciteObject.EMPTY, info.getFunction(), incremental, info.isMultiset())
+                .addAnnotations(info.annotations(), DBSPConstantOperator.class);
     }
 }

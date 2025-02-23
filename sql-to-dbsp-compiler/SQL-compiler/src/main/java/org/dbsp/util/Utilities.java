@@ -25,6 +25,8 @@
 
 package org.dbsp.util;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -47,6 +49,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -120,6 +123,7 @@ public class Utilities {
                 .builder()
                 .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
                 .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                .configure(DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY, true)
                 .build();
     }
 
@@ -364,5 +368,70 @@ public class Utilities {
 
     public static String trimRight(String value) {
         return value.replaceAll("[ ]*$", "");
+    }
+
+    static void toDepth(JsonNode node, int depth, IIndentStream stream) {
+        if (depth < 0) {
+            stream.append("...").newline();
+            return;
+        }
+        if (node.isObject()) {
+            stream.append("{").increase();
+            Iterator<String> it = node.fieldNames();
+            while (it.hasNext()) {
+                String field = it.next();
+                stream.appendJsonLabelAndColon(field);
+                toDepth(node.get(field), depth - 1, stream);
+            }
+            stream.decrease().append("}").newline();
+        } else if (node.isArray()) {
+            stream.append("[").increase();
+            node.forEach(element -> toDepth(element, depth - 1, stream));
+            stream.decrease().append("]").newline();
+        } else {
+            stream.append(node.asText()).newline();
+        }
+    }
+
+    /** Serialize as String a object to the specified depth */
+    public static String toDepth(JsonNode node, int depth) {
+        IndentStreamBuilder builder = new IndentStreamBuilder();
+        toDepth(node, depth, builder);
+        return builder.toString();
+    }
+
+    public static JsonNode getProperty(JsonNode node, String property) {
+        JsonNode prop = node.get(property);
+        assert prop != null: "Node does not have property " + Utilities.singleQuote(property) +
+                Utilities.toDepth(node, 1);
+        return prop;
+    }
+
+    public static boolean getBooleanProperty(JsonNode node, String property) {
+        JsonNode prop = Utilities.getProperty(node, property);
+        return prop.asBoolean();
+    }
+
+    public static String getStringProperty(JsonNode node, String property) {
+        JsonNode prop = Utilities.getProperty(node, property);
+        return prop.asText();
+    }
+
+    public static int getIntProperty(JsonNode node, String property) {
+        JsonNode prop = Utilities.getProperty(node, property);
+        return prop.asInt();
+    }
+
+    public static long getLongProperty(JsonNode node, String property) {
+        JsonNode prop = Utilities.getProperty(node, property);
+        return prop.asLong();
+    }
+
+    @Nullable
+    public static Long getOptionalLongProperty(JsonNode node, String property) {
+        if (!node.has(property))
+            return null;
+        JsonNode prop = Utilities.getProperty(node, property);
+        return prop.asLong();
     }
 }

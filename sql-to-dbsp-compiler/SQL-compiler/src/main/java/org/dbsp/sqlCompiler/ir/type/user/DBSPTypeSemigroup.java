@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -30,6 +32,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.Linq;
+
+import java.util.List;
 
 /** Represents a Semigroup trait implementation. */
 public class DBSPTypeSemigroup extends DBSPTypeUser {
@@ -52,7 +56,7 @@ public class DBSPTypeSemigroup extends DBSPTypeUser {
         visitor.push(this);
         visitor.startArrayProperty("typeArgs");
         int index = 0;
-        for (DBSPType type: this.typeArgs) {
+        for (DBSPType type : this.typeArgs) {
             visitor.propertyIndex(index);
             index++;
             type.accept(visitor);
@@ -60,5 +64,14 @@ public class DBSPTypeSemigroup extends DBSPTypeUser {
         visitor.endArrayProperty("typeArgs");
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeSemigroup fromJson(JsonNode node, JsonDecoder decoder) {
+        List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
+        assert typeArgs.size() % 2 == 0;
+        DBSPType[] elementTypes = typeArgs.subList(0, typeArgs.size() / 2).toArray(new DBSPType[0]);
+        DBSPType[] semigroupTypes = typeArgs.subList(typeArgs.size() / 2, typeArgs.size()).toArray(new DBSPType[0]);
+        return new DBSPTypeSemigroup(semigroupTypes, elementTypes);
     }
 }

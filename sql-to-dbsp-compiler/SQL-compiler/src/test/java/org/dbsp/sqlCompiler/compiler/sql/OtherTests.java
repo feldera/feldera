@@ -23,6 +23,9 @@
 
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -31,6 +34,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
@@ -353,6 +357,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String[] sqlFiles = dir.list(filter);
         assert sqlFiles != null;
         for (String sqlFile: sqlFiles) {
+            // if (!sqlFile.contains("feature")) continue;
+            // System.out.println(sqlFile);
             String basename = Utilities.getBaseName(sqlFile);
             String udf = basename + ".udf.rs";
             File udfFile = new File(dir.getPath() + "/" + udf);
@@ -607,13 +613,19 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test
-    public void serializationTest() {
+    public void serializationTest() throws JsonProcessingException {
         var cc = this.getCC("""
                 CREATE TABLE tab0(pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER);
                 CREATE VIEW V AS SELECT pk FROM tab0
                 WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
         ToJsonOuterVisitor visitor = new ToJsonOuterVisitor(cc.compiler, 1);
         visitor.apply(cc.getCircuit());
+        String str = visitor.getJsonString();
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(str);
+        JsonDecoder decoder = new JsonDecoder();
+        DBSPCircuit decoded = decoder.decodeOuter(parsed, DBSPCircuit.class);
+        Assert.assertNotNull(decoded);
     }
 
     @Test @Ignore("To be invoked manually every time a new function is added")

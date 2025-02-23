@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.commons.codec.binary.Hex;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -36,6 +38,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Objects;
 
 /** A byte array literal */
@@ -109,5 +112,16 @@ public final class DBSPBinaryLiteral extends DBSPLiteral {
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), Arrays.hashCode(this.value));
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPBinaryLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        byte[] value = null;
+        if (node.has("value")) {
+            String str = Utilities.getStringProperty(node, "value");
+            value = Base64.getDecoder().decode(str);
+        }
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPBinaryLiteral(CalciteObject.EMPTY, type, value);
     }
 }

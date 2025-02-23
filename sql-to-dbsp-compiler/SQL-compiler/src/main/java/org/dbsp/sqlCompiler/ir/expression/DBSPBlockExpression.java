@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -121,5 +123,14 @@ public final class DBSPBlockExpression extends DBSPExpression {
             newContext = eq.context();
         }
         return newContext.equivalent(this.lastExpression, otherExpression.lastExpression);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPBlockExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        List<DBSPStatement> contents = fromJsonInnerList(node, "contents", decoder, DBSPStatement.class);
+        DBSPExpression lastExpression = null;
+        if (node.has("lastExpression"))
+            lastExpression = fromJsonInner(node, "lastExpression", decoder, DBSPExpression.class);
+        return new DBSPBlockExpression(contents, lastExpression);
     }
 }

@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -9,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
@@ -28,17 +31,17 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue 
     }
 
     public DBSPVariantExpression(boolean mayBeNull) {
-        super(CalciteObject.EMPTY, new DBSPTypeVariant(CalciteObject.EMPTY, mayBeNull));
+        super(CalciteObject.EMPTY, DBSPTypeVariant.create(mayBeNull));
         this.isSqlNull = true;
         this.value = null;
     }
 
     public DBSPVariantExpression(@Nullable DBSPExpression value, boolean mayBeNull) {
-        this(value, new DBSPTypeVariant(CalciteObject.EMPTY, mayBeNull));
+        this(value, DBSPTypeVariant.create(mayBeNull));
     }
 
     public DBSPVariantExpression(@Nullable DBSPExpression value) {
-        this(value, new DBSPTypeVariant(CalciteObject.EMPTY, false));
+        this(value, DBSPTypeVariant.create(false));
     }
 
     /** The value representing the SQL NULL */
@@ -54,6 +57,8 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue 
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
+        visitor.property("type");
+        this.type.accept(visitor);
         visitor.push(this);
         if (this.value != null) {
             visitor.property("value");
@@ -113,5 +118,18 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue 
         return builder.append("VARIANT(")
                 .append(this.value)
                 .append(")");
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPVariantExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean isSqlNull = Utilities.getBooleanProperty(node, "isSqlNull");
+        DBSPType type = getJsonType(node, decoder);
+        if (isSqlNull)
+            return new DBSPVariantExpression(type.mayBeNull);
+        DBSPExpression value = null;
+        if (node.has("value")) {
+            value = fromJsonInner(node, "value", decoder, DBSPExpression.class);
+        }
+        return new DBSPVariantExpression(value, type);
     }
 }

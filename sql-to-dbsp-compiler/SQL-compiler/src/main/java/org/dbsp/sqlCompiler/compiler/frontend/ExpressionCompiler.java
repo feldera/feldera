@@ -672,7 +672,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     @SuppressWarnings("SameParameterValue")
     void nullLiteralToNullArray(List<DBSPExpression> ops, int arg) {
         if (ops.get(arg).is(DBSPNullLiteral.class)) {
-            ops.set(arg, new DBSPTypeArray(new DBSPTypeNull(CalciteObject.EMPTY), true).nullValue());
+            ops.set(arg, new DBSPTypeArray(DBSPTypeNull.INSTANCE, true).nullValue());
         }
     }
 
@@ -754,7 +754,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPType type = this.typeCompiler.convertType(call.getType(), false);
         // If type is NULL we can skip the call altogether...
         if (type.is(DBSPTypeNull.class))
-            return new DBSPNullLiteral();
+            return DBSPNullLiteral.INSTANCE;
         assert !type.is(DBSPTypeStruct.class);
 
         final RexCall finalCall = call;

@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -124,5 +126,14 @@ public final class DBSPIfExpression extends DBSPExpression {
         return context.equivalent(this.condition, otherExpression.condition) &&
                 context.equivalent(this.positive, otherExpression.positive) &&
                 context.equivalent(this.negative, otherExpression.negative);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPIfExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        getJsonType(node, decoder);
+        DBSPExpression condition = fromJsonInner(node, "condition", decoder, DBSPExpression.class);
+        DBSPExpression positive = fromJsonInner(node, "positive", decoder, DBSPExpression.class);
+        DBSPExpression negative = fromJsonInner(node, "negative", decoder, DBSPExpression.class);
+        return new DBSPIfExpression(CalciteObject.EMPTY, condition, positive, negative);
     }
 }

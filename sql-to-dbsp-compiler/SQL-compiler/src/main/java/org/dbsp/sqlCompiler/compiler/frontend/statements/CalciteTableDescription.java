@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
+import org.dbsp.util.Properties;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,14 +38,14 @@ public class CalciteTableDescription extends AbstractTable implements ScannableT
         return new Statistic() {
             @Override
             public @Nullable Double getRowCount() {
-                PropertyList properties = CalciteTableDescription.this.schema.getProperties();
+                Properties properties = CalciteTableDescription.this.schema.getProperties();
                 if (properties == null)
                     return null;
-                SqlFragment expectedSize = properties.getPropertyValue("expected_size");
+                String expectedSize = properties.getPropertyValue("expected_size");
                 if (expectedSize == null)
                     return null;
                 try {
-                    long size = Long.parseLong(expectedSize.getString());
+                    long size = Long.parseLong(expectedSize);
                     return (double) size;
                 } catch (NumberFormatException ex) {
                     return null;

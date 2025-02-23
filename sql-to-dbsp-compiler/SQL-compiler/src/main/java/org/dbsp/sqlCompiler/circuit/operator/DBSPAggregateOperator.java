@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -74,4 +76,16 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
     }
 
     // equivalent is inherited from base class
+
+    @SuppressWarnings("unused")
+    public static DBSPAggregateOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        DBSPAggregate aggregate = null;
+        if (node.has("aggregate"))
+            aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregate.class);
+        return new DBSPAggregateOperator(
+                CalciteObject.EMPTY, info.getIndexedZsetType(), info.function(),
+                aggregate, info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPAggregateOperator.class);
+    }
 }

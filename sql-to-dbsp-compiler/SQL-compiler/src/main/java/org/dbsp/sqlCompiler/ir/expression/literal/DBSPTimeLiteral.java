@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.calcite.util.TimeString;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -97,5 +99,14 @@ public final class DBSPTimeLiteral extends DBSPLiteral {
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTimeLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        TimeString value = null;
+        if (node.has("value"))
+            value = new TimeString(Utilities.getStringProperty(node, "value"));
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPTimeLiteral(CalciteObject.EMPTY, type, value);
     }
 }

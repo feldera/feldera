@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -36,21 +38,21 @@ import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
 
-/**
- * This type has a single value, NULL.
- */
+/** This type has a single value, NULL. */
 public class DBSPTypeNull extends DBSPTypeBaseType {
-    public DBSPTypeNull(CalciteObject node) {
+    public static final DBSPTypeNull INSTANCE = new DBSPTypeNull(CalciteObject.EMPTY);
+
+    DBSPTypeNull(CalciteObject node) {
         super(node, NULL, true);
     }
 
     @Override
     public DBSPExpression defaultValue() {
-        return new DBSPNullLiteral();
+        return DBSPNullLiteral.INSTANCE;
     }
 
     public static DBSPTypeNull getDefault() {
-        return new DBSPTypeNull(CalciteObject.EMPTY);
+        return INSTANCE;
     }
 
     @Override
@@ -87,5 +89,10 @@ public class DBSPTypeNull extends DBSPTypeBaseType {
     @Override
     public boolean sameType(DBSPType other) {
         return other.is(DBSPTypeNull.class);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeNull fromJson(JsonNode node, JsonDecoder decoder) {
+        return INSTANCE;
     }
 }

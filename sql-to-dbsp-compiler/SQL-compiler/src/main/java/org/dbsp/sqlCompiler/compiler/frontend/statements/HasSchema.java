@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
+import org.dbsp.util.Properties;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -46,7 +47,7 @@ public class HasSchema implements IHasSchema {
     }
 
     @Nullable @Override
-    public PropertyList getProperties() {
+    public Properties getProperties() {
         return null;
     }
 }

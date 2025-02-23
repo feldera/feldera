@@ -23,12 +23,16 @@
 
 package org.dbsp.sqlCompiler.ir;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /**
  * Rust supports parameters with patterns, but we don't.
@@ -84,5 +88,12 @@ public final class DBSPParameter extends DBSPNode implements
         return builder.append(this.name)
                 .append(": ")
                 .append(this.type);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPParameter fromJson(JsonNode node, JsonDecoder decoder) {
+        String name = Utilities.getStringProperty(node, "name");
+        DBSPType type = DBSPNode.fromJsonInner(node, "type", decoder, DBSPType.class);
+        return new DBSPParameter(name, type);
     }
 }

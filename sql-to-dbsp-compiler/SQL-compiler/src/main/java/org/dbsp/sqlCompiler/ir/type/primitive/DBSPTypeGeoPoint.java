@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -34,8 +36,21 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import java.util.Objects;
 
 public class DBSPTypeGeoPoint extends DBSPTypeGeo {
-    public DBSPTypeGeoPoint(CalciteObject node, boolean mayBeNull) {
+    public static final DBSPTypeGeoPoint INSTANCE = new DBSPTypeGeoPoint(CalciteObject.EMPTY, false);
+    public static final DBSPTypeGeoPoint NULLABLE_INSTANCE = new DBSPTypeGeoPoint(CalciteObject.EMPTY, true);
+
+    DBSPTypeGeoPoint(CalciteObject node, boolean mayBeNull) {
         super(node, DBSPTypeCode.GEOPOINT, mayBeNull);
+    }
+
+    public static DBSPTypeGeoPoint create(CalciteObject node, boolean mayBeNull) {
+        if (node.isEmpty()) {
+            if (mayBeNull)
+                return NULLABLE_INSTANCE;
+            else
+                return INSTANCE;
+        }
+        return new DBSPTypeGeoPoint(node, mayBeNull);
     }
 
     @Override
@@ -74,5 +89,11 @@ public class DBSPTypeGeoPoint extends DBSPTypeGeo {
                 new DBSPTypeDouble(CalciteObject.EMPTY,false).defaultValue(),
                 new DBSPTypeDouble(CalciteObject.EMPTY,false).defaultValue(),
                 this);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeGeoPoint fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        return DBSPTypeGeoPoint.create(CalciteObject.EMPTY, mayBeNull);
     }
 }

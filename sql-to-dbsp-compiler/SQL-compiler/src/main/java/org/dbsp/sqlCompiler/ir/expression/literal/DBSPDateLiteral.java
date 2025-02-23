@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.calcite.util.DateString;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -32,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -118,5 +121,14 @@ public final class DBSPDateLiteral extends DBSPLiteral {
         if (this.value == null)
             return DBSPNullLiteral.NULL;
         return Objects.requireNonNull(this.getDateString()).toString();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPDateLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        Integer value = null;
+        if (node.has("value"))
+            value = Utilities.getIntProperty(node, "value");
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPDateLiteral(CalciteObject.EMPTY, type, value);
     }
 }

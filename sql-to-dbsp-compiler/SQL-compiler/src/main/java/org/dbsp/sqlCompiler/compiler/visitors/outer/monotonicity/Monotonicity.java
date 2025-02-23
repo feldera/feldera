@@ -928,7 +928,7 @@ public class Monotonicity extends CircuitVisitor {
             if (expression.is(DBSPUnaryExpression.class)) {
                 DBSPUnaryExpression unary = expression.to(DBSPUnaryExpression.class);
                 // If the filter is wrap_bool(expression), analyze expression
-                if (unary.operation == DBSPOpcode.WRAP_BOOL)
+                if (unary.opcode == DBSPOpcode.WRAP_BOOL)
                     expression = unary.source;
             }
             this.complete = this.analyzeConjunction(expression, param);

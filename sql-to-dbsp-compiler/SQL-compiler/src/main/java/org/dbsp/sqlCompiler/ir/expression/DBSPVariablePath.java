@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -103,5 +105,12 @@ public final class DBSPVariablePath extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPVariablePath(this.variable, this.type);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPVariablePath fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType type = fromJsonInner(node, "type", decoder, DBSPType.class);
+        String variable = Utilities.getStringProperty(node, "variable");
+        return new DBSPVariablePath(variable, type);
     }
 }

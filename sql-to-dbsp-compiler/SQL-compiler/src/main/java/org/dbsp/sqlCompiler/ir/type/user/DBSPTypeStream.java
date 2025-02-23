@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -72,6 +74,7 @@ public class DBSPTypeStream extends DBSPType {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("elementType");
         this.elementType.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
@@ -97,5 +100,11 @@ public class DBSPTypeStream extends DBSPType {
         return builder.append("stream<")
                 .append(this.elementType)
                 .append(">");
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeStream fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType elementType = fromJsonInner(node, "elementType", decoder, DBSPType.class);
+        return new DBSPTypeStream(elementType);
     }
 }

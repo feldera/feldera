@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -8,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -74,9 +77,22 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
 
     @Override
     public void accept(InnerVisitor visitor) {
+        super.accept(visitor);
         visitor.property("comparator");
         this.comparator.accept(visitor);
         visitor.property("projection");
         this.projection.accept(visitor);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPLagOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        int offset = Utilities.getIntProperty(node, "offset");
+        DBSPComparatorExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPComparatorExpression.class);
+        DBSPExpression projection = fromJsonInner(node, "projection", decoder, DBSPExpression.class);
+        return new DBSPLagOperator(
+                CalciteObject.EMPTY, offset, projection, info.getFunction(),
+                comparator, info.getIndexedZsetType(), info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPLagOperator.class);
     }
 }

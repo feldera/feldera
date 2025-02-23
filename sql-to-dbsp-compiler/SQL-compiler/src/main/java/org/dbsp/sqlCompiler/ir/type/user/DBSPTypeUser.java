@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -36,8 +38,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 /** User-defined generic type with type arguments. */
@@ -157,5 +161,14 @@ public class DBSPTypeUser extends DBSPType {
      */
     public DBSPExpression constructor(DBSPExpression... arguments) {
         return this.constructor("new", arguments);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeUser fromJson(JsonNode node, JsonDecoder decoder) {
+        List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
+        boolean mayBeNull = fromJsonMayBeNull(node);
+        String name = Utilities.getStringProperty(node, "name");
+        DBSPTypeCode code = DBSPTypeCode.valueOf(Utilities.getStringProperty(node, "code"));
+        return new DBSPTypeUser(CalciteObject.EMPTY, code, name, mayBeNull, typeArgs.toArray(new DBSPType[0]));
     }
 }

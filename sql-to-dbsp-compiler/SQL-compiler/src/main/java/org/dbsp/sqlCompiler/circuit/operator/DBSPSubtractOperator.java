@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -62,5 +64,12 @@ public final class DBSPSubtractOperator extends DBSPBinaryOperator {
             return new DBSPSubtractOperator(
                     this.getNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPSubtractOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = commonInfoFromJson(node, decoder);
+        return new DBSPSubtractOperator(CalciteObject.EMPTY, info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPSubtractOperator.class);
     }
 }

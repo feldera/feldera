@@ -190,6 +190,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPNoComparatorExpression expression) {
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPSortExpression expression) {
         /*
         move |(k, array): (&(), &Vec<Tup<...>>, ), | -> Array<Tup<...>> {
@@ -583,7 +588,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         String f32 = "f32::from_bits(" +
             Integer.toUnsignedString(exact) + "u32)";
 
-        String out = literal.raw ? f32 : literal.wrapSome("F32::new(" + f32 + ")");
+        String out = literal.wrapSome("F32::new(" + f32 + ")");
         this.builder.append(out);
         this.builder.append("/*")
                 .append(val)
@@ -625,7 +630,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         long exact = Double.doubleToRawLongBits(value);
         String f64 = "f64::from_bits(" +
                 Long.toUnsignedString(exact) + "u64)";
-        String out = literal.raw ? f64 : literal.wrapSome("F64::new(" + f64 + ")");
+        String out = literal.wrapSome("F64::new(" + f64 + ")");
         this.builder.append(out);
         this.builder.append("/*")
                 .append(val)
@@ -636,7 +641,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPUSizeLiteral literal) {
-        String val = Long.toString(Objects.requireNonNull(literal.value));
+        String val = Objects.requireNonNull(literal.value).toString();
         this.builder.append(literal.wrapSome(val + "usize"));
         return VisitDecision.STOP;
     }
@@ -1084,7 +1089,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 DBSPExpression sub1 = ExpressionCompiler.makeBinaryExpression(
                         expression.getNode(), indexType, DBSPOpcode.SUB,
                         expression.right, indexType.to(IsNumericType.class).getOne());
-                sub1 = sub1.cast(new DBSPTypeISize(CalciteObject.EMPTY, indexType.mayBeNull), false);
+                sub1 = sub1.cast(DBSPTypeISize.create(indexType.mayBeNull), false);
                 Simplify simplify = new Simplify(this.compiler);
                 sub1 = simplify.apply(sub1).to(DBSPExpression.class);
                 sub1.accept(this);
@@ -1246,10 +1251,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPUnaryExpression expression) {
         this.push(expression);
-        if (expression.operation == DBSPOpcode.WRAP_BOOL ||
-            expression.operation == DBSPOpcode.INDICATOR) {
-            this.builder.append(expression.operation.toString());
-            if (expression.operation == DBSPOpcode.INDICATOR) {
+        if (expression.opcode == DBSPOpcode.WRAP_BOOL ||
+            expression.opcode == DBSPOpcode.INDICATOR) {
+            this.builder.append(expression.opcode.toString());
+            if (expression.opcode == DBSPOpcode.INDICATOR) {
                 this.builder.append("::<_, ");
                 expression.getType().accept(this);
                 this.builder.append(">");
@@ -1259,8 +1264,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(")");
             this.pop(expression);
             return VisitDecision.STOP;
-        } else if (expression.operation.toString().startsWith("is_")) {
-            this.builder.append(expression.operation.toString())
+        } else if (expression.opcode.toString().startsWith("is_")) {
+            this.builder.append(expression.opcode.toString())
                     .append("_")
                     .append(expression.source.getType().baseTypeWithSuffix())
                     .append("_(");
@@ -1268,7 +1273,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(")");
             this.pop(expression);
             return VisitDecision.STOP;
-        } else if (expression.operation == DBSPOpcode.TYPEDBOX) {
+        } else if (expression.opcode == DBSPOpcode.TYPEDBOX) {
             this.builder.append("TypedBox::new(");
             expression.source.accept(this);
             this.builder.append(")");
@@ -1281,7 +1286,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             expression.source.accept(this);
             this.builder.append(" {").increase()
                     .append("Some(x) => Some(")
-                    .append(expression.operation.toString())
+                    .append(expression.opcode.toString())
                     .append("(x)),\n")
                     .append("_ => None,\n")
                     .decrease()
@@ -1289,7 +1294,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append(")");
         } else {
             this.builder.append("(")
-                    .append(expression.operation.toString());
+                    .append(expression.opcode.toString());
             expression.source.accept(this);
             this.builder.append(")");
         }

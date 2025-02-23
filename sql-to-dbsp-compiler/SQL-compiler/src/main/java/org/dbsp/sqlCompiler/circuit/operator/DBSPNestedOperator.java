@@ -1,8 +1,11 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -188,5 +191,26 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         if (port == null)
             return DBSPTypeVoid.INSTANCE;
         return port.node().streamType(port.outputNumber);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPNestedOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPNestedOperator result = new DBSPNestedOperator(CalciteObject.EMPTY);
+        List<DBSPOperator> operators =
+                fromJsonOuterList(node, "allOperators", decoder, DBSPOperator.class);
+        for (DBSPOperator op : operators)
+            result.addOperator(op);
+        List<OutputPort> internalOutputs = Linq.list(Linq.map(
+                Utilities.getProperty(node, "internalOutputs").elements(),
+                e -> OutputPort.fromJson(e, decoder)));
+        List<ProgramIdentifier> outputViews = Linq.list(Linq.map(
+                Utilities.getProperty(node, "outputViews").elements(),
+                ProgramIdentifier::fromJson));
+        assert internalOutputs.size() == outputViews.size();
+        for (int i = 0; i < internalOutputs.size(); i++) {
+            result.addOutput(outputViews.get(i), internalOutputs.get(i));
+        }
+        Annotations annotations = Annotations.fromJson(Utilities.getProperty(node, "annotations"));
+        return result.addAnnotations(annotations, DBSPNestedOperator.class);
     }
 }

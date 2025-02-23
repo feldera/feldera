@@ -1,10 +1,12 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -14,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -70,5 +73,19 @@ public final class DBSPViewOperator
     public Iterable<? extends IHasWatermark> getWatermarks() {
         // Currently no watermark information in views
         return Linq.list();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPViewOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        ProgramIdentifier viewName = ProgramIdentifier.fromJson(Utilities.getProperty(node, "viewName"));
+        String queryOrViewName = "";
+        if (node.has("query"))
+            queryOrViewName = Utilities.getStringProperty(node, "query");
+        CommonInfo info = commonInfoFromJson(node, decoder);
+        DBSPType originalRowType = fromJsonInner(node, "originalRowType", decoder, DBSPType.class);
+        ViewMetadata metadata = ViewMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
+        return new DBSPViewOperator(CalciteObject.EMPTY, viewName, queryOrViewName,
+                originalRowType, metadata, info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPViewOperator.class);
     }
 }

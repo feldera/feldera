@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -290,5 +292,15 @@ public class NonLinearAggregate extends AggregateBase {
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         return false;
+    }
+
+    @SuppressWarnings("unused")
+    public static NonLinearAggregate fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression zero = fromJsonInner(node, "zero", decoder, DBSPExpression.class);
+        DBSPClosureExpression increment = fromJsonInner(node, "increment", decoder, DBSPClosureExpression.class);
+        DBSPExpression emptySetResult = fromJsonInner(node, "emptySetResult", decoder, DBSPExpression.class);
+        DBSPType semigroup = fromJsonInner(node, "semigroup", decoder, DBSPType.class);
+        DBSPClosureExpression postProcess = fromJsonInner(node, "postProcess", decoder, DBSPClosureExpression.class);
+        return new NonLinearAggregate(CalciteObject.EMPTY, zero, increment, postProcess, emptySetResult, semigroup);
     }
 }

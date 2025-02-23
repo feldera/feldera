@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -8,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -71,5 +74,16 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
                     this.getOutputZSetType(), newInputs.get(0))
                     .copyAnnotations(this);
         return this;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPHopOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        int timestampIndex = Utilities.getIntProperty(node, "timestampIndex");
+        DBSPExpression interval = fromJsonInner(node, "interval", decoder, DBSPExpression.class);
+        DBSPExpression start = fromJsonInner(node, "start", decoder, DBSPExpression.class);
+        DBSPExpression size = fromJsonInner(node, "size", decoder, DBSPExpression.class);
+        return new DBSPHopOperator(CalciteObject.EMPTY, timestampIndex, interval, start, size,
+                info.getZsetType(), info.getInput(0));
     }
 }

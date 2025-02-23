@@ -23,6 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -118,5 +121,16 @@ public final class DBSPStringLiteral extends DBSPLiteral {
     public DBSPStrLiteral toStr() {
         assert this.value != null;
         return new DBSPStrLiteral(this.value);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPStringLiteral fromJson(JsonNode node, JsonDecoder decoder) throws JsonProcessingException {
+        String value = null;
+        if (node.has("value")) {
+            value = Utilities.getStringProperty(node, "value");
+        }
+        String charset = Utilities.getStringProperty(node, "charset");
+        DBSPType type = getJsonType(node, decoder);
+        return new DBSPStringLiteral(CalciteObject.EMPTY, type, value, Charset.forName(charset));
     }
 }

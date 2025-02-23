@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -22,6 +24,8 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 import java.util.List;
+
+import static org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator.commonInfoFromJson;
 
 /**
  * The {@link DBSPControlledKeyFilterOperator} is an operator with 2 outputs, including
@@ -146,5 +150,16 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
                 .replace("DBSP", "")
                 .replace("Operator", "")
                 + " " + this.getIdString();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPControlledKeyFilterOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        // Populate cache
+        fromJsonInner(node, "errorType", decoder, DBSPType.class);
+        DBSPClosureExpression error = fromJsonInner(node, "error", decoder, DBSPClosureExpression.class);
+        DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
+        return new DBSPControlledKeyFilterOperator(CalciteObject.EMPTY,
+                info.getClosureFunction(), error, info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPControlledKeyFilterOperator.class);
     }
 }

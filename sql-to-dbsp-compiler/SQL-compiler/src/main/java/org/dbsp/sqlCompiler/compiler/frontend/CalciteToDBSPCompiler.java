@@ -124,10 +124,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CalciteTableDescription;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
@@ -1010,7 +1008,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                 // Create external tables table
                 JdbcTableScan jscan = (JdbcTableScan) scan;
-                RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.sqlToRelCompiler.typeFactory);
+                RelDataType tableRowType = jscan.jdbcTable.getRowType(SqlToRelCompiler.TYPE_FACTORY);
                 DBSPTypeStruct originalRowType = this.convertType(tableRowType, true)
                         .to(DBSPTypeStruct.class)
                         .rename(tableName);
@@ -3214,7 +3212,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.addOperator(agg);
 
         if (limit != null)
-            limit = limit.cast(new DBSPTypeUSize(node, false), false);
+            limit = limit.cast(DBSPTypeUSize.INSTANCE, false);
         DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator, limit);
         DBSPSimpleOperator result = new DBSPMapOperator(
                 node, sorter, this.makeZSet(arrayType), agg.outputPort());
@@ -3305,13 +3303,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 .newline();
         this.go(rel);
         DBSPSimpleOperator op = this.getOperator(rel);
-        if (view.emitFinalColumn(this.compiler) >= 0 && this.options.languageOptions.optimizationLevel < 2) {
-            PropertyList properties = Objects.requireNonNull(view.getProperties());
-            SqlFragment value = Objects.requireNonNull(properties.getPropertyKey("emit_only"));
-            throw new UnsupportedException("The 'emit_only' annotation can only be used with " +
-                    " optimization level 2 or higher in the compiler",
-                    CalciteObject.create(value.getParserPosition()));
-        }
 
         // The operator above may not contain all columns that were computed.
         RelRoot root = view.getRoot();
@@ -3357,7 +3348,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             columnMetadata.add(cm);
         }
 
-        int emitFinalIndex = view.emitFinalColumn(this.compiler);
+        int emitFinalIndex = view.emitFinalColumn();
         DeclareViewStatement declare = this.recursiveViews.get(view.relationName);
         ViewMetadata meta = new ViewMetadata(view.relationName,
                 columnMetadata, view.getViewKind(), emitFinalIndex,

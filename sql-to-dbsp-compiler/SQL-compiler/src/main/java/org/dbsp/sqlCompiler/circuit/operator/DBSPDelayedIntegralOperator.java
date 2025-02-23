@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -32,5 +34,11 @@ public final class DBSPDelayedIntegralOperator extends DBSPUnaryOperator {
             return new DBSPDelayedIntegralOperator(
                     this.getNode(), newInputs.get(0));
         return this;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPDelayedIntegralOperator fromJson(JsonNode node, JsonDecoder decoder) {
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        return new DBSPDelayedIntegralOperator(CalciteObject.EMPTY, info.getInput(0));
     }
 }

@@ -1,12 +1,15 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -18,6 +21,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.ToIndentableString;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -69,7 +73,9 @@ public final class DBSPZSetExpression extends DBSPExpression
         this.elementType = elementType;
     }
 
-    /** Creates an empty zset with the specified element type. */
+    /**
+     * Creates an empty zset with the specified element type.
+     */
     public DBSPZSetExpression(DBSPType elementType) {
         super(CalciteObject.EMPTY, new DBSPTypeZSet(elementType));
         this.elementType = elementType;
@@ -131,6 +137,7 @@ public final class DBSPZSetExpression extends DBSPExpression
         return this;
     }
 
+    @SuppressWarnings("UnusedReturnValue")
     public DBSPZSetExpression addUsingCast(DBSPZSetExpression other) {
         other.data.forEach(this::addUsingCast);
         return this;
@@ -205,9 +212,11 @@ public final class DBSPZSetExpression extends DBSPExpression
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("elementType");
+        this.elementType.accept(visitor);
         visitor.startArrayProperty("data");
         int index = 0;
-        for (DBSPExpression expr: this.data.keySet()) {
+        for (DBSPExpression expr : this.data.keySet()) {
             visitor.propertyIndex(index);
             index++;
             expr.accept(visitor);
@@ -224,7 +233,7 @@ public final class DBSPZSetExpression extends DBSPExpression
             return false;
         if (this.size() != otherZset.size())
             return false;
-        for (var entry: this.data.entrySet()) {
+        for (var entry : this.data.entrySet()) {
             DBSPExpression expr = entry.getKey();
             if (!otherZset.data.containsKey(expr))
                 return false;
@@ -279,5 +288,18 @@ public final class DBSPZSetExpression extends DBSPExpression
                     .append(",");
         }
         return builder.append(")");
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPZSetExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPType elementType = DBSPNode.fromJsonInner(node, "elementType", decoder, DBSPType.class);
+        List<DBSPExpression> data = DBSPNode.fromJsonInnerList(node, "data", decoder, DBSPExpression.class);
+        JsonNode w = Utilities.getProperty(node, "weights");
+        List<Long> weights = Linq.list(Linq.map(w.elements(), JsonNode::asLong));
+        assert data.size() == weights.size();
+        Map<DBSPExpression, Long> map = new HashMap<>();
+        for (int i = 0; i < data.size(); i++)
+            map.put(data.get(i), weights.get(i));
+        return new DBSPZSetExpression(map, elementType);
     }
 }

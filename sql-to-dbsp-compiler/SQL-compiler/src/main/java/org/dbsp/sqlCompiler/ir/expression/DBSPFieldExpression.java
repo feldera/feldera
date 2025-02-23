@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -32,6 +34,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
+
+import java.util.List;
 
 /** Tuple field reference expression. */
 public final class DBSPFieldExpression extends DBSPExpression {
@@ -118,5 +123,12 @@ public final class DBSPFieldExpression extends DBSPExpression {
             return false;
         return this.fieldNo == otherExpression.fieldNo &&
                 context.equivalent(this.expression, otherExpression.expression);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPFieldExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
+        int fieldNo = Utilities.getIntProperty(node, "fieldNo");
+        return new DBSPFieldExpression(CalciteObject.EMPTY, expression, fieldNo);
     }
 }

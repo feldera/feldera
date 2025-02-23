@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -10,8 +12,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+
+import static org.dbsp.sqlCompiler.ir.expression.DBSPExpression.getJsonType;
 
 /** <a href="https://doc.rust-lang.org/reference/items/constant-items.html">Constant item</a> */
 @NonCoreIR
@@ -82,5 +87,13 @@ public final class DBSPConstItem extends DBSPItem implements IHasType {
     public EquivalenceResult equivalent(EquivalenceContext context, DBSPStatement other) {
         // Since this is NonCoreIR we leave this for later
         return new EquivalenceResult(false, context);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPConstItem fromJson(JsonNode node, JsonDecoder decoder) {
+        String name = Utilities.getStringProperty(node, "name");
+        DBSPType type = getJsonType(node, decoder);
+        DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
+        return new DBSPConstItem(name, type, expression);
     }
 }

@@ -30,9 +30,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Properties;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -43,10 +42,10 @@ public abstract class CreateRelationStatement
         implements IHasSchema {
     public final ProgramIdentifier relationName;
     public final List<RelColumnMetadata> columns;
-    @Nullable final PropertyList properties;
+    @Nullable final Properties properties;
 
     protected CreateRelationStatement(ParsedStatement node, ProgramIdentifier relationName,
-                                      List<RelColumnMetadata> columns, @Nullable PropertyList properties) {
+                                      List<RelColumnMetadata> columns, @Nullable Properties properties) {
         super(node);
         this.relationName = relationName;
         this.columns = columns;
@@ -65,16 +64,13 @@ public abstract class CreateRelationStatement
         return this.columns;
     }
 
-    @Nullable public PropertyList getProperties() { return this.properties; }
+    @Nullable public Properties getProperties() { return this.properties; }
 
     @Nullable
     public String getPropertyValue(String property) {
         if (this.properties == null)
             return null;
-        SqlFragment fragment = this.properties.getPropertyValue(property);
-        if (fragment == null)
-            return null;
-        return fragment.getString();
+        return this.properties.getPropertyValue(property);
     }
 
     @Override

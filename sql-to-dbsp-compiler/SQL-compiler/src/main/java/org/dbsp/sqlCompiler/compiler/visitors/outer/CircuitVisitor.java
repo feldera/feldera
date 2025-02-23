@@ -82,7 +82,7 @@ public abstract class CircuitVisitor
     }
 
     /** Property of a node that is being visited */
-    public void property(String property) {}
+    public void label(String property) {}
 
     /** Property that has an array of values */
     public void startArrayProperty(String property) {}
@@ -91,6 +91,7 @@ public abstract class CircuitVisitor
     public void endArrayProperty(String property) {}
 
     /** Index of a property that has an array or list value */
+    @SuppressWarnings("unused")
     public void propertyIndex(int index) {}
 
     /** Override to initialize before visiting any node. */

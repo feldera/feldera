@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -7,6 +9,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.BYTES;
 
@@ -76,5 +79,12 @@ public class DBSPTypeBinary extends DBSPTypeBaseType implements IHasPrecision {
     @Override
     public int getPrecision() {
         return this.precision;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeBinary fromJson(JsonNode node, JsonDecoder decoder) {
+        boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
+        int precision = Utilities.getIntProperty(node, "precision");
+        return new DBSPTypeBinary(CalciteObject.EMPTY, precision, mayBeNull);
     }
 }

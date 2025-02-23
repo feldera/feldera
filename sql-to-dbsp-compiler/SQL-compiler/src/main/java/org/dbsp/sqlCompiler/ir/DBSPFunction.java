@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -34,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -131,5 +134,17 @@ public final class DBSPFunction extends DBSPNode implements IHasType, IDBSPDecla
                 .append(" ")
                 .append(this.body);
         return builder;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPFunction fromJson(JsonNode node, JsonDecoder decoder) {
+        String name = Utilities.getStringProperty(node, "name");
+        List<DBSPParameter> parameters = fromJsonInnerList(node, "parameters", decoder, DBSPParameter.class);
+        DBSPType returnType = fromJsonInner(node, "returnType", decoder, DBSPType.class);
+        DBSPExpression body = fromJsonInner(node, "body", decoder, DBSPExpression.class);
+        List<String> annotations = Linq.list(
+                Linq.map(Utilities.getProperty(node, "annotations").elements(),
+                JsonNode::asText));
+        return new DBSPFunction(name, parameters, returnType, body, annotations);
     }
 }

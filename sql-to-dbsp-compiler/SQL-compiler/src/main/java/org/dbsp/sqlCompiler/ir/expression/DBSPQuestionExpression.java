@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -58,5 +60,11 @@ public final class DBSPQuestionExpression extends DBSPExpression {
         if (otherExpression == null)
             return false;
         return context.equivalent(this.source, otherExpression.source);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPQuestionExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
+        return new DBSPQuestionExpression(source);
     }
 }

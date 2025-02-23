@@ -15,7 +15,7 @@ public class CompactNames extends CircuitCloneVisitor {
 
     @Override
     public VisitDecision preorder(DBSPOperator operator) {
-        operator.addAnnotation(new CompactName("s" + id++));
+        operator.addAnnotation(new CompactName("s" + id++), DBSPOperator.class);
         return super.preorder(operator);
     }
 }

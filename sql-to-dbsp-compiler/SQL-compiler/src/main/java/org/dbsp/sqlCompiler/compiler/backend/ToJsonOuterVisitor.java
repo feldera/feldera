@@ -1,9 +1,27 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -18,7 +36,7 @@ import java.util.Set;
 
 /** Serializes an outer node as a JSON string */
 public class ToJsonOuterVisitor extends CircuitVisitor {
-    final JsonStream stream;
+    public final JsonStream stream;
     final int verbosity;
     final Set<Long> serialized;
     final ToJsonInnerVisitor innerVisitor;
@@ -57,48 +75,237 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
 
     @Override
     public void startArrayProperty(String property) {
-        this.property(property);
+        this.label(property);
         this.stream.beginArray();
     }
 
     @Override
+    public void label(String name) {
+        this.property(name);
+    }
+
     public void property(String name) {
         this.stream.label(name);
     }
-
-    JsonStream open() {
-        return this.stream.beginObject();
+    
+    @SuppressWarnings("SameParameterValue")
+    boolean checkDone(IDBSPOuterNode node, boolean silent) {
+        if (this.serialized.contains(node.getId())) {
+            if (silent)
+                return true;
+            this.stream.beginObject()
+                    .label("node")
+                    .append(node.getId())
+                    .endObject();
+            return true;
+        }
+        return false;
     }
 
-    void close() {
-        this.stream.endObject();
+    @Override
+    public VisitDecision preorder(IDBSPOuterNode node) {
+        if (!this.checkDone(node, false)) {
+            this.stream.beginObject().appendClass(node);
+            this.property("id");
+            this.stream.append(node.getId());
+            this.serialized.add(node.getId());
+            return VisitDecision.CONTINUE;
+        }
+        return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPOperator operator) {
-        this.open().label("id").append(operator.id);
-        this.stream.label("class");
-        this.stream.append(operator.getClass().getSimpleName());
+        if (this.preorder(operator.to(IDBSPOuterNode.class)).stop())
+            return VisitDecision.STOP;
+        this.label("annotations");
+        operator.annotations.asJson(this.stream);
+        this.label("inputs");
+        this.stream.beginArray();
+        for (OutputPort port: operator.inputs) {
+            port.asJson(this);
+        }
+        this.stream.endArray();
         operator.accept(this.innerVisitor);
         return VisitDecision.CONTINUE;
     }
 
     @Override
+    public void postorder(DBSPNestedOperator operator) {
+        this.label("internalOutputs");
+        this.stream.beginArray();
+        int index = 0;
+        for (OutputPort port: operator.internalOutputs) {
+            this.propertyIndex(index);
+            index++;
+            if (port == null)
+                this.stream.appendNull();
+            else
+                port.asJson(this);
+        }
+        this.stream.endArray();
+
+        this.label("outputViews");
+        this.stream.beginArray();
+        index = 0;
+        for (ProgramIdentifier view: operator.outputViews) {
+            this.propertyIndex(index);
+            index++;
+            view.asJson(this.innerVisitor);
+        }
+        this.stream.endArray();
+        super.postorder(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIndexedTopKOperator operator) {
+        VisitDecision decision = this.preorder(operator.to(DBSPUnaryOperator.class));
+        if (decision.stop())
+            return VisitDecision.STOP;
+        this.label("numbering");
+        this.stream.append(operator.numbering.name());
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPSimpleOperator operator) {
+        if (this.preorder(operator.to(DBSPOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("isMultiset");
+        this.stream.append(operator.isMultiset);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPViewBaseOperator operator) {
+        if (this.preorder(operator.to(DBSPUnaryOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("viewName");
+        operator.viewName.asJson(this.innerVisitor);
+        /*
+        ignore deliberately
+        this.property("query");
+        this.stream.append(operator.query);
+         */
+        this.property("metadata");
+        operator.metadata.asJson(this.innerVisitor);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPSourceBaseOperator operator) {
+        if (this.preorder(operator.to(DBSPSimpleOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.label("tableName");
+        operator.tableName.asJson(this.innerVisitor);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPSourceTableOperator operator) {
+        if (this.preorder(operator.to(DBSPSourceBaseOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.label("metadata");
+        operator.metadata.asJson(this.innerVisitor);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
+        return this.preorder(operator.to(DBSPSourceTableOperator.class));
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPSourceMapOperator operator) {
+        if (this.preorder(operator.to(DBSPSourceTableOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.label("keyFields");
+        this.stream.beginArray();
+        int index = 0;
+        for (int i: operator.keyFields) {
+            this.propertyIndex(index);
+            index++;
+            this.stream.append(i);
+        }
+        this.stream.endArray();
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLagOperator operator) {
+        if (this.preorder(operator.to(DBSPUnaryOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("offset");
+        this.stream.append(operator.offset);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPOperatorWithError operator) {
+        if (this.preorder(operator.to(DBSPOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("isMultiset");
+        // This is not really used, but makes reading it back simpler
+        this.stream.append(false);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPConstantOperator operator) {
+        if (this.preorder(operator.to(DBSPSimpleOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("incremental");
+        this.stream.append(operator.incremental);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPAsofJoinOperator operator) {
+        if (this.preorder(operator.to(DBSPJoinBaseOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("isLeft");
+        this.stream.append(operator.isLeft);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPWindowOperator operator) {
+        if (this.preorder(operator.to(DBSPBinaryOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("lowerInclusive");
+        this.stream.append(operator.lowerInclusive);
+        this.property("upperInclusive");
+        this.stream.append(operator.upperInclusive);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
     public void postorder(DBSPOperator operator) {
-        this.close();
+        this.stream.endObject();
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDeclaration declaration) {
+        if (this.preorder(declaration.to(IDBSPOuterNode.class)).stop())
+            return VisitDecision.STOP;
+        declaration.accept(this.innerVisitor);
+        this.stream.endObject();
+        return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
-        this.open();
-        this.property("circuit");
-        this.stream.append(circuit.id);
-        return super.preorder(circuit);
+        super.preorder(circuit);
+        this.preorder(circuit.to(IDBSPOuterNode.class));
+        this.property("metadata");
+        circuit.metadata.asJson(this.innerVisitor);
+        return VisitDecision.CONTINUE;
     }
 
     @Override
     public void postorder(DBSPCircuit circuit) {
-        this.close();
+        super.postorder(circuit);
+        this.stream.endObject();
     }
 
     public String getJsonString() {

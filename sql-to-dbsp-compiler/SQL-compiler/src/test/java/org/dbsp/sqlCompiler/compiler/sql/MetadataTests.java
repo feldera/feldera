@@ -917,6 +917,7 @@ public class MetadataTests extends BaseSQLTests {
                     "primary_key" : [ "col3" ],
                     "materialized" : false,
                     "foreign_keys" : [ {
+                      "source" : "t",
                       "columns" : [ "col2" ],
                       "refers" : "s",
                       "tocolumns" : [ "col0" ]

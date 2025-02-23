@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -31,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 @NonCoreIR
 public final class DBSPForExpression extends DBSPExpression implements IDBSPDeclaration {
@@ -102,5 +105,13 @@ public final class DBSPForExpression extends DBSPExpression implements IDBSPDecl
     @Override
     public String getName() {
         return this.variable;
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPForExpression fromJson(JsonNode node, JsonDecoder decoder) {
+        String variable = Utilities.getStringProperty(node, "variable");
+        DBSPExpression iterated = fromJsonInner(node, "iterated", decoder, DBSPExpression.class);
+        DBSPBlockExpression block = fromJsonInner(node, "block", decoder, DBSPBlockExpression.class);
+        return new DBSPForExpression(variable, iterated, block);
     }
 }

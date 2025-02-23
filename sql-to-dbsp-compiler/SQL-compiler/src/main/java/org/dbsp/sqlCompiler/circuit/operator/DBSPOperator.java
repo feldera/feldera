@@ -76,9 +76,14 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     }
 
     @SuppressWarnings("UnusedReturnValue")
-    public DBSPOperator addAnnotation(Annotation annotation) {
+    public <T extends DBSPOperator> T addAnnotation(Annotation annotation, Class<T> clazz) {
         this.annotations.add(annotation);
-        return this;
+        return this.to(clazz);
+    }
+
+    public <T extends DBSPOperator> T addAnnotations(Annotations annotations, Class<T> clazz) {
+        this.annotations.add(annotations);
+        return this.to(clazz);
     }
 
     public boolean hasAnnotation(Predicate<Annotation> test) {
@@ -106,6 +111,7 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         return false;
     }
 
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean sameInputs(DBSPOperator other) {
         return !this.inputsDiffer(other.inputs, false);
     }
