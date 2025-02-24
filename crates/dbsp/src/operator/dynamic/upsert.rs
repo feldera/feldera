@@ -191,7 +191,11 @@ where
     ///
     /// This is a stateful operator that internally maintains the trace of the
     /// collection.
-    pub fn upsert<B>(&self, factories: &UpsertFactories<<C as WithClock>::Time, B>) -> Stream<C, B>
+    pub fn upsert<B>(
+        &self,
+        name: Option<&str>,
+        factories: &UpsertFactories<<C as WithClock>::Time, B>,
+    ) -> Stream<C, B>
     where
         B: IndexedZSet<Key = K, Val = V>,
     {
@@ -220,6 +224,7 @@ where
             let bounds = <TraceBounds<K, V>>::unbounded();
 
             let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
+                name,
                 &factories.trace_factories,
                 false,
                 circuit.root_scope(),

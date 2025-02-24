@@ -279,6 +279,7 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
     #[allow(clippy::type_complexity)]
     pub fn dyn_aggregate_mono(
         &self,
+        name: Option<&str>,
         factories: &IncAggregateFactories<MonoIndexedZSet, MonoIndexedZSet, ()>,
         aggregator: &dyn DynAggregator<
             DynData,
@@ -422,6 +423,7 @@ where
     #[allow(clippy::type_complexity)]
     pub fn dyn_aggregate<Acc, Out>(
         &self,
+        name: Option<&str>,
         factories: &IncAggregateFactories<Z, OrdIndexedZSet<Z::Key, Out>, C::Time>,
         aggregator: &dyn DynAggregator<
             Z::Val,
@@ -436,12 +438,15 @@ where
         Out: DataTrait + ?Sized,
         Z: IndexedZSet,
     {
-        self.dyn_aggregate_generic::<Acc, Out, OrdIndexedZSet<Z::Key, Out>>(factories, aggregator)
+        self.dyn_aggregate_generic::<Acc, Out, OrdIndexedZSet<Z::Key, Out>>(
+            name, factories, aggregator,
+        )
     }
 
     /// Like [`Self::dyn_aggregate`], but can return any batch type.
     pub fn dyn_aggregate_generic<Acc, Out, O>(
         &self,
+        name: Option<&str>,
         factories: &IncAggregateFactories<Z, O, C::Time>,
         aggregator: &dyn DynAggregator<
             Z::Val,
@@ -472,7 +477,7 @@ where
         //                └─────┘                  └────────────────────┘      └──────┘
         // ```
 
-        circuit
+        let output = circuit
             .add_binary_operator(
                 AggregateIncremental::new(
                     factories.keys_factory,
@@ -484,8 +489,12 @@ where
                 &stream,
                 &stream.dyn_trace(&factories.trace_factories),
             )
-            .upsert::<O>(&factories.upsert_factories)
-            .mark_sharded()
+            .upsert::<O>(name, &factories.upsert_factories)
+            .mark_sharded();
+
+        name.map(|name| output.set_label(UNIQUE_OPERATOR_NAME, name));
+
+        output
     }
 
     /// See [`Stream::aggregate_linear`].

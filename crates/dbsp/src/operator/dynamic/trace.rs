@@ -31,6 +31,8 @@ use std::{
     sync::Arc,
 };
 
+use super::communication::shard::ShardingPolicy;
+
 circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
 circuit_cache_key!(DelayedTraceId<C, D>(StreamId => Stream<C, D>));
@@ -315,6 +317,7 @@ where
     /// See [`Stream::trace_with_bound`].
     pub fn dyn_trace_with_bound(
         &self,
+        unique_name: &str,
         output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
@@ -544,16 +547,17 @@ where
     pub fn connect(self, stream: &Stream<C, T::Batch>) {
         let circuit = self.delayed_trace.circuit();
 
+        let sharded = stream.try_sharded_version();
+        self.delayed_trace
+            .set_integral_name(sharded.get_unique_name());
+
         let trace = circuit.add_binary_operator_with_preference(
             <UntimedTraceAppend<T>>::new(),
             (
                 &self.delayed_trace,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             ),
-            (
-                &stream.try_sharded_version(),
-                OwnershipPreference::PREFER_OWNED,
-            ),
+            (&sharded, OwnershipPreference::PREFER_OWNED),
         );
 
         if stream.has_sharded_version() {
@@ -608,8 +612,9 @@ pub trait TraceFeedback: Circuit {
     where
         T: Trace<Time = ()> + Clone,
     {
+        // We'll give `Z1Trace` a real name inside `TraceFeedbackConnector::connect`, where we have the name of the input stream.
         let (ExportStream { local, export }, feedback) = self.add_feedback_with_export(
-            Z1Trace::new(factories, true, self.root_scope(), bounds.clone()),
+            Z1Trace::new(None, factories, true, self.root_scope(), bounds.clone()),
         );
 
         TraceFeedbackConnector {
@@ -864,6 +869,7 @@ where
 }
 
 pub struct Z1Trace<T: Trace> {
+    unique_name: Option<String>,
     time: T::Time,
     trace: Option<T>,
     factories: T::Factories,
@@ -885,12 +891,14 @@ where
     T: Trace,
 {
     pub fn new(
+        unique_name: Option<&str>,
         factories: &T::Factories,
         reset_on_clock_start: bool,
         root_scope: Scope,
         bounds: TraceBounds<T::Key, T::Val>,
     ) -> Self {
         Self {
+            unique_name: unique_name.map(str::to_owned),
             time: <T::Time as Timestamp>::clock_start(),
             trace: None,
             factories: factories.clone(),
