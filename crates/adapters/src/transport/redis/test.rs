@@ -197,6 +197,19 @@ outputs:
 
     let client = redis::Client::open("redis://localhost:6379/0").unwrap();
     let mut conn = client.get_connection().unwrap();
+
+    wait(
+        || {
+            let keys = conn.keys::<_, HashSet<String>>("*").unwrap();
+            insert_records.as_array().unwrap().iter().all(|v| {
+                let key = format!("{}:{}", v["insert"]["struct1"], v["insert"]["decimal_10_3"]);
+                keys.contains(&key)
+            })
+        },
+        5_000,
+    )
+    .expect("timeout while waiting for redis entry to update");
+
     for record in insert_records.as_array().unwrap() {
         let key = format!(
             "{}:{}",
@@ -219,7 +232,7 @@ outputs:
                 !keys.contains(&key)
             })
         },
-        1_000,
+        5_000,
     )
     .expect("timeout while waiting for redis entry to update");
 
