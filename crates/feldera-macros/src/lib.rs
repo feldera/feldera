@@ -253,22 +253,27 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
             fn eq(&self, other: &Self) -> bool {
                 let #name( #(#fields),*, hash) = self;
                 let #name( #(#fields_of_other),*, other_hash) = other;
+                *hash == *other_hash
 
-                if *hash != 0x0 && *other_hash != 0x0 && *hash != *other_hash {
+                /*if *hash != 0x0 && *other_hash != 0x0 && *hash != *other_hash {
                     return false;
                 }
                 else {
                     #(#fields == #fields_of_other) &&*
-                }
+                }*/
             }
         }
 
         impl<#(#generics: PartialOrd),*> PartialOrd for #name<#(#generics),*>
         {
             fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-                let #name( #(#fields),*, _hash) = self;
-                let #name( #(#fields_of_other),*, _hash) = other;
+                let #name( #(#fields),*, hash) = self;
+                let #name( #(#fields_of_other),*, other_hash) = other;
+                assert!(*hash != 0x0, "Hash code not set for tuple");
+                assert!(*other_hash != 0x0, "Hash code not set for tuple");
+                hash.partial_cmp(other_hash)
 
+                /*
                 #(
                     match #fields.partial_cmp(#fields_of_other) {
                         Some(core::cmp::Ordering::Equal) => (),
@@ -276,23 +281,26 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
                     };
                 )*
 
-                Some(core::cmp::Ordering::Equal)
+                Some(core::cmp::Ordering::Equal)*/
             }
         }
 
         impl<#(#generics: Ord),*> Ord for #name<#(#generics),*> {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-                let #name( #(#fields),*, _hash) = self;
-                let #name( #(#fields_of_other),*, _hash) = other;
+                let #name( #(#fields),*, hash) = self;
+                let #name( #(#fields_of_other),*, other_hash) = other;
+                assert!(*hash != 0x0, "Hash code not set for tuple");
+                assert!(*other_hash != 0x0, "Hash code not set for tuple");
+                hash.cmp(other_hash)
 
-                #(
+                /*#(
                     match #fields.cmp(#fields_of_other) {
                         core::cmp::Ordering::Equal => (),
                         not_equal => return not_equal
                     };
                 )*
 
-                core::cmp::Ordering::Equal
+                core::cmp::Ordering::Equal*/
             }
         }
 
@@ -319,10 +327,10 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
     });
 
     // Debug print
-    let expanded_pretty = expanded.clone();
-    let parsed_file: syn::File = syn::parse2(expanded_pretty).expect("Failed to parse");
-    let formatted = prettyplease::unparse(&parsed_file);
-    eprintln!("{}", formatted);
+    //let expanded_pretty = expanded.clone();
+    //let parsed_file: syn::File = syn::parse2(expanded_pretty).expect("Failed to parse");
+    //let formatted = prettyplease::unparse(&parsed_file);
+    //eprintln!("{}", formatted);
 
     expanded.into()
 }
