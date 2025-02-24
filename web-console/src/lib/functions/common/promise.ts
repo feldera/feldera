@@ -7,27 +7,32 @@ export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
  * @returns A function to cancel the action loop
  */
 export const closedIntervalAction = (action: () => Promise<void>, periodMs: number) => {
-  let onTimeoutReject: (reason?: any) => void
-  let t1 = Date.now()
-  setTimeout(async () => {
-    try {
-      while (true) {
-        await new Promise((resolve, reject) => {
-          const t2 = Date.now()
-          setTimeout(resolve, Math.max(Math.min(periodMs - t2 + t1, periodMs), 0))
-          onTimeoutReject = reject
-        })
-        t1 = Date.now()
-        await action()
-      }
-    } catch (e) {
-      if (e === 'Closed interval cancelled') {
+  let cancelled = false
+  let t0 = Date.now()
+  let timeout: Timer
+
+  function execute() {
+    if (cancelled) {
+      return
+    }
+
+    action().finally(() => {
+      if (cancelled) {
         return
       }
-      throw e
-    }
-  })
+
+      const now = Date.now()
+      t0 += periodMs
+      const nextDelay = Math.max(t0 - now, 0)
+
+      timeout = setTimeout(execute, nextDelay)
+    })
+  }
+
+  timeout = setTimeout(execute, periodMs)
+
   return () => {
-    onTimeoutReject?.('Closed interval cancelled')
+    cancelled = true
+    clearTimeout(timeout)
   }
 }
