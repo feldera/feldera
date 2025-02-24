@@ -65,11 +65,11 @@ fn small_push() {
     );
 
     merger.queue = vec![vec![
-        pairs_vec![Tup2(Tup2(0u64, 0u64), 1i64)],
-        pairs_vec![Tup2(Tup2(45u64, 0u64), -1i64)],
+        pairs_vec![Tup2::new(Tup2::new(0u64, 0u64), 1i64)],
+        pairs_vec![Tup2::new(Tup2::new(45u64, 0u64), -1i64)],
     ]];
 
-    let mut batch = pairs_vec![Tup2(Tup2(45u64, 1u64), 1i64)];
+    let mut batch = pairs_vec![Tup2::new(Tup2::new(45u64, 1u64), 1i64)];
     merger.push_batch(&mut batch);
 
     let mut output = Vec::new();
@@ -78,8 +78,11 @@ fn small_push() {
     assert_eq!(
         output,
         vec![
-            pairs_vec![Tup2(Tup2(0u64, 0u64), 1i64), Tup2(Tup2(45, 0), -1)],
-            pairs_vec![Tup2(Tup2(45u64, 1u64), 1i64)]
+            pairs_vec![
+                Tup2::new(Tup2::new(0u64, 0u64), 1i64),
+                Tup2::new(Tup2::new(45, 0), -1)
+            ],
+            pairs_vec![Tup2::new(Tup2::new(45u64, 1u64), 1i64)]
         ],
     );
 }
@@ -92,25 +95,30 @@ fn merge_by() {
     );
 
     let left = vec![pairs_vec![
-        Tup2(0u64, 1i64),
-        Tup2(1, 6),
-        Tup2(24, 5),
-        Tup2(54, -23)
+        Tup2::new(0u64, 1i64),
+        Tup2::new(1, 6),
+        Tup2::new(24, 5),
+        Tup2::new(54, -23)
     ]];
     let right = vec![pairs_vec![
-        Tup2(0u64, 7i64),
-        Tup2(1, 6),
-        Tup2(24, -5),
-        Tup2(25, 12),
-        Tup2(89, 1)
+        Tup2::new(0u64, 7i64),
+        Tup2::new(1, 6),
+        Tup2::new(24, -5),
+        Tup2::new(25, 12),
+        Tup2::new(89, 1)
     ]];
     let merged = merger.merge_by(left, right);
 
     // TODO: Not entirely sure if this is an optimal result, we always leave
     // one element trailing
     let expected = vec![
-        pairs_vec![Tup2(0u64, 8i64), Tup2(1, 12), Tup2(25, 12), Tup2(54, -23)],
-        pairs_vec![Tup2(89u64, 1i64)],
+        pairs_vec![
+            Tup2::new(0u64, 8i64),
+            Tup2::new(1, 12),
+            Tup2::new(25, 12),
+            Tup2::new(54, -23)
+        ],
+        pairs_vec![Tup2::new(89u64, 1i64)],
     ];
     assert_eq!(merged, expected);
 }
@@ -124,10 +132,10 @@ fn push_with_excess_stashes() {
     merger.stash = preallocated_stashes::<_, _, u64, i64>(5);
 
     merger.push_batch(&mut pairs_vec![
-        Tup2(0u64, 1i64),
-        Tup2(1, 6),
-        Tup2(24, 5),
-        Tup2(54, -23)
+        Tup2::new(0u64, 1i64),
+        Tup2::new(1, 6),
+        Tup2::new(24, 5),
+        Tup2::new(54, -23)
     ]);
 
     let mut output = Vec::new();
@@ -136,10 +144,10 @@ fn push_with_excess_stashes() {
     assert_eq!(
         output,
         vec![pairs_vec![
-            Tup2(0u64, 1i64),
-            Tup2(1, 6),
-            Tup2(24, 5),
-            Tup2(54, -23)
+            Tup2::new(0u64, 1i64),
+            Tup2::new(1, 6),
+            Tup2::new(24, 5),
+            Tup2::new(54, -23)
         ]]
     );
 }
@@ -153,19 +161,19 @@ fn force_finish_merge() {
 
     merger.queue = vec![
         vec![pairs_vec![
-            Tup2(0u64, 1i64),
-            Tup2(1, 6),
-            Tup2(24, 5),
-            Tup2(54, -23)
+            Tup2::new(0u64, 1i64),
+            Tup2::new(1, 6),
+            Tup2::new(24, 5),
+            Tup2::new(54, -23)
         ]],
-        vec![pairs_vec![Tup2(89u64, 1i64)]],
+        vec![pairs_vec![Tup2::new(89u64, 1i64)]],
         vec![pairs_vec![
-            Tup2(0u64, 8i64),
-            Tup2(1, 12),
-            Tup2(25, 12),
-            Tup2(54, -23)
+            Tup2::new(0u64, 8i64),
+            Tup2::new(1, 12),
+            Tup2::new(25, 12),
+            Tup2::new(54, -23)
         ]],
-        vec![pairs_vec![Tup2(23u64, 54i64), Tup2(97, -102)]],
+        vec![pairs_vec![Tup2::new(23u64, 54i64), Tup2::new(97, -102)]],
     ];
     merger.stash = preallocated_stashes::<_, _, u64, i64>(5);
 
@@ -174,15 +182,15 @@ fn force_finish_merge() {
 
     let expected = vec![
         pairs_vec![
-            Tup2(0u64, 9i64),
-            Tup2(1, 18),
-            Tup2(23, 54),
-            Tup2(24, 5),
-            Tup2(25, 12),
-            Tup2(54, -46)
+            Tup2::new(0u64, 9i64),
+            Tup2::new(1, 18),
+            Tup2::new(23, 54),
+            Tup2::new(24, 5),
+            Tup2::new(25, 12),
+            Tup2::new(54, -46)
         ],
-        pairs_vec![Tup2(89u64, 1i64)],
-        pairs_vec![Tup2(97u64, -102i64)],
+        pairs_vec![Tup2::new(89u64, 1i64)],
+        pairs_vec![Tup2::new(97u64, -102i64)],
     ];
     assert_eq!(output, expected);
 }
@@ -196,37 +204,40 @@ fn force_merge_on_push() {
 
     merger.queue = vec![
         vec![pairs_vec![
-            Tup2(0u64, 1i64),
-            Tup2(1, 6),
-            Tup2(24, 5),
-            Tup2(54, -23)
+            Tup2::new(0u64, 1i64),
+            Tup2::new(1, 6),
+            Tup2::new(24, 5),
+            Tup2::new(54, -23)
         ]],
-        vec![pairs_vec![Tup2(89u64, 1i64)]],
+        vec![pairs_vec![Tup2::new(89u64, 1i64)]],
         vec![pairs_vec![
-            Tup2(0u64, 8i64),
-            Tup2(1, 12),
-            Tup2(25, 12),
-            Tup2(54, -23)
+            Tup2::new(0u64, 8i64),
+            Tup2::new(1, 12),
+            Tup2::new(25, 12),
+            Tup2::new(54, -23)
         ]],
     ];
     merger.stash = preallocated_stashes::<_, _, u64, i64>(5);
 
-    merger.push_batch(&mut pairs_vec![Tup2(23u64, 54i64), Tup2(97, -102)]);
+    merger.push_batch(&mut pairs_vec![
+        Tup2::new(23u64, 54i64),
+        Tup2::new(97, -102)
+    ]);
 
     let mut output = Vec::new();
     merger.finish_into(&mut output);
 
     let expected = vec![
         pairs_vec![
-            Tup2(0u64, 9i64),
-            Tup2(1, 18),
-            Tup2(23, 54),
-            Tup2(24, 5),
-            Tup2(25, 12),
-            Tup2(54, -46)
+            Tup2::new(0u64, 9i64),
+            Tup2::new(1, 18),
+            Tup2::new(23, 54),
+            Tup2::new(24, 5),
+            Tup2::new(25, 12),
+            Tup2::new(54, -46)
         ],
-        pairs_vec![Tup2(89u64, 1i64)],
-        pairs_vec![Tup2(97u64, -102i64)],
+        pairs_vec![Tup2::new(89u64, 1i64)],
+        pairs_vec![Tup2::new(97u64, -102i64)],
     ];
     assert_eq!(output, expected);
 }
@@ -260,11 +271,11 @@ fn count_tuples() {
     has_tuples.queue = vec![
         vec![
             Box::new(LeanVec::<Tup2<Tup2<u64, u64>, i64>>::new()).erase_box(),
-            pairs_vec![Tup2(Tup2(0u64, 0u64), 0i64); 1000],
-            pairs_vec![Tup2(Tup2(1, 1), 1)],
+            pairs_vec![Tup2::new(Tup2::new(0u64, 0u64), 0i64); 1000],
+            pairs_vec![Tup2::new(Tup2::new(1, 1), 1)],
         ],
         Vec::new(),
-        vec![pairs_vec![Tup2(Tup2(10, 10), 10); 256]],
+        vec![pairs_vec![Tup2::new(Tup2::new(10, 10), 10); 256]],
     ];
     has_tuples.stash = preallocated_stashes::<_, _, Tup2<u64, u64>, i64>(100);
 
@@ -311,7 +322,7 @@ mod proptests {
             value in 0..1000u64,
             diff in -1000..=1000i64,
         ) -> Tup2<Tup2<u64, u64>, i64> {
-            Tup2(Tup2(key, value), diff)
+            Tup2::new(Tup2::new(key, value), diff)
         }
     }
 
@@ -397,25 +408,25 @@ mod proptests {
         let mut values = BTreeMap::new();
         for queued in &merger.queue {
             for batch in queued {
-                for &Tup2(tuple, diff) in batch
+                for &t in batch
                     .downcast_checked::<LeanVec<Tup2<Tup2<u64, u64>, i64>>>()
                     .as_slice()
                     .iter()
                 {
                     values
-                        .entry(tuple)
-                        .and_modify(|acc| *acc += diff)
-                        .or_insert(diff);
+                        .entry(*t.fst())
+                        .and_modify(|acc| *acc += *t.snd())
+                        .or_insert(*t.snd());
                 }
             }
         }
 
         // Collect all tuples within the batch
-        for &Tup2(tuple, diff) in batch {
+        for &t in batch {
             values
-                .entry(tuple)
-                .and_modify(|acc| *acc += diff)
-                .or_insert(diff);
+                .entry(*t.fst())
+                .and_modify(|acc| *acc += *t.snd())
+                .or_insert(*t.snd());
         }
 
         // Elements with a value of zero are removed in consolidation
@@ -426,11 +437,11 @@ mod proptests {
     fn batches_data(batches: &[LeanVec<Tup2<Tup2<u64, u64>, i64>>]) -> AggregatedData {
         let mut values = BTreeMap::new();
         for batch in batches {
-            for &Tup2(tuple, diff) in batch.as_slice() {
+            for t in batch.as_slice() {
                 values
-                    .entry(tuple)
-                    .and_modify(|acc| *acc += diff)
-                    .or_insert(diff);
+                    .entry(*t.fst())
+                    .and_modify(|acc| *acc += *t.snd())
+                    .or_insert(*t.snd());
             }
         }
 

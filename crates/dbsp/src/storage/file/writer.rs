@@ -4,6 +4,7 @@
 //! 2-column layer file.  To write more columns, either add another `Writer<N>`
 //! struct, which is easily done, or mark the currently private `Writer` as
 //! `pub`.
+use crate::storage::file::{DbspBloomFilter, DbspBloomFilterHasher};
 use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
     buffer_cache::{BufferCache, CacheEntry, FBuf, FBufSerializer, LimitExceeded},
@@ -1067,7 +1068,7 @@ impl BlockWriter {
 /// 1-column and 2-column layer files, respectively, with added type safety.
 struct Writer {
     writer: BlockWriter,
-    bloom_filter: BloomFilter,
+    bloom_filter: DbspBloomFilter,
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
 }
@@ -1096,6 +1097,7 @@ impl Writer {
             // but don't have that information here.
             bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
                 .seed(&BLOOM_FILTER_SEED)
+                .hasher(DbspBloomFilterHasher::default())
                 .expected_items(estimated_keys),
             cws,
             finished_columns,
@@ -1142,7 +1144,9 @@ impl Writer {
         Ok(())
     }
 
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf, BloomFilter), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, PathBuf, DbspBloomFilter), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
         // Write the file trailer block.
@@ -1287,7 +1291,9 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf, BloomFilter), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, PathBuf, DbspBloomFilter), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.close()
     }
@@ -1463,7 +1469,9 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf, BloomFilter), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, PathBuf, DbspBloomFilter), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
         self.inner.close()

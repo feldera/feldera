@@ -355,15 +355,15 @@ mod test {
         input.dyn_push(key.clone().erase_mut(), upd.clone().erase_mut());
         match contents.entry(key) {
             Entry::Vacant(ve) => {
-                assert_eq!(upd.1, 1);
-                ve.insert(Box::new(upd.0).erase_box());
+                assert_eq!(*upd.snd(), 1);
+                ve.insert(Box::new(*upd.fst()).erase_box());
             }
             Entry::Occupied(mut oe) => {
-                assert!(upd.1 == 1 || upd.1 == -1);
-                if upd.1 == 1 {
-                    *oe.get_mut().downcast_mut_checked::<u64>() += upd.0;
+                assert!(*upd.snd() == 1 || *upd.snd() == -1);
+                if *upd.snd() == 1 {
+                    *oe.get_mut().downcast_mut_checked::<u64>() += *upd.fst();
                 } else {
-                    *oe.get_mut().downcast_mut_checked::<u64>() -= upd.0;
+                    *oe.get_mut().downcast_mut_checked::<u64>() -= *upd.fst();
                 }
                 if *oe.get().downcast_checked::<u64>() == 0 {
                     oe.remove();
@@ -420,7 +420,7 @@ mod test {
             &input,
             &mut contents.lock().unwrap(),
             0x1000_0000_0000_0001,
-            Tup2(1, 1),
+            Tup2::new(1, 1),
         );
         circuit.step().unwrap();
 
@@ -428,7 +428,7 @@ mod test {
             &input,
             &mut contents.lock().unwrap(),
             0x1000_0000_0000_0002,
-            Tup2(2, 1),
+            Tup2::new(2, 1),
         );
         circuit.step().unwrap();
 
@@ -436,7 +436,7 @@ mod test {
             &input,
             &mut contents.lock().unwrap(),
             0x1000_1000_0000_0000,
-            Tup2(3, 1),
+            Tup2::new(3, 1),
         );
         circuit.step().unwrap();
 
@@ -444,7 +444,7 @@ mod test {
             &input,
             &mut contents.lock().unwrap(),
             0x1000_0000_0000_0002,
-            Tup2(2, -1),
+            Tup2::new(2, -1),
         );
         circuit.step().unwrap();
 
@@ -452,49 +452,49 @@ mod test {
             &input,
             &mut contents.lock().unwrap(),
             0xf100_0000_0000_0001,
-            Tup2(4, 1),
+            Tup2::new(4, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf200_0000_0000_0001,
-            Tup2(5, 1),
+            Tup2::new(5, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_0000_0000_0001,
-            Tup2(6, 1),
+            Tup2::new(6, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_0000_0001,
-            Tup2(7, 1),
+            Tup2::new(7, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_1000_0001,
-            Tup2(8, 1),
+            Tup2::new(8, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_1000_1001,
-            Tup2(9, 1),
+            Tup2::new(9, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_1100_1001,
-            Tup2(10, 1),
+            Tup2::new(10, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_1100_1001,
-            Tup2(10, -1),
+            Tup2::new(10, -1),
         );
         circuit.step().unwrap();
 
@@ -502,13 +502,13 @@ mod test {
             &input,
             &mut contents.lock().unwrap(),
             0xf400_1000_1100_1001,
-            Tup2(11, 1),
+            Tup2::new(11, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_0000_0001,
-            Tup2(7, -1),
+            Tup2::new(7, -1),
         );
         circuit.step().unwrap();
 
@@ -516,25 +516,25 @@ mod test {
             &input,
             &mut contents.lock().unwrap(),
             0x1000_0000_0000_0001,
-            Tup2(1, -1),
+            Tup2::new(1, -1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0x1000_1000_0000_0000,
-            Tup2(3, -1),
+            Tup2::new(3, -1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf100_0000_0000_0001,
-            Tup2(4, -1),
+            Tup2::new(4, -1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf200_0000_0000_0001,
-            Tup2(5, -1),
+            Tup2::new(5, -1),
         );
         circuit.step().unwrap();
 
@@ -542,19 +542,19 @@ mod test {
             &input,
             &mut contents.lock().unwrap(),
             0xf300_0000_0000_0001,
-            Tup2(6, -1),
+            Tup2::new(6, -1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_1000_0001,
-            Tup2(8, -1),
+            Tup2::new(8, -1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_1000_1001,
-            Tup2(9, -1),
+            Tup2::new(9, -1),
         );
         circuit.step().unwrap();
 
@@ -562,7 +562,7 @@ mod test {
             &input,
             &mut contents.lock().unwrap(),
             0xf400_1000_1100_1001,
-            Tup2(11, -1),
+            Tup2::new(11, -1),
         );
         circuit.step().unwrap();
 
@@ -570,37 +570,37 @@ mod test {
             &input,
             &mut contents.lock().unwrap(),
             0xf100_0000_0000_0001,
-            Tup2(4, 1),
+            Tup2::new(4, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf200_0000_0000_0001,
-            Tup2(5, 1),
+            Tup2::new(5, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_0000_0000_0001,
-            Tup2(6, 1),
+            Tup2::new(6, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_0000_0001,
-            Tup2(7, 1),
+            Tup2::new(7, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_1000_0001,
-            Tup2(8, 1),
+            Tup2::new(8, 1),
         );
         update_key(
             &input,
             &mut contents.lock().unwrap(),
             0xf300_1000_1000_0001,
-            Tup2(11, 1),
+            Tup2::new(11, 1),
         );
         circuit.step().unwrap();
     }

@@ -28,7 +28,7 @@ pub fn q13_side_input() -> Vec<Tup2<Tup3<u64, String, u64>, ZWeight>> {
     read_side_input(File::open(Q13_SIDE_INPUT_CSV).unwrap())
         .unwrap()
         .into_iter()
-        .map(|(k, v)| Tup2(Tup3(k, v, p_time), 1))
+        .map(|(k, v)| Tup2::new(Tup3::new(k, v, p_time), 1))
         .collect()
 }
 
@@ -95,47 +95,45 @@ pub fn q13(circuit: &mut RootCircuit, input: NexmarkStream) -> Q13Stream {
     let bids_by_auction_mod = input.flat_map_index(move |event| match event {
         Event::Bid(b) => Some((
             b.auction % 10_000,
-            Tup5(b.auction, b.bidder, b.price, b.date_time, process_time()),
+            Tup5::new(b.auction, b.bidder, b.price, b.date_time, process_time()),
         )),
         _ => None,
     });
 
     // Index the side_input by the key.
-    let side_input_indexed = side_input.map_index(|Tup3(k, v, t)| (*k, Tup2(v.clone(), *t)));
+    let side_input_indexed =
+        side_input.map_index(|t3| (*t3.get_0(), Tup2::new(t3.get_1().clone(), *t3.get_2())));
 
     // Join on the key from the side input
     bids_by_auction_mod
-        .join(
-            &side_input_indexed,
-            |&_,
-             &Tup5(auction, bidder, price, date_time, b_p_time),
-             Tup2(input_value, input_p_time)| {
-                Tup7(
-                    auction,
-                    bidder,
-                    price,
-                    date_time,
+        .join(&side_input_indexed, |&_, &t5, t2| {
+            let (auction, bidder, price, date_time, b_p_time) = t5.into();
+            let (input_value, input_p_time) = t2.into();
+            Tup7::new(
+                auction,
+                bidder,
+                price,
+                date_time,
+                input_value.clone(),
+                b_p_time,
+                *input_p_time,
+            )
+        })
+        .flat_map(|t7| {
+            let (auction, bidder, price, date_time, input_value, b_p_time, input_p_time) =
+                t7.into();
+            if *b_p_time >= *input_p_time {
+                Some(Tup5::new(
+                    *auction,
+                    *bidder,
+                    *price,
+                    *date_time,
                     input_value.clone(),
-                    b_p_time,
-                    *input_p_time,
-                )
-            },
-        )
-        .flat_map(
-            |Tup7(auction, bidder, price, date_time, input_value, b_p_time, input_p_time)| {
-                if b_p_time >= input_p_time {
-                    Some(Tup5(
-                        *auction,
-                        *bidder,
-                        *price,
-                        *date_time,
-                        input_value.clone(),
-                    ))
-                } else {
-                    None
-                }
-            },
-        )
+                ))
+            } else {
+                None
+            }
+        })
 }
 
 #[cfg(test)]
@@ -147,14 +145,14 @@ mod tests {
     #[test]
     fn test_q13() {
         let input_vecs = vec![vec![
-            Tup2(
+            Tup2::new(
                 Event::Bid(Bid {
                     auction: 1005,
                     ..make_bid()
                 }),
                 1,
             ),
-            Tup2(
+            Tup2::new(
                 Event::Bid(Bid {
                     auction: 10005,
                     ..make_bid()
@@ -168,8 +166,8 @@ mod tests {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let mut expected_output = vec![zset![
-                Tup5(1_005, 1, 99, 0, String::from("1005")) => 1,
-                Tup5(10_005, 1, 99, 0, String::from("5")) => 1,
+                Tup5::new(1_005, 1, 99, 0, String::from("1005")) => 1,
+                Tup5::new(10_005, 1, 99, 0, String::from("5")) => 1,
             ]]
             .into_iter();
 

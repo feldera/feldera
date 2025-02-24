@@ -20,18 +20,18 @@ use crate::utils::{
 fn test_consolidate() {
     let test_cases = vec![
         (
-            lean_vec![Tup2("a", -1), Tup2("b", -2), Tup2("a", 1)],
-            lean_vec![Tup2("b", -2)],
+            lean_vec![Tup2::new("a", -1), Tup2::new("b", -2), Tup2::new("a", 1)],
+            lean_vec![Tup2::new("b", -2)],
         ),
         (
-            lean_vec![Tup2("a", -1), Tup2("b", 0), Tup2("a", 1)],
+            lean_vec![Tup2::new("a", -1), Tup2::new("b", 0), Tup2::new("a", 1)],
             lean_vec![],
         ),
-        (lean_vec![Tup2("a", 0)], lean_vec![]),
-        (lean_vec![Tup2("a", 0), Tup2("b", 0)], lean_vec![]),
+        (lean_vec![Tup2::new("a", 0)], lean_vec![]),
+        (lean_vec![Tup2::new("a", 0), Tup2::new("b", 0)], lean_vec![]),
         (
-            lean_vec![Tup2("a", 1), Tup2("b", 1)],
-            lean_vec![Tup2("a", 1), Tup2("b", 1)],
+            lean_vec![Tup2::new("a", 1), Tup2::new("b", 1)],
+            lean_vec![Tup2::new("a", 1), Tup2::new("b", 1)],
         ),
     ];
 
@@ -45,18 +45,18 @@ fn test_consolidate() {
 fn test_consolidate_from_start() {
     let test_cases = vec![
         (
-            lean_vec![Tup2("a", -1), Tup2("b", -2), Tup2("a", 1)],
-            lean_vec![Tup2("b", -2)],
+            lean_vec![Tup2::new("a", -1), Tup2::new("b", -2), Tup2::new("a", 1)],
+            lean_vec![Tup2::new("b", -2)],
         ),
         (
-            lean_vec![Tup2("a", -1), Tup2("b", 0), Tup2("a", 1)],
+            lean_vec![Tup2::new("a", -1), Tup2::new("b", 0), Tup2::new("a", 1)],
             lean_vec![],
         ),
-        (lean_vec![Tup2("a", 0)], lean_vec![]),
-        (lean_vec![Tup2("a", 0), Tup2("b", 0)], lean_vec![]),
+        (lean_vec![Tup2::new("a", 0)], lean_vec![]),
+        (lean_vec![Tup2::new("a", 0), Tup2::new("b", 0)], lean_vec![]),
         (
-            lean_vec![Tup2("a", 1), Tup2("b", 1)],
-            lean_vec![Tup2("a", 1), Tup2("b", 1)],
+            lean_vec![Tup2::new("a", 1), Tup2::new("b", 1)],
+            lean_vec![Tup2::new("a", 1), Tup2::new("b", 1)],
         ),
     ];
 
@@ -70,21 +70,21 @@ fn test_consolidate_from_start() {
 fn test_consolidate_from() {
     let test_cases = vec![
         (
-            lean_vec![Tup2("a", -1), Tup2("b", -2), Tup2("a", 1)],
-            lean_vec![Tup2("a", -1), Tup2("a", 1), Tup2("b", -2)],
+            lean_vec![Tup2::new("a", -1), Tup2::new("b", -2), Tup2::new("a", 1)],
+            lean_vec![Tup2::new("a", -1), Tup2::new("a", 1), Tup2::new("b", -2)],
         ),
         (
-            lean_vec![Tup2("a", -1), Tup2("b", 0), Tup2("a", 1)],
-            lean_vec![Tup2("a", -1), Tup2("a", 1)],
+            lean_vec![Tup2::new("a", -1), Tup2::new("b", 0), Tup2::new("a", 1)],
+            lean_vec![Tup2::new("a", -1), Tup2::new("a", 1)],
         ),
-        (lean_vec![Tup2("a", 0)], lean_vec![Tup2("a", 0)]),
+        (lean_vec![Tup2::new("a", 0)], lean_vec![Tup2::new("a", 0)]),
         (
-            lean_vec![Tup2("a", 0), Tup2("b", 0)],
-            lean_vec![Tup2("a", 0)],
+            lean_vec![Tup2::new("a", 0), Tup2::new("b", 0)],
+            lean_vec![Tup2::new("a", 0)],
         ),
         (
-            lean_vec![Tup2("a", 1), Tup2("b", 1)],
-            lean_vec![Tup2("a", 1), Tup2("b", 1)],
+            lean_vec![Tup2::new("a", 1), Tup2::new("b", 1)],
+            lean_vec![Tup2::new("a", 1), Tup2::new("b", 1)],
         ),
     ];
 
@@ -98,18 +98,18 @@ fn test_consolidate_from() {
 fn test_consolidate_slice() {
     let test_cases = vec![
         (
-            lean_vec![Tup2("a", -1), Tup2("b", -2), Tup2("a", 1)],
-            lean_vec![Tup2("b", -2)],
+            lean_vec![Tup2::new("a", -1), Tup2::new("b", -2), Tup2::new("a", 1)],
+            lean_vec![Tup2::new("b", -2)],
         ),
         (
-            lean_vec![Tup2("a", -1), Tup2("b", 0), Tup2("a", 1)],
+            lean_vec![Tup2::new("a", -1), Tup2::new("b", 0), Tup2::new("a", 1)],
             lean_vec![],
         ),
-        (lean_vec![Tup2("a", 0)], lean_vec![]),
-        (lean_vec![Tup2("a", 0), Tup2("b", 0)], lean_vec![]),
+        (lean_vec![Tup2::new("a", 0)], lean_vec![]),
+        (lean_vec![Tup2::new("a", 0), Tup2::new("b", 0)], lean_vec![]),
         (
-            lean_vec![Tup2("a", 1), Tup2("b", 1)],
-            lean_vec![Tup2("a", 1), Tup2("b", 1)],
+            lean_vec![Tup2::new("a", 1), Tup2::new("b", 1)],
+            lean_vec![Tup2::new("a", 1), Tup2::new("b", 1)],
         ),
     ];
 

@@ -50,28 +50,40 @@ fn build_circuit(
     let monthly_totals = subset
         .map_index(|r| {
             (
-                Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+                Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
         .aggregate_linear(|v| *v as i64);
     let running_monthly_totals = monthly_totals
-        .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+        .map_index(|(t, v)| {
+            (
+                *t.get_1() as u32 * 12 + (*t.get_2() as u32 - 1),
+                Tup2::new(t.get_0().clone(), *v),
+            )
+        })
         .partitioned_rolling_aggregate_linear(
-            |Tup2(l, v)| (l.clone(), *v),
+            |t| (t.fst().clone(), *t.snd()),
             |vaxxed| *vaxxed,
             |total| total,
             RelRange::new(RelOffset::Before(u32::MAX), RelOffset::Before(0)),
         );
     let vax_rates = running_monthly_totals
-        .map_index(|(l, Tup2(date, total))| {
+        .map_index(|(l, t)| {
             (
                 l.clone(),
-                Tup3((date / 12) as i32, (date % 12 + 1) as u8, total.unwrap()),
+                Tup3::new(
+                    (*t.fst() / 12) as i32,
+                    (*t.fst() % 12 + 1) as u8,
+                    t.snd().unwrap(),
+                ),
             )
         })
-        .join_index(&pop_stream, |l, Tup3(y, m, total), pop| {
-            Some((Tup3(l.clone(), *y, *m), Tup2(*total, *pop)))
+        .join_index(&pop_stream, |l, t, pop| {
+            Some((
+                Tup3::new(l.clone(), *t.get_0(), *t.get_1()),
+                Tup2::new(*t.get_2(), *pop),
+            ))
         });
     Ok((vax_handle, pop_handle, vax_rates.output()))
 }
@@ -85,26 +97,30 @@ fn main() -> Result<()> {
     );
     let mut vax_records = Reader::from_path(path)?
         .deserialize()
-        .map(|result| result.map(|record| Tup2(record, 1)))
+        .map(|result| result.map(|record| Tup2::new(record, 1)))
         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
     vax_handle.append(&mut vax_records);
 
     let mut pop_records = vec![
-        Tup2("England".into(), Tup2(56286961u64, 1i64)),
-        Tup2("Northern Ireland".into(), Tup2(1893667, 1)),
-        Tup2("Scotland".into(), Tup2(5463300, 1)),
-        Tup2("Wales".into(), Tup2(3152879, 1)),
+        Tup2::new("England".into(), Tup2::new(56286961u64, 1i64)),
+        Tup2::new("Northern Ireland".into(), Tup2::new(1893667, 1)),
+        Tup2::new("Scotland".into(), Tup2::new(5463300, 1)),
+        Tup2::new("Wales".into(), Tup2::new(3152879, 1)),
     ];
     pop_handle.append(&mut pop_records);
 
     circuit.step()?;
 
-    output_handle
-        .consolidate()
-        .iter()
-        .for_each(|(Tup3(l, y, m), Tup2(vaxxes, pop), w)| {
-            let rate = vaxxes as f64 / pop as f64 * 100.0;
-            println!("{l:16} {y}-{m:02}: {vaxxes:9} {pop:8} {rate:6.2}% {w:+}",)
-        });
+    output_handle.consolidate().iter().for_each(|(t3, t2, w)| {
+        let rate = *t2.fst() as f64 / *t2.snd() as f64 * 100.0;
+        println!(
+            "{:16} {}-{:02}: {:9} {:8} {rate:6.2}% {w:+}",
+            t3.get_0(),
+            t3.get_1(),
+            t3.get_2(),
+            t2.fst(),
+            t2.snd()
+        )
+    });
     Ok(())
 }

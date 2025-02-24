@@ -220,7 +220,10 @@ mod test {
             integral.inspect(move |s| {
                 let mut batch = Vec::with_capacity(counter2);
                 for i in 0..counter2 {
-                    batch.push(Tup2(Tup2(i as u64, ()), (counter2 - i) as ZWeight));
+                    batch.push(Tup2::new(
+                        Tup2::new(i as u64, ()),
+                        (counter2 - i) as ZWeight,
+                    ));
                 }
                 assert_eq!(s, &<OrdZSet<_>>::from_tuples((), batch));
                 counter2 += 1;
@@ -229,7 +232,10 @@ mod test {
             integral.delay().inspect(move |s| {
                 let mut batch = Vec::with_capacity(counter2);
                 for i in 1..counter3 {
-                    batch.push(Tup2(Tup2((i - 1) as u64, ()), (counter3 - i) as ZWeight));
+                    batch.push(Tup2::new(
+                        Tup2::new((i - 1) as u64, ()),
+                        (counter3 - i) as ZWeight,
+                    ));
                 }
                 assert_eq!(s, &<OrdZSet<_>>::from_tuples((), batch));
                 counter3 += 1;

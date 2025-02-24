@@ -97,7 +97,7 @@ pub fn q9(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q9Stream {
     let auctions_by_id = input.flat_map_index(|event| match event {
         Event::Auction(a) => Some((
             a.id,
-            Tup9(
+            Tup9::new(
                 a.item_name.clone(),
                 a.description.clone(),
                 a.initial_bid,
@@ -116,7 +116,7 @@ pub fn q9(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q9Stream {
     let bids_by_auction = input.flat_map_index(|event| match event {
         Event::Bid(b) => Some((
             b.auction,
-            Tup4(b.bidder, b.price, b.date_time, b.extra.clone()),
+            Tup4::new(b.bidder, b.price, b.date_time, b.extra.clone()),
         )),
         _ => None,
     });
@@ -132,23 +132,22 @@ pub fn q9(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q9Stream {
     >;
 
     // Join to get bids for each auction.
-    let bids_for_auctions: BidsAuctionsJoin = auctions_by_id.join(
-        &bids_by_auction,
-        |&auction_id,
-         Tup9(
-            a_item_name,
-            a_description,
-            a_initial_bid,
-            a_reserve,
-            a_date_time,
-            a_expires,
-            a_seller,
-            a_category,
-            a_extra,
-        ),
-         Tup4(b_bidder, b_price, b_date_time, b_extra)| {
-            Tup2(
-                Tup10(
+    let bids_for_auctions: BidsAuctionsJoin =
+        auctions_by_id.join(&bids_by_auction, |&auction_id, t9, t4| {
+            let (
+                a_item_name,
+                a_description,
+                a_initial_bid,
+                a_reserve,
+                a_date_time,
+                a_expires,
+                a_seller,
+                a_category,
+                a_extra,
+            ) = t9.into();
+            let (b_bidder, b_price, b_date_time, b_extra) = t4.into();
+            Tup2::new(
+                Tup10::new(
                     auction_id,
                     a_item_name.clone(),
                     a_description.clone(),
@@ -160,53 +159,50 @@ pub fn q9(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q9Stream {
                     *a_category,
                     a_extra.clone(),
                 ),
-                Tup4(*b_bidder, *b_price, *b_date_time, b_extra.clone()),
+                Tup4::new(*b_bidder, *b_price, *b_date_time, b_extra.clone()),
             )
-        },
-    );
+        });
 
     // Filter out the invalid bids while indexing.
     // TODO: update to use incremental version of `join_range` once implemented
     // (#137).
-    let bids_for_auctions_indexed = bids_for_auctions.flat_map_index(
-        |Tup2(
-            Tup10(
-                auction_id,
-                a_item_name,
-                a_description,
-                a_initial_bid,
-                a_reserve,
-                a_date_time,
-                a_expires,
-                a_seller,
-                a_category,
-                a_extra,
-            ),
-            Tup4(b_bidder, b_price, b_date_time, b_extra),
-        )| {
-            if b_date_time >= a_date_time && b_date_time <= a_expires {
-                Some((
-                    Tup10(
-                        *auction_id,
-                        a_item_name.to_string(),
-                        a_description.to_string(),
-                        *a_initial_bid,
-                        *a_reserve,
-                        *a_date_time,
-                        *a_expires,
-                        *a_seller,
-                        *a_category,
-                        a_extra.to_string(),
-                    ),
-                    // Note that the price of the bid is first in the tuple here to ensure that the
-                    // default lexicographic Ord of tuples does what we want below.
-                    Tup4(*b_price, *b_bidder, *b_date_time, b_extra.clone()),
-                ))
-            } else {
-                None
-            }
-        },
-    );
+    let bids_for_auctions_indexed = bids_for_auctions.flat_map_index(|t2| {
+        let (t10, t4) = t2.into();
+        let (
+            auction_id,
+            a_item_name,
+            a_description,
+            a_initial_bid,
+            a_reserve,
+            a_date_time,
+            a_expires,
+            a_seller,
+            a_category,
+            a_extra,
+        ) = t10.into();
+        let (b_bidder, b_price, b_date_time, b_extra) = t4.into();
+        if b_date_time >= a_date_time && b_date_time <= a_expires {
+            Some((
+                Tup10::new(
+                    *auction_id,
+                    a_item_name.to_string(),
+                    a_description.to_string(),
+                    *a_initial_bid,
+                    *a_reserve,
+                    *a_date_time,
+                    *a_expires,
+                    *a_seller,
+                    *a_category,
+                    a_extra.to_string(),
+                ),
+                // Note that the price of the bid is first in the tuple here to ensure that the
+                // default lexicographic Ord of tuples does what we want below.
+                Tup4::new(*b_price, *b_bidder, *b_date_time, b_extra.clone()),
+            ))
+        } else {
+            None
+        }
+    });
 
     // TODO: We can optimize this given that there are no deletions, as DBSP
     // doesn't need to keep records of the bids for future max calculations.
@@ -222,41 +218,38 @@ pub fn q9(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q9Stream {
 
     // Finally, put the output together as expected and flip the price/bidder
     // into the output order.
-    auctions_with_winning_bids.map(
-        |(
-            Tup10(
-                auction_id,
-                a_item_name,
-                a_description,
-                a_initial_bid,
-                a_reserve,
-                a_date_time,
-                a_expires,
-                a_seller,
-                a_category,
-                a_extra,
-            ),
-            Tup4(b_price, b_bidder, b_date_time, b_extra),
-        )| {
-            Q9Output(
-                *auction_id,
-                a_item_name.clone(),
-                a_description.clone(),
-                *a_initial_bid,
-                *a_reserve,
-                *a_date_time,
-                *a_expires,
-                *a_seller,
-                *a_category,
-                a_extra.clone(),
-                *auction_id,
-                *b_bidder,
-                *b_price,
-                *b_date_time,
-                b_extra.clone(),
-            )
-        },
-    )
+    auctions_with_winning_bids.map(|(t10, t4)| {
+        let (
+            auction_id,
+            a_item_name,
+            a_description,
+            a_initial_bid,
+            a_reserve,
+            a_date_time,
+            a_expires,
+            a_seller,
+            a_category,
+            a_extra,
+        ) = t10.into();
+        let (b_price, b_bidder, b_date_time, b_extra) = t4.into();
+        Q9Output(
+            *auction_id,
+            a_item_name.clone(),
+            a_description.clone(),
+            *a_initial_bid,
+            *a_reserve,
+            *a_date_time,
+            *a_expires,
+            *a_seller,
+            *a_category,
+            a_extra.clone(),
+            *auction_id,
+            *b_bidder,
+            *b_price,
+            *b_date_time,
+            b_extra.clone(),
+        )
+    })
 }
 
 #[cfg(test)]
@@ -274,7 +267,7 @@ mod tests {
             // The first batch has a single auction for seller 99 with a highest bid of 100
             // (currently).
             vec![
-                Tup2(
+                Tup2::new(
                     Event::Auction(Auction {
                         id: 1,
                         seller: 99,
@@ -283,7 +276,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         auction: 1,
                         date_time: 1_000,
@@ -292,7 +285,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         auction: 1,
                         date_time: 2_000,
@@ -305,7 +298,7 @@ mod tests {
             // The second batch has a new highest bid for the (currently) only auction.
             // And adds a new auction without any bids (empty join).
             vec![
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         auction: 1,
                         date_time: 9_000,
@@ -314,7 +307,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Auction(Auction {
                         id: 2,
                         seller: 101,
@@ -327,7 +320,7 @@ mod tests {
             // The third batch has a new bid but it's not higher, so no effect to the first
             // auction. A bid added for the second auction, so it is added.
             vec![
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         auction: 1,
                         date_time: 9_500,
@@ -336,7 +329,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         auction: 2,
                         date_time: 19_000,
@@ -348,7 +341,7 @@ mod tests {
             ],
             // The fourth and final batch has a new bid for auction 2, but it's
             // come in (one millisecond) too late to be valid, so no change.
-            vec![Tup2(
+            vec![Tup2::new(
                 Event::Bid(Bid {
                     auction: 2,
                     date_time: 20_001,

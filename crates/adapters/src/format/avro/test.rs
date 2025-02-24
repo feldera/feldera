@@ -654,7 +654,7 @@ where
                 } else {
                     -1
                 };
-                Tup2(value, w)
+                Tup2::new(value, w)
             })
             .collect(),
     );
@@ -807,17 +807,18 @@ fn test_confluent_avro_output<K, V, KF>(
     let (expected_inserts, expected_deletes): (Vec<_>, Vec<_>) = batches
         .concat()
         .into_iter()
-        .flat_map(|Tup2(v, w)| {
+        .flat_map(|t| {
+            let (v, w) = t.into();
             if w > 0 {
-                repeat(Tup2(v.clone(), 1)).take(w as usize)
+                repeat(Tup2::new(v.clone(), 1)).take(w as usize)
             } else {
-                repeat(Tup2(v.clone(), -1)).take(-w as usize)
+                repeat(Tup2::new(v.clone(), -1)).take(-w as usize)
             }
         })
-        .partition(|Tup2(_, w)| *w > 0);
+        .partition(|t| *t.snd() > 0);
     let expected_deletes = expected_deletes
         .into_iter()
-        .map(|Tup2(v, w)| Tup2(key_func(&v), w))
+        .map(|t| Tup2::new(key_func(t.fst()), *t.snd()))
         .collect::<Vec<_>>();
 
     let (inserts, deletes): (Vec<_>, Vec<_>) = consumer_data
@@ -828,12 +829,12 @@ fn test_confluent_avro_output<K, V, KF>(
             if let Some(v) = v {
                 let val = from_avro_datum(&schema, &mut &v[5..], None).unwrap();
                 let value = from_avro_value::<V>(&val, &schema).unwrap();
-                (Some(Tup2(value, 1)), None)
+                (Some(Tup2::new(value, 1)), None)
             } else {
                 let val =
                     from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
                 let value = from_avro_value::<K>(&val, &key_schema).unwrap();
-                (None, Some(Tup2(value, -1)))
+                (None, Some(Tup2::new(value, -1)))
             }
         })
         .unzip();

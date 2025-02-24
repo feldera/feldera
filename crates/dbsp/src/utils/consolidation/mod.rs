@@ -63,19 +63,18 @@ where
         return;
     }
 
-    unstable_sort_by(vec.as_mut_slice(), |Tup2(key1, _), Tup2(key2, _)| {
-        key1.cmp(key2)
-    });
+    unstable_sort_by(vec.as_mut_slice(), |t1, t2| t1.fst().cmp(t2.fst()));
     // TODO: Combine the `.dedup_by()` and `.retain()` calls together
-    vec.dedup_by(|Tup2(key1, data1), Tup2(key2, data2)| {
-        if key1 == key2 {
-            data2.add_assign_by_ref(&replace(data1, R::zero()));
+    vec.dedup_by(|t1, t2| {
+        if t1.fst() == t2.fst() {
+            t2.snd_mut()
+                .add_assign_by_ref(&replace(t1.snd_mut(), R::zero()));
             true
         } else {
             false
         }
     });
-    vec.retain(|Tup2(_, data)| !data.is_zero());
+    vec.retain(|t| !t.snd().is_zero());
 }
 
 /// Sorts and consolidate `vec[offset..]`.
@@ -93,18 +92,17 @@ where
         return;
     }
 
-    unstable_sort_by(&mut vec[offset..], |Tup2(key1, _), Tup2(key2, _)| {
-        key1.cmp(key2)
-    });
-    vec.dedup_by_starting_at(offset, |Tup2(key1, data1), Tup2(key2, data2)| {
-        if key1 == key2 {
-            data2.add_assign_by_ref(&replace(data1, R::zero()));
+    unstable_sort_by(&mut vec[offset..], |t1, t2| t1.fst().cmp(t2.fst()));
+    vec.dedup_by_starting_at(offset, |t1, t2| {
+        if t1.fst() == t2.fst() {
+            t2.snd_mut()
+                .add_assign_by_ref(&replace(t1.snd_mut(), R::zero()));
             true
         } else {
             false
         }
     });
-    vec.retain_starting_at(offset, |Tup2(_, data)| !data.is_zero());
+    vec.retain_starting_at(offset, |t| !t.snd().is_zero());
 }
 
 /// Sorts and consolidates a slice, returning the valid prefix length.
@@ -130,12 +128,12 @@ where
     // Ideally we'd combine the sorting and value merging portions
     // This line right here is literally the hottest code within the entirety of the
     // program. It makes up 90% of the work done while joining or merging anything
-    unstable_sort_by(slice, |Tup2(key1, _), Tup2(key2, _)| key1.cmp(key2));
+    unstable_sort_by(slice, |t1, t2| t1.fst().cmp(t2.fst()));
     consolidate_slice_inner(
         slice,
-        |Tup2(key1, _), Tup2(key2, _)| key1 == key2,
-        |Tup2(_, diff1), Tup2(_, diff2)| diff1.add_assign_by_ref(diff2),
-        |Tup2(_, diff)| diff.is_zero(),
+        |t1, t2| t1.fst() == t2.fst(),
+        |t1, t2| t1.snd_mut().add_assign_by_ref(t2.snd()),
+        |t| t.snd().is_zero(),
     )
 }
 

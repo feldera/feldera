@@ -49,7 +49,7 @@ fn kvtr_batch(
 ) -> BoxedStrategy<Vec<Tup4<i32, i32, u32, ZWeight>>> {
     vec(
         (0..max_key, 0..max_val, 0..max_time, -max_weight..max_weight)
-            .prop_map(|(k, v, t, r)| Tup4(k, v, t, r)),
+            .prop_map(|(k, v, t, r)| Tup4::new(k, v, t, r)),
         max_tuples,
     )
     .boxed()
@@ -62,7 +62,7 @@ fn ktr_batch(
     max_tuples: usize,
 ) -> BoxedStrategy<Vec<Tup3<i32, u32, ZWeight>>> {
     vec(
-        (0..max_key, 0..max_time, -max_weight..max_weight).prop_map(|(k, t, r)| Tup3(k, t, r)),
+        (0..max_key, 0..max_time, -max_weight..max_weight).prop_map(|(k, t, r)| Tup3::new(k, t, r)),
         max_tuples,
     )
     .boxed()
@@ -77,7 +77,7 @@ fn kr_batches(
     vec(
         (
             vec(
-                (0..max_key, -max_weight..max_weight).prop_map(|(x, y)| Tup2(x, y)),
+                (0..max_key, -max_weight..max_weight).prop_map(|(x, y)| Tup2::new(x, y)),
                 0..max_tuples,
             ),
             (0..max_key),
@@ -98,10 +98,10 @@ fn kvr_batches(
         (
             vec(
                 (
-                    (0..max_key, 0..max_val).prop_map(|(x, y)| Tup2(x, y)),
+                    (0..max_key, 0..max_val).prop_map(|(x, y)| Tup2::new(x, y)),
                     -max_weight..max_weight,
                 )
-                    .prop_map(|(x, y)| Tup2(x, y)),
+                    .prop_map(|(x, y)| Tup2::new(x, y)),
                 0..max_tuples,
             ),
             (0..max_key),
@@ -127,10 +127,10 @@ fn kvr_batches_monotone_keys(
                         i as i32 * window_step..i as i32 * window_step + window_size,
                         0..max_value,
                     )
-                        .prop_map(|(x, y)| Tup2(x, y)),
+                        .prop_map(|(x, y)| Tup2::new(x, y)),
                     1..2i64,
                 )
-                    .prop_map(|(x, y)| Tup2(x, y)),
+                    .prop_map(|(x, y)| Tup2::new(x, y)),
                 0..max_tuples,
             )
         })
@@ -153,10 +153,10 @@ fn kvr_batches_monotone_values(
                         0..max_key,
                         i as i32 * window_step..i as i32 * window_step + window_size,
                     )
-                        .prop_map(|(x, y)| Tup2(x, y)),
+                        .prop_map(|(x, y)| Tup2::new(x, y)),
                     1..2i64,
                 )
-                    .prop_map(|(x, y)| Tup2(x, y)),
+                    .prop_map(|(x, y)| Tup2::new(x, y)),
                 0..max_tuples,
             )
         })
@@ -176,7 +176,7 @@ pub fn zset_tuples(
     Box::new(LeanVec::from(
         tuples
             .into_iter()
-            .map(|Tup2(k, w)| Tup2(Tup2(k, ()), w))
+            .map(|t| Tup2::new(Tup2::new(*t.fst(), ()), *t.snd()))
             .collect::<Vec<_>>(),
     ))
     .erase_box()
@@ -357,9 +357,11 @@ where
 {
     let mut builder = B::Builder::with_capacity(factories, tuples.len());
     #[allow(clippy::into_iter_on_ref)]
-    for (key, vtds) in &tuples.into_iter().chunk_by(|Tup4(key, _, _, _)| key) {
-        for (val, tds) in &vtds.into_iter().chunk_by(|Tup4(_, val, _, _)| val) {
-            for Tup4(_, _, time, diff) in tds {
+    for (key, vtds) in &tuples.into_iter().chunk_by(|t| t.get_0()) {
+        for (val, tds) in &vtds.into_iter().chunk_by(|t| t.get_1()) {
+            for t in tds {
+                let time = t.get_2();
+                let diff = t.get_3();
                 builder.push_time_diff(time, diff);
             }
             builder.push_val(val);
@@ -377,8 +379,8 @@ fn test_indexed_zset_trace_builder<B>(
     B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>,
 {
     tuples.sort_unstable();
-    tuples.retain(|Tup4(_k, _v, _t, r)| *r != 0);
-    tuples.dedup_by_key(|Tup4(k, v, t, _r)| (*k, *v, *t));
+    tuples.retain(|t4| *t4.get_3() != 0);
+    tuples.dedup_by_key(|t4| (*t4.get_0(), *t4.get_1(), *t4.get_2()));
 
     let ref_batch = timed_indexed_batch_from_tuples::<TestBatch<DynI32, DynI32, u32, DynZWeight>>(
         &TestBatchFactories::new(),
@@ -397,8 +399,9 @@ where
 {
     let mut builder = B::Builder::with_capacity(factories, tuples.len());
     #[allow(clippy::into_iter_on_ref)]
-    for (key, tds) in &tuples.into_iter().chunk_by(|Tup3(key, _time, _diff)| key) {
-        for Tup3(_key, time, diff) in tds {
+    for (key, tds) in &tuples.into_iter().chunk_by(|t3| t3.get_0()) {
+        for t in tds {
+            let (_key, time, diff) = t.into();
             builder.push_time_diff(time, diff);
         }
         builder.push_val(&());
@@ -415,8 +418,8 @@ fn test_zset_trace_builder<B>(
     B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>,
 {
     tuples.sort_unstable();
-    tuples.retain(|Tup3(_k, _t, r)| *r != 0);
-    tuples.dedup_by_key(|Tup3(k, t, _r)| (*k, *t));
+    tuples.retain(|t3| *t3.get_2() != 0);
+    tuples.dedup_by_key(|t3| (*t3.get_0(), *t3.get_1()));
 
     let ref_batch = timed_batch_from_tuples::<TestBatch<DynI32, DynUnit, u32, DynZWeight>>(
         &TestBatchFactories::new(),

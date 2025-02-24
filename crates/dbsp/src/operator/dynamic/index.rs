@@ -282,25 +282,25 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             let mut inputs = vec![
                 vec![
-                    (Tup2(1, 'a'), 1i64),
-                    (Tup2(1, 'b'), 1),
-                    (Tup2(2, 'a'), 1),
-                    (Tup2(2, 'c'), 1),
-                    (Tup2(1, 'a'), 2),
-                    (Tup2(1, 'b'), -1),
+                    (Tup2::new(1, 'a'), 1i64),
+                    (Tup2::new(1, 'b'), 1),
+                    (Tup2::new(2, 'a'), 1),
+                    (Tup2::new(2, 'c'), 1),
+                    (Tup2::new(1, 'a'), 2),
+                    (Tup2::new(1, 'b'), -1),
                 ],
                 vec![
-                    (Tup2(1, 'd'), 1),
-                    (Tup2(1, 'e'), 1),
-                    (Tup2(2, 'a'), -1),
-                    (Tup2(3, 'a'), 2),
+                    (Tup2::new(1, 'd'), 1),
+                    (Tup2::new(1, 'e'), 1),
+                    (Tup2::new(2, 'a'), -1),
+                    (Tup2::new(3, 'a'), 2),
                 ],
             ]
             .into_iter()
             .map(|tuples| {
                 let tuples = tuples
                     .into_iter()
-                    .map(|(k, v)| Tup2(Tup2(k, ()), v))
+                    .map(|(k, v)| Tup2::new(Tup2::new(k, ()), v))
                     .collect::<Vec<_>>();
                 let mut batcher =
                     <DynOrdZSet<DynPair<DynData, DynData>> as DynBatch>::Batcher::new_batcher(
@@ -336,25 +336,25 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             let mut inputs = vec![
                 vec![
-                    (Tup2(1, 'a'), 1),
-                    (Tup2(1, 'b'), 1),
-                    (Tup2(2, 'a'), 1),
-                    (Tup2(2, 'c'), 1),
-                    (Tup2(1, 'a'), 2),
-                    (Tup2(1, 'b'), -1),
+                    (Tup2::new(1, 'a'), 1),
+                    (Tup2::new(1, 'b'), 1),
+                    (Tup2::new(2, 'a'), 1),
+                    (Tup2::new(2, 'c'), 1),
+                    (Tup2::new(1, 'a'), 2),
+                    (Tup2::new(1, 'b'), -1),
                 ],
                 vec![
-                    (Tup2(1, 'd'), 1),
-                    (Tup2(1, 'e'), 1),
-                    (Tup2(2, 'a'), -1),
-                    (Tup2(3, 'a'), 2),
+                    (Tup2::new(1, 'd'), 1),
+                    (Tup2::new(1, 'e'), 1),
+                    (Tup2::new(2, 'a'), -1),
+                    (Tup2::new(3, 'a'), 2),
                 ],
             ]
             .into_iter()
             .map(|tuples| {
                 let tuples = tuples
                     .into_iter()
-                    .map(|(k, v)| Tup2(Tup2(k, ()), v))
+                    .map(|(k, v)| Tup2::new(Tup2::new(k, ()), v))
                     .collect::<Vec<_>>();
                 let mut batcher =
                     <DynOrdZSet<DynPair<DynData, DynData>> as DynBatch>::Batcher::new_batcher(

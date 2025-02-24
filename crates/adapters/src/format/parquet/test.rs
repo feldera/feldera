@@ -138,7 +138,10 @@ fn parquet_output() {
     .expect("Can't create encoder");
     let zset = OrdZSet::from_keys(
         (),
-        vec![Tup2(test_data[0].clone(), 2), Tup2(test_data[1].clone(), 1)],
+        vec![
+            Tup2::new(test_data[0].clone(), 2),
+            Tup2::new(test_data[1].clone(), 1),
+        ],
     );
 
     let zset = &SerBatchImpl::<_, TestStruct2, ()>::new(zset) as &dyn SerBatchReader;

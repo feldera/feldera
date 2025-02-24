@@ -34,14 +34,15 @@ const TOP_BIDS: usize = 10;
 /// ```
 pub fn q19(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q19Stream {
     let bids_by_auction = input.flat_map_index(|event| match event {
-        Event::Bid(b) => Some((b.auction, Tup2(b.price, b.clone()))),
+        Event::Bid(b) => Some((b.auction, Tup2::new(b.price, b.clone()))),
         _ => None,
     });
 
     bids_by_auction
         .aggregate(<Fold<_, _, UnimplementedSemigroup<_>, _, _>>::new(
             Vec::with_capacity(TOP_BIDS),
-            |top: &mut Vec<Bid>, Tup2(_price, bid): &Tup2<u64, Bid>, _w| {
+            |top: &mut Vec<Bid>, t2: &Tup2<u64, Bid>, _w| {
+                let (_price, bid) = t2.into();
                 if top.len() >= TOP_BIDS {
                     top.remove(0);
                 }
@@ -262,7 +263,7 @@ mod tests {
             batch
                 .into_iter()
                 .map(|(auction, bidder, price)| {
-                    Tup2(
+                    Tup2::new(
                         Event::Bid(Bid {
                             auction,
                             bidder,

@@ -61,6 +61,8 @@ public enum DBSPOpcode {
     // Aggregate operations.  These operations
     // handle NULL values differently from standard
     // arithmetic operations, following SQL semantics.
+    // Notice that some aggregates, such as array_agg, do not appear here.
+    // Special function calls are generated for these.
     AGG_AND("agg_and", true),
     AGG_OR("agg_or", true),
     // Operation which combines an accumulator and a *weighted* value

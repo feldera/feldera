@@ -59,7 +59,7 @@ fn main() -> Result<()> {
 
             // Count the number of edges with each node as its source (each node's
             // out-degree).
-            let degrees = edges.map(|Tup2(src, _dst)| *src).weighted_count();
+            let degrees = edges.map(|t| *t.fst()).weighted_count();
 
             // Count the number of nodes with each out-degree.
             let distribution = degrees.map(|(_src, count)| *count).weighted_count();
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
 
     // Add some initial edges and print the results.
     for i in 0..edges {
-        hedges.push(Tup2(i % sources, i % 7), 1);
+        hedges.push(Tup2::new(i % sources, i % 7), 1);
     }
     dbsp.step().unwrap();
     println!("Initialization:");
@@ -78,7 +78,7 @@ fn main() -> Result<()> {
 
     // Add a few more nodes and print the changes.
     for i in 0..extra {
-        hedges.push(Tup2(i % sources, i % 9), 1);
+        hedges.push(Tup2::new(i % sources, i % 9), 1);
     }
     dbsp.step().unwrap();
     println!("Changes:");

@@ -1441,7 +1441,7 @@ mod test {
     fn filter_map_test() {
         let circuit = RootCircuit::build(move |circuit| {
             let mut input: vec::IntoIter<OrdZSet<Tup2<i64, String>>> =
-                vec![zset! { Tup2(1, "1".to_string()) => 1, Tup2(-1, "-1".to_string()) => 1, Tup2(5, "5 foo".to_string()) => 1, Tup2(-2, "-2".to_string()) => 1 }].into_iter();
+                vec![zset! { Tup2::new(1, "1".to_string()) => 1, Tup2::new(-1, "-1".to_string()) => 1, Tup2::new(5, "5 foo".to_string()) => 1, Tup2::new(-2, "-2".to_string()) => 1 }].into_iter();
 
             let mut filter_output =
                 vec![zset! { 1 => 1, 5 => 1 }].into_iter();
@@ -1470,11 +1470,11 @@ mod test {
             let mut abs_output =
                 vec![zset! { 1 => 2, 5 => 1, 2 => 1 }].into_iter();
             let mut i_abs_output =
-                vec![zset! { Tup2(1, "1".to_string()) => 1, Tup2(1, "-1".to_string()) => 1, Tup2(5, "5 foo".to_string()) => 1, Tup2(2, "-2".to_string()) => 1 }].into_iter();
+                vec![zset! { Tup2::new(1, "1".to_string()) => 1, Tup2::new(1, "-1".to_string()) => 1, Tup2::new(5, "5 foo".to_string()) => 1, Tup2::new(2, "-2".to_string()) => 1 }].into_iter();
             let mut abs_pos_output =
                 vec![zset! { 1 => 1, 5 => 1 }].into_iter();
             let mut i_abs_pos_output =
-                vec![zset! { Tup2(1, "1".to_string()) => 1, Tup2(5, "5 foo".to_string()) => 1 }].into_iter();
+                vec![zset! { Tup2::new(1, "1".to_string()) => 1, Tup2::new(5, "5 foo".to_string()) => 1 }].into_iter();
             let mut sqr_output =
                 vec![zset! { 1 => 2, 25 => 1, 4 => 1 }].into_iter();
             let mut i_sqr_output =
@@ -1490,7 +1490,7 @@ mod test {
 
             let input =
                 circuit.add_source(Generator::new(move || input.next().unwrap()));
-            let input_indexed = input.map_index(|Tup2(k, v)| (*k, v.clone()));
+            let input_indexed = input.map_index(|t| (*t.fst(), t.snd().clone()));
             let input_ints = input_indexed.map(|(&x, _)| x);
 
             let filter_pos = input_ints.filter(|&n| n > 0);
@@ -1511,8 +1511,8 @@ mod test {
             let i_times2_pos = input_indexed.flat_map(|(&n, s)| if n > 0 && s.contains("foo") { Some(n * 2) } else { None });
             let i_neg = input_indexed.map(|(n, _)| -n);
             let i_neg_pos = input_indexed.flat_map(|(&n, s)| if n > 0 && s.contains("foo") { Some(-n) } else { None });
-            let i_abs = input_indexed.map(|(n, s)| Tup2(n.abs(), s.clone()));
-            let i_abs_pos = input_indexed.flat_map(|(&n, s)| if n > 0 { Some(Tup2(n.abs(), s.clone())) } else { None });
+            let i_abs = input_indexed.map(|(n, s)| Tup2::new(n.abs(), s.clone()));
+            let i_abs_pos = input_indexed.flat_map(|(&n, s)| if n > 0 { Some(Tup2::new(n.abs(), s.clone())) } else { None });
             let i_sqr = input_indexed.map(|(n, _)| n * n);
             let i_sqr_pos = input_indexed.flat_map(|(&n, s)| if n > 0 && s.contains("foo") { Some(n * n) } else { None });
             let i_sqr_pos_indexed = input_indexed.flat_map_index(|(&n, s)| if n > 0 { Some((n * n, s.clone())) } else { None });
@@ -1617,12 +1617,12 @@ mod test {
         .unwrap();
 
         input_handle.append(&mut vec![
-            Tup2(-1, ((), 1).into()),
-            Tup2(0, ((), 1).into()),
-            Tup2(1, ((), 1).into()),
-            Tup2(2, ((), 2).into()),
-            Tup2(3, ((), 3).into()),
-            Tup2(4, ((), 4).into()),
+            Tup2::new(-1, ((), 1).into()),
+            Tup2::new(0, ((), 1).into()),
+            Tup2::new(1, ((), 1).into()),
+            Tup2::new(2, ((), 2).into()),
+            Tup2::new(3, ((), 3).into()),
+            Tup2::new(4, ((), 4).into()),
         ]);
         circuit.step().unwrap();
         let output = output_handle.consolidate();

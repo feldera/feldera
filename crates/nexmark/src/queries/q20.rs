@@ -64,7 +64,7 @@ pub fn q20(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q20Stream {
     });
 
     bids_by_auction.join(&auctions_indexed, |_, bid, auction| {
-        Tup2(bid.clone(), auction.clone())
+        Tup2::new(bid.clone(), auction.clone())
     })
 }
 
@@ -120,11 +120,11 @@ mod tests {
             }),
         ]],
         vec![zset! {
-            Tup2(Bid { auction: 1, bidder: 10, price: 10, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            Tup2(Bid { auction: 1, bidder: 20, price: 20, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            Tup2(Bid { auction: 1, bidder: 30, price: 30, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2::new(Bid { auction: 1, bidder: 10, price: 10, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2::new(Bid { auction: 1, bidder: 20, price: 20, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2::new(Bid { auction: 1, bidder: 30, price: 30, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
         }, zset! {
-            Tup2(Bid { auction: 1, bidder: 40, price: 40, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2::new(Bid { auction: 1, bidder: 40, price: 40, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
         }])]
     #[case::auction_bids_wrong_category(
         vec![vec![
@@ -211,13 +211,13 @@ mod tests {
             }),
         ]],
         vec![zset! {
-            Tup2(Bid { auction: 1, bidder: 10, price: 10, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            Tup2(Bid { auction: 1, bidder: 20, price: 20, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            Tup2(Bid { auction: 1, bidder: 30, price: 30, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            Tup2(Bid { auction: 2, bidder: 50, price: 50, ..make_bid()}, Auction { id: 2, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2::new(Bid { auction: 1, bidder: 10, price: 10, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2::new(Bid { auction: 1, bidder: 20, price: 20, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2::new(Bid { auction: 1, bidder: 30, price: 30, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2::new(Bid { auction: 2, bidder: 50, price: 50, ..make_bid()}, Auction { id: 2, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
         }, zset! {
-            Tup2(Bid { auction: 1, bidder: 40, price: 40, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            Tup2(Bid { auction: 2, bidder: 60, price: 60, ..make_bid()}, Auction { id: 2, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2::new(Bid { auction: 1, bidder: 40, price: 40, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2::new(Bid { auction: 2, bidder: 60, price: 60, ..make_bid()}, Auction { id: 2, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
         }])]
     fn test_q20(
         #[case] input_event_batches: Vec<Vec<Event>>,
@@ -225,7 +225,7 @@ mod tests {
     ) {
         let input_vecs = input_event_batches
             .into_iter()
-            .map(|batch| batch.into_iter().map(|e| Tup2(e, 1)).collect());
+            .map(|batch| batch.into_iter().map(|e| Tup2::new(e, 1)).collect());
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();

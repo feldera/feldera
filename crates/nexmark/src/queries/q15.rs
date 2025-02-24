@@ -114,68 +114,109 @@ pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {
                 .to_ordinal_date();
             //.format(iso8601_day_format)
             //.unwrap();
-            Some(Tup2(day, Tup3(b.auction, b.price, b.bidder)))
+            Some(Tup2::new(day, Tup3::new(b.auction, b.price, b.bidder)))
         }
         _ => None,
     });
 
     // Partition bids based on price.
-    let rank1_bids = bids.filter(|Tup2(_day, Tup3(_auction, price, _bidder))| *price < 10_000);
-    let rank2_bids = bids.filter(|Tup2(_day, Tup3(_auction, price, _bidder))| {
+    let rank1_bids = bids.filter(|t| *t.snd().get_1() < 10_000); // Tup2(_day, Tup3(_auction, price, _bidder))
+    let rank2_bids = bids.filter(|t| {
+        let (_day, t3) = t.into();
+        let (_auction, price, _bidder) = t3.into();
         *price >= 10_000 && *price < 1_000_000
     });
-    let rank3_bids = bids.filter(|Tup2(_day, Tup3(_auction, price, _bidder))| *price >= 1_000_000);
+    let rank3_bids = bids.filter(|t| {
+        let (_day, t3) = t.into();
+        let (_auction, price, _bidder) = t3.into();
+        *price >= 1_000_000
+    });
 
     // Compute unique bidders across all bids and for each price range.
     let distinct_bidder = bids
-        .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
+        .map(|t| {
+            let (day, t3) = t.into();
+            let (_auction, _price, bidder) = t3.into();
+            Tup2::new(*day, *bidder)
+        })
         .distinct()
-        .map_index(|Tup2(k, v)| (*k, *v));
+        .map_index(|t| (*t.fst(), *t.snd()));
     let rank1_distinct_bidder = rank1_bids
-        .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
+        .map(|t| {
+            let (day, t3) = t.into();
+            let (_auction, _price, bidder) = t3.into();
+            Tup2::new(*day, *bidder)
+        })
         .distinct()
-        .map_index(|Tup2(k, v)| (*k, *v));
+        .map_index(|t| (*t.fst(), *t.snd()));
 
     let rank2_distinct_bidder = rank2_bids
-        .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
+        .map(|t| {
+            let (day, t3) = t.into();
+            let (_auction, _price, bidder) = t3.into();
+            Tup2::new(*day, *bidder)
+        })
         .distinct()
-        .map_index(|Tup2(k, v)| (*k, *v));
+        .map_index(|t| (*t.fst(), *t.snd()));
 
     let rank3_distinct_bidder = rank3_bids
-        .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
+        .map(|t| {
+            let (day, t3) = t.into();
+            let (_auction, _price, bidder) = t3.into();
+            Tup2::new(*day, *bidder)
+        })
         .distinct()
-        .map_index(|Tup2(k, v)| (*k, *v));
+        .map_index(|t| (*t.fst(), *t.snd()));
 
     // Compute unique auctions across all bids and for each price range.
     let distinct_auction = bids
-        .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
+        .map(|t| {
+            let (day, t3) = t.into();
+            let (auction, _price, _bidder) = t3.into();
+            Tup2::new(*day, *auction)
+        })
         .distinct()
-        .map_index(|Tup2(k, v)| (*k, *v));
+        .map_index(|t| (*t.fst(), *t.snd()));
 
     let rank1_distinct_auction = rank1_bids
-        .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
+        .map(|t| {
+            let (day, t3) = t.into();
+            let (auction, _price, _bidder) = t3.into();
+            Tup2::new(*day, *auction)
+        })
         .distinct()
-        .map_index(|Tup2(k, v)| (*k, *v));
+        .map_index(|t| (*t.fst(), *t.snd()));
 
     let rank2_distinct_auction = rank2_bids
-        .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
+        .map(|t| {
+            let (day, t3) = t.into();
+            let (auction, _price, _bidder) = t3.into();
+            Tup2::new(*day, *auction)
+        })
         .distinct()
-        .map_index(|Tup2(k, v)| (*k, *v));
+        .map_index(|t| (*t.fst(), *t.snd()));
 
     let rank3_distinct_auction = rank3_bids
-        .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
+        .map(|t| {
+            let (day, t3) = t.into();
+            let (auction, _price, _bidder) = t3.into();
+            Tup2::new(*day, *auction)
+        })
         .distinct()
-        .map_index(|Tup2(k, v)| (*k, *v));
+        .map_index(|t| (*t.fst(), *t.snd()));
 
     // Compute bids per day.
     let count_total_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
-        bids.map_index(|Tup2(k, v)| (*k, *v)).weighted_count();
-    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
-        rank1_bids.map_index(|Tup2(k, v)| (*k, *v)).weighted_count();
-    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
-        rank2_bids.map_index(|Tup2(k, v)| (*k, *v)).weighted_count();
-    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
-        rank3_bids.map_index(|Tup2(k, v)| (*k, *v)).weighted_count();
+        bids.map_index(|t| (*t.fst(), *t.snd())).weighted_count();
+    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = rank1_bids
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .weighted_count();
+    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = rank2_bids
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .weighted_count();
+    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = rank3_bids
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .weighted_count();
 
     // Count unique bidders per day.
     let count_total_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
@@ -201,85 +242,70 @@ pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {
     // single output stream.
     count_total_bids
         .outer_join_default(&count_rank1_bids, |date, total_bids, rank1_bids| {
-            Tup2(*date, Tup2(*total_bids, *rank1_bids))
+            Tup2::new(*date, Tup2::new(*total_bids, *rank1_bids))
         })
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_rank2_bids,
-            |date, Tup2(total_bids, rank1_bids), rank2_bids| {
-                Tup2(*date, Tup3(*total_bids, *rank1_bids, *rank2_bids))
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_rank3_bids,
-            |date, Tup3(total_bids, rank1_bids, rank2_bids), rank3_bids| {
-                Tup2(
-                    *date,
-                    Tup4(*total_bids, *rank1_bids, *rank2_bids, *rank3_bids),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_total_bidders,
-            |date, Tup4(total_bids, rank1_bids, rank2_bids, rank3_bids), total_bidders| {
-                Tup2(
-                    *date,
-                    Tup5(
-                        *total_bids,
-                        *rank1_bids,
-                        *rank2_bids,
-                        *rank3_bids,
-                        *total_bidders,
-                    ),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_rank1_bidders,
-            |date,
-             Tup5(total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders),
-             rank1_bidders| {
-                Tup2(
-                    *date,
-                    Tup6(
-                        *total_bids,
-                        *rank1_bids,
-                        *rank2_bids,
-                        *rank3_bids,
-                        *total_bidders,
-                        *rank1_bidders,
-                    ),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_rank2_bidders,
-            |date,
-             Tup6(total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders, rank1_bidders),
-             rank2_bidders| {
-                Tup2(
-                    *date,
-                    Tup7(
-                        *total_bids,
-                        *rank1_bids,
-                        *rank2_bids,
-                        *rank3_bids,
-                        *total_bidders,
-                        *rank1_bidders,
-                        *rank2_bidders,
-                    ),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_rank3_bidders,
-            |date,
-             Tup7(
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_rank2_bids, |date, t, rank2_bids| {
+            let (total_bids, rank1_bids) = t.into();
+            Tup2::new(*date, Tup3::new(*total_bids, *rank1_bids, *rank2_bids))
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_rank3_bids, |date, t, rank3_bids| {
+            let (total_bids, rank1_bids, rank2_bids) = t.into();
+            Tup2::new(
+                *date,
+                Tup4::new(*total_bids, *rank1_bids, *rank2_bids, *rank3_bids),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_total_bidders, |date, t, total_bidders| {
+            let (total_bids, rank1_bids, rank2_bids, rank3_bids) = t.into();
+            Tup2::new(
+                *date,
+                Tup5::new(
+                    *total_bids,
+                    *rank1_bids,
+                    *rank2_bids,
+                    *rank3_bids,
+                    *total_bidders,
+                ),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_rank1_bidders, |date, t5, rank1_bidders| {
+            let (total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders) = t5.into();
+            Tup2::new(
+                *date,
+                Tup6::new(
+                    *total_bids,
+                    *rank1_bids,
+                    *rank2_bids,
+                    *rank3_bids,
+                    *total_bidders,
+                    *rank1_bidders,
+                ),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_rank2_bidders, |date, t6, rank2_bidders| {
+            let (total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders, rank1_bidders) =
+                t6.into();
+            Tup2::new(
+                *date,
+                Tup7::new(
+                    *total_bids,
+                    *rank1_bids,
+                    *rank2_bids,
+                    *rank3_bids,
+                    *total_bidders,
+                    *rank1_bidders,
+                    *rank2_bidders,
+                ),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_rank3_bidders, |date, t7, rank3_bidders| {
+            let (
                 total_bids,
                 rank1_bids,
                 rank2_bids,
@@ -287,28 +313,24 @@ pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {
                 total_bidders,
                 rank1_bidders,
                 rank2_bidders,
-            ),
-             rank3_bidders| {
-                Tup2(
-                    *date,
-                    Tup8(
-                        *total_bids,
-                        *rank1_bids,
-                        *rank2_bids,
-                        *rank3_bids,
-                        *total_bidders,
-                        *rank1_bidders,
-                        *rank2_bidders,
-                        *rank3_bidders,
-                    ),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_total_auctions,
-            |date,
-             Tup8(
+            ) = t7.into();
+            Tup2::new(
+                *date,
+                Tup8::new(
+                    *total_bids,
+                    *rank1_bids,
+                    *rank2_bids,
+                    *rank3_bids,
+                    *total_bidders,
+                    *rank1_bidders,
+                    *rank2_bidders,
+                    *rank3_bidders,
+                ),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_total_auctions, |date, t8, total_auctions| {
+            let (
                 total_bids,
                 rank1_bids,
                 rank2_bids,
@@ -317,29 +339,25 @@ pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {
                 rank1_bidders,
                 rank2_bidders,
                 rank3_bidders,
-            ),
-             total_auctions| {
-                Tup2(
-                    *date,
-                    Tup9(
-                        *total_bids,
-                        *rank1_bids,
-                        *rank2_bids,
-                        *rank3_bids,
-                        *total_bidders,
-                        *rank1_bidders,
-                        *rank2_bidders,
-                        *rank3_bidders,
-                        *total_auctions,
-                    ),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_rank1_auctions,
-            |date,
-             Tup9(
+            ) = t8.into();
+            Tup2::new(
+                *date,
+                Tup9::new(
+                    *total_bids,
+                    *rank1_bids,
+                    *rank2_bids,
+                    *rank3_bids,
+                    *total_bidders,
+                    *rank1_bidders,
+                    *rank2_bidders,
+                    *rank3_bidders,
+                    *total_auctions,
+                ),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_rank1_auctions, |date, t9, rank1_auctions| {
+            let (
                 total_bids,
                 rank1_bids,
                 rank2_bids,
@@ -349,11 +367,41 @@ pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {
                 rank2_bidders,
                 rank3_bidders,
                 total_auctions,
-            ),
-             rank1_auctions| {
-                Tup2(
-                    *date,
-                    Tup10(
+            ) = t9.into();
+            Tup2::new(
+                *date,
+                Tup10::new(
+                    *total_bids,
+                    *rank1_bids,
+                    *rank2_bids,
+                    *rank3_bids,
+                    *total_bidders,
+                    *rank1_bidders,
+                    *rank2_bidders,
+                    *rank3_bidders,
+                    *total_auctions,
+                    *rank1_auctions,
+                ),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_rank2_auctions, |date, t10, rank2_auctions| {
+            let (
+                total_bids,
+                rank1_bids,
+                rank2_bids,
+                rank3_bids,
+                total_bidders,
+                rank1_bidders,
+                rank2_bidders,
+                rank3_bidders,
+                total_auctions,
+                rank1_auctions,
+            ) = t10.into();
+            Tup2::new(
+                *date,
+                Tup2::new(
+                    Tup10::new(
                         *total_bids,
                         *rank1_bids,
                         *rank2_bids,
@@ -365,14 +413,14 @@ pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {
                         *total_auctions,
                         *rank1_auctions,
                     ),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_rank2_auctions,
-            |date,
-             Tup10(
+                    *rank2_auctions,
+                ),
+            )
+        })
+        .map_index(|t| (*t.fst(), *t.snd()))
+        .outer_join_default(&count_rank3_auctions, |date, t2, rank3_auctions| {
+            let (t10, rank2_auctions) = t2.into();
+            let (
                 total_bids,
                 rank1_bids,
                 rank2_bids,
@@ -383,48 +431,9 @@ pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {
                 rank3_bidders,
                 total_auctions,
                 rank1_auctions,
-            ),
-             rank2_auctions| {
-                Tup2(
-                    *date,
-                    Tup2(
-                        Tup10(
-                            *total_bids,
-                            *rank1_bids,
-                            *rank2_bids,
-                            *rank3_bids,
-                            *total_bidders,
-                            *rank1_bidders,
-                            *rank2_bidders,
-                            *rank3_bidders,
-                            *total_auctions,
-                            *rank1_auctions,
-                        ),
-                        *rank2_auctions,
-                    ),
-                )
-            },
-        )
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .outer_join_default(
-            &count_rank3_auctions,
-            |date,
-             Tup2(
-                Tup10(
-                    total_bids,
-                    rank1_bids,
-                    rank2_bids,
-                    rank3_bids,
-                    total_bidders,
-                    rank1_bidders,
-                    rank2_bidders,
-                    rank3_bidders,
-                    total_auctions,
-                    rank1_auctions,
-                ),
-                rank2_auctions,
-            ),
-             rank3_auctions| Q15Output {
+            ) = t10.into();
+
+            Q15Output {
                 day: Date::from_ordinal_date(date.0, date.1)
                     .unwrap()
                     .format(iso8601_day_format)
@@ -441,8 +450,8 @@ pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {
                 rank1_auctions: *rank1_auctions as u64,
                 rank2_auctions: *rank2_auctions as u64,
                 rank3_auctions: *rank3_auctions as u64,
-            },
-        )
+            }
+        })
 }
 
 #[cfg(test)]
@@ -466,7 +475,7 @@ mod tests {
     #[case::multi_threaded_4_threads(4)]
     fn test_q15(#[case] num_threads: usize) {
         let input_vecs = vec![
-            vec![Tup2(
+            vec![Tup2::new(
                 Event::Bid(Bid {
                     // Right on 1970 epoch
                     date_time: 0,
@@ -477,7 +486,7 @@ mod tests {
                 1,
             )],
             vec![
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         // Six minutes after epoch
                         date_time: 1000 * 6,
@@ -489,7 +498,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         // One millisecond before next day
                         date_time: 24 * 60 * 60 * 1000 - 1,
@@ -501,7 +510,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         // One millisecond into Jan 2 1970
                         date_time: 24 * 60 * 60 * 1000 + 1,
@@ -512,7 +521,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         // One millisecond into Jan 3 1970
                         date_time: 2 * 24 * 60 * 60 * 1000 + 1,
@@ -523,7 +532,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         // One millisecond into Jan 4 1970
                         date_time: 3 * 24 * 60 * 60 * 1000 + 1,
@@ -534,7 +543,7 @@ mod tests {
                     }),
                     1,
                 ),
-                Tup2(
+                Tup2::new(
                     Event::Bid(Bid {
                         // One millisecond into Jan 5 1970
                         date_time: 4 * 24 * 60 * 60 * 1000 + 1,
@@ -546,7 +555,7 @@ mod tests {
                     1,
                 ),
             ],
-            vec![Tup2(
+            vec![Tup2::new(
                 Event::Bid(Bid {
                     date_time: MILLIS_2022_01_01,
                     auction: 4,

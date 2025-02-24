@@ -70,6 +70,27 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, Neg};
 
+/// a variant of Option::and_then which returns a reference
+#[doc(hidden)]
+pub trait AndThenRef<T, U> {
+    fn and_then_ref<F>(&self, f: F) -> &Option<U>
+    where
+        F: FnOnce(&T) -> &Option<U>;
+}
+
+#[doc(hidden)]
+impl<T, U> AndThenRef<T, U> for Option<T> {
+    fn and_then_ref<F>(&self, f: F) -> &Option<U>
+    where
+        F: FnOnce(&T) -> &Option<U>,
+    {
+        match self {
+            Some(v) => f(v),
+            None => &Option::None,
+        }
+    }
+}
+
 /// Convert a value of a SQL data type to an integer
 /// that preserves ordering.  Used for partitioned_rolling_aggregates
 #[doc(hidden)]
@@ -723,15 +744,16 @@ pub struct PairSemigroup<T, R, TS, RS>(PhantomData<(T, R, TS, RS)>);
 #[doc(hidden)]
 impl<T, R, TS, RS> Semigroup<Tup2<T, R>> for PairSemigroup<T, R, TS, RS>
 where
-    TS: Semigroup<T>,
-    RS: Semigroup<R>,
+    T: DBData,
+    R: DBData,
+    TS: Semigroup<T> + DBData,
+    RS: Semigroup<R> + DBData,
 {
     #[doc(hidden)]
     fn combine(left: &Tup2<T, R>, right: &Tup2<T, R>) -> Tup2<T, R> {
-        Tup2::new(
-            TS::combine(&left.0, &right.0),
-            RS::combine(&left.1, &right.1),
-        )
+        let (l0, l1) = left.into();
+        let (r0, r1) = right.into();
+        Tup2::new(TS::combine(l0, r0), RS::combine(l1, r1))
     }
 }
 
@@ -742,16 +764,21 @@ pub struct TripleSemigroup<T, R, V, TS, RS, VS>(PhantomData<(T, R, V, TS, RS, VS
 #[doc(hidden)]
 impl<T, R, V, TS, RS, VS> Semigroup<Tup3<T, R, V>> for TripleSemigroup<T, R, V, TS, RS, VS>
 where
+    T: DBData,
+    R: DBData,
+    V: DBData,
     TS: Semigroup<T>,
     RS: Semigroup<R>,
     VS: Semigroup<V>,
 {
     #[doc(hidden)]
     fn combine(left: &Tup3<T, R, V>, right: &Tup3<T, R, V>) -> Tup3<T, R, V> {
+        let (l0, l1, l2) = left.into();
+        let (r0, r1, r2) = right.into();
         Tup3::new(
-            TS::combine(&left.0, &right.0),
-            RS::combine(&left.1, &right.1),
-            VS::combine(&left.2, &right.2),
+            TS::combine(l0, r0),
+            RS::combine(l1, r1),
+            VS::combine(l2, r2),
         )
     }
 }
@@ -1660,7 +1687,7 @@ where
         let item = unsafe { cursor.key().downcast::<D>() };
         let data = mapper(item);
         let weight = unsafe { *cursor.weight().downcast::<ZWeight>() };
-        tuples.push(Tup2(Tup2(data, ()), weight));
+        tuples.push(Tup2::new(Tup2::new(data, ()), weight));
         cursor.step_key();
     }
     WSet::from_tuples((), tuples)

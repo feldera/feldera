@@ -1144,10 +1144,10 @@ mod test {
         .unwrap();
 
         input.append(&mut vec![
-            Tup2(1, Tup2(0, 1)),
-            Tup2(1, Tup2(1, 2)),
-            Tup2(2, Tup2(0, 1)),
-            Tup2(2, Tup2(1, 1)),
+            Tup2::new(1, Tup2::new(0, 1)),
+            Tup2::new(1, Tup2::new(1, 2)),
+            Tup2::new(2, Tup2::new(0, 1)),
+            Tup2::new(2, Tup2::new(1, 1)),
         ]);
         circuit.step().unwrap();
         assert_eq!(
@@ -1156,7 +1156,10 @@ mod test {
         );
         assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
 
-        input.append(&mut vec![Tup2(3, Tup2(1, 1)), Tup2(2, Tup2(1, 1))]);
+        input.append(&mut vec![
+            Tup2::new(3, Tup2::new(1, 1)),
+            Tup2::new(2, Tup2::new(1, 1)),
+        ]);
         circuit.step().unwrap();
         assert_eq!(
             &*output1.lock().unwrap(),
@@ -1164,7 +1167,10 @@ mod test {
         );
         assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
 
-        input.append(&mut vec![Tup2(1, Tup2(1, 3)), Tup2(2, Tup2(1, -3))]);
+        input.append(&mut vec![
+            Tup2::new(1, Tup2::new(1, 3)),
+            Tup2::new(2, Tup2::new(1, -3)),
+        ]);
         circuit.step().unwrap();
         assert_eq!(
             &*output1.lock().unwrap(),
@@ -1190,7 +1196,7 @@ mod test {
                 (),
                 tuples
                     .into_iter()
-                    .map(|(k, w)| Tup2(Tup2(k, ()), w))
+                    .map(|(k, w)| Tup2::new(Tup2::new(k, ()), w))
                     .collect(),
             )
         })
@@ -1203,10 +1209,10 @@ mod test {
     fn test_indexed_zset() -> impl Strategy<Value = TestIndexedZSet> {
         collection::vec(
             (
-                (0..NUM_KEYS, -MAX_VAL..MAX_VAL).prop_map(|(x, y)| Tup2(x, y)),
+                (0..NUM_KEYS, -MAX_VAL..MAX_VAL).prop_map(|(x, y)| Tup2::new(x, y)),
                 -1..=1i64,
             )
-                .prop_map(|(x, y)| Tup2(x, y)),
+                .prop_map(|(x, y)| Tup2::new(x, y)),
             0..MAX_TUPLES,
         )
         .prop_map(|tuples| OrdIndexedZSet::from_tuples((), tuples))

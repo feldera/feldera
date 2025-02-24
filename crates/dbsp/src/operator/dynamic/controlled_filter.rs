@@ -340,15 +340,15 @@ mod test {
             Runtime::init_circuit(CircuitConfig::from(4), |circuit| {
                 let (input, input_handle) = circuit.add_input_zset::<u64>();
                 let threshold: Stream<_, TypedBox<Tup1<u64>, DynData>> = input.waterline(
-                    || Tup1(0),
-                    |&x, _| Tup1(x.saturating_sub(5)),
+                    || Tup1::new(0),
+                    |&x, _| Tup1::new(x.saturating_sub(5)),
                     |x, y| *max(x, y),
                 );
 
                 let (output, errors) = input.controlled_key_filter_typed(
                     &threshold.inner_typed(),
-                    |t, k| *k >= t.0,
-                    |t, k, _v, _w| format!("{k} < {}", t.0),
+                    |t, k| *k >= *t.get_0(),
+                    |t, k, _v, _w| format!("{k} < {}", t.get_0()),
                 );
 
                 let output_handle = output.output();
@@ -365,7 +365,7 @@ mod test {
 
             dbsp.step().unwrap();
 
-            let expected_output = (4..10).map(|j| Tup2(10 * i + j - 10, 1)).collect();
+            let expected_output = (4..10).map(|j| Tup2::new(10 * i + j - 10, 1)).collect();
 
             assert_eq!(
                 output_handle.consolidate(),
@@ -373,7 +373,7 @@ mod test {
             );
 
             let expected_errors = (0..4)
-                .map(|j| Tup2(format!("{} < {}", 10 * i + j - 10, 10 * i - 6), 1))
+                .map(|j| Tup2::new(format!("{} < {}", 10 * i + j - 10, 10 * i - 6), 1))
                 .collect();
 
             assert_eq!(
@@ -389,8 +389,8 @@ mod test {
             Runtime::init_circuit(CircuitConfig::from(4), |circuit| {
                 let (input, input_handle) = circuit.add_input_zset::<u64>();
                 let threshold: Stream<_, TypedBox<Tup1<u64>, DynData>> = input.waterline(
-                    || Tup1(0),
-                    |&x, _| Tup1(x.saturating_sub(5)),
+                    || Tup1::new(0),
+                    |&x, _| Tup1::new(x.saturating_sub(5)),
                     |x, y| *max(x, y),
                 );
 
@@ -398,8 +398,8 @@ mod test {
 
                 let (output, errors) = indexed.controlled_value_filter_typed(
                     &threshold.inner_typed(),
-                    |t, k, v| *k >= t.0 && *v % 2 == 0,
-                    |t, k, _v, _w| format!("{k} < {}", t.0),
+                    |t, k, v| *k >= *t.get_0() && *v % 2 == 0,
+                    |t, k, _v, _w| format!("{k} < {}", t.get_0()),
                 );
 
                 let output_handle = output.output();
@@ -418,7 +418,7 @@ mod test {
 
             let expected_output = [4, 6, 8]
                 .iter()
-                .map(|j| Tup2(Tup2(10 * i + j - 10, 10 * i + j - 10), 1))
+                .map(|j| Tup2::new(Tup2::new(10 * i + j - 10, 10 * i + j - 10), 1))
                 .collect();
 
             assert_eq!(
@@ -428,7 +428,7 @@ mod test {
 
             let expected_errors = [0, 1, 2, 3, 5, 7, 9]
                 .iter()
-                .map(|j| Tup2(format!("{} < {}", 10 * i + j - 10, 10 * i - 6), 1))
+                .map(|j| Tup2::new(format!("{} < {}", 10 * i + j - 10, 10 * i - 6), 1))
                 .collect();
 
             assert_eq!(

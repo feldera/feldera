@@ -468,23 +468,23 @@ mod test {
             let mut input = vec![
                 zset! {
                     // old value before the first window, should never appear in the output.
-                    Tup2(800, "800".to_string()) => 1i64, Tup2(900, "900".to_string()) => 1, Tup2(950, "950".to_string()) => 1, Tup2(999, "999".to_string()) => 1,
+                    Tup2::new(800, "800".to_string()) => 1i64, Tup2::new(900, "900".to_string()) => 1, Tup2::new(950, "950".to_string()) => 1, Tup2::new(999, "999".to_string()) => 1,
                     // will appear in the next window
-                    Tup2(1000, "1000".to_string()) => 1
+                    Tup2::new(1000, "1000".to_string()) => 1
                 },
                 zset! {
                     // old value before the first window
-                    Tup2(700, "700".to_string()) => 1,
+                    Tup2::new(700, "700".to_string()) => 1,
                     // too late, the window already moved forward
-                    Tup2(900, "900".to_string()) => 1,
-                    Tup2(901, "901".to_string()) => 1,
-                    Tup2(999, "999".to_string()) => 1,
-                    Tup2(1000, "1000".to_string()) => 1,
-                    Tup2(1001, "1001".to_string()) => 1, // will appear in the next window
-                    Tup2(1002, "1002".to_string()) => 1, // will appear two windows later
-                    Tup2(1003, "1003".to_string()) => 1, // will appear three windows later
+                    Tup2::new(900, "900".to_string()) => 1,
+                    Tup2::new(901, "901".to_string()) => 1,
+                    Tup2::new(999, "999".to_string()) => 1,
+                    Tup2::new(1000, "1000".to_string()) => 1,
+                    Tup2::new(1001, "1001".to_string()) => 1, // will appear in the next window
+                    Tup2::new(1002, "1002".to_string()) => 1, // will appear two windows later
+                    Tup2::new(1003, "1003".to_string()) => 1, // will appear three windows later
                 },
-                zset! { Tup2(1004, "1004".to_string()) => 1 }, // no new values in this window
+                zset! { Tup2::new(1004, "1004".to_string()) => 1 }, // no new values in this window
                 zset! {},
                 zset! {},
                 zset! {},
@@ -510,7 +510,7 @@ mod test {
 
             let index1: Stream<_, OrdIndexedZSet<Time, String>> = circuit
                 .add_source(Generator::new(move || input.next().unwrap()))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
+                .map_index(|t| (*t.fst(), t.snd().clone()));
             index1
                 .window((true, false), &bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
@@ -532,19 +532,19 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             let mut input = vec![
                 // window: 995..1000
-                zset! { Tup2(700, "700".to_string()) => 1 , Tup2(995, "995".to_string()) => 1 , Tup2(996, "996".to_string()) => 1 , Tup2(999, "999".to_string()) => 1 , Tup2(1000, "1000".to_string()) => 1 },
-                zset! { Tup2(995, "995".to_string()) =>  1 , Tup2(1000, "1000".to_string()) => 1 , Tup2(1001, "1001".to_string()) => 1 },
-                zset! { Tup2(999, "999".to_string()) => 1 },
-                zset! { Tup2(1002, "1002".to_string()) => 1 },
-                zset! { Tup2(1003, "1003".to_string()) => 1 },
+                zset! { Tup2::new(700, "700".to_string()) => 1 , Tup2::new(995, "995".to_string()) => 1 , Tup2::new(996, "996".to_string()) => 1 , Tup2::new(999, "999".to_string()) => 1 , Tup2::new(1000, "1000".to_string()) => 1 },
+                zset! { Tup2::new(995, "995".to_string()) =>  1 , Tup2::new(1000, "1000".to_string()) => 1 , Tup2::new(1001, "1001".to_string()) => 1 },
+                zset! { Tup2::new(999, "999".to_string()) => 1 },
+                zset! { Tup2::new(1002, "1002".to_string()) => 1 },
+                zset! { Tup2::new(1003, "1003".to_string()) => 1 },
                 // window: 1000..1005
-                zset! { Tup2(996, "996".to_string()) => 1 }, // no longer within window
-                zset! { Tup2(999, "999".to_string()) => 1 },
-                zset! { Tup2(1004, "1004".to_string()) => 1 },
-                zset! { Tup2(1005, "1005".to_string()) => 1 }, // next window
-                zset! { Tup2(1010, "1010".to_string()) => 1 },
+                zset! { Tup2::new(996, "996".to_string()) => 1 }, // no longer within window
+                zset! { Tup2::new(999, "999".to_string()) => 1 },
+                zset! { Tup2::new(1004, "1004".to_string()) => 1 },
+                zset! { Tup2::new(1005, "1005".to_string()) => 1 }, // next window
+                zset! { Tup2::new(1010, "1010".to_string()) => 1 },
                 // window: 1005..1010
-                zset! { Tup2(1005, "1005".to_string()) => 1  },
+                zset! { Tup2::new(1005, "1005".to_string()) => 1  },
             ]
             .into_iter();
 
@@ -575,7 +575,7 @@ mod test {
 
             let index1: Stream<_, OrdIndexedZSet<Time, String>> = circuit
                 .add_source(Generator::new(move || input.next().unwrap()))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
+                .map_index(|t| (*t.fst(), t.snd().clone()));
             index1
                 .window((true, false), &bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
@@ -596,30 +596,30 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             let mut input= vec![
                 zset! {
-                    Tup2(800u64, "800".to_string()) => 1,
-                    Tup2(900, "900".to_string()) => 1,
-                    Tup2(950, "950".to_string()) => 1,
-                    Tup2(990, "990".to_string()) => 1,
-                    Tup2(999, "999".to_string()) => 1,
-                    Tup2(1000, "1000".to_string()) => 1
+                    Tup2::new(800u64, "800".to_string()) => 1,
+                    Tup2::new(900, "900".to_string()) => 1,
+                    Tup2::new(950, "950".to_string()) => 1,
+                    Tup2::new(990, "990".to_string()) => 1,
+                    Tup2::new(999, "999".to_string()) => 1,
+                    Tup2::new(1000, "1000".to_string()) => 1
                 },
                 zset! {
-                    Tup2(700, "700".to_string()) => 1,
-                    Tup2(900, "900".to_string()) => 1,
-                    Tup2(901, "901".to_string()) => 1,
-                    Tup2(915, "915".to_string()) => 1,
-                    Tup2(940, "940".to_string()) => 1,
-                    Tup2(985, "985".to_string()) => 1,
-                    Tup2(999, "999".to_string()) => 1,
-                    Tup2(1000, "1000".to_string()) => 1,
-                    Tup2(1001, "1001".to_string()) => 1,
-                    Tup2(1002, "1002".to_string()) => 1,
-                    Tup2(1003, "1003".to_string()) => 1,
+                    Tup2::new(700, "700".to_string()) => 1,
+                    Tup2::new(900, "900".to_string()) => 1,
+                    Tup2::new(901, "901".to_string()) => 1,
+                    Tup2::new(915, "915".to_string()) => 1,
+                    Tup2::new(940, "940".to_string()) => 1,
+                    Tup2::new(985, "985".to_string()) => 1,
+                    Tup2::new(999, "999".to_string()) => 1,
+                    Tup2::new(1000, "1000".to_string()) => 1,
+                    Tup2::new(1001, "1001".to_string()) => 1,
+                    Tup2::new(1002, "1002".to_string()) => 1,
+                    Tup2::new(1003, "1003".to_string()) => 1,
                 },
-                zset! { Tup2(1004, "1004".to_string()) => 1,
-                        Tup2(1010, "1010".to_string()) => 1,
-                        Tup2(1020, "1020".to_string()) => 1,
-                        Tup2(1039, "1039".to_string()) => 1 },
+                zset! { Tup2::new(1004, "1004".to_string()) => 1,
+                        Tup2::new(1010, "1010".to_string()) => 1,
+                        Tup2::new(1020, "1020".to_string()) => 1,
+                        Tup2::new(1039, "1039".to_string()) => 1 },
                 zset! {},
                 zset! {},
                 zset! {},
@@ -661,7 +661,7 @@ mod test {
 
             let index1: Stream<_, OrdIndexedZSet<Time, String>> = circuit
                 .add_source(Generator::new(move || input.next().unwrap()))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
+                .map_index(|t| (*t.fst(), t.snd().clone()));
             index1
                 .window((true, false), &bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
@@ -737,13 +737,13 @@ mod test {
             let (now, now_handle) = circuit.add_input_stream::<Clock>();
 
             let (data, data_handle) = circuit.add_input_zset::<Transaction>();
-            let data_by_time = data.map_index(|x| (x.0, x.clone()));
+            let data_by_time = data.map_index(|x| (*x.get_0(), x.clone()));
 
             let bounds = now.apply(|ts: &Clock| (TypedBox::new(*ts - 1000), TypedBox::new(*ts)));
 
             let counts = data_by_time
                 .window((true, false), &bounds)
-                .map_index(|(_ts, x)| (x.1.clone(), x.clone()))
+                .map_index(|(_ts, x)| (x.get_1().clone(), x.clone()))
                 .weighted_count();
 
             // Reference implementation: filter the entire collection wrt to now.
@@ -755,8 +755,8 @@ mod test {
                         batch
                             .iter()
                             .filter_map(|(x, (), w)| {
-                                if x.0 <= *ts && x.0 >= *ts - 1000 {
-                                    Some(Tup2(x.clone(), w))
+                                if *x.get_0() <= *ts && *x.get_0() >= *ts - 1000 {
+                                    Some(Tup2::new(x.clone(), w))
                                 } else {
                                     None
                                 }
@@ -765,7 +765,7 @@ mod test {
                     )
                 })
                 .differentiate()
-                .map_index(|x| (x.1.clone(), x.clone()))
+                .map_index(|x| (x.get_1().clone(), x.clone()))
                 .weighted_count();
 
             expected.apply2(&counts, |expected, actual| assert_eq!(expected, actual));
@@ -777,7 +777,7 @@ mod test {
         for i in 1..1000 {
             now_handle.set_for_all(i * 10);
             for j in (i - 1) * 10..i * 10 {
-                data_handle.push(Tup3(j, format!("{}", j % 10), j as u64), 1);
+                data_handle.push(Tup3::new(j, format!("{}", j % 10), j as u64), 1);
             }
             dbsp.step().unwrap();
         }

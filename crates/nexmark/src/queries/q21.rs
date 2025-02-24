@@ -53,7 +53,8 @@ pub fn q21(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q21Stream {
                         _ => None,
                     }),
             };
-            channel_id.map(|ch_id| Tup5(b.auction, b.bidder, b.price, b.channel.clone(), ch_id))
+            channel_id
+                .map(|ch_id| Tup5::new(b.auction, b.bidder, b.price, b.channel.clone(), ch_id))
         }
         _ => None,
     })
@@ -87,10 +88,10 @@ mod tests {
             }),
         ]],
         vec![zset!{
-            Tup5(1, 1, 99, String::from("ApPlE"), String::from("0")) => 1,
-            Tup5(1, 1, 99, String::from("GooGle"), String::from("1")) => 1,
-            Tup5(1, 1, 99, String::from("FaceBook"), String::from("2")) => 1,
-            Tup5(1, 1, 99, String::from("Baidu"), String::from("3")) => 1,
+            Tup5::new(1, 1, 99, String::from("ApPlE"), String::from("0")) => 1,
+            Tup5::new(1, 1, 99, String::from("GooGle"), String::from("1")) => 1,
+            Tup5::new(1, 1, 99, String::from("FaceBook"), String::from("2")) => 1,
+            Tup5::new(1, 1, 99, String::from("Baidu"), String::from("3")) => 1,
         }],
     )]
     #[case::bids_with_unknown_channel_ids(
@@ -109,14 +110,14 @@ mod tests {
             }),
         ]],
         vec![zset!{
-            Tup5(1, 1, 99, String::from("https://example.com/?channel_id=ubuntu"), String::from("ubuntu")) => 1,
-            Tup5(1, 1, 99, String::from("https://example.com/?channel_id=cherry-pie"), String::from("cherry-pie")) => 1,
+            Tup5::new(1, 1, 99, String::from("https://example.com/?channel_id=ubuntu"), String::from("ubuntu")) => 1,
+            Tup5::new(1, 1, 99, String::from("https://example.com/?channel_id=cherry-pie"), String::from("cherry-pie")) => 1,
         }],
     )]
     fn test_q21(#[case] input_event_batches: Vec<Vec<Event>>, #[case] expected_zsets: Vec<Q21Set>) {
         let input_vecs = input_event_batches
             .into_iter()
-            .map(|batch| batch.into_iter().map(|e| Tup2(e, 1)).collect());
+            .map(|batch| batch.into_iter().map(|e| Tup2::new(e, 1)).collect());
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();

@@ -212,10 +212,10 @@ mod test {
     ) {
         let (input, input_handle) = circuit.add_input_zset::<Tup2<u64, i32>>();
 
-        let input_indexed = input.map_index(|Tup2(x, y)| (*x, *y));
+        let input_indexed = input.map_index(|&t| (*t.fst(), *t.snd()));
         let aggregate = input_indexed
             .aggregate(Min)
-            .map_index(|(x, y)| (*x, y.to_string()))
+            .map_index(|(k, v)| (*k, v.to_string()))
             .output();
         let delta_aggregate = input_indexed
             .chain_aggregate(|v, _w| *v, |acc, i, _w| min(acc, *i))
@@ -232,10 +232,10 @@ mod test {
     ) -> impl Strategy<Value = Vec<Tup2<Tup2<u64, i32>, ZWeight>>> {
         collection::vec(
             (
-                (0..num_keys, -max_val..max_val).prop_map(|(x, y)| Tup2(x, y)),
+                (0..num_keys, -max_val..max_val).prop_map(|(x, y)| Tup2::new(x, y)),
                 1..=2i64,
             )
-                .prop_map(|(x, y)| Tup2(x, y)),
+                .prop_map(|(x, y)| Tup2::new(x, y)),
             0..max_tuples,
         )
     }

@@ -277,13 +277,13 @@ mod test {
                 let mut distinct_count = 0;
                 for &v in &v[0..n as usize] {
                     let w = rng.gen_range(W);
-                    input_tuples.push(Tup2(Tup2(k, v as i64), w));
+                    input_tuples.push(Tup2::new(Tup2::new(k, v as i64), w));
                     if w > 0 {
                         distinct_count += 1;
                     }
                 }
                 if distinct_count > 0 {
-                    expected_tuples.push(Tup2(Tup2(k, distinct_count), 1i64));
+                    expected_tuples.push(Tup2::new(Tup2::new(k, distinct_count), 1i64));
                 }
             }
             input.push(OrdIndexedZSet::from_tuples((), input_tuples));

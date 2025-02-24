@@ -1003,7 +1003,7 @@ proptest! {
             &DeltaTestStruct::schema(),
             &HashMap::new());
 
-        let expected_zset = OrdZSet::from_tuples((), data.clone().into_iter().map(|x| Tup2(Tup2(x,()),1)).collect());
+        let expected_zset = OrdZSet::from_tuples((), data.clone().into_iter().map(|x| Tup2::new(Tup2::new(x,()),1)).collect());
         let zset = file_to_zset::<DeltaTestStruct>(json_file.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_zset);
 
@@ -1026,7 +1026,7 @@ proptest! {
                 (),
                 data.clone().into_iter()
                     .filter(|x| x.bigint >= 10000)
-                    .map(|x| Tup2(Tup2(x,()),1)).collect()
+                    .map(|x| Tup2::new(Tup2::new(x,()),1)).collect()
                 );
 
             let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered.as_file_mut(), "json", r#"update_format: "insert_delete""#);
@@ -1060,7 +1060,7 @@ proptest! {
             (),
             data.clone().into_iter()
                 .filter(|x| x.bigint >= 10000)
-                .map(|x| Tup2(Tup2(x,()),1)).collect()
+                .map(|x| Tup2::new(Tup2::new(x,()),1)).collect()
             );
 
         let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered_by_id.as_file_mut(), "json", r#"update_format: "insert_delete""#);
@@ -1081,7 +1081,7 @@ proptest! {
             (),
             data.into_iter()
                 .filter(|x| x.timestamp_ntz.milliseconds() >= start.and_utc().timestamp_millis())
-                .map(|x| Tup2(Tup2(x,()),1)).collect()
+                .map(|x| Tup2::new(Tup2::new(x,()),1)).collect()
             );
 
         let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
@@ -1121,7 +1121,7 @@ proptest! {
             &DeltaTestStruct::schema(),
             &object_store_config);
 
-        let expected_zset = OrdZSet::from_tuples((), data.into_iter().map(|x| Tup2(Tup2(x,()),1)).collect());
+        let expected_zset = OrdZSet::from_tuples((), data.into_iter().map(|x| Tup2::new(Tup2::new(x,()),1)).collect());
         let zset = file_to_zset::<DeltaTestStruct>(json_file.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_zset);
     }

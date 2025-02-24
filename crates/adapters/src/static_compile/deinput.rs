@@ -481,14 +481,16 @@ where
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.buffer.updates.push(Tup2(key, ZWeight::one()));
+        self.buffer.updates.push(Tup2::new(key, ZWeight::one()));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.buffer.updates.push(Tup2(key, ZWeight::one().neg()));
+        self.buffer
+            .updates
+            .push(Tup2::new(key, ZWeight::one().neg()));
         Ok(())
     }
 
@@ -563,7 +565,7 @@ where
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer
             .updates
-            .extend(records.into_iter().map(|r| Tup2(K::from(r), 1)));
+            .extend(records.into_iter().map(|r| Tup2::new(K::from(r), 1)));
 
         Ok(())
     }
@@ -576,7 +578,7 @@ where
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer
             .updates
-            .extend(records.into_iter().map(|r| Tup2(K::from(r), -1)));
+            .extend(records.into_iter().map(|r| Tup2::new(K::from(r), -1)));
 
         Ok(())
     }
@@ -595,8 +597,9 @@ where
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
 
         self.buffer.updates.extend(
-            zip(records, polarities)
-                .map(|(record, polarity)| Tup2(K::from(record), if *polarity { 1 } else { -1 })),
+            zip(records, polarities).map(|(record, polarity)| {
+                Tup2::new(K::from(record), if *polarity { 1 } else { -1 })
+            }),
         );
 
         Ok(())
@@ -665,7 +668,7 @@ where
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.buffer.updates.push(Tup2(K::from(v), 1));
+        self.buffer.updates.push(Tup2::new(K::from(v), 1));
 
         Ok(())
     }
@@ -674,7 +677,7 @@ where
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.buffer.updates.push(Tup2(K::from(v), -1));
+        self.buffer.updates.push(Tup2::new(K::from(v), -1));
 
         Ok(())
     }
@@ -880,14 +883,14 @@ where
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.buffer.updates.push(Tup2(key, true));
+        self.buffer.updates.push(Tup2::new(key, true));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.buffer.updates.push(Tup2(key, false));
+        self.buffer.updates.push(Tup2::new(key, false));
         Ok(())
     }
 
@@ -962,7 +965,7 @@ where
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer
             .updates
-            .extend(records.into_iter().map(|r| Tup2(K::from(r), true)));
+            .extend(records.into_iter().map(|r| Tup2::new(K::from(r), true)));
 
         Ok(())
     }
@@ -975,7 +978,7 @@ where
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer
             .updates
-            .extend(records.into_iter().map(|r| Tup2(K::from(r), false)));
+            .extend(records.into_iter().map(|r| Tup2::new(K::from(r), false)));
 
         Ok(())
     }
@@ -997,7 +1000,8 @@ where
 
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer.updates.extend(
-            zip(records, polarities).map(|(record, polarity)| Tup2(K::from(record), *polarity)),
+            zip(records, polarities)
+                .map(|(record, polarity)| Tup2::new(K::from(record), *polarity)),
         );
 
         Ok(())
@@ -1062,7 +1066,7 @@ where
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.buffer.updates.push(Tup2(K::from(v), true));
+        self.buffer.updates.push(Tup2::new(K::from(v), true));
 
         Ok(())
     }
@@ -1071,7 +1075,7 @@ where
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.buffer.updates.push(Tup2(K::from(v), false));
+        self.buffer.updates.push(Tup2::new(K::from(v), false));
 
         Ok(())
     }
@@ -1378,14 +1382,16 @@ where
         let val = V::from(self.deserializer.deserialize::<VD>(data)?);
         let key = (self.value_key_func)(&val);
 
-        self.buffer.updates.push(Tup2(key, Update::Insert(val)));
+        self.buffer
+            .updates
+            .push(Tup2::new(key, Update::Insert(val)));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = K::from(self.deserializer.deserialize::<KD>(data)?);
 
-        self.buffer.updates.push(Tup2(key, Update::Delete));
+        self.buffer.updates.push(Tup2::new(key, Update::Delete));
         Ok(())
     }
 
@@ -1393,7 +1399,9 @@ where
         let upd = U::from(self.deserializer.deserialize::<UD>(data)?);
         let key = (self.update_key_func)(&upd);
 
-        self.buffer.updates.push(Tup2(key, Update::Update(upd)));
+        self.buffer
+            .updates
+            .push(Tup2::new(key, Update::Update(upd)));
         Ok(())
     }
 
@@ -1493,7 +1501,7 @@ where
         let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer.updates.extend(records.into_iter().map(|r| {
             let v = V::from(r);
-            Tup2((self.value_key_func)(&v), Update::Insert(v))
+            Tup2::new((self.value_key_func)(&v), Update::Insert(v))
         }));
 
         Ok(())
@@ -1507,7 +1515,7 @@ where
         let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer.updates.extend(records.into_iter().map(|r| {
             let v = V::from(r);
-            Tup2((self.value_key_func)(&v), Update::Delete)
+            Tup2::new((self.value_key_func)(&v), Update::Delete)
         }));
 
         Ok(())
@@ -1537,7 +1545,7 @@ where
             .updates
             .extend(zip(records, polarities).map(|(record, polarity)| {
                 let v = V::from(record);
-                Tup2(
+                Tup2::new(
                     (self.value_key_func)(&v),
                     if *polarity {
                         Update::Insert(v)
@@ -1638,7 +1646,7 @@ where
         let val = V::from(v);
         self.buffer
             .updates
-            .push(Tup2((self.value_key_func)(&val), Update::Insert(val)));
+            .push(Tup2::new((self.value_key_func)(&val), Update::Insert(val)));
 
         Ok(())
     }
@@ -1650,7 +1658,7 @@ where
         let val = V::from(v);
         self.buffer
             .updates
-            .push(Tup2((self.value_key_func)(&val), Update::Delete));
+            .push(Tup2::new((self.value_key_func)(&val), Update::Delete));
 
         Ok(())
     }
@@ -1886,14 +1894,14 @@ mod test {
             (),
             inputs
                 .iter()
-                .map(|v| Tup2(v.clone(), 1))
+                .map(|v| Tup2::new(v.clone(), 1))
                 .collect::<Vec<_>>(),
         );
         let map = <OrdIndexedZSet<i64, TestStruct>>::from_tuples(
             (),
             inputs
                 .iter()
-                .map(|v| Tup2(Tup2(v.id, v.clone()), 1))
+                .map(|v| Tup2::new(Tup2::new(v.id, v.clone()), 1))
                 .collect::<Vec<_>>(),
         );
 
@@ -1977,14 +1985,14 @@ mod test {
             (),
             inputs
                 .iter()
-                .map(|v| Tup2(v.clone(), -1))
+                .map(|v| Tup2::new(v.clone(), -1))
                 .collect::<Vec<_>>(),
         );
         let map = <OrdIndexedZSet<i64, TestStruct>>::from_tuples(
             (),
             inputs
                 .iter()
-                .map(|v| Tup2(Tup2(v.id, v.clone()), -1))
+                .map(|v| Tup2::new(Tup2::new(v.id, v.clone()), -1))
                 .collect::<Vec<_>>(),
         );
 

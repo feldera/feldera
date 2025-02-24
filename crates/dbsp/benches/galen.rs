@@ -164,28 +164,53 @@ fn main() -> Result<()> {
             let (outp, outq) = circuit
                 .recursive(
                     |child, (pvar, qvar): (Stream<_, Pair>, Stream<_, Triple>)| {
-                        let p_by_1 = pvar.map_index(|Tup2(x, y)| (*x, *y));
-                        let p_by_2 = pvar.map_index(|&Tup2(x, y)| (y, x));
-                        let p_by_12 = pvar.map_index(|&Tup2(x, y)| (Tup2(x, y), ()));
-                        let u_by_1 = u.delta0(child).map_index(|&Tup3(x, y, z)| (x, Tup2(y, z)));
-                        let q_by_1 = qvar.map_index(|&Tup3(x, y, z)| (x, Tup2(y, z)));
-                        let q_by_2 = qvar.map_index(|&Tup3(x, y, z)| (y, Tup2(x, z)));
-                        let q_by_12 = qvar.map_index(|&Tup3(x, y, z)| (Tup2(x, y), z));
-                        let q_by_23 = qvar.map_index(|&Tup3(x, y, z)| (Tup2(y, z), x));
-                        let c_by_2 = c.delta0(child).map_index(|&Tup3(x, y, z)| (y, Tup2(x, z)));
-                        let r_by_1 = r.delta0(child).map_index(|&Tup3(x, y, z)| (x, Tup2(y, z)));
-                        let s_by_1 = s.delta0(child).map_index(|Tup2(x, y)| (*x, *y));
+                        let p_by_1 = pvar.map_index(|t| (*t.fst(), *t.snd()));
+                        let p_by_2 = pvar.map_index(|&t| (*t.snd(), *t.fst()));
+                        let p_by_12 = pvar.map_index(|&t| (Tup2::new(*t.fst(), *t.snd()), ()));
+                        let u_by_1 = u.delta0(child).map_index(|t3| {
+                            let (x, y, z) = t3.into();
+                            (*x, Tup2::new(*y, *z))
+                        });
+                        let q_by_1 = qvar.map_index(|t3| {
+                            let (x, y, z) = t3.into();
+                            (*x, Tup2::new(*y, *z))
+                        });
+                        let q_by_2 = qvar.map_index(|t3| {
+                            let (x, y, z) = t3.into();
+                            (*y, Tup2::new(*x, *z))
+                        });
+                        let q_by_12 = qvar.map_index(|t3| {
+                            let (x, y, z) = t3.into();
+                            (Tup2::new(*x, *y), *z)
+                        });
+                        let q_by_23 = qvar.map_index(|t3| {
+                            let (x, y, z) = t3.into();
+                            (Tup2::new(*y, *z), *x)
+                        });
+                        let c_by_2 = c.delta0(child).map_index(|t3| {
+                            let (x, y, z) = t3.into();
+                            (*y, Tup2::new(*x, *z))
+                        });
+                        let r_by_1 = r.delta0(child).map_index(|t3| {
+                            let (x, y, z) = t3.into();
+                            (*x, Tup2::new(*y, *z))
+                        });
+                        let s_by_1 = s.delta0(child).map_index(|t| (*t.fst(), *t.snd()));
 
                         // IR1: p(x,z) :- p(x,y), p(y,z).
-                        let ir1 =
-                            child.region("IR1", || p_by_2.join(&p_by_1, |&_y, &x, &z| Tup2(x, z)));
+                        let ir1 = child.region("IR1", || {
+                            p_by_2.join(&p_by_1, |&_y, &x, &z| Tup2::new(x, z))
+                        });
                         /*ir1.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir1: {}", Runtime::worker_index(), zs.len())
                         });*/
 
                         // IR2: q(x,r,z) := p(x,y), q(y,r,z)
                         let ir2 = child.region("IR2", || {
-                            p_by_2.join(&q_by_1, |&_y, &x, &Tup2(r, z)| Tup3(x, r, z))
+                            p_by_2.join(&q_by_1, |&_y, &x, t2| {
+                                let (r, z) = t2.into();
+                                Tup3::new(x, *r, *z)
+                            })
                         });
 
                         /*ir2.inspect(|zs: &OrdZSet<_, _>| {
@@ -195,8 +220,11 @@ fn main() -> Result<()> {
                         // IR3: p(x,z) := p(y,w), u(w,r,z), q(x,r,y)
                         let ir3 = child.region("IR3", || {
                             p_by_2
-                                .join_index(&u_by_1, |&_w, &y, &Tup2(r, z)| once((Tup2(r, y), z)))
-                                .join(&q_by_23, |&Tup2(_r, _y), &z, &x| Tup2(x, z))
+                                .join_index(&u_by_1, |&_w, &y, t2| {
+                                    let (r, z) = t2.into();
+                                    once((Tup2::new(*r, y), *z))
+                                })
+                                .join(&q_by_23, |_t2, &z, &x| Tup2::new(x, z))
                         });
                         /*ir3.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir3: {}", Runtime::worker_index(), zs.len())
@@ -204,14 +232,20 @@ fn main() -> Result<()> {
 
                         // IR4: p(x,z) := c(y,w,z), p(x,w), p(x,y)
                         let ir4_1 = child.region("IR4-1", || {
-                            c_by_2.join_index(&p_by_2, |&_w, &Tup2(y, z), &x| once((Tup2(x, y), z)))
+                            c_by_2.join_index(&p_by_2, |&_w, t, &x| {
+                                let (y, z) = t.into();
+                                once((Tup2::new(x, *y), *z))
+                            })
                         });
                         /*ir4_1.inspect(|zs: &OrdIndexedZSet<_, _, _>| {
                             println!("{}: ir4_1: {}", Runtime::worker_index(), zs.len())
                         });*/
 
                         let ir4 = child.region("IR4-2", || {
-                            ir4_1.join(&p_by_12, |&Tup2(x, _y), &z, &()| Tup2(x, z))
+                            ir4_1.join(&p_by_12, |t, &z, &()| {
+                                let (x, _y) = t.into();
+                                Tup2::new(*x, z)
+                            })
                         });
                         /*ir4.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir4: {}", Runtime::worker_index(), zs.len())
@@ -219,7 +253,10 @@ fn main() -> Result<()> {
 
                         // IR5: q(x,q,z) := q(x,r,z), s(r,q)
                         let ir5 = child.region("IR5", || {
-                            q_by_2.join(&s_by_1, |&_r, &Tup2(x, z), &q| Tup3(x, q, z))
+                            q_by_2.join(&s_by_1, |&_r, t2, &q| {
+                                let (x, z) = t2.into();
+                                Tup3::new(*x, q, *z)
+                            })
                         });
                         /*ir5.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir5: {}", Runtime::worker_index(), zs.len())
@@ -227,12 +264,17 @@ fn main() -> Result<()> {
 
                         // IR6: q(x,e,o) := q(x,y,z), r(y,u,e), q(z,u,o)
                         let ir6_1 = child.region("IR6_1", || {
-                            q_by_2.join_index(&r_by_1, |&_y, &Tup2(x, z), &Tup2(u, e)| {
-                                once((Tup2(z, u), Tup2(x, e)))
+                            q_by_2.join_index(&r_by_1, |&_y, t2a, t2b| {
+                                let (x, z) = t2a.into();
+                                let (u, e) = t2b.into();
+                                once((Tup2::new(*z, *u), Tup2::new(*x, *e)))
                             })
                         });
                         let ir6 = child.region("IR6", || {
-                            ir6_1.join(&q_by_12, |&Tup2(_z, _u), &Tup2(x, e), &o| Tup3(x, e, o))
+                            ir6_1.join(&q_by_12, |_t, t2, &o| {
+                                let (x, e) = t2.into();
+                                Tup3::new(*x, *e, o)
+                            })
                         });
 
                         /*ir6.inspect(|zs: &OrdZSet<_, _>| {

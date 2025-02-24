@@ -45,7 +45,7 @@ fn build_circuit(
     let monthly_totals = subset
         .map_index(|r| {
             (
-                Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
+                Tup3::new(r.location.clone(), r.date.year(), r.date.month() as u8),
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
@@ -62,16 +62,20 @@ fn main() -> Result<()> {
     );
     let mut input_records = Reader::from_path(path)?
         .deserialize()
-        .map(|result| result.map(|record| Tup2(record, 1)))
+        .map(|result| result.map(|record| Tup2::new(record, 1)))
         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
     input_handle.append(&mut input_records);
 
     circuit.step()?;
 
-    output_handle
-        .consolidate()
-        .iter()
-        .for_each(|(Tup3(l, y, m), sum, w)| println!("{l:16} {y}-{m:02} {sum:10}: {w:+}"));
+    output_handle.consolidate().iter().for_each(|(t, sum, w)| {
+        println!(
+            "{:16} {}-{:02} {sum:10}: {w:+}",
+            t.get_0(),
+            t.get_1(),
+            t.get_2()
+        )
+    });
 
     Ok(())
 }
