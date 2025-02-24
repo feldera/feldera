@@ -148,7 +148,7 @@ impl Layout {
 
     /// Returns an iterator over `Host`s in this layout other than this one.  If
     /// this is a single-host layout, this will be an empty iterator.
-    pub fn other_hosts(&self) -> impl Iterator<Item=&Host> {
+    pub fn other_hosts(&self) -> impl Iterator<Item = &Host> {
         match self {
             Self::Solo { .. } => Either::Left(empty()),
             Self::Multihost {
@@ -840,7 +840,7 @@ pub(crate) mod tests {
             }));
             Ok(())
         })
-            .unwrap();
+        .unwrap();
 
         if let DbspError::Runtime(err) = handle.step().unwrap_err() {
             // println!("error: {err}");
@@ -862,7 +862,7 @@ pub(crate) mod tests {
             }));
             Ok(())
         })
-            .unwrap();
+        .unwrap();
 
         if let DbspError::Runtime(err) = handle.step().unwrap_err() {
             // println!("error: {err}");
@@ -888,7 +888,7 @@ pub(crate) mod tests {
             circuit.add_source(Generator::new(|| 5usize));
             Ok(())
         })
-            .unwrap();
+        .unwrap();
 
         handle.enable_cpu_profiler().unwrap();
         handle.step().unwrap();
@@ -914,7 +914,7 @@ pub(crate) mod tests {
             circuit.add_source(Generator::new(|| 5usize));
             Ok(())
         })
-            .unwrap();
+        .unwrap();
 
         handle.step().unwrap();
     }
@@ -1382,7 +1382,7 @@ pub(crate) mod tests {
                     });
                 Ok(handle)
             })
-                .unwrap()
+            .unwrap()
         }
 
         let batches = vec![

@@ -45,13 +45,13 @@ use super::{MonoIndexedZSet, MonoZSet};
 circuit_cache_key!(AntijoinId<C, D>((StreamId, StreamId) => Stream<C, D>));
 
 pub trait TraceJoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized>:
-FnMut(&K, &V1, &V2, &mut dyn FnMut(&mut OK, &mut OV))
+    FnMut(&K, &V1, &V2, &mut dyn FnMut(&mut OK, &mut OV))
 {
     fn fork(&self) -> TraceJoinFunc<K, V1, V2, OK, OV>;
 }
 
 impl<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized, F>
-TraceJoinFuncTrait<K, V1, V2, OK, OV> for F
+    TraceJoinFuncTrait<K, V1, V2, OK, OV> for F
 where
     F: FnMut(&K, &V1, &V2, &mut dyn FnMut(&mut OK, &mut OV)) + Clone + 'static,
 {
@@ -80,7 +80,7 @@ impl<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized> TraceJoinFuncs<K
     }
 }
 pub trait JoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, O: ?Sized>:
-Fn(&K, &V1, &V2, &mut O)
+    Fn(&K, &V1, &V2, &mut O)
 {
     fn fork(&self) -> JoinFunc<K, V1, V2, O>;
 }
@@ -110,7 +110,7 @@ where
 impl<I1, I2, O> StreamJoinFactories<I1, I2, O>
 where
     I1: IndexedZSetReader,
-    I2: IndexedZSetReader<Key=I1::Key>,
+    I2: IndexedZSetReader<Key = I1::Key>,
     O: ZSet,
 {
     pub fn new<KType, V1Type, V2Type, VType>() -> Self
@@ -149,7 +149,7 @@ where
 impl<I1, I2, T, O> JoinFactories<I1, I2, T, O>
 where
     I1: IndexedZSetReader,
-    I2: IndexedZSetReader<Key=I1::Key>,
+    I2: IndexedZSetReader<Key = I1::Key>,
     O: IndexedZSet,
     T: Timestamp,
 {
@@ -168,9 +168,9 @@ where
             right_trace_factories: BatchReaderFactories::new::<KType, V2Type, ZWeight>(),
             output_factories: BatchReaderFactories::new::<OKType, OVType, ZWeight>(),
             timed_item_factory:
-            WithFactory::<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>::FACTORY,
+                WithFactory::<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>::FACTORY,
             timed_items_factory:
-            WithFactory::<LeanVec<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>>::FACTORY,
+                WithFactory::<LeanVec<Tup2<T, Tup2<Tup2<OKType, OVType>, ZWeight>>>>::FACTORY,
         }
     }
 }
@@ -208,7 +208,7 @@ where
 impl<I1, I2, T> AntijoinFactories<I1, I2, T>
 where
     I1: IndexedZSet,
-    I2: ZSet<Key=I1::Key>,
+    I2: ZSet<Key = I1::Key>,
     T: Timestamp,
 {
     pub fn new<KType, V1Type>() -> Self
@@ -256,7 +256,7 @@ where
 impl<I1, I2, T, O> OuterJoinFactories<I1, I2, T, O>
 where
     I1: IndexedZSet,
-    I2: IndexedZSet<Key=I1::Key>,
+    I2: IndexedZSet<Key = I1::Key>,
     T: Timestamp,
     O: DataTrait + ?Sized,
 {
@@ -312,7 +312,7 @@ where
     ) -> Stream<C, OrdZSet<V>>
     where
         I1: IndexedZSet,
-        I2: IndexedZSet<Key=I1::Key>,
+        I2: IndexedZSet<Key = I1::Key>,
         V: DataTrait + ?Sized,
     {
         self.dyn_stream_join_generic(factories, other, join)
@@ -328,7 +328,7 @@ where
     ) -> Stream<C, Z>
     where
         I1: IndexedZSet,
-        I2: IndexedZSet<Key=I1::Key>,
+        I2: IndexedZSet<Key = I1::Key>,
         Z: ZSet,
     {
         self.circuit().add_binary_operator(
@@ -348,7 +348,7 @@ where
     ) -> Stream<C, Z>
     where
         I1: IndexedZSet,
-        I2: IndexedZSet<Key=I1::Key>,
+        I2: IndexedZSet<Key = I1::Key>,
         Z: ZSet,
     {
         self.circuit().add_binary_operator(
@@ -367,7 +367,7 @@ where
     ) -> Stream<C, Z>
     where
         I1: IndexedZSetReader + Clone,
-        I2: IndexedZSetReader<Key=I1::Key> + Clone,
+        I2: IndexedZSetReader<Key = I1::Key> + Clone,
         Z: ZSet,
     {
         self.circuit()
@@ -402,7 +402,7 @@ impl<I1> Stream<RootCircuit, I1> {
     ) -> Stream<RootCircuit, Z>
     where
         I1: IndexedZSet,
-        I2: IndexedZSet<Key=I1::Key>,
+        I2: IndexedZSet<Key = I1::Key>,
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet,
     {
@@ -514,7 +514,7 @@ where
         join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, V, DynUnit>,
     ) -> Stream<C, OrdZSet<V>>
     where
-        I2: IndexedZSet<Key=I1::Key>,
+        I2: IndexedZSet<Key = I1::Key>,
         V: DataTrait + ?Sized,
     {
         self.dyn_join_generic(factories, other, join_funcs)
@@ -529,7 +529,7 @@ where
         join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, K, V>,
     ) -> Stream<C, OrdIndexedZSet<K, V>>
     where
-        I2: IndexedZSet<Key=I1::Key>,
+        I2: IndexedZSet<Key = I1::Key>,
         K: DataTrait + ?Sized,
         V: DataTrait + ?Sized,
     {
@@ -545,7 +545,7 @@ where
         join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
     ) -> Stream<C, Z>
     where
-        I2: IndexedZSet<Key=I1::Key>,
+        I2: IndexedZSet<Key = I1::Key>,
         Z: IndexedZSet,
     {
         // TODO: I think this is correct, but we need a proper proof.
@@ -634,7 +634,7 @@ where
         other: &Stream<C, I2>,
     ) -> Stream<C, I1>
     where
-        I2: IndexedZSet<Key=I1::Key> + DynFilterMap + Send,
+        I2: IndexedZSet<Key = I1::Key> + DynFilterMap + Send,
         Box<I1::Key>: Clone,
         Box<I1::Val>: Clone,
     {
@@ -712,7 +712,7 @@ where
     ) -> Stream<C, OrdZSet<O>>
     where
         Z: DynFilterMap + Send,
-        Z2: IndexedZSet<Key=Z::Key> + Send,
+        Z2: IndexedZSet<Key = Z::Key> + Send,
         Z2: DynFilterMap,
         O: DataTrait + ?Sized,
         Box<Z::Key>: Clone,
@@ -750,11 +750,11 @@ where
     ) -> Stream<C, OrdZSet<O>>
     where
         Z: for<'a> DynFilterMap<
-            DynItemRef<'a>=(&'a <Z as BatchReader>::Key, &'a <Z as BatchReader>::Val),
-        > + Send,
-        Z2: IndexedZSet<Key=Z::Key> + Send,
+                DynItemRef<'a> = (&'a <Z as BatchReader>::Key, &'a <Z as BatchReader>::Val),
+            > + Send,
+        Z2: IndexedZSet<Key = Z::Key> + Send,
         Z2: for<'a> DynFilterMap<
-            DynItemRef<'a>=(&'a <Z2 as BatchReader>::Key, &'a <Z2 as BatchReader>::Val),
+            DynItemRef<'a> = (&'a <Z2 as BatchReader>::Key, &'a <Z2 as BatchReader>::Val),
         >,
         O: DataTrait + ?Sized,
         Box<Z::Key>: Clone,
@@ -841,7 +841,7 @@ where
 impl<I1, I2, Z> BinaryOperator<I1, I2, Z> for Join<I1, I2, Z>
 where
     I1: IndexedZSetReader,
-    I2: IndexedZSetReader<Key=I1::Key>,
+    I2: IndexedZSetReader<Key = I1::Key>,
     Z: ZSet,
 {
     #[trace]
@@ -947,7 +947,7 @@ where
 impl<I1, I2, Z> BinaryOperator<I1, I2, Z> for MonotonicJoin<I1, I2, Z>
 where
     I1: IndexedZSetReader,
-    I2: IndexedZSetReader<Key=I1::Key>,
+    I2: IndexedZSetReader<Key = I1::Key>,
     Z: ZSet,
 {
     #[trace]
@@ -1098,7 +1098,7 @@ where
     I: IndexedZSet,
     T: ZBatchReader,
     Z: IndexedZSet,
-    Clk: WithClock<Time=T::Time> + 'static,
+    Clk: WithClock<Time = T::Time> + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("JoinTrace")
@@ -1212,7 +1212,7 @@ where
                             "allocated" => MetaItem::bytes(size.total_bytes()),
                             "used" => MetaItem::bytes(size.used_bytes()),
                         }
-                            .into(),
+                        .into(),
                     )
                 })
                 .collect(),
@@ -1255,18 +1255,18 @@ where
         self.empty_input
             && self.empty_output
             && self
-            .output_batchers
-            .keys()
-            .all(|time| !time.less_equal(&epoch_end))
+                .output_batchers
+                .keys()
+                .all(|time| !time.less_equal(&epoch_end))
     }
 }
 
 impl<I, T, Z, Clk> BinaryOperator<I, T, Z> for JoinTrace<I, T, Z, Clk>
 where
     I: IndexedZSet,
-    T: ZBatchReader<Key=I::Key>,
+    T: ZBatchReader<Key = I::Key>,
     Z: IndexedZSet,
-    Clk: WithClock<Time=T::Time> + 'static,
+    Clk: WithClock<Time = T::Time> + 'static,
 {
     #[trace]
     async fn eval(&mut self, index: &I, trace: &T) -> Z {
@@ -1402,7 +1402,7 @@ mod test {
                 zset! {Tup2::new(4, "n".to_string()) => 2},
                 zset! {Tup2::new(1, "a".to_string()) => 0},
             ]
-                .into_iter();
+            .into_iter();
             let mut input2 = vec![
                 zset! {
                     Tup2::new(2, "g".to_string()) => 3i64,
@@ -1417,7 +1417,7 @@ mod test {
                 zset! {},
                 zset! {},
             ]
-                .into_iter();
+            .into_iter();
             let mut outputs = vec![
                 zset! {
                     Tup2::new(2, "c g".to_string()) => 9i64,
@@ -1436,7 +1436,7 @@ mod test {
                 zset! {},
                 zset! {},
             ]
-                .into_iter();
+            .into_iter();
             let inc_outputs_vec = vec![
                 zset! {
                     Tup2::new(2, "c g".to_string()) => 9,
@@ -1554,8 +1554,8 @@ mod test {
 
             Ok(())
         })
-            .unwrap()
-            .0;
+        .unwrap()
+        .0;
 
         for _ in 0..5 {
             circuit.step().unwrap();
@@ -1566,7 +1566,7 @@ mod test {
         let hruntime = Runtime::run(workers, || {
             join_test();
         })
-            .expect("failed to run test");
+        .expect("failed to run test");
 
         hruntime.join().unwrap();
     }
@@ -1676,7 +1676,7 @@ mod test {
 
             Ok((input_handle1, input_handle2))
         })
-            .unwrap();
+        .unwrap();
 
         input1.append(&mut vec![
             Tup2(1, Tup2(0, 1)),

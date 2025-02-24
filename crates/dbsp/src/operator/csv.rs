@@ -126,8 +126,8 @@ mod test {
                 .inspect(move |data: &OrdZSet<Tup3<u64, u64, u64>>| assert_eq!(data, &expected));
             Ok(())
         })
-            .unwrap()
-            .0;
+        .unwrap()
+        .0;
 
         circuit.step().unwrap();
     }

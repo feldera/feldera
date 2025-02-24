@@ -192,12 +192,12 @@ fn debezium_avro_schema(value_schema: &str, value_type_name: &str) -> AvroSchema
 fn serialize_record<T>(x: &T, schema: &AvroSchema) -> Vec<u8>
 where
     T: Clone
-    + Debug
-    + Eq
-    + SerializeWithContext<SqlSerdeConfig>
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + Send
-    + 'static,
+        + Debug
+        + Eq
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Send
+        + 'static,
 {
     // 5-byte header
     let mut buffer = vec![0; 5];
@@ -219,12 +219,12 @@ fn gen_raw_parser_test<T>(
 ) -> TestCase<T>
 where
     T: Clone
-    + Debug
-    + Eq
-    + SerializeWithContext<SqlSerdeConfig>
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + Send
-    + 'static,
+        + Debug
+        + Eq
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Send
+        + 'static,
 {
     let config = AvroParserConfig {
         update_format: AvroUpdateFormat::Raw,
@@ -265,12 +265,12 @@ fn gen_debezium_parser_test<T>(
 ) -> TestCase<T>
 where
     T: Clone
-    + Debug
-    + Eq
-    + SerializeWithContext<SqlSerdeConfig>
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + Send
-    + 'static,
+        + Debug
+        + Eq
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Send
+        + 'static,
 {
     let debezium_schema = debezium_avro_schema(avro_schema_str, type_name);
     let resolved = ResolvedSchema::try_from(&debezium_schema).unwrap();
@@ -315,14 +315,14 @@ where
 fn run_parser_test<T>(test_cases: Vec<TestCase<T>>)
 where
     T: Debug
-    + Eq
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + Hash
-    + Send
-    + Sync
-    + Debug
-    + Clone
-    + 'static,
+        + Eq
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
 {
     for test in test_cases {
         let format_config = FormatConfig {
@@ -610,8 +610,8 @@ proptest! {
 fn test_raw_avro_output<T>(config: AvroEncoderConfig, batches: Vec<Vec<Tup2<T, i64>>>)
 where
     T: DBData
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + SerializeWithContext<SqlSerdeConfig>,
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
 {
     let schema = AvroSchema::parse_str(config.schema.as_ref().unwrap()).unwrap();
     let consumer = MockOutputConsumer::new();
@@ -624,7 +624,7 @@ where
         config,
         None,
     )
-        .unwrap();
+    .unwrap();
     let zsets = batches
         .iter()
         .map(|batch| {
@@ -669,11 +669,11 @@ fn test_raw_avro_output_indexed<K, T>(
     batches: Vec<Vec<(T, T)>>,
 ) where
     T: DBData
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + SerializeWithContext<SqlSerdeConfig>,
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
     K: DBData
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + SerializeWithContext<SqlSerdeConfig>,
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
 {
     let schema = AvroSchema::parse_str(config.schema.as_ref().unwrap()).unwrap();
 
@@ -687,7 +687,7 @@ fn test_raw_avro_output_indexed<K, T>(
         config,
         None,
     )
-        .unwrap();
+    .unwrap();
 
     let zsets = batches
         .iter()
@@ -770,11 +770,11 @@ fn test_confluent_avro_output<K, V, KF>(
     key_schema: &str,
 ) where
     K: DBData
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + SerializeWithContext<SqlSerdeConfig>,
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
     V: DBData
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + SerializeWithContext<SqlSerdeConfig>,
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
     KF: Fn(&V) -> K,
 {
     let schema = AvroSchema::parse_str(config.schema.as_ref().unwrap()).unwrap();
@@ -790,7 +790,7 @@ fn test_confluent_avro_output<K, V, KF>(
         config,
         None,
     )
-        .unwrap();
+    .unwrap();
     let zsets = batches
         .iter()
         .map(|batch| {
@@ -854,11 +854,11 @@ fn test_confluent_avro_output_indexed<K, V>(
     batches: Vec<Vec<(V, V)>>,
 ) where
     K: DBData
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + SerializeWithContext<SqlSerdeConfig>,
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
     V: DBData
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-    + SerializeWithContext<SqlSerdeConfig>,
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
 {
     let consumer = MockOutputConsumer::new();
     let consumer_data = consumer.data.clone();
@@ -870,7 +870,7 @@ fn test_confluent_avro_output_indexed<K, V>(
         config,
         None,
     )
-        .unwrap();
+    .unwrap();
 
     let key_schema = encoder.key_avro_schema.clone().unwrap();
     let value_schema = encoder.value_avro_schema.clone();

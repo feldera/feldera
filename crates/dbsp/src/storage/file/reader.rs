@@ -3,7 +3,10 @@
 //! [`Reader`] is the top-level interface for reading layer files.
 
 use super::format::{Compression, FileTrailer};
-use super::{AnyFactories, BloomFilterState, Factories, BLOOM_FILTER_FALSE_POSITIVE_RATE, DbspBloomFilter, DbspBloomFilterHasher};
+use super::{
+    AnyFactories, BloomFilterState, DbspBloomFilter, DbspBloomFilterHasher, Factories,
+    BLOOM_FILTER_FALSE_POSITIVE_RATE,
+};
 use crate::storage::buffer_cache::{CacheAccess, CacheEntry};
 use crate::storage::{
     backend::StorageError,
@@ -330,7 +333,7 @@ impl VarintReader {
                 count,
                 each: varint.len(),
             }
-                .into()),
+            .into()),
         }
     }
     fn new_opt(
@@ -379,7 +382,7 @@ impl StrideReader {
             stride,
             count,
         }
-            .into())
+        .into())
     }
     fn get(&self, index: usize) -> usize {
         debug_assert!(index < self.count);
@@ -511,7 +514,7 @@ where
                 rows: entry.rows(),
                 expected_rows: node.rows.clone(),
             }
-                .into());
+            .into());
         }
 
         Ok(entry)
@@ -536,7 +539,7 @@ where
                 start,
                 end,
             }
-                .into())
+            .into())
         }
     }
     unsafe fn archived_item(
@@ -753,7 +756,7 @@ where
                     prev,
                     next,
                 }
-                    .into());
+                .into());
             }
         }
 
@@ -822,7 +825,7 @@ where
                 n_rows,
                 expected_rows,
             }
-                .into());
+            .into());
         }
 
         Ok(entry)
@@ -1126,7 +1129,7 @@ impl ImmutableFileRef {
                     compressed_len,
                     max_compressed_len: raw.len() - 4,
                 }
-                    .into());
+                .into());
             };
             match compression {
                 Compression::Snappy => {
@@ -1143,7 +1146,7 @@ impl ImmutableFileRef {
                                 length: n,
                                 expected_length: decompressed_len,
                             }
-                                .into())
+                            .into())
                         }
                         Err(error) => {
                             return Err(CorruptionError::Snappy { location, error }.into())
@@ -1164,7 +1167,7 @@ impl ImmutableFileRef {
                 checksum,
                 computed_checksum,
             }
-                .into());
+            .into());
         }
         Ok(raw)
     }
@@ -1249,7 +1252,7 @@ where
                 version: file_trailer.version,
                 expected_version: VERSION_NUMBER,
             }
-                .into());
+            .into());
         }
 
         assert_eq!(factories.len(), file_trailer.columns.len());
@@ -1278,7 +1281,7 @@ where
                     prev_n_rows,
                     this_n_rows,
                 }
-                    .into());
+                .into());
             }
         }
 
@@ -1314,7 +1317,9 @@ where
             Err(e) if e.kind() == ErrorKind::NotFound => {
                 // If the bloom filter file does not exist because we're not writing them atm,
                 // we create an empty bloom filter.
-                BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE).hasher(DbspBloomFilterHasher::default()).expected_items(0)
+                BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
+                    .hasher(DbspBloomFilterHasher::default())
+                    .expected_items(0)
             }
             Err(e) => return Err(e.into()),
         };
@@ -1981,7 +1986,7 @@ where
             depth: indexes.len(),
             max_depth: MAX_DEPTH,
         }
-            .into());
+        .into());
     }
 
     indexes.push(index_block);
@@ -2262,7 +2267,7 @@ where
                 Some(i) => {
                     let min_row = index.get_row_bound(i * 2);
                     let max_row = index.get_row_bound(i * 2 + 1);
-                    write!(f, "\n[child {i} of {n}: rows {min_row}..={max_row}]", )?;
+                    write!(f, "\n[child {i} of {n}: rows {min_row}..={max_row}]",)?;
                 }
                 None => {
                     // This should not be possible because it indicates an

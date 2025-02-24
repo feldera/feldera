@@ -52,7 +52,7 @@ fn kvtr_batch(
             .prop_map(|(k, v, t, r)| Tup4::new(k, v, t, r)),
         max_tuples,
     )
-        .boxed()
+    .boxed()
 }
 
 fn ktr_batch(
@@ -65,7 +65,7 @@ fn ktr_batch(
         (0..max_key, 0..max_time, -max_weight..max_weight).prop_map(|(k, t, r)| Tup3::new(k, t, r)),
         max_tuples,
     )
-        .boxed()
+    .boxed()
 }
 
 fn kr_batches(
@@ -84,7 +84,7 @@ fn kr_batches(
         ),
         0..max_batches,
     )
-        .boxed()
+    .boxed()
 }
 
 fn kvr_batches(
@@ -109,7 +109,7 @@ fn kvr_batches(
         ),
         0..max_batches,
     )
-        .boxed()
+    .boxed()
 }
 
 fn kvr_batches_monotone_keys(
@@ -179,10 +179,10 @@ pub fn zset_tuples(
             .map(|t| Tup2::new(Tup2::new(*t.fst(), ()), *t.snd()))
             .collect::<Vec<_>>(),
     ))
-        .erase_box()
+    .erase_box()
 }
 
-fn test_zset_spine<B: ZSet<Key=DynI32>>(
+fn test_zset_spine<B: ZSet<Key = DynI32>>(
     factories: &B::Factories,
     batches: Vec<(Vec<Tup2<i32, ZWeight>>, i32)>,
     seed: u64,
@@ -230,7 +230,7 @@ fn test_zset_spine<B: ZSet<Key=DynI32>>(
     }
 }
 
-fn test_indexed_zset_spine<B: IndexedZSet<Key=DynI32, Val=DynI32>>(
+fn test_indexed_zset_spine<B: IndexedZSet<Key = DynI32, Val = DynI32>>(
     factories: &B::Factories,
     batches: Vec<(Vec<Tup2<Tup2<i32, i32>, ZWeight>>, i32, i32)>,
     seed: u64,
@@ -292,7 +292,7 @@ fn test_indexed_zset_spine<B: IndexedZSet<Key=DynI32, Val=DynI32>>(
     }
 }
 
-fn test_indexed_zset_trace_spine<B: ZBatch<Key=DynI32, Val=DynI32, Time=u32>>(
+fn test_indexed_zset_trace_spine<B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>>(
     factories: &B::Factories,
     batches: Vec<(Vec<Tup2<Tup2<i32, i32>, ZWeight>>, i32, i32)>,
     seed: u64,
@@ -353,7 +353,7 @@ fn timed_indexed_batch_from_tuples<B>(
     tuples: &[Tup4<i32, i32, u32, ZWeight>],
 ) -> B
 where
-    B: ZBatch<Key=DynI32, Val=DynI32, Time=u32>,
+    B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>,
 {
     let mut builder = B::Builder::with_capacity(factories, tuples.len());
     #[allow(clippy::into_iter_on_ref)]
@@ -378,7 +378,7 @@ fn test_indexed_zset_trace_builder<B>(
     mut tuples: Vec<Tup4<i32, i32, u32, ZWeight>>,
     seed: u64,
 ) where
-    B: ZBatch<Key=DynI32, Val=DynI32, Time=u32>,
+    B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>,
 {
     tuples.sort_unstable();
     tuples.retain(|t4| *t4.get_3() != 0);
@@ -397,7 +397,7 @@ fn test_indexed_zset_trace_builder<B>(
 
 fn timed_batch_from_tuples<B>(factories: &B::Factories, tuples: &[Tup3<i32, u32, ZWeight>]) -> B
 where
-    B: ZBatch<Key=DynI32, Val=DynUnit, Time=u32>,
+    B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>,
 {
     let mut builder = B::Builder::with_capacity(factories, tuples.len());
     #[allow(clippy::into_iter_on_ref)]
@@ -419,7 +419,7 @@ fn test_zset_trace_builder<B>(
     mut tuples: Vec<Tup3<i32, u32, ZWeight>>,
     seed: u64,
 ) where
-    B: ZBatch<Key=DynI32, Val=DynUnit, Time=u32>,
+    B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>,
 {
     tuples.sort_unstable();
     tuples.retain(|t3| *t3.get_2() != 0);
@@ -436,7 +436,7 @@ fn test_zset_trace_builder<B>(
     assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
 }
 
-fn test_zset_trace_spine<B: ZBatch<Key=DynI32, Val=DynUnit, Time=u32>>(
+fn test_zset_trace_spine<B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>>(
     factories: &B::Factories,
     batches: Vec<(Vec<Tup2<i32, ZWeight>>, i32)>,
     seed: u64,
@@ -730,7 +730,7 @@ where
             Ok(())
         }
     })
-        .unwrap();
+    .unwrap();
 
     // Make sure that the callback executes exactly once.
     assert_eq!(count.load(Ordering::Relaxed), 1);

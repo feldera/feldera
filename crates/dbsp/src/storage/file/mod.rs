@@ -88,7 +88,7 @@ use rkyv::{
 };
 use std::cell::RefCell;
 use std::fmt::Debug;
-use std::{any::Any, sync::Arc, hash::BuildHasher};
+use std::{any::Any, hash::BuildHasher, sync::Arc};
 
 pub mod format;
 mod item;
@@ -157,7 +157,7 @@ impl RandomDefaultHasher {
 impl Default for RandomDefaultHasher {
     #[inline]
     fn default() -> Self {
-        let mut seed = [0u8; 16];
+        let seed = [0u8; 16];
         Self::seeded(&seed)
     }
 }

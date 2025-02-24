@@ -27,14 +27,12 @@ feldera_macros::declare_tuple! { Tup1<T1> }
     size_of::SizeOf,
     rkyv::Archive,
     rkyv::Serialize,
-    rkyv::Deserialize
+    rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(
-    bound(
-        archive = " T1 : rkyv :: Archive, < T1 as rkyv :: Archive > :: Archived : Ord, T2 : rkyv :: Archive, < T2 as rkyv :: Archive > :: Archived : Ord,"
-    )
-)]
+#[archive(bound(
+    archive = " T1 : rkyv :: Archive, < T1 as rkyv :: Archive > :: Archived : Ord, T2 : rkyv :: Archive, < T2 as rkyv :: Archive > :: Archived : Ord,"
+))]
 pub struct Tup2<T1, T2>(T1, T2);
 impl<T1, T2> Tup2<T1, T2> {
     #[allow(clippy::too_many_arguments)]
@@ -68,8 +66,8 @@ impl<T1, T2> Tup2<T1, T2> {
 }
 impl<T1, T2, W> crate::algebra::MulByRef<W> for Tup2<T1, T2>
 where
-    T1: crate::algebra::MulByRef<W, Output=T1>,
-    T2: crate::algebra::MulByRef<W, Output=T2>,
+    T1: crate::algebra::MulByRef<W, Output = T1>,
+    T2: crate::algebra::MulByRef<W, Output = T2>,
     W: crate::algebra::ZRingValue,
 {
     type Output = Self;
@@ -132,17 +130,17 @@ impl<T1, T2> From<(T1, T2)> for Tup2<T1, T2> {
         Self(t0, t1)
     }
 }
-impl<'a, T1, T2> Into<(&'a T1, &'a T2)> for &'a Tup2<T1, T2> {
+impl<'a, T1, T2> From<&'a Tup2<T1, T2>> for (&'a T1, &'a T2) {
     #[allow(clippy::from_over_into)]
-    fn into(self) -> (&'a T1, &'a T2) {
-        let Tup2(t0, t1) = &self;
+    fn from(val: &'a Tup2<T1, T2>) -> Self {
+        let Tup2(t0, t1) = &val;
         (t0, t1)
     }
 }
-impl<T1, T2> Into<(T1, T2)> for Tup2<T1, T2> {
+impl<T1, T2> From<Tup2<T1, T2>> for (T1, T2) {
     #[allow(clippy::from_over_into)]
-    fn into(self) -> (T1, T2) {
-        let Tup2(t0, t1) = self;
+    fn from(val: Tup2<T1, T2>) -> Self {
+        let Tup2(t0, t1) = val;
         (t0, t1)
     }
 }
@@ -157,26 +155,23 @@ where
     }
     fn num_entries_deep(&self) -> usize {
         let Tup2(t0, t1) = self;
-        0 + (t0).num_entries_deep() + (t1).num_entries_deep()
+        (t0).num_entries_deep() + (t1).num_entries_deep()
     }
 }
 impl<T1: core::fmt::Debug, T2: core::fmt::Debug> core::fmt::Debug for Tup2<T1, T2> {
-    fn fmt(
-        &self,
-        f: &mut core::fmt::Formatter,
-    ) -> core::result::Result<(), core::fmt::Error> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::result::Result<(), core::fmt::Error> {
         let Tup2(t0, t1) = self;
-        f.debug_tuple(stringify!(Tup2)).field(&t0).field(&t1).finish()
+        f.debug_tuple(stringify!(Tup2))
+            .field(&t0)
+            .field(&t1)
+            .finish()
     }
 }
 impl<T1: Copy, T2: Copy> Copy for Tup2<T1, T2> {}
 impl<T1, T2> crate::circuit::checkpointer::Checkpoint for Tup2<T1, T2>
 where
-    Tup2<
-        T1,
-        T2,
-    >: ::rkyv::Serialize<crate::storage::file::Serializer>
-    + crate::storage::file::Deserializable,
+    Tup2<T1, T2>:
+        ::rkyv::Serialize<crate::storage::file::Serializer> + crate::storage::file::Deserializable,
 {
     fn checkpoint(&self) -> Result<Vec<u8>, crate::Error> {
         let mut s = crate::storage::file::Serializer::default();
@@ -189,8 +184,6 @@ where
         Ok(())
     }
 }
-
-
 
 feldera_macros::declare_tuple! { Tup3<T1, T2, T3> }
 feldera_macros::declare_tuple! { Tup4<T1, T2, T3, T4> }
