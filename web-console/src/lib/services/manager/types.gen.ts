@@ -949,7 +949,13 @@ export type JsonLines = 'multiple' | 'single'
  * Each element in the input stream contains a record without any
  * additional envelope that gets inserted in the input table.
  */
-export type JsonUpdateFormat = 'insert_delete' | 'weighted' | 'debezium' | 'snowflake' | 'raw'
+export type JsonUpdateFormat =
+  | 'insert_delete'
+  | 'weighted'
+  | 'debezium'
+  | 'snowflake'
+  | 'raw'
+  | 'redis'
 
 /**
  * Kafka message header.
@@ -1662,6 +1668,22 @@ export type PubSubInputConfig = {
 }
 
 /**
+ * Redis output connector configuration.
+ */
+export type RedisOutputConfig = {
+  /**
+   * The URL format: `redis://[<username>][:<password>@]<hostname>[:port][/[<db>][?protocol=<protocol>]]`
+   * This is parsed by the [redis](https://docs.rs/redis/latest/redis/#connection-parameters) crate.
+   */
+  connection_string: string
+  /**
+   * Separator used to join multiple components into a single key.
+   * ":" by default.
+   */
+  key_separator?: string
+}
+
+/**
  * A SQL table or view. It has a name and a list of fields.
  *
  * Matches the Calcite JSON format.
@@ -2138,6 +2160,10 @@ export type TransportConfig =
       name: 'delta_table_output'
     }
   | {
+      config: RedisOutputConfig
+      name: 'redis_output'
+    }
+  | {
       config: IcebergReaderConfig
       name: 'iceberg_input'
     }
@@ -2410,7 +2436,7 @@ export type GetPipelineHeapProfileError = ErrorResponse
 
 export type HttpInputData = {
   /**
-   * Contains the new input data in CSV.
+   * Input data in the specified format
    */
   body: string
   path: {
@@ -2469,11 +2495,11 @@ export type PipelineAdhocSqlData = {
   }
   query: {
     /**
-     * Input data format, e.g., 'text', 'json' or 'parquet'.
+     * Input data format, e.g., 'text', 'json' or 'parquet'
      */
     format: AdHocResultFormat
     /**
-     * The SQL query to execute.
+     * SQL query to execute
      */
     sql: string
   }
@@ -2497,6 +2523,29 @@ export type GetPipelineStatsResponse = {
 }
 
 export type GetPipelineStatsError = ErrorResponse
+
+export type GetPipelineInputConnectorStatusData = {
+  path: {
+    /**
+     * Unique input connector name
+     */
+    connector_name: string
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+    /**
+     * Unique table name
+     */
+    table_name: string
+  }
+}
+
+export type GetPipelineInputConnectorStatusResponse = {
+  [key: string]: unknown
+}
+
+export type GetPipelineInputConnectorStatusError = ErrorResponse
 
 export type PostPipelineInputConnectorActionData = {
   path: {
@@ -2522,6 +2571,29 @@ export type PostPipelineInputConnectorActionData = {
 export type PostPipelineInputConnectorActionResponse = unknown
 
 export type PostPipelineInputConnectorActionError = ErrorResponse
+
+export type GetPipelineOutputConnectorStatusData = {
+  path: {
+    /**
+     * Unique output connector name
+     */
+    connector_name: string
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+    /**
+     * Unique SQL view name
+     */
+    view_name: string
+  }
+}
+
+export type GetPipelineOutputConnectorStatusResponse = {
+  [key: string]: unknown
+}
+
+export type GetPipelineOutputConnectorStatusError = ErrorResponse
 
 export type PostPipelineActionData = {
   path: {
@@ -2663,14 +2735,12 @@ export type $OpenApiTs = {
          * Pipeline successfully created
          */
         '201': PipelineInfo
-        /**
-         * Invalid name specified
-         */
         '400': ErrorResponse
         /**
          * Cannot create pipeline as the name already exists
          */
         '409': ErrorResponse
+        '500': ErrorResponse
       }
     }
   }
@@ -2686,6 +2756,7 @@ export type $OpenApiTs = {
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
+        '500': ErrorResponse
       }
     }
     put: {
@@ -2695,14 +2766,12 @@ export type $OpenApiTs = {
          * Pipeline successfully updated
          */
         '200': PipelineInfo
-        /**
-         * Pipeline needs to be shutdown to be modified
-         */
         '400': ErrorResponse
         /**
-         * Cannot rename pipeline as the name already exists
+         * Cannot rename pipeline as the new name already exists
          */
         '409': ErrorResponse
+        '500': ErrorResponse
       }
     }
     delete: {
@@ -2720,6 +2789,7 @@ export type $OpenApiTs = {
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
+        '500': ErrorResponse
       }
     }
     patch: {
@@ -2729,9 +2799,6 @@ export type $OpenApiTs = {
          * Pipeline successfully updated
          */
         '200': PipelineInfo
-        /**
-         * Pipeline needs to be shutdown to be modified
-         */
         '400': ErrorResponse
         /**
          * Pipeline with that name does not exist
@@ -2741,6 +2808,7 @@ export type $OpenApiTs = {
          * Cannot rename pipeline as the name already exists
          */
         '409': ErrorResponse
+        '500': ErrorResponse
       }
     }
   }
@@ -2749,17 +2817,15 @@ export type $OpenApiTs = {
       req: CheckpointPipelineData
       res: {
         /**
-         * Checkpoint completed.
+         * Checkpoint completed
          */
         '200': unknown
-        /**
-         * Pipeline is not running or paused, or fault tolerance is not enabled for this pipeline
-         */
-        '400': ErrorResponse
         /**
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -2768,19 +2834,17 @@ export type $OpenApiTs = {
       req: GetPipelineCircuitProfileData
       res: {
         /**
-         * Obtains a circuit performance profile.
+         * Circuit performance profile
          */
         '200': {
           [key: string]: unknown
         }
         /**
-         * Pipeline is not running or paused
-         */
-        '400': ErrorResponse
-        /**
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -2792,22 +2856,13 @@ export type $OpenApiTs = {
          * Connection to the endpoint successfully established. The body of the response contains a stream of data chunks.
          */
         '200': Chunk
-        /**
-         * Unknown data format specified in the '?format=' argument.
-         */
         '400': ErrorResponse
         /**
-         * Specified table or view does not exist.
+         * Pipeline and/or table/view with that name does not exist
          */
         '404': ErrorResponse
-        /**
-         * Pipeline is not currently running because it has been shutdown or not yet started.
-         */
-        '410': ErrorResponse
-        /**
-         * Request failed.
-         */
         '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -2816,17 +2871,19 @@ export type $OpenApiTs = {
       req: GetPipelineHeapProfileData
       res: {
         /**
-         * Pipeline's heap usage profile as a gzipped protobuf that can be inspected by the pprof tool
+         * Heap usage profile as a gzipped protobuf that can be inspected by the pprof tool
          */
         '200': Blob | File
         /**
-         * Pipeline is not running or paused, or getting a heap profile is not supported on this platform
+         * Getting a heap profile is not supported on this platform
          */
         '400': ErrorResponse
         /**
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -2835,21 +2892,16 @@ export type $OpenApiTs = {
       req: HttpInputData
       res: {
         /**
-         * Data successfully delivered to the pipeline.
+         * Data successfully delivered to the pipeline
          */
         '200': unknown
-        /**
-         * Error parsing input data.
-         */
         '400': ErrorResponse
         /**
-         * Pipeline is not currently running because it has been shutdown or not yet started.
+         * Pipeline and/or table with that name does not exist
          */
         '404': ErrorResponse
-        /**
-         * Request failed.
-         */
         '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -2865,6 +2917,8 @@ export type $OpenApiTs = {
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -2873,21 +2927,19 @@ export type $OpenApiTs = {
       req: PipelineAdhocSqlData
       res: {
         /**
-         * Executes an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental.
+         * Ad-hoc SQL query result
          */
         '200': Blob | File
         /**
-         * Pipeline is shutdown or an invalid SQL query was supplied
+         * Invalid SQL query
          */
         '400': ErrorResponse
         /**
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
-        /**
-         * A fatal error occurred during query processing (after streaming response was already initiated)
-         */
         '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -2902,13 +2954,30 @@ export type $OpenApiTs = {
           [key: string]: unknown
         }
         /**
-         * Pipeline is not running or paused
-         */
-        '400': ErrorResponse
-        /**
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats': {
+    get: {
+      req: GetPipelineInputConnectorStatusData
+      res: {
+        /**
+         * Input connector status retrieved successfully
+         */
+        '200': {
+          [key: string]: unknown
+        }
+        /**
+         * Pipeline, table and/or input connector with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -2921,9 +2990,30 @@ export type $OpenApiTs = {
          */
         '200': unknown
         /**
-         * Input connector with that name does not exist
+         * Pipeline, table and/or input connector with that name does not exist
          */
         '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats': {
+    get: {
+      req: GetPipelineOutputConnectorStatusData
+      res: {
+        /**
+         * Output connector status retrieved successfully
+         */
+        '200': {
+          [key: string]: unknown
+        }
+        /**
+         * Pipeline, view and/or output connector with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -2932,17 +3022,18 @@ export type $OpenApiTs = {
       req: PostPipelineActionData
       res: {
         /**
-         * Action accepted and is being performed
+         * Action is accepted and is being performed
          */
         '202': unknown
         /**
-         * Unable to accept action
+         * Action could not be performed
          */
         '400': ErrorResponse
         /**
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
+        '500': ErrorResponse
       }
     }
   }

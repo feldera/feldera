@@ -473,7 +473,8 @@ pub(crate) async fn list_pipelines(
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline()))
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline management"
 )]
@@ -527,9 +528,12 @@ pub(crate) async fn get_pipeline(
             , body = ErrorResponse
             , example = json!(examples::error_duplicate_name())),
         (status = BAD_REQUEST
-            , description = "Invalid name specified"
             , body = ErrorResponse
-            , example = json!(examples::error_invalid_name()))
+            , examples(
+                ("Name does not match pattern" = (value = json!(examples::error_name_does_not_match_pattern())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline management"
 )]
@@ -582,13 +586,17 @@ pub(crate) async fn post_pipeline(
             , body = PipelineInfo
             , example = json!(examples::pipeline_1_info())),
         (status = CONFLICT
-            , description = "Cannot rename pipeline as the name already exists"
+            , description = "Cannot rename pipeline as the new name already exists"
             , body = ErrorResponse
             , example = json!(examples::error_duplicate_name())),
         (status = BAD_REQUEST
-            , description = "Pipeline needs to be shutdown to be modified"
             , body = ErrorResponse
-            , example = json!(examples::error_cannot_update_non_shutdown_pipeline()))
+            , examples(
+                ("Name does not match pattern" = (value = json!(examples::error_name_does_not_match_pattern()))),
+                ("Cannot update non-shutdown pipeline" = (value = json!(examples::error_cannot_update_non_shutdown_pipeline())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline management"
 )]
@@ -652,15 +660,19 @@ async fn put_pipeline(
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
+            , example = json!(examples::error_unknown_pipeline_name())),
         (status = CONFLICT
             , description = "Cannot rename pipeline as the name already exists"
             , body = ErrorResponse
             , example = json!(examples::error_duplicate_name())),
         (status = BAD_REQUEST
-            , description = "Pipeline needs to be shutdown to be modified"
             , body = ErrorResponse
-            , example = json!(examples::error_cannot_update_non_shutdown_pipeline()))
+            , examples(
+                ("Name does not match pattern" = (value = json!(examples::error_name_does_not_match_pattern()))),
+                ("Cannot update non-shutdown pipeline" = (value = json!(examples::error_cannot_update_non_shutdown_pipeline())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline management"
 )]
@@ -713,11 +725,12 @@ pub(crate) async fn patch_pipeline(
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
+            , example = json!(examples::error_unknown_pipeline_name())),
         (status = BAD_REQUEST
             , description = "Pipeline needs to be shutdown to be deleted"
             , body = ErrorResponse
-            , example = json!(examples::error_cannot_delete_non_shutdown_pipeline()))
+            , example = json!(examples::error_cannot_delete_non_shutdown_pipeline())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline management"
 )]
@@ -764,19 +777,20 @@ pub(crate) async fn delete_pipeline(
     ),
     responses(
         (status = ACCEPTED
-            , description = "Action accepted and is being performed"),
+            , description = "Action is accepted and is being performed"),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
+            , example = json!(examples::error_unknown_pipeline_name())),
         (status = BAD_REQUEST
-            , description = "Unable to accept action"
+            , description = "Action could not be performed"
             , body = ErrorResponse
             , examples(
-                ("Illegal action" = (description = "Action is not applicable in the current state", value = json!(examples::error_illegal_pipeline_action()))),
-                ("Invalid action" = (description = "Invalid action specified", value = json!(examples::error_invalid_pipeline_action()))),
+                ("Invalid action" = (value = json!(examples::error_invalid_pipeline_action()))),
+                ("Illegal action" = (value = json!(examples::error_illegal_pipeline_action()))),
             )
         ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline management"
 )]

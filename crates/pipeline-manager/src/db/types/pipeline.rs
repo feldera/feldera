@@ -336,7 +336,7 @@ pub fn validate_deployment_desired_status_transition(
         if *current_desired_status == PipelineDesiredStatus::Shutdown
             && *current_status != PipelineStatus::Shutdown
         {
-            Err(DBError::IllegalPipelineStateTransition {
+            Err(DBError::IllegalPipelineAction {
                 hint: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting the pipeline again.".to_string(),
                 status: *current_status,
                 desired_status: *current_desired_status,
@@ -351,7 +351,7 @@ pub fn validate_deployment_desired_status_transition(
         if *current_desired_status != PipelineDesiredStatus::Shutdown
             && *current_status == PipelineStatus::Failed
         {
-            Err(DBError::IllegalPipelineStateTransition {
+            Err(DBError::IllegalPipelineAction {
                 hint: "Cannot restart a pipeline which is failed. Clear the failed error state first by invoking the '/shutdown' endpoint.".to_string(),
                 status: *current_status,
                 desired_status: *current_desired_status,
