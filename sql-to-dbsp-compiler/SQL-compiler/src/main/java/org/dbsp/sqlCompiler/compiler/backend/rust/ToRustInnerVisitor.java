@@ -1658,7 +1658,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 parent.is(DBSPUnaryExpression.class) ||
                 parent.is(DBSPBinaryExpression.class) ||
                 parent.is(DBSPSomeExpression.class) ||
-                parent.is(DBSPCastExpression.class))
+                parent.is(DBSPCastExpression.class) ||
+                parent.is(DBSPIfExpression.class))
                 deref = true;
         }
 
