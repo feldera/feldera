@@ -183,6 +183,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::transport::iceberg::RestCatalogConfig,
         feldera_types::transport::iceberg::GlueCatalogConfig,
         feldera_types::transport::postgres::PostgresReaderConfig,
+        feldera_types::transport::redis::RedisOutputConfig,
         feldera_types::transport::http::Chunk,
         feldera_types::query::AdhocQueryArgs,
         feldera_types::query::AdHocResultFormat,

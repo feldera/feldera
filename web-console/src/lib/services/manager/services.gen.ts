@@ -63,9 +63,15 @@ import type {
   GetPipelineStatsData,
   GetPipelineStatsError,
   GetPipelineStatsResponse,
+  GetPipelineInputConnectorStatusData,
+  GetPipelineInputConnectorStatusError,
+  GetPipelineInputConnectorStatusResponse,
   PostPipelineInputConnectorActionData,
   PostPipelineInputConnectorActionError,
   PostPipelineInputConnectorActionResponse,
+  GetPipelineOutputConnectorStatusData,
+  GetPipelineOutputConnectorStatusError,
+  GetPipelineOutputConnectorStatusResponse,
   PostPipelineActionData,
   PostPipelineActionError,
   PostPipelineActionResponse
@@ -289,7 +295,7 @@ export const httpInput = (options: Options<HttpInputData>) => {
 }
 
 /**
- * Retrieve pipeline logs as a stream.
+ * Retrieve logs of a (non-shutdown) pipeline as a stream.
  * The logs stream catches up to the extent of the internally configured per-pipeline
  * circular logs buffer (limited to a certain byte size and number of lines, whichever
  * is reached first). After the catch-up, new lines are pushed whenever they become
@@ -308,7 +314,7 @@ export const getPipelineLogs = (options: Options<GetPipelineLogsData>) => {
 }
 
 /**
- * Execute an ad-hoc query in a running or paused pipeline.
+ * Execute an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental.
  */
 export const pipelineAdhocSql = (options: Options<PipelineAdhocSqlData>) => {
   return (options?.client ?? client).get<PipelineAdhocSqlResponse, PipelineAdhocSqlError>({
@@ -318,12 +324,27 @@ export const pipelineAdhocSql = (options: Options<PipelineAdhocSqlData>) => {
 }
 
 /**
- * Retrieve pipeline statistics (e.g., metrics, performance counters).
+ * Retrieve statistics (e.g., metrics, performance counters) of a running or paused pipeline.
  */
 export const getPipelineStats = (options: Options<GetPipelineStatsData>) => {
   return (options?.client ?? client).get<GetPipelineStatsResponse, GetPipelineStatsError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/stats'
+  })
+}
+
+/**
+ * Retrieve the status of an input connector.
+ */
+export const getPipelineInputConnectorStatus = (
+  options: Options<GetPipelineInputConnectorStatusData>
+) => {
+  return (options?.client ?? client).get<
+    GetPipelineInputConnectorStatusResponse,
+    GetPipelineInputConnectorStatusError
+  >({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats'
   })
 }
 
@@ -364,6 +385,21 @@ export const postPipelineInputConnectorAction = (
   >({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}'
+  })
+}
+
+/**
+ * Retrieve the status of an output connector.
+ */
+export const getPipelineOutputConnectorStatus = (
+  options: Options<GetPipelineOutputConnectorStatusData>
+) => {
+  return (options?.client ?? client).get<
+    GetPipelineOutputConnectorStatusResponse,
+    GetPipelineOutputConnectorStatusError
+  >({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats'
   })
 }
 

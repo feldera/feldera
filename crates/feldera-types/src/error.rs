@@ -11,14 +11,14 @@ pub const MAX_REPORTED_PARSE_ERRORS: usize = 1_000;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub struct ErrorResponse {
     /// Human-readable error message.
-    #[schema(example = "Unknown input format 'xml'.")]
+    #[schema(example = "Explanation of the error that occurred.")]
     pub message: String,
     /// Error code is a string that specifies this error type.
-    #[schema(example = "UnknownInputFormat")]
+    #[schema(example = "CodeSpecifyingErrorType")]
     pub error_code: Cow<'static, str>,
     /// Detailed error metadata.
     /// The contents of this field is determined by `error_code`.
-    #[schema(value_type=Object)]
+    #[schema(value_type = Object)]
     pub details: JsonValue,
 }
 

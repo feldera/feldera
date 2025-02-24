@@ -1,4 +1,4 @@
-// Example errors for use in OpenAPI docs.
+//! Example data and error types for use in OpenAPI docs.
 use crate::api::endpoints::pipeline_management::{
     PartialProgramInfo, PatchPipeline, PipelineInfo, PipelineInfoInternal, PipelineSelectedInfo,
     PipelineSelectedInfoInternal, PostPutPipeline,
@@ -13,41 +13,16 @@ use crate::db::types::utils::{
     validate_program_config, validate_program_info, validate_runtime_config,
 };
 use crate::db::types::version::Version;
-use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
+use crate::runner::interaction::{
+    format_disconnected_error_message, format_timeout_error_message, RunnerInteraction,
+};
 use feldera_types::config::{ResourceConfig, StorageOptions};
 use feldera_types::{config::RuntimeConfig, error::ErrorResponse};
 use uuid::uuid;
 
-pub(crate) fn error_duplicate_name() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&DBError::DuplicateName)
-}
-
-pub(crate) fn error_invalid_name() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&DBError::NameDoesNotMatchPattern {
-        name: "invalid-name.db".to_string(),
-    })
-}
-
-pub(crate) fn error_invalid_uuid_param() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ManagerError::from(ApiError::InvalidUuidParam {
-        value: "not_a_uuid".to_string(),
-        error: "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1".to_string()
-    }))
-}
-
-pub(crate) fn error_unknown_api_key() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&DBError::UnknownApiKey {
-        name: "unknown_api_key".to_string(),
-    })
-}
-
-pub(crate) fn error_stream_terminated() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
-        error: "Failed to connect to host: Internal error: connector has been disconnected"
-            .to_string(),
-    })
-}
+////////////////////////////////////////
+// EXAMPLE REQUEST AND RESPONSE BODIES
 
 /// First example [`ExtendedPipelineDescr`] the database could return.
 fn extended_pipeline_1() -> ExtendedPipelineDescr {
@@ -183,10 +158,6 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
     }
 }
 
-pub(crate) fn pipeline_1_info() -> PipelineInfo {
-    pipeline_info_internal_to_external(PipelineInfoInternal::new(extended_pipeline_1()))
-}
-
 /// Converts the actual serialized type [`PipelineSelectedInfoInternal`] to the type the endpoint
 /// OpenAPI specification states it will return ([`PipelineSelectedInfo`]). The conversion for this
 /// example should always succeed as it uses field values that were directly serialized prior.
@@ -232,22 +203,31 @@ fn pipeline_selected_info_internal_to_external(
     }
 }
 
+/// Example response body of pipeline POST/PUT/PATCH.
+pub(crate) fn pipeline_1_info() -> PipelineInfo {
+    pipeline_info_internal_to_external(PipelineInfoInternal::new(extended_pipeline_1()))
+}
+
+/// First example response body of pipeline GET.
 pub(crate) fn pipeline_1_selected_info() -> PipelineSelectedInfo {
     pipeline_selected_info_internal_to_external(PipelineSelectedInfoInternal::new_all(
         extended_pipeline_1(),
     ))
 }
 
-pub(crate) fn pipeline_2_selected_info() -> PipelineSelectedInfo {
+/// Second example response body of pipeline GET.
+fn pipeline_2_selected_info() -> PipelineSelectedInfo {
     pipeline_selected_info_internal_to_external(PipelineSelectedInfoInternal::new_all(
         extended_pipeline_2(),
     ))
 }
 
+/// Example response body of list of pipelines GET.
 pub(crate) fn list_pipeline_selected_info() -> Vec<PipelineSelectedInfo> {
     vec![pipeline_1_selected_info(), pipeline_2_selected_info()]
 }
 
+/// Example request body of pipeline POST/PUT.
 pub(crate) fn pipeline_post_put() -> PostPutPipeline {
     PostPutPipeline {
         name: "example1".to_string(),
@@ -267,6 +247,7 @@ pub(crate) fn pipeline_post_put() -> PostPutPipeline {
     }
 }
 
+/// Example request body of pipeline PATCH.
 pub(crate) fn patch_pipeline() -> PatchPipeline {
     PatchPipeline {
         name: None,
@@ -279,9 +260,34 @@ pub(crate) fn patch_pipeline() -> PatchPipeline {
     }
 }
 
-pub(crate) fn error_unknown_pipeline() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&DBError::UnknownPipeline {
-        pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
+////////////////////////////
+// GENERAL ERROR RESPONSES
+
+pub(crate) fn error_duplicate_name() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::DuplicateName)
+}
+
+pub(crate) fn error_name_does_not_match_pattern() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::NameDoesNotMatchPattern {
+        name: "name-with-invalid-char-#".to_string(),
+    })
+}
+
+////////////////////////////
+// API KEY ERROR RESPONSES
+
+pub(crate) fn error_unknown_api_key() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::UnknownApiKey {
+        name: "non-existent-api-key".to_string(),
+    })
+}
+
+////////////////////////////////////////
+// PIPELINE MANAGEMENT ERROR RESPONSES
+
+pub(crate) fn error_unknown_pipeline_name() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::UnknownPipelineName {
+        pipeline_name: "non-existent-pipeline".to_string(),
     })
 }
 
@@ -293,26 +299,67 @@ pub(crate) fn error_cannot_delete_non_shutdown_pipeline() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::CannotDeleteNonShutdownPipeline)
 }
 
-pub(crate) fn error_pipeline_not_running_or_paused() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
-        error: "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again".to_string(),
+pub(crate) fn error_invalid_pipeline_action() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&ApiError::InvalidPipelineAction {
+        action: "dance".to_string(),
     })
 }
 
-pub(crate) fn error_invalid_pipeline_action() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ManagerError::from(ApiError::InvalidPipelineAction {
-        action: "dance".to_string(),
-    }))
-}
-
 pub(crate) fn error_illegal_pipeline_action() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&DBError::IllegalPipelineStateTransition {
+    ErrorResponse::from_error_nolog(&DBError::IllegalPipelineAction {
             hint: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.".to_string(),
             status: PipelineStatus::ShuttingDown,
             desired_status: PipelineDesiredStatus::Shutdown,
             requested_desired_status: PipelineDesiredStatus::Running,
     })
 }
+
+/////////////////////////////////////////
+// PIPELINE INTERACTION ERROR RESPONSES
+
+pub(crate) fn error_pipeline_interaction_not_deployed() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionNotDeployed {
+        status: PipelineStatus::Shutdown,
+        desired_status: PipelineDesiredStatus::Running,
+    })
+}
+
+pub(crate) fn error_pipeline_interaction_currently_unavailable() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
+        error: "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again".to_string()
+    })
+}
+
+pub(crate) fn error_pipeline_interaction_disconnected() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
+        error: format_disconnected_error_message("".to_string()),
+    })
+}
+
+pub(crate) fn error_pipeline_interaction_timeout() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
+        error: format_timeout_error_message(
+            RunnerInteraction::PIPELINE_HTTP_REQUEST_TIMEOUT,
+            "Timeout while waiting for response".to_string(),
+        ),
+    })
+}
+
+pub(crate) fn error_runner_interaction_shutdown() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&RunnerError::RunnerInteractionShutdown)
+}
+
+pub(crate) fn error_runner_interaction_timeout() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&RunnerError::RunnerInteractionUnreachable {
+        error: format_timeout_error_message(
+            RunnerInteraction::RUNNER_HTTP_REQUEST_TIMEOUT,
+            "Timeout while waiting for response".to_string(),
+        ),
+    })
+}
+
+///////////////////////////////////////////////////////
+// PIPELINE INTERACTION ERROR RESPONSES FROM PIPELINE
 
 //
 // TODO: The below errors can be returned when forwarding data to/from a running pipeline.

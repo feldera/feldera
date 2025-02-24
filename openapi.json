@@ -197,10 +197,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown API key 'unknown_api_key'",
+                  "message": "Unknown API key 'non-existent-api-key'",
                   "error_code": "UnknownApiKey",
                   "details": {
-                    "name": "unknown_api_key"
+                    "name": "non-existent-api-key"
                   }
                 }
               }
@@ -242,10 +242,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown API key 'unknown_api_key'",
+                  "message": "Unknown API key 'non-existent-api-key'",
                   "error_code": "UnknownApiKey",
                   "details": {
-                    "name": "unknown_api_key"
+                    "name": "non-existent-api-key"
                   }
                 }
               }
@@ -576,17 +576,21 @@
             }
           },
           "400": {
-            "description": "Invalid name specified",
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "example": {
-                  "message": "Name 'invalid-name.db' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)",
-                  "error_code": "NameDoesNotMatchPattern",
-                  "details": {
-                    "name": "invalid-name.db"
+                "examples": {
+                  "Name does not match pattern": {
+                    "value": {
+                      "message": "Name 'name-with-invalid-char-#' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)",
+                      "error_code": "NameDoesNotMatchPattern",
+                      "details": {
+                        "name": "name-with-invalid-char-#"
+                      }
+                    }
                   }
                 }
               }
@@ -603,6 +607,16 @@
                   "message": "An entity with this name already exists",
                   "error_code": "DuplicateName",
                   "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -706,11 +720,21 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
-                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_name": "non-existent-pipeline"
                   }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -890,22 +914,35 @@
             }
           },
           "400": {
-            "description": "Pipeline needs to be shutdown to be modified",
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "example": {
-                  "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
-                  "error_code": "CannotUpdateNonShutdownPipeline",
-                  "details": null
+                "examples": {
+                  "Cannot update non-shutdown pipeline": {
+                    "value": {
+                      "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
+                      "error_code": "CannotUpdateNonShutdownPipeline",
+                      "details": null
+                    }
+                  },
+                  "Name does not match pattern": {
+                    "value": {
+                      "message": "Name 'name-with-invalid-char-#' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)",
+                      "error_code": "NameDoesNotMatchPattern",
+                      "details": {
+                        "name": "name-with-invalid-char-#"
+                      }
+                    }
+                  }
                 }
               }
             }
           },
           "409": {
-            "description": "Cannot rename pipeline as the name already exists",
+            "description": "Cannot rename pipeline as the new name already exists",
             "content": {
               "application/json": {
                 "schema": {
@@ -915,6 +952,16 @@
                   "message": "An entity with this name already exists",
                   "error_code": "DuplicateName",
                   "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -970,11 +1017,21 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
-                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_name": "non-existent-pipeline"
                   }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1078,16 +1135,29 @@
             }
           },
           "400": {
-            "description": "Pipeline needs to be shutdown to be modified",
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "example": {
-                  "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
-                  "error_code": "CannotUpdateNonShutdownPipeline",
-                  "details": null
+                "examples": {
+                  "Cannot update non-shutdown pipeline": {
+                    "value": {
+                      "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
+                      "error_code": "CannotUpdateNonShutdownPipeline",
+                      "details": null
+                    }
+                  },
+                  "Name does not match pattern": {
+                    "value": {
+                      "message": "Name 'name-with-invalid-char-#' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)",
+                      "error_code": "NameDoesNotMatchPattern",
+                      "details": {
+                        "name": "name-with-invalid-char-#"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -1100,10 +1170,10 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
-                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_name": "non-existent-pipeline"
                   }
                 }
               }
@@ -1120,6 +1190,16 @@
                   "message": "An entity with this name already exists",
                   "error_code": "DuplicateName",
                   "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1152,24 +1232,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Checkpoint completed."
-          },
-          "400": {
-            "description": "Pipeline is not running or paused, or fault tolerance is not enabled for this pipeline",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
-                  "error_code": "PipelineInteractionUnreachable",
-                  "details": {
-                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
-                  }
-                }
-              }
-            }
+            "description": "Checkpoint completed"
           },
           "404": {
             "description": "Pipeline with that name does not exist",
@@ -1179,10 +1242,69 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
-                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
                   }
                 }
               }
@@ -1216,28 +1338,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Obtains a circuit performance profile.",
+            "description": "Circuit performance profile",
             "content": {
               "application/zip": {
                 "schema": {
                   "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Pipeline is not running or paused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
-                  "error_code": "PipelineInteractionUnreachable",
-                  "details": {
-                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
-                  }
                 }
               }
             }
@@ -1250,10 +1355,69 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
-                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
                   }
                 }
               }
@@ -1336,7 +1500,7 @@
             }
           },
           "400": {
-            "description": "Unknown data format specified in the '?format=' argument.",
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -1346,38 +1510,81 @@
             }
           },
           "404": {
-            "description": "Specified table or view does not exist.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Pipeline is not currently running because it has been shutdown or not yet started.",
+            "description": "Pipeline and/or table/view with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "example": {
-                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
-                  "error_code": "PipelineInteractionUnreachable",
-                  "details": {
-                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                "examples": {
+                  "Pipeline with that name does not exist": {
+                    "value": {
+                      "message": "Unknown pipeline name 'non-existent-pipeline'",
+                      "error_code": "UnknownPipelineName",
+                      "details": {
+                        "pipeline_name": "non-existent-pipeline"
+                      }
+                    }
                   }
                 }
               }
             }
           },
           "500": {
-            "description": "Request failed.",
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -1410,7 +1617,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Pipeline's heap usage profile as a gzipped protobuf that can be inspected by the pprof tool",
+            "description": "Heap usage profile as a gzipped protobuf that can be inspected by the pprof tool",
             "content": {
               "application/protobuf": {
                 "schema": {
@@ -1421,18 +1628,11 @@
             }
           },
           "400": {
-            "description": "Pipeline is not running or paused, or getting a heap profile is not supported on this platform",
+            "description": "Getting a heap profile is not supported on this platform",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
-                  "error_code": "PipelineInteractionUnreachable",
-                  "details": {
-                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
-                  }
                 }
               }
             }
@@ -1445,10 +1645,69 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
-                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
                   }
                 }
               }
@@ -1533,7 +1792,7 @@
           }
         ],
         "requestBody": {
-          "description": "Contains the new input data in CSV.",
+          "description": "Input data in the specified format",
           "content": {
             "text/plain": {
               "schema": {
@@ -1545,10 +1804,10 @@
         },
         "responses": {
           "200": {
-            "description": "Data successfully delivered to the pipeline."
+            "description": "Data successfully delivered to the pipeline"
           },
           "400": {
-            "description": "Error parsing input data.",
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -1558,28 +1817,81 @@
             }
           },
           "404": {
-            "description": "Pipeline is not currently running because it has been shutdown or not yet started.",
+            "description": "Pipeline and/or table with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "example": {
-                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
-                  "error_code": "PipelineInteractionUnreachable",
-                  "details": {
-                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                "examples": {
+                  "Pipeline with that name does not exist": {
+                    "value": {
+                      "message": "Unknown pipeline name 'non-existent-pipeline'",
+                      "error_code": "UnknownPipelineName",
+                      "details": {
+                        "pipeline_name": "non-existent-pipeline"
+                      }
+                    }
                   }
                 }
               }
             }
           },
           "500": {
-            "description": "Request failed.",
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -1597,7 +1909,7 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "Retrieve pipeline logs as a stream.",
+        "summary": "Retrieve logs of a (non-shutdown) pipeline as a stream.",
         "description": "The logs stream catches up to the extent of the internally configured per-pipeline\ncircular logs buffer (limited to a certain byte size and number of lines, whichever\nis reached first). After the catch-up, new lines are pushed whenever they become\navailable.\n\nThe logs stream will end when the pipeline is shut down. It is also possible for the\nlogs stream to end prematurely due to the runner back-end (temporarily) losing\nconnectivity to the pipeline instance (e.g., process). In this case, it is needed\nto issue again a new request to this endpoint.",
         "operationId": "get_pipeline_logs",
         "parameters": [
@@ -1631,10 +1943,48 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
-                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Pipeline is shutdown": {
+                    "value": {
+                      "message": "Unable to interact with pipeline runner because the deployment status is 'shutdown' -- start the pipeline or wait if it has already been started",
+                      "error_code": "RunnerInteractionShutdown",
+                      "details": null
+                    }
+                  },
+                  "Runner response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline runner to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "RunnerInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
                   }
                 }
               }
@@ -1653,7 +2003,7 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "Execute an ad-hoc query in a running or paused pipeline.",
+        "summary": "Execute an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental.",
         "operationId": "pipeline_adhoc_sql",
         "parameters": [
           {
@@ -1668,7 +2018,7 @@
           {
             "name": "sql",
             "in": "query",
-            "description": "The SQL query to execute.",
+            "description": "SQL query to execute",
             "required": true,
             "schema": {
               "type": "string"
@@ -1677,7 +2027,7 @@
           {
             "name": "format",
             "in": "query",
-            "description": "Input data format, e.g., 'text', 'json' or 'parquet'.",
+            "description": "Input data format, e.g., 'text', 'json' or 'parquet'",
             "required": true,
             "schema": {
               "$ref": "#/components/schemas/AdHocResultFormat"
@@ -1686,7 +2036,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Executes an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental.",
+            "description": "Ad-hoc SQL query result",
             "content": {
               "text/plain": {
                 "schema": {
@@ -1697,18 +2047,11 @@
             }
           },
           "400": {
-            "description": "Pipeline is shutdown or an invalid SQL query was supplied",
+            "description": "Invalid SQL query",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
-                  "error_code": "PipelineInteractionUnreachable",
-                  "details": {
-                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
-                  }
                 }
               }
             }
@@ -1721,27 +2064,69 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
-                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_name": "non-existent-pipeline"
                   }
                 }
               }
             }
           },
           "500": {
-            "description": "A fatal error occurred during query processing (after streaming response was already initiated)",
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "example": {
-                  "message": "Unable to reach pipeline to interact due to: Failed to connect to host: Internal error: connector has been disconnected",
-                  "error_code": "PipelineInteractionUnreachable",
-                  "details": {
-                    "error": "Failed to connect to host: Internal error: connector has been disconnected"
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
                   }
                 }
               }
@@ -1760,7 +2145,7 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "Retrieve pipeline statistics (e.g., metrics, performance counters).",
+        "summary": "Retrieve statistics (e.g., metrics, performance counters) of a running or paused pipeline.",
         "operationId": "get_pipeline_stats",
         "parameters": [
           {
@@ -1784,23 +2169,6 @@
               }
             }
           },
-          "400": {
-            "description": "Pipeline is not running or paused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
-                  "error_code": "PipelineInteractionUnreachable",
-                  "details": {
-                    "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
-                  }
-                }
-              }
-            }
-          },
           "404": {
             "description": "Pipeline with that name does not exist",
             "content": {
@@ -1809,10 +2177,69 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
-                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
                   }
                 }
               }
@@ -1864,7 +2291,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Action has been processed",
+            "description": "Input connector status retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -1874,11 +2301,81 @@
             }
           },
           "404": {
-            "description": "Input connector with that name does not exist",
+            "description": "Pipeline, table and/or input connector with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Pipeline with that name does not exist": {
+                    "value": {
+                      "message": "Unknown pipeline name 'non-existent-pipeline'",
+                      "error_code": "UnknownPipelineName",
+                      "details": {
+                        "pipeline_name": "non-existent-pipeline"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -1942,11 +2439,81 @@
             "description": "Action has been processed"
           },
           "404": {
-            "description": "Input connector with that name does not exist",
+            "description": "Pipeline, table and/or input connector with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Pipeline with that name does not exist": {
+                    "value": {
+                      "message": "Unknown pipeline name 'non-existent-pipeline'",
+                      "error_code": "UnknownPipelineName",
+                      "details": {
+                        "pipeline_name": "non-existent-pipeline"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -1988,7 +2555,7 @@
           {
             "name": "connector_name",
             "in": "path",
-            "description": "Unique input connector name",
+            "description": "Unique output connector name",
             "required": true,
             "schema": {
               "type": "string"
@@ -1997,7 +2564,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Action has been processed",
+            "description": "Output connector status retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -2007,11 +2574,81 @@
             }
           },
           "404": {
-            "description": "Input connector with that name does not exist",
+            "description": "Pipeline, view and/or output connector with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Pipeline with that name does not exist": {
+                    "value": {
+                      "message": "Unknown pipeline name 'non-existent-pipeline'",
+                      "error_code": "UnknownPipelineName",
+                      "details": {
+                        "pipeline_name": "non-existent-pipeline"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -2054,10 +2691,10 @@
         ],
         "responses": {
           "202": {
-            "description": "Action accepted and is being performed"
+            "description": "Action is accepted and is being performed"
           },
           "400": {
-            "description": "Unable to accept action",
+            "description": "Action could not be performed",
             "content": {
               "application/json": {
                 "schema": {
@@ -2065,10 +2702,9 @@
                 },
                 "examples": {
                   "Illegal action": {
-                    "description": "Action is not applicable in the current state",
                     "value": {
                       "message": "Deployment status (current: 'ShuttingDown', desired: 'Shutdown') cannot have desired changed to 'Running'. Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
-                      "error_code": "IllegalPipelineStateTransition",
+                      "error_code": "IllegalPipelineAction",
                       "details": {
                         "hint": "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
                         "status": "ShuttingDown",
@@ -2078,7 +2714,6 @@
                     }
                   },
                   "Invalid action": {
-                    "description": "Invalid action specified",
                     "value": {
                       "message": "Invalid pipeline action 'dance'; valid actions are: 'start', 'pause', or 'shutdown'",
                       "error_code": "InvalidPipelineAction",
@@ -2099,11 +2734,21 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'",
-                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_name": "non-existent-pipeline"
                   }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2654,12 +3299,12 @@
           "error_code": {
             "type": "string",
             "description": "Error code is a string that specifies this error type.",
-            "example": "UnknownInputFormat"
+            "example": "CodeSpecifyingErrorType"
           },
           "message": {
             "type": "string",
             "description": "Human-readable error message.",
-            "example": "Unknown input format 'xml'."
+            "example": "Explanation of the error that occurred."
           }
         }
       },
@@ -4052,6 +4697,23 @@
             "type": "string",
             "description": "Reset subscription's backlog to a given timestamp on startup,\nusing the Pub/Sub `Seek` API.\n\nThe value of this option is an ISO 8601-encoded UTC time, e.g., \"2024-08-17T16:39:57-08:00\".\n\nThis option is mutually exclusive with the `snapshot` option.",
             "nullable": true
+          }
+        }
+      },
+      "RedisOutputConfig": {
+        "type": "object",
+        "description": "Redis output connector configuration.",
+        "required": [
+          "connection_string"
+        ],
+        "properties": {
+          "connection_string": {
+            "type": "string",
+            "description": "The URL format: `redis://[<username>][:<password>@]<hostname>[:port][/[<db>][?protocol=<protocol>]]`\nThis is parsed by the [redis](https://docs.rs/redis/latest/redis/#connection-parameters) crate."
+          },
+          "key_separator": {
+            "type": "string",
+            "description": "Separator used to join multiple components into a single key.\n\":\" by default."
           }
         }
       },

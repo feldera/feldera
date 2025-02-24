@@ -71,6 +71,15 @@ pub fn format_timeout_error_message<T: Display>(timeout: Duration, error: T) -> 
     )
 }
 
+/// Format the error message displayed when a request to the runner timed out.
+pub fn format_runner_timeout_error_message<T: Display>(timeout: Duration, error: T) -> String {
+    format!(
+        "timeout ({}s) was reached: this means the runner took too long to respond -- \
+         the runner logs might contain additional information (original send request error: {error})",
+        timeout.as_secs()
+    )
+}
+
 /// Formats the error message displayed when a request to a pipeline experiences
 /// a disconnection at the HTTP connector level.
 ///
@@ -97,10 +106,10 @@ pub struct RunnerInteraction {
 
 impl RunnerInteraction {
     /// Default timeout for an HTTP request to a pipeline.
-    const PIPELINE_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+    pub const PIPELINE_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
     /// Default timeout for an HTTP request to a pipeline runner.
-    const RUNNER_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+    pub const RUNNER_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
     /// Creates the interaction interface.
     /// The database is used to retrieve pipelines.
@@ -372,23 +381,16 @@ impl RunnerInteraction {
             .timeout(Self::RUNNER_HTTP_REQUEST_TIMEOUT)
             .send()
             .await
-            .map_err(|e| {
-                match e {
-                    SendRequestError::Timeout => {
-                        RunnerError::RunnerInteractionUnreachable {
-                            error: format!(
-                                "timeout ({}s) was reached: this means the runner took too long to respond -- \
-                                 the runner logs might contain additional information (original send request error: {e})",
-                                Self::RUNNER_HTTP_REQUEST_TIMEOUT.as_secs()
-                            )
-                        }
-                    }
-                    _ => {
-                        RunnerError::RunnerInteractionUnreachable {
-                            error: format!("unable to send request due to: {e}"),
-                        }
-                    }
-                }
+            .map_err(|e| match e {
+                SendRequestError::Timeout => RunnerError::RunnerInteractionUnreachable {
+                    error: format_runner_timeout_error_message(
+                        Self::RUNNER_HTTP_REQUEST_TIMEOUT,
+                        e,
+                    ),
+                },
+                _ => RunnerError::RunnerInteractionUnreachable {
+                    error: format!("unable to send request due to: {e}"),
+                },
             })?;
 
         // Build the HTTP response with the same status, headers and streaming body

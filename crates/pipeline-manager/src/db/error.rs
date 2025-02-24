@@ -154,7 +154,7 @@ pub enum DBError {
         current: PipelineStatus,
         transition_to: PipelineStatus,
     },
-    IllegalPipelineStateTransition {
+    IllegalPipelineAction {
         hint: String,
         status: PipelineStatus,
         desired_status: PipelineDesiredStatus,
@@ -535,7 +535,7 @@ impl Display for DBError {
                     "Cannot transition from deployment status '{current:?}' to '{transition_to:?}'"
                 )
             }
-            DBError::IllegalPipelineStateTransition {
+            DBError::IllegalPipelineAction {
                 hint,
                 status,
                 desired_status,
@@ -614,9 +614,7 @@ impl DetailedError for DBError {
             Self::InvalidDeploymentStatusTransition { .. } => {
                 Cow::from("InvalidDeploymentStatusTransition")
             }
-            Self::IllegalPipelineStateTransition { .. } => {
-                Cow::from("IllegalPipelineStateTransition")
-            }
+            Self::IllegalPipelineAction { .. } => Cow::from("IllegalPipelineAction"),
         }
     }
 }
@@ -665,7 +663,7 @@ impl ResponseError for DBError {
             Self::TransitionRequiresCompiledProgram { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidDeploymentStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
-            Self::IllegalPipelineStateTransition { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which is not valid
+            Self::IllegalPipelineAction { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which cannot be performed currently
         }
     }
 

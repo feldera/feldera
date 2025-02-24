@@ -43,43 +43,38 @@ use std::time::Duration;
     ),
     request_body(
         content = String,
-        description = "Contains the new input data in CSV.",
+        description = "Input data in the specified format",
         content_type = "text/plain",
     ),
     responses(
         (status = OK
-            , description = "Data successfully delivered to the pipeline."
+            , description = "Data successfully delivered to the pipeline"
             , content_type = "application/json"),
-        (status = BAD_REQUEST
-            , description = "Specified pipeline id is not a valid uuid."
-            , body = ErrorResponse
-            , example = json!(examples::error_invalid_uuid_param())),
         (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
-        (status = NOT_FOUND
-            , description = "Specified table does not exist."
-            , body = ErrorResponse
-            // , example = json!(examples::error_unknown_input_table("MyTable"))
-            ),
-        (status = NOT_FOUND
-            , description = "Pipeline is not currently running because it has been shutdown or not yet started."
-            , body = ErrorResponse
-            , example = json!(examples::error_pipeline_not_running_or_paused())),
+            , description = "Pipeline and/or table with that name does not exist"
+            , examples(
+                ("Pipeline with that name does not exist" = (value = json!(examples::error_unknown_pipeline_name()))),
+                // ("Table with that name does not exist" = (value = json!(examples::error_unknown_input_table()))),
+            )
+        ),
         (status = BAD_REQUEST
-            , description = "Unknown data format specified in the '?format=' argument."
             , body = ErrorResponse
-            // , example = json!(examples::error_unknown_input_format())
-            ),
-        (status = BAD_REQUEST
-            , description = "Error parsing input data."
+            // , examples(
+            //     ("Unknown input data format" = (value = json!(examples::error_unknown_input_format()))),
+            //     ("Input parse error" = (value = json!(examples::error_parse_errors()))),
+            // )
+        ),
+        (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse
-            // , example = json!(examples::error_parse_errors())
-            ),
-        (status = INTERNAL_SERVER_ERROR
-            , description = "Request failed."
-            , body = ErrorResponse),
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction",
 )]
@@ -144,31 +139,30 @@ async fn http_input(
             , description = "Connection to the endpoint successfully established. The body of the response contains a stream of data chunks."
             , content_type = "application/json"
             , body = Chunk),
-        (status = BAD_REQUEST
-            , description = "Specified pipeline id is not a valid uuid."
-            , body = ErrorResponse
-            , example = json!(examples::error_invalid_uuid_param())),
         (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
-        (status = NOT_FOUND
-            , description = "Specified table or view does not exist."
-            , body = ErrorResponse
-            // , example = json!(examples::error_unknown_output_table("MyTable"))
-            ),
-        (status = GONE
-            , description = "Pipeline is not currently running because it has been shutdown or not yet started."
-            , body = ErrorResponse
-            , example = json!(examples::error_pipeline_not_running_or_paused())),
+            , description = "Pipeline and/or table/view with that name does not exist"
+            , examples(
+                ("Pipeline with that name does not exist" = (value = json!(examples::error_unknown_pipeline_name()))),
+                // ("Table or view with that name does not exist" = ...),
+            )
+        ),
         (status = BAD_REQUEST
-            , description = "Unknown data format specified in the '?format=' argument."
             , body = ErrorResponse
-            // , example = json!(examples::error_unknown_output_format())
-            ),
-        (status = INTERNAL_SERVER_ERROR
-            , description = "Request failed."
-            , body = ErrorResponse),
+            // , examples(
+            //    ("Unknown output data format" = ...),
+            // )
+        ),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction"
 )]
@@ -244,15 +238,24 @@ async fn http_output(
         (status = OK
             , description = "Action has been processed"),
         (status = NOT_FOUND
-            , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
-        (status = NOT_FOUND
-            , description = "Table with that name does not exist"
-            , body = ErrorResponse),
-        (status = NOT_FOUND
-            , description = "Input connector with that name does not exist"
-            , body = ErrorResponse),
+            , description = "Pipeline, table and/or input connector with that name does not exist"
+            , examples(
+                ("Pipeline with that name does not exist" = (value = json!(examples::error_unknown_pipeline_name()))),
+                // ("Table with that name does not exist" = ...),
+                // ("Input connector with that name does not exist" = ...),
+            )
+        ),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction"
 )]
@@ -318,19 +321,28 @@ pub(crate) async fn post_pipeline_input_connector_action(
     ),
     responses(
         (status = OK
-            , description = "Action has been processed"
+            , description = "Input connector status retrieved successfully"
             , content_type = "application/json"
             , body = Object),
         (status = NOT_FOUND
-            , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
-        (status = NOT_FOUND
-            , description = "Table with that name does not exist"
-            , body = ErrorResponse),
-        (status = NOT_FOUND
-            , description = "Input connector with that name does not exist"
-            , body = ErrorResponse),
+            , description = "Pipeline, table and/or input connector with that name does not exist"
+            , examples(
+                ("Pipeline with that name does not exist" = (value = json!(examples::error_unknown_pipeline_name()))),
+                // ("Table with that name does not exist" = ...),
+                // ("Input connector with that name does not exist" = ...),
+            )
+        ),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction"
 )]
@@ -376,23 +388,32 @@ pub(crate) async fn get_pipeline_input_connector_status(
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
         ("view_name" = String, Path, description = "Unique SQL view name"),
-        ("connector_name" = String, Path, description = "Unique input connector name")
+        ("connector_name" = String, Path, description = "Unique output connector name")
     ),
     responses(
         (status = OK
-            , description = "Action has been processed"
+            , description = "Output connector status retrieved successfully"
             , content_type = "application/json"
             , body = Object),
         (status = NOT_FOUND
-            , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
-        (status = NOT_FOUND
-            , description = "View with that name does not exist"
-            , body = ErrorResponse),
-        (status = NOT_FOUND
-            , description = "Input connector with that name does not exist"
-            , body = ErrorResponse),
+            , description = "Pipeline, view and/or output connector with that name does not exist"
+            , examples(
+                ("Pipeline with that name does not exist" = (value = json!(examples::error_unknown_pipeline_name()))),
+                // ("View with that name does not exist" = ...),
+                // ("Output connector with that name does not exist" = ...),
+            )
+        ),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction"
 )]
@@ -431,7 +452,7 @@ pub(crate) async fn get_pipeline_output_connector_status(
     Ok(response)
 }
 
-/// Retrieve pipeline logs as a stream.
+/// Retrieve logs of a (non-shutdown) pipeline as a stream.
 ///
 /// The logs stream catches up to the extent of the internally configured per-pipeline
 /// circular logs buffer (limited to a certain byte size and number of lines, whichever
@@ -456,7 +477,15 @@ pub(crate) async fn get_pipeline_output_connector_status(
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline()))
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is shutdown" = (value = json!(examples::error_runner_interaction_shutdown()))),
+                ("Runner response timeout" = (value = json!(examples::error_runner_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction"
 )]
@@ -474,7 +503,7 @@ pub(crate) async fn get_pipeline_logs(
         .await
 }
 
-/// Retrieve pipeline statistics (e.g., metrics, performance counters).
+/// Retrieve statistics (e.g., metrics, performance counters) of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -490,11 +519,17 @@ pub(crate) async fn get_pipeline_logs(
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
-        (status = BAD_REQUEST
-            , description = "Pipeline is not running or paused"
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse
-            , example = json!(examples::error_pipeline_not_running_or_paused()))
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction"
 )]
@@ -530,17 +565,23 @@ pub(crate) async fn get_pipeline_stats(
     ),
     responses(
         (status = OK
-            , description = "Obtains a circuit performance profile."
+            , description = "Circuit performance profile"
             , content_type = "application/zip"
             , body = Object),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
-        (status = BAD_REQUEST
-            , description = "Pipeline is not running or paused"
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse
-            , example = json!(examples::error_pipeline_not_running_or_paused()))
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction"
 )]
@@ -576,15 +617,21 @@ pub(crate) async fn get_pipeline_circuit_profile(
     ),
     responses(
         (status = OK
-            , description = "Checkpoint completed."),
+            , description = "Checkpoint completed"),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
-        (status = BAD_REQUEST
-            , description = "Pipeline is not running or paused, or fault tolerance is not enabled for this pipeline"
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse
-            , example = json!(examples::error_pipeline_not_running_or_paused()))
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction"
 )]
@@ -629,17 +676,26 @@ pub(crate) async fn checkpoint_pipeline(
     ),
     responses(
         (status = OK
-            , description = "Pipeline's heap usage profile as a gzipped protobuf that can be inspected by the pprof tool"
+            , description = "Heap usage profile as a gzipped protobuf that can be inspected by the pprof tool"
             , content_type = "application/protobuf"
             , body = Vec<u8>),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline())),
+            , example = json!(examples::error_unknown_pipeline_name())),
         (status = BAD_REQUEST
-            , description = "Pipeline is not running or paused, or getting a heap profile is not supported on this platform"
+            , description = "Getting a heap profile is not supported on this platform"
+            , body = ErrorResponse),
+        (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse
-            , example = json!(examples::error_pipeline_not_running_or_paused()))
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction"
 )]
@@ -666,32 +722,37 @@ pub(crate) async fn get_pipeline_heap_profile(
         .await
 }
 
-/// Execute an ad-hoc query in a running or paused pipeline.
+/// Execute an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("sql" = String, Query, description = "The SQL query to execute."),
-        ("format" = AdHocResultFormat, Query, description = "Input data format, e.g., 'text', 'json' or 'parquet'."),
+        ("sql" = String, Query, description = "SQL query to execute"),
+        ("format" = AdHocResultFormat, Query, description = "Input data format, e.g., 'text', 'json' or 'parquet'"),
     ),
     responses(
         (status = OK
-        , description = "Executes an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental."
-        , content_type = "text/plain"
-        , body = Vec<u8>),
+            , description = "Ad-hoc SQL query result"
+            , content_type = "text/plain"
+            , body = Vec<u8>),
         (status = NOT_FOUND
-        , description = "Pipeline with that name does not exist"
-        , body = ErrorResponse
-        , example = json!(examples::error_unknown_pipeline())),
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
         (status = BAD_REQUEST
-        , description = "Pipeline is shutdown or an invalid SQL query was supplied"
-        , body = ErrorResponse
-        , example = json!(examples::error_pipeline_not_running_or_paused())),
-        (status = INTERNAL_SERVER_ERROR
-        , description = "A fatal error occurred during query processing (after streaming response was already initiated)"
-        , body = ErrorResponse
-        , example = json!(examples::error_stream_terminated()))
+            , description = "Invalid SQL query"
+            , body = ErrorResponse),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline interaction"
 )]

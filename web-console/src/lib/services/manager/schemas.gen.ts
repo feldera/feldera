@@ -695,12 +695,12 @@ The contents of this field is determined by \`error_code\`.`
     error_code: {
       type: 'string',
       description: 'Error code is a string that specifies this error type.',
-      example: 'UnknownInputFormat'
+      example: 'CodeSpecifyingErrorType'
     },
     message: {
       type: 'string',
       description: 'Human-readable error message.',
-      example: "Unknown input format 'xml'."
+      example: 'Explanation of the error that occurred.'
     }
   }
 } as const
@@ -1212,7 +1212,7 @@ the start of the stream.
 This format is suitable for insert-only streams (no deletions).
 Each element in the input stream contains a record without any
 additional envelope that gets inserted in the input table.`,
-  enum: ['insert_delete', 'weighted', 'debezium', 'snowflake', 'raw']
+  enum: ['insert_delete', 'weighted', 'debezium', 'snowflake', 'raw', 'redis']
 } as const
 
 export const $KafkaHeader = {
@@ -2435,6 +2435,24 @@ This option is mutually exclusive with the \`snapshot\` option.`,
   }
 } as const
 
+export const $RedisOutputConfig = {
+  type: 'object',
+  description: 'Redis output connector configuration.',
+  required: ['connection_string'],
+  properties: {
+    connection_string: {
+      type: 'string',
+      description: `The URL format: \`redis://[<username>][:<password>@]<hostname>[:port][/[<db>][?protocol=<protocol>]]\`
+This is parsed by the [redis](https://docs.rs/redis/latest/redis/#connection-parameters) crate.`
+    },
+    key_separator: {
+      type: 'string',
+      description: `Separator used to join multiple components into a single key.
+":" by default.`
+    }
+  }
+} as const
+
 export const $Relation = {
   allOf: [
     {
@@ -3346,6 +3364,19 @@ export const $TransportConfig = {
         name: {
           type: 'string',
           enum: ['delta_table_output']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
+          $ref: '#/components/schemas/RedisOutputConfig'
+        },
+        name: {
+          type: 'string',
+          enum: ['redis_output']
         }
       }
     },
