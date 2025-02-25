@@ -45,13 +45,13 @@
     }
   }
   const startReadingStream = (pipelineName: string, relationName: string) => {
-    const handle = relationEgressStream(pipelineName, relationName).then((stream) => {
-      if ('message' in stream) {
+    const request = relationEgressStream(pipelineName, relationName).then((result) => {
+      if (result instanceof Error) {
         pipelinesRelations[pipelineName][relationName].cancelStream = undefined
         return undefined
       }
       const { cancel } = parseCancellable(
-        stream,
+        result,
         {
           pushChanges: (rows: XgressEntry[]) => {
             const initialLen = changeStream[pipelineName].rows.length
@@ -114,7 +114,7 @@
       }
     })
     return () => {
-      handle.then((cancel) => {
+      request.then((cancel) => {
         cancel?.()
         pipelinesRelations[pipelineName][relationName].cancelStream = undefined
         ;({ rows: changeStream[pipelineName].rows, headers: changeStream[pipelineName].headers } =

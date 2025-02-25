@@ -2,6 +2,7 @@ import { BigNumber } from 'bignumber.js/bignumber.js'
 import { JSONParser, Tokenizer, TokenParser, type JSONParserOptions } from '@streamparser/json'
 import { findIndex } from '$lib/functions/common/array'
 import { tuple } from '$lib/functions/common/tuple'
+import invariant from 'tiny-invariant'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
@@ -17,7 +18,10 @@ class BigNumberTokenizer extends Tokenizer {
  * @returns
  */
 export const parseCancellable = <T, Transformer extends TransformStream<Uint8Array, T>>(
-  stream: ReadableStream<Uint8Array>,
+  source: {
+    stream: ReadableStream<Uint8Array<ArrayBufferLike>>
+    cancel: () => void
+  },
   cbs: {
     pushChanges: (changes: T[]) => void
     onBytesSkipped?: (bytes: number) => void
@@ -27,8 +31,12 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
   transformer: Transformer,
   options?: { bufferSize?: number }
 ) => {
+  invariant(
+    source.stream instanceof ReadableStream,
+    `parseCancellable(): stream is ${JSON.stringify(source.stream)}`
+  )
   const maxChunkSize = 100000
-  const reader = stream
+  const reader = source.stream
     .pipeThrough(
       splitStreamByMaxChunk(maxChunkSize, options?.bufferSize ?? 1000000, cbs.onBytesSkipped)
     )
@@ -80,11 +88,9 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
     cancel: () => {
       flush()
       closedReason = 'cancelled'
-      reader
-        .cancel() // A call to .cancel() here sometimes causes multiple rejectionhandled events emitted on window object
-        .catch((e) => {
-          cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
-        })
+      reader.cancel().then(() => {
+        source.cancel()
+      })
     }
   }
 }
