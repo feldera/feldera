@@ -678,20 +678,31 @@ async fn prepare_workspace(
         })?;
 
     // Create the workspace-level Cargo.toml
-    let cargo_toml = formatdoc! {"
+    let cargo_toml = formatdoc! {r#"
         [workspace]
-        members = [ \"projects/project-{source_checksum}\" ]
-        resolver = \"2\"
+        members = [ "projects/project-{source_checksum}" ]
+        resolver = "2"
+
+        [patch.crates-io]
+        datafusion = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
+        datafusion-common = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
+        datafusion-expr = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
+        datafusion-functions = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
+        datafusion-functions-aggregate = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
+        datafusion-physical-expr = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
+        datafusion-physical-plan = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
+        datafusion-proto = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
+        datafusion-sql = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
 
         [profile.unoptimized]
-        inherits = \"release\"
+        inherits = "release"
         opt-level = 0
-        lto = \"off\"
+        lto = "off"
         codegen-units = 256
 
         [profile.optimized]
-        inherits = \"release\"
-    "};
+        inherits = "release"
+    "#};
     let cargo_toml_file_path = config
         .working_dir()
         .join("rust-compilation")
