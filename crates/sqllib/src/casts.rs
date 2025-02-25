@@ -431,6 +431,54 @@ cast_function!(dec, Dec, decimal, Decimal);
 
 #[doc(hidden)]
 #[inline]
+pub fn cast_to_dec_f(value: F32) -> SqlResult<Decimal> {
+    Ok(Decimal::from_f32(value.into_inner()).unwrap())
+}
+
+cast_function!(dec, Dec, f, F32);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_dec_d(value: F64) -> SqlResult<Decimal> {
+    Ok(Decimal::from_f64(value.into_inner()).unwrap())
+}
+
+cast_function!(dec, Dec, d, F64);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_dec_i8(value: i8) -> SqlResult<Decimal> {
+    Ok(value.into())
+}
+
+cast_function!(dec, Dec, i8, i8);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_dec_i16(value: i16) -> SqlResult<Decimal> {
+    Ok(value.into())
+}
+
+cast_function!(dec, Dec, i16, i16);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_dec_i32(value: i32) -> SqlResult<Decimal> {
+    Ok(value.into())
+}
+
+cast_function!(dec, Dec, i32, i32);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_dec_i64(value: i64) -> SqlResult<Decimal> {
+    Ok(value.into())
+}
+
+cast_function!(dec, Dec, i64, i64);
+
+#[doc(hidden)]
+#[inline]
 pub fn cast_to_decimal_decimalN(
     value: Option<Decimal>,
     precision: u32,

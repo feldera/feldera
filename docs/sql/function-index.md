@@ -56,6 +56,7 @@
 * `BIT_XOR` (aggregate): [aggregates](aggregates.md#bit_xor)
 * `BOOL_AND` (aggregate): [aggregates](aggregates.md#logical_and)
 * `BOOL_OR` (aggregate): [aggregates](aggregates.md#logical_or)
+* `BROUND`: [decimal](decimal.md#round)
 * `CARDINALITY`: [array](array.md#cardinality), [map](map.md#cardinality)
 * `CASE`: [comparisons](comparisons.md#case)
 * `CAST`: [casts](casts.md#data-type-conversions)

@@ -1,17 +1,36 @@
 //! Operations on Decimal values
 
-use crate::{casts::*, some_polymorphic_function1, some_polymorphic_function2};
+use crate::{casts::*, some_function2, some_polymorphic_function1, some_polymorphic_function2};
 use core::cmp::Ordering;
 use dbsp::algebra::F64;
 use num::ToPrimitive;
 use num_traits::Signed;
-use rust_decimal::{Decimal, MathematicalOps};
+use rust_decimal::{Decimal, MathematicalOps, RoundingStrategy};
 use std::str::FromStr;
 
 // Runtime decimal type
 pub type Dec = Decimal;
 
 /***** decimals ***** */
+
+#[doc(hidden)]
+pub fn bround__(left: Decimal, right: i32) -> Decimal {
+    if right.is_negative() {
+        let right_unsigned = right.unsigned_abs();
+        let pow_of_ten = Decimal::new(10_i64.pow(right_unsigned), 0);
+        let rounded = ((left / pow_of_ten)
+            .round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven))
+            * pow_of_ten;
+        return rounded;
+    }
+
+    left.round_dp_with_strategy(
+        u32::try_from(right).unwrap(),
+        RoundingStrategy::MidpointNearestEven,
+    )
+}
+
+some_function2!(bround, Decimal, i32, Decimal);
 
 #[doc(hidden)]
 #[inline(always)]

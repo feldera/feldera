@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rel.type.RelDataTypeImpl;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlCallBinding;
 import org.apache.calcite.sql.SqlFunction;
@@ -26,6 +27,7 @@ import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.util.Util;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -37,8 +39,9 @@ import java.util.Locale;
 import java.util.Objects;
 
 import static java.util.Objects.requireNonNull;
-import static org.apache.calcite.sql.type.OperandTypes.family;
+import static org.apache.calcite.sql.type.OperandTypes.*;
 import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
+import static org.apache.calcite.sql.type.ReturnTypes.explicit;
 import static org.apache.calcite.util.Static.RESOURCE;
 
 /** Several functions that we define and add to the existing ones. */
@@ -69,6 +72,7 @@ public class CustomFunctions {
         this.functions.add(new ArrayRemoveFunction());
         this.functions.add(new ArrayContainsFunction());
         this.functions.add(new ArrayPositionFunction());
+        this.functions.add(new BroundFunction());
         this.udf = new HashMap<>();
     }
 
@@ -165,6 +169,37 @@ public class CustomFunctions {
                     ReturnTypes.VARIANT.andThen(SqlTypeTransforms.TO_NULLABLE),
                     OperandTypes.STRING,
                     SqlFunctionCategory.STRING, "json#parse_json");
+        }
+    }
+
+    static class BroundFunction extends NonOptimizedFunction {
+        private BroundFunction() {
+            super("BROUND",
+                    BroundFunction::broundReturnType,
+                    sequence("DECIMAL, INTEGER", OperandTypes.family(SqlTypeFamily.NUMERIC),
+                            typeName(SqlTypeName.INTEGER)
+                                    .or(typeName(SqlTypeName.BIGINT))
+                                    .or(typeName(SqlTypeName.SMALLINT)
+                                    .or(typeName(SqlTypeName.TINYINT)))),
+                    SqlFunctionCategory.NUMERIC,
+                    "decimal#round");
+        }
+
+        private static RelDataType broundReturnType(SqlOperatorBinding opBinding) {
+            List<RelDataType> operandTypes = opBinding.collectOperandTypes();
+            assert operandTypes.size() == 2;
+            RelDataType type0 = operandTypes.get(0);
+            boolean anyNull = type0.isNullable() || operandTypes.get(1).isNullable();
+            if (type0.getSqlTypeName() == SqlTypeName.DECIMAL)
+                return opBinding.getTypeFactory().createTypeWithNullability(type0, anyNull);
+            int precision = DBSPTypeDecimal.MAX_PRECISION;
+            int scale;
+            if (SqlTypeName.INT_TYPES.contains(type0.getSqlTypeName()))
+                scale = 0;
+            else
+                scale = DBSPTypeDecimal.MAX_SCALE;
+            RelDataType resultType = opBinding.getTypeFactory().createSqlType(SqlTypeName.DECIMAL, precision, scale);
+            return opBinding.getTypeFactory().createTypeWithNullability(resultType, anyNull);
         }
     }
 

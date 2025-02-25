@@ -31,6 +31,34 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void testBround() {
+        this.qs("""
+                SELECT BROUND(1.123, 0), BROUND(1.123, 1), BROUND(1.123, 2), BROUND(1.123, 3);
+                 a |   b |    c |     d
+                ------------------------
+                 1 | 1.1 | 1.12 | 1.123
+                (1 row)
+                
+                SELECT BROUND(1.15, 1), BROUND(1.25, 1), BROUND(1.55, 1);
+                 a   |   b |   c
+                -----------------
+                 1.2 | 1.2 | 1.6
+                (1 row)
+                
+                SELECT BROUND(11.15, -1), BROUND(15.25, -1), BROUND(25.55, -1);
+                 a  |  b |  c
+                --------------
+                 10 | 20 | 30
+                (1 row)
+                
+                SELECT BROUND(11, -4), BROUND(11.25e0, 1), BROUND(0, CAST(1 AS TINYINT));
+                 a   |    b | c
+                ----------------
+                 0   | 11.2 | 0
+                (1 row)""");
+    }
+
+    @Test
     public void testBetween() {
         this.qs("""
                 SELECT TIMESTAMP '2020-02-02 10:00:00' between TIMESTAMP '2020-02-02 09:00:00' and TIMESTAMP '2020-02-02 11:00:00';

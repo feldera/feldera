@@ -94,6 +94,11 @@ But invalid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 3))`` will throw a r
     <td>absolute value</td>
   </tr>
   <tr>
+    <td><a id="bround"></a><code>BROUND(decimal, digits)</code></td>
+    <td>Performs banker's rounding to the specified number of decimal digits after the decimal point.
+        Negative values for "digits" are supported.</td>
+  </tr>
+  <tr>
     <td><a id="ceil"></a><code>CEIL(value)</code></td>
     <td>Ceiling function: nearest integer value greater than or equal to argument (result is a decimal value)</td>
   </tr>
@@ -119,7 +124,7 @@ But invalid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 3))`` will throw a r
   </tr>
   <tr>
     <td><a id="round2"></a><code>ROUND(value, digits)</code></td>
-    <td>where <code>digits</code> is an integer value. Round the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
+    <td>where <code>digits</code> is an integer value, which may be negative. Round the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
   </tr>
   <tr>
     <td><a id="sign"></a><code>SIGN(value)</code></td>
@@ -139,7 +144,7 @@ But invalid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 3))`` will throw a r
   </tr>
   <tr>
     <td><a id="truncate"></a><code>TRUNCATE(value, digits)</code></td>
-    <td>where <code>digits</code> is an integer value. Truncates the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
+    <td>where <code>digits</code> is an integer value, which may be negative. Truncates the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
   </tr>
 </table>
 
