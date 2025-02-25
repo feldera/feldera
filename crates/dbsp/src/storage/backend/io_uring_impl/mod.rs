@@ -10,17 +10,18 @@ use std::path::{Path, PathBuf};
 use std::rc::Weak;
 use std::{rc::Rc, sync::Arc};
 
-use feldera_types::config::StorageCacheConfig;
+use crate::circuit::metrics::FILES_CREATED;
+use crate::storage::buffer_cache::FBuf;
+use crate::storage::init;
+use feldera_storage::{StorageBackend, StorageBackendFactory};
+use feldera_types::config::{StorageBackendConfig, StorageCacheConfig, StorageConfig};
 use io_uring::squeue::Entry;
 use io_uring::{opcode, types::Fd, IoUring};
 use libc::{c_void, iovec};
 use metrics::counter;
+use tracing::warn;
 
-use crate::storage::buffer_cache::FBuf;
-use crate::storage::init;
-use crate::{circuit::metrics::FILES_CREATED, storage::backend::StorageBackend};
-
-use super::posixio_impl::PosixReader;
+use super::posixio_impl::{PosixBackendFactory, PosixReader};
 use super::{FileId, FileReader, FileWriter, HasFileId, StorageCacheFlags, StorageError, IOV_MAX};
 
 #[cfg(test)]
@@ -458,4 +459,41 @@ impl StorageBackend for IoUringBackend {
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
         PosixReader::open(self.base.join(name), self.cache)
     }
+}
+
+struct IoUringBackendFactory;
+impl StorageBackendFactory for IoUringBackendFactory {
+    fn backend(&self) -> &'static str {
+        "io_uring"
+    }
+
+    fn create(
+        &self,
+        storage_config: &StorageConfig,
+        backend_config: &StorageBackendConfig,
+    ) -> Result<Rc<dyn StorageBackend>, StorageError> {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+
+        #[cfg(target_os = "linux")]
+        match IoUringBackend::new(storage_config.path(), storage_config.cache) {
+            Ok(backend) => return Ok(Rc::new(backend)),
+            Err(error) => {
+                ONCE.call_once(|| {
+                    warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
+                });
+            }
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        ONCE.call_once(|| {
+            warn!("io_uring backend not supported on this operating system, falling back to POSIX I/O")
+        });
+
+        let pbf = PosixBackendFactory;
+        pbf.create(storage_config, backend_config)
+    }
+}
+
+inventory::submit! {
+    &IoUringBackendFactory as &dyn StorageBackendFactory
 }

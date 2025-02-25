@@ -5335,20 +5335,27 @@
           {
             "type": "object",
             "required": [
-              "name",
-              "config"
+              "name"
             ],
             "properties": {
-              "config": {
+              "name": {
                 "type": "string",
                 "enum": [
                   "default"
                 ]
-              },
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
               "name": {
                 "type": "string",
                 "enum": [
-                  "config"
+                  "io_uring"
                 ]
               }
             }
@@ -5361,21 +5368,21 @@
             ],
             "properties": {
               "config": {
-                "type": "string",
-                "enum": [
-                  "io_uring"
-                ]
+                "$ref": "#/components/schemas/ObjectStorageConfig"
               },
               "name": {
                 "type": "string",
                 "enum": [
-                  "config"
+                  "object"
                 ]
               }
             }
           }
         ],
-        "description": "Backend storage configuration."
+        "description": "Backend storage configuration.",
+        "discriminator": {
+          "propertyName": "name"
+        }
       },
       "StorageCacheConfig": {
         "type": "string",

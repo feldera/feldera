@@ -564,7 +564,8 @@ fn main() {
         eprintln!("{e}");
         std::process::exit(1);
     });
-}"#;
+}
+"#;
 
 /// Prepares the project directory by writing the files required for compilation:
 /// - `src/main.rs`: content is the SQL-generated Rust code (`program_info.main_rust`) appended
@@ -597,6 +598,8 @@ async fn prepare_project(
     let main_rs_file_path = src_dir.join("main.rs");
     let mut main_rs_content = main_rust.to_string();
     main_rs_content.push_str(MAIN_FUNCTION);
+    #[cfg(feature = "feldera-enterprise")]
+    main_rs_content.push_str("extern crate dbsp_enterprise;");
     create_new_file_with_content(&main_rs_file_path, &main_rs_content).await?;
 
     // src/stubs.rs
@@ -630,8 +633,11 @@ async fn prepare_project(
                 #[cfg(not(feature = "feldera-enterprise"))]
                 { r#"dbsp_adapters = { path = "../../crates/adapters" }"# }
                 #[cfg(feature = "feldera-enterprise")]
-                { r#"dbsp_adapters = { path = "../../crates/adapters", features = ["feldera-enterprise"] }"# }
-            }
+                {
+                    r#"dbsp_adapters = { path = "../../crates/adapters", features = ["feldera-enterprise"] }
+dbsp-enterprise = { path = "../../crates/dbsp-enterprise" }"#
+                }
+            },
         )
         .replace(
             "../../crates",
@@ -1179,8 +1185,8 @@ async fn cleanup_rust_compilation(
         .join("pipeline-binaries");
     let valid_pipeline_binary_filenames: Vec<String> = existing_pipeline_programs.iter().map(
         |(pipeline_id, program_version, source_checksum, integrity_checksum)| {
-        format!("pipeline_{pipeline_id}_v{program_version}_sc_{source_checksum}_ic_{integrity_checksum}")
-    }).collect();
+            format!("pipeline_{pipeline_id}_v{program_version}_sc_{source_checksum}_ic_{integrity_checksum}")
+        }).collect();
     if pipeline_binaries_dir.is_dir() {
         cleanup_specific_files(
             "Rust compilation pipeline binaries",

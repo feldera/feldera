@@ -1,6 +1,15 @@
 //! [StorageBackend] implementation using POSIX I/O.
 
-use feldera_types::config::StorageCacheConfig;
+use super::{
+    tempdir_for_thread, BlockLocation, FileId, FileReader, FileWriter, HasFileId,
+    StorageCacheFlags, StorageError, IOV_MAX, MUTABLE_EXTENSION,
+};
+use crate::circuit::metrics::{
+    FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
+};
+use crate::storage::{buffer_cache::FBuf, init};
+use feldera_storage::{append_to_path, StorageBackend, StorageBackendFactory};
+use feldera_types::config::{StorageBackendConfig, StorageCacheConfig, StorageConfig};
 use metrics::{counter, histogram};
 use std::{
     fs::{self, remove_file, File, OpenOptions},
@@ -15,15 +24,6 @@ use std::{
     time::Instant,
 };
 use tracing::warn;
-
-use super::{
-    append_to_path, tempdir_for_thread, BlockLocation, FileId, FileReader, FileWriter, HasFileId,
-    StorageBackend, StorageCacheFlags, StorageError, IOV_MAX, MUTABLE_EXTENSION,
-};
-use crate::circuit::metrics::{
-    FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
-};
-use crate::storage::{buffer_cache::FBuf, init};
 
 pub(super) struct PosixReader {
     file: Arc<File>,
@@ -300,16 +300,35 @@ impl StorageBackend for PosixBackend {
     }
 }
 
+pub(crate) struct PosixBackendFactory;
+impl StorageBackendFactory for PosixBackendFactory {
+    fn backend(&self) -> &'static str {
+        "default"
+    }
+
+    fn create(
+        &self,
+        storage_config: &StorageConfig,
+        _backend_config: &StorageBackendConfig,
+    ) -> Result<Rc<dyn StorageBackend>, StorageError> {
+        Ok(Rc::new(PosixBackend::new(
+            storage_config.path(),
+            storage_config.cache,
+        )))
+    }
+}
+
+inventory::submit! {
+    &PosixBackendFactory as &dyn StorageBackendFactory
+}
+
 #[cfg(test)]
 mod tests {
+    use feldera_storage::StorageBackend;
+    use feldera_types::config::StorageCacheConfig;
     use std::{path::Path, rc::Rc};
 
-    use feldera_types::config::StorageCacheConfig;
-
-    use crate::storage::backend::{
-        tests::{random_sizes, test_backend},
-        StorageBackend,
-    };
+    use crate::storage::backend::tests::{random_sizes, test_backend};
 
     use super::PosixBackend;
 
