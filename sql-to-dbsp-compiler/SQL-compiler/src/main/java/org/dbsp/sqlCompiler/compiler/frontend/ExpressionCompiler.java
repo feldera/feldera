@@ -1323,6 +1323,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
                 return compileFunction(module_prefix + getCallName(call), node, type, ops, 2);
             }
+            case ARRAY_JOIN:
             case ARRAY_TO_STRING: {
                 validateArgCount(node, operationName, ops.size(), 2, 3);
                 DBSPExpression op0 = ops.get(0);
@@ -1338,7 +1339,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 this.ensureString(ops, 1);
                 if (ops.size() > 2)
                     this.ensureString(ops, 2);
-                return compileFunction(call, node, type, ops, 2, 3);
+                return compileFunction("array_to_string", node, type, ops, 2, 3);
             }
             case LIKE:
             // ILIKE will also match LIKE in Calcite, it's just a special case for case-insensitive matching
