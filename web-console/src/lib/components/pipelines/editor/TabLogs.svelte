@@ -73,17 +73,26 @@
   })
   const bufferSize = 10000
   const areLogsAbsent = (pipelineStatusName: NamesInUnion<PipelineStatus>) =>
-    ['Shutdown', 'ShuttingDown', 'PipelineError'].includes(pipelineStatusName)
-  const areLogsExpected = (pipelineStatusName: NamesInUnion<PipelineStatus>) =>
-    ['Provisioning', 'Starting up', 'Running', 'Pausing', 'Paused', 'Resuming'].includes(
+    new Array<NamesInUnion<PipelineStatus>>('Preparing', 'Shutdown', 'ShuttingDown').includes(
       pipelineStatusName
     )
+  const areLogsExpected = (pipelineStatusName: NamesInUnion<PipelineStatus>) =>
+    new Array<NamesInUnion<PipelineStatus>>(
+      'Provisioning',
+      'Initializing',
+      'Running',
+      'Pausing',
+      'Paused',
+      'Resuming',
+      'PipelineError'
+    ).includes(pipelineStatusName)
   const startStream = (pipelineName: string) => {
     if ('open' in streams[pipelineName].stream) {
       return
     }
     pipelineLogsStream(pipelineName).then((result) => {
       if (result instanceof Error) {
+        streams[pipelineName].stream = { closed: {} }
         tryRestartStream(pipelineName, 5000)
         return
       }
@@ -175,23 +184,29 @@
 
 <div class="relative flex h-full flex-1 flex-col rounded">
   {#if 'closed' in stream}
-    {#if 'retryAtTimestamp' in stream && pipelineStatusName !== 'Provisioning' && pipelineStatusName !== 'Starting up'}
+    {#if 'retryAtTimestamp' in stream && pipelineStatusName !== 'Preparing' && pipelineStatusName !== 'Provisioning' && pipelineStatusName !== 'Initializing'}
       <WarningBanner>
         {@const seconds = Math.floor(
           Dayjs.duration(stream.retryAtTimestamp - now.current.valueOf()).asSeconds()
         )}
         Connection to logs stream lost.
         {#if seconds > 0}Retrying in
-          {seconds}s
+          {seconds}s...
         {:else}
-          Retrying...
+          Retrying now...
         {/if}
       </WarningBanner>
-    {:else if getStreams()[pipelineName].rows.length && areLogsAbsent(pipelineStatusName)}
-      <WarningBanner>
-        Displaying log history from the last pipeline run. When the pipeline is started again this
-        history will be erased
-      </WarningBanner>
+    {:else if areLogsAbsent(pipelineStatusName)}
+      {#if getStreams()[pipelineName].rows.length}
+        <WarningBanner variant="info">
+          Displaying log history from the last pipeline run. When the pipeline is started again this
+          history will be cleared.
+        </WarningBanner>
+      {:else}
+        <WarningBanner variant="info">
+          There are no logs available as the pipeline is shutdown.
+        </WarningBanner>
+      {/if}
     {/if}
   {/if}
   {#key pipelineName}

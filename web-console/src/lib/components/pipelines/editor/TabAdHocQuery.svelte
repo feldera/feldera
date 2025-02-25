@@ -11,7 +11,7 @@
   import { adHocQuery, type ExtendedPipeline } from '$lib/services/pipelineManager'
   import Query, { type Row } from '$lib/components/adhoc/Query.svelte'
   import { type QueryData } from '$lib/components/adhoc/Query.svelte'
-  import { isPipelineIdle } from '$lib/functions/pipelines/status'
+  import { isPipelineInteractive } from '$lib/functions/pipelines/status'
   import type { SQLValueJS } from '$lib/types/sql.ts'
   import {
     CustomJSONParserTransformStream,
@@ -24,7 +24,7 @@
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   let pipelineName = $derived(pipeline.current.name)
-  let isIdle = $derived(isPipelineIdle(pipeline.current.status))
+  let isInteractive = $derived(isPipelineInteractive(pipeline.current.status))
 
   const reverseScroll = useReverseScrollContainer({
     observeContentElement: (e) => e.firstElementChild!
@@ -144,7 +144,7 @@
 
 <div class=" h-full min-h-full overflow-y-auto py-2 scrollbar" use:reverseScroll.action>
   <div class="flex flex-col gap-6">
-    {#if isIdle}
+    {#if !isInteractive}
       <WarningBanner class="sticky top-0 z-20 -mb-4 -translate-y-2">
         Start the pipeline to be able to run queries
       </WarningBanner>
@@ -167,7 +167,7 @@
           onCancelQuery={adhocQueries[pipelineName].queries[i]!.progress
             ? adhocQueries[pipelineName].queries[i].result?.endResultStream
             : undefined}
-          disabled={isIdle}
+          disabled={!isInteractive}
           isLastQuery={adhocQueries[pipelineName].queries.length === i + 1}
         ></Query>
       {/if}
