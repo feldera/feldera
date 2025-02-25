@@ -401,44 +401,78 @@ const getAuthenticatedFetch = () => {
   }
 }
 
+const streamingFetch = async <E>(
+  fetch: typeof globalThis.fetch,
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  handleError?: (json: any) => E
+) => {
+  const controller = new AbortController()
+  const result = await fetch(input, {
+    ...init,
+    signal: controller.signal
+  })
+  return result.status === 200 && result.body
+    ? {
+        stream: result.body,
+        cancel: controller.abort.bind(controller)
+      }
+    : result.json().then(handleError)
+}
+
 export const relationEgressStream = async (pipelineName: string, relationName: string) => {
   // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'mode': 'watch', 'array': false, 'query': 'table'}})
-  const fetch = getAuthenticatedFetch()
-  const result = await fetch(
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&array=false`,
-    {
-      method: 'POST'
-    }
-  )
-  return result.status === 200 && result.body ? result.body : (result.json() as Promise<Error>)
+  try {
+    return streamingFetch(
+      getAuthenticatedFetch(),
+      `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&array=false`,
+      {
+        method: 'POST'
+      },
+      (e) => new Error(e.message, { cause: e })
+    )
+  } catch {
+    return new Error(
+      `Failed to connect to the egress stream of relation ${relationName} of pipeline ${pipelineName}`
+    )
+  }
 }
+
 export const pipelineLogsStream = async (pipelineName: string) => {
-  const fetch = getAuthenticatedFetch()
-  const result = await fetch(`${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`, {
-    method: 'GET'
-  })
-  return result.status === 200 && result.body ? result.body : (result.json() as Promise<Error>)
+  try {
+    return streamingFetch(
+      getAuthenticatedFetch(),
+      `${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`,
+      {},
+      (e) => new Error(e.message, { cause: e })
+    )
+  } catch {
+    return new Error(`Failed to connect to the log stream of pipeline ${pipelineName}`)
+  }
 }
 
 export const adHocQuery = async (pipelineName: string, query: string) => {
-  const fetch = getAuthenticatedFetch()
-  const result = await fetch(
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=json`
-  )
-  if (result.status !== 200) {
-    const json = await result.json()
-    return new ReadableStream<Uint8Array>({
-      start(controller) {
-        const encodedString = new TextEncoder().encode(
-          JSON.stringify({ error: json.details.error ?? json.message })
-        )
-        controller.enqueue(encodedString)
-        controller.close()
-      }
-    })
+  try {
+    return streamingFetch(
+      getAuthenticatedFetch(),
+      `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=json`,
+      {},
+      (e) => ({
+        stream: new ReadableStream<Uint8Array>({
+          start(controller) {
+            const encodedString = new TextEncoder().encode(
+              JSON.stringify({ error: e.details.error ?? e.message })
+            )
+            controller.enqueue(encodedString)
+            controller.close()
+          }
+        }),
+        cancel: () => {}
+      })
+    )
+  } catch {
+    return new Error(`Failed to invoke an ad-hoc query on pipeline ${pipelineName}`)
   }
-  invariant(result.body !== null)
-  return result.body
 }
 
 export type XgressEntry = { previewSlice: string } & (

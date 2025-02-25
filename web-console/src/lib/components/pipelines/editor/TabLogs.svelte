@@ -102,7 +102,7 @@
       )
       streams[pipelineName] = {
         firstRowIndex: 0,
-        stream: { open: result, stop: cancel },
+        stream: { open: result.stream, stop: cancel },
         rows: [],
         rowBoundaries: [],
         totalSkippedBytes: 0
