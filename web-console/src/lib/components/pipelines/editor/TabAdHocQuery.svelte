@@ -36,104 +36,109 @@
   const isDataRow = (record: Record<string, SQLValueJS>) =>
     !(Object.keys(record).length === 1 && ('error' in record || 'warning' in record))
 
-  const onSubmitQuery = (pipelineName: string, i: number) => (query: string) => {
-    const promise = adHocQuery(pipelineName, query)
+  const onSubmitQuery = (pipelineName: string, i: number) => async (query: string) => {
+    const request = adHocQuery(pipelineName, query)
     adhocQueries[pipelineName].queries[i]!.progress = true
-    promise.then((stream) => {
-      if (!adhocQueries[pipelineName].queries[i]) {
+    const result = await request
+    if (!adhocQueries[pipelineName].queries[i]) {
+      return
+    }
+    adhocQueries[pipelineName].queries[i].result = {
+      rows: enclosure([]),
+      columns: [],
+      totalSkippedBytes: 0,
+      endResultStream: () => {}
+    }
+    if (result instanceof Error) {
+      adhocQueries[pipelineName].queries[i].result.rows().push({
+        error: result.message
+      })
+      return
+    }
+    const bufferSize = 1000
+    const pushChanges = (
+      input: (Record<string, SQLValueJS> | { error: string } | { warning: string })[]
+    ) => {
+      if (!adhocQueries[pipelineName].queries[i]?.result) {
         return
       }
-      adhocQueries[pipelineName].queries[i].result = {
-        rows: enclosure([]),
-        columns: [],
-        totalSkippedBytes: 0,
-        endResultStream: () => {}
+      if (
+        adhocQueries[pipelineName].queries[i].result.columns.length === 0 &&
+        isDataRow(input[0])
+      ) {
+        adhocQueries[pipelineName].queries[i].result.columns.push(
+          ...Object.keys(input[0]).map((name) => ({
+            name,
+            case_sensitive: false,
+            columntype: { nullable: true }
+          }))
+        )
       }
-      const bufferSize = 1000
-      const pushChanges = (
-        input: (Record<string, SQLValueJS> | { error: string } | { warning: string })[]
-      ) => {
-        if (!adhocQueries[pipelineName].queries[i]?.result) {
-          return
-        }
-        if (
-          adhocQueries[pipelineName].queries[i].result.columns.length === 0 &&
-          isDataRow(input[0])
-        ) {
-          adhocQueries[pipelineName].queries[i].result.columns.push(
-            ...Object.keys(input[0]).map((name) => ({
-              name,
-              case_sensitive: false,
-              columntype: { nullable: true }
-            }))
+      {
+        // Limit result size behavior - ignore all but first bufferSize rows
+        const previousLength = adhocQueries[pipelineName].queries[i].result.rows().length
+        adhocQueries[pipelineName].queries[i].result
+          .rows()
+          .push(
+            ...input
+              .slice(0, bufferSize - previousLength)
+              .map((v) => (isDataRow(v) ? { cells: Object.values(v) } : v) as Row)
           )
-        }
-        {
-          // Limit result size behavior - ignore all but first bufferSize rows
-          const previousLength = adhocQueries[pipelineName].queries[i].result.rows().length
-          adhocQueries[pipelineName].queries[i].result
-            .rows()
-            .push(
-              ...input
-                .slice(0, bufferSize - previousLength)
-                .map((v) => (isDataRow(v) ? { cells: Object.values(v) } : v) as Row)
-            )
-          reclosureKey(adhocQueries[pipelineName].queries[i].result, 'rows')
-          if (input.length > bufferSize - previousLength) {
-            queueMicrotask(() => {
-              if (!adhocQueries[pipelineName].queries[i]) {
-                return
-              }
-              if (adhocQueries[pipelineName].queries[i].result?.rows) {
-                adhocQueries[pipelineName].queries[i].result.rows().push({
-                  warning: `The result contains more rows, but only the first ${bufferSize} are shown`
-                })
-                reclosureKey(adhocQueries[pipelineName].queries[i].result, 'rows')
-              }
-              adhocQueries[pipelineName].queries[i].result?.endResultStream()
-            })
-          }
-        }
-      }
-      const { cancel } = parseCancellable(
-        stream,
-        {
-          pushChanges,
-          onBytesSkipped: (skippedBytes) => {
-            if (!adhocQueries[pipelineName].queries[i]?.result) {
-              return
-            }
-            adhocQueries[pipelineName].queries[i].result.totalSkippedBytes += skippedBytes
-          },
-          onParseEnded: () => {
+        reclosureKey(adhocQueries[pipelineName].queries[i].result, 'rows')
+        if (input.length > bufferSize - previousLength) {
+          queueMicrotask(() => {
             if (!adhocQueries[pipelineName].queries[i]) {
               return
             }
-            // Add field for the next query if the last query did not yield an error right away
-            if (
-              adhocQueries[pipelineName].queries.length === i + 1 &&
-              ((row) => !row || isDataRow(row))(
-                adhocQueries[pipelineName].queries[i].result?.rows().at(0)
-              )
-            ) {
-              adhocQueries[pipelineName].queries.push({ query: '' })
+            if (adhocQueries[pipelineName].queries[i].result?.rows) {
+              adhocQueries[pipelineName].queries[i].result.rows().push({
+                warning: `The result contains more rows, but only the first ${bufferSize} are shown`
+              })
+              reclosureKey(adhocQueries[pipelineName].queries[i].result, 'rows')
             }
-            adhocQueries[pipelineName].queries[i].progress = false
-          },
-          onNetworkError(e, injectValue) {
-            injectValue({ error: e.message })
-          }
-        },
-        new CustomJSONParserTransformStream<Record<string, SQLValueJS>>({
-          paths: ['$'],
-          separator: ''
-        }),
-        {
-          bufferSize: 8 * 1024 * 1024
+            adhocQueries[pipelineName].queries[i].result?.endResultStream()
+          })
         }
-      )
-      adhocQueries[pipelineName].queries[i].result.endResultStream = cancel
-    })
+      }
+    }
+    const { cancel } = parseCancellable(
+      result,
+      {
+        pushChanges,
+        onBytesSkipped: (skippedBytes) => {
+          if (!adhocQueries[pipelineName].queries[i]?.result) {
+            return
+          }
+          adhocQueries[pipelineName].queries[i].result.totalSkippedBytes += skippedBytes
+        },
+        onParseEnded: () => {
+          if (!adhocQueries[pipelineName].queries[i]) {
+            return
+          }
+          // Add field for the next query if the last query did not yield an error right away
+          if (
+            adhocQueries[pipelineName].queries.length === i + 1 &&
+            ((row) => !row || isDataRow(row))(
+              adhocQueries[pipelineName].queries[i].result?.rows().at(0)
+            )
+          ) {
+            adhocQueries[pipelineName].queries.push({ query: '' })
+          }
+          adhocQueries[pipelineName].queries[i].progress = false
+        },
+        onNetworkError(e, injectValue) {
+          injectValue({ error: e.message })
+        }
+      },
+      new CustomJSONParserTransformStream<Record<string, SQLValueJS>>({
+        paths: ['$'],
+        separator: ''
+      }),
+      {
+        bufferSize: 8 * 1024 * 1024
+      }
+    )
+    adhocQueries[pipelineName].queries[i].result.endResultStream = cancel
   }
 </script>
 
