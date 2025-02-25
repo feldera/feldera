@@ -19,6 +19,17 @@ exclude = [
 ]
 resolver = "2"
 
+[patch.crates-io]
+datafusion = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
+datafusion-common = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
+datafusion-expr = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
+datafusion-functions = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
+datafusion-functions-aggregate = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
+datafusion-physical-expr = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
+datafusion-physical-plan = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
+datafusion-proto = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
+datafusion-sql = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
+
 [workspace.metadata.release]
 release = false
 
