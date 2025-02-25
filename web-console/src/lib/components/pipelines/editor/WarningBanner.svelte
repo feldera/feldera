@@ -1,11 +1,25 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
 
-  let { children, class: classes = '' }: { children: Snippet; class?: string } = $props()
+  const styles = {
+    warning: {
+      iconClass: 'fd fd-triangle-alert',
+      colorClass: 'preset-tonal-warning'
+    },
+    info: {
+      iconClass: 'fd fd-info',
+      colorClass: 'preset-filled-tertiary-100-900'
+    }
+  }
+  let {
+    children,
+    class: classes = '',
+    variant = 'warning'
+  }: { children: Snippet; class?: string; variant?: keyof typeof styles } = $props()
 </script>
 
-<div class="flex gap-2 p-2 preset-tonal-warning {classes}">
-  <span class="fd fd-triangle-alert text-[20px]"></span>
+<div class="flex gap-2 p-2 {styles[variant].colorClass} {classes} rounded-t">
+  <span class="{styles[variant].iconClass} text-[20px]"></span>
   <span>
     {@render children()}
   </span>

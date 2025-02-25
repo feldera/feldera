@@ -48,6 +48,7 @@ import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 import invariant from 'tiny-invariant'
 import { tuple } from '$lib/functions/common/tuple'
 import { sleep } from '$lib/functions/common/promise'
+import { type NamesInUnion, unionName } from '$lib/functions/common/union'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -65,7 +66,8 @@ export const programStatusOf = (status: PipelineStatus) =>
   match(status)
     .returnType<ProgramStatus | undefined>()
     .with(
-      'Starting up',
+      'Preparing',
+      'Provisioning',
       'Initializing',
       'Pausing',
       'Resuming',
@@ -300,12 +302,11 @@ const consolidatePipelineStatus = (
     .with(['Shutdown', P.any, P.nullish, { SystemError: P.select() }], (SystemError) => ({
       SystemError
     }))
-    .with(['Shutdown', 'Running', P.any, P._], () => 'Starting up' as const) // Workaround when fetching status right after POST start action
-    .with(['Provisioning', 'Running', P.any, P._], () => 'Starting up' as const) // Workaround when fetching status right after POST start action
-    .with(['Shutdown', 'Paused', P.any, P._], () => 'Starting up' as const) // Workaround when fetching status right after POST start_paused action
+    .with(['Shutdown', 'Running', P.any, P._], () => 'Preparing' as const)
+    .with(['Shutdown', 'Paused', P.any, P._], () => 'Preparing' as const)
     .with(['Shutdown', 'Shutdown', P.nullish, 'Success'], () => 'Shutdown' as const)
     .with(['Shutdown', 'Shutdown', P.select(P.nonNullable), P.any], () => 'Shutdown' as const)
-    .with(['Provisioning', P.any, P.nullish, P._], () => 'Starting up' as const)
+    .with(['Provisioning', P.any, P.nullish, P._], () => 'Provisioning' as const)
     .with(['Initializing', P.any, P.nullish, P._], () => 'Initializing' as const)
     .with(['Paused', 'Running', P.nullish, P._], () => 'Resuming' as const)
     .with(['Paused', 'Shutdown', P.nullish, P._], () => 'ShuttingDown' as const)
@@ -354,21 +355,22 @@ export const postPipelineAction = async (
         start_paused: 'Paused'
       } satisfies Record<PipelineAction, PipelineStatus>
     )[action]
-    const ignoreStatuses = [
+    const ignoreStatuses: NamesInUnion<PipelineStatus>[] = [
+      'Preparing',
+      'Provisioning',
       'Initializing',
       'Compiling binary',
       'SQL compiled',
       'Compiling SQL',
-      'Queued',
-      'Starting up'
-    ] as PipelineStatus[]
+      'Queued'
+    ]
     while (true) {
       await sleep(300)
       const status = (await getPipelineStatus(pipeline_name)).status
       if (status === desiredStatus) {
         break
       }
-      if (ignoreStatuses.includes(status)) {
+      if (ignoreStatuses.includes(unionName(status))) {
         continue
       }
       throw new Error(
@@ -410,14 +412,23 @@ export const relationEgressStream = async (pipelineName: string, relationName: s
       method: 'POST'
     }
   )
-  return result.status === 200 && result.body ? result.body : (result.json() as Promise<Error>)
+  return result.status === 200 && result.body
+    ? result.body
+    : result.json().then((e) => new Error(e.message, { cause: e }))
 }
+
 export const pipelineLogsStream = async (pipelineName: string) => {
   const fetch = getAuthenticatedFetch()
-  const result = await fetch(`${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`, {
-    method: 'GET'
-  })
-  return result.status === 200 && result.body ? result.body : (result.json() as Promise<Error>)
+  try {
+    const result = await fetch(`${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`, {
+      method: 'GET'
+    })
+    return result.status === 200 && result.body
+      ? result.body
+      : result.json().then((e) => new Error(e.message, { cause: e }))
+  } catch {
+    return new Error(`Failed to connect to the log stream of pipeline ${pipelineName}`)
+  }
 }
 
 export const adHocQuery = async (pipelineName: string, query: string) => {
