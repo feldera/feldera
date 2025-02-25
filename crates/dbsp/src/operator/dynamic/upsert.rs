@@ -99,6 +99,7 @@ where
     /// collection.
     pub fn update_set<B>(
         &self,
+        unique_name: Option<&str>,
         factories: &UpdateSetFactories<<C as WithClock>::Time, B>,
     ) -> Stream<C, B>
     where
@@ -129,6 +130,7 @@ where
             let bounds = <TraceBounds<K, DynUnit>>::unbounded();
 
             let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
+                unique_name,
                 &factories.trace_factories,
                 false,
                 circuit.root_scope(),
@@ -150,6 +152,7 @@ where
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<FileKeySpine<B, C>, B, C>>::new(
+                    unique_name,
                     &factories.trace_factories,
                     circuit.clone(),
                 ),
@@ -193,7 +196,7 @@ where
     /// collection.
     pub fn upsert<B>(
         &self,
-        name: Option<&str>,
+        unique_name: Option<&str>,
         factories: &UpsertFactories<<C as WithClock>::Time, B>,
     ) -> Stream<C, B>
     where
@@ -224,7 +227,7 @@ where
             let bounds = <TraceBounds<K, V>>::unbounded();
 
             let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
-                name,
+                unique_name,
                 &factories.trace_factories,
                 false,
                 circuit.root_scope(),
@@ -243,6 +246,7 @@ where
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<ValSpine<B, C>, B, C>>::new(
+                    unique_name,
                     &factories.trace_factories,
                     circuit.clone(),
                 ),

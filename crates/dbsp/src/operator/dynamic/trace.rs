@@ -306,18 +306,24 @@ where
     /// See [`Stream::trace`].
     pub fn dyn_trace(
         &self,
+        unique_name: Option<&str>,
         output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
     ) -> Stream<C, FileValSpine<B, C>>
     where
         B: Batch<Time = ()>,
     {
-        self.dyn_trace_with_bound(output_factories, TraceBound::new(), TraceBound::new())
+        self.dyn_trace_with_bound(
+            unique_name,
+            output_factories,
+            TraceBound::new(),
+            TraceBound::new(),
+        )
     }
 
     /// See [`Stream::trace_with_bound`].
     pub fn dyn_trace_with_bound(
         &self,
-        unique_name: &str,
+        unique_name: Option<&str>,
         output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
@@ -333,6 +339,7 @@ where
 
                 circuit.region("trace", || {
                     let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
+                        unique_name,
                         output_factories,
                         false,
                         circuit.root_scope(),
@@ -340,6 +347,7 @@ where
                     ));
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<FileValSpine<B, C>, B, C>>::new(
+                            unique_name,
                             output_factories,
                             circuit.clone(),
                         ),
@@ -448,16 +456,26 @@ where
 
     // TODO: this method should replace `Stream::integrate()`.
     #[track_caller]
-    pub fn dyn_integrate_trace(&self, factories: &B::Factories) -> Stream<C, Spine<B>>
+    pub fn dyn_integrate_trace(
+        &self,
+        unique_name: Option<&str>,
+        factories: &B::Factories,
+    ) -> Stream<C, Spine<B>>
     where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
-        self.dyn_integrate_trace_with_bound(factories, TraceBound::new(), TraceBound::new())
+        self.dyn_integrate_trace_with_bound(
+            unique_name,
+            factories,
+            TraceBound::new(),
+            TraceBound::new(),
+        )
     }
 
     pub fn dyn_integrate_trace_with_bound(
         &self,
+        unique_name: Option<&str>,
         factories: &B::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
@@ -467,6 +485,7 @@ where
         Spine<B>: SizeOf,
     {
         self.integrate_trace_inner(
+            unique_name,
             factories,
             self.trace_bounds_with_bound(lower_key_bound, lower_val_bound),
         )
@@ -475,6 +494,7 @@ where
     #[allow(clippy::type_complexity)]
     fn integrate_trace_inner(
         &self,
+        unique_name: Option<&str>,
         input_factories: &B::Factories,
         bounds: TraceBounds<B::Key, B::Val>,
     ) -> Stream<C, Spine<B>>
@@ -490,6 +510,7 @@ where
                 circuit.region("integrate_trace", || {
                     let (ExportStream { local, export }, z1feedback) = circuit
                         .add_feedback_with_export(Z1Trace::new(
+                            unique_name,
                             input_factories,
                             true,
                             circuit.root_scope(),
@@ -497,7 +518,7 @@ where
                         ));
 
                     let trace = circuit.add_binary_operator_with_preference(
-                        UntimedTraceAppend::<Spine<B>>::new(),
+                        UntimedTraceAppend::<Spine<B>>::new(unique_name),
                         (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
                         (
                             &self.try_sharded_version(),
@@ -531,6 +552,7 @@ where
     C: Circuit,
     T: Trace,
 {
+    unique_name: Option<String>,
     feedback: FeedbackConnector<C, T, T, Z1Trace<T>>,
     /// `delayed_trace` stream in the diagram in
     /// [`trait TraceFeedback`] documentation.
@@ -548,11 +570,9 @@ where
         let circuit = self.delayed_trace.circuit();
 
         let sharded = stream.try_sharded_version();
-        self.delayed_trace
-            .set_integral_name(sharded.get_unique_name());
 
         let trace = circuit.add_binary_operator_with_preference(
-            <UntimedTraceAppend<T>>::new(),
+            <UntimedTraceAppend<T>>::new(self.unique_name.as_deref()),
             (
                 &self.delayed_trace,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -606,6 +626,7 @@ where
 pub trait TraceFeedback: Circuit {
     fn add_integrate_trace_feedback<T>(
         &self,
+        unique_name: Option<&str>,
         factories: &T::Factories,
         bounds: TraceBounds<T::Key, T::Val>,
     ) -> TraceFeedbackConnector<Self, T>
@@ -613,11 +634,17 @@ pub trait TraceFeedback: Circuit {
         T: Trace<Time = ()> + Clone,
     {
         // We'll give `Z1Trace` a real name inside `TraceFeedbackConnector::connect`, where we have the name of the input stream.
-        let (ExportStream { local, export }, feedback) = self.add_feedback_with_export(
-            Z1Trace::new(None, factories, true, self.root_scope(), bounds.clone()),
-        );
+        let (ExportStream { local, export }, feedback) =
+            self.add_feedback_with_export(Z1Trace::new(
+                unique_name,
+                factories,
+                true,
+                self.root_scope(),
+                bounds.clone(),
+            ));
 
         TraceFeedbackConnector {
+            unique_name: unique_name.map(str::to_string),
             feedback,
             delayed_trace: local,
             export_trace: export,
@@ -652,6 +679,7 @@ pub struct UntimedTraceAppend<T>
 where
     T: Trace,
 {
+    unique_name: Option<String>,
     // Total number of input tuples processed by the operator.
     num_inputs: usize,
     num_inputs_metric: Option<Gauge>,
@@ -663,8 +691,9 @@ impl<T> UntimedTraceAppend<T>
 where
     T: Trace,
 {
-    pub fn new() -> Self {
+    pub fn new(unique_name: Option<&str>) -> Self {
         Self {
+            unique_name: unique_name.map(str::to_string),
             num_inputs: 0,
             num_inputs_metric: None,
             _phantom: PhantomData,
@@ -672,14 +701,14 @@ where
     }
 }
 
-impl<T> Default for UntimedTraceAppend<T>
-where
-    T: Trace,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl<T> Default for UntimedTraceAppend<T>
+// where
+//     T: Trace,
+// {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
 
 impl<T> Operator for UntimedTraceAppend<T>
 where
@@ -757,6 +786,7 @@ where
 }
 
 pub struct TraceAppend<T: Trace, B: BatchReader, C> {
+    unique_name: Option<String>,
     clock: C,
     output_factories: T::Factories,
 
@@ -768,8 +798,9 @@ pub struct TraceAppend<T: Trace, B: BatchReader, C> {
 }
 
 impl<T: Trace, B: BatchReader, C> TraceAppend<T, B, C> {
-    pub fn new(output_factories: &T::Factories, clock: C) -> Self {
+    pub fn new(unique_name: Option<&str>, output_factories: &T::Factories, clock: C) -> Self {
         Self {
+            unique_name: unique_name.map(str::to_string),
             clock,
             output_factories: output_factories.clone(),
             num_inputs: 0,

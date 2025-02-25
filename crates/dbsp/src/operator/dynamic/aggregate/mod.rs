@@ -487,12 +487,10 @@ where
                     circuit.clone(),
                 ),
                 &stream,
-                &stream.dyn_trace(&factories.trace_factories),
+                &stream.dyn_trace(stream.get_unique_name(), &factories.trace_factories),
             )
             .upsert::<O>(name, &factories.upsert_factories)
             .mark_sharded();
-
-        name.map(|name| output.set_label(UNIQUE_OPERATOR_NAME, name));
 
         output
     }

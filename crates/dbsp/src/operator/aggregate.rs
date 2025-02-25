@@ -52,7 +52,7 @@ where
         >::new(aggregator);
 
         self.inner()
-            .dyn_aggregate(&aggregate_factories, &dyn_aggregator)
+            .dyn_aggregate(None, &aggregate_factories, &dyn_aggregator)
             .typed()
     }
 }
@@ -186,6 +186,7 @@ where
 
         self.inner()
             .dyn_aggregate_generic(
+                None,
                 &factories,
                 &DynAggregatorImpl::<Z::DynV, Z::Val, _, Z::DynR, Z::R, _, DynData, O::DynV>::new(
                     aggregator,

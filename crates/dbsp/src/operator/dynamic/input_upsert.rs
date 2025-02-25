@@ -184,6 +184,7 @@ where
     /// collection.
     pub fn input_upsert<B>(
         &self,
+        unique_name: Option<&str>,
         factories: &InputUpsertFactories<<C as WithClock>::Time, B>,
         patch_func: PatchFunc<V, U>,
     ) -> Stream<C, B>
@@ -215,6 +216,7 @@ where
             let bounds = <TraceBounds<K, V>>::unbounded();
 
             let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
+                unique_name,
                 &factories.trace_factories,
                 false,
                 circuit.root_scope(),
@@ -240,6 +242,7 @@ where
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<ValSpine<B, C>, B, C>>::new(
+                    unique_name,
                     &factories.trace_factories,
                     circuit.clone(),
                 ),

@@ -409,7 +409,7 @@ impl<I1> Stream<RootCircuit, I1> {
         let left = self.dyn_shard(self_factories);
         let right = other.dyn_shard(other_factories);
 
-        left.dyn_integrate_trace(self_factories)
+        left.dyn_integrate_trace(left.get_unique_name().as_deref(), self_factories)
             .delay_trace()
             .dyn_stream_join_inner(
                 output_factories,
@@ -419,7 +419,7 @@ impl<I1> Stream<RootCircuit, I1> {
             )
             .plus(&left.dyn_stream_join_inner(
                 output_factories,
-                &right.dyn_integrate_trace(other_factories),
+                &right.dyn_integrate_trace(right.get_unique_name().as_deref(), other_factories),
                 join_func,
                 Location::caller(),
             ))
@@ -592,8 +592,14 @@ where
             let left = self.dyn_shard(&factories.left_factories);
             let right = other.dyn_shard(&factories.right_factories);
 
-            let left_trace = left.dyn_trace(&factories.left_trace_factories);
-            let right_trace = right.dyn_trace(&factories.right_trace_factories);
+            let left_trace = left.dyn_trace(
+                left.get_unique_name().as_deref(),
+                &factories.left_trace_factories,
+            );
+            let right_trace = right.dyn_trace(
+                right.get_unique_name().as_deref(),
+                &factories.right_trace_factories,
+            );
 
             let left = self.circuit().add_binary_operator(
                 JoinTrace::new(

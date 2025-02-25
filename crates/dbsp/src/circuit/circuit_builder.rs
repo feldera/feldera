@@ -785,6 +785,10 @@ where
                 node.get_label(key).map(str::to_string)
             })
     }
+
+    pub fn get_unique_name(&self) -> Option<String> {
+        todo!()
+    }
 }
 
 impl<C, D> Stream<C, D> {
