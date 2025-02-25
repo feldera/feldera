@@ -1,8 +1,8 @@
 @font-face {
 	font-family: "feldera-material-icons";
 	font-display: block;
-	src: url("feldera-material-icons.woff2?1d5b320a4f0357bdeeeb228a7ccba950") format("woff2"),
-url("feldera-material-icons.woff?1d5b320a4f0357bdeeeb228a7ccba950") format("woff");
+	src: url("feldera-material-icons.woff2?bab9d1373537a3f22732672e6443c5c4") format("woff2"),
+url("feldera-material-icons.woff?bab9d1373537a3f22732672e6443c5c4") format("woff");
 }
 
 .fd {
@@ -106,36 +106,39 @@ url("feldera-material-icons.woff?1d5b320a4f0357bdeeeb228a7ccba950") format("woff
 .fd-more_horiz:before {
 	content: "\f11e";
 }
-.fd-settings:before {
+.fd-info:before {
 	content: "\f11f";
 }
-.fd-copy-check:before {
+.fd-settings:before {
 	content: "\f120";
 }
-.fd-copy:before {
+.fd-copy-check:before {
 	content: "\f121";
 }
-.fd-book-marked:before {
+.fd-copy:before {
 	content: "\f122";
 }
-.fd-panel-left:before {
+.fd-book-marked:before {
 	content: "\f123";
 }
-.fd-pencil-line:before {
+.fd-panel-left:before {
 	content: "\f124";
 }
-.fd-message-circle-question:before {
+.fd-pencil-line:before {
 	content: "\f125";
 }
-.fd-play:before {
+.fd-message-circle-question:before {
 	content: "\f126";
 }
-.fd-menu:before {
+.fd-play:before {
 	content: "\f127";
 }
-.fd-arrow-right:before {
+.fd-menu:before {
 	content: "\f128";
 }
-.fd-rocket:before {
+.fd-arrow-right:before {
 	content: "\f129";
+}
+.fd-rocket:before {
+	content: "\f12a";
 }

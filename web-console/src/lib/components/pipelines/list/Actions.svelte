@@ -17,6 +17,7 @@
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
+  import { useToast } from '$lib/compositions/useToastNotification'
 
   let {
     pipeline,
@@ -46,6 +47,7 @@
     onDeletePipeline?.(pipelineName)
     goto(`${base}/`)
   }
+  const { toastError } = useToast()
 
   const actions = {
     _start,
@@ -70,10 +72,15 @@
     return match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
       .with('Shutdown', { SqlWarning: P.any }, () => ['_spacer_long', '_start_paused'])
-      .with('Provisioning', 'Starting up', 'Pausing', 'Resuming', 'Unavailable', () => [
-        '_shutdown',
-        '_status_spinner'
-      ])
+      .with(
+        'Preparing',
+        'Provisioning',
+        'Initializing',
+        'Pausing',
+        'Resuming',
+        'Unavailable',
+        () => ['_shutdown', '_status_spinner']
+      )
       .with('Running', () => ['_shutdown', '_pause'])
       .with('Paused', () => ['_shutdown', '_start'])
       .with('ShuttingDown', () => ['_spacer_long', '_status_spinner'])
@@ -176,13 +183,12 @@
       onclick={async (e) => {
         const _action = action(e.ctrlKey || e.shiftKey || e.metaKey)
         const pipelineName = pipeline.current.name
-        const success = await postPipelineAction(
+        const waitFor = await postPipelineAction(
           pipeline.current.name,
           _action === 'start_paused_start' ? 'start_paused' : _action
         )
         pipeline.optimisticUpdate({ status })
-        await success()
-        onActionSuccess?.(pipelineName, _action)
+        waitFor().then(() => onActionSuccess?.(pipelineName, _action), toastError)
       }}
     >
       <span class="fd fd-play {iconClass}"></span>
@@ -200,7 +206,7 @@
   {/if}
 {/snippet}
 {#snippet _start_paused()}
-  {@render start('Start', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Starting up')}
+  {@render start('Start', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Preparing')}
   {#if unsavedChanges}
     <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
       Save the program before running
@@ -231,12 +237,11 @@
 {#snippet _pause()}
   <button
     class="{buttonClass} {longClass} {basicBtnColor}"
-    onclick={() => {
+    onclick={async () => {
       const pipelineName = pipeline.current.name
-      postPipelineAction(pipelineName, 'pause').then(() => {
-        onActionSuccess?.(pipelineName, 'pause')
-        pipeline.optimisticUpdate({ status: 'Pausing' })
-      })
+      await postPipelineAction(pipelineName, 'pause')
+      onActionSuccess?.(pipelineName, 'pause')
+      pipeline.optimisticUpdate({ status: 'Pausing' })
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>

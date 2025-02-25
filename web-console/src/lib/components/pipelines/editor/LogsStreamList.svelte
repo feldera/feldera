@@ -47,7 +47,11 @@
   use:virtualSelect={{
     getRoot: (node) => node.firstElementChild!,
     getRootChildrenOffset: (root) => {
-      const num = parseInt(root.children.item(0)!.children.item(0)!.getAttribute('data-rowindex')!)
+      const firstChild = root?.children.item(0)?.children.item(0)
+      if (!firstChild) {
+        return 0
+      }
+      const num = parseInt(firstChild.getAttribute('data-rowindex')!)
       return num
     },
     getCopyContent(slice) {
