@@ -70,7 +70,7 @@ class cmpxtst_arr_field_access(TstView):
                 "c2_val1": 4,
                 "c2_val2": 5,
                 "c3_val1": "Ciao",
-                "c3_val2": "Hi",
+                "c4_val2": "Hi",
             },
             {
                 "id": 1,
@@ -79,7 +79,7 @@ class cmpxtst_arr_field_access(TstView):
                 "c2_val1": 7,
                 "c2_val2": 8,
                 "c3_val1": None,
-                "c3_val2": None,
+                "c4_val2": None,
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW arr_field_access AS SELECT
@@ -89,5 +89,5 @@ class cmpxtst_arr_field_access(TstView):
                       c2_arr[1] AS c2_val1,
                       c2_arr[2] AS c2_val2,
                       c3_arr[1] AS c3_val1,
-                      c4_arr[2] AS c3_val2
+                      c4_arr[2] AS c4_val2
                       FROM array_int_var_tbl"""
