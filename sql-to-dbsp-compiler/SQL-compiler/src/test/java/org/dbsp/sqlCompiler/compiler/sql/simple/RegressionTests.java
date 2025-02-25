@@ -372,6 +372,13 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3609() {
+        this.getCCS("""
+              CREATE TABLE T(x INT ARRAY);
+              CREATE VIEW V AS select array_join(array_distinct(x), ',') FROM T;""");
+    }
+
+    @Test
     public void issue3072() {
         this.compileRustTestCase("""
                 CREATE TABLE t0(c0 VARCHAR);
