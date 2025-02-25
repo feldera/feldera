@@ -92,6 +92,7 @@ import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -657,8 +658,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     void ensureInteger(List<DBSPExpression> ops, int argument, int integerSize) {
         DBSPExpression arg = ops.get(argument);
         DBSPTypeInteger expected = new DBSPTypeInteger(arg.getType().getNode(), integerSize, true, arg.getType().mayBeNull);
-
         if (!arg.getType().sameType(expected))
+            ops.set(argument, arg.cast(expected, false));
+    }
+
+    void ensureDecimal(List<DBSPExpression> ops, int argument) {
+        DBSPExpression arg = ops.get(argument);
+        DBSPType expected = new DBSPTypeRuntimeDecimal(arg.getType().getNode(), arg.getType().mayBeNull);
+        if (!arg.getType().is(DBSPTypeDecimal.class) && !arg.getType().is(DBSPTypeRuntimeDecimal.class))
             ops.set(argument, arg.cast(expected, false));
     }
 
@@ -1122,6 +1129,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         this.ensureInteger(ops, 1, 32);
                         // Fall through
                     case "format_date":
+                        return compileFunction(call, node, type, ops, 2);
+                    case "bround":
+                        this.ensureInteger(ops, 1, 32);
+                        this.ensureDecimal(ops, 0);
                         return compileFunction(call, node, type, ops, 2);
                     case "replace":
                         validateArgCount(node, opName, ops.size(), 3);

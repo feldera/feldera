@@ -674,7 +674,18 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200 |  1.234567890123379e+200
                  1.2345678901234e-200 | 1.2345678901233948e-200
                 (3 rows)
-                """
+                
+                -- adapted for BROUND; not a Postgres function
+                SELECT f.f1, bround(f.f1, 1) AS round_f1
+                   FROM FLOAT8_TBL f
+                   WHERE abs(f1) < 10000;
+                          f1          |       round_f1
+                ----------------------+----------------------
+                                    0 |                    0
+                               1004.3 |               1004.3
+                 1.2345678901234e-200 |                    0
+                               -34.84 |                -34.8
+                (4 rows)"""
         );
     }
 
