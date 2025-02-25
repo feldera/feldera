@@ -13,6 +13,7 @@
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import { isPipelineEditable } from '$lib/functions/pipelines/status'
+  import { useToast } from '$lib/compositions/useToastNotification'
   let {
     pipelines,
     selectedPipelines = $bindable()
@@ -38,7 +39,7 @@
         ]
       )
       .with('Shutdown', { SqlWarning: P.any }, () => ['start', 'delete'])
-      .with('Provisioning', 'Starting up', () => ['shutdown', 'delete'])
+      .with('Preparing', 'Provisioning', 'Initializing', () => ['shutdown', 'delete'])
       .with('Running', () => ['shutdown', 'pause'])
       .with('Pausing', () => ['shutdown', 'delete'])
       .with('Paused', () => ['shutdown', 'start'])
@@ -86,10 +87,13 @@
     selectedPipelines.forEach((pipelineName) => postPipelineAction(pipelineName, action))
     selectedPipelines = []
   }
+  const { toastError } = useToast()
   let deletePipelines = () => {
     selected.forEach(async (pipeline) => {
       if (!isPipelineEditable(pipeline.status)) {
-        await postPipelineAction(pipeline.name, 'shutdown').then((waitFor) => waitFor())
+        await postPipelineAction(pipeline.name, 'shutdown').then((waitFor) =>
+          waitFor().catch(toastError)
+        )
       }
       return deletePipeline(pipeline.name)
     })

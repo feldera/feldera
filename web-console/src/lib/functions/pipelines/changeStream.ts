@@ -2,6 +2,7 @@ import { BigNumber } from 'bignumber.js/bignumber.js'
 import { JSONParser, Tokenizer, TokenParser, type JSONParserOptions } from '@streamparser/json'
 import { findIndex } from '$lib/functions/common/array'
 import { tuple } from '$lib/functions/common/tuple'
+import invariant from 'tiny-invariant'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
@@ -27,6 +28,10 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
   transformer: Transformer,
   options?: { bufferSize?: number }
 ) => {
+  invariant(
+    stream instanceof ReadableStream,
+    `parseCancellable(): stream is ${JSON.stringify(stream)}`
+  )
   const maxChunkSize = 100000
   const reader = stream
     .pipeThrough(
