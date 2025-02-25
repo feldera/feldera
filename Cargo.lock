@@ -3730,6 +3730,7 @@ dependencies = [
  "fdlimit",
  "feldera-ijson",
  "feldera-size-of",
+ "feldera-storage",
  "feldera-types",
  "feldera_rust_decimal",
  "futures",
@@ -3737,6 +3738,7 @@ dependencies = [
  "impl-trait-for-tuples",
  "indexmap 2.7.1",
  "indicatif",
+ "inventory",
  "io-uring",
  "itertools 0.14.0",
  "libc",
@@ -4824,6 +4826,24 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "feldera-storage"
+version = "0.38.0"
+dependencies = [
+ "feldera-types",
+ "inventory",
+ "libc",
+ "nix 0.27.1",
+ "object_store",
+ "once_cell",
+ "rkyv",
+ "serde",
+ "thiserror 2.0.11",
+ "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -6154,6 +6174,15 @@ name = "integer-encoding"
 version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bb03732005da905c88227371639bf1ad885cc712789c011c31c5fb3ab3ccf02"
+
+[[package]]
+name = "inventory"
+version = "0.3.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54b12ebb6799019b044deaf431eadfe23245b259bba5a2c0796acec3943a3cdb"
+dependencies = [
+ "rustversion",
+]
 
 [[package]]
 name = "io-uring"

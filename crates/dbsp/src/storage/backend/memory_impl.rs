@@ -2,14 +2,6 @@
 //!
 //! This is useful for performance testing, not as part of a production system.
 
-use metrics::counter;
-use std::{
-    collections::HashMap,
-    io::{Error as IoError, ErrorKind},
-    path::{Path, PathBuf},
-    sync::{Arc, LazyLock, RwLock},
-};
-
 use super::{
     BlockLocation, FileId, FileReader, FileWriter, HasFileId, StorageBackend, StorageError,
 };
@@ -18,6 +10,13 @@ use crate::circuit::metrics::{
     WRITES_SUCCESS,
 };
 use crate::storage::buffer_cache::FBuf;
+use metrics::counter;
+use std::{
+    collections::HashMap,
+    io::{Error as IoError, ErrorKind},
+    path::{Path, PathBuf},
+    sync::{Arc, LazyLock, RwLock},
+};
 
 struct MemoryFile {
     file_id: FileId,

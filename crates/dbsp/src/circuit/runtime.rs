@@ -36,7 +36,7 @@ use std::{
     },
     thread::{Builder, JoinHandle, Result as ThreadResult},
 };
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
 
 use super::dbsp_handle::{CircuitStorageConfig, Layout};
@@ -475,6 +475,16 @@ impl Runtime {
                         ThreadType::set_current(ThreadType::Foreground);
                         runtime.inner().pin_cpu();
                         RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
+                        // This ensures we panic immediately if the storage backend is misconfigured.
+                        // otherwise this might only happen after the first storage operation which
+                        // can happen much later depending on the pipeline.
+                        if let Err(e) = Runtime::storage_backend() {
+                            if let StorageError::StorageDisabled = e {
+                                debug!("Storage is disabled");
+                            } else {
+                                panic!("failed to initialize storage backend: {e}");
+                            }
+                        }
 
                         // Build the worker's circuit
                         build_circuit();
