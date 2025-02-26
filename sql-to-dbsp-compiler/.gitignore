@@ -25,8 +25,9 @@ hs_err_pid*
 SQL-compiler/target/
 extra/
 # Compiler-generated test files
-temp/
+temp/*
 !temp/Cargo.toml
+!temp/Cargo.lock
 !temp/src/udf.rs
 !temp/src/README.md
 lib/*/target/
