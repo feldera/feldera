@@ -2,7 +2,7 @@ name: feldera
 services:
   pipeline-manager:
     tty: true
-    image: ghcr.io/feldera/pipeline-manager:${FELDERA_VERSION:-0.37.0}
+    image: ghcr.io/feldera/pipeline-manager:${FELDERA_VERSION:-0.38.0}
     ports:
       # If you change the host side of the port mapping here, don't forget to
       # also add a corresponding --allowed-origins argument to the pipeline
