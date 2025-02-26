@@ -126,6 +126,15 @@ const sidebars = {
                         'use_cases/otel/grafana'
                     ]
                 },
+                {
+                    type: 'category',
+                    label: 'Batch Processing to Feldera',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/batch_to_streaming/tpch-intro'
+                    },
+                    items: []
+                },
                 'tutorials/rest_api/index',
                 'tutorials/monitoring/index'
             ]
