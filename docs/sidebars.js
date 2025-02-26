@@ -86,6 +86,18 @@ const sidebars = {
                     ]
                 },
                 {
+                    type: 'category',
+                    label: 'Accelerating Batch Analytics',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/batch/intro'
+                    },
+                    items: [
+                        'use_cases/batch/part1',
+                        'use_cases/batch/part2'
+                    ]
+                },
+                {
                     type: 'doc',
                     id: 'use_cases/fraud_detection/fraud_detection',
                     label: 'Real-time Fraud Detection',
