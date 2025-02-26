@@ -124,7 +124,9 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
     pub(crate) fn new() -> Self {
         Self(Rc::new(RefCell::new(TraceBoundsInner {
             key_predicate: Predicate::Bounds(Vec::new()),
+            unique_key_name: None,
             val_predicate: Predicate::Bounds(Vec::new()),
+            unique_val_name: None,
         })))
     }
 
@@ -133,7 +135,9 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
     pub(crate) fn unbounded() -> Self {
         Self(Rc::new(RefCell::new(TraceBoundsInner {
             key_predicate: Predicate::Bounds(vec![TraceBound::new()]),
+            unique_key_name: None,
             val_predicate: Predicate::Bounds(vec![TraceBound::new()]),
+            unique_val_name: None,
         })))
     }
 
@@ -150,6 +154,10 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
         self.0.borrow_mut().key_predicate = Predicate::Filter(filter);
     }
 
+    pub(crate) fn set_unique_key_bound_name(&self, unique_name: Option<&str>) {
+        self.0.borrow_mut().unique_key_name = unique_name.map(str::to_string);
+    }
+
     pub(crate) fn add_val_bound(&self, bound: TraceBound<V>) {
         match &mut self.0.borrow_mut().val_predicate {
             Predicate::Bounds(bounds) => bounds.push(bound),
@@ -161,6 +169,10 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
     /// set using [`Self::add_val_bound`].
     pub(crate) fn set_val_filter(&self, filter: Filter<V>) {
         self.0.borrow_mut().val_predicate = Predicate::Filter(filter);
+    }
+
+    pub(crate) fn set_unique_val_bound_name(&self, unique_name: Option<&str>) {
+        self.0.borrow_mut().unique_val_name = unique_name.map(str::to_string);
     }
 
     /// Returns effective key retention condition, computed as the
@@ -244,8 +256,10 @@ impl<V: Debug + ?Sized> Predicate<V> {
 struct TraceBoundsInner<K: ?Sized + 'static, V: ?Sized + 'static> {
     /// Key bounds _or_ retainment condition.
     key_predicate: Predicate<K>,
+    unique_key_name: Option<String>,
     /// Value bounds _or_ retainment condition.
     val_predicate: Predicate<V>,
+    unique_val_name: Option<String>,
 }
 
 impl<K: Debug + ?Sized + 'static, V: Debug + ?Sized + 'static> TraceBoundsInner<K, V> {
@@ -377,6 +391,7 @@ where
         Box<TS>: Clone,
     {
         let bounds = self.trace_bounds();
+        bounds.set_unique_key_bound_name(bounds_stream.get_unique_name().as_deref());
         bounds_stream.inspect(move |ts| {
             let filter = retain_key_func(ts.as_ref());
             bounds.set_key_filter(filter);
@@ -395,6 +410,8 @@ where
         Box<TS>: Clone,
     {
         let bounds = self.trace_bounds();
+        bounds.set_unique_val_bound_name(bounds_stream.get_unique_name().as_deref());
+
         bounds_stream.inspect(move |ts| {
             let filter = retain_val_func(ts.as_ref());
             bounds.set_val_filter(filter);

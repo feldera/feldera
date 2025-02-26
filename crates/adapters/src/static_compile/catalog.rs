@@ -423,15 +423,14 @@ impl Catalog {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
-        // Create handle for the stream itself.
-        let delta_handle = stream.map(|(_k, v)| v.clone()).output();
-
-        // Improve the odds that `integrate_trace` below reuses the trace of `stream`
-        // if one exists.
         let stream = stream.try_sharded_version();
 
-        let integrate_handle = stream
-            .map(|(_k, v)| v.clone())
+        // Create handle for the stream itself.
+        let delta = stream.map(|(_k, v)| v.clone());
+
+        let delta_handle = delta.output();
+
+        let integrate_handle = delta
             .integrate_trace()
             .apply(|s| TypedBatch::<V, (), ZWeight, _>::new(s.ro_snapshot()))
             .output();
