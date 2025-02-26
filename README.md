@@ -98,7 +98,7 @@ First, make sure you have [Docker](https://docs.docker.com/) installed. Then run
 following command:
 
 ```text
-docker run -p 8080:8080 --tty --rm -it ghcr.io/feldera/pipeline-manager:0.37.0
+docker run -p 8080:8080 --tty --rm -it ghcr.io/feldera/pipeline-manager:0.38.0
 ```
 
 Once the container image downloads and you see the Feldera logo on your terminal, visit
