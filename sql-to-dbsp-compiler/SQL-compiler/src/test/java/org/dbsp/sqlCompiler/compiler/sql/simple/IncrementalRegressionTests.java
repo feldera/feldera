@@ -626,6 +626,40 @@ public class IncrementalRegressionTests extends SqlIoTest {
         this.compileRustTestCase(sql);
     }
 
+    @Test
+    public void issue3621() {
+        this.getCCS("""
+                DECLARE RECURSIVE VIEW rv1(x VARCHAR NULL);
+                CREATE MATERIALIZED VIEW rv1 AS SELECT null as x;
+                
+                DECLARE RECURSIVE VIEW rv2(x VARCHAR);
+                CREATE MATERIALIZED VIEW rv2 AS SELECT null as x;
+                
+                DECLARE RECURSIVE VIEW rv3(x VARCHAR);
+                CREATE MATERIALIZED VIEW rv3 AS SELECT CAST('foo' as varchar) as x;
+                
+                DECLARE RECURSIVE VIEW rv4(x VARCHAR NULL);
+                CREATE MATERIALIZED VIEW rv4 AS SELECT CAST('foo' as varchar) as x;
+                
+                DECLARE RECURSIVE VIEW rv5(x VARCHAR NOT NULL);
+                CREATE MATERIALIZED VIEW rv5 AS SELECT CAST('foo' as varchar) as x;
+                
+                DECLARE RECURSIVE VIEW rv6(x VARCHAR);
+                CREATE MATERIALIZED VIEW rv6 AS SELECT 'foo' as x;
+                
+                DECLARE RECURSIVE VIEW rv7(type_path VARCHAR ARRAY NOT NULL);
+                CREATE MATERIALIZED VIEW rv7
+                AS select array[cast('event' as varchar)] as type_path;
+
+                DECLARE RECURSIVE VIEW rv8(type_path VARCHAR ARRAY NOT NULL);
+                CREATE MATERIALIZED VIEW rv8
+                AS select cast(array['event'] as VARCHAR ARRAY) as type_path;
+                
+                DECLARE RECURSIVE VIEW rv9(type_path BIGINT);
+                CREATE MATERIALIZED VIEW rv9
+                AS select 1 as type_path;""");
+    }
+
     // Tests that are not in the repository
     @Test @Ignore
     public void extraTests() throws IOException {
