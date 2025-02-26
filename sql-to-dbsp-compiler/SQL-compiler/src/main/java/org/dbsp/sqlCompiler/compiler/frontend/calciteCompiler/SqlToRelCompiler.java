@@ -734,6 +734,65 @@ public class SqlToRelCompiler implements IWritesLogs {
         return result;
     }
 
+    /** True if the left data type can be cast to the right data type "trivially".
+     * This includes:
+     * - non-null to null
+     * - char(n) to varchar */
+    @SuppressWarnings("RedundantIfStatement")
+    public static boolean canBeTriviallyCastTo(RelDataType left, RelDataType right) {
+        if (left.equals(right))
+            return true;
+        SqlTypeName leftName = left.getSqlTypeName();
+        SqlTypeName rightName = right.getSqlTypeName();
+        if (left.isNullable() && !right.isNullable())
+            return false;
+        if (leftName != rightName) {
+            if (leftName == SqlTypeName.CHAR && rightName == SqlTypeName.VARCHAR) {
+                if (right.getPrecision() == RelDataType.PRECISION_NOT_SPECIFIED) {
+                    return true;
+                }
+            } else if (leftName == SqlTypeName.NULL && right.isNullable()) {
+                return true;
+            } else if (SqlTypeName.INT_TYPES.contains(leftName) && SqlTypeName.INT_TYPES.contains(rightName)) {
+                if (left.getPrecision() <= right.getPrecision())
+                    return true;
+            }
+            return false;
+        }
+        if (left.isStruct() != right.isStruct())
+            return false;
+        if (left.isStruct()) {
+            if (left.getFieldCount() != right.getFieldCount())
+                return false;
+            List<RelDataTypeField> leftFields = left.getFieldList();
+            List<RelDataTypeField> rightFields = right.getFieldList();
+            for (int i = 0; i < left.getFieldCount(); i++) {
+                RelDataTypeField lf = leftFields.get(i);
+                RelDataTypeField rf = rightFields.get(i);
+                if (!lf.getName().equals(rf.getName()))
+                    return false;
+
+                RelDataType lt = lf.getType();
+                RelDataType rt = rf.getType();
+                if (!canBeTriviallyCastTo(lt, rt))
+                    return false;
+            }
+        } else if (left.getComponentType() != null) {
+            assert right.getComponentType() != null;
+            return canBeTriviallyCastTo(left.getComponentType(), right.getComponentType());
+        } else if (left.getKeyType() != null) {
+            assert right.getKeyType() != null;
+            assert left.getValueType() != null;
+            assert right.getValueType() != null;
+            return canBeTriviallyCastTo(left.getKeyType(), right.getKeyType()) &&
+                    canBeTriviallyCastTo(left.getValueType(), right.getValueType());
+        } else {
+            left = TYPE_FACTORY.enforceTypeWithNullability(left, true);
+            return left.equals(right);
+        }
+        return true;
+    }
+
     List<ForeignKey> createForeignKeys(SqlCreateTable table) {
         List<ForeignKey> result = new ArrayList<>();
         // Extract foreign key information from two places:
@@ -1413,9 +1472,10 @@ public class SqlToRelCompiler implements IWritesLogs {
                 break;
             case NULL:
                 builder.append("NULL");
+                break;
             case ARRAY:
                 toSql(Objects.requireNonNull(type.getComponentType()), builder, false);
-                builder.append("ARRAY");
+                builder.append(" ARRAY");
                 break;
             case MAP:
                 builder.append("MAP<");
@@ -1734,7 +1794,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             DeclareViewStatement dv = this.declaredViews.get(view.relationName);
             RelDataType viewType = view.getRowType();
             RelDataType declaredType = dv.getRowType();
-            if (!viewType.equals(declaredType)) {
+            if (!canBeTriviallyCastTo(viewType, declaredType)) {
                this.errorReporter.reportError(view.getPosition(), "Type mismatch",
                         "Type inferred for view " + view.relationName.singleQuote() +
                         " is " + this.typeToColumns(view.relationName, viewType));
