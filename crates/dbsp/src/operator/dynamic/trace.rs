@@ -306,24 +306,17 @@ where
     /// See [`Stream::trace`].
     pub fn dyn_trace(
         &self,
-        unique_name: Option<&str>,
         output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
     ) -> Stream<C, FileValSpine<B, C>>
     where
         B: Batch<Time = ()>,
     {
-        self.dyn_trace_with_bound(
-            unique_name,
-            output_factories,
-            TraceBound::new(),
-            TraceBound::new(),
-        )
+        self.dyn_trace_with_bound(output_factories, TraceBound::new(), TraceBound::new())
     }
 
     /// See [`Stream::trace_with_bound`].
     pub fn dyn_trace_with_bound(
         &self,
-        unique_name: Option<&str>,
         output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
@@ -333,13 +326,15 @@ where
     {
         let bounds = self.trace_bounds_with_bound(lower_key_bound, lower_val_bound);
 
+        let unique_name = self.get_unique_name();
+
         self.circuit()
             .cache_get_or_insert_with(TraceId::new(self.stream_id()), || {
                 let circuit = self.circuit();
 
                 circuit.region("trace", || {
                     let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
-                        unique_name,
+                        unique_name.as_deref(),
                         output_factories,
                         false,
                         circuit.root_scope(),
@@ -347,17 +342,14 @@ where
                     ));
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<FileValSpine<B, C>, B, C>>::new(
-                            unique_name,
+                            unique_name.as_deref(),
                             output_factories,
                             circuit.clone(),
                         ),
                         (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                        (
-                            &self.try_sharded_version(),
-                            OwnershipPreference::PREFER_OWNED,
-                        ),
+                        (&self, OwnershipPreference::PREFER_OWNED),
                     );
-                    if self.has_sharded_version() {
+                    if self.is_sharded() {
                         local.mark_sharded();
                         trace.mark_sharded();
                     }
@@ -456,26 +448,16 @@ where
 
     // TODO: this method should replace `Stream::integrate()`.
     #[track_caller]
-    pub fn dyn_integrate_trace(
-        &self,
-        unique_name: Option<&str>,
-        factories: &B::Factories,
-    ) -> Stream<C, Spine<B>>
+    pub fn dyn_integrate_trace(&self, factories: &B::Factories) -> Stream<C, Spine<B>>
     where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
-        self.dyn_integrate_trace_with_bound(
-            unique_name,
-            factories,
-            TraceBound::new(),
-            TraceBound::new(),
-        )
+        self.dyn_integrate_trace_with_bound(factories, TraceBound::new(), TraceBound::new())
     }
 
     pub fn dyn_integrate_trace_with_bound(
         &self,
-        unique_name: Option<&str>,
         factories: &B::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
@@ -485,7 +467,6 @@ where
         Spine<B>: SizeOf,
     {
         self.integrate_trace_inner(
-            unique_name,
             factories,
             self.trace_bounds_with_bound(lower_key_bound, lower_val_bound),
         )
@@ -494,7 +475,6 @@ where
     #[allow(clippy::type_complexity)]
     fn integrate_trace_inner(
         &self,
-        unique_name: Option<&str>,
         input_factories: &B::Factories,
         bounds: TraceBounds<B::Key, B::Val>,
     ) -> Stream<C, Spine<B>>
@@ -502,6 +482,8 @@ where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
+        let unique_name = self.get_unique_name();
+
         self.circuit()
             .cache_get_or_insert_with(TraceId::new(self.stream_id()), || {
                 let circuit = self.circuit();
@@ -510,7 +492,7 @@ where
                 circuit.region("integrate_trace", || {
                     let (ExportStream { local, export }, z1feedback) = circuit
                         .add_feedback_with_export(Z1Trace::new(
-                            unique_name,
+                            unique_name.as_deref(),
                             input_factories,
                             true,
                             circuit.root_scope(),
@@ -518,15 +500,12 @@ where
                         ));
 
                     let trace = circuit.add_binary_operator_with_preference(
-                        UntimedTraceAppend::<Spine<B>>::new(unique_name),
+                        UntimedTraceAppend::<Spine<B>>::new(unique_name.as_deref()),
                         (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                        (
-                            &self.try_sharded_version(),
-                            OwnershipPreference::PREFER_OWNED,
-                        ),
+                        (&self, OwnershipPreference::PREFER_OWNED),
                     );
 
-                    if self.has_sharded_version() {
+                    if self.is_sharded() {
                         local.mark_sharded();
                         trace.mark_sharded();
                     }
@@ -569,18 +548,16 @@ where
     pub fn connect(self, stream: &Stream<C, T::Batch>) {
         let circuit = self.delayed_trace.circuit();
 
-        let sharded = stream.try_sharded_version();
-
         let trace = circuit.add_binary_operator_with_preference(
             <UntimedTraceAppend<T>>::new(self.unique_name.as_deref()),
             (
                 &self.delayed_trace,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             ),
-            (&sharded, OwnershipPreference::PREFER_OWNED),
+            (&stream, OwnershipPreference::PREFER_OWNED),
         );
 
-        if stream.has_sharded_version() {
+        if stream.is_sharded() {
             self.delayed_trace.mark_sharded();
             trace.mark_sharded();
         }

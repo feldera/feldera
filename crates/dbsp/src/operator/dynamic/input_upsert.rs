@@ -193,6 +193,11 @@ where
     {
         let circuit = self.circuit();
 
+        assert!(
+            self.is_sharded(),
+            "input_upsert operator applied to a non-sharded collection"
+        );
+
         // We build the following circuit to implement the upsert semantics.
         // The collection is accumulated into a trace using integrator
         // (UntimedTraceAppend + Z1Trace = integrator).  The `InputUpsert`
@@ -223,7 +228,7 @@ where
                 bounds.clone(),
             ));
 
-            local.mark_sharded_if(self);
+            local.mark_sharded();
 
             let delta = circuit
                 .add_binary_operator(
@@ -235,10 +240,10 @@ where
                         patch_func,
                     ),
                     &local,
-                    &self.try_sharded_version(),
+                    &self,
                 )
                 .mark_distinct();
-            delta.mark_sharded_if(self);
+            delta.mark_sharded();
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<ValSpine<B, C>, B, C>>::new(
@@ -247,12 +252,9 @@ where
                     circuit.clone(),
                 ),
                 (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                (
-                    &delta.try_sharded_version(),
-                    OwnershipPreference::PREFER_OWNED,
-                ),
+                (&delta, OwnershipPreference::PREFER_OWNED),
             );
-            trace.mark_sharded_if(self);
+            trace.mark_sharded();
 
             z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
             circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), local);

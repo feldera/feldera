@@ -83,6 +83,11 @@ where
                                         self,
                                     )
                                 }
+                                .set_unique_name(
+                                    self.get_unique_name()
+                                        .map(|name| format!("{name}.gather({receiver_worker})"))
+                                        .as_deref(),
+                                )
                             },
                         )
                         .clone()

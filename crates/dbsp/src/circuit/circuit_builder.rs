@@ -772,10 +772,11 @@ where
             .clone()
     }
 
-    pub fn set_label(&self, key: &str, val: &str) {
+    pub fn set_label(&self, key: &str, val: &str) -> Self {
         self.circuit
             .root_circuit()
             .map_node_mut(&self.origin_node_id, &mut |node| node.set_label(key, val));
+        self.clone()
     }
 
     pub fn get_label(&self, key: &str) -> Option<String> {
@@ -784,6 +785,10 @@ where
             .map_node(&self.origin_node_id, &mut |node| {
                 node.get_label(key).map(str::to_string)
             })
+    }
+
+    pub fn set_unique_name(&self, name: Option<&str>) -> Self {
+        todo!()
     }
 
     pub fn get_unique_name(&self) -> Option<String> {

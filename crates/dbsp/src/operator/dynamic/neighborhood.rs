@@ -275,7 +275,7 @@ where
                 .circuit()
                 .add_binary_operator(
                     NeighborhoodLocal::new(&factories.local_factories),
-                    &stream.dyn_integrate_trace(None, &factories.input_factories),
+                    &stream.dyn_integrate_trace(&factories.input_factories),
                     neighborhood_descr,
                 )
                 .differentiate_with_initial_value(Batch::dyn_empty(&factories.local_factories));
@@ -289,7 +289,7 @@ where
                 ),
                 &local_output
                     .dyn_gather(&factories.local_factories, 0)
-                    .dyn_integrate_trace(None, &factories.stored_factories),
+                    .dyn_integrate_trace(&factories.stored_factories),
                 neighborhood_descr,
             );
 
