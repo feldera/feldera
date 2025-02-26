@@ -3288,6 +3288,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression defaultValue = null;
         if (metadata.defaultValue != null) {
             defaultValue = expressionCompiler.compile(metadata.defaultValue);
+            if (!type.mayBeNull && defaultValue.getType().mayBeNull)
+                this.compiler.reportError(defaultValue.getSourcePosition(), "Illegal value",
+                        "Nullable default value assigned to non-null column " +
+                                metadata.getName().singleQuote());
             defaultValue = defaultValue.cast(type, false);
         }
         return new InputColumnMetadata(metadata.getNode(), metadata.getName(), type,
