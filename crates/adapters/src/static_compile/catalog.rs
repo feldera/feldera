@@ -289,11 +289,33 @@ impl Catalog {
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
+        self.register_output_zset_named(None, stream, schema)
+    }
+
+    /// Add an output stream of Z-sets to the catalog.
+    pub fn register_output_zset_named<Z, D>(
+        &mut self,
+        unique_name: Option<&str>,
+        stream: Stream<RootCircuit, Z>,
+        schema: &str,
+    ) where
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<Z::Key>
+            + Clone
+            + Debug
+            + Send
+            + Sync
+            + 'static,
+        Z: ZSet + Debug + Send + Sync,
+        Z::InnerBatch: Send,
+        Z::Key: Sync + From<D>,
+    {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
         // Create handle for the stream itself.
-        let delta_handle = stream.output();
+        let delta_handle = stream.output_named(unique_name);
 
         let handles = OutputCollectionHandles {
             key_schema: None,
@@ -325,6 +347,26 @@ impl Catalog {
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
+        self.register_materialized_output_zset_named(None, stream, schema)
+    }
+
+    pub fn register_materialized_output_zset_named<Z, D>(
+        &mut self,
+        unique_name: Option<&str>,
+        stream: Stream<RootCircuit, Z>,
+        schema: &str,
+    ) where
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<Z::Key>
+            + Clone
+            + Debug
+            + Send
+            + 'static,
+        Z: ZSet + Debug + Send + Sync,
+        Z::InnerBatch: Send,
+        Z::Key: Sync + From<D>,
+    {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
@@ -336,7 +378,7 @@ impl Catalog {
         let stream = stream.shard();
 
         // Create handle for the stream itself.
-        let delta_handle = stream.output();
+        let delta_handle = stream.output_named(unique_name);
 
         let integrate_handle = stream
             .integrate_trace()
@@ -420,15 +462,43 @@ impl Catalog {
         K: DBData + Send + Sync + From<KD> + Default,
         V: DBData + Send + Sync + From<VD> + Default,
     {
+        self.register_materialized_output_map_named(None, stream, schema)
+    }
+
+    pub fn register_materialized_output_map_named<K, KD, V, VD>(
+        &mut self,
+        unique_name: Option<&str>,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        schema: &str,
+    ) where
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Default
+            + Debug
+            + Clone
+            + Send
+            + 'static,
+        K: DBData + Send + Sync + From<KD> + Default,
+        V: DBData + Send + Sync + From<VD> + Default,
+    {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
         let stream = stream.try_sharded_version();
 
         // Create handle for the stream itself.
-        let delta = stream.map(|(_k, v)| v.clone());
+        let delta = stream.map(|(_k, v)| v.clone()).set_unique_name(
+            stream
+                .get_unique_name()
+                .map(|name| format!("{name}.values"))
+                .as_deref(),
+        );
 
-        let delta_handle = delta.output();
+        let delta_handle = delta.output_named(unique_name);
 
         let integrate_handle = delta
             .integrate_trace()
