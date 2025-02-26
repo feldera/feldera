@@ -25,6 +25,15 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue3615() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE example (
+                    inserted_xid BIGINT not null,
+                    deleted_xid BIGINT not null default null -- '9223372036854775807'
+                );""", "Nullable default value assigned to non-null column 'deleted_xid'");
+    }
+
+    @Test
     public void issue3262() {
         this.getCCS("""
                   CREATE TABLE T(p MAP<VARCHAR, ROW(k VARCHAR, v VARCHAR)>);
