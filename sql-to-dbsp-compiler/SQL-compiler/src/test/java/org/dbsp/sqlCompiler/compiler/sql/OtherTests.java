@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
@@ -48,12 +49,10 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
-import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
@@ -68,7 +67,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
-import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Ignore;
@@ -89,8 +87,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /** Miscellaneous tests that do not fit into standard categories */
 public class OtherTests extends BaseSQLTests implements IWritesLogs { // interface used for testing
@@ -110,16 +110,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         return compiler;
     }
 
-    // This is also testing the deterministic node numbering
-    // The numbering of the nodes will change when the optimizations are changed.
     @Test public void toStringTest() {
-        // Ensure some test was run before so the state of the counters is not deterministic.
-        this.testIntCastWarning();
-        // Reset the counters.
-        NameGen.reset();
-        DBSPNode.reset();
-        DBSPVariablePath.reset();
-
         String query = "CREATE VIEW V AS SELECT T.COL3 FROM T";
         DBSPCompiler compiler = this.compileDef();
         compiler.submitStatementForCompilation(query);
@@ -134,7 +125,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // CREATE TABLE `t` (`col1` INTEGER NOT NULL, `col2` DOUBLE NOT NULL, `col3` BOOLEAN NOT NULL, `col4` VARCHAR NOT NULL, `col5` INTEGER, `col6` DOUBLE)
                     let s1 = t();
                     // DBSPMapOperator s2
-                    let s2: stream<WSet<Tup1<b>>> = s1.map((|t_1: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_1).2), )));
+                    let s2: stream<WSet<Tup1<b>>> = s1.map((|p0: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*p0).2), )));
                     // CREATE VIEW `v` AS
                     // SELECT `t`.`col3`
                     // FROM `schema`.`t` AS `t`
@@ -613,12 +604,38 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test
+    public void merkleTest() {
+        // Compile two programs that have some query in common and check that the circuts produced
+        // have nodes in common.
+        var cc0 = this.getCC("""
+                CREATE TABLE tab0(pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER);
+                CREATE VIEW V AS SELECT pk FROM tab0
+                WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
+        MerkleOuter visitor0 = new MerkleOuter(cc0.compiler);
+        visitor0.apply(cc0.getCircuit());
+
+        var cc1 = this.getCC("""
+                CREATE TABLE tab0(pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER);
+                CREATE VIEW W AS SELECT pk + col0 FROM tab0;
+                CREATE VIEW V AS SELECT pk FROM tab0
+                WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
+        MerkleOuter visitor1 = new MerkleOuter(cc1.compiler);
+        visitor1.apply(cc1.getCircuit());
+        Set<String> c0 = new HashSet<>(visitor0.operatorHash.values());
+        Set<String> c1 = new HashSet<>(visitor1.operatorHash.values());
+        Set<String> common = new HashSet<>(c0);
+        // All nodes in circuit0 must be in circuit1
+        common.retainAll(c1);
+        assert common.size() == c0.size();
+    }
+
+    @Test
     public void serializationTest() throws JsonProcessingException {
         var cc = this.getCC("""
                 CREATE TABLE tab0(pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER);
                 CREATE VIEW V AS SELECT pk FROM tab0
                 WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
-        ToJsonOuterVisitor visitor = new ToJsonOuterVisitor(cc.compiler, 1);
+        ToJsonOuterVisitor visitor = ToJsonOuterVisitor.create(cc.compiler, 1);
         visitor.apply(cc.getCircuit());
         String str = visitor.getJsonString();
         ObjectMapper mapper = Utilities.deterministicObjectMapper();

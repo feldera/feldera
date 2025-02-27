@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.util.Utilities;
 
 /** Tests serialization to Json and back */
+@SuppressWarnings("unused")
 public class TestSerialize implements CircuitTransform {
     DBSPCompiler compiler;
 
@@ -23,7 +24,7 @@ public class TestSerialize implements CircuitTransform {
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
-        ToJsonOuterVisitor visitor = new ToJsonOuterVisitor(compiler, 1);
+        ToJsonOuterVisitor visitor = ToJsonOuterVisitor.create(compiler, 1);
         visitor.apply(circuit);
         String str = visitor.getJsonString();
         // System.out.println(str);

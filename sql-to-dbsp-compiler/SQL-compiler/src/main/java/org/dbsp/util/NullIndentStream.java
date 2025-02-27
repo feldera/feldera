@@ -30,9 +30,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-/**
- * Drops all data written.
- */
+/** Drops all data written. */
 public class NullIndentStream implements IIndentStream {
     public NullIndentStream() {}
 

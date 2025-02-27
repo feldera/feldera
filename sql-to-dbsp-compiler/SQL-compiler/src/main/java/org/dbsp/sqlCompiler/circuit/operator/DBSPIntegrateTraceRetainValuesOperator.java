@@ -41,12 +41,12 @@ public final class DBSPIntegrateTraceRetainValuesOperator
         DBSPVariablePath controlArg = controlType.ref().var();
         assert data.outputType().is(DBSPTypeIndexedZSet.class);
         DBSPType valueType = data.getOutputIndexedZSetType().elementType;
-        DBSPVariablePath dataArg = valueType.var();
-        DBSPParameter param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
+        DBSPVariablePath dataArg = valueType.ref().var();
+        DBSPParameter param = new DBSPParameter(dataArg.variable, dataArg.getType());
         DBSPExpression project = dataProjection
                 .to(PartiallyMonotoneTuple.class)
                 .getField(1)
-                .projectExpression(dataArg);
+                .projectExpression(dataArg.deref());
         DBSPExpression compare0 = controlArg.deref().field(0).not();
         DBSPExpression compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
                 project, controlArg.deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);

@@ -25,6 +25,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.util.IJson;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
@@ -41,14 +42,20 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     final Set<Long> serialized;
     final ToJsonInnerVisitor innerVisitor;
 
-    public ToJsonOuterVisitor(DBSPCompiler compiler, int verbosity) {
+    public ToJsonOuterVisitor(DBSPCompiler compiler, int verbosity, ToJsonInnerVisitor innerVisitor) {
         super(compiler);
-        IndentStream stream = new IndentStream(new StringBuilder());
-        stream.setIndentAmount(verbosity);
-        this.stream = new JsonStream(stream);
+        this.stream = innerVisitor.stream;
         this.verbosity = verbosity;
         this.serialized = new HashSet<>();
-        this.innerVisitor = new ToJsonInnerVisitor(compiler, this.stream, verbosity);
+        this.innerVisitor = innerVisitor;
+    }
+
+    public static ToJsonOuterVisitor create(DBSPCompiler compiler, int verbosity) {
+        IndentStream stream = new IndentStream(new StringBuilder());
+        stream.setIndentAmount(1);
+        JsonStream json = new JsonStream(stream);
+        ToJsonInnerVisitor inner = new ToJsonInnerVisitor(compiler, json, 1);
+        return new ToJsonOuterVisitor(compiler, verbosity, inner);
     }
 
     List<Integer> propertyIndexStack = new ArrayList<>();
@@ -151,7 +158,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         for (ProgramIdentifier view: operator.outputViews) {
             this.propertyIndex(index);
             index++;
-            view.asJson(this.innerVisitor);
+            this.asJsonInner(view);
         }
         this.stream.endArray();
         super.postorder(operator);
@@ -176,19 +183,23 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         return VisitDecision.CONTINUE;
     }
 
+    void asJsonInner(IJson value) {
+        value.asJson(this.innerVisitor);
+    }
+
     @Override
     public VisitDecision preorder(DBSPViewBaseOperator operator) {
         if (this.preorder(operator.to(DBSPUnaryOperator.class)).stop())
             return VisitDecision.STOP;
         this.property("viewName");
-        operator.viewName.asJson(this.innerVisitor);
+        this.asJsonInner(operator.viewName);
         /*
         ignore deliberately
         this.property("query");
         this.stream.append(operator.query);
          */
         this.property("metadata");
-        operator.metadata.asJson(this.innerVisitor);
+        this.asJsonInner(operator.metadata);
         return VisitDecision.CONTINUE;
     }
 
@@ -197,7 +208,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         if (this.preorder(operator.to(DBSPSimpleOperator.class)).stop())
             return VisitDecision.STOP;
         this.label("tableName");
-        operator.tableName.asJson(this.innerVisitor);
+        this.asJsonInner(operator.tableName);
         return VisitDecision.CONTINUE;
     }
 
@@ -206,7 +217,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         if (this.preorder(operator.to(DBSPSourceBaseOperator.class)).stop())
             return VisitDecision.STOP;
         this.label("metadata");
-        operator.metadata.asJson(this.innerVisitor);
+        this.asJsonInner(operator.metadata);
         return VisitDecision.CONTINUE;
     }
 
@@ -298,7 +309,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         super.preorder(circuit);
         this.preorder(circuit.to(IDBSPOuterNode.class));
         this.property("metadata");
-        circuit.metadata.asJson(this.innerVisitor);
+        this.asJsonInner(circuit.metadata);
         return VisitDecision.CONTINUE;
     }
 

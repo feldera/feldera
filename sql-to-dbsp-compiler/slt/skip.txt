@@ -9,3 +9,6 @@ SELECT ALL CASE - 6 WHEN + 70 + ( 81 ) THEN NULL WHEN COALESCE ( - 22, - + COALE
 SELECT ALL - 23 / 19 / - 0 / ( - 13 ) * ( - MIN ( + CAST ( NULL AS INTEGER ) ) ) + - ( - + 1 )
 // test/random/expr/slt_good_118.test: test 7834, division by zero
 SELECT ALL 12 / + + 0 * - MAX ( + CASE - 75 WHEN ( 44 ) * - 15 - - ( - + 55 ) * 89 THEN 45 WHEN 67 THEN NULL ELSE NULL END ) + 39 * - 69 AS col2
+// test/random/expr/slt_good_115.test: test 9895, multiplication overflow
+SELECT DISTINCT - 27 + 0 + 47 - - 3, - 72 * + + 23 * - - NULLIF ( ( 36 ), 23 * + MIN ( - 66 ) * - 84 * 58 * 48 * - - 61 / - ( 58 ) ) * COUNT ( * ) + + 95 + + COUNT ( DISTINCT + 42 ) col1
+
