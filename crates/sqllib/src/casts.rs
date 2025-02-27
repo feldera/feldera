@@ -106,6 +106,14 @@ pub fn unwrap_cast<T>(value: SqlResult<T>) -> T {
     }
 }
 
+#[doc(hidden)]
+pub fn unwrap_cast_position<T>(position: &str, value: SqlResult<T>) -> T {
+    match value {
+        Err(ce) => panic!("{}: {}", position, *ce),
+        Ok(v) => v,
+    }
+}
+
 /// Safe cast implementation: if the result is Error, return null (None).
 // The result is always Option<T>.
 #[doc(hidden)]

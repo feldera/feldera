@@ -332,18 +332,52 @@ public class SqlToRelCompiler implements IWritesLogs {
         public int getMaxNumericPrecision() {
             return DBSPTypeDecimal.MAX_PRECISION;
         }
+
         @Override
         public int getMaxNumericScale() {
             return DBSPTypeDecimal.MAX_SCALE;
         }
+
         @Override
         public int getMaxPrecision(SqlTypeName typeName) {
             if (typeName.equals(SqlTypeName.TIME))
                 return 9;
             return super.getMaxPrecision(typeName);
         }
+
         @Override
         public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
+
+        /*
+        @Override
+        public @org.checkerframework.checker.nullness.qual.Nullable RelDataType deriveDecimalMultiplyType(
+                RelDataTypeFactory typeFactory, RelDataType type1, RelDataType type2) {
+            if (SqlTypeUtil.isExactNumeric(type1)
+                && SqlTypeUtil.isExactNumeric(type2)) {
+                if (SqlTypeUtil.isDecimal(type1) || SqlTypeUtil.isDecimal(type2)) {
+                    int p1 = type1.getPrecision();
+                    int p2 = type2.getPrecision();
+                    int s1 = type1.getScale();
+                    int s2 = type2.getScale();
+
+                    int precision = p1 + p2;
+                    int excessPrecision = getMaxNumericPrecision() - precision;
+                    precision = Math.min(precision, getMaxNumericPrecision());
+
+                    int scale = s1 + s2;
+                    scale = Math.min(scale, getMaxNumericScale());
+                    if (excessPrecision < 0)
+                        scale = scale + excessPrecision;
+                    if (scale < 0)
+                        scale = 0;
+
+                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, precision, scale);
+                }
+            }
+
+            return null;
+        }
+         */
     };
 
     public static final RelDataTypeFactory TYPE_FACTORY = new SqlTypeFactoryImpl(TYPE_SYSTEM);

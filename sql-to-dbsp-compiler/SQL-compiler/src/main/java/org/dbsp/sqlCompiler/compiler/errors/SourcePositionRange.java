@@ -60,4 +60,8 @@ public class SourcePositionRange implements IHasSourcePositionRange {
         this.appendAsJson(result);
         return result;
     }
+
+    public String toRustConstant() {
+        return "\"line " + this.start.line + " column " + this.start.column + "\"";
+    }
 }

@@ -727,10 +727,10 @@ public class PostgresNumericTests extends SqlIoTest {
         // Removed unsupported numeric values inf, nan, etc.
         // No div function known, so I removed this one
         this.q("WITH v(x) AS\n" +
-                "  (VALUES(CAST(0 AS NUMERIC(" + WIDTH + ", 20))),\n" +
-                "         (CAST(1 AS NUMERIC(" + WIDTH + ", 20))),\n" +
-                "         (CAST(-1 AS NUMERIC(" + WIDTH + ",20))),\n" +
-                "         (CAST(4.2 AS NUMERIC(" + WIDTH + ", 20))))\n" +
+                "  (VALUES(CAST(0 AS NUMERIC(" + WIDTH + ", 10))),\n" +
+                "         (CAST(1 AS NUMERIC(" + WIDTH + ", 10))),\n" +
+                "         (CAST(-1 AS NUMERIC(" + WIDTH + ",10))),\n" +
+                "         (CAST(4.2 AS NUMERIC(" + WIDTH + ", 10))))\n" +
                 "SELECT x1, x2,\n" +
                 "  x1 / x2 AS quot,\n" +
                 "  x1 % x2 AS mod\n" +
@@ -961,16 +961,17 @@ public class PostgresNumericTests extends SqlIoTest {
         // Changed last digit of ln from 6 to 7
         // log in Calcite is different from log in Postgres
         // log(value) is equivalent to ln(value) in Calcite but log10(value) in Postgres
-        this.q("WITH v(x) AS\n" +
-                "  (VALUES(1),(CAST(4.2 AS NUMERIC(" + WIDTH + ", 22))))\n" +
-                "SELECT x,\n" +
-                "  log(x),\n" +
-                "  log10(x),\n" +
-                "  ln(x)\n" +
-                "FROM v;\n" +
-                "    x     |         log        |     log10         |         ln         \n" +
-                "----------+--------------------+---------------+------------------------\n" +
-                "        1 | 0.0000000000000000 | 0.0000000000000000 | 0.0000000000000000\n" +
-                "      4.2 | 1.4350845252893227 | 0.6232492903979005 | 1.4350845252893227");
+        this.q("""
+                WITH v(x) AS
+                  (VALUES(1),(CAST(4.2 AS NUMERIC(20, 10))))
+                SELECT x,
+                  log(x),
+                  log10(x),
+                  ln(x)
+                FROM v;
+                    x     |         log        |     log10         |         ln
+                ----------+--------------------+---------------+------------------------
+                        1 | 0.0000000000000000 | 0.0000000000000000 | 0.0000000000000000
+                      4.2 | 1.4350845252893227 | 0.6232492903979005 | 1.4350845252893227""");
     }
 }

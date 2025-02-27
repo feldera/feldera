@@ -27,6 +27,7 @@ import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
@@ -859,10 +860,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
         String functionName;
 
         if (!this.compact) {
-            if (expression.safe)
+            if (expression.safe) {
                 this.builder.append("unwrap_safe_cast(");
-            else
-                this.builder.append("unwrap_cast(");
+            }
+            else {
+                SourcePositionRange range = expression.getNode().getPositionRange();
+                if (range.isValid()) {
+                    this.builder.append("unwrap_cast_position(")
+                            .append(range.toRustConstant())
+                            .append(", ");
+                } else {
+                    this.builder.append("unwrap_cast(");
+                }
+            }
         }
         if (destVecType != null) {
             if (sourceType.is(DBSPTypeVariant.class)) {

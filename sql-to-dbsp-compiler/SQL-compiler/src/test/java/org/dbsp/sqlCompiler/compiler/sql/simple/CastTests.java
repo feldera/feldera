@@ -88,6 +88,18 @@ public class CastTests extends SqlIoTest {
     }
 
     @Test
+    public void castFailPosition() {
+        // use bround to inhibit compile-time optimization
+        this.runtimeConstantFail("""
+                        SELECT
+                            CAST(bround(100000, 0)
+                            AS DECIMAL
+                               (3,2))""",
+                "line 2 column 10: Cannot represent 100000 as DECIMAL(3, 2): " +
+                        "precision of DECIMAL type too small to represent value");
+    }
+
+    @Test
     public void intAndString() {
         String query = "SELECT '1' + 2";
         this.testQuery(query, new DBSPZSetExpression(
