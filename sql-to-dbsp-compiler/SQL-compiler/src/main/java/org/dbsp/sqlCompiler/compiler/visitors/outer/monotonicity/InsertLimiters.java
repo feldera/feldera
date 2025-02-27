@@ -1384,22 +1384,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 "Projection type does not match control type " + leftSliceType + "/" + controlType;
 
         DBSPType rowType = data.getOutputRowType();
-        DBSPVariablePath dataArg = rowType.var();
-        DBSPParameter dataParam;
-        if (rowType.is(DBSPTypeRawTuple.class)) {
-            assert false;
-            DBSPTypeRawTuple raw = rowType.to(DBSPTypeRawTuple.class);
-            dataParam = new DBSPParameter(dataArg.variable,
-                    new DBSPTypeRawTuple(raw.tupFields[0].ref(), raw.tupFields[1].ref()));
-        } else {
-            dataParam = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
-        }
-        DBSPExpression projection = monotoneType.projectExpression(dataArg);
+        DBSPVariablePath dataVar = rowType.ref().var();
+        DBSPExpression projection = monotoneType.projectExpression(dataVar.deref());
 
         DBSPVariablePath controlArg = controlType.ref().var();
         DBSPExpression compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
                 projection, controlArg.deref(), DBSPOpcode.CONTROLLED_FILTER_GTE);
-        DBSPClosureExpression closure = compare.closure(controlArg.asParameter(), dataParam);
+        DBSPClosureExpression closure = compare.closure(controlArg, dataVar);
 
         // The last parameter is not used
         DBSPVariablePath valArg = new DBSPTypeRawTuple().ref().var();
@@ -1407,12 +1398,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPClosureExpression error = new DBSPTupleExpression(
                 new DBSPStringLiteral(tableOrViewName.toString()),
                 new DBSPStringLiteral(DBSPControlledKeyFilterOperator.LATE_ERROR),
-                // dataArg.cast(new DBSPTypeVariant(false), false)).closure(
                 new DBSPApplyExpression("format!",
                         DBSPTypeAny.INSTANCE,
                         new DBSPStrLiteral("{:?}"),
-                        dataArg).applyMethod("into", DBSPTypeString.varchar(false)))
-                .closure(controlArg.asParameter(), dataParam, valArg.asParameter(), weightArg.asParameter());
+                        dataVar).applyMethod("into", DBSPTypeString.varchar(false)))
+                .closure(controlArg, dataVar, valArg, weightArg);
         DBSPControlledKeyFilterOperator result = new DBSPControlledKeyFilterOperator(node, closure, error, data, control);
 
         OutputPort errorPort = result.getOutput(1);

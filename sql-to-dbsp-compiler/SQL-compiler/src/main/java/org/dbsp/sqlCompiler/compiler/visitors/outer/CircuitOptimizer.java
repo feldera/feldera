@@ -28,8 +28,10 @@ import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
@@ -138,7 +140,10 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new CSE(compiler));
         passes.add(new RemoveViewOperators(compiler, true));
         // passes.add(new TestSerialize(compiler));
+        // The canonical form is needed if we want the Merkle hashes to be "stable".
+        passes.add(new CanonicalForm(compiler).getCircuitVisitor(false));
         passes.add(new CompactNames(compiler));
+        passes.add(new MerkleOuter(compiler));
         return new Passes("CircuitOptimizer", compiler, passes);
     }
 

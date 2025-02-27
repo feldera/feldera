@@ -27,7 +27,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
+import org.dbsp.sqlCompiler.circuit.annotation.MerkleHash;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
@@ -74,7 +76,6 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
@@ -399,7 +400,14 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     void generateOperator(DBSPOperator operator) {
+        List<Annotation> hash = operator.annotations.get(a -> a.is(MerkleHash.class));
+        assert operator.is(DBSPNestedOperator.class) || !hash.isEmpty();
         if (this.compiler.options.ioOptions.verbosity > 0) {
+            if (!hash.isEmpty()) {
+                this.builder.append("// Hash: ")
+                        .append(hash.get(0).to(MerkleHash.class).hash)
+                        .newline();
+            }
             String str = operator.getNode().toInternalString();
             this.writeComments(str);
         }
