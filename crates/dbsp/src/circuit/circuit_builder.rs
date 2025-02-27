@@ -74,6 +74,8 @@ use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
 use tracing::info;
 use typedmap::{TypedMap, TypedMapKey};
 
+const LABEL_UNIQUE_OPERATOR_NAME: &str = "unique_name";
+
 /// Value stored in the stream.
 struct StreamValue<D> {
     /// Value written to the stream at the current clock cycle;
@@ -788,11 +790,15 @@ where
     }
 
     pub fn set_unique_name(&self, name: Option<&str>) -> Self {
-        todo!()
+        if let Some(name) = name {
+            self.set_label(LABEL_UNIQUE_OPERATOR_NAME, name)
+        } else {
+            self.clone()
+        }
     }
 
     pub fn get_unique_name(&self) -> Option<String> {
-        todo!()
+        self.get_label(LABEL_UNIQUE_OPERATOR_NAME)
     }
 }
 
@@ -2293,26 +2299,6 @@ impl RootCircuit {
     pub fn unregister_scheduler_event_handler(&self, name: &str) -> bool {
         self.inner().unregister_scheduler_event_handler(name)
     }
-
-    pub(crate) fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T {
-        let path = id.path();
-        let mut result: Option<T> = None;
-
-        self.map_node_inner(path, &mut |node| result = Some(f(node)));
-        result.unwrap()
-    }
-
-    pub(crate) fn map_node_mut<T>(
-        &self,
-        id: &GlobalNodeId,
-        f: &mut dyn FnMut(&mut dyn Node) -> T,
-    ) -> T {
-        let path = id.path();
-        let mut result: Option<T> = None;
-
-        self.map_node_mut_inner(path, &mut |node| result = Some(f(node)));
-        result.unwrap()
-    }
 }
 
 impl<P> ChildCircuit<P>
@@ -2444,6 +2430,34 @@ where
     /// circuit.
     pub(super) fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
         self.inner().log_scheduler_event(event);
+    }
+
+    pub(crate) fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T {
+        let path = id.path();
+        let mut result: Option<T> = None;
+
+        if path.starts_with(self.global_id().path()) {
+            self.map_node_inner(
+                path.strip_prefix(self.global_id().path()).unwrap(),
+                &mut |node| result = Some(f(node)),
+            );
+            result.unwrap()
+        } else {
+            self.map_node_inner(path, &mut |node| result = Some(f(node)));
+            result.unwrap()
+        }
+    }
+
+    pub(crate) fn map_node_mut<T>(
+        &self,
+        id: &GlobalNodeId,
+        f: &mut dyn FnMut(&mut dyn Node) -> T,
+    ) -> T {
+        let path = id.path();
+        let mut result: Option<T> = None;
+
+        self.map_node_mut_inner(path, &mut |node| result = Some(f(node)));
+        result.unwrap()
     }
 
     pub(crate) fn map_node_inner(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
