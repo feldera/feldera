@@ -9,7 +9,7 @@ at `s3://batchtofeldera`.
 
 The dataset is sourced from the [TPC-H Tiny Dataset](https://github.com/dbtoaster/dbtoaster-experiments-data/tree/master/tpch/tiny).
 
-![Data Flow Architecture](./batch-to-feldera-tpch1.png)
+![Data Flow Architecture](./tpch1-arch.png)
 
 For Apache Spark, we will use Databricks, while for Feldera, we will use Docker.
 
