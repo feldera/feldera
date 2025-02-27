@@ -38,6 +38,7 @@ impl CompilerTest {
         };
         let compiler_config = CompilerConfig {
             sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
+            compilation_cargo_lock_path: "../../Cargo.lock".to_owned(),
             dbsp_override_path: "not-used".to_owned(),
             compilation_profile: CompilationProfile::Optimized,
             precompile: false,

@@ -310,6 +310,10 @@ fn calculate_source_checksum(
             config.sql_compiler_home.to_string().as_bytes(),
         ),
         (
+            "config.compilation_cargo_lock_path",
+            config.compilation_cargo_lock_path.to_string().as_bytes(),
+        ),
+        (
             "config.dbsp_override_path",
             config.dbsp_override_path.to_string().as_bytes(),
         ),
@@ -708,6 +712,14 @@ async fn prepare_workspace(
         .join("rust-compilation")
         .join("Cargo.toml");
     recreate_file_with_content(&cargo_toml_file_path, &cargo_toml).await?;
+
+    // Copy over the Cargo.lock such that it is the same for each compilation
+    let cargo_lock_source_path = Path::new(&config.compilation_cargo_lock_path);
+    let cargo_lock_target_path = config
+        .working_dir()
+        .join("rust-compilation")
+        .join("Cargo.lock");
+    copy_file(cargo_lock_source_path, &cargo_lock_target_path).await?;
 
     Ok(())
 }
@@ -1249,6 +1261,7 @@ mod test {
             compiler_working_directory: "".to_string(),
             compilation_profile: CompilationProfile::Dev,
             sql_compiler_home: "".to_string(),
+            compilation_cargo_lock_path: "".to_string(),
             dbsp_override_path: "".to_string(),
             precompile: false,
             binary_ref_host: "".to_string(),
@@ -1258,6 +1271,7 @@ mod test {
             compiler_working_directory: "a".to_string(),
             compilation_profile: CompilationProfile::Dev,
             sql_compiler_home: "".to_string(),
+            compilation_cargo_lock_path: "".to_string(),
             dbsp_override_path: "".to_string(),
             precompile: false,
             binary_ref_host: "".to_string(),
@@ -1267,6 +1281,7 @@ mod test {
             compiler_working_directory: "".to_string(),
             compilation_profile: CompilationProfile::Dev,
             sql_compiler_home: "b".to_string(),
+            compilation_cargo_lock_path: "".to_string(),
             dbsp_override_path: "".to_string(),
             precompile: false,
             binary_ref_host: "".to_string(),
@@ -1276,6 +1291,7 @@ mod test {
             compiler_working_directory: "".to_string(),
             compilation_profile: CompilationProfile::Dev,
             sql_compiler_home: "".to_string(),
+            compilation_cargo_lock_path: "".to_string(),
             dbsp_override_path: "c".to_string(),
             precompile: false,
             binary_ref_host: "".to_string(),
