@@ -111,9 +111,8 @@ COPY --from=builder /app/target/release/pipeline-manager pipeline-manager
 RUN mkdir -p lib/sql-to-dbsp-compiler/SQL-compiler/target
 COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar lib/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
 
-# Reuse `Cargo.lock` to ensure consistent crate versions.
-RUN mkdir -p .feldera/compiler/rust-compilation
-COPY --chown=feldera Cargo.lock .feldera/compiler/rust-compilation/Cargo.lock
+# Copy over `Cargo.lock` into home directory (copied overriding at each pipeline Rust compilation)
+COPY --chown=feldera Cargo.lock Cargo.lock
 
 # Copy over demos
 RUN mkdir -p demos
@@ -140,6 +139,6 @@ RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86
 ENV PATH="$PATH:/home/feldera/.cargo/bin:/home/feldera/mold/bin"
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 # Run the precompile phase to speed up Rust compilations during deployment
-RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler --dbsp-override-path=/home/feldera/lib --precompile
+RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler --compilation-cargo-lock-path=/home/feldera/Cargo.lock --dbsp-override-path=/home/feldera/lib --precompile
 ENV BANNER_ADDR=localhost
-ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/lib", "--demos-dir", "/home/feldera/demos"]
+ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler", "--compilation-cargo-lock-path=/home/feldera/Cargo.lock", "--dbsp-override-path=/home/feldera/lib", "--demos-dir", "/home/feldera/demos"]

@@ -324,9 +324,8 @@ build-pipeline-manager-container:
     COPY +build-manager/pipeline-manager .
     COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
 
-    # Reuse `Cargo.lock` to ensure consistent crate versions.
-    RUN mkdir -p .feldera/compiler/rust-compilation
-    COPY --chown=feldera Cargo.lock .feldera/compiler/rust-compilation/Cargo.lock
+    # Copy over `Cargo.lock` into home directory (copied overriding at each pipeline Rust compilation)
+    COPY --chown=feldera Cargo.lock Cargo.lock
 
     # Copy over demos
     RUN mkdir -p demos
@@ -347,8 +346,8 @@ build-pipeline-manager-container:
     RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
     ENV PATH="$PATH:/home/feldera/.cargo/bin"
 
-    RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler --compilation-profile=unoptimized --dbsp-override-path=/home/feldera/database-stream-processor --precompile
-    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/database-stream-processor", "--compilation-profile=unoptimized", "--demos-dir", "/home/feldera/demos"]
+    RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler --compilation-cargo-lock-path=/home/feldera/Cargo.lock --compilation-profile=unoptimized --dbsp-override-path=/home/feldera/database-stream-processor --precompile
+    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--compilation-cargo-lock-path=/home/feldera/Cargo.lock", "--dbsp-override-path=/home/feldera/database-stream-processor", "--compilation-profile=unoptimized", "--demos-dir", "/home/feldera/demos"]
 
 # Same as the above, but with a permissive CORS setting, else playwright doesn't work
 pipeline-manager-container-cors-all:

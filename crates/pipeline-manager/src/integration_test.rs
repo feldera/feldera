@@ -118,6 +118,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
     let compiler_config = CompilerConfig {
         compiler_working_directory: workdir.join("compiler").to_string_lossy().to_string(),
         sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
+        compilation_cargo_lock_path: "../../Cargo.lock".to_owned(),
         dbsp_override_path: "../../".to_owned(),
         compilation_profile: CompilationProfile::Unoptimized,
         precompile: true,
