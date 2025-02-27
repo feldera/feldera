@@ -3,7 +3,8 @@ import { groupBy } from '$lib/functions/common/array'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
 import type { ErrorResponse } from '$lib/services/manager'
 import {
-  getPipeline,
+  getExtendedPipeline,
+  type CompilerOutput,
   type ExtendedPipeline,
   type Pipeline,
   type PipelineStatus,
@@ -88,12 +89,12 @@ export const programErrorReport = (pipeline: Pipeline) => (pipelineName: string,
   }) as ReportDetails
 
 const fetchedProgramErrorReport = async (pipelineName: string, message: string) => {
-  const pipeline = await getPipeline(pipelineName)
+  const pipeline = await getExtendedPipeline(pipelineName)
   return programErrorReport(pipeline)(pipelineName, message)
 }
 
 export const showSqlCompilerMessage = (e: SqlCompilerMessage) =>
-  `${e.error_type ? e.error_type + ':\n' : ''}${e.message}${e.snippet ? '\n' + e.snippet : ''}`
+  `${e.warning ? 'warning' : 'error'}: ${e.error_type ? e.error_type + '\n' : ''}${e.message}${e.snippet ? '\n' + e.snippet : ''}`
 
 export const extractInternalCompilationError = <Report>(
   stderr: string,
@@ -190,125 +191,110 @@ export const extractRustCompilerError = <Report>(
   }
 }
 
+const ignoredRustErrors = ['warning: patch for the non root package will be ignored']
+
 /**
  * @returns Errors associated with source files
  */
 export const extractProgramErrors =
   <Report>(getReport: (pipelineName: string, message: string) => Report) =>
-  (pipeline: { name: string; status: PipelineStatus }) => {
+  (pipeline: Pick<ExtendedPipeline, 'name' | 'status' | 'compilerOutput'>) => {
     const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
-    const result = match(pipeline.status)
-      .returnType<SystemError<any, Report>[]>()
-      .with({ RustError: P.any }, (e) => {
-        const rustCompilerErrorRegex = /^((warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)\n\n/gm
-        const rustInternalCompilerError = extractInternalCompilationError(
-          e.RustError,
-          pipeline.name,
-          source,
-          getReport
-        )
-        if (rustInternalCompilerError) {
-          // In case of an internal error we return the entire stderr verbatim as a single error,
-          // so we don't need to split it into errors
-          return [rustInternalCompilerError]
-        }
-        const rustCompilerMessages: string[] = Array.from(
-          e.RustError.matchAll(rustCompilerErrorRegex)
-        ).map((match) => match[1])
-        const rustCompilerErrors = rustCompilerMessages.map(
-          extractRustCompilerError(pipeline.name, source, getReport)
-        )
-        return rustCompilerErrors
-      })
-      .with(
-        {
-          SystemError: P.any
-        },
-        (e) => [
+    const result: SystemError<any, Report>[] = []
+    if (pipeline.compilerOutput.sql) {
+      result.push.apply(
+        result,
+        ((messages) =>
+          messages.map((e) => ({
+            name: `Error in SQL code of ${pipeline.name}`,
+            message: showSqlCompilerMessage(e),
+            cause: {
+              entityName: pipeline.name,
+              tag: 'programError',
+              source:
+                source +
+                '#program.sql:' +
+                e.start_line_number +
+                (e.start_column > 1 ? ':' + e.start_column.toString() : ''),
+              report: getReport(pipeline.name, e.message),
+              body: e,
+              warning: e.warning
+            }
+          })))(pipeline.compilerOutput.sql.messages)
+      )
+    }
+    if (pipeline.compilerOutput.rust) {
+      result.push.apply(
+        result,
+        ((stderr) => {
+          // $(?![\r\n]) - RegEx for the end of a string with multiline flag (/gm)
+          const rustCompilerErrorRegex =
+            /^((warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)\n(\n|(?=error|warning))/gm
+          const rustInternalCompilerError = extractInternalCompilationError(
+            stderr,
+            pipeline.name,
+            source,
+            getReport
+          )
+          if (rustInternalCompilerError) {
+            // In case of an internal error we return the entire stderr verbatim as a single error,
+            // so we don't need to split it into errors
+            return [rustInternalCompilerError]
+          }
+          const rustStderrPart: string[] = Array.from(stderr.matchAll(rustCompilerErrorRegex))
+            .map((match) => match[1])
+            .filter(
+              (stderrPart) => !ignoredRustErrors.some((ignored) => stderrPart.startsWith(ignored))
+            )
+          const rustCompilerErrors = rustStderrPart.map(
+            extractRustCompilerError(pipeline.name, source, getReport)
+          )
+          return rustCompilerErrors
+        })(pipeline.compilerOutput.rust.stderr)
+      )
+    }
+    if (pipeline.compilerOutput.systemError) {
+      result.push.apply(
+        result,
+        ((systemErr) => [
           (() => ({
             name: `Error compiling ${pipeline.name}`,
-            message: e.SystemError,
+            message: systemErr,
             cause: {
               entityName: pipeline.name,
               tag: 'programError',
               source,
-              report: getReport(pipeline.name, e.SystemError),
-              body: e.SystemError
+              report: getReport(pipeline.name, systemErr),
+              body: systemErr
             }
           }))()
-        ]
+        ])(pipeline.compilerOutput.systemError)
       )
-      .with(
-        {
-          SqlError: P.any
-        },
-        (es) =>
-          es.SqlError.map((e) => ({
-            name: `Error in SQL code of ${pipeline.name}`,
-            message: showSqlCompilerMessage(e),
-            cause: {
-              entityName: pipeline.name,
-              tag: 'programError',
-              source:
-                source +
-                '#program.sql:' +
-                e.start_line_number +
-                (e.start_column > 1 ? ':' + e.start_column.toString() : ''),
-              report: getReport(pipeline.name, e.message),
-              body: e,
-              warning: e.warning
-            }
-          }))
-      )
-      .with(
-        {
-          SqlWarning: P.any
-        },
-        (es) =>
-          es.SqlWarning.map((e) => ({
-            name: `Error in SQL code of ${pipeline.name}`,
-            message: showSqlCompilerMessage(e),
-            cause: {
-              entityName: pipeline.name,
-              tag: 'programError',
-              source:
-                source +
-                '#program.sql:' +
-                e.start_line_number +
-                (e.start_column > 1 ? ':' + e.start_column.toString() : ''),
-              report: getReport(pipeline.name, e.message),
-              body: e,
-              warning: e.warning
-            }
-          }))
-      )
-      .otherwise(() => [])
+    }
     return result
   }
 
-export const extractProgramStderr = (pipeline: { name: string; status: PipelineStatus }) => {
-  const result = match(pipeline.status)
-    .returnType<string[]>()
-    .with({ RustError: P.any }, (e) => [e.RustError])
-    .with(
-      {
-        SystemError: P.any
-      },
-      (e) => [e.SystemError]
-    )
-    .with(
-      {
-        SqlError: P.any
-      },
-      (es) => [es.SqlError.join('\n')]
-    )
-    .with(
-      {
-        SqlWarning: P.any
-      },
-      (es) => [es.SqlWarning.join('\n')]
-    )
-    .otherwise(() => [])
+const printSqlCompilerMessage = (message: SqlCompilerMessage) => {
+  return `${message.warning ? 'warning' : 'error'}: ${message.error_type}
+${message.message}
+${message.snippet}
+`
+}
+
+export const extractProgramStderr = (pipeline: { compilerOutput: CompilerOutput }) => {
+  const result: string[] = []
+  if (pipeline.compilerOutput.sql) {
+    result.push(pipeline.compilerOutput.sql.messages.map(printSqlCompilerMessage).join('\n'))
+    result.push(`SQL compiler exit code: ${pipeline.compilerOutput.sql.exit_code}`)
+  }
+  if (pipeline.compilerOutput.rust) {
+    result.push(pipeline.compilerOutput.rust.stdout)
+    result.push(pipeline.compilerOutput.rust.stderr)
+    result.push(`Rust compiler exit code: ${pipeline.compilerOutput.rust.exit_code}`)
+  }
+  if (pipeline.compilerOutput.systemError) {
+    result.push(pipeline.compilerOutput.systemError)
+  }
   return result
 }
 

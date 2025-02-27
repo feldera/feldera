@@ -7,7 +7,7 @@
 
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', { SqlWarning: P.any }, () => '')
+      .with('Shutdown', () => '')
       .with('Preparing', 'Provisioning', 'Initializing', () => 'preset-filled-tertiary-200-800')
       .with('Paused', () => 'preset-tonal-warning')
       .with('Running', () => 'preset-tonal-success')
@@ -17,13 +17,13 @@
       .with({ PipelineError: P.any }, () => '')
       .with(
         { Queued: P.any },
-        { 'Compiling SQL': P.any },
-        { 'SQL compiled': P.any },
-        { 'Compiling binary': P.any },
+        { CompilingSql: P.any },
+        { SqlCompiled: P.any },
+        { CompilingRust: P.any },
         () => ''
       )
       .with('Unavailable', () => 'bg-orange-300 dark:bg-orange-700')
-      .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => '')
+      .with('SqlError', 'RustError', 'SystemError', () => '')
       .exhaustive()
   )
 </script>

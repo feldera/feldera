@@ -71,7 +71,7 @@
   const active = $derived.by(() => {
     return match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', { SqlWarning: P.any }, () => ['_spacer_long', '_start_paused'])
+      .with('Shutdown', () => ['_spacer_long', '_start_paused'])
       .with(
         'Preparing',
         'Provisioning',
@@ -87,20 +87,17 @@
       .with({ PipelineError: P.any }, () => ['_shutdown', '_spacer_long'])
       .with(
         { Queued: P.any },
-        { 'Compiling SQL': P.any },
-        { 'SQL compiled': P.any },
-        { 'Compiling binary': P.any },
+        { CompilingSql: P.any },
+        { SqlCompiled: P.any },
+        { CompilingRust: P.any },
         (cause) => [
-          Object.values(cause)[0] === 'upgrade'
+          Object.values(cause)[0].cause === 'upgrade'
             ? ('_unschedule' as const)
             : ('_spacer_long' as const),
           '_start_pending'
         ]
       )
-      .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
-        '_spacer_long',
-        '_start_error'
-      ])
+      .with('SqlError', 'RustError', 'SystemError', () => ['_spacer_long', '_start_error'])
       .exhaustive()
   })
 

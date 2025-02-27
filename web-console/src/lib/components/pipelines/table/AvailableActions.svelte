@@ -30,15 +30,15 @@
       .returnType<(typeof availableActions)[number][]>()
       .with(
         { Queued: P.any },
-        { 'Compiling SQL': P.any },
-        { 'SQL compiled': P.any },
-        { 'Compiling binary': P.any },
+        { CompilingSql: P.any },
+        { SqlCompiled: P.any },
+        { CompilingRust: P.any },
         (cause) => [
-          ...(Object.values(cause)[0] === 'upgrade' ? ['shutdown' as const] : []),
+          ...(Object.values(cause)[0].cause === 'upgrade' ? ['shutdown' as const] : []),
           'delete'
         ]
       )
-      .with('Shutdown', { SqlWarning: P.any }, () => ['start', 'delete'])
+      .with('Shutdown', () => ['start', 'delete'])
       .with('Preparing', 'Provisioning', 'Initializing', () => ['shutdown', 'delete'])
       .with('Running', () => ['shutdown', 'pause'])
       .with('Pausing', () => ['shutdown', 'delete'])
@@ -46,7 +46,7 @@
       .with('Resuming', () => ['shutdown', 'delete'])
       .with('ShuttingDown', () => ['shutdown'])
       .with('Unavailable', () => ['delete'])
-      .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => ['delete'])
+      .with('SqlError', 'RustError', 'SystemError', () => ['delete'])
       .with({ PipelineError: P.any }, () => ['shutdown', 'delete'])
       .exhaustive()
   let selected = $derived(

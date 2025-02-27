@@ -24,7 +24,8 @@ import {
   httpInput,
   type Field,
   type SqlCompilerMessage,
-  type PostPutPipeline
+  type PostPutPipeline,
+  type ProgramError
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -37,7 +38,7 @@ export type {
 import { P, match } from 'ts-pattern'
 import type { ControllerStatus, XgressRecord } from '$lib/types/pipelineManager'
 export type { ProgramSchema } from '$lib/services/manager'
-export type ProgramStatus = _ProgramStatus | { SqlWarning: SqlCompilerMessage[] }
+export type ProgramStatus = _ProgramStatus
 
 import * as AxaOidc from '@axa-fr/oidc-client'
 const { OidcClient } = AxaOidc
@@ -49,6 +50,7 @@ import invariant from 'tiny-invariant'
 import { tuple } from '$lib/functions/common/tuple'
 import { sleep } from '$lib/functions/common/promise'
 import { type NamesInUnion, unionName } from '$lib/functions/common/union'
+import { nonNull } from '$lib/functions/common/function'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -80,17 +82,15 @@ export const programStatusOf = (status: PipelineStatus) =>
       () => 'Success' as const
     )
     .with({ Queued: P.any }, () => 'Pending' as const)
-    .with({ 'Compiling SQL': P.any }, () => 'CompilingSql')
-    .with({ 'SQL compiled': P.any }, () => 'SqlCompiled')
-    .with({ 'Compiling binary': P.any }, () => 'CompilingRust')
-    .with(
-      { SqlWarning: P.any },
-      { SqlError: P.any },
-      { RustError: P.any },
-      { SystemError: P.any },
-      (programStatus) => programStatus
-    )
+    .with({ CompilingSql: P.any }, () => 'CompilingSql')
+    .with({ SqlCompiled: P.any }, () => 'SqlCompiled')
+    .with({ CompilingRust: P.any }, () => 'CompilingRust')
+    .with('SqlError', 'RustError', 'SystemError', (programStatus) => programStatus)
     .exhaustive()
+
+// export const toDddProgramStatus = (status: _ProgramStatus, errors: ProgramError) => {
+
+// }
 
 const toPipelineThumb = (
   pipeline: Omit<ExtendedPipelineDescr, 'program_code' | 'udf_rust' | 'udf_toml'>
@@ -103,6 +103,7 @@ const toPipelineThumb = (
     pipeline.deployment_desired_status,
     pipeline.deployment_error
   ),
+  compilerOutput: toCompilerOutput(pipeline.program_error),
   deploymentStatusSince: pipeline.deployment_status_since,
   refreshVersion: pipeline.refresh_version
 })
@@ -151,7 +152,8 @@ const toExtendedPipeline = ({
     deployment_status,
     deployment_desired_status,
     deployment_error
-  )
+  ),
+  compilerOutput: toCompilerOutput(pipeline.program_error)
 })
 
 const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({
@@ -168,12 +170,12 @@ export type PipelineThumb = ReturnType<typeof toPipelineThumb>
 export type Pipeline = ReturnType<typeof toPipeline>
 export type ExtendedPipeline = ReturnType<typeof toExtendedPipeline>
 
-export const getPipeline = async (pipeline_name: string) => {
-  return handled(
-    _getPipeline,
-    `Failed to fetch ${pipeline_name} pipeline`
-  )({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(toPipeline)
-}
+// export const getPipeline = async (pipeline_name: string) => {
+//   return handled(
+//     _getPipeline,
+//     `Failed to fetch ${pipeline_name} pipeline`
+//   )({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(toPipeline)
+// }
 
 export const getExtendedPipeline = async (
   pipeline_name: string,
@@ -274,49 +276,65 @@ export const getPipelineStats = async (pipeline_name: string) => {
     })
 }
 
+const toCompilerOutput = (programError: ProgramError) => {
+  return {
+    sql: programError.sql_compilation,
+    rust: programError.rust_compilation,
+    systemError: programError.system_error
+  }
+}
+
+export type CompilerOutput = ReturnType<typeof toCompilerOutput>
+
 const consolidatePipelineStatus = (
   programStatus: ProgramStatus,
   pipelineStatus: _PipelineStatus,
   desiredStatus: _PipelineStatus,
   pipelineError: ErrorResponse | null | undefined
 ) => {
-  const status = match([pipelineStatus, desiredStatus, pipelineError, programStatus])
-    .with(['Shutdown', P.any, P.nullish, 'CompilingSql'], () => ({
-      'Compiling SQL': desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+  const status = match([pipelineStatus, desiredStatus, programStatus])
+    .with(['Shutdown', P.any, 'Pending'], () => ({
+      Queued: { cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const) }
     }))
-    .with(['Shutdown', P.any, P.nullish, 'SqlCompiled'], () => ({
-      'SQL compiled': desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+    .with(['Shutdown', P.any, 'CompilingSql'], () => ({
+      CompilingSql: {
+        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+      }
     }))
-    .with(['Shutdown', P.any, P.nullish, 'Pending'], () => ({
-      Queued: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+    .with(['Shutdown', P.any, 'SqlCompiled'], () => ({
+      SqlCompiled: {
+        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+      }
     }))
-    .with(['Shutdown', P.any, P.nullish, 'CompilingRust'], () => ({
-      'Compiling binary': desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+    .with(['Shutdown', P.any, 'CompilingRust'], () => ({
+      CompilingRust: {
+        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+      }
     }))
+    .with(['Shutdown', P.any, 'SqlError'], () => 'SqlError' as const)
+    .with(['Shutdown', P.any, 'RustError'], () => 'RustError' as const)
+    .with(['Shutdown', P.any, 'SystemError'], () => 'SystemError' as const)
+    .with(['Shutdown', 'Running', P._], () => 'Preparing' as const)
+    .with(['Shutdown', 'Paused', P._], () => 'Preparing' as const)
+    .with(['Shutdown', 'Shutdown', 'Success'], () => 'Shutdown' as const)
+    .with(['Provisioning', P.any, P._], () => 'Provisioning' as const)
+    .with(['Initializing', P.any, P._], () => 'Initializing' as const)
+    .with(['Paused', 'Running', P._], () => 'Resuming' as const)
+    .with(['Paused', 'Shutdown', P._], () => 'ShuttingDown' as const)
+    .with(['Paused', P.any, P._], () => 'Paused' as const)
+    .with(['Running', 'Paused', P._], () => 'Pausing' as const)
+    .with(['Running', 'Shutdown', P._], () => 'ShuttingDown' as const)
+    .with(['Running', P.any, P._], () => 'Running' as const)
+    .with(['ShuttingDown', P.any, P._], () => 'ShuttingDown' as const)
     .with(
-      ['Shutdown', P.any, P.nullish, { SqlError: P.select() }],
-      (SqlError): { SqlError: SqlCompilerMessage[] } | { SqlWarning: SqlCompilerMessage[] } =>
-        SqlError.every(({ warning }) => warning) ? { SqlWarning: SqlError } : { SqlError }
+      ['Failed', P.any, P._],
+      P.when(() => nonNull(pipelineError)),
+      () => {
+        invariant(pipelineError)
+        return { PipelineError: pipelineError }
+      }
     )
-    .with(['Shutdown', P.any, P.nullish, { RustError: P.select() }], (RustError) => ({ RustError }))
-    .with(['Shutdown', P.any, P.nullish, { SystemError: P.select() }], (SystemError) => ({
-      SystemError
-    }))
-    .with(['Shutdown', 'Running', P.any, P._], () => 'Preparing' as const)
-    .with(['Shutdown', 'Paused', P.any, P._], () => 'Preparing' as const)
-    .with(['Shutdown', 'Shutdown', P.nullish, 'Success'], () => 'Shutdown' as const)
-    .with(['Shutdown', 'Shutdown', P.select(P.nonNullable), P.any], () => 'Shutdown' as const)
-    .with(['Provisioning', P.any, P.nullish, P._], () => 'Provisioning' as const)
-    .with(['Initializing', P.any, P.nullish, P._], () => 'Initializing' as const)
-    .with(['Paused', 'Running', P.nullish, P._], () => 'Resuming' as const)
-    .with(['Paused', 'Shutdown', P.nullish, P._], () => 'ShuttingDown' as const)
-    .with(['Paused', P.any, P.nullish, P._], () => 'Paused' as const)
-    .with(['Running', 'Paused', P.nullish, P._], () => 'Pausing' as const)
-    .with(['Running', 'Shutdown', P.nullish, P._], () => 'ShuttingDown' as const)
-    .with(['Running', P.any, P.nullish, P._], () => 'Running' as const)
-    .with(['ShuttingDown', P.any, P.nullish, P._], () => 'ShuttingDown' as const)
-    .with(['Failed', P.any, P.select(P.nonNullable), P._], (PipelineError) => ({ PipelineError }))
-    .with(['Unavailable', P.any, P.any, P.any], () => 'Unavailable' as const)
+    .with(['Unavailable', P.any, P.any], () => 'Unavailable' as const)
     .otherwise(() => {
       throw new Error(
         `Unable to consolidatePipelineStatus: ${pipelineStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
@@ -359,9 +377,9 @@ export const postPipelineAction = async (
       'Preparing',
       'Provisioning',
       'Initializing',
-      'Compiling binary',
-      'SQL compiled',
-      'Compiling SQL',
+      'CompilingRust',
+      'SqlCompiled',
+      'CompilingSql',
       'Queued'
     ]
     while (true) {
