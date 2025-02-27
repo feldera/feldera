@@ -48,6 +48,13 @@ public interface ICastable {
         return result;
     }
 
+    default <T> T to(Class<T> clazz, String error) {
+        T result = this.as(clazz);
+        if (result == null)
+            throw new RuntimeException(error);
+        return result;
+    }
+
     default <T> boolean is(Class<T> clazz) {
         return clazz.isInstance(this);
     }

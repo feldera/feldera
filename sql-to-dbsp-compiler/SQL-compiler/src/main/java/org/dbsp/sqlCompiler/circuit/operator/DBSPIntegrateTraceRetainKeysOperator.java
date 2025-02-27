@@ -50,24 +50,24 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         DBSPExpression compare0 = controlArg.deref().field(0).not();
         if (data.outputType().is(DBSPTypeIndexedZSet.class)) {
             DBSPType keyType = data.getOutputIndexedZSetType().keyType;
-            DBSPVariablePath dataArg = keyType.var();
-            param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
+            DBSPVariablePath dataArg = keyType.ref().var();
+            param = new DBSPParameter(dataArg.variable, dataArg.getType());
             IMaybeMonotoneType dataField0 = dataProjection
                     .to(PartiallyMonotoneTuple.class)
                     .getField(0);
             if (!dataField0.mayBeMonotone())
                 return null;
             DBSPExpression project = dataField0
-                    .projectExpression(dataArg);
+                    .projectExpression(dataArg.deref());
             compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
                     project, controlArg.deref().field(1).field(0), DBSPOpcode.CONTROLLED_FILTER_GTE);
         } else {
             DBSPType keyType = data.getOutputZSetElementType();
-            DBSPVariablePath dataArg = keyType.var();
-            param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
+            DBSPVariablePath dataArg = keyType.ref().var();
+            param = new DBSPParameter(dataArg.variable, dataArg.getType());
             if (!dataProjection.mayBeMonotone())
                 return null;
-            DBSPExpression project = dataProjection.projectExpression(dataArg);
+            DBSPExpression project = dataProjection.projectExpression(dataArg.deref());
             compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
                     project, controlArg.deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
         }

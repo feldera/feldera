@@ -26,10 +26,6 @@
 package org.dbsp.util;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.function.Function;
-import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 public class IndentStream implements IIndentStream {
     private Appendable stream;
@@ -50,8 +46,9 @@ public class IndentStream implements IIndentStream {
     }
 
     /** Set the indent amount.  If less or equal to 0, newline will have no effect. */
-    public void setIndentAmount(int amount) {
+    public IndentStream setIndentAmount(int amount) {
         this.amount = amount;
+        return this;
     }
 
     @Override
@@ -74,193 +71,6 @@ public class IndentStream implements IIndentStream {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-    }
-
-    @Override
-    public IIndentStream append(String string) {
-        for (int i = 0; i < string.length(); i++) {
-            char c = string.charAt(i);
-            this.appendChar(c);
-        }
-        return this;
-    }
-
-    @Override
-    public IIndentStream append(boolean b) {
-        return this.append(Boolean.toString(b));
-    }
-
-    @Override
-    public <T extends ToIndentableString> IIndentStream append(T value) {
-        value.toString(this);
-        return this;
-    }
-
-    @Override
-    public IIndentStream append(int value) {
-        this.append(Integer.toString(value));
-        return this;
-    }
-
-    @Override
-    public IIndentStream append(long value) {
-        this.append(Long.toString(value));
-        return this;
-    }
-
-    @Override
-    public IIndentStream appendSupplier(Supplier<String> supplier) {
-        return this.append(supplier.get());
-    }
-
-    @Override
-    public IIndentStream joinS(String separator, Collection<String> data) {
-        boolean first = true;
-        for (String d: data) {
-            if (!first)
-                this.append(separator);
-            first = false;
-            this.append(d);
-        }
-        return this;
-    }
-
-    @Override
-    public <T extends ToIndentableString>
-    IIndentStream joinI(String separator, Collection<T> data) {
-        boolean first = true;
-        for (ToIndentableString d: data) {
-            if (!first)
-                this.append(separator);
-            first = false;
-            this.append(d);
-        }
-        return this;
-    }
-
-    @Override
-    public <T> IIndentStream join(String separator, T[] data, Function<T, String> generator) {
-        boolean first = true;
-        for (T d: data) {
-            if (!first)
-                this.append(separator);
-            first = false;
-            this.append(generator.apply(d));
-        }
-        return this;
-    }
-
-    @Override
-    public <T> IIndentStream intercalate(String separator, T[] data, Function<T, String> generator) {
-        for (T d: data) {
-            this.append(generator.apply(d));
-            this.append(separator);
-        }
-        return this;
-    }
-
-    @Override
-    public IIndentStream join(String separator, String[] data) {
-        boolean first = true;
-        for (String d: data) {
-            if (!first)
-                this.append(separator);
-            first = false;
-            this.append(d);
-        }
-        return this;
-    }
-
-    @Override
-    public IIndentStream join(String separator, Stream<String> data) {
-        final boolean[] first = {true};
-        data.forEach(d -> {
-            if (!first[0])
-                this.append(separator);
-            first[0] = false;
-            this.append(d);
-        });
-        return this;
-    }
-
-    @Override
-    public <T extends ToIndentableString> IIndentStream join(String separator, T[] data) {
-        boolean first = true;
-        for (ToIndentableString d: data) {
-            if (!first)
-                this.append(separator);
-            first = false;
-            this.append(d);
-        }
-        return this;
-    }
-
-    @Override
-    public IIndentStream join(String separator, Collection<String> data) {
-        boolean first = true;
-        for (String d: data) {
-            if (!first)
-                this.append(separator);
-            first = false;
-            this.append(d);
-        }
-        return this;
-    }
-
-    @Override
-    public IIndentStream joinSupplier(String separator, Supplier<Collection<String>> data) {
-        return this.join(separator, data.get());
-    }
-
-    @Override
-    public IIndentStream intercalate(String separator, Collection<String> data) {
-        for (String d: data) {
-            this.append(d);
-            this.append(separator);
-        }
-        return this;
-    }
-
-    @Override
-    public IIndentStream intercalate(String separator, String[] data) {
-        for (String d: data) {
-            this.append(d);
-            this.append(separator);
-        }
-        return this;
-    }
-
-    @Override
-    public IIndentStream intercalateS(String separator, Collection<String> data) {
-        for (String d: data) {
-            this.append(d);
-            this.append(separator);
-        }
-        return this;
-    }
-
-    @Override
-    public <T extends ToIndentableString>
-    IIndentStream intercalateI(String separator, Collection<T> data) {
-        for (T d: data) {
-            this.append(d);
-            this.append(separator);
-        }
-        return this;
-    }
-
-    @Override
-    public <T extends ToIndentableString> IIndentStream intercalateI(String separator, T[] data) {
-        for (T d: data) {
-            this.append(d);
-            this.append(separator);
-        }
-        return this;
-    }
-
-    @Override
-    public IIndentStream newline() {
-        return this.append("\n");
     }
 
     @Override

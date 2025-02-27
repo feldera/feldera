@@ -31,31 +31,177 @@ import java.util.stream.Stream;
 @SuppressWarnings("UnusedReturnValue")
 public interface IIndentStream {
     IIndentStream appendChar(char c);
-    IIndentStream append(String string);
-    IIndentStream append(boolean b);
-    <T extends ToIndentableString> IIndentStream append(T value);
-    IIndentStream append(int value);
-    IIndentStream append(long value);
+
+    default IIndentStream append(String string) {
+        for (int i = 0; i < string.length(); i++) {
+            char c = string.charAt(i);
+            this.appendChar(c);
+        }
+        return this;
+    }
+
+    default IIndentStream append(boolean b) {
+        return this.append(Boolean.toString(b));
+    }
+
+    default <T extends ToIndentableString> IIndentStream append(T value) {
+        value.toString(this);
+        return this;
+    }
+
+    default IIndentStream append(int value) {
+        this.append(Integer.toString(value));
+        return this;
+    }
+
+    default IIndentStream append(long value) {
+        this.append(Long.toString(value));
+        return this;
+    }
+
     /** For lazy evaluation of the argument. */
-    IIndentStream appendSupplier(Supplier<String> supplier);
-    IIndentStream joinS(String separator, Collection<String> data);
-    <T extends ToIndentableString> IIndentStream joinI(String separator, Collection<T> data);
-    IIndentStream join(String separator, String[] data);
-    IIndentStream join(String separator, Stream<String> data);
-    <T> IIndentStream join(String separator, T[] data, Function<T, String> generator);
-    <T> IIndentStream intercalate(String separator, T[] data, Function<T, String> generator);
-    <T extends ToIndentableString> IIndentStream join(String separator, T[] data);
-    IIndentStream join(String separator, Collection<String> data);
-    IIndentStream joinSupplier(String separator, Supplier<Collection<String>> data);
-    IIndentStream intercalate(String separator, Collection<String> data);
-    IIndentStream intercalate(String separator, String[] data);
-    IIndentStream intercalateS(String separator, Collection<String> data);
-    <T extends ToIndentableString> IIndentStream intercalateI(String separator, Collection<T> data);
-    <T extends ToIndentableString> IIndentStream intercalateI(String separator, T[] data);
-    IIndentStream newline();
+    default IIndentStream appendSupplier(Supplier<String> supplier) {
+        return this.append(supplier.get());
+    }
+
+    default IIndentStream joinS(String separator, Collection<String> data) {
+        boolean first = true;
+        for (String d: data) {
+            if (!first)
+                this.append(separator);
+            first = false;
+            this.append(d);
+        }
+        return this;
+    }
+
+    default <T extends ToIndentableString> IIndentStream joinI(String separator, Collection<T> data) {
+        boolean first = true;
+        for (ToIndentableString d: data) {
+            if (!first)
+                this.append(separator);
+            first = false;
+            this.append(d);
+        }
+        return this;
+    }
+
+    default IIndentStream join(String separator, String[] data) {
+        boolean first = true;
+        for (String d: data) {
+            if (!first)
+                this.append(separator);
+            first = false;
+            this.append(d);
+        }
+        return this;
+    }
+
+    default IIndentStream join(String separator, Stream<String> data) {
+        final boolean[] first = {true};
+        data.forEach(d -> {
+            if (!first[0])
+                this.append(separator);
+            first[0] = false;
+            this.append(d);
+        });
+        return this;
+    }
+
+    default <T> IIndentStream join(String separator, T[] data, Function<T, String> generator) {
+        boolean first = true;
+        for (T d: data) {
+            if (!first)
+                this.append(separator);
+            first = false;
+            this.append(generator.apply(d));
+        }
+        return this;
+    }
+    
+    default <T> IIndentStream intercalate(String separator, T[] data, Function<T, String> generator) {
+        for (T d: data) {
+            this.append(generator.apply(d));
+            this.append(separator);
+        }
+        return this;
+    }
+
+    default <T extends ToIndentableString> IIndentStream join(String separator, T[] data) {
+        boolean first = true;
+        for (ToIndentableString d: data) {
+            if (!first)
+                this.append(separator);
+            first = false;
+            this.append(d);
+        }
+        return this;
+    }
+
+    default IIndentStream join(String separator, Collection<String> data) {
+        boolean first = true;
+        for (String d: data) {
+            if (!first)
+                this.append(separator);
+            first = false;
+            this.append(d);
+        }
+        return this;
+    }
+
+    default IIndentStream joinSupplier(String separator, Supplier<Collection<String>> data) {
+        return this.join(separator, data.get());
+    }
+
+    default IIndentStream intercalate(String separator, Collection<String> data) {
+        for (String d: data) {
+            this.append(d);
+            this.append(separator);
+        }
+        return this;
+    }
+
+    default IIndentStream intercalate(String separator, String[] data) {
+        for (String d: data) {
+            this.append(d);
+            this.append(separator);
+        }
+        return this;
+    }
+
+    default IIndentStream intercalateS(String separator, Collection<String> data) {
+        for (String d: data) {
+            this.append(d);
+            this.append(separator);
+        }
+        return this;
+    }
+
+    default <T extends ToIndentableString>
+    IIndentStream intercalateI(String separator, Collection<T> data) {
+        for (T d: data) {
+            this.append(d);
+            this.append(separator);
+        }
+        return this;
+    }
+
+    default <T extends ToIndentableString> IIndentStream intercalateI(String separator, T[] data) {
+        for (T d: data) {
+            this.append(d);
+            this.append(separator);
+        }
+        return this;
+    }
+
+    default IIndentStream newline()  {
+        return this.append("\n");
+    }
+
     /** Increase indentation and emit a newline. */
     IIndentStream increase();
     IIndentStream decrease();
+
     default IIndentStream appendJsonLabelAndColon(String label) {
         return this.append("\"").append(Utilities.escapeDoubleQuotes(label)).append("\": ");
     }
