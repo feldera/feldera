@@ -776,17 +776,14 @@ where
 
     pub fn set_label(&self, key: &str, val: &str) -> Self {
         self.circuit
-            .root_circuit()
             .map_node_mut(&self.origin_node_id, &mut |node| node.set_label(key, val));
         self.clone()
     }
 
     pub fn get_label(&self, key: &str) -> Option<String> {
-        self.circuit
-            .root_circuit()
-            .map_node(&self.origin_node_id, &mut |node| {
-                node.get_label(key).map(str::to_string)
-            })
+        self.circuit.map_node(&self.origin_node_id, &mut |node| {
+            node.get_label(key).map(str::to_string)
+        })
     }
 
     pub fn set_unique_name(&self, name: Option<&str>) -> Self {
@@ -1367,6 +1364,10 @@ pub trait Circuit: WithClock + Clone + 'static {
 
     /// Circuit's global node id.
     fn global_node_id(&self) -> GlobalNodeId;
+
+    fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T;
+
+    fn map_node_mut<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T;
 
     /// Lookup a value in the circuit cache or create and insert a new value
     /// if it does not exist.
@@ -2432,34 +2433,6 @@ where
         self.inner().log_scheduler_event(event);
     }
 
-    pub(crate) fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T {
-        let path = id.path();
-        let mut result: Option<T> = None;
-
-        if path.starts_with(self.global_id().path()) {
-            self.map_node_inner(
-                path.strip_prefix(self.global_id().path()).unwrap(),
-                &mut |node| result = Some(f(node)),
-            );
-            result.unwrap()
-        } else {
-            self.map_node_inner(path, &mut |node| result = Some(f(node)));
-            result.unwrap()
-        }
-    }
-
-    pub(crate) fn map_node_mut<T>(
-        &self,
-        id: &GlobalNodeId,
-        f: &mut dyn FnMut(&mut dyn Node) -> T,
-    ) -> T {
-        let path = id.path();
-        let mut result: Option<T> = None;
-
-        self.map_node_mut_inner(path, &mut |node| result = Some(f(node)));
-        result.unwrap()
-    }
-
     pub(crate) fn map_node_inner(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
         let nodes = self.inner().nodes.borrow();
         let node = nodes[path[0].0].borrow();
@@ -2519,6 +2492,32 @@ where
             .iter()
             .map(|node| node.borrow().local_id())
             .collect()
+    }
+
+    fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T {
+        let path = id.path();
+        let mut result: Option<T> = None;
+
+        assert!(path.starts_with(self.global_id().path()));
+
+        self.map_node_inner(
+            path.strip_prefix(self.global_id().path()).unwrap(),
+            &mut |node| result = Some(f(node)),
+        );
+        result.unwrap()
+    }
+
+    fn map_node_mut<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T {
+        let path = id.path();
+        let mut result: Option<T> = None;
+
+        assert!(path.starts_with(self.global_id().path()));
+
+        self.map_node_mut_inner(
+            path.strip_prefix(self.global_id().path()).unwrap(),
+            &mut |node| result = Some(f(node)),
+        );
+        result.unwrap()
     }
 
     fn allocate_stream_id(&self) -> StreamId {
