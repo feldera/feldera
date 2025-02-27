@@ -143,7 +143,7 @@ For example, the following label indicates that the connector is used
 to backfill the pipeline with historical data.
 
 ```
-"label": ["backfill"]
+"labels": ["backfill"]
 ```
 
 ### Configuring the order of connector activation using `start_after`
@@ -177,7 +177,7 @@ create table PRICE (
     vendor bigint not null,
     price integer
 ) WITH ('connectors' = '[{
-    "labels": "price.backfill",
+    "labels": ["price.backfill"],
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
     },
