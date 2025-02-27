@@ -75,12 +75,7 @@
     }
   })
 
-  let programErrors = $derived(
-    extractProgramErrors(() => pipeline.current)({
-      name: pipeline.current.name,
-      status: pipeline.current.status
-    })
-  )
+  let programErrors = $derived(extractProgramErrors(() => pipeline.current)(pipeline.current))
   let pipelineErrors = $derived(extractPipelineErrors(pipeline.current))
   let xgressErrors = $derived(
     extractPipelineXgressErrors({ pipelineName, status: metrics.current })

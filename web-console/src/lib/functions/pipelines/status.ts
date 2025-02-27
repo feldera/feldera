@@ -4,7 +4,7 @@ import { P, match } from 'ts-pattern'
 
 export const getPipelineStatusLabel = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', { SqlWarning: P.any }, () => 'Ready To Start')
+    .with('Shutdown', () => 'Ready To Start')
     .with('Preparing', () => 'Preparing')
     .with('Provisioning', () => 'Provisioning')
     .with('Initializing', () => 'Initializing')
@@ -15,19 +15,19 @@ export const getPipelineStatusLabel = (status: PipelineStatus) => {
     .with('ShuttingDown', () => 'Shutting Down')
     .with({ PipelineError: P._ }, () => 'Pipeline Error')
     .with({ Queued: P.any }, () => 'Queued')
-    .with({ 'Compiling SQL': P.any }, () => 'Compiling SQL')
-    .with({ 'SQL compiled': P.any }, () => 'SQL compiled')
-    .with({ 'Compiling binary': P.any }, () => 'Compiling Rust')
+    .with({ CompilingSql: P.any }, () => 'Compiling SQL')
+    .with({ SqlCompiled: P.any }, () => 'SQL compiled')
+    .with({ CompilingRust: P.any }, () => 'Compiling Rust')
     .with('Unavailable', () => 'Unavailable')
-    .with({ SqlError: P._ }, () => 'Program Error')
-    .with({ RustError: P._ }, () => 'Program Error')
-    .with({ SystemError: P._ }, () => 'Program Error')
+    .with('SqlError', () => 'Program Error')
+    .with('RustError', () => 'Program Error')
+    .with('SystemError', () => 'Program Error')
     .exhaustive()
 }
 
 export const getDeploymentStatusLabel = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', { SqlWarning: P.any }, () => '')
+    .with('Shutdown', () => '')
     .with('Preparing', () => 'Preparing')
     .with('Provisioning', () => 'Provisioning')
     .with('Initializing', () => 'Initializing')
@@ -39,15 +39,15 @@ export const getDeploymentStatusLabel = (status: PipelineStatus) => {
     .with({ PipelineError: P._ }, () => 'Pipeline Error')
     .with(
       { Queued: P.any },
-      { 'Compiling SQL': P.any },
-      { 'SQL compiled': P.any },
-      { 'Compiling binary': P.any },
+      { CompilingSql: P.any },
+      { SqlCompiled: P.any },
+      { CompilingRust: P.any },
       () => ''
     )
     .with('Unavailable', () => 'Unavailable')
-    .with({ SqlError: P._ }, () => '')
-    .with({ RustError: P._ }, () => '')
-    .with({ SystemError: P._ }, () => '')
+    .with('SqlError', () => '')
+    .with('RustError', () => '')
+    .with('SystemError', () => '')
     .exhaustive()
 }
 
@@ -56,7 +56,7 @@ export const getDeploymentStatusLabel = (status: PipelineStatus) => {
  */
 export const isPipelineInteractive = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', { SqlWarning: P.any }, () => false)
+    .with('Shutdown', () => false)
     .with('Preparing', () => false)
     .with('Provisioning', () => false)
     .with('Initializing', () => false)
@@ -68,21 +68,21 @@ export const isPipelineInteractive = (status: PipelineStatus) => {
     .with({ PipelineError: P._ }, () => false)
     .with(
       { Queued: P.any },
-      { 'Compiling SQL': P.any },
-      { 'SQL compiled': P.any },
-      { 'Compiling binary': P.any },
+      { CompilingSql: P.any },
+      { SqlCompiled: P.any },
+      { CompilingRust: P.any },
       () => false
     )
     .with('Unavailable', () => false)
-    .with({ SqlError: P._ }, () => false)
-    .with({ RustError: P._ }, () => false)
-    .with({ SystemError: P._ }, () => false)
+    .with('SqlError', () => false)
+    .with('RustError', () => false)
+    .with('SystemError', () => false)
     .exhaustive()
 }
 
 export const isPipelineEditable = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', { SqlWarning: P.any }, () => true)
+    .with('Shutdown', () => true)
     .with('Preparing', () => false)
     .with('Provisioning', () => false)
     .with('Initializing', () => false)
@@ -94,21 +94,21 @@ export const isPipelineEditable = (status: PipelineStatus) => {
     .with({ PipelineError: P._ }, () => false)
     .with(
       { Queued: P.any },
-      { 'Compiling SQL': P.any },
-      { 'SQL compiled': P.any },
-      { 'Compiling binary': P.any },
-      (cause) => Object.values(cause)[0] === 'compile'
+      { CompilingSql: P.any },
+      { SqlCompiled: P.any },
+      { CompilingRust: P.any },
+      (cause) => Object.values(cause)[0].cause === 'compile'
     )
     .with('Unavailable', () => false)
-    .with({ SqlError: P._ }, () => true)
-    .with({ RustError: P._ }, () => true)
-    .with({ SystemError: P._ }, () => true)
+    .with('SqlError', () => true)
+    .with('RustError', () => true)
+    .with('SystemError', () => true)
     .exhaustive()
 }
 
 export const isMetricsAvailable = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', { SqlWarning: P.any }, () => 'no' as const)
+    .with('Shutdown', () => 'no' as const)
     .with('Preparing', () => 'no' as const)
     .with('Provisioning', () => 'no' as const)
     .with('Initializing', () => 'no' as const)
@@ -120,14 +120,14 @@ export const isMetricsAvailable = (status: PipelineStatus) => {
     .with({ PipelineError: P._ }, () => 'no' as const)
     .with(
       { Queued: P.any },
-      { 'Compiling SQL': P.any },
-      { 'SQL compiled': P.any },
-      { 'Compiling binary': P.any },
+      { CompilingSql: P.any },
+      { SqlCompiled: P.any },
+      { CompilingRust: P.any },
       () => 'no' as const
     )
     .with('Unavailable', () => 'soon' as const)
-    .with({ SqlError: P._ }, () => 'no' as const)
-    .with({ RustError: P._ }, () => 'no' as const)
-    .with({ SystemError: P._ }, () => 'no' as const)
+    .with('SqlError', () => 'no' as const)
+    .with('RustError', () => 'no' as const)
+    .with('SystemError', () => 'no' as const)
     .exhaustive()
 }

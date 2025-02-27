@@ -7,7 +7,7 @@
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', { SqlWarning: P.any }, () => 'preset-filled-surface-400-600')
+      .with('Shutdown', () => 'preset-filled-surface-400-600')
       .with('Preparing', 'Provisioning', 'Initializing', () => 'preset-filled-tertiary-200-800')
       .with('Paused', () => 'preset-filled-warning-400-600')
       .with('Running', () => 'preset-filled-success-400-600')
@@ -17,18 +17,13 @@
       .with({ PipelineError: P.any }, () => 'preset-filled-error-400-600')
       .with(
         { Queued: P.any },
-        { 'Compiling SQL': P.any },
-        { 'SQL compiled': P.any },
-        { 'Compiling binary': P.any },
+        { CompilingSql: P.any },
+        { SqlCompiled: P.any },
+        { CompilingRust: P.any },
         () => 'preset-filled-warning-400-600'
       )
       .with('Unavailable', () => 'bg-orange-300 dark:bg-orange-700')
-      .with(
-        { SqlError: P.any },
-        { RustError: P.any },
-        { SystemError: P.any },
-        () => 'preset-filled-error-400-600'
-      )
+      .with('SqlError', 'RustError', 'SystemError', () => 'preset-filled-error-400-600')
       .exhaustive()
   )
 </script>

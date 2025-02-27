@@ -87,10 +87,7 @@
 
   const programErrors = $derived(
     programErrorsPerFile(
-      extractProgramErrors(programErrorReport(pipeline.current))({
-        name: pipeline.current.name,
-        status: pipeline.current.status
-      })
+      extractProgramErrors(programErrorReport(pipeline.current))(pipeline.current)
     )
   )
 
