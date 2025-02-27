@@ -70,7 +70,7 @@ ENV PATH="$HOME/.bun/bin:$PATH"
 RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts
 
 RUN \
-   rustup install 1.82.0 && \
+   rustup install $RUST_VERSION && \
    rustup component add rustfmt && \
    rustup component add clippy && \
    cargo install cargo-make

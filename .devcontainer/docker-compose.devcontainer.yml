@@ -8,5 +8,6 @@ services:
       dockerfile: Dockerfile
     tty: true
     environment:
+      - RUST_VERSION=1.83.0
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092
