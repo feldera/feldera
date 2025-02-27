@@ -197,7 +197,7 @@ public class CustomFunctions {
             if (SqlTypeName.INT_TYPES.contains(type0.getSqlTypeName()))
                 scale = 0;
             else
-                scale = DBSPTypeDecimal.MAX_SCALE;
+                scale = type0.getScale();
             RelDataType resultType = opBinding.getTypeFactory().createSqlType(SqlTypeName.DECIMAL, precision, scale);
             return opBinding.getTypeFactory().createTypeWithNullability(resultType, anyNull);
         }
