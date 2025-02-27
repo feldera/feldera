@@ -105,6 +105,17 @@ class View(SqlObject):
         super().__init__(SqlObject.extract_name(sql, False), sql, data)
         self.local = View.sqlObject_is_local(sql)  # 'local' flag set based on SQL check
 
+    def assert_result(self, data, expected, msg):
+        """Manually compare the data received and expected data and raise an error if they don't match"""
+        # Sorting data received and expected data by string representation to ensure consistent sequence order between them
+        sorted_data = sorted(data, key=lambda x: str(x))
+        sorted_expected = sorted(expected, key=lambda x: str(x))
+
+        if sorted_data != sorted_expected:
+            raise AssertionError(
+                f"{msg}\nExpected:\n{sorted_expected}\nReceived:\n{sorted_data}"
+            )
+
     def validate(self, pipeline: Pipeline):
         """Check that the data received matches the expected data"""
         if not self.local:  # If it's not a local view, perform validation
@@ -113,7 +124,7 @@ class View(SqlObject):
 
             tc = unittest.TestCase()
             tc.maxDiff = None  # display the difference between expected and actual results during an assertion error, even if the difference is large
-            tc.assertCountEqual(
+            self.assert_result(
                 data, expected, f"\nASSERTION ERROR: failed view: {self.name}"
             )
 
