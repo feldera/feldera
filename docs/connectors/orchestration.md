@@ -14,7 +14,7 @@ in the `Paused` state by setting its
 [`paused`](/connectors/#generic-attributes) property
 to `true`.
 The current connector state can be retrieved via the
-[pipeline statistics endpoint](/api/retrieve-pipeline-statistics-e-g-metrics-performance-counters).
+[pipeline statistics endpoint](/api/retrieve-statistics-e-g-metrics-performance-counters-of-a-running-or-paused-pipeline).
 
 When paused, the connector remains idle until it is reactivated.
 Conversely, a connector in the `Running` state can be paused at any time.
