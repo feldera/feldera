@@ -62,7 +62,7 @@ class aggtst_real_min_where(TstView):
                       FROM real_tbl"""
 
 
-class aggtst_time_min_where_gby(TstView):
+class aggtst_real_min_where_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
