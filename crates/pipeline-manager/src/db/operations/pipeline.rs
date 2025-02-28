@@ -19,6 +19,7 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use deadpool_postgres::Transaction;
 use feldera_types::error::ErrorResponse;
+use log::error;
 use tokio_postgres::Row;
 use uuid::Uuid;
 
@@ -46,6 +47,19 @@ fn deserialize_program_error(s: &str) -> Result<ProgramError, DBError> {
             error: e.to_string(),
         })?;
     Ok(program_error)
+}
+
+/// Deserializes the string of JSON as an [`ProgramError`] with a default if deserialization fails.
+/// TODO: can be removed once no longer needed as fallback
+fn deserialize_program_error_with_default(s: &str) -> ProgramError {
+    deserialize_program_error(s).unwrap_or_else(|e| {
+        error!("Backward incompatibility detected: the following string:\n{s}\n\n... is not a valid program error due to: {e}");
+        ProgramError {
+            sql_compilation: None,
+            rust_compilation: None,
+            system_error: None,
+        }
+    })
 }
 
 /// Serializes the [`ErrorResponse`] as a string of JSON.
@@ -97,7 +111,7 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
     let _ = validate_program_config(&program_config, true); // Prints to log if validation failed
 
     // Program error: ProgramError
-    let program_error = deserialize_program_error(&row.get::<_, String>(15))?;
+    let program_error = deserialize_program_error_with_default(&row.get::<_, String>(15));
 
     // Program information: ProgramInfo
     let program_info = match row.get::<_, Option<String>>(16) {
@@ -167,7 +181,7 @@ fn row_to_extended_pipeline_descriptor_monitoring(
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
     assert_eq!(row.len(), 17);
     // Program error: ProgramError
-    let program_error = deserialize_program_error(&row.get::<_, String>(10))?;
+    let program_error = deserialize_program_error_with_default(&row.get::<_, String>(10));
 
     // Deployment error: ErrorResponse
     let deployment_error = match row.get::<_, Option<String>>(14) {
@@ -1209,9 +1223,15 @@ pub(crate) async fn list_pipeline_programs_across_all_tenants(
 mod tests {
     use crate::db::error::DBError;
     use crate::db::operations::pipeline::{
-        deserialize_error_response, deserialize_json_value, serialize_error_response,
+        deserialize_error_response, deserialize_json_value, deserialize_program_error,
+        deserialize_program_error_with_default, serialize_error_response, serialize_program_error,
+    };
+    use crate::db::types::program::{
+        ConnectorGenerationError, ProgramError, RustCompilationInfo, SqlCompilationInfo,
+        SqlCompilerMessage,
     };
     use feldera_types::error::ErrorResponse;
+    use feldera_types::program_schema::SourcePosition;
     use serde_json::json;
     use std::borrow::Cow;
 
@@ -1284,5 +1304,188 @@ mod tests {
             deserialize_error_response("{}"),
             Err(DBError::InvalidErrorResponse { value: _, error: _ })
         ));
+    }
+
+    #[test]
+    fn program_error_de_serialization() {
+        // ProgramError -> JSON string -> ProgramError is the same as original
+        let program_error = ProgramError {
+            sql_compilation: Some(SqlCompilationInfo {
+                exit_code: 123,
+                messages: vec![SqlCompilerMessage::new_from_connector_generation_error(
+                    ConnectorGenerationError::InvalidPropertyValue {
+                        position: SourcePosition {
+                            start_line_number: 4,
+                            start_column: 5,
+                            end_line_number: 6,
+                            end_column: 7,
+                        },
+                        relation: "relation-example".to_string(),
+                        key: "key-example".to_string(),
+                        value: "value-example".to_string(),
+                        reason: Box::new("reason-example".to_string()),
+                    },
+                )],
+            }),
+            rust_compilation: Some(RustCompilationInfo {
+                exit_code: 89,
+                stdout: "stdout-example".to_string(),
+                stderr: "stderr-example".to_string(),
+            }),
+            system_error: Some("system-error-example".to_string()),
+        };
+        let data = serialize_program_error(&program_error).unwrap();
+        assert_eq!(program_error, deserialize_program_error(&data).unwrap());
+
+        // Valid JSON for ProgramError
+        assert_eq!(
+            deserialize_program_error("{}").unwrap(),
+            ProgramError {
+                sql_compilation: None,
+                rust_compilation: None,
+                system_error: None,
+            }
+        );
+        assert_eq!(
+            deserialize_program_error(
+                "{ \"sql_compilation\": { \"exit_code\": 0, \"messages\": [] } }"
+            )
+            .unwrap(),
+            ProgramError {
+                sql_compilation: Some(SqlCompilationInfo {
+                    exit_code: 0,
+                    messages: vec![],
+                }),
+                rust_compilation: None,
+                system_error: None,
+            }
+        );
+        assert_eq!(
+            deserialize_program_error(
+                "{ \"sql_compilation\": { \"exit_code\": 12, \"messages\": [] } }"
+            )
+            .unwrap(),
+            ProgramError {
+                sql_compilation: Some(SqlCompilationInfo {
+                    exit_code: 12,
+                    messages: vec![],
+                }),
+                rust_compilation: None,
+                system_error: None,
+            }
+        );
+        assert_eq!(
+            deserialize_program_error(
+                "{ \"sql_compilation\": { \"exit_code\": 0, \"messages\": [] }, \"rust_compilation\": { \"exit_code\": 0, \"stdout\": \"\", \"stderr\": \"\" } }"
+            )
+            .unwrap(),
+            ProgramError {
+                sql_compilation: Some(SqlCompilationInfo {
+                    exit_code: 0,
+                    messages: vec![],
+                }),
+                rust_compilation: Some(RustCompilationInfo {
+                    exit_code: 0,
+                    stdout: "".to_string(),
+                    stderr: "".to_string(),
+                }),
+                system_error: None,
+            }
+        );
+        assert_eq!(
+            deserialize_program_error(
+                "{ \"sql_compilation\": { \"exit_code\": 2, \"messages\": [] }, \"rust_compilation\": { \"exit_code\": 3, \"stdout\": \"a\", \"stderr\": \"b\" } }"
+            )
+            .unwrap(),
+            ProgramError {
+                sql_compilation: Some(SqlCompilationInfo {
+                    exit_code: 2,
+                    messages: vec![],
+                }),
+                rust_compilation: Some(RustCompilationInfo {
+                    exit_code: 3,
+                    stdout: "a".to_string(),
+                    stderr: "b".to_string(),
+                }),
+                system_error: None,
+            }
+        );
+        assert_eq!(
+            deserialize_program_error("{ \"system_error\": \"example\" }").unwrap(),
+            ProgramError {
+                sql_compilation: None,
+                rust_compilation: None,
+                system_error: Some("example".to_string()),
+            }
+        );
+        assert_eq!(
+            deserialize_program_error("{ \"system_error\": \"c\" }").unwrap(),
+            ProgramError {
+                sql_compilation: None,
+                rust_compilation: None,
+                system_error: Some("c".to_string()),
+            }
+        );
+        assert_eq!(
+            deserialize_program_error(
+                "{ \"sql_compilation\": { \"exit_code\": 0, \"messages\": [] }, \"system_error\": \"example\" }"
+            )
+            .unwrap(),
+            ProgramError {
+                sql_compilation: Some(SqlCompilationInfo {
+                    exit_code: 0,
+                    messages: vec![],
+                }),
+                rust_compilation: None,
+                system_error: Some("example".to_string()),
+            }
+        );
+        assert_eq!(
+            deserialize_program_error(
+                "{ \"sql_compilation\": { \"exit_code\": 123, \"messages\": [] }, \"system_error\": \"abc\" }"
+            )
+            .unwrap(),
+            ProgramError {
+                sql_compilation: Some(SqlCompilationInfo {
+                    exit_code: 123,
+                    messages: vec![],
+                }),
+                rust_compilation: None,
+                system_error: Some("abc".to_string()),
+            }
+        );
+
+        // Invalid JSON for ProgramError
+        assert!(matches!(
+            deserialize_program_error(""),
+            Err(DBError::InvalidJsonData { data: _, error: _ })
+        ));
+        assert!(matches!(
+            deserialize_program_error("invalid"),
+            Err(DBError::InvalidJsonData { data: _, error: _ })
+        ));
+        assert!(matches!(
+            deserialize_program_error("{\"system_error\": 123}"),
+            Err(DBError::InvalidProgramError { value: _, error: _ })
+        ));
+
+        // Should pass for the deserialization with default
+        let default_program_error = ProgramError {
+            sql_compilation: None,
+            rust_compilation: None,
+            system_error: None,
+        };
+        assert_eq!(
+            deserialize_program_error_with_default(""),
+            default_program_error
+        );
+        assert_eq!(
+            deserialize_program_error_with_default("invalid"),
+            default_program_error
+        );
+        assert_eq!(
+            deserialize_program_error_with_default("{\"system_error\": 123}"),
+            default_program_error
+        );
     }
 }
