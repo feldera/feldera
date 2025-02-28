@@ -3,6 +3,7 @@ import { MarkerSeverity, type editor, type Range } from 'monaco-editor/esm/vs/ed
 import invariant from 'tiny-invariant'
 import { showSqlCompilerMessage, type SystemError } from '$lib/compositions/health/systemErrors'
 import type { SqlCompilerMessage } from '$lib/services/pipelineManager'
+import { nonNull } from '$lib/functions/common/function'
 
 const getDefaultErrorMarker = (monaco: Monaco, error: { message: string }) => ({
   startLineNumber: 0,
@@ -100,35 +101,29 @@ export const felderaCompilerMarkerSource = 'feldera compiler'
 export const extractErrorMarkers = (
   errors: SystemError<string | SqlCompilerMessage | ErrorRange>[]
 ) => {
-  return errors.map(({ cause: { body: error } }) => {
-    if (typeof error === 'string') {
-      // Just make sure error highlights all of the program
-      return {
-        startLineNumber: 0,
-        endLineNumber: 999,
-        startColumn: 0,
-        endColumn: 9999,
-        message: error,
-        severity: MarkerSeverity.Error
+  return errors
+    .map(({ cause: { body: error } }) => {
+      if (typeof error === 'string') {
+        return null
       }
-    }
-    if ('startLineNumber' in error) {
+      if ('startLineNumber' in error) {
+        return {
+          startLineNumber: error.startLineNumber,
+          endLineNumber: error.endLineNumber,
+          startColumn: error.startColumn,
+          endColumn: error.endColumn + 1,
+          message: error.message,
+          severity: error.warning ? MarkerSeverity.Warning : MarkerSeverity.Error
+        }
+      }
       return {
-        startLineNumber: error.startLineNumber,
-        endLineNumber: error.endLineNumber,
-        startColumn: error.startColumn,
-        endColumn: error.endColumn + 1,
-        message: error.message,
+        startLineNumber: error.start_line_number,
+        endLineNumber: error.end_line_number,
+        startColumn: error.start_column,
+        endColumn: error.end_column + 1,
+        message: showSqlCompilerMessage(error),
         severity: error.warning ? MarkerSeverity.Warning : MarkerSeverity.Error
       }
-    }
-    return {
-      startLineNumber: error.start_line_number,
-      endLineNumber: error.end_line_number,
-      startColumn: error.start_column,
-      endColumn: error.end_column + 1,
-      message: showSqlCompilerMessage(error),
-      severity: error.warning ? MarkerSeverity.Warning : MarkerSeverity.Error
-    }
-  })
+    })
+    .filter(nonNull)
 }
