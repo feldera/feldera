@@ -7,7 +7,10 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
     PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{validate_program_status_transition, ProgramStatus};
+use crate::db::types::program::{
+    validate_program_status_transition, ProgramError, ProgramStatus, RustCompilationInfo,
+    SqlCompilationInfo,
+};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_deployment_config, validate_name, validate_program_config, validate_program_info,
@@ -25,6 +28,24 @@ fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
         data: s.to_string(),
         error: format!("unable to deserialize data string as JSON due to: {e}"),
     })
+}
+
+/// Serializes the [`ProgramError`] as a string of JSON.
+fn serialize_program_error(program_error: &ProgramError) -> Result<String, DBError> {
+    serde_json::to_string(program_error).map_err(|e| DBError::FailedToSerializeProgramError {
+        error: e.to_string(),
+    })
+}
+
+/// Deserializes the string of JSON as an [`ProgramError`].
+fn deserialize_program_error(s: &str) -> Result<ProgramError, DBError> {
+    let json_value = deserialize_json_value(s)?;
+    let program_error: ProgramError =
+        serde_json::from_value(json_value.clone()).map_err(|e| DBError::InvalidProgramError {
+            value: json_value,
+            error: e.to_string(),
+        })?;
+    Ok(program_error)
 }
 
 /// Serializes the [`ErrorResponse`] as a string of JSON.
@@ -75,6 +96,9 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
     let program_config = deserialize_json_value(row.get(11))?;
     let _ = validate_program_config(&program_config, true); // Prints to log if validation failed
 
+    // Program error: ProgramError
+    let program_error = deserialize_program_error(&row.get::<_, String>(15))?;
+
     // Program information: ProgramInfo
     let program_info = match row.get::<_, Option<String>>(16) {
         None => None,
@@ -113,8 +137,9 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         udf_toml: row.get(10),
         program_config,
         program_version: Version(row.get(12)),
-        program_status: ProgramStatus::from_columns(row.get(13), row.get(15))?,
+        program_status: row.get::<_, String>(13).try_into()?,
         program_status_since: row.get(14),
+        program_error,
         program_info,
         program_binary_source_checksum: row.get(17),
         program_binary_integrity_checksum: row.get(18),
@@ -141,6 +166,10 @@ fn row_to_extended_pipeline_descriptor_monitoring(
     row: &Row,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
     assert_eq!(row.len(), 17);
+    // Program error: ProgramError
+    let program_error = deserialize_program_error(&row.get::<_, String>(10))?;
+
+    // Deployment error: ErrorResponse
     let deployment_error = match row.get::<_, Option<String>>(14) {
         None => None,
         Some(s) => Some(deserialize_error_response(&s)?),
@@ -154,8 +183,9 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         version: Version(row.get(5)),
         platform_version: row.get(6),
         program_version: Version(row.get(7)),
-        program_status: ProgramStatus::from_columns(row.get(8), row.get(10))?,
+        program_status: row.get::<_, String>(8).try_into()?,
         program_status_since: row.get(9),
+        program_error,
         deployment_status: row.get::<_, String>(11).try_into()?,
         deployment_status_since: row.get(12),
         deployment_desired_status: row.get::<_, String>(13).try_into()?,
@@ -336,31 +366,37 @@ pub(crate) async fn new_pipeline(
                                    deployment_error, deployment_config, deployment_location, uses_json, refresh_version)
             VALUES ($1, $2, $3, $4, now(), $5, $6, $7,
                     $8, $9, $10, $11, $12, $13,
-                    now(), NULL, NULL,
+                    now(), $14, NULL,
                     NULL, NULL, NULL,
-                    $14, now(), $15,
-                    NULL, NULL, NULL, TRUE, $16)",
+                    $15, now(), $16,
+                    NULL, NULL, NULL, TRUE, $17)",
         )
         .await?;
     txn.execute(
         &stmt,
         &[
-            &new_id,                                // $1: id
-            &tenant_id.0,                           // $2: tenant_id
-            &pipeline.name,                         // $3: name
-            &pipeline.description,                  // $4: description
-            &Version(1).0,                          // $5: version
-            &platform_version.to_string(),          // $6: platform_version
-            &runtime_config.to_string(),            // $7: runtime_config
-            &pipeline.program_code,                 // $8: program_code
-            &pipeline.udf_rust,                     // $9: udf_rust
-            &pipeline.udf_toml,                     // $10: udf_toml
-            &program_config.to_string(),            // $11: program_config
-            &Version(1).0,                          // $12: program_version
-            &ProgramStatus::Pending.to_columns().0, // $13: program_status
-            &PipelineStatus::Shutdown.to_string(),  // $14: deployment_status
-            &PipelineStatus::Shutdown.to_string(),  // $15: deployment_desired_status
-            &Version(1).0,                          // $16: refresh_version
+            &new_id,                             // $1: id
+            &tenant_id.0,                        // $2: tenant_id
+            &pipeline.name,                      // $3: name
+            &pipeline.description,               // $4: description
+            &Version(1).0,                       // $5: version
+            &platform_version.to_string(),       // $6: platform_version
+            &runtime_config.to_string(),         // $7: runtime_config
+            &pipeline.program_code,              // $8: program_code
+            &pipeline.udf_rust,                  // $9: udf_rust
+            &pipeline.udf_toml,                  // $10: udf_toml
+            &program_config.to_string(),         // $11: program_config
+            &Version(1).0,                       // $12: program_version
+            &ProgramStatus::Pending.to_string(), // $13: program_status
+            // $14: program_error
+            &serialize_program_error(&ProgramError {
+                sql_compilation: None,
+                rust_compilation: None,
+                system_error: None,
+            })?,
+            &PipelineStatus::Shutdown.to_string(), // $15: deployment_status
+            &PipelineStatus::Shutdown.to_string(), // $16: deployment_desired_status
+            &Version(1).0,                         // $17: refresh_version
         ],
     )
     .await
@@ -536,16 +572,21 @@ pub(crate) async fn update_pipeline(
                      program_info = NULL,
                      program_status = $1,
                      program_status_since = now(),
-                     program_error = NULL,
+                     program_error = $2,
                      program_binary_url = NULL
-                 WHERE tenant_id = $2 AND name = $3",
+                 WHERE tenant_id = $3 AND name = $4",
             )
             .await?;
         let rows_affected = txn
             .execute(
                 &stmt,
                 &[
-                    &ProgramStatus::Pending.to_columns().0,
+                    &ProgramStatus::Pending.to_string(),
+                    &serialize_program_error(&ProgramError {
+                        sql_compilation: None,
+                        rust_compilation: None,
+                        system_error: None,
+                    })?,
                     &tenant_id.0,
                     &name.clone().unwrap_or(original_name.to_string()), // The name has at this point has potentially been changed from the original name to a new name
                 ],
@@ -592,6 +633,9 @@ pub(crate) async fn set_program_status(
     pipeline_id: PipelineId,
     program_version_guard: Version,
     new_program_status: &ProgramStatus,
+    new_program_error_sql_compilation: &Option<SqlCompilationInfo>,
+    new_program_error_rust_compilation: &Option<RustCompilationInfo>,
+    new_program_error_system_error: &Option<String>,
     new_program_info: &Option<serde_json::Value>,
     new_program_binary_source_checksum: &Option<String>,
     new_program_binary_integrity_checksum: &Option<String>,
@@ -620,6 +664,9 @@ pub(crate) async fn set_program_status(
     // Determine new values depending on where to transition to
     // Note that None becomes NULL as there is no coalescing in the query.
     let (
+        final_program_error_sql_compilation,
+        final_program_error_rust_compilation,
+        final_program_error_system_error,
         final_program_info,
         final_program_binary_source_checksum,
         final_program_binary_integrity_checksum,
@@ -628,48 +675,84 @@ pub(crate) async fn set_program_status(
     ) = match &new_program_status {
         ProgramStatus::Pending => {
             assert!(
-                new_program_info.is_none()
+                new_program_error_sql_compilation.is_none()
+                    && new_program_error_rust_compilation.is_none()
+                    && new_program_error_system_error.is_none()
+                    && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
                     && new_program_binary_url.is_none()
             );
-            (None, None, None, None, true)
+            (None, None, None, None, None, None, None, true)
         }
         ProgramStatus::CompilingSql => {
             assert!(
-                new_program_info.is_none()
+                new_program_error_sql_compilation.is_none()
+                    && new_program_error_rust_compilation.is_none()
+                    && new_program_error_system_error.is_none()
+                    && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
                     && new_program_binary_url.is_none()
             );
-            (None, None, None, None, false)
+            (None, None, None, None, None, None, None, false)
         }
         ProgramStatus::SqlCompiled => {
             assert!(
-                new_program_info.is_some()
+                new_program_error_sql_compilation.is_some()
+                    && new_program_error_rust_compilation.is_none()
+                    && new_program_error_system_error.is_none()
+                    && new_program_info.is_some()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
                     && new_program_binary_url.is_none()
             );
-            (new_program_info.clone(), None, None, None, true)
+            (
+                new_program_error_sql_compilation.clone(),
+                None,
+                None,
+                new_program_info.clone(),
+                None,
+                None,
+                None,
+                true,
+            )
         }
         ProgramStatus::CompilingRust => {
             assert!(
-                new_program_info.is_none()
+                new_program_error_sql_compilation.is_none()
+                    && new_program_error_rust_compilation.is_none()
+                    && new_program_error_system_error.is_none()
+                    && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
                     && new_program_binary_url.is_none()
             );
-            (current.program_info, None, None, None, false)
+            (
+                current.program_error.sql_compilation,
+                None,
+                None,
+                current.program_info,
+                None,
+                None,
+                None,
+                false,
+            )
         }
         ProgramStatus::Success => {
             assert!(
-                new_program_info.is_none()
+                new_program_error_sql_compilation.is_none()
+                    && new_program_error_rust_compilation.is_some()
+                    && new_program_error_system_error.is_none()
+                    && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_some()
                     && new_program_binary_integrity_checksum.is_some()
                     && new_program_binary_url.is_some()
             );
             (
+                current.program_error.sql_compilation,
+                new_program_error_rust_compilation.clone(),
+                None,
                 current.program_info,
                 new_program_binary_source_checksum.clone(),
                 new_program_binary_integrity_checksum.clone(),
@@ -677,9 +760,76 @@ pub(crate) async fn set_program_status(
                 false,
             )
         }
-        ProgramStatus::SqlError(_) => (None, None, None, None, false),
-        ProgramStatus::RustError(_) => (current.program_info, None, None, None, false),
-        ProgramStatus::SystemError(_) => (current.program_info, None, None, None, false),
+        ProgramStatus::SqlError => {
+            assert!(
+                new_program_error_sql_compilation.is_some()
+                    && new_program_error_rust_compilation.is_none()
+                    && new_program_error_system_error.is_none()
+                    && new_program_info.is_none()
+                    && new_program_binary_source_checksum.is_none()
+                    && new_program_binary_integrity_checksum.is_none()
+                    && new_program_binary_url.is_none()
+            );
+            (
+                new_program_error_sql_compilation.clone(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+        }
+        ProgramStatus::RustError => {
+            assert!(
+                new_program_error_sql_compilation.is_none()
+                    && new_program_error_rust_compilation.is_some()
+                    && new_program_error_system_error.is_none()
+                    && new_program_info.is_none()
+                    && new_program_binary_source_checksum.is_none()
+                    && new_program_binary_integrity_checksum.is_none()
+                    && new_program_binary_url.is_none()
+            );
+            (
+                current.program_error.sql_compilation,
+                new_program_error_rust_compilation.clone(),
+                None,
+                current.program_info,
+                None,
+                None,
+                None,
+                false,
+            )
+        }
+        ProgramStatus::SystemError => {
+            assert!(
+                new_program_error_sql_compilation.is_none()
+                    && new_program_error_rust_compilation.is_none()
+                    && new_program_error_system_error.is_some()
+                    && new_program_info.is_none()
+                    && new_program_binary_source_checksum.is_none()
+                    && new_program_binary_integrity_checksum.is_none()
+                    && new_program_binary_url.is_none()
+            );
+            (
+                current.program_error.sql_compilation,
+                current.program_error.rust_compilation,
+                new_program_error_system_error.clone(),
+                current.program_info,
+                None,
+                None,
+                None,
+                false,
+            )
+        }
+    };
+
+    // Final program error
+    let final_program_error = ProgramError {
+        sql_compilation: final_program_error_sql_compilation,
+        rust_compilation: final_program_error_rust_compilation,
+        system_error: final_program_error_system_error,
     };
 
     // Validate that the new or existing program information is valid
@@ -713,20 +863,19 @@ pub(crate) async fn set_program_status(
              WHERE tenant_id = $8 AND id = $9",
         )
         .await?;
-    let new_program_status_columns = new_program_status.to_columns();
     let rows_affected = txn
         .execute(
             &stmt,
             &[
-                &new_program_status_columns.0, // $1: program_status
-                &new_program_status_columns.1, // $2: program_error
+                &new_program_status.to_string(),                 // $1: program_status
+                &serialize_program_error(&final_program_error)?, // $2: program_error
                 &final_program_info.as_ref().map(|v| v.to_string()), // $3: program_info
                 &final_program_binary_source_checksum, // $4: program_binary_source_checksum
                 &final_program_binary_integrity_checksum, // $5: program_binary_integrity_checksum
-                &final_program_binary_url,     // $6: program_binary_url
-                &final_refresh_version.0,      // $7: refresh_version
-                &tenant_id.0,                  // $8: tenant_id
-                &pipeline_id.0,                // $9: id
+                &final_program_binary_url,             // $6: program_binary_url
+                &final_refresh_version.0,              // $7: refresh_version
+                &tenant_id.0,                          // $8: tenant_id
+                &pipeline_id.0,                        // $9: id
             ],
         )
         .await?;

@@ -1,5 +1,5 @@
 use crate::db::error::DBError;
-use crate::db::types::program::ProgramStatus;
+use crate::db::types::program::{ProgramError, ProgramStatus};
 use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
@@ -435,6 +435,9 @@ pub struct ExtendedPipelineDescr {
     /// Timestamp when the current program status was set.
     pub program_status_since: DateTime<Utc>,
 
+    /// Log, warning and error information about the program compilation.
+    pub program_error: ProgramError,
+
     /// Program information which includes schema, input connectors and output connectors.
     /// It is set once SQL compilation has been successfully completed
     /// (i.e., the `program_status` field reaches >= `ProgramStatus::SqlCompiled`).
@@ -498,6 +501,7 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
+    pub program_error: ProgramError,
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,

@@ -1003,7 +1003,7 @@ async fn pipeline_get() {
 }
 
 /// Fields included in the `all` selector.
-const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 20] = [
+const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 21] = [
     "id",
     "name",
     "description",
@@ -1018,6 +1018,7 @@ const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 20] = [
     "program_version",
     "program_status",
     "program_status_since",
+    "program_error",
     "program_info",
     "deployment_status",
     "deployment_status_since",
@@ -1027,7 +1028,7 @@ const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 20] = [
 ];
 
 /// Fields included in the `status` selector.
-const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 14] = [
+const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 15] = [
     "id",
     "name",
     "description",
@@ -1037,6 +1038,7 @@ const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 14] = [
     "program_version",
     "program_status",
     "program_status_since",
+    "program_error",
     "deployment_status",
     "deployment_status_since",
     "deployment_desired_status",

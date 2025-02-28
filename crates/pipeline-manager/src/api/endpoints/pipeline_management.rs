@@ -7,7 +7,7 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
     PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramStatus};
+use crate::db::types::program::{ProgramConfig, ProgramError, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
@@ -74,6 +74,7 @@ pub struct PipelineInfo {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
+    pub program_error: ProgramError,
     pub program_info: Option<PartialProgramInfo>,
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
@@ -107,6 +108,7 @@ pub struct PipelineInfoInternal {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
+    pub program_error: ProgramError,
     pub program_info: Option<serde_json::Value>,
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
@@ -132,6 +134,7 @@ impl PipelineInfoInternal {
             program_version: extended_pipeline.program_version,
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
+            program_error: extended_pipeline.program_error,
             program_info: remove_main_rust_from_program_info(extended_pipeline.program_info),
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
@@ -166,6 +169,7 @@ pub struct PipelineSelectedInfo {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
+    pub program_error: ProgramError,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub program_info: Option<Option<PartialProgramInfo>>,
     pub deployment_status: PipelineStatus,
@@ -203,6 +207,7 @@ pub struct PipelineSelectedInfoInternal {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
+    pub program_error: ProgramError,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub program_info: Option<Option<serde_json::Value>>,
     pub deployment_status: PipelineStatus,
@@ -229,6 +234,7 @@ impl PipelineSelectedInfoInternal {
             program_version: extended_pipeline.program_version,
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
+            program_error: extended_pipeline.program_error,
             program_info: Some(remove_main_rust_from_program_info(
                 extended_pipeline.program_info,
             )),
@@ -256,6 +262,7 @@ impl PipelineSelectedInfoInternal {
             program_version: extended_pipeline.program_version,
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
+            program_error: extended_pipeline.program_error,
             program_info: None,
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
@@ -286,6 +293,7 @@ pub enum PipelineFieldSelector {
     /// - `program_version`
     /// - `program_status`
     /// - `program_status_since`
+    /// - `program_error`
     /// - `program_info`
     /// - `deployment_status`
     /// - `deployment_status_since`
@@ -305,6 +313,7 @@ pub enum PipelineFieldSelector {
     /// - `program_version`
     /// - `program_status`
     /// - `program_status_since`
+    /// - `program_error`
     /// - `deployment_status`
     /// - `deployment_status_since`
     /// - `deployment_desired_status`

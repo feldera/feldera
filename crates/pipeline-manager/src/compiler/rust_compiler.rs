@@ -9,7 +9,7 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
-use crate::db::types::program::{CompilationProfile, ProgramConfig};
+use crate::db::types::program::{CompilationProfile, ProgramConfig, RustCompilationInfo};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{validate_program_config, validate_program_info};
 use crate::db::types::version::Version;
@@ -197,7 +197,14 @@ async fn attempt_end_to_end_rust_compilation(
 
     // (5) Update database that Rust compilation is finished
     match compilation_result {
-        Ok((program_binary_url, source_checksum, integrity_checksum, duration, cached)) => {
+        Ok((
+            program_binary_url,
+            source_checksum,
+            integrity_checksum,
+            duration,
+            cached,
+            compilation_info,
+        )) => {
             info!(
                 "Rust compilation success: pipeline {} (program version: {}) ({}; source checksum: {}; integrity checksum: {})",
                 pipeline.id,
@@ -216,6 +223,7 @@ async fn attempt_end_to_end_rust_compilation(
                     tenant_id,
                     pipeline.id,
                     pipeline.program_version,
+                    &compilation_info,
                     &source_checksum,
                     &integrity_checksum,
                     &program_binary_url,
@@ -241,14 +249,14 @@ async fn attempt_end_to_end_rust_compilation(
                     pipeline.id, pipeline.program_version,
                 );
             }
-            RustCompilationError::RustError(rust_error) => {
+            RustCompilationError::RustError(compilation_info) => {
                 db.lock()
                     .await
                     .transit_program_status_to_rust_error(
                         tenant_id,
                         pipeline.id,
                         pipeline.program_version,
-                        &rust_error,
+                        &compilation_info,
                     )
                     .await?;
                 info!(
@@ -355,7 +363,7 @@ pub enum RustCompilationError {
     /// - The Rust compiler call failed and returned an error
     ///   (e.g., a syntax error in the SQL-generated Rust or
     ///   the user-provided Rust implementation of UDFs).
-    RustError(String),
+    RustError(RustCompilationInfo),
     /// General system problem occurred (e.g., I/O error)
     SystemError(String),
 }
@@ -389,7 +397,7 @@ pub async fn perform_rust_compilation(
     program_info: &Option<serde_json::Value>,
     udf_rust: &str,
     udf_toml: &str,
-) -> Result<(String, String, String, Duration, bool), RustCompilationError> {
+) -> Result<(String, String, String, Duration, bool, RustCompilationInfo), RustCompilationError> {
     let start = Instant::now();
 
     // These must always be the same, the Rust compiler should never pick up
@@ -464,7 +472,7 @@ pub async fn perform_rust_compilation(
         .join("binaries");
     let binary_file_path = binaries_dir.join(format!("project-{source_checksum}"));
     let is_cached = program_config.cache && binary_file_path.exists() && binary_file_path.is_file();
-    if !is_cached {
+    let compilation_info = if !is_cached {
         // No cached binary exists: perform compilation
         info!(
             "Rust compilation started: pipeline {} (program version: {}) with profile {} (source checksum: {})",
@@ -489,8 +497,14 @@ pub async fn perform_rust_compilation(
             &source_checksum,
             &profile,
         )
-        .await?;
-    }
+        .await?
+    } else {
+        RustCompilationInfo {
+            exit_code: 0,
+            stdout: "".to_string(),
+            stderr: "".to_string(),
+        }
+    };
 
     // Either the binary was already binaries directory (cached) or the compiler just generated it.
     // We will now copy the binary to a file dedicated to the pipeline, such that if there is any
@@ -542,6 +556,7 @@ pub async fn perform_rust_compilation(
         integrity_checksum,
         start.elapsed(),
         is_cached,
+        compilation_info,
     ))
 }
 
@@ -739,7 +754,7 @@ async fn call_compiler(
     config: &CompilerConfig,
     source_checksum: &str,
     profile: &CompilationProfile,
-) -> Result<(), RustCompilationError> {
+) -> Result<RustCompilationInfo, RustCompilationError> {
     // Pre-existing project directory
     let project_dir = config
         .working_dir()
@@ -831,6 +846,35 @@ async fn call_compiler(
         sleep(COMPILATION_CHECK_INTERVAL).await;
     };
 
+    // Check presence of exit status code
+    let Some(exit_code) = exit_status.code() else {
+        // No exit status code present because the process was terminated by a signal
+        return Err(RustCompilationError::TerminatedBySignal);
+    };
+
+    // Read stdout and stderr
+    let stdout = fs::read_to_string(stdout_file_path.clone())
+        .await
+        .map_err(|e| {
+            RustCompilationError::SystemError(
+                CommonError::io_error(format!("reading file '{}'", stdout_file_path.display()), e)
+                    .to_string(),
+            )
+        })?;
+    let stderr = fs::read_to_string(stderr_file_path.clone())
+        .await
+        .map_err(|e| {
+            RustCompilationError::SystemError(
+                CommonError::io_error(format!("reading file '{}'", stderr_file_path.display()), e)
+                    .to_string(),
+            )
+        })?;
+    let compilation_info = RustCompilationInfo {
+        exit_code,
+        stdout,
+        stderr,
+    };
+
     // Compilation is successful if the return exit code is present and zero
     if exit_status.success() {
         // Source file
@@ -883,56 +927,9 @@ async fn call_compiler(
         copy_file(&source_file_path, &target_file_path).await?;
 
         // Success
-        Ok(())
+        Ok(compilation_info)
     } else {
-        match exit_status.code() {
-            None => {
-                // No exit status code present because the process was terminated by a signal
-                Err(RustCompilationError::TerminatedBySignal)
-            }
-            Some(exit_code) => {
-                let stdout_str =
-                    fs::read_to_string(stdout_file_path.clone())
-                        .await
-                        .map_err(|e| {
-                            RustCompilationError::SystemError(
-                                CommonError::io_error(
-                                    format!("reading file '{}'", stdout_file_path.display()),
-                                    e,
-                                )
-                                .to_string(),
-                            )
-                        })?;
-                let stderr_str =
-                    fs::read_to_string(stderr_file_path.clone())
-                        .await
-                        .map_err(|e| {
-                            RustCompilationError::SystemError(
-                                CommonError::io_error(
-                                    format!("reading file '{}'", stderr_file_path.display()),
-                                    e,
-                                )
-                                .to_string(),
-                            )
-                        })?;
-                let error_message = formatdoc! {"
-                    Rust error: the Rust code generated based on the SQL (possibly combined with any user-provided UDF Rust and TOML code) failed to compile.
-                    This should not happen (except if the error is in user-provided UDF code).
-                    Please file a bug report with the example SQL and any UDF Rust/TOML that triggers it at:
-                    https://github.com/feldera/feldera/issues
-                "};
-                Err(RustCompilationError::RustError(
-                    format!(
-                        "{error_message}\n\n\
-                        The compilation task exited with status code {exit_code} and produced the following logs:\n\n\
-                        stderr:\n\
-                        {stderr_str}\n\n\
-                        stdout:\n\
-                        {stdout_str}"
-                    )
-                ))
-            }
-        }
+        Err(RustCompilationError::RustError(compilation_info))
     }
 }
 

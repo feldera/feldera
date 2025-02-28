@@ -394,6 +394,11 @@
                     "program_version": 2,
                     "program_status": "Pending",
                     "program_status_since": "1970-01-01T00:00:00Z",
+                    "program_error": {
+                      "sql_compilation": null,
+                      "rust_compilation": null,
+                      "system_error": null
+                    },
                     "program_info": null,
                     "deployment_status": "Shutdown",
                     "deployment_status_since": "1970-01-01T00:00:00Z",
@@ -445,6 +450,11 @@
                     "program_version": 1,
                     "program_status": "Pending",
                     "program_status_since": "1970-01-01T00:00:00Z",
+                    "program_error": {
+                      "sql_compilation": null,
+                      "rust_compilation": null,
+                      "system_error": null
+                    },
                     "program_info": null,
                     "deployment_status": "Shutdown",
                     "deployment_status_since": "1970-01-01T00:00:00Z",
@@ -565,6 +575,11 @@
                   "program_version": 2,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_error": {
+                    "sql_compilation": null,
+                    "rust_compilation": null,
+                    "system_error": null
+                  },
                   "program_info": null,
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
@@ -702,6 +717,11 @@
                   "program_version": 2,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_error": {
+                    "sql_compilation": null,
+                    "rust_compilation": null,
+                    "system_error": null
+                  },
                   "program_info": null,
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
@@ -849,6 +869,11 @@
                   "program_version": 2,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_error": {
+                    "sql_compilation": null,
+                    "rust_compilation": null,
+                    "system_error": null
+                  },
                   "program_info": null,
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
@@ -903,6 +928,11 @@
                   "program_version": 2,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_error": {
+                    "sql_compilation": null,
+                    "rust_compilation": null,
+                    "system_error": null
+                  },
                   "program_info": null,
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
@@ -1124,6 +1154,11 @@
                   "program_version": 2,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_error": {
+                    "sql_compilation": null,
+                    "rust_compilation": null,
+                    "system_error": null
+                  },
                   "program_info": null,
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
@@ -4198,6 +4233,7 @@
           "program_version",
           "program_status",
           "program_status_since",
+          "program_error",
           "deployment_status",
           "deployment_status_since",
           "deployment_desired_status",
@@ -4243,6 +4279,9 @@
           },
           "program_config": {
             "$ref": "#/components/schemas/ProgramConfig"
+          },
+          "program_error": {
+            "$ref": "#/components/schemas/ProgramError"
           },
           "program_info": {
             "allOf": [
@@ -4292,6 +4331,7 @@
           "program_version",
           "program_status",
           "program_status_since",
+          "program_error",
           "deployment_status",
           "deployment_status_since",
           "deployment_desired_status",
@@ -4343,6 +4383,9 @@
               }
             ],
             "nullable": true
+          },
+          "program_error": {
+            "$ref": "#/components/schemas/ProgramError"
           },
           "program_info": {
             "allOf": [
@@ -4482,6 +4525,33 @@
           }
         }
       },
+      "ProgramError": {
+        "type": "object",
+        "description": "Log, warning and error information about the program compilation.",
+        "properties": {
+          "rust_compilation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RustCompilationInfo"
+              }
+            ],
+            "nullable": true
+          },
+          "sql_compilation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SqlCompilationInfo"
+              }
+            ],
+            "nullable": true
+          },
+          "system_error": {
+            "type": "string",
+            "description": "System error that occurred.\n- Set `Some(...)` upon transition to `SystemError`\n- Set `None` upon transition to `Pending`",
+            "nullable": true
+          }
+        }
+      },
       "ProgramSchema": {
         "type": "object",
         "description": "A struct containing the tables (inputs) and views for a program.\n\nParse from the JSON data-type of the DDL generated by the SQL compiler.",
@@ -4505,83 +4575,18 @@
         }
       },
       "ProgramStatus": {
-        "oneOf": [
-          {
-            "type": "string",
-            "description": "Awaiting to be picked up for SQL compilation.",
-            "enum": [
-              "Pending"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "Compilation of SQL is ongoing.",
-            "enum": [
-              "CompilingSql"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "Compilation of SQL has been completed; awaiting to be picked up for Rust compilation.",
-            "enum": [
-              "SqlCompiled"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "Compilation of Rust is ongoing.",
-            "enum": [
-              "CompilingRust"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "Compilation (both SQL and Rust) succeeded.",
-            "enum": [
-              "Success"
-            ]
-          },
-          {
-            "type": "object",
-            "required": [
-              "SqlError"
-            ],
-            "properties": {
-              "SqlError": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/SqlCompilerMessage"
-                },
-                "description": "SQL compiler returned one or more errors."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "RustError"
-            ],
-            "properties": {
-              "RustError": {
-                "type": "string",
-                "description": "Rust compiler returned an error."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "SystemError"
-            ],
-            "properties": {
-              "SystemError": {
-                "type": "string",
-                "description": "System/OS returned an error when trying to invoke commands."
-              }
-            }
-          }
-        ],
-        "description": "Program compilation status."
+        "type": "string",
+        "description": "Program compilation status.",
+        "enum": [
+          "Pending",
+          "CompilingSql",
+          "SqlCompiled",
+          "CompilingRust",
+          "Success",
+          "SqlError",
+          "RustError",
+          "SystemError"
+        ]
       },
       "PropertyValue": {
         "type": "object",
@@ -5033,6 +5038,30 @@
           }
         }
       },
+      "RustCompilationInfo": {
+        "type": "object",
+        "description": "Rust compilation information.",
+        "required": [
+          "exit_code",
+          "stdout",
+          "stderr"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Exit code of the `cargo` compilation command."
+          },
+          "stderr": {
+            "type": "string",
+            "description": "Output printed to stderr by the `cargo` compilation command."
+          },
+          "stdout": {
+            "type": "string",
+            "description": "Output printed to stdout by the `cargo` compilation command."
+          }
+        }
+      },
       "S3InputConfig": {
         "type": "object",
         "description": "Configuration for reading data from AWS S3.",
@@ -5104,6 +5133,28 @@
           "start_line_number": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "SqlCompilationInfo": {
+        "type": "object",
+        "description": "SQL compilation information.",
+        "required": [
+          "exit_code",
+          "messages"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Exit code of the SQL compiler."
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SqlCompilerMessage"
+            },
+            "description": "Messages (warnings and errors) generated by the SQL compiler."
           }
         }
       },

@@ -8,7 +8,7 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
-use crate::db::types::program::{generate_program_info, SqlCompilerMessage};
+use crate::db::types::program::{generate_program_info, SqlCompilationInfo, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::validate_program_config;
 use crate::db::types::version::Version;
@@ -187,7 +187,7 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
 
     // (5) Update database that SQL compilation is finished
     match compilation_result {
-        Ok((program_info, duration)) => {
+        Ok((program_info, duration, compilation_info)) => {
             info!(
                 "SQL compilation success: pipeline {} (program version: {}) (took {:.2}s)",
                 pipeline.id,
@@ -200,6 +200,7 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                     tenant_id,
                     pipeline.id,
                     pipeline.program_version,
+                    &compilation_info,
                     &program_info,
                 )
                 .await?;
@@ -223,14 +224,14 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                     pipeline.id, pipeline.program_version,
                 );
             }
-            SqlCompilationError::SqlError(sql_compiler_messages) => {
+            SqlCompilationError::SqlError(compilation_info) => {
                 db.lock()
                     .await
                     .transit_program_status_to_sql_error(
                         tenant_id,
                         pipeline.id,
                         pipeline.program_version,
-                        sql_compiler_messages.clone(),
+                        &compilation_info,
                     )
                     .await?;
                 info!(
@@ -272,7 +273,7 @@ pub enum SqlCompilationError {
     /// behavior rather than declaring failure to compile the specific program.
     TerminatedBySignal,
     /// Identifiable issue with the SQL (e.g., syntax error, connector error)
-    SqlError(Vec<SqlCompilerMessage>),
+    SqlError(SqlCompilationInfo),
     /// General system problem occurred (e.g., I/O error)
     SystemError(String),
 }
@@ -299,7 +300,7 @@ pub(crate) async fn perform_sql_compilation(
     program_version: Version,
     program_config: &serde_json::Value,
     program_code: &str,
-) -> Result<(serde_json::Value, Duration), SqlCompilationError> {
+) -> Result<(serde_json::Value, Duration, SqlCompilationInfo), SqlCompilationError> {
     let start = Instant::now();
 
     // These must always be the same, the SQL compiler should never pick up
@@ -431,6 +432,44 @@ pub(crate) async fn perform_sql_compilation(
         sleep(COMPILATION_CHECK_INTERVAL).await;
     };
 
+    // Check presence of exit status code
+    let Some(exit_code) = exit_status.code() else {
+        // No exit status code present because the process was terminated by a signal
+        return Err(SqlCompilationError::TerminatedBySignal);
+    };
+
+    // Extract the SQL compiler messages (includes warnings and errors)
+    let stderr_str = fs::read_to_string(output_stderr_file_path.clone())
+        .await
+        .map_err(|e| {
+            SqlCompilationError::SystemError(
+                CommonError::io_error(
+                    format!(
+                        "reading stderr file '{}'",
+                        output_stderr_file_path.display()
+                    ),
+                    e,
+                )
+                .to_string(),
+            )
+        })?;
+    let messages: Vec<SqlCompilerMessage> = if stderr_str.is_empty() {
+        vec![]
+    } else {
+        match serde_json::from_str(&stderr_str) {
+            Ok(messages) => messages,
+            Err(e) => {
+                return Err(SqlCompilationError::SystemError(
+                    format!("SQL compiler process returned with non-zero exit status code ({exit_code}) and stderr which cannot be deserialized due to {e}:\n{stderr_str}")
+                ));
+            }
+        }
+    };
+    let mut compilation_info = SqlCompilationInfo {
+        exit_code,
+        messages,
+    };
+
     // Compilation is successful if the return exit code is present and zero
     if exit_status.success() {
         // Read schema.json
@@ -462,50 +501,18 @@ pub(crate) async fn perform_sql_compilation(
                         )));
                     }
                 };
-                Ok((program_info, start.elapsed()))
+                Ok((program_info, start.elapsed(), compilation_info))
             }
             Err(e) => {
                 // The SQL compilation itself was successful, however the connectors JSON within the
                 // WITH statement could not be deserialized into connectors
                 let message = SqlCompilerMessage::new_from_connector_generation_error(e);
-                Err(SqlCompilationError::SqlError(vec![message]))
+                compilation_info.messages.push(message);
+                Err(SqlCompilationError::SqlError(compilation_info))
             }
         }
     } else {
-        match exit_status.code() {
-            None => {
-                // No exit status code present because the process was terminated by a signal
-                Err(SqlCompilationError::TerminatedBySignal)
-            }
-            Some(exit_code) => {
-                let stderr_str = fs::read_to_string(output_stderr_file_path.clone())
-                    .await
-                    .map_err(|e| {
-                        SqlCompilationError::SystemError(
-                            CommonError::io_error(
-                                format!(
-                                    "reading stderr file '{}'",
-                                    output_stderr_file_path.display()
-                                ),
-                                e,
-                            )
-                            .to_string(),
-                        )
-                    })?;
-                let messages: serde_json::Result<Vec<SqlCompilerMessage>> =
-                    serde_json::from_str(&stderr_str);
-                match messages {
-                    Ok(messages) => {
-                        Err(SqlCompilationError::SqlError(messages))
-                    }
-                    Err(e) => {
-                        Err(SqlCompilationError::SystemError(
-                            format!("SQL compiler process returned with non-zero exit status code ({exit_code}) and stderr which cannot be deserialized due to {e}:\n{stderr_str}")
-                        ))
-                    }
-                }
-            }
-        }
+        Err(SqlCompilationError::SqlError(compilation_info))
     }
 }
 
@@ -997,11 +1004,12 @@ mod test {
             .await;
         test.sql_compiler_tick().await;
         let pipeline_descr = test.get_pipeline(tenant_id, pipeline_id).await;
-        assert!(matches!(
-            pipeline_descr.program_status,
-            ProgramStatus::SqlError(errors)
-            if errors.len() == 1 && errors[0].to_owned().error_type == "Error parsing SQL"
-        ));
+        assert_eq!(pipeline_descr.program_status, ProgramStatus::SqlError);
+        assert!(pipeline_descr
+            .program_error
+            .sql_compilation
+            .is_some_and(|info| info.messages.len() == 1
+                && info.messages[0].to_owned().error_type == "Error parsing SQL"));
     }
 
     /// Tests that compilation fails with an invalid connector.
@@ -1021,11 +1029,12 @@ mod test {
             .await;
         test.sql_compiler_tick().await;
         let pipeline_descr = test.get_pipeline(tenant_id, pipeline_id).await;
-        assert!(matches!(
-            pipeline_descr.program_status,
-            ProgramStatus::SqlError(errors)
-            if errors.len() == 1 && errors[0].to_owned().error_type == "ConnectorGenerationError"
-        ));
+        assert_eq!(pipeline_descr.program_status, ProgramStatus::SqlError);
+        assert!(pipeline_descr
+            .program_error
+            .sql_compilation
+            .is_some_and(|info| info.messages.len() == 1
+                && info.messages[0].to_owned().error_type == "ConnectorGenerationError"));
     }
 
     /// Tests that the cleanup ignores files and directories that do not follow the pattern.

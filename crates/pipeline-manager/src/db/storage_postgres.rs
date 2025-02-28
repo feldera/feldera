@@ -10,7 +10,9 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
     PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus, SqlCompilerMessage};
+use crate::db::types::program::{
+    ProgramConfig, ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
+};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
@@ -399,6 +401,9 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            &None,
+            &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -423,6 +428,9 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            &None,
+            &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -434,6 +442,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
+        sql_compilation: &SqlCompilationInfo,
         program_info: &serde_json::Value,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
@@ -444,6 +453,9 @@ impl Storage for StoragePostgres {
             pipeline_id,
             program_version_guard,
             &ProgramStatus::SqlCompiled,
+            &Some(sql_compilation.clone()),
+            &None,
+            &None,
             &Some(program_info.clone()),
             &None,
             &None,
@@ -472,6 +484,9 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            &None,
+            &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -483,6 +498,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
+        rust_compilation: &RustCompilationInfo,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
         program_binary_url: &str,
@@ -495,6 +511,9 @@ impl Storage for StoragePostgres {
             pipeline_id,
             program_version_guard,
             &ProgramStatus::Success,
+            &None,
+            &Some(rust_compilation.clone()),
+            &None,
             &None,
             &Some(program_binary_source_checksum.to_string()),
             &Some(program_binary_integrity_checksum.to_string()),
@@ -510,7 +529,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        internal_sql_error: Vec<SqlCompilerMessage>,
+        sql_compilation: &SqlCompilationInfo,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -519,7 +538,10 @@ impl Storage for StoragePostgres {
             tenant_id,
             pipeline_id,
             program_version_guard,
-            &ProgramStatus::SqlError(internal_sql_error),
+            &ProgramStatus::SqlError,
+            &Some(sql_compilation.clone()),
+            &None,
+            &None,
             &None,
             &None,
             &None,
@@ -535,7 +557,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        internal_rust_error: &str,
+        rust_compilation: &RustCompilationInfo,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -544,7 +566,10 @@ impl Storage for StoragePostgres {
             tenant_id,
             pipeline_id,
             program_version_guard,
-            &ProgramStatus::RustError(internal_rust_error.to_string()),
+            &ProgramStatus::RustError,
+            &None,
+            &Some(rust_compilation.clone()),
+            &None,
             &None,
             &None,
             &None,
@@ -560,7 +585,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        internal_system_error: &str,
+        system_error: &str,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -569,7 +594,10 @@ impl Storage for StoragePostgres {
             tenant_id,
             pipeline_id,
             program_version_guard,
-            &ProgramStatus::SystemError(internal_system_error.to_string()),
+            &ProgramStatus::SystemError,
+            &None,
+            &None,
+            &Some(system_error.to_string()),
             &None,
             &None,
             &None,
@@ -861,6 +889,9 @@ impl Storage for StoragePostgres {
                             &None,
                             &None,
                             &None,
+                            &None,
+                            &None,
+                            &None,
                         )
                         .await?;
                     }
@@ -921,6 +952,9 @@ impl Storage for StoragePostgres {
                             pipeline.id,
                             pipeline.program_version,
                             &ProgramStatus::SqlCompiled,
+                            &Some(pipeline_complete.program_error.sql_compilation.clone().expect("program_error.sql_compilation must be present if current status is CompilingRust")),
+                            &None,
+                            &None,
                             &Some(pipeline_complete.program_info.clone().expect(
                                 "program_info must be present if current status is CompilingRust",
                             )),
