@@ -26,6 +26,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
 
     public boolean process(
             DBSPUnaryOperator operator,
+            int depth,
             TriFunction<CalciteObject, DBSPClosureExpression, OutputPort, DBSPUnaryOperator> constructor) {
         OutputPort source = this.mapped(operator.input());
         int inputFanout = this.getGraph().getFanout(operator.input().node());
@@ -42,24 +43,24 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
             DBSPParameter filterParam = filterFunction.parameters[0];
             FindUnusedFields mapFinder = new FindUnusedFields(this.compiler);
             mapFinder.findUnusedFields(mapFunction);
-            if (mapFinder.foundUnusedFields(2)) {
+            if (mapFinder.foundUnusedFields(depth)) {
                 FieldUseMap mapUsed = mapFinder.parameterFieldMap.get(mapParam);
 
                 FindUnusedFields filterFinder = new FindUnusedFields(this.compiler);
                 filterFinder.findUnusedFields(filterFunction);
-                if (filterFinder.foundUnusedFields(2)) {
+                if (filterFinder.foundUnusedFields(depth)) {
                     FieldUseMap filterUsed = filterFinder.parameterFieldMap.get(filterParam);
                     FieldUseMap reduced = mapUsed.reduce(filterUsed);
-                    if (reduced.hasUnusedFields(2)) {
+                    if (reduced.hasUnusedFields(depth)) {
                         filterFinder.setParameterUseMap(filterParam, reduced);
-                        RewriteFields filterRewriter = filterFinder.getFieldRewriter(1);
+                        RewriteFields filterRewriter = filterFinder.getFieldRewriter(depth);
                         DBSPClosureExpression newFilterFunc = filterRewriter.apply(filterFunction)
                                 .to(DBSPClosureExpression.class);
-                        DBSPClosureExpression preProjection = reduced.getProjection(1);
+                        DBSPClosureExpression preProjection = reduced.getProjection(depth);
                         assert preProjection != null;
 
                         mapFinder.setParameterUseMap(mapParam, reduced);
-                        RewriteFields mapRewriter = mapFinder.getFieldRewriter(2);
+                        RewriteFields mapRewriter = mapFinder.getFieldRewriter(depth);
                         DBSPClosureExpression post = mapRewriter.rewriteClosure(mapFunction);
 
                         DBSPMapOperator pre = new DBSPMapOperator(filter.getNode(),
@@ -85,7 +86,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
     @Override
     public void postorder(DBSPMapOperator operator) {
         @SuppressWarnings("DataFlowIssue")
-        boolean done = this.process(operator, DBSPMapOperator::new);
+        boolean done = this.process(operator, 1, DBSPMapOperator::new);
         if (!done)
             super.postorder(operator);
     }
@@ -93,7 +94,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
         @SuppressWarnings("DataFlowIssue")
-        boolean done = this.process(operator, DBSPMapIndexOperator::new);
+        boolean done = this.process(operator, 2, DBSPMapIndexOperator::new);
         if (!done)
             super.postorder(operator);
     }
