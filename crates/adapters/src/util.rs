@@ -1,11 +1,19 @@
 use std::borrow::Cow;
 use std::path::Path;
 use std::{
+    error::Error,
     fs::File,
     io::{Error as IoError, Write},
 };
 
 use tempfile::NamedTempFile;
+
+pub(crate) fn root_cause(mut err: &dyn Error) -> &dyn Error {
+    while let Some(source) = err.source() {
+        err = source;
+    }
+    err
+}
 
 pub(crate) fn truncate_ellipse<'a>(s: &'a str, len: usize, ellipse: &str) -> Cow<'a, str> {
     if s.len() <= len {

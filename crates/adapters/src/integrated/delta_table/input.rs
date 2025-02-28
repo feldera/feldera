@@ -5,13 +5,16 @@ use crate::integrated::delta_table::{delta_input_serde_config, register_storage_
 use crate::transport::{
     InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint, NonFtInputReaderCommand,
 };
+use crate::util::root_cause;
 use crate::{
     ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat,
     TransportInputEndpoint,
 };
+use actix_web::web::Data;
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use arrow::array::BooleanArray;
 use arrow::datatypes::Schema;
+use arrow::error::ArrowError;
 use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::{AsArray, RecordBatch};
 use datafusion::datasource::file_format::parquet::ParquetFormat;
@@ -19,6 +22,7 @@ use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::datasource::MemTable;
+use datafusion::error::DataFusionError;
 use datafusion::execution::context::ExecutionProps;
 use datafusion::logical_expr::sqlparser::parser::ParserError;
 use datafusion::logical_expr::{Filter, LogicalPlan, Projection};
@@ -60,6 +64,7 @@ use futures::TryFutureExt;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::error::Error;
 use std::fmt::format;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
@@ -911,10 +916,17 @@ impl DeltaTableInputEndpointInner {
             let batch = match batch {
                 Ok(batch) => batch,
                 Err(e) => {
-                    self.consumer.error(
-                        false,
-                        anyhow!("error retrieving batch {num_batches} of {descr}: {e}"),
-                    );
+                    match e {
+                        DataFusionError::ArrowError(ArrowError::ExternalError(error), _) => self.consumer.error(
+                            false,
+                            anyhow!("error retrieving batch {num_batches} of {descr}: external error: {error} (root cause: {})", root_cause(error.as_ref()),
+                        )),
+                        e => self.consumer.error(
+                            false,
+                            anyhow!("error retrieving batch {num_batches} of {descr}: {e}"),
+                        ),
+                    }
+
                     continue;
                 }
             };
