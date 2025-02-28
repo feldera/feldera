@@ -104,7 +104,7 @@ class FelderaClient:
             elif status not in wait:
                 # error handling for SQL compilation errors
                 if status == "SqlError":
-                    sql_errors = p.program_error['sql_compilation']['messages']
+                    sql_errors = p.program_error["sql_compilation"]["messages"]
                     if sql_errors:
                         err_msg = f"Pipeline {name} failed to compile:\n"
                         for sql_error in sql_errors:
