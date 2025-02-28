@@ -106,7 +106,7 @@ class View(SqlObject):
         self.local = View.sqlObject_is_local(sql)  # 'local' flag set based on SQL check
 
     def assert_result(self, data, expected, msg):
-        """Manually compare the data received and expected data and raise an error if they don't match"""
+        """Compare the data received and expected data and raise an error if they don't match"""
         # Sorting data received and expected data by string representation to ensure consistent sequence order between them
         sorted_data = sorted(data, key=lambda x: str(x))
         sorted_expected = sorted(expected, key=lambda x: str(x))
