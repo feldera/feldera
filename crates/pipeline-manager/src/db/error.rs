@@ -74,6 +74,10 @@ pub enum DBError {
         value: serde_json::Value,
         error: ValidationError,
     },
+    InvalidProgramError {
+        value: serde_json::Value,
+        error: String,
+    },
     InvalidErrorResponse {
         value: serde_json::Value,
         error: String,
@@ -82,6 +86,9 @@ pub enum DBError {
         error: String,
     },
     FailedToSerializeProgramConfig {
+        error: String,
+    },
+    FailedToSerializeProgramError {
         error: String,
     },
     FailedToSerializeErrorResponse {
@@ -411,6 +418,9 @@ impl Display for DBError {
                     "JSON for 'deployment_config' field:\n{value:#}\n\n... is not valid due to: {error}"
                 )
             }
+            DBError::InvalidProgramError { value, error } => {
+                write!(f, "JSON for 'program_error' field:\n{value:#}\n\n... is not valid due to: {error}")
+            }
             DBError::InvalidErrorResponse { value, error } => {
                 write!(f, "JSON for 'deployment_error' field:\n{value:#}\n\n... is not valid due to: {error}")
             }
@@ -419,6 +429,9 @@ impl Display for DBError {
             }
             DBError::FailedToSerializeProgramConfig { error } => {
                 write!(f, "Unable to serialize program configuration for 'program_config' field as JSON due to: {error}")
+            }
+            DBError::FailedToSerializeProgramError { error } => {
+                write!(f, "Unable to serialize program error for 'program_error' field as JSON due to: {error}")
             }
             DBError::FailedToSerializeErrorResponse { error } => {
                 write!(f, "Unable to serialize error response for 'deployment_error' field as JSON due to: {error}")
@@ -566,12 +579,16 @@ impl DetailedError for DBError {
             Self::InvalidProgramConfig { .. } => Cow::from("InvalidProgramConfig"),
             Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
             Self::InvalidDeploymentConfig { .. } => Cow::from("InvalidDeploymentConfig"),
+            Self::InvalidProgramError { .. } => Cow::from("InvalidProgramError"),
             Self::InvalidErrorResponse { .. } => Cow::from("InvalidErrorResponse"),
             Self::FailedToSerializeRuntimeConfig { .. } => {
                 Cow::from("FailedToSerializeRuntimeConfig")
             }
             Self::FailedToSerializeProgramConfig { .. } => {
                 Cow::from("FailedToSerializeProgramConfig")
+            }
+            Self::FailedToSerializeProgramError { .. } => {
+                Cow::from("FailedToSerializeProgramError")
             }
             Self::FailedToSerializeErrorResponse { .. } => {
                 Cow::from("FailedToSerializeErrorResponse")
@@ -637,9 +654,11 @@ impl ResponseError for DBError {
             Self::InvalidProgramConfig { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidProgramError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidErrorResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::FailedToSerializeRuntimeConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::FailedToSerializeProgramConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::FailedToSerializeProgramError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::FailedToSerializeErrorResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UniqueKeyViolation { .. } => StatusCode::INTERNAL_SERVER_ERROR, // UUID conflict
             Self::DuplicateKey { .. } => StatusCode::INTERNAL_SERVER_ERROR, // This error should never bubble up till here

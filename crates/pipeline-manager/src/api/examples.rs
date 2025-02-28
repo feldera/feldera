@@ -8,7 +8,7 @@ use crate::db::error::DBError;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramStatus};
+use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramError, ProgramStatus};
 use crate::db::types::utils::{
     validate_program_config, validate_program_info, validate_runtime_config,
 };
@@ -51,6 +51,11 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         program_info: None,
         program_status: ProgramStatus::Pending,
         program_status_since: Default::default(),
+        program_error: ProgramError {
+            sql_compilation: None,
+            rust_compilation: None,
+            system_error: None,
+        },
         program_binary_source_checksum: None,
         program_binary_integrity_checksum: None,
         program_binary_url: None,
@@ -106,6 +111,11 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         program_info: None,
         program_status: ProgramStatus::Pending,
         program_status_since: Default::default(),
+        program_error: ProgramError {
+            sql_compilation: None,
+            rust_compilation: None,
+            system_error: None,
+        },
         program_binary_source_checksum: None,
         program_binary_integrity_checksum: None,
         program_binary_url: None,
@@ -140,6 +150,7 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
         program_version: pipeline.program_version,
         program_status: pipeline.program_status,
         program_status_since: pipeline.program_status_since,
+        program_error: pipeline.program_error,
         program_info: pipeline.program_info.map(|v| {
             let program_info = validate_program_info(&v)
                 .expect("example must have a valid program_info if specified");
@@ -183,6 +194,7 @@ fn pipeline_selected_info_internal_to_external(
         program_version: pipeline.program_version,
         program_status: pipeline.program_status,
         program_status_since: pipeline.program_status_since,
+        program_error: pipeline.program_error,
         program_info: pipeline.program_info.map(|v| {
             v.map(|v| {
                 let program_info = validate_program_info(&v)

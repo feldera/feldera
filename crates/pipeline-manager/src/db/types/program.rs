@@ -13,6 +13,7 @@ use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::string::ParseError;
@@ -141,7 +142,7 @@ impl SqlCompilerMessage {
 }
 
 /// Program compilation status.
-#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone, Copy)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum ProgramStatus {
     /// Awaiting to be picked up for SQL compilation.
@@ -156,66 +157,99 @@ pub enum ProgramStatus {
     #[cfg_attr(test, proptest(weight = 2))]
     Success,
     /// SQL compiler returned one or more errors.
-    SqlError(Vec<SqlCompilerMessage>),
+    SqlError,
     /// Rust compiler returned an error.
-    RustError(String),
+    RustError,
     /// System/OS returned an error when trying to invoke commands.
-    SystemError(String),
+    SystemError,
 }
 
-/// The database encodes program status using two columns:
-/// - `status` which has type `string`, but acts as an enum
-/// - `error` which is only used if `status` is one of: `sql_error`,
-///   `rust_error` or `system_error`
-impl ProgramStatus {
-    /// Decode `ProgramStatus` from the values of `error` and `status` columns.
-    pub fn from_columns(
-        status_string: &str,
-        error_string: Option<String>,
-    ) -> Result<Self, DBError> {
-        match status_string {
-            "success" => Ok(Self::Success),
+impl TryFrom<String> for ProgramStatus {
+    type Error = DBError;
+    fn try_from(value: String) -> Result<Self, DBError> {
+        match value.as_str() {
             "pending" => Ok(Self::Pending),
             "compiling_sql" => Ok(Self::CompilingSql),
             "sql_compiled" => Ok(Self::SqlCompiled),
             "compiling_rust" => Ok(Self::CompilingRust),
-            "sql_error" => {
-                let error = error_string.unwrap_or_default();
-                if let Ok(messages) = serde_json::from_str(&error) {
-                    Ok(Self::SqlError(messages))
-                } else {
-                    error!("Expected valid json for SqlCompilerMessage but got {:?}, did you update the struct without adjusting the database?", error);
-                    Ok(Self::SystemError(error))
-                }
-            }
-            "rust_error" => Ok(Self::RustError(error_string.unwrap_or_default())),
-            "system_error" => Ok(Self::SystemError(error_string.unwrap_or_default())),
-            status => Err(DBError::invalid_program_status(status.to_string())),
+            "success" => Ok(Self::Success),
+            "sql_error" => Ok(Self::SqlError),
+            "rust_error" => Ok(Self::RustError),
+            "system_error" => Ok(Self::SystemError),
+            _ => Err(DBError::invalid_program_status(value)),
         }
     }
-    pub fn to_columns(&self) -> (Option<String>, Option<String>) {
-        match self {
-            ProgramStatus::Success => (Some("success".to_string()), None),
-            ProgramStatus::Pending => (Some("pending".to_string()), None),
-            ProgramStatus::CompilingSql => (Some("compiling_sql".to_string()), None),
-            ProgramStatus::SqlCompiled => (Some("sql_compiled".to_string()), None),
-            ProgramStatus::CompilingRust => (Some("compiling_rust".to_string()), None),
-            ProgramStatus::SqlError(error) => {
-                if let Ok(error_string) = serde_json::to_string(&error) {
-                    (Some("sql_error".to_string()), Some(error_string))
-                } else {
-                    error!("Expected valid json for SqlError, but got {:?}", error);
-                    (Some("sql_error".to_string()), None)
-                }
-            }
-            ProgramStatus::RustError(error) => {
-                (Some("rust_error".to_string()), Some(error.clone()))
-            }
-            ProgramStatus::SystemError(error) => {
-                (Some("system_error".to_string()), Some(error.clone()))
-            }
+}
+
+impl From<ProgramStatus> for &'static str {
+    fn from(val: ProgramStatus) -> Self {
+        match val {
+            ProgramStatus::Pending => "pending",
+            ProgramStatus::CompilingSql => "compiling_sql",
+            ProgramStatus::SqlCompiled => "sql_compiled",
+            ProgramStatus::CompilingRust => "compiling_rust",
+            ProgramStatus::Success => "success",
+            ProgramStatus::SqlError => "sql_error",
+            ProgramStatus::RustError => "rust_error",
+            ProgramStatus::SystemError => "system_error",
         }
     }
+}
+
+impl Display for ProgramStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let status: &'static str = (*self).into();
+        write!(f, "{status}")
+    }
+}
+
+/// SQL compilation information.
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
+pub struct SqlCompilationInfo {
+    /// Exit code of the SQL compiler.
+    pub exit_code: i32,
+    /// Messages (warnings and errors) generated by the SQL compiler.
+    pub messages: Vec<SqlCompilerMessage>,
+}
+
+/// Rust compilation information.
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
+pub struct RustCompilationInfo {
+    /// Exit code of the `cargo` compilation command.
+    pub exit_code: i32,
+    /// Output printed to stdout by the `cargo` compilation command.
+    pub stdout: String,
+    /// Output printed to stderr by the `cargo` compilation command.
+    pub stderr: String,
+}
+
+impl Display for RustCompilationInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Rust compilation process exited with code {}\n\nstdout:\n{}\n\nstderr:\n\n{}",
+            self.exit_code, self.stdout, self.stderr
+        )
+    }
+}
+
+/// Log, warning and error information about the program compilation.
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
+pub struct ProgramError {
+    /// Information about the SQL compilation.
+    /// - Set `Some(...)` upon transition to `SqlCompiled` or `SqlError`
+    /// - Set `None` upon transition to `Pending`
+    pub sql_compilation: Option<SqlCompilationInfo>,
+
+    /// Information about the Rust compilation.
+    /// - Set `Some(...)` upon transition to `Success` or `RustError`
+    /// - Set `None` upon transition to `Pending` or `SqlCompiled`
+    pub rust_compilation: Option<RustCompilationInfo>,
+
+    /// System error that occurred.
+    /// - Set `Some(...)` upon transition to `SystemError`
+    /// - Set `None` upon transition to `Pending`
+    pub system_error: Option<String>,
 }
 
 /// Validates the program status transition from current status to a new one.
@@ -226,28 +260,28 @@ pub fn validate_program_status_transition(
     if matches!(
         (current_status, new_status),
         (ProgramStatus::Pending, ProgramStatus::CompilingSql)
-            | (ProgramStatus::Pending, ProgramStatus::SystemError(_))
+            | (ProgramStatus::Pending, ProgramStatus::SystemError)
             | (ProgramStatus::CompilingSql, ProgramStatus::Pending)
             | (ProgramStatus::CompilingSql, ProgramStatus::SqlCompiled)
-            | (ProgramStatus::CompilingSql, ProgramStatus::SqlError(_))
-            | (ProgramStatus::CompilingSql, ProgramStatus::SystemError(_))
+            | (ProgramStatus::CompilingSql, ProgramStatus::SqlError)
+            | (ProgramStatus::CompilingSql, ProgramStatus::SystemError)
             | (ProgramStatus::SqlCompiled, ProgramStatus::Pending)
             | (ProgramStatus::SqlCompiled, ProgramStatus::CompilingRust)
             | (ProgramStatus::CompilingRust, ProgramStatus::Pending)
             | (ProgramStatus::CompilingRust, ProgramStatus::SqlCompiled)
             | (ProgramStatus::CompilingRust, ProgramStatus::Success)
-            | (ProgramStatus::CompilingRust, ProgramStatus::RustError(_))
-            | (ProgramStatus::CompilingRust, ProgramStatus::SystemError(_))
+            | (ProgramStatus::CompilingRust, ProgramStatus::RustError)
+            | (ProgramStatus::CompilingRust, ProgramStatus::SystemError)
             | (ProgramStatus::Success, ProgramStatus::Pending)
-            | (ProgramStatus::SqlError(_), ProgramStatus::Pending)
-            | (ProgramStatus::RustError(_), ProgramStatus::Pending)
-            | (ProgramStatus::SystemError(_), ProgramStatus::Pending)
+            | (ProgramStatus::SqlError, ProgramStatus::Pending)
+            | (ProgramStatus::RustError, ProgramStatus::Pending)
+            | (ProgramStatus::SystemError, ProgramStatus::Pending)
     ) {
         Ok(())
     } else {
         Err(DBError::InvalidProgramStatusTransition {
-            current: current_status.clone(),
-            transition_to: new_status.clone(),
+            current: *current_status,
+            transition_to: *new_status,
         })
     }
 }

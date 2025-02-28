@@ -144,7 +144,7 @@ pub async fn compiler_precompile(
     let udf_toml = "";
 
     // SQL
-    let (program_info, sql_duration) = perform_sql_compilation(
+    let (program_info, sql_duration, _) = perform_sql_compilation(
         &common_config,
         &config,
         None,
@@ -166,14 +166,14 @@ pub async fn compiler_precompile(
         SqlCompilationError::TerminatedBySignal => CompilerError::PrecompilationError {
             error: "SQL compilation terminated by signal".to_string(),
         },
-        SqlCompilationError::SqlError(messages) => CompilerError::PrecompilationError {
-            error: format!("{:?}", messages),
+        SqlCompilationError::SqlError(compilation_info) => CompilerError::PrecompilationError {
+            error: format!("{:?}", compilation_info),
         },
         SqlCompilationError::SystemError(error) => CompilerError::PrecompilationError { error },
     })?;
 
     // Rust
-    let (_, source_checksum, integrity_checksum, rust_duration, _) = perform_rust_compilation(
+    let (_, source_checksum, integrity_checksum, rust_duration, _, _) = perform_rust_compilation(
         &common_config,
         &config,
         None,
@@ -197,7 +197,9 @@ pub async fn compiler_precompile(
         RustCompilationError::TerminatedBySignal => CompilerError::PrecompilationError {
             error: "Rust compilation terminated by signal".to_string(),
         },
-        RustCompilationError::RustError(error) => CompilerError::PrecompilationError { error },
+        RustCompilationError::RustError(compilation_info) => CompilerError::PrecompilationError {
+            error: compilation_info.to_string(),
+        },
         RustCompilationError::SystemError(error) => CompilerError::PrecompilationError { error },
     })?;
 

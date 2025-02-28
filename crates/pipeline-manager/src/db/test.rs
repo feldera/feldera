@@ -10,7 +10,8 @@ use crate::db::types::pipeline::{
 };
 use crate::db::types::program::{
     generate_pipeline_config, validate_program_status_transition, CompilationProfile,
-    ProgramConfig, ProgramInfo, ProgramStatus, SqlCompilerMessage,
+    ProgramConfig, ProgramError, ProgramInfo, ProgramStatus, RustCompilationInfo,
+    SqlCompilationInfo,
 };
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
@@ -369,7 +370,24 @@ fn limited_option_program_config() -> impl Strategy<Value = Option<serde_json::V
     any::<Option<ProgramConfigPropVal>>().prop_map(|val| val.map(map_val_to_limited_program_config))
 }
 
-/// Generates different optional program information.
+/// Generates different SQL compilation information.
+fn limited_sql_compilation_info() -> impl Strategy<Value = SqlCompilationInfo> {
+    any::<u8>().prop_map(|v| SqlCompilationInfo {
+        exit_code: (v % 4) as i32,
+        messages: vec![],
+    })
+}
+
+/// Generates different Rust compilation information.
+fn limited_rust_compilation_info() -> impl Strategy<Value = RustCompilationInfo> {
+    any::<(u8, u8, u8)>().prop_map(|v| RustCompilationInfo {
+        exit_code: (v.0 % 4) as i32,
+        stdout: format!("stdout-{}", v.1),
+        stderr: format!("stderr-{}", v.1),
+    })
+}
+
+/// Generates different program information.
 fn limited_program_info() -> impl Strategy<Value = serde_json::Value> {
     any::<ProgramInfoPropVal>().prop_map(map_val_to_limited_program_info)
 }
@@ -1106,6 +1124,10 @@ async fn pipeline_program_compilation() {
             tenant_id,
             pipeline1.id,
             Version(1),
+            &SqlCompilationInfo {
+                exit_code: 0,
+                messages: vec![],
+            },
             &serde_json::to_value(ProgramInfo {
                 schema: ProgramSchema {
                     inputs: vec![],
@@ -1138,7 +1160,19 @@ async fn pipeline_program_compilation() {
         .unwrap();
     handle
         .db
-        .transit_program_status_to_success(tenant_id, pipeline1.id, Version(1), "abc", "123", "abc")
+        .transit_program_status_to_success(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            &RustCompilationInfo {
+                exit_code: 0,
+                stdout: "".to_string(),
+                stderr: "".to_string(),
+            },
+            "abc",
+            "123",
+            "abc",
+        )
         .await
         .unwrap();
 
@@ -1207,6 +1241,10 @@ async fn pipeline_deployment() {
             tenant_id,
             pipeline1.id,
             Version(1),
+            &SqlCompilationInfo {
+                exit_code: 0,
+                messages: vec![],
+            },
             &serde_json::to_value(ProgramInfo {
                 schema: ProgramSchema {
                     inputs: vec![],
@@ -1232,6 +1270,11 @@ async fn pipeline_deployment() {
             tenant_id,
             pipeline1.id,
             Version(1),
+            &RustCompilationInfo {
+                exit_code: 0,
+                stdout: "".to_string(),
+                stderr: "".to_string(),
+            },
             "def",
             "123",
             "abcdef",
@@ -1337,6 +1380,10 @@ async fn pipeline_provision_version_guard() {
             tenant_id,
             pipeline.id,
             Version(1),
+            &SqlCompilationInfo {
+                exit_code: 0,
+                messages: vec![],
+            },
             &serde_json::to_value(ProgramInfo {
                 schema: ProgramSchema {
                     inputs: vec![],
@@ -1362,6 +1409,11 @@ async fn pipeline_provision_version_guard() {
             tenant_id,
             pipeline.id,
             Version(1),
+            &RustCompilationInfo {
+                exit_code: 0,
+                stdout: "".to_string(),
+                stderr: "".to_string(),
+            },
             "def",
             "123",
             "abcdef",
@@ -1534,6 +1586,7 @@ enum StorageAction {
         TenantId,
         PipelineId,
         Version,
+        #[proptest(strategy = "limited_sql_compilation_info()")] SqlCompilationInfo,
         #[proptest(strategy = "limited_program_info()")] serde_json::Value,
     ),
     TransitProgramStatusToCompilingRust(TenantId, PipelineId, Version),
@@ -1541,12 +1594,23 @@ enum StorageAction {
         TenantId,
         PipelineId,
         Version,
+        #[proptest(strategy = "limited_rust_compilation_info()")] RustCompilationInfo,
         #[proptest(strategy = "limited_program_binary_source_checksum()")] String,
         #[proptest(strategy = "limited_program_binary_integrity_checksum()")] String,
         String,
     ),
-    TransitProgramStatusToSqlError(TenantId, PipelineId, Version, Vec<SqlCompilerMessage>),
-    TransitProgramStatusToRustError(TenantId, PipelineId, Version, String),
+    TransitProgramStatusToSqlError(
+        TenantId,
+        PipelineId,
+        Version,
+        #[proptest(strategy = "limited_sql_compilation_info()")] SqlCompilationInfo,
+    ),
+    TransitProgramStatusToRustError(
+        TenantId,
+        PipelineId,
+        Version,
+        #[proptest(strategy = "limited_rust_compilation_info()")] RustCompilationInfo,
+    ),
     TransitProgramStatusToSystemError(TenantId, PipelineId, Version, String),
     SetDeploymentDesiredStatusRunning(
         TenantId,
@@ -2014,10 +2078,10 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.transit_program_status_to_compiling_sql(tenant_id, pipeline_id, program_version_guard).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitProgramStatusToSqlCompiled(tenant_id, pipeline_id, program_version_guard, program_info) => {
+                            StorageAction::TransitProgramStatusToSqlCompiled(tenant_id, pipeline_id, program_version_guard, sql_compilation, program_info) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_program_status_to_sql_compiled(tenant_id, pipeline_id, program_version_guard, &program_info).await;
-                                let impl_response = handle.db.transit_program_status_to_sql_compiled(tenant_id, pipeline_id, program_version_guard, &program_info).await;
+                                let model_response = model.transit_program_status_to_sql_compiled(tenant_id, pipeline_id, program_version_guard, &sql_compilation, &program_info).await;
+                                let impl_response = handle.db.transit_program_status_to_sql_compiled(tenant_id, pipeline_id, program_version_guard, &sql_compilation, &program_info).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitProgramStatusToCompilingRust(tenant_id, pipeline_id, program_version_guard) => {
@@ -2026,28 +2090,28 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, program_version_guard).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitProgramStatusToSuccess(tenant_id, pipeline_id, program_version_guard, program_binary_source_checksum, program_binary_integrity_checksum, program_binary_url) => {
+                            StorageAction::TransitProgramStatusToSuccess(tenant_id, pipeline_id, program_version_guard, rust_compilation, program_binary_source_checksum, program_binary_integrity_checksum, program_binary_url) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_binary_url).await;
-                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_binary_url).await;
+                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_binary_url).await;
+                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_binary_url).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitProgramStatusToSqlError(tenant_id, pipeline_id, program_version_guard, internal_sql_error) => {
+                            StorageAction::TransitProgramStatusToSqlError(tenant_id, pipeline_id, program_version_guard, sql_compilation) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_program_status_to_sql_error(tenant_id, pipeline_id, program_version_guard, internal_sql_error.clone()).await;
-                                let impl_response = handle.db.transit_program_status_to_sql_error(tenant_id, pipeline_id, program_version_guard, internal_sql_error.clone()).await;
+                                let model_response = model.transit_program_status_to_sql_error(tenant_id, pipeline_id, program_version_guard, &sql_compilation).await;
+                                let impl_response = handle.db.transit_program_status_to_sql_error(tenant_id, pipeline_id, program_version_guard, &sql_compilation).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitProgramStatusToRustError(tenant_id, pipeline_id, program_version_guard, internal_rust_error) => {
+                            StorageAction::TransitProgramStatusToRustError(tenant_id, pipeline_id, program_version_guard, rust_compilation) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_program_status_to_rust_error(tenant_id, pipeline_id, program_version_guard, &internal_rust_error).await;
-                                let impl_response = handle.db.transit_program_status_to_rust_error(tenant_id, pipeline_id, program_version_guard, &internal_rust_error).await;
+                                let model_response = model.transit_program_status_to_rust_error(tenant_id, pipeline_id, program_version_guard, &rust_compilation).await;
+                                let impl_response = handle.db.transit_program_status_to_rust_error(tenant_id, pipeline_id, program_version_guard, &rust_compilation).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitProgramStatusToSystemError(tenant_id, pipeline_id, program_version_guard, internal_system_error) => {
+                            StorageAction::TransitProgramStatusToSystemError(tenant_id, pipeline_id, program_version_guard, system_error) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_program_status_to_system_error(tenant_id, pipeline_id, program_version_guard, &internal_system_error).await;
-                                let impl_response = handle.db.transit_program_status_to_system_error(tenant_id, pipeline_id, program_version_guard, &internal_system_error).await;
+                                let model_response = model.transit_program_status_to_system_error(tenant_id, pipeline_id, program_version_guard, &system_error).await;
+                                let impl_response = handle.db.transit_program_status_to_system_error(tenant_id, pipeline_id, program_version_guard, &system_error).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetDeploymentDesiredStatusRunning(tenant_id, pipeline_name) => {
@@ -2348,6 +2412,11 @@ impl ModelHelpers for Mutex<DbModel> {
             pipeline.program_version = Version(pipeline.program_version.0 + 1);
             pipeline.program_status = ProgramStatus::Pending;
             pipeline.program_status_since = Utc::now();
+            pipeline.program_error = ProgramError {
+                sql_compilation: None,
+                rust_compilation: None,
+                system_error: None,
+            };
             pipeline.program_info = None;
             pipeline.program_binary_url = None;
         }
@@ -2464,8 +2533,9 @@ fn convert_descriptor_to_monitoring(
         version: pipeline.version,
         platform_version: pipeline.platform_version.clone(),
         program_version: pipeline.program_version,
-        program_status: pipeline.program_status.clone(),
+        program_status: pipeline.program_status,
         program_status_since: pipeline.program_status_since,
+        program_error: pipeline.program_error,
         deployment_status: pipeline.deployment_status,
         deployment_status_since: pipeline.program_status_since,
         deployment_desired_status: pipeline.deployment_desired_status,
@@ -2747,6 +2817,11 @@ impl Storage for Mutex<DbModel> {
             program_version: Version(1),
             program_status: ProgramStatus::Pending,
             program_status_since: now,
+            program_error: ProgramError {
+                sql_compilation: None,
+                rust_compilation: None,
+                system_error: None,
+            },
             program_info: None,
             program_binary_source_checksum: None,
             program_binary_integrity_checksum: None,
@@ -2874,6 +2949,11 @@ impl Storage for Mutex<DbModel> {
             .await?;
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        pipeline.program_error = ProgramError {
+            sql_compilation: None,
+            rust_compilation: None,
+            system_error: None,
+        };
         pipeline.program_info = None;
         pipeline.program_binary_url = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
@@ -2908,6 +2988,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
+        sql_compilation: &SqlCompilationInfo,
         program_info: &serde_json::Value,
     ) -> Result<(), DBError> {
         let new_status = ProgramStatus::SqlCompiled;
@@ -2920,6 +3001,11 @@ impl Storage for Mutex<DbModel> {
         })?;
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        pipeline.program_error = ProgramError {
+            sql_compilation: Some(sql_compilation.clone()),
+            rust_compilation: None,
+            system_error: None,
+        };
         pipeline.program_info = Some(program_info.clone());
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
@@ -2953,6 +3039,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
+        rust_compilation: &RustCompilationInfo,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
         program_binary_url: &str,
@@ -2963,6 +3050,11 @@ impl Storage for Mutex<DbModel> {
             .await?;
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        pipeline.program_error = ProgramError {
+            sql_compilation: pipeline.program_error.sql_compilation,
+            rust_compilation: Some(rust_compilation.clone()),
+            system_error: None,
+        };
         pipeline.program_binary_source_checksum = Some(program_binary_source_checksum.to_string());
         pipeline.program_binary_integrity_checksum =
             Some(program_binary_integrity_checksum.to_string());
@@ -2979,14 +3071,19 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        internal_sql_error: Vec<SqlCompilerMessage>,
+        sql_compilation: &SqlCompilationInfo,
     ) -> Result<(), DBError> {
-        let new_status = ProgramStatus::SqlError(internal_sql_error);
+        let new_status = ProgramStatus::SqlError;
         let mut pipeline = self
             .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
             .await?;
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        pipeline.program_error = ProgramError {
+            sql_compilation: Some(sql_compilation.clone()),
+            rust_compilation: None,
+            system_error: None,
+        };
         self.lock()
             .await
             .pipelines
@@ -2999,14 +3096,19 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        internal_rust_error: &str,
+        rust_compilation: &RustCompilationInfo,
     ) -> Result<(), DBError> {
-        let new_status = ProgramStatus::RustError(internal_rust_error.to_string());
+        let new_status = ProgramStatus::RustError;
         let mut pipeline = self
             .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
             .await?;
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        pipeline.program_error = ProgramError {
+            sql_compilation: pipeline.program_error.sql_compilation,
+            rust_compilation: Some(rust_compilation.clone()),
+            system_error: None,
+        };
         self.lock()
             .await
             .pipelines
@@ -3019,14 +3121,19 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        internal_system_error: &str,
+        system_error: &str,
     ) -> Result<(), DBError> {
-        let new_status = ProgramStatus::SystemError(internal_system_error.to_string());
+        let new_status = ProgramStatus::SystemError;
         let mut pipeline = self
             .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
             .await?;
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        pipeline.program_error = ProgramError {
+            sql_compilation: pipeline.program_error.sql_compilation,
+            rust_compilation: pipeline.program_error.rust_compilation,
+            system_error: Some(system_error.to_string()),
+        };
         self.lock()
             .await
             .pipelines
@@ -3357,6 +3464,7 @@ impl Storage for Mutex<DbModel> {
                             tid,
                             pipeline.id,
                             pipeline.program_version,
+                            &pipeline.program_error.sql_compilation.unwrap(),
                             &pipeline_complete.program_info.unwrap(),
                         )
                         .await?;

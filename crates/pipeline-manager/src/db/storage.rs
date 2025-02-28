@@ -3,7 +3,7 @@ use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
-use crate::db::types::program::SqlCompilerMessage;
+use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use async_trait::async_trait;
@@ -31,8 +31,9 @@ impl ExtendedPipelineDescrRunner {
                 version: pipeline.version,
                 platform_version: pipeline.platform_version.clone(),
                 program_version: pipeline.program_version,
-                program_status: pipeline.program_status.clone(),
+                program_status: pipeline.program_status,
                 program_status_since: pipeline.program_status_since,
+                program_error: pipeline.program_error.clone(),
                 deployment_status: pipeline.deployment_status,
                 deployment_status_since: pipeline.deployment_status_since,
                 deployment_desired_status: pipeline.deployment_desired_status,
@@ -204,6 +205,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
+        sql_compilation: &SqlCompilationInfo,
         program_info: &serde_json::Value,
     ) -> Result<(), DBError>;
 
@@ -216,11 +218,13 @@ pub(crate) trait Storage {
     ) -> Result<(), DBError>;
 
     /// Transitions program status to `Success`.
+    #[allow(clippy::too_many_arguments)]
     async fn transit_program_status_to_success(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
+        rust_compilation: &RustCompilationInfo,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
         program_binary_url: &str,
@@ -232,7 +236,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        internal_sql_error: Vec<SqlCompilerMessage>,
+        sql_compilation: &SqlCompilationInfo,
     ) -> Result<(), DBError>;
 
     /// Transitions program status to `RustError`.
@@ -241,7 +245,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        internal_rust_error: &str,
+        rust_compilation: &RustCompilationInfo,
     ) -> Result<(), DBError>;
 
     /// Transitions program status to `SystemError`.
@@ -250,7 +254,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        internal_system_error: &str,
+        system_error: &str,
     ) -> Result<(), DBError>;
 
     /// Sets deployment desired status to `Running`.

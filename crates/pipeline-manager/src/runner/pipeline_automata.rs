@@ -684,12 +684,17 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
         // If the pipeline program errored during compilation, immediately transition to `Failed`
         match &pipeline.program_status {
-            ProgramStatus::SqlError(e) => {
+            ProgramStatus::SqlError => {
                 return Ok(State::TransitionToFailed {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &DBError::StartFailedDueToFailedCompilation {
-                            compiler_error: e
+                            compiler_error: pipeline
+                                .program_error
+                                .sql_compilation
+                                .as_ref()
+                                .map(|v| v.messages.clone())
+                                .unwrap_or_default()
                                 .iter()
                                 .map(|s| s.to_string())
                                 .collect::<Vec<String>>()
@@ -698,22 +703,31 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     ),
                 });
             }
-            ProgramStatus::RustError(e) => {
+            ProgramStatus::RustError => {
                 return Ok(State::TransitionToFailed {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &DBError::StartFailedDueToFailedCompilation {
-                            compiler_error: e.to_string(),
+                            compiler_error: pipeline
+                                .program_error
+                                .rust_compilation
+                                .as_ref()
+                                .map(|v| v.to_string())
+                                .unwrap_or("".to_string()),
                         },
                     ),
                 });
             }
-            ProgramStatus::SystemError(e) => {
+            ProgramStatus::SystemError => {
                 return Ok(State::TransitionToFailed {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &DBError::StartFailedDueToFailedCompilation {
-                            compiler_error: e.to_string(),
+                            compiler_error: pipeline
+                                .program_error
+                                .system_error
+                                .clone()
+                                .unwrap_or("".to_string()),
                         },
                     ),
                 });
@@ -1199,7 +1213,7 @@ mod test {
     use crate::db::storage::Storage;
     use crate::db::storage_postgres::StoragePostgres;
     use crate::db::types::pipeline::{PipelineDescr, PipelineId, PipelineStatus};
-    use crate::db::types::program::ProgramInfo;
+    use crate::db::types::program::{ProgramInfo, RustCompilationInfo, SqlCompilationInfo};
     use crate::db::types::version::Version;
     use crate::error::ManagerError;
     use crate::logging;
@@ -1374,6 +1388,10 @@ mod test {
                 tenant_id,
                 pipeline_id,
                 Version(1),
+                &SqlCompilationInfo {
+                    exit_code: 0,
+                    messages: vec![],
+                },
                 &serde_json::to_value(ProgramInfo {
                     schema: ProgramSchema {
                         inputs: vec![],
@@ -1399,6 +1417,11 @@ mod test {
                 tenant_id,
                 pipeline_id,
                 Version(1),
+                &RustCompilationInfo {
+                    exit_code: 0,
+                    stdout: "".to_string(),
+                    stderr: "".to_string(),
+                },
                 "not-used-program-binary-source-checksum",
                 "not-used-program-binary-integrity-checksum",
                 "not-used-program-binary-url",

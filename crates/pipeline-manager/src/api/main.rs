@@ -127,6 +127,9 @@ only the program-related core fields, and is used by the compiler to discern whe
         crate::db::types::program::CompilationProfile,
         crate::db::types::program::SqlCompilerMessage,
         crate::db::types::program::ProgramStatus,
+        crate::db::types::program::ProgramError,
+        crate::db::types::program::SqlCompilationInfo,
+        crate::db::types::program::RustCompilationInfo,
         crate::db::types::program::ProgramConfig,
         crate::api::endpoints::pipeline_management::PartialProgramInfo,
 
