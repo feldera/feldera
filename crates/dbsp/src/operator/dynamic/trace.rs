@@ -31,8 +31,6 @@ use std::{
     sync::Arc,
 };
 
-use super::communication::shard::ShardingPolicy;
-
 circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
 circuit_cache_key!(DelayedTraceId<C, D>(StreamId => Stream<C, D>));
@@ -340,23 +338,26 @@ where
     {
         let bounds = self.trace_bounds_with_bound(lower_key_bound, lower_val_bound);
 
-        let unique_name = self.get_unique_name();
-
         self.circuit()
             .cache_get_or_insert_with(TraceId::new(self.stream_id()), || {
                 let circuit = self.circuit();
 
                 circuit.region("trace", || {
-                    let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
-                        unique_name.as_deref(),
-                        output_factories,
-                        false,
-                        circuit.root_scope(),
-                        bounds.clone(),
-                    ));
+                    let unique_name = self.get_unique_name();
+
+                    let (local, z1feedback) = circuit.add_feedback_named(
+                        unique_name
+                            .map(|name| format!("{name}.integral"))
+                            .as_deref(),
+                        Z1Trace::new(
+                            output_factories,
+                            false,
+                            circuit.root_scope(),
+                            bounds.clone(),
+                        ),
+                    );
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<FileValSpine<B, C>, B, C>>::new(
-                            unique_name.as_deref(),
                             output_factories,
                             circuit.clone(),
                         ),
@@ -499,25 +500,24 @@ where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
-        let unique_name = self.get_unique_name();
-
         self.circuit()
             .cache_get_or_insert_with(TraceId::new(self.stream_id()), || {
                 let circuit = self.circuit();
                 let bounds = bounds.clone();
 
+                let unique_name = self.get_unique_name();
+
                 circuit.region("integrate_trace", || {
                     let (ExportStream { local, export }, z1feedback) = circuit
-                        .add_feedback_with_export(Z1Trace::new(
-                            unique_name.as_deref(),
-                            input_factories,
-                            true,
-                            circuit.root_scope(),
-                            bounds,
-                        ));
+                        .add_feedback_with_export_named(
+                            unique_name
+                                .map(|name| format!("{name}.integral"))
+                                .as_deref(),
+                            Z1Trace::new(input_factories, true, circuit.root_scope(), bounds),
+                        );
 
                     let trace = circuit.add_binary_operator_with_preference(
-                        UntimedTraceAppend::<Spine<B>>::new(unique_name.as_deref()),
+                        UntimedTraceAppend::<Spine<B>>::new(),
                         (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
                         (&self, OwnershipPreference::PREFER_OWNED),
                     );
@@ -548,7 +548,6 @@ where
     C: Circuit,
     T: Trace,
 {
-    unique_name: Option<String>,
     feedback: FeedbackConnector<C, T, T, Z1Trace<T>>,
     /// `delayed_trace` stream in the diagram in
     /// [`trait TraceFeedback`] documentation.
@@ -566,7 +565,7 @@ where
         let circuit = self.delayed_trace.circuit();
 
         let trace = circuit.add_binary_operator_with_preference(
-            <UntimedTraceAppend<T>>::new(self.unique_name.as_deref()),
+            <UntimedTraceAppend<T>>::new(),
             (
                 &self.delayed_trace,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
@@ -628,17 +627,14 @@ pub trait TraceFeedback: Circuit {
         T: Trace<Time = ()> + Clone,
     {
         // We'll give `Z1Trace` a real name inside `TraceFeedbackConnector::connect`, where we have the name of the input stream.
-        let (ExportStream { local, export }, feedback) =
-            self.add_feedback_with_export(Z1Trace::new(
-                unique_name,
-                factories,
-                true,
-                self.root_scope(),
-                bounds.clone(),
-            ));
+        let (ExportStream { local, export }, feedback) = self.add_feedback_with_export_named(
+            unique_name
+                .map(|name| format!("{name}.integral"))
+                .as_deref(),
+            Z1Trace::new(factories, true, self.root_scope(), bounds.clone()),
+        );
 
         TraceFeedbackConnector {
-            unique_name: unique_name.map(str::to_string),
             feedback,
             delayed_trace: local,
             export_trace: export,
@@ -673,7 +669,6 @@ pub struct UntimedTraceAppend<T>
 where
     T: Trace,
 {
-    unique_name: Option<String>,
     // Total number of input tuples processed by the operator.
     num_inputs: usize,
     num_inputs_metric: Option<Gauge>,
@@ -685,9 +680,8 @@ impl<T> UntimedTraceAppend<T>
 where
     T: Trace,
 {
-    pub fn new(unique_name: Option<&str>) -> Self {
+    pub fn new() -> Self {
         Self {
-            unique_name: unique_name.map(str::to_string),
             num_inputs: 0,
             num_inputs_metric: None,
             _phantom: PhantomData,
@@ -780,7 +774,6 @@ where
 }
 
 pub struct TraceAppend<T: Trace, B: BatchReader, C> {
-    unique_name: Option<String>,
     clock: C,
     output_factories: T::Factories,
 
@@ -792,9 +785,8 @@ pub struct TraceAppend<T: Trace, B: BatchReader, C> {
 }
 
 impl<T: Trace, B: BatchReader, C> TraceAppend<T, B, C> {
-    pub fn new(unique_name: Option<&str>, output_factories: &T::Factories, clock: C) -> Self {
+    pub fn new(output_factories: &T::Factories, clock: C) -> Self {
         Self {
-            unique_name: unique_name.map(str::to_string),
             clock,
             output_factories: output_factories.clone(),
             num_inputs: 0,
@@ -894,7 +886,6 @@ where
 }
 
 pub struct Z1Trace<T: Trace> {
-    unique_name: Option<String>,
     time: T::Time,
     trace: Option<T>,
     factories: T::Factories,
@@ -916,14 +907,12 @@ where
     T: Trace,
 {
     pub fn new(
-        unique_name: Option<&str>,
         factories: &T::Factories,
         reset_on_clock_start: bool,
         root_scope: Scope,
         bounds: TraceBounds<T::Key, T::Val>,
     ) -> Self {
         Self {
-            unique_name: unique_name.map(str::to_owned),
             time: <T::Time as Timestamp>::clock_start(),
             trace: None,
             factories: factories.clone(),

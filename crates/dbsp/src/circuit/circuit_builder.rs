@@ -1743,6 +1743,23 @@ pub trait Circuit: WithClock + Clone + 'static {
         O: Data,
         Op: StrictUnaryOperator<I, O>;
 
+    fn add_feedback_named<I, O, Op>(
+        &self,
+        unique_name: Option<&str>,
+        operator: Op,
+    ) -> (Stream<Self, O>, FeedbackConnector<Self, I, O, Op>)
+    where
+        I: Data,
+        O: Data,
+        Op: StrictUnaryOperator<I, O>,
+    {
+        let (output, feedback) = self.add_feedback(operator);
+
+        output.set_unique_name(unique_name);
+
+        (output, feedback)
+    }
+
     /// Like `add_feedback`, but additionally makes the output of the operator
     /// available to the parent circuit.
     ///
@@ -1764,6 +1781,23 @@ pub trait Circuit: WithClock + Clone + 'static {
         I: Data,
         O: Data,
         Op: StrictUnaryOperator<I, O>;
+
+    fn add_feedback_with_export_named<I, O, Op>(
+        &self,
+        unique_name: Option<&str>,
+        operator: Op,
+    ) -> (ExportStream<Self, O>, FeedbackConnector<Self, I, O, Op>)
+    where
+        I: Data,
+        O: Data,
+        Op: StrictUnaryOperator<I, O>,
+    {
+        let (export, feedback) = self.add_feedback_with_export(operator);
+
+        export.local.set_unique_name(unique_name);
+
+        (export, feedback)
+    }
 
     fn connect_feedback_with_preference<I, O, Op>(
         &self,
