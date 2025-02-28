@@ -4,6 +4,7 @@ use crate::{
     catalog::{OutputCollectionHandles, SerCollectionHandle},
     Catalog, ControllerError,
 };
+use datafusion::prelude::Expr;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::{
     operator::{MapHandle, SetHandle, ZSetHandle},
@@ -37,6 +38,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         handle: ZSetHandle<Z::Key>,
         schema: &str,
+        datafusion_defaults: BTreeMap<SqlIdentifier, Expr>,
     ) where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -54,6 +56,7 @@ impl Catalog {
 
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema,
+            datafusion_defaults,
             DeZSetHandle::new(handle),
         ))
         .unwrap();
@@ -69,6 +72,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         handle: ZSetHandle<Z::Key>,
         schema: &str,
+        datafusion_defaults: BTreeMap<SqlIdentifier, Expr>,
     ) where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -86,6 +90,7 @@ impl Catalog {
 
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema,
+            datafusion_defaults,
             DeZSetHandle::new(handle),
         ))
         .unwrap();
@@ -104,6 +109,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         handle: SetHandle<Z::Key>,
         schema: &str,
+        datafusion_defaults: BTreeMap<SqlIdentifier, Expr>,
     ) where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -121,6 +127,7 @@ impl Catalog {
 
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema,
+            datafusion_defaults,
             DeSetHandle::new(handle),
         ))
         .unwrap();
@@ -136,6 +143,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         handle: SetHandle<Z::Key>,
         schema: &str,
+        datafusion_defaults: BTreeMap<SqlIdentifier, Expr>,
     ) where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -153,6 +161,7 @@ impl Catalog {
 
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema,
+            datafusion_defaults,
             DeSetHandle::new(handle),
         ))
         .unwrap();
@@ -185,6 +194,7 @@ impl Catalog {
         value_key_func: VF,
         update_key_func: UF,
         schema: &str,
+        datafusion_defaults: BTreeMap<SqlIdentifier, Expr>,
     ) where
         VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
         UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
@@ -217,6 +227,7 @@ impl Catalog {
 
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema,
+            datafusion_defaults,
             DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
         ))
         .unwrap();
@@ -234,6 +245,7 @@ impl Catalog {
         value_key_func: VF,
         update_key_func: UF,
         schema: &str,
+        datafusion_defaults: BTreeMap<SqlIdentifier, Expr>,
     ) where
         VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
         UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
@@ -266,6 +278,7 @@ impl Catalog {
 
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema,
+            datafusion_defaults,
             DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
         ))
         .unwrap();
@@ -526,13 +539,52 @@ fn index_schema(
 
 #[cfg(test)]
 mod test {
-    use std::{io::Write, ops::Deref};
-
     use crate::{catalog::RecordFormat, test::TestStruct, Catalog, CircuitCatalog, SerBatch};
+    use datafusion::common::ScalarValue;
+    use datafusion::prelude::Expr;
     use dbsp::Runtime;
     use feldera_types::format::json::JsonFlavor;
+    use feldera_types::program_schema::SqlIdentifier;
+    use std::collections::BTreeMap;
+    use std::{io::Write, ops::Deref};
 
     const RECORD_FORMAT: RecordFormat = RecordFormat::Json(JsonFlavor::Default);
+
+    #[test]
+    fn datafusion_default_expr() {
+        let (_circuit, _catalog) = Runtime::init_circuit(4, |circuit| {
+            let mut catalog = Catalog::new();
+
+            let (input, hinput) = circuit.add_input_map::<u32, TestStruct, TestStruct, _>(|v, u| *v = u.clone());
+            let mut default_expressions: BTreeMap<SqlIdentifier, Expr> = BTreeMap::new();
+            default_expressions.insert("a".into(), Expr::Literal(ScalarValue::Null));
+            default_expressions.insert("b".into(), Expr::Literal(ScalarValue::Boolean(Some(true))));
+            default_expressions.insert("c".into(), Expr::Literal(ScalarValue::Int8(Some(1))));
+            default_expressions.insert("d".into(), Expr::Literal(ScalarValue::Int16(Some(1))));
+            default_expressions.insert("e".into(), Expr::Literal(ScalarValue::Int32(Some(1))));
+            default_expressions.insert("f".into(), Expr::Literal(ScalarValue::Int64(Some(1))));
+            default_expressions.insert("g".into(), Expr::Literal(ScalarValue::Float32(Some(1.0))));
+            default_expressions.insert("h".into(), Expr::Literal(ScalarValue::Float64(Some(1.0))));
+            let precision = 1u8;
+            let scale = 2i8;
+            default_expressions.insert("i".into(), Expr::Literal(ScalarValue::Decimal128(Some(1i128), precision, scale)));
+            default_expressions.insert("j".into(), Expr::Literal(ScalarValue::Utf8(Some(String::from("foo")))));
+            default_expressions.insert("k".into(), Expr::Literal(ScalarValue::Binary(Some(vec![1, 2, 3u8]))));
+            default_expressions.insert("l".into(), Expr::Literal(ScalarValue::Utf8(Some(String::from("foo")))));
+
+            catalog.register_materialized_input_map::<u32, u32, TestStruct, TestStruct, TestStruct, TestStruct, _, _>(
+                input.clone(),
+                hinput,
+                |test_struct| test_struct.id,
+                |test_struct| test_struct.id,
+                r#"{"name": "input_MAP", "case_sensitive": false, "fields":[]}"#,
+                default_expressions,
+            );
+
+            Ok(catalog)
+        })
+            .unwrap();
+    }
 
     fn batch_to_json(batch: &dyn SerBatch) -> String {
         let mut cursor = batch.cursor(RECORD_FORMAT.clone()).unwrap();
@@ -560,12 +612,13 @@ mod test {
                 hinput,
                 |test_struct| test_struct.id,
                 |test_struct| test_struct.id,
-                r#"{"name": "input_MAP", "case_sensitive": false, "fields":[]}"#
+                r#"{"name": "input_MAP", "case_sensitive": false, "fields":[]}"#,
+                BTreeMap::new(),
             );
 
             Ok(catalog)
         })
-        .unwrap();
+            .unwrap();
 
         let input_map_handle = catalog
             .input_collection_handle(&("iNpUt_map".into()))

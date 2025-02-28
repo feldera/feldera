@@ -250,7 +250,7 @@ impl BufferConsumer {
         let mut parser = format
             .new_parser(
                 "BaseConsumer",
-                &InputCollectionHandle::new(schema, buffer.clone()),
+                &InputCollectionHandle::new(schema, BTreeMap::new(), buffer.clone()),
                 &serde_yaml::from_str::<serde_yaml::Value>(format_config_yaml).unwrap(),
             )
             .unwrap();

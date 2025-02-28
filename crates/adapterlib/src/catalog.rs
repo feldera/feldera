@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
@@ -7,6 +7,7 @@ use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
 use apache_avro::{schema::NamesRef, types::Value as AvroValue, Schema as AvroSchema};
 use arrow::record_batch::RecordBatch;
+use datafusion::prelude::Expr;
 use dyn_clone::DynClone;
 use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::format::json::JsonFlavor;
@@ -403,7 +404,7 @@ impl<'a> CursorWithPolarity<'a> {
     fn advance_val(&mut self) {
         while self.cursor.val_valid()
             && ((!self.second_pass && self.cursor.weight() >= 0)
-                || (self.second_pass && self.cursor.weight() <= 0))
+            || (self.second_pass && self.cursor.weight() <= 0))
         {
             self.step_val();
         }
@@ -495,7 +496,7 @@ pub trait CircuitCatalog: Send + Sync {
 
     fn output_iter(
         &self,
-    ) -> Box<dyn Iterator<Item = (&SqlIdentifier, &OutputCollectionHandles)> + '_>;
+    ) -> Box<dyn Iterator<Item=(&SqlIdentifier, &OutputCollectionHandles)> + '_>;
 
     /// Look up output stream handles by name.
     fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles>;
@@ -506,15 +507,17 @@ pub trait CircuitCatalog: Send + Sync {
 pub struct InputCollectionHandle {
     pub schema: Relation,
     pub handle: Box<dyn DeCollectionHandle>,
+    pub datafusion_defaults: BTreeMap<SqlIdentifier, Expr>,
 }
 
 impl InputCollectionHandle {
-    pub fn new<H>(schema: Relation, handle: H) -> Self
+    pub fn new<H>(schema: Relation, datafusion_defaults: BTreeMap<SqlIdentifier, Expr>, handle: H) -> Self
     where
         H: DeCollectionHandle + 'static,
     {
         Self {
             schema,
+            datafusion_defaults,
             handle: Box::new(handle),
         }
     }

@@ -119,7 +119,7 @@ where
     let input_handle = <MockDeZSet<T, U>>::new();
     let consumer = MockInputConsumer::new();
     let parser = MockInputParser::from_handle(
-        &InputCollectionHandle::new(schema.clone(), input_handle.clone()),
+        &InputCollectionHandle::new(schema.clone(), BTreeMap::new(), input_handle.clone()),
         config,
     );
     Ok((consumer, parser, input_handle))
@@ -233,7 +233,12 @@ where
         ))
         .unwrap();
 
-        catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
+        catalog.register_materialized_input_zset(
+            input.clone(),
+            hinput,
+            &input_schema,
+            BTreeMap::new(),
+        );
         catalog.register_materialized_output_zset(input, &output_schema);
 
         Ok(catalog)
@@ -274,7 +279,7 @@ where
     let mut parser = format
         .new_parser(
             "BaseConsumer",
-            &InputCollectionHandle::new(schema, buffer.clone()),
+            &InputCollectionHandle::new(schema, BTreeMap::new(), buffer.clone()),
             &serde_yaml::from_str::<serde_yaml::Value>(format_config_yaml).unwrap(),
         )
         .unwrap();
