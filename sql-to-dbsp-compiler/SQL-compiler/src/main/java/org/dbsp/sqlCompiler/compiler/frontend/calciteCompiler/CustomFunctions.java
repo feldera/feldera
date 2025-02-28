@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
-import org.apache.calcite.rel.type.RelDataTypeImpl;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlCallBinding;
 import org.apache.calcite.sql.SqlFunction;
@@ -41,7 +40,6 @@ import java.util.Objects;
 import static java.util.Objects.requireNonNull;
 import static org.apache.calcite.sql.type.OperandTypes.*;
 import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
-import static org.apache.calcite.sql.type.ReturnTypes.explicit;
 import static org.apache.calcite.util.Static.RESOURCE;
 
 /** Several functions that we define and add to the existing ones. */

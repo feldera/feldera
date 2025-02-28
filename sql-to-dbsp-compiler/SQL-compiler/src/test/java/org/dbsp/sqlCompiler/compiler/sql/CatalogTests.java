@@ -1,13 +1,16 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.junit.Assert;
@@ -531,6 +534,33 @@ public class CatalogTests extends BaseSQLTests {
                    primary key(id1, id2)
                 )""";
         this.getCCS(sql);
+    }
+
+    @Test
+    public void issue3637() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t (id VARCHAR);
+                
+                DECLARE RECURSIVE VIEW v(
+                    id VARCHAR,
+                    parent_id VARCHAR
+                );
+                
+                CREATE MATERIALIZED VIEW v
+                AS SELECT id,
+                    -- Delta lake output connector using field type Null instead of using the explicit VARCHAR
+                    NULL AS parent_id
+                FROM t
+                ;""");
+        var circuit = ccs.getCircuit();
+        DBSPSinkOperator v = circuit.getSink(new ProgramIdentifier("v", false));
+        Assert.assertNotNull(v);
+        DBSPType rowType = v.getOutputZSetElementType();
+        Assert.assertTrue(rowType.is(DBSPTypeTuple.class));
+        DBSPTypeTuple tuple = rowType.to(DBSPTypeTuple.class);
+        Assert.assertEquals(2, tuple.size());
+        DBSPType second = tuple.getFieldType(1);
+        Assert.assertEquals(second, DBSPTypeString.varchar(true));
     }
 
     @Test

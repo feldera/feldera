@@ -93,6 +93,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -3350,6 +3351,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         int emitFinalIndex = view.emitFinalColumn();
         DeclareViewStatement declare = this.recursiveViews.get(view.relationName);
+        DBSPTypeStruct declaredStruct = struct;
+        if (declare != null) {
+            declaredStruct = declare.getRowTypeAsStruct(this.compiler().typeCompiler);
+            if (!declaredStruct.sameType(struct)) {
+                // Use the declared type rather than the inferred type
+                DBSPTypeTuple viewType = struct.toTuple();
+                DBSPTypeTuple sinkType = declaredStruct.toTuple();
+                DBSPVariablePath var = viewType.ref().var();
+                DBSPExpression cast = new DBSPTupleExpression(DBSPTypeTuple.flatten(var.deref()), false)
+                        .pointwiseCast(sinkType);
+                op = new DBSPMapOperator(view.getCalciteObject(), cast.closure(var), op.outputPort());
+                this.addOperator(op);
+            }
+        }
         ViewMetadata meta = new ViewMetadata(view.relationName,
                 columnMetadata, view.getViewKind(), emitFinalIndex,
                 // The view is a system view if it's not visible
@@ -3363,14 +3378,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.addOperator(vo);
             o = new DBSPSinkOperator(
                     view.getCalciteObject(), view.relationName,
-                    view.getStatement(), struct, meta, vo.outputPort());
+                    view.getStatement(), declaredStruct, meta, vo.outputPort());
         } else {
             // We may already have a node for this output
             DBSPSimpleOperator previous = this.getCircuit().getView(view.relationName);
             if (previous != null)
                 return previous;
             o = new DBSPViewOperator(view.getCalciteObject(), view.relationName,
-                    view.getStatement(), struct, meta, op.outputPort());
+                    view.getStatement(), declaredStruct, meta, op.outputPort());
         }
         this.addOperator(o);
         this.currentView = previousView;
