@@ -66,6 +66,37 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue3635() {
+        this.compileRustTestCase("""
+                CREATE TABLE t (
+                    id VARCHAR,
+                    state VARCHAR,
+                    r ROW(
+                        a ROW(
+                            d VARCHAR
+                        ),
+                        b ROW(
+                            e ROW(
+                                f ROW(
+                                    h VARCHAR,
+                                    i VARCHAR
+                                ),
+                                g VARCHAR
+                            )
+                        ),
+                        c MAP<VARCHAR, VARCHAR>
+                    )
+                );
+                
+                CREATE MATERIALIZED VIEW v
+                AS
+                SELECT t.r.b -- or t.r.b.e, or t.r.b.e.g
+                FROM t
+                WHERE state = 'ACTIVE' -- this is necessary
+                ;""");
+    }
+
+    @Test
     public void issue3262a() {
         this.compileRustTestCase("""
                 CREATE TABLE T (
