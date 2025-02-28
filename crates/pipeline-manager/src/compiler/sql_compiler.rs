@@ -460,7 +460,7 @@ pub(crate) async fn perform_sql_compilation(
             Ok(messages) => messages,
             Err(e) => {
                 return Err(SqlCompilationError::SystemError(
-                    format!("SQL compiler process returned with non-zero exit status code ({exit_code}) and stderr which cannot be deserialized due to {e}:\n{stderr_str}")
+                    format!("SQL compiler process returned with exit status code ({exit_code}) and stderr which cannot be deserialized due to {e}:\n{stderr_str}")
                 ));
             }
         }
