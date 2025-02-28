@@ -112,9 +112,15 @@ export const extractInternalCompilationError = <Report>(
     cause: {
       entityName: pipelineName,
       tag: 'programError',
-      source,
+      source: source + '#program.sql',
       report: getReport(pipelineName, stderr),
-      body: stderr.match(/([\S\s]+?)\n\n/)?.[1] ?? 'Unknown internal compilation error' // Return first stderr paragraph as error body
+      body: {
+        startLineNumber: 0,
+        endLineNumber: 9999,
+        startColumn: 0,
+        endColumn: 9999,
+        message: stderr.match(/([\S\s]+?)\n\n/)?.[1] ?? 'Unknown internal compilation error' // Return first stderr paragraph as error body
+      }
     }
   }
 }
@@ -182,9 +188,15 @@ export const extractRustCompilerError = <Report>(
       cause: {
         entityName: pipelineName,
         tag: 'unrecognizedProgramError',
-        source,
+        source: source + '#program.sql',
         report: getReport(pipelineName, stderr),
-        body: stderr,
+        body: {
+          startLineNumber: 0,
+          endLineNumber: 9999,
+          startColumn: 0,
+          endColumn: 9999,
+          message: stderr
+        },
         warning
       }
     }
@@ -302,9 +314,8 @@ export const programErrorsPerFile = <Report>(errors: SystemError<any, Report>[])
   Object.fromEntries(
     groupBy(
       errors,
-      (item) =>
-        item.cause.source.match(new RegExp(`#(${pipelineFileNameRegex})`))?.[1] ?? 'program.sql'
-    )
+      (item) => item.cause.source.match(new RegExp(`#(${pipelineFileNameRegex})`))?.[1] ?? ''
+    ).filter(([fileName]) => fileName !== '')
   )
 
 export const pipelineFileNameRegex = '[\\w-_\\.]+'
