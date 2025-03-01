@@ -3226,6 +3226,12 @@
           "mode": {
             "$ref": "#/components/schemas/DeltaTableIngestMode"
           },
+          "num_parsers": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The number of parallel parsing tasks the connector uses to process data read from the\ntable. Increasing this value can enhance performance by allowing more concurrent processing.\nRecommended range: 1–10. The default is 4.",
+            "minimum": 0
+          },
           "snapshot_filter": {
             "type": "string",
             "description": "Optional row filter.\n\nThis option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.\n\nWhen specified, only rows that satisfy the filter condition are included in the\nsnapshot.  The condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from snapshot where ...` query.\n\nThis option can be used to specify the range of event times to include in the snapshot,\ne.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.",
