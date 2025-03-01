@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -83,8 +84,9 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
                     .applyAfter(this.compiler(), expression, Maybe.MAYBE);
+            CalciteRelNode node = operator.getRelNode().after(source.node().getRelNode());
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
+                    node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
             this.map(operator, result);
             return;
         } else if (source.node().is(DBSPMapIndexOperator.class) && this.canMergeSource(source, size)) {
@@ -99,8 +101,9 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             DBSPExpression apply = thisFunction.call(argument);
             DBSPClosureExpression newFunction = apply.closure(sourceFunction.parameters)
                     .reduce(this.compiler()).to(DBSPClosureExpression.class);
+            CalciteRelNode node = operator.getRelNode().after(source.node().getRelNode());
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
+                    node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
             this.map(operator, result);
             return;
         } else {
@@ -135,7 +138,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 OutputPort leftPort = left;
                 if (!RemoveIdentityOperators.isIdentityFunction(split.left)) {
                     // Identical index operators on both sides
-                    DBSPSimpleOperator leftIndex = new DBSPMapIndexOperator(operator.getNode(),
+                    DBSPSimpleOperator leftIndex = new DBSPMapIndexOperator(operator.getRelNode(),
                             split.left, left).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
                     this.addOperator(leftIndex);
                     leftPort = leftIndex.outputPort();
@@ -146,7 +149,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 OutputPort rightPort = right;
                 DBSPClosureExpression closure = keysOnly(join.right().getOutputIndexedZSetType());
                 if (!RemoveIdentityOperators.isIdentityFunction(closure)) {
-                    DBSPSimpleOperator rightIndex = new DBSPMapIndexOperator(operator.getNode(),
+                    DBSPSimpleOperator rightIndex = new DBSPMapIndexOperator(operator.getRelNode(),
                             closure, right).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
                     this.addOperator(rightIndex);
                     rightPort = rightIndex.outputPort();
@@ -160,7 +163,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 } else {
                     if (newJoin != join)
                         this.addOperator(newJoin);
-                    DBSPSimpleOperator result = new DBSPMapIndexOperator(operator.getNode(),
+                    DBSPSimpleOperator result = new DBSPMapIndexOperator(operator.getRelNode(),
                             split.right, newJoin.outputPort());
                     this.map(operator, result);
                 }
@@ -264,7 +267,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             DBSPClosureExpression newFunction = operator.getClosureFunction()
                     .applyAfter(this.compiler(), expression, Maybe.YES);
             DBSPSimpleOperator result = new DBSPApplyOperator(
-                    operator.getNode(), newFunction, operator.outputType,
+                    operator.getRelNode(), newFunction, operator.outputType,
                     apply.inputs.get(0), apply.comment);
             this.map(operator, result);
             return;
@@ -290,7 +293,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                             .applyAfter(this.compiler(), jfm.map.to(DBSPClosureExpression.class), Maybe.YES);
                 }
                 DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(
-                        jfm.getNode(), operator.getOutputZSetType(), jfm.getFunction(),
+                        jfm.getRelNode(), operator.getOutputZSetType(), jfm.getFunction(),
                         jfm.filter, newMap, operator.isMultiset, jfm.left(), jfm.right())
                         .copyAnnotations(operator).copyAnnotations(source.node()).to(DBSPSimpleOperator.class);
                 this.map(operator, result);

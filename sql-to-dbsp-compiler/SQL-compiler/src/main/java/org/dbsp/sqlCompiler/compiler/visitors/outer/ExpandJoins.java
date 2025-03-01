@@ -27,13 +27,15 @@ public class ExpandJoins extends CircuitCloneVisitor {
         var inputs = Linq.map(operator.inputs, this::mapped);
         List<OutputPort> diffs = new ArrayList<>(operator.inputs.size());
         for (OutputPort in: inputs) {
-            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getNode(), in);
+            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(
+                    operator.getRelNode().intermediate(), in);
             this.addOperator(diff);
             diffs.add(diff.outputPort());
         }
-        DBSPAntiJoinOperator join = new DBSPAntiJoinOperator(operator.getNode(), diffs.get(0), diffs.get(1));
+        DBSPAntiJoinOperator join = new DBSPAntiJoinOperator(
+                operator.getRelNode().intermediate(), diffs.get(0), diffs.get(1));
         this.addOperator(join);
-        DBSPIntegrateOperator integ = new DBSPIntegrateOperator(operator.getNode(), join.outputPort());
+        DBSPIntegrateOperator integ = new DBSPIntegrateOperator(operator.getRelNode(), join.outputPort());
         this.map(operator, integ);
     }
 
@@ -42,15 +44,16 @@ public class ExpandJoins extends CircuitCloneVisitor {
         var inputs = Linq.map(operator.inputs, this::mapped);
         List<OutputPort> diffs = new ArrayList<>(operator.inputs.size());
         for (OutputPort in: inputs) {
-            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getNode(), in);
+            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(
+                    operator.getRelNode().intermediate(), in);
             this.addOperator(diff);
             diffs.add(diff.outputPort());
         }
         DBSPJoinIndexOperator join = new DBSPJoinIndexOperator(
-                operator.getNode(), operator.getOutputIndexedZSetType(), operator.getFunction(),
+                operator.getRelNode().intermediate(), operator.getOutputIndexedZSetType(), operator.getFunction(),
                 operator.isMultiset, diffs.get(0), diffs.get(1));
         this.addOperator(join);
-        DBSPIntegrateOperator integ = new DBSPIntegrateOperator(operator.getNode(), join.outputPort());
+        DBSPIntegrateOperator integ = new DBSPIntegrateOperator(operator.getRelNode(), join.outputPort());
         this.map(operator, integ);
     }
 

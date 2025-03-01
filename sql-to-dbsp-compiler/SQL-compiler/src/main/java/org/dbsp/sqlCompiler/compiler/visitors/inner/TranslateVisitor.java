@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -38,7 +39,7 @@ public class TranslateVisitor<T> extends InnerVisitor {
         }
 
         public String toString() {
-            IndentStream stream = new IndentStream(new StringBuilder());
+            IndentStream stream = new IndentStreamBuilder();
             stream.append("[").increase();
             for (Map.Entry<Long, T> e: this.translation.entrySet()) {
                 IDBSPInnerNode node = this.node.get(e.getKey());

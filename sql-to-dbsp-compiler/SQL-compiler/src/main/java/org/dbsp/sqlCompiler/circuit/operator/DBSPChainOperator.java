@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -34,7 +36,7 @@ import java.util.List;
 public class DBSPChainOperator extends DBSPUnaryOperator {
     public final ComputationChain chain;
 
-    public DBSPChainOperator(CalciteObject node, ComputationChain chain, boolean isMultiset, OutputPort source) {
+    public DBSPChainOperator(CalciteRelNode node, ComputationChain chain, boolean isMultiset, OutputPort source) {
         super(node, "chain" + chain.summary(), null, chain.getOutputType(), isMultiset, source);
         this.chain = chain;
         assert this.chain.size() > 1;
@@ -206,7 +208,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPChainOperator(this.getNode(), this.chain, this.isMultiset, newInputs.get(0))
+            return new DBSPChainOperator(this.getRelNode(), this.chain, this.isMultiset, newInputs.get(0))
                     .copyAnnotations(this);
         return this;
     }
@@ -234,7 +236,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
     public static DBSPChainOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         ComputationChain chain = ComputationChain.fromJson(node.get("chain"), decoder);
-        return new DBSPChainOperator(CalciteObject.EMPTY,
+        return new DBSPChainOperator(CalciteEmptyRel.INSTANCE,
                 chain, info.isMultiset(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPChainOperator.class);
     }

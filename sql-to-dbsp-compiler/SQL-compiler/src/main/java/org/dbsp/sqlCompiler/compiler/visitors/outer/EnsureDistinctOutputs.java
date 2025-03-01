@@ -21,7 +21,8 @@ public class EnsureDistinctOutputs extends CircuitCloneVisitor {
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         OutputPort input = sources.get(0);
         if (input.isMultiset()) {
-            DBSPStreamDistinctOperator distinct = new DBSPStreamDistinctOperator(operator.getNode(), input);
+            DBSPStreamDistinctOperator distinct = new DBSPStreamDistinctOperator(
+                    operator.getRelNode().intermediate(), input);
             this.addOperator(distinct);
             DBSPSimpleOperator result = operator.withInputs(Linq.list(distinct.outputPort()), true);
             this.map(operator, result);

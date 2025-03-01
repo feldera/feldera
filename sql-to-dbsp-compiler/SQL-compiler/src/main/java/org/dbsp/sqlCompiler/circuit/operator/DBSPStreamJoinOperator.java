@@ -26,7 +26,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -38,7 +39,7 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
-    public DBSPStreamJoinOperator(CalciteObject node, DBSPTypeZSet outputType,
+    public DBSPStreamJoinOperator(CalciteRelNode node, DBSPTypeZSet outputType,
                                   // Closure from key, valueLeft, valueRight to result type
                                   DBSPExpression function, boolean isMultiset,
                                   OutputPort left, OutputPort right) {
@@ -59,7 +60,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPStreamJoinOperator(
-                this.getNode(), outputType.to(DBSPTypeZSet.class),
+                this.getRelNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression),
                 this.isMultiset, this.left(), this.right()).copyAnnotations(this);
     }
@@ -68,7 +69,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPStreamJoinOperator(
-                    this.getNode(), this.getOutputZSetType(),
+                    this.getRelNode(), this.getOutputZSetType(),
                     this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         return this;
@@ -76,7 +77,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
 
     @Override
     public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
-        return new DBSPStreamJoinOperator(this.getNode(), this.getOutputZSetType(), function, this.isMultiset, left, right);
+        return new DBSPStreamJoinOperator(this.getRelNode(), this.getOutputZSetType(), function, this.isMultiset, left, right);
     }
 
     // equivalent inherited from base class
@@ -84,7 +85,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     @SuppressWarnings("unused")
     public static DBSPStreamJoinOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPStreamJoinOperator(CalciteObject.EMPTY, info.getZsetType(),
+        return new DBSPStreamJoinOperator(CalciteEmptyRel.INSTANCE, info.getZsetType(),
                 info.getFunction(), info.isMultiset(), info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPStreamJoinOperator.class);
     }

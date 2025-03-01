@@ -296,7 +296,7 @@ public class RecursiveComponents extends Passes {
 
             DBSPNestedOperator block;
             if (!this.components.containsKey(myComponent)) {
-                block = new DBSPNestedOperator(operator.getNode());
+                block = new DBSPNestedOperator(operator.getRelNode());
                 block.addAnnotation(Recursive.INSTANCE, DBSPNestedOperator.class);
                 this.toAdd.add(block);
                 Utilities.putNew(this.components, myComponent, block);
@@ -326,17 +326,17 @@ public class RecursiveComponents extends Passes {
                         deltas = Utilities.putNew(this.deltasCreated, block, new HashMap<>());
                     }
                     if (delta == null) {
-                        delta = new DBSPDeltaOperator(operator.getNode(), source);
+                        delta = new DBSPDeltaOperator(operator.getRelNode(), source);
                         block.addOperator(delta);
                         Utilities.putNew(deltas, source, delta);
                     }
 
-                    DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), delta.outputPort());
+                    DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getRelNode(), delta.outputPort());
                     block.addOperator(integral);
                     sources.add(integral.outputPort());
                 } else if (source.node().is(DBSPViewDeclarationOperator.class)) {
                     // Insert an integrator after view declarations
-                    DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), source);
+                    DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getRelNode(), source);
                     block.addOperator(integral);
                     sources.add(integral.outputPort());
                 } else if (input.node().is(DBSPViewOperator.class)) {
@@ -357,7 +357,7 @@ public class RecursiveComponents extends Passes {
             OutputPort port = result.outputPort();
             if (view != null) {
                 // Insert a differentiator after each view
-                DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getNode(), view.outputPort());
+                DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getRelNode(), view.outputPort());
                 block.addOperator(diff);
                 // Map the output to the NestedOperator, and not the source view
                 port = block.addOutput(view.viewName, diff.outputPort());

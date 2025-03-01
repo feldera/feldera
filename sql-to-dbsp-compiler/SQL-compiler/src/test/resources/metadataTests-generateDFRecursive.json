@@ -1,0 +1,408 @@
+{
+  "plan": {
+    "error_view": {
+      "rels": [
+        {
+          "id": 0,
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "error_table"
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    "fibonacci": {
+      "rels": [
+        {
+          "id": 1,
+          "relOp": "LogicalValues",
+          "type": [
+            {
+              "type": "INTEGER",
+              "nullable": false,
+              "name": "n"
+            },
+            {
+              "type": "INTEGER",
+              "nullable": false,
+              "name": "value"
+            }
+          ],
+          "tuples": [
+            [
+              {
+                "literal": 0,
+                "type": {
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              },
+              {
+                "literal": 0,
+                "type": {
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              }
+            ],
+            [
+              {
+                "literal": 1,
+                "type": {
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              },
+              {
+                "literal": 1,
+                "type": {
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              }
+            ]
+          ],
+          "inputs": []
+        },
+        {
+          "id": 2,
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "fibonacci-decl"
+          ],
+          "inputs": []
+        },
+        {
+          "id": 3,
+          "relOp": "LogicalProject",
+          "fields": [
+            "n",
+            "value",
+            "$f2"
+          ],
+          "exprs": [
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            },
+            {
+              "op": {
+                "name": "-",
+                "kind": "CHECKED_MINUS",
+                "syntax": "BINARY"
+              },
+              "operands": [
+                {
+                  "input": 0,
+                  "name": "$0"
+                },
+                {
+                  "literal": 1,
+                  "type": {
+                    "type": "INTEGER",
+                    "nullable": false
+                  }
+                }
+              ]
+            }
+          ],
+          "inputs": [
+            2
+          ]
+        },
+        {
+          "id": 4,
+          "relOp": "LogicalJoin",
+          "condition": {
+            "op": {
+              "name": "=",
+              "kind": "EQUALS",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 3,
+                "name": "$3"
+              },
+              {
+                "input": 2,
+                "name": "$2"
+              }
+            ]
+          },
+          "joinType": "inner",
+          "inputs": [
+            3,
+            2
+          ]
+        },
+        {
+          "id": 5,
+          "relOp": "LogicalFilter",
+          "condition": {
+            "op": {
+              "name": "AND",
+              "kind": "AND",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "name": "<",
+                  "kind": "LESS_THAN",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 0,
+                    "name": "$0"
+                  },
+                  {
+                    "literal": 10,
+                    "type": {
+                      "type": "INTEGER",
+                      "nullable": false
+                    }
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "name": "<",
+                  "kind": "LESS_THAN",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 3,
+                    "name": "$3"
+                  },
+                  {
+                    "literal": 10,
+                    "type": {
+                      "type": "INTEGER",
+                      "nullable": false
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "inputs": [
+            4
+          ]
+        },
+        {
+          "id": 6,
+          "relOp": "LogicalProject",
+          "fields": [
+            "n",
+            "value"
+          ],
+          "exprs": [
+            {
+              "op": {
+                "name": "+",
+                "kind": "CHECKED_PLUS",
+                "syntax": "BINARY"
+              },
+              "operands": [
+                {
+                  "input": 3,
+                  "name": "$3"
+                },
+                {
+                  "literal": 1,
+                  "type": {
+                    "type": "INTEGER",
+                    "nullable": false
+                  }
+                }
+              ]
+            },
+            {
+              "op": {
+                "name": "+",
+                "kind": "CHECKED_PLUS",
+                "syntax": "BINARY"
+              },
+              "operands": [
+                {
+                  "input": 4,
+                  "name": "$4"
+                },
+                {
+                  "input": 1,
+                  "name": "$1"
+                }
+              ]
+            }
+          ],
+          "inputs": [
+            5
+          ]
+        },
+        {
+          "id": 7,
+          "relOp": "LogicalUnion",
+          "all": true,
+          "inputs": [
+            1,
+            6
+          ]
+        }
+      ]
+    }
+  },
+  "dataflow": {
+    "s0": {
+      "operation": "constant",
+      "inputs": [],
+      "calcite": {
+        "partial": 0
+      },
+      "positions": []
+    }, "s1": {
+      "operation": "constant",
+      "inputs": [],
+      "calcite": {
+        "final": 1
+      },
+      "positions": []
+    }, "s2": {
+      "operation": "nested",
+      "outputs": [
+        { "node": "s10", "output": 0 }
+      ],
+      "s3": {
+        "operation": "Z fibonacci-decl",
+        "inputs": [],
+        "backedges": [{ "node": "s10", "output": 0 }],
+        "calcite": {
+          "final": 2
+        },
+        "positions": []
+      },
+      "s4": {
+        "operation": "flat_map_index",
+        "inputs": [
+          { "node": "s3", "output": 0 }
+        ],
+        "calcite": {
+          "seq": [
+            {
+              "final": 3
+            },{
+              "partial": 4
+            }]
+        },
+        "positions": [
+          {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50},
+          {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26}
+        ]
+      },
+      "s5": {
+        "operation": "flat_map_index",
+        "inputs": [
+          { "node": "s3", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 4
+        },
+        "positions": [
+          {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50}
+        ]
+      },
+      "s6": {
+        "operation": "join_flatmap",
+        "inputs": [
+          { "node": "s4", "output": 0 },
+          { "node": "s5", "output": 0 }
+        ],
+        "calcite": {
+          "seq": [
+            {
+              "final": 5
+            },{
+              "partial": 4
+            }]
+        },
+        "positions": [
+          {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21},
+          {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37},
+          {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":37}
+        ]
+      },
+      "s7": {
+        "operation": "delta0",
+        "inputs": [
+          { "node": "s1", "output": 0 }
+        ],
+        "calcite": {
+          "final": 7
+        },
+        "positions": []
+      },
+      "s8": {
+        "operation": "map",
+        "inputs": [
+          { "node": "s7", "output": 0 }
+        ],
+        "calcite": null,
+        "positions": [
+          {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
+        ]
+      },
+      "s9": {
+        "operation": "flat_map",
+        "inputs": [
+          { "node": "s6", "output": 0 }
+        ],
+        "calcite": {
+          "final": 6
+        },
+        "positions": [
+          {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
+          {"start_line_number":15,"start_column":9,"end_line_number":15,"end_column":18}
+        ]
+      },
+      "s10": {
+        "operation": "sum",
+        "inputs": [
+          { "node": "s8", "output": 0 },
+          { "node": "s9", "output": 0 }
+        ],
+        "calcite": {
+          "final": 7
+        },
+        "positions": []
+      }
+    }, "s11": {
+      "operation": "inspect",
+      "inputs": [
+        { "node": "s2", "output": 0 }
+      ],
+      "calcite": {
+        "final": 7
+      },
+      "positions": []
+    }, "s12": {
+      "operation": "inspect",
+      "inputs": [
+        { "node": "s0", "output": 0 }
+      ],
+      "calcite": {
+        "final": 0
+      },
+      "positions": []
+    }
+  },
+  "sources": "DECLARE RECURSIVE view fibonacci(n INT, value INT);\ncreate table input (x int);\n\ncreate view fibonacci AS\n(\n    -- Base case: first two Fibonacci numbers\n    select 0 as n, 0 as value\n    union all\n    select 1 as n, 1 as value\n)\nunion all\n(\n    -- Compute F(n)=F(n-1)+F(n-2)\n    select\n        prev.n + 1 as n,\n        (prev.value + curr.value) as value\n    from fibonacci as curr\n    join fibonacci as prev\n    on prev.n = curr.n - 1\n    where curr.n < 10 and prev.n < 10\n);\n"
+}

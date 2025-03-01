@@ -28,10 +28,12 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
 
@@ -48,10 +50,8 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
      *                         and a raw tuple with 2 fields for an index: (key, value), each a struct.
      * @param metadata         Metadata of view (for an index this is the view's metadata).
      * @param input            Unique input stream. */
-    public DBSPSinkOperator(CalciteObject node, ProgramIdentifier viewName, String queryOrViewName,
-                            DBSPType originalRowType,
-                            ViewMetadata metadata,
-                            OutputPort input) {
+    public DBSPSinkOperator(CalciteRelNode node, ProgramIdentifier viewName, String queryOrViewName,
+                            DBSPType originalRowType, ViewMetadata metadata, OutputPort input) {
         super(node, "inspect", null, viewName, queryOrViewName,
                 originalRowType, metadata, input);
     }
@@ -74,7 +74,7 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSinkOperator(
-                    this.getNode(), this.viewName, this.query, this.originalRowType,
+                    this.getRelNode(), this.viewName, this.query, this.originalRowType,
                     this.metadata, newInputs.get(0)).copyAnnotations(this);
         return this;
     }
@@ -86,9 +86,9 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
         if (node.has("query"))
             queryOrViewName = Utilities.getStringProperty(node, "query");
         CommonInfo info = commonInfoFromJson(node, decoder);
-        DBSPType originalRowType = fromJsonInner(node, "originalRowType", decoder, DBSPType.class);
+        DBSPTypeStruct originalRowType = fromJsonInner(node, "originalRowType", decoder, DBSPTypeStruct.class);
         ViewMetadata metadata = ViewMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
-        return new DBSPSinkOperator(CalciteObject.EMPTY, viewName, queryOrViewName,
+        return new DBSPSinkOperator(CalciteEmptyRel.INSTANCE, viewName, queryOrViewName,
                 originalRowType, metadata, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPSinkOperator.class);
     }

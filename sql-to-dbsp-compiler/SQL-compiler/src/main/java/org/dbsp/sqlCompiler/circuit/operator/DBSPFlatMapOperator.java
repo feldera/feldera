@@ -26,7 +26,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -38,10 +39,10 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
-    public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
+    public DBSPFlatMapOperator(CalciteRelNode node, DBSPExpression expression,
                                DBSPTypeZSet outputType, boolean isMultiset, OutputPort input) {
         super(node, "flat_map", expression, outputType, isMultiset, input);
-        this.checkArgumentFunctionType(expression, input);
+        checkArgumentFunctionType(expression, input);
     }
 
     // When implementing UNNEST, initially the expression is DBSPFlatmap, but later it is lowered
@@ -51,7 +52,7 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     //   let array_clone: Vec<i32> = (*array).clone();
     //   array_clone.clone().into_iter().map(move |e: X| ... )
     // }
-    public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
+    public DBSPFlatMapOperator(CalciteRelNode node, DBSPExpression expression,
                                DBSPTypeZSet outputType, OutputPort input) {
         this(node, expression, outputType, true, input);
     }
@@ -68,7 +69,7 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPFlatMapOperator(
-                this.getNode(), Objects.requireNonNull(expression),
+                this.getRelNode(), Objects.requireNonNull(expression),
                 outputType.to(DBSPTypeZSet.class), this.input())
                 .copyAnnotations(this);
     }
@@ -77,7 +78,7 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPFlatMapOperator(
-                    this.getNode(), this.getFunction(),
+                    this.getRelNode(), this.getFunction(),
                     this.getOutputZSetType(), newInputs.get(0))
                     .copyAnnotations(this);
         return this;
@@ -86,7 +87,7 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     @SuppressWarnings("unused")
     public static DBSPFlatMapOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        return new DBSPFlatMapOperator(CalciteObject.EMPTY, info.getFunction(),
+        return new DBSPFlatMapOperator(CalciteEmptyRel.INSTANCE, info.getFunction(),
                 info.getZsetType(), info.isMultiset(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPFlatMapOperator.class);
     }

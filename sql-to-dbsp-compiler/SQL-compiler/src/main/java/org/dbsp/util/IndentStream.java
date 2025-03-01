@@ -46,7 +46,8 @@ public class IndentStream implements IIndentStream {
     }
 
     /** Set the indent amount.  If less or equal to 0, newline will have no effect. */
-    public IndentStream setIndentAmount(int amount) {
+    public IIndentStream setIndentAmount(int amount) {
+        assert amount >= 0;
         this.amount = amount;
         return this;
     }

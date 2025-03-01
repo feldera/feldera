@@ -6,7 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -27,7 +27,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
     public boolean process(
             DBSPUnaryOperator operator,
             int depth,
-            TriFunction<CalciteObject, DBSPClosureExpression, OutputPort, DBSPUnaryOperator> constructor) {
+            TriFunction<CalciteRelNode, DBSPClosureExpression, OutputPort, DBSPUnaryOperator> constructor) {
         OutputPort source = this.mapped(operator.input());
         int inputFanout = this.getGraph().getFanout(operator.input().node());
         if (!operator.getFunction().is(DBSPClosureExpression.class))
@@ -63,16 +63,16 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
                         RewriteFields mapRewriter = mapFinder.getFieldRewriter(depth);
                         DBSPClosureExpression post = mapRewriter.rewriteClosure(mapFunction);
 
-                        DBSPMapOperator pre = new DBSPMapOperator(filter.getNode(),
+                        DBSPMapOperator pre = new DBSPMapOperator(filter.getRelNode(),
                                 preProjection, filter.input());
                         this.addOperator(pre);
 
                         DBSPFilterOperator newFilter = new DBSPFilterOperator(
-                                filter.getNode(), newFilterFunc, pre.outputPort());
+                                filter.getRelNode(), newFilterFunc, pre.outputPort());
                         this.addOperator(newFilter);
 
                         DBSPUnaryOperator postProj = constructor.apply(
-                                operator.getNode(), post, newFilter.outputPort());
+                                operator.getRelNode(), post, newFilter.outputPort());
                         assert postProj != null;
                         this.map(operator, postProj);
                         return true;

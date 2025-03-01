@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -25,7 +26,7 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
      * currently the second parameter is never used, and should always have the type &() */
     public final DBSPClosureExpression extractTs;
 
-    public DBSPWaterlineOperator(CalciteObject node, DBSPClosureExpression init,
+    public DBSPWaterlineOperator(CalciteRelNode node, DBSPClosureExpression init,
                                  DBSPClosureExpression extractTs,
                                  DBSPClosureExpression function, OutputPort input) {
         super(node, "waterline", function, function.getResultType(),
@@ -39,7 +40,7 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPWaterlineOperator(this.getNode(), this.init,
+        return new DBSPWaterlineOperator(this.getRelNode(), this.init,
                 this.extractTs,
                 Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
                 this.input()).copyAnnotations(this);
@@ -48,7 +49,7 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPWaterlineOperator(this.getNode(), this.init,
+            return new DBSPWaterlineOperator(this.getRelNode(), this.init,
                     this.extractTs,
                     this.getClosureFunction(),
                     newInputs.get(0))
@@ -90,7 +91,7 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
         DBSPClosureExpression init = fromJsonInner(node, "init", decoder, DBSPClosureExpression.class);
         DBSPClosureExpression extractTs = fromJsonInner(node, "extractTs", decoder, DBSPClosureExpression.class);
         return new DBSPWaterlineOperator(
-                CalciteObject.EMPTY, init, extractTs, info.getClosureFunction(),
+                CalciteEmptyRel.INSTANCE, init, extractTs, info.getClosureFunction(),
                 info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPWaterlineOperator.class);
     }

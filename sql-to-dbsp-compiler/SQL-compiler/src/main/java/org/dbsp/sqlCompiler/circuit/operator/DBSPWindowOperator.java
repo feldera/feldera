@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -25,7 +26,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
     public final boolean upperInclusive;
 
     public DBSPWindowOperator(
-            CalciteObject node, boolean lowerInclusive, boolean upperInclusive,
+            CalciteRelNode node, boolean lowerInclusive, boolean upperInclusive,
             OutputPort data, OutputPort control) {
         super(node, "window", null, data.outputType(), data.isMultiset(),
                 data, control);
@@ -45,7 +46,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWindowOperator(
-                    this.getNode(), this.lowerInclusive, this.upperInclusive,
+                    this.getRelNode(), this.lowerInclusive, this.upperInclusive,
                     newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
@@ -64,7 +65,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
         DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
         boolean lowerInclusive = Utilities.getBooleanProperty(node, "lowerInclusive");
         boolean upperInclusive = Utilities.getBooleanProperty(node, "upperInclusive");
-        return new DBSPWindowOperator(CalciteObject.EMPTY,
+        return new DBSPWindowOperator(CalciteEmptyRel.INSTANCE,
                 lowerInclusive, upperInclusive, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPWindowOperator.class);
     }

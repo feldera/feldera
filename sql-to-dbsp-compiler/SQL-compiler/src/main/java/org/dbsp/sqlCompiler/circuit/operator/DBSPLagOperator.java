@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -32,7 +33,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
      * @param outputType Type of output record produced.
      * @param source     Input node for the lag operator.
      */
-    public DBSPLagOperator(CalciteObject node, int offset,
+    public DBSPLagOperator(CalciteRelNode node, int offset,
                            DBSPExpression projection, DBSPExpression function,
                            DBSPComparatorExpression comparator,
                            DBSPTypeIndexedZSet outputType, OutputPort source) {
@@ -58,7 +59,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 1: "Expected 1 input " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
-            return new DBSPLagOperator(this.getNode(), this.offset,
+            return new DBSPLagOperator(this.getRelNode(), this.offset,
                     this.projection, this.getFunction(), this.comparator,
                     this.getOutputIndexedZSetType(), newInputs.get(0))
                     .copyAnnotations(this);
@@ -91,7 +92,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
         DBSPComparatorExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPComparatorExpression.class);
         DBSPExpression projection = fromJsonInner(node, "projection", decoder, DBSPExpression.class);
         return new DBSPLagOperator(
-                CalciteObject.EMPTY, offset, projection, info.getFunction(),
+                CalciteEmptyRel.INSTANCE, offset, projection, info.getFunction(),
                 comparator, info.getIndexedZsetType(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPLagOperator.class);
     }

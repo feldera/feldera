@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
@@ -9,7 +9,7 @@ import javax.annotation.Nullable;
 
 /** Base class for all DBSP query operators that have two inputs. */
 public abstract class DBSPBinaryOperator extends DBSPSimpleOperator {
-    protected DBSPBinaryOperator(CalciteObject node, String operation,
+    protected DBSPBinaryOperator(CalciteRelNode node, String operation,
                                  @Nullable DBSPExpression function, DBSPType outputType,
                                  boolean isMultiset, OutputPort left, OutputPort right) {
         super(node, operation, function, outputType, isMultiset);

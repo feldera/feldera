@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.dot;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
@@ -36,9 +35,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
 
     public String getEdgeLabel(OutputPort source) {
         DBSPType type = source.getOutputRowType();
-        String name = CompactName.getCompactName(source.node());
-        if (name == null)
-            name = Long.toString(source.node().getId());
+        String name = source.node().getCompactName();
         return name + " " +
                 ToRustInnerVisitor.toRustString(this.compiler(), type, true);
     }

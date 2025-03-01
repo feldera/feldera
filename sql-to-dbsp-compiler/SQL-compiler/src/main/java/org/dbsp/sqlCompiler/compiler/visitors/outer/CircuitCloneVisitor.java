@@ -470,7 +470,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         if (this.visited.contains(operator))
             return VisitDecision.STOP;
         this.visited.add(operator);
-        DBSPNestedOperator result = new DBSPNestedOperator(operator.getNode());
+        DBSPNestedOperator result = new DBSPNestedOperator(operator.getRelNode());
         this.underConstruction.add(result);
         return VisitDecision.CONTINUE;
     }

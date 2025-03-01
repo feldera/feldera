@@ -1,0 +1,99 @@
+{
+  "error_view": {
+    "rels": [
+      {
+        "id": 0,
+        "relOp": "LogicalTableScan",
+        "table": [
+          "schema",
+          "error_table"
+        ],
+        "inputs": []
+      }
+    ]
+  },
+  "v1": {
+    "rels": [
+      {
+        "id": 1,
+        "relOp": "LogicalTableScan",
+        "table": [
+          "schema",
+          "t"
+        ],
+        "inputs": []
+      },
+      {
+        "id": 2,
+        "relOp": "LogicalProject",
+        "fields": [
+          "col1"
+        ],
+        "exprs": [
+          {
+            "input": 0,
+            "name": "$0"
+          }
+        ],
+        "inputs": [
+          1
+        ]
+      }
+    ]
+  },
+  "v2": {
+    "rels": [
+      {
+        "id": 3,
+        "relOp": "LogicalTableScan",
+        "table": [
+          "schema",
+          "t"
+        ],
+        "inputs": []
+      },
+      {
+        "id": 4,
+        "relOp": "LogicalProject",
+        "fields": [
+          "col1"
+        ],
+        "exprs": [
+          {
+            "input": 0,
+            "name": "$0"
+          }
+        ],
+        "inputs": [
+          3
+        ]
+      },
+      {
+        "id": 5,
+        "relOp": "LogicalAggregate",
+        "group": [],
+        "aggs": [
+          {
+            "agg": {
+              "name": "SUM",
+              "kind": "SUM",
+              "syntax": "FUNCTION"
+            },
+            "type": {
+              "type": "INTEGER",
+              "nullable": true
+            },
+            "distinct": false,
+            "operands": [
+              0
+            ],
+            "name": "EXPR$0"
+          }
+        ],
+        "inputs": [
+          4
+        ]
+      }
+    ]
+  }
+}

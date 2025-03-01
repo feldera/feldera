@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -11,7 +11,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
  * some non-incremental. */
 public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
     protected DBSPJoinBaseOperator(
-            CalciteObject node, String operation, DBSPExpression function,
+            CalciteRelNode node, String operation, DBSPExpression function,
             DBSPType outputType, boolean isMultiset,
             OutputPort left, OutputPort right) {
         super(node, operation, function, outputType, isMultiset, left, right);

@@ -8,7 +8,8 @@ import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -40,7 +41,7 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     /** Outputs correspond to views (recursive or not).  Names of these views in order. */
     public final List<ProgramIdentifier> outputViews;
 
-    public DBSPNestedOperator(CalciteObject node) {
+    public DBSPNestedOperator(CalciteRelNode node) {
         super(node);
         this.allOperators = new ArrayList<>();
         this.viewByName = new HashMap<>();
@@ -195,7 +196,7 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
 
     @SuppressWarnings("unused")
     public static DBSPNestedOperator fromJson(JsonNode node, JsonDecoder decoder) {
-        DBSPNestedOperator result = new DBSPNestedOperator(CalciteObject.EMPTY);
+        DBSPNestedOperator result = new DBSPNestedOperator(CalciteEmptyRel.INSTANCE);
         List<DBSPOperator> operators =
                 fromJsonOuterList(node, "allOperators", decoder, DBSPOperator.class);
         for (DBSPOperator op : operators)

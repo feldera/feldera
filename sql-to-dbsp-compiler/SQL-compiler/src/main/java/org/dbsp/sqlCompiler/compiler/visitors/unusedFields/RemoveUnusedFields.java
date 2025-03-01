@@ -12,7 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -48,7 +48,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         this.find = new FindUnusedFields(compiler);
     }
 
-    OutputPort getProjection(CalciteObject node, FieldUseMap fieldMap, OutputPort input) {
+    OutputPort getProjection(CalciteRelNode node, FieldUseMap fieldMap, OutputPort input) {
         OutputPort source = this.mapped(input);
         if (!fieldMap.hasUnusedFields())
             return source;
@@ -81,8 +81,8 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         if (!leftRemap.hasUnusedFields(1) && !rightRemap.hasUnusedFields(1))
             return false;
 
-        OutputPort leftMap = getProjection(join.getNode(), leftRemap, join.left());
-        OutputPort rightMap = getProjection(join.getNode(), rightRemap, join.right());
+        OutputPort leftMap = getProjection(join.getRelNode(), leftRemap, join.left());
+        OutputPort rightMap = getProjection(join.getRelNode(), rightRemap, join.right());
 
         // Parameter 0 is not fields in the body of the function, leave it unchanged
         rw.parameterFullyUsed(joinFunction.parameters[0]);
@@ -159,12 +159,12 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 return;
             }
             OutputPort source = this.mapped(operator.input());
-            DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getNode(), projection, source)
+            DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getRelNode(), projection, source)
                     .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.addOperator(adjust);
 
             DBSPSimpleOperator result = new DBSPMapOperator(
-                    operator.getNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
+                    operator.getRelNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
             this.map(operator, result);
         } else {
             // closure = compressed \circ projection
@@ -179,11 +179,11 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
             OutputPort source = this.mapped(operator.input());
             DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(2));
-            DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getNode(), projection, source)
+            DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
                     .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.addOperator(adjust);
             DBSPSimpleOperator result = new DBSPMapOperator(
-                    operator.getNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
+                    operator.getRelNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
             this.map(operator, result);
         }
     }
@@ -217,12 +217,12 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 return;
             }
 
-            DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getNode(), projection, source)
+            DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getRelNode(), projection, source)
                     .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.addOperator(adjust);
 
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    operator.getNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
+                    operator.getRelNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
             this.map(operator, result);
         } else {
             // closure = compressed \circ projection
@@ -238,11 +238,11 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
             DBSPClosureExpression compressed = rw.rewriteClosure(closure);
             OutputPort source = this.mapped(operator.input());
-            DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getNode(), projection, source)
+            DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
                     .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.addOperator(adjust);
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    operator.getNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
+                    operator.getRelNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
             this.map(operator, result);
         }
     }

@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -61,7 +62,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
 
                     Shuffle shuffle = projection.getShuffle().after(sourceFunction.shuffle);
                     DBSPExpression newFunction = new DBSPFlatmap(
-                            function.getNode(), newFunctionType, sourceFunction.inputElementType,
+                            operator.getRelNode(), newFunctionType, sourceFunction.inputElementType,
                             sourceFunction.collectionExpression, sourceFunction.leftInputIndexes,
                             sourceFunction.rightProjections, sourceFunction.ordinalityIndexType, shuffle);
                     DBSPSimpleOperator result = source.simpleNode().withFunction(newFunction, operator.outputType);
@@ -138,11 +139,11 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters)
                 .reduce(reporter).to(DBSPClosureExpression.class);
         if (source.is(DBSPJoinIndexOperator.class)) {
-            return new DBSPJoinOperator(source.getNode(), operator.getOutputZSetType(),
+            return new DBSPJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
                     newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right());
         } else {
             assert source.is(DBSPStreamJoinIndexOperator.class);
-            return new DBSPStreamJoinOperator(source.getNode(), operator.getOutputZSetType(),
+            return new DBSPStreamJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
                     newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right());
         }
     }
@@ -153,11 +154,12 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
                 .applyAfter(reporter, joinFunction, Maybe.YES);
+        CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
         if (source.is(DBSPJoinOperator.class)) {
-            return new DBSPJoinIndexOperator(source.getNode(), operator.getOutputIndexedZSetType(),
+            return new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
         } else if (source.is(DBSPStreamJoinOperator.class)) {
-            return new DBSPStreamJoinIndexOperator(source.getNode(), operator.getOutputIndexedZSetType(),
+            return new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
         } else {
             return source.withFunction(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
@@ -176,12 +178,13 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPExpression apply = function.call(argument);
         DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters)
                 .reduce(reporter).to(DBSPClosureExpression.class);
+        CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
         if (source.is(DBSPJoinIndexOperator.class)) {
-            return new DBSPJoinIndexOperator(source.getNode(), operator.getOutputIndexedZSetType(),
+            return new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
         } else {
             assert source.is(DBSPStreamJoinIndexOperator.class);
-            return new DBSPStreamJoinIndexOperator(source.getNode(), operator.getOutputIndexedZSetType(),
+            return new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
         }
     }

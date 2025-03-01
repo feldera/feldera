@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -19,7 +19,7 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
     @Nullable
     public final DBSPAggregate aggregate;
 
-    protected DBSPAggregateOperatorBase(CalciteObject node, String operation,
+    protected DBSPAggregateOperatorBase(CalciteRelNode node, String operation,
                                         DBSPTypeIndexedZSet outputType,
                                         @Nullable DBSPExpression function,
                                         @Nullable DBSPAggregate aggregate,

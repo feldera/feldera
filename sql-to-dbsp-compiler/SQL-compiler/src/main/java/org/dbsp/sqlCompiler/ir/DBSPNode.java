@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -45,9 +46,10 @@ public abstract class DBSPNode
     public static long outerId = 0;
     public final long id;
 
-    /** Original Calcite object node that produced this node. */
-    private final
-    CalciteObject node;
+    /** Original Calcite object node that produced this node.
+     * This is essentially final; it can only be mutated for DBSPOperator nodes
+     * while the graph is still being constructed. */
+    protected CalciteObject node;
 
     /** Controls the debugging for deterministic executions. */
     static boolean DEBUG_DETERMINISM = false;
@@ -162,10 +164,9 @@ public abstract class DBSPNode
 
     @Override
     public String toString() {
-        StringBuilder builder = new StringBuilder();
-        IndentStream stream = new IndentStream(builder);
+        IndentStream stream = new IndentStreamBuilder();
         this.toString(stream);
-        return builder.toString();
+        return stream.toString();
     }
 
     public SourcePositionRange getSourcePosition() {
