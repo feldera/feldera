@@ -26,14 +26,15 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
 import java.util.List;
 
 public final class DBSPNegateOperator extends DBSPUnaryOperator {
-    public DBSPNegateOperator(CalciteObject node, OutputPort input) {
+    public DBSPNegateOperator(CalciteRelNode node, OutputPort input) {
         super(node, "neg", null, input.outputType(), input.isMultiset(), input);
     }
 
@@ -51,14 +52,14 @@ public final class DBSPNegateOperator extends DBSPUnaryOperator {
         assert newInputs.size() == 1;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPNegateOperator(
-                    this.getNode(), newInputs.get(0)).copyAnnotations(this);
+                    this.getRelNode(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 
     @SuppressWarnings("unused")
     public static DBSPNegateOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPNegateOperator(CalciteObject.EMPTY, info.getInput(0))
+        return new DBSPNegateOperator(CalciteEmptyRel.INSTANCE, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPNegateOperator.class);
     }
 }

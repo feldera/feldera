@@ -28,7 +28,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
-import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.annotation.MerkleHash;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
@@ -123,6 +122,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -427,9 +427,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     String handleName(DBSPSimpleOperator operator) {
-        String compactName = CompactName.getCompactName(operator);
-        if (compactName == null)
-            compactName = Long.toString(operator.id);
+        String compactName = operator.getCompactName();
         return "handle" + compactName;
     }
 
@@ -441,8 +439,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
-        StringBuilder b = new StringBuilder();
-        IndentStream signature = new IndentStream(b);
+        IndentStream signature = new IndentStreamBuilder();
         ToRustInnerVisitor inner = this.createInnerVisitor(signature);
 
         for (DBSPDeclaration item: circuit.declarations) {
@@ -1685,10 +1682,9 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     public static String toRustString(DBSPCompiler compiler, DBSPCircuit node) {
-        StringBuilder builder = new StringBuilder();
-        IndentStream stream = new IndentStream(builder);
+        IndentStream stream = new IndentStreamBuilder();
         ToRustVisitor visitor = new ToRustVisitor(compiler, stream, node.getMetadata());
         visitor.apply(node);
-        return builder.toString();
+        return stream.toString();
     }
 }

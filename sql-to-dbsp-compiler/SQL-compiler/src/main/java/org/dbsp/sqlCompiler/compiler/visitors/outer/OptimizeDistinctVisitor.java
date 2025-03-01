@@ -108,12 +108,11 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
         // join(distinct) = distinct(join)
         if (left.node().is(DBSPStreamDistinctOperator.class) &&
             right.node().is(DBSPStreamDistinctOperator.class)) {
-            // swap distinct after filter
             OutputPort newLeft = left.node().inputs.get(0);
             OutputPort newRight = right.node().inputs.get(0);
             DBSPSimpleOperator result = join.withInputs(Linq.list(newLeft, newRight), false);
             this.addOperator(result);
-            DBSPSimpleOperator distinct = new DBSPStreamDistinctOperator(join.getNode(), result.outputPort());
+            DBSPSimpleOperator distinct = new DBSPStreamDistinctOperator(join.getRelNode(), result.outputPort());
             this.map(join, distinct);
             return;
         }

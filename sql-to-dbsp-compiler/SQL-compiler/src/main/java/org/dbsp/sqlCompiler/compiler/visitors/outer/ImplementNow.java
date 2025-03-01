@@ -21,7 +21,8 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
@@ -230,7 +231,7 @@ public class ImplementNow extends Passes {
                     new DBSPTupleExpression(),
                     DBSPTupleExpression.flatten(var.deref()));
             DBSPMapIndexOperator index = new DBSPMapIndexOperator(
-                    operator.getNode(), indexFunction.closure(var),
+                    operator.getRelNode(), indexFunction.closure(var),
                     TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), inputType), input.outputPort());
             this.addOperator(index);
 
@@ -245,7 +246,7 @@ public class ImplementNow extends Passes {
             DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
                     .closure(key, left, right);
             assert nowIndexed != null;
-            DBSPSimpleOperator result = new DBSPStreamJoinOperator(operator.getNode(), joinType,
+            DBSPSimpleOperator result = new DBSPStreamJoinOperator(operator.getRelNode(), joinType,
                         joinFunction, operator.isMultiset, index.outputPort(), nowIndexed.outputPort());
             this.addOperator(result);
             return result;
@@ -261,7 +262,7 @@ public class ImplementNow extends Passes {
                 RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
                 function = rn.apply(function).to(DBSPExpression.class);
                 DBSPSimpleOperator result = new DBSPMapOperator(
-                        operator.getNode(), function, operator.getOutputZSetType(), join.outputPort());
+                        operator.getRelNode(), function, operator.getOutputZSetType(), join.outputPort());
                 this.map(operator, result);
             } else {
                 super.postorder(operator);
@@ -630,7 +631,7 @@ public class ImplementNow extends Passes {
             DBSPParameter parameter = t.asParameter();
             DBSPClosureExpression max = InsertLimiters.timestampMax(source.getNode(), min.getTypeAsTupleBase());
             DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
-                    source.getNode(), min.closure(),
+                    source.getRelNode(), min.closure(),
                     timestampTuple.closure(parameter, new DBSPTypeRawTuple().ref().var().asParameter()),
                     max, source.outputPort());
             this.addOperator(waterline);
@@ -672,7 +673,7 @@ public class ImplementNow extends Passes {
             DBSPSimpleOperator flattenNow = this.flattenNow();
             WindowBounds bounds = comparisons.getWindowBounds(this.compiler());
             DBSPClosureExpression makeWindow = bounds.makeWindow();
-            DBSPSimpleOperator windowBounds = new DBSPApplyOperator(operator.getNode(),
+            DBSPSimpleOperator windowBounds = new DBSPApplyOperator(operator.getRelNode(),
                     makeWindow, flattenNow.outputPort(), null);
             this.addOperator(windowBounds);
 
@@ -684,7 +685,7 @@ public class ImplementNow extends Passes {
             if (bounds.common.getType().mayBeNull) {
                 DBSPClosureExpression nonNull =
                         bounds.common.is_null().not().closure(param);
-                DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), nonNull, source.outputPort());
+                DBSPFilterOperator filter = new DBSPFilterOperator(operator.getRelNode(), nonNull, source.outputPort());
                 this.addOperator(filter);
                 source = filter;
             }
@@ -694,26 +695,26 @@ public class ImplementNow extends Passes {
                     new DBSPRawTupleExpression(
                             bounds.common.cast(commonType.withMayBeNull(false), false),
                             param.asVariable().deref().applyClone()).closure(param);
-            DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getNode(),
+            DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getRelNode(),
                     commonType.withMayBeNull(false),
                     inputType);
-            DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getNode(),
+            DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getRelNode(),
                     indexFunction, ix, operator.isMultiset, source.outputPort());
             this.addOperator(index);
 
             // Apply window function.  Operator is incremental, so add D & I around it
-            DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(operator.getNode(), index.outputPort());
+            DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(operator.getRelNode(), index.outputPort());
             this.addOperator(diffIndex);
             boolean lowerInclusive = bounds.lower == null || bounds.lower.inclusive;
             boolean upperInclusive = bounds.upper == null || bounds.upper.inclusive;
             DBSPSimpleOperator window = new DBSPWindowOperator(
-                    operator.getNode(), lowerInclusive, upperInclusive, diffIndex.outputPort(), windowBounds.outputPort());
+                    operator.getRelNode(), lowerInclusive, upperInclusive, diffIndex.outputPort(), windowBounds.outputPort());
             this.addOperator(window);
-            DBSPSimpleOperator winInt = new DBSPIntegrateOperator(operator.getNode(), window.outputPort());
+            DBSPSimpleOperator winInt = new DBSPIntegrateOperator(operator.getRelNode(), window.outputPort());
             this.addOperator(winInt);
 
             // Deindex result of window
-            DBSPSimpleOperator deindex = new DBSPDeindexOperator(operator.getNode(), winInt.outputPort());
+            DBSPSimpleOperator deindex = new DBSPDeindexOperator(operator.getRelNode(), winInt.outputPort());
             this.addOperator(deindex);
             return deindex;
         }
@@ -747,7 +748,7 @@ public class ImplementNow extends Passes {
                     // NowComparison expressions have been eliminated by combineExpressions
                     DBSPExpression body = ExpressionCompiler.wrapBoolIfNeeded(expression.to(NoNow.class).noNow);
                     DBSPClosureExpression closure = body.closure(param);
-                    DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), closure, current);
+                    DBSPFilterOperator filter = new DBSPFilterOperator(operator.getRelNode(), closure, current);
                     this.addOperator(filter);
                     current = filter.outputPort();
                 }
@@ -786,14 +787,14 @@ public class ImplementNow extends Passes {
                         leftOver.to(NonTemporalFilter.class).expression);
                 function = filterBody.closure(closure.parameters);
                 function = rn.apply(function).to(DBSPExpression.class);
-                DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getNode(), function, join.outputPort());
+                DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getRelNode(), function, join.outputPort());
                 this.addOperator(filter);
                 // Drop the extra field
                 DBSPVariablePath var = filter.getOutputZSetElementType().ref().var();
                 List<DBSPExpression> fields = var.deref().allFields();
                 Utilities.removeLast(fields);
                 DBSPExpression drop = new DBSPTupleExpression(fields, false).closure(var);
-                result = new DBSPMapOperator(operator.getNode(), drop, operator.getOutputZSetType(), filter.outputPort());
+                result = new DBSPMapOperator(operator.getRelNode(), drop, operator.getOutputZSetType(), filter.outputPort());
                 this.addOperator(result);
             }
             this.map(operator.outputPort(), result.outputPort(), false);
@@ -804,10 +805,10 @@ public class ImplementNow extends Passes {
             // We are doing this in preorder because we want now to be first in topological order,
             // otherwise the now operator may be inserted in the topological order too late,
             // after nodes that should depend on it
-            // (but don't yet, because they think they are calling a function).
+            // (but don't yet have an explicit edge, because they think they are calling a function).
             super.preorder(circuit);
             DBSPType timestamp = ContainsNow.timestampType();
-            CalciteObject node = circuit.getNode();
+            CalciteRelNode node = CalciteEmptyRel.INSTANCE;
 
             DBSPSimpleOperator now;
             boolean useSource = !this.compiler.compiler().options.ioOptions.nowStream;
@@ -824,7 +825,7 @@ public class ImplementNow extends Passes {
                 this.visited.add(now);
                 this.addOperator(now);
 
-                DBSPDifferentiateOperator dNow = new DBSPDifferentiateOperator(circuit.getNode(), now.outputPort());
+                DBSPDifferentiateOperator dNow = new DBSPDifferentiateOperator(node, now.outputPort());
                 now = dNow;
                 dNow.annotations.add(NoInc.INSTANCE);
             }

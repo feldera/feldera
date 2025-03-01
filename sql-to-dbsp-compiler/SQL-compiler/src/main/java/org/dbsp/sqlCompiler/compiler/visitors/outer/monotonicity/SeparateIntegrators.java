@@ -100,7 +100,7 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
 
             OutputPort source = this.mapped(input);
             if (addBuffer) {
-                DBSPNoopOperator noop = new DBSPNoopOperator(operator.getNode(), source, null);
+                DBSPNoopOperator noop = new DBSPNoopOperator(operator.getRelNode(), source, null);
                 this.addOperator(noop);
                 sources.add(noop.outputPort());
             } else {

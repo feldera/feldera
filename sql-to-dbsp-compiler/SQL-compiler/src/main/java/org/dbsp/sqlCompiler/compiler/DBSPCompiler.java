@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.runtime.CalciteException;
 import org.apache.calcite.schema.Schema;
@@ -64,14 +65,18 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.ToJsonVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IWritesLogs;
+import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.RelJsonWriter;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -160,25 +165,46 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.start();
     }
 
-    public String getPlans() {
-        StringBuilder jsonPlan = new StringBuilder();
-        jsonPlan.append("{");
+    public void getDataflow(Appendable appendable, DBSPCircuit circuit) throws IOException {
+        IIndentStream result = new IndentStream(appendable).setIndentAmount(2);
+        result.append("{").increase();
+        result.appendJsonLabelAndColon("plan");
+        Map<RelNode, Integer> remap = this.getPlans(result);
+        result.append(",").newline();
+        result.appendJsonLabelAndColon("dataflow");
+        ToJsonVisitor toJson = new ToJsonVisitor(
+                this, result, this.options.ioOptions.verbosity, remap);
+        toJson.apply(circuit);
+        result.append(",").newline();
+        String program = this.sources.getWholeProgram();
+        result.appendJsonLabelAndColon("sources");
+        result.append(Utilities.deterministicObjectMapper().writeValueAsString(program));
+        result.newline().decrease().append("}");
+    }
+
+    /** Write the plans to the specified appendable.  Return a Map that renumbers RelNodes */
+    public Map<RelNode, Integer> getPlans(IIndentStream stream) throws IOException {
+        stream.append("{").increase();
         boolean first = true;
         List<ProgramIdentifier> sorted = Linq.list(this.views.keySet());
         sorted.sort(Comparator.comparing(ProgramIdentifier::name));
+        Map<RelNode, Integer> result = new HashMap<>();
         for (ProgramIdentifier e: sorted) {
             CreateViewStatement cv = this.views.get(e);
             if (!first) {
-                jsonPlan.append(",").append(System.lineSeparator());
+                stream.append(",").newline();
             }
             first = false;
-            jsonPlan.append("\"").append(Utilities.escapeDoubleQuotes(e.name())).append("\"");
-            jsonPlan.append(":");
-            String json = SqlToRelCompiler.getPlan(cv.getRelNode(), true);
-            jsonPlan.append(json);
+            stream.append("\"").append(Utilities.escapeDoubleQuotes(e.name())).append("\"");
+            stream.append(": ");
+            RelNode rel = cv.getRel();
+            RelJsonWriter planWriter = new RelJsonWriter(result);
+            rel.explain(planWriter);
+            String json = planWriter.asString();
+            stream.appendIndentedStrings(json);
         }
-        jsonPlan.append(System.lineSeparator()).append("}");
-        return jsonPlan.toString();
+        stream.newline().decrease().append("}");
+        return result;
     }
 
     // Will soon be overwritten

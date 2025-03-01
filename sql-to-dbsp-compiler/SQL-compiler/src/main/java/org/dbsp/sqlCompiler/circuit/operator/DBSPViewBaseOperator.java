@@ -3,8 +3,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
@@ -19,11 +19,12 @@ public abstract class DBSPViewBaseOperator extends DBSPUnaryOperator {
     // Called viewName, but it could also be an index name
     public final ProgramIdentifier viewName;
     public final String query;
+    /** Usually a struct, but can be a tuple for indexes */
     public final DBSPType originalRowType;
     public final ViewMetadata metadata;
 
     protected DBSPViewBaseOperator(
-            CalciteObject node, String operation, @Nullable DBSPExpression function,
+            CalciteRelNode node, String operation, @Nullable DBSPExpression function,
             ProgramIdentifier viewName, String query, DBSPType originalRowType,
             ViewMetadata metadata, OutputPort input) {
         super(node, operation, function, input.outputType(), input.isMultiset(), input);

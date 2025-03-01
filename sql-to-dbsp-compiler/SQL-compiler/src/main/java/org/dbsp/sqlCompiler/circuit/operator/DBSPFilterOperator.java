@@ -26,7 +26,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -38,9 +39,9 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPFilterOperator extends DBSPUnaryOperator {
-    public DBSPFilterOperator(CalciteObject node, DBSPExpression condition, OutputPort input) {
+    public DBSPFilterOperator(CalciteRelNode node, DBSPExpression condition, OutputPort input) {
         super(node, "filter", condition, input.outputType(), input.isMultiset(), input);
-        this.checkResultType(condition, new DBSPTypeBool(CalciteObject.EMPTY, false));
+        this.checkResultType(condition, new DBSPTypeBool(CalciteEmptyRel.INSTANCE, false));
     }
 
     @Override
@@ -54,7 +55,7 @@ public final class DBSPFilterOperator extends DBSPUnaryOperator {
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPFilterOperator(this.getNode(), Objects.requireNonNull(expression), this.input())
+        return new DBSPFilterOperator(this.getRelNode(), Objects.requireNonNull(expression), this.input())
                 .copyAnnotations(this);
     }
 
@@ -62,14 +63,14 @@ public final class DBSPFilterOperator extends DBSPUnaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPFilterOperator(
-                    this.getNode(), this.getFunction(), newInputs.get(0)).copyAnnotations(this);
+                    this.getRelNode(), this.getFunction(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 
     @SuppressWarnings("unused")
     public static DBSPFilterOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPFilterOperator(CalciteObject.EMPTY, info.getFunction(), info.getInput(0))
+        return new DBSPFilterOperator(CalciteEmptyRel.INSTANCE, info.getFunction(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPFilterOperator.class);
     }
 }

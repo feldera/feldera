@@ -146,6 +146,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Utilities;
 
 import java.util.Map;
@@ -2084,10 +2085,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     public static String toRustString(DBSPCompiler compiler, IDBSPInnerNode node, boolean compact) {
-        StringBuilder builder = new StringBuilder();
-        IndentStream stream = new IndentStream(builder);
+        IndentStream stream = new IndentStreamBuilder();
         ToRustInnerVisitor visitor = new ToRustInnerVisitor(compiler, stream, compact);
         node.accept(visitor);
-        return builder.toString();
+        return stream.toString();
     }
 }

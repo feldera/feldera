@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.IndentStreamBuilder;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -41,8 +42,7 @@ public class ExpressionTree {
 
     public static String asTree(DBSPExpression expression) {
         try {
-            StringBuilder builder = new StringBuilder();
-            IndentStream stream = new IndentStream(builder);
+            IndentStream stream = new IndentStreamBuilder();
             asTree(expression, stream);
             return stream.toString();
         } catch (IllegalAccessException e) {

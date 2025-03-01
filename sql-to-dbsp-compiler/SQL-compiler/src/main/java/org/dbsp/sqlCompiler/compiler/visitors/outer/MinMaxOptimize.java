@@ -150,7 +150,7 @@ public class MinMaxOptimize extends Passes {
 
             OutputPort indexInput = index.input();
             DBSPMapIndexOperator reIndex = new DBSPMapIndexOperator(
-                    index.getNode(), newIndexClosure, indexInput.simpleNode().outputPort());
+                    index.getRelNode(), newIndexClosure, indexInput.simpleNode().outputPort());
             this.addOperator(reIndex);
 
             DBSPClosureExpression init = new DBSPTupleExpression(inits, false)
@@ -158,7 +158,7 @@ public class MinMaxOptimize extends Passes {
             DBSPClosureExpression comparison = new DBSPTupleExpression(comparisons, false)
                     .closure(acc, inputVar, this.weightVar);
 
-            DBSPSimpleOperator chain = new DBSPChainAggregateOperator(operator.getNode(),
+            DBSPSimpleOperator chain = new DBSPChainAggregateOperator(operator.getRelNode(),
                     init, comparison, operator.outputType, reIndex.outputPort());
             this.map(operator, chain);
         }

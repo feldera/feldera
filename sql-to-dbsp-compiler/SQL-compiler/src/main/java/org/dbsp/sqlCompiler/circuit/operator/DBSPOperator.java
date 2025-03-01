@@ -28,7 +28,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -45,7 +45,7 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     /** id of the operator this one is derived from.  -1 for "new" operators */
     public long derivedFrom;
 
-    protected DBSPOperator(CalciteObject node) {
+    protected DBSPOperator(CalciteRelNode node) {
         super(node);
         this.inputs = new ArrayList<>();
         this.annotations = new Annotations();
@@ -154,7 +154,18 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
 
     public abstract DBSPType streamType(int outputNumber);
 
+    public String getCompactName() {
+        String name = CompactName.getCompactName(this);
+        if (name == null)
+            name = Long.toString(this.getId());
+        return name;
+    }
+
     public OutputPort getOutput(int outputNo) {
         return new OutputPort(this, outputNo);
+    }
+
+    public CalciteRelNode getRelNode() {
+        return this.node.to(CalciteRelNode.class);
     }
 }

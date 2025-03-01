@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
@@ -44,7 +44,7 @@ public abstract class DBSPSourceBaseOperator extends DBSPSimpleOperator {
      * @param tableName  The name of the table that this operator is created from.
      * @param comment    A comment describing the operator. */
     protected DBSPSourceBaseOperator(
-            CalciteObject node, String operation, DBSPType outputType, boolean isMultiset,
+            CalciteRelNode node, String operation, DBSPType outputType, boolean isMultiset,
             ProgramIdentifier tableName, @Nullable String comment) {
         super(node, operation + " " + tableName, null, outputType, isMultiset, comment);
         this.tableName = tableName;

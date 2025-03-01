@@ -4,7 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -37,7 +38,7 @@ import static org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator.commonInf
  * It is invoked only when the function returns 'false'. */
 public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError {
     public DBSPControlledKeyFilterOperator(
-            CalciteObject node, DBSPClosureExpression function, DBSPClosureExpression error,
+            CalciteRelNode node, DBSPClosureExpression function, DBSPClosureExpression error,
             OutputPort data, OutputPort control) {
         super(node, "controlled_key_filter_typed", data.outputType(),
                 TypeCompiler.makeZSet(error.getResultType()), function, error);
@@ -68,10 +69,10 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
                     .sameType(rightType.withMayBeNull(true)):
                     "Types differ: " + leftType + " vs " + rightType;
             // Notice the comparison using AGG_GTE, which never returns NULL
-            DBSPExpression comparison = new DBSPBinaryExpression(CalciteObject.EMPTY,
+            DBSPExpression comparison = new DBSPBinaryExpression(CalciteEmptyRel.INSTANCE,
                     DBSPTypeBool.create(false), opcode, left, right);
-            return new DBSPBinaryExpression(CalciteObject.EMPTY,
-                    new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.AND, compare, comparison);
+            return new DBSPBinaryExpression(CalciteEmptyRel.INSTANCE,
+                    new DBSPTypeBool(CalciteEmptyRel.INSTANCE, false), DBSPOpcode.AND, compare, comparison);
         } else if (leftType.is(DBSPTypeRef.class)) {
             return compareRecursive(compare, opcode, left.deref(), right.deref());
         } else {
@@ -105,7 +106,7 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPControlledKeyFilterOperator(
-                    this.getNode(), this.function, this.error,
+                    this.getRelNode(), this.function, this.error,
                     newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         return this;
@@ -158,7 +159,7 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
         fromJsonInner(node, "errorType", decoder, DBSPType.class);
         DBSPClosureExpression error = fromJsonInner(node, "error", decoder, DBSPClosureExpression.class);
         DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPControlledKeyFilterOperator(CalciteObject.EMPTY,
+        return new DBSPControlledKeyFilterOperator(CalciteEmptyRel.INSTANCE,
                 info.getClosureFunction(), error, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPControlledKeyFilterOperator.class);
     }

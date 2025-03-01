@@ -114,13 +114,11 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             passes.add(new NoIntegralVisitor(compiler));
         passes.add(new ExpandHop(compiler));
         passes.add(new RemoveDeindexOperators(compiler));
-        passes.add(new OptimizeWithGraph(compiler, g -> new ComposeIndexWithMap(compiler, g)));
         passes.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         passes.add(new RemoveViewOperators(compiler, false));
         passes.add(new RemoveIdentityOperators(compiler));
         passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         passes.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
-        // optimize the maps introduced by the deindex removal
         passes.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, false, g)));
         passes.add(new SimplifyWaterline(compiler)
                 .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));

@@ -47,7 +47,7 @@ public class ChainVisitor extends CircuitCloneWithGraphsVisitor {
         if (in.node().is(DBSPChainOperator.class)) {
             DBSPChainOperator chainOp = in.node().to(DBSPChainOperator.class);
             DBSPChainOperator.ComputationChain chain = chainOp.chain;
-            return new DBSPChainOperator(operator.getNode(),
+            return new DBSPChainOperator(operator.getRelNode().after(in.node().getRelNode()),
                     chain.add(computation), operator.isMultiset, chainOp.input());
         } else {
             if (!in.node().is(DBSPSimpleOperator.class))
@@ -59,7 +59,8 @@ public class ChainVisitor extends CircuitCloneWithGraphsVisitor {
             DBSPChainOperator.ComputationChain chain = new DBSPChainOperator.ComputationChain(
                     inSimple.inputs.get(0).outputType());
             chain = chain.add(inComputation).add(computation);
-            return new DBSPChainOperator(operator.getNode(), chain, operator.isMultiset, inSimple.inputs.get(0));
+            return new DBSPChainOperator(operator.getRelNode().after(in.node().getRelNode()),
+                    chain, operator.isMultiset, inSimple.inputs.get(0));
         }
     }
 
