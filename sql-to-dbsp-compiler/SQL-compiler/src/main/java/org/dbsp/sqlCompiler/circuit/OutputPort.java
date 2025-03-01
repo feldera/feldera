@@ -126,4 +126,8 @@ public class OutputPort {
         this.operator.accept(visitor);
         visitor.stream.endObject();
     }
+
+    public String asJson() {
+        return "{ \"node\": " + this.operator.id + ", \"output\": " + this.outputNumber + " }";
+    }
 }

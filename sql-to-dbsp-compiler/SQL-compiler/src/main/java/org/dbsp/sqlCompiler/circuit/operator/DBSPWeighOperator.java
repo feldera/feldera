@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -19,7 +20,7 @@ public final class DBSPWeighOperator extends DBSPUnaryOperator {
         return new DBSPTypeZSet(sourceType.elementType);
     }
 
-    public DBSPWeighOperator(CalciteObject node, DBSPExpression function, OutputPort source) {
+    public DBSPWeighOperator(CalciteRelNode node, DBSPExpression function, OutputPort source) {
         super(node, "weigh", function,
                 outputType(source.getOutputIndexedZSetType()), false, source);
     }
@@ -27,7 +28,7 @@ public final class DBSPWeighOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPWeighOperator(this.getNode(), this.getFunction(), newInputs.get(0))
+            return new DBSPWeighOperator(this.getRelNode(), this.getFunction(), newInputs.get(0))
                     .copyAnnotations(this);
         return this;
     }
@@ -44,7 +45,7 @@ public final class DBSPWeighOperator extends DBSPUnaryOperator {
     @SuppressWarnings("unused")
     public static DBSPWeighOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        return new DBSPWeighOperator(CalciteObject.EMPTY, info.getFunction(), info.getInput(0))
+        return new DBSPWeighOperator(CalciteEmptyRel.INSTANCE, info.getFunction(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPWeighOperator.class);
     }
 }

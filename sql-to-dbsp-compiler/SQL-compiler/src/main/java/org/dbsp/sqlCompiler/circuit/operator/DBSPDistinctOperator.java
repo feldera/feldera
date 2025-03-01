@@ -26,14 +26,15 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
 import java.util.List;
 
 public final class DBSPDistinctOperator extends DBSPUnaryOperator {
-    public DBSPDistinctOperator(CalciteObject node, OutputPort input) {
+    public DBSPDistinctOperator(CalciteRelNode node, OutputPort input) {
         super(node, "distinct", null, input.outputType(), false, input);
     }
 
@@ -50,14 +51,14 @@ public final class DBSPDistinctOperator extends DBSPUnaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDistinctOperator(
-                    this.getNode(), newInputs.get(0)).copyAnnotations(this);
+                    this.getRelNode(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 
     @SuppressWarnings("unused")
     public static DBSPDistinctOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPDistinctOperator(CalciteObject.EMPTY, info.getInput(0))
+        return new DBSPDistinctOperator(CalciteEmptyRel.INSTANCE, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPDistinctOperator.class);
     }
 }

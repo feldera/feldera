@@ -1,0 +1,205 @@
+{
+  "plan": {
+    "error_view": {
+      "rels": [
+        {
+          "id": 0,
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "error_table"
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    "v": {
+      "rels": [
+        {
+          "id": 1,
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "t"
+          ],
+          "inputs": []
+        },
+        {
+          "id": 2,
+          "relOp": "LogicalProject",
+          "fields": [
+            "col1"
+          ],
+          "exprs": [
+            {
+              "input": 0,
+              "name": "$0"
+            }
+          ],
+          "inputs": [
+            1
+          ]
+        },
+        {
+          "id": 3,
+          "relOp": "LogicalAggregate",
+          "group": [],
+          "aggs": [
+            {
+              "agg": {
+                "name": "SUM",
+                "kind": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "type": {
+                "type": "INTEGER",
+                "nullable": true
+              },
+              "distinct": false,
+              "operands": [
+                0
+              ],
+              "name": "EXPR$0"
+            }
+          ],
+          "inputs": [
+            2
+          ]
+        }
+      ]
+    }
+  },
+  "dataflow": {
+    "s0": {
+      "operation": "constant",
+      "inputs": [],
+      "calcite": {
+        "partial": 0
+      },
+      "positions": []
+    }, "s1": {
+      "operation": "constant",
+      "inputs": [],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": []
+    }, "s2": {
+      "operation": "multiset t",
+      "inputs": [],
+      "calcite": {
+        "final": 1
+      },
+      "positions": []
+    }, "s3": {
+      "operation": "map_index",
+      "inputs": [
+        { "node": "s2", "output": 0 }
+      ],
+      "calcite": {
+        "seq": [
+          {
+            "final": 2
+          },{
+            "partial": 3
+          }]
+      },
+      "positions": []
+    }, "s4": {
+      "operation": "differentiate",
+      "inputs": [
+        { "node": "s3", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": []
+    }, "s5": {
+      "operation": "aggregate_linear_postprocess",
+      "inputs": [
+        { "node": "s4", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": [
+        {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
+      ]
+    }, "s6": {
+      "operation": "map",
+      "inputs": [
+        { "node": "s5", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": []
+    }, "s7": {
+      "operation": "map",
+      "inputs": [
+        { "node": "s6", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": []
+    }, "s8": {
+      "operation": "neg",
+      "inputs": [
+        { "node": "s7", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": []
+    }, "s9": {
+      "operation": "integrate",
+      "inputs": [
+        { "node": "s8", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": []
+    }, "s10": {
+      "operation": "integrate",
+      "inputs": [
+        { "node": "s6", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": []
+    }, "s11": {
+      "operation": "sum",
+      "inputs": [
+        { "node": "s1", "output": 0 },
+        { "node": "s9", "output": 0 },
+        { "node": "s10", "output": 0 }
+      ],
+      "calcite": {
+        "final": 3
+      },
+      "positions": []
+    }, "s12": {
+      "operation": "inspect",
+      "inputs": [
+        { "node": "s11", "output": 0 }
+      ],
+      "calcite": {
+        "final": 3
+      },
+      "positions": []
+    }, "s13": {
+      "operation": "inspect",
+      "inputs": [
+        { "node": "s0", "output": 0 }
+      ],
+      "calcite": {
+        "final": 0
+      },
+      "positions": []
+    }
+  },
+  "sources": "CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);\nCREATE VIEW V AS SELECT SUM(COL1) FROM T;\n"
+}

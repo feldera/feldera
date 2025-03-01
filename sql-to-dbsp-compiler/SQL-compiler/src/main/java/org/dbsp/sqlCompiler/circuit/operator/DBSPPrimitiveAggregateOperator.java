@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -17,7 +18,7 @@ import java.util.List;
 @NonCoreIR
 public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
     public DBSPPrimitiveAggregateOperator(
-            CalciteObject node, @Nullable DBSPExpression function, DBSPType outputType,
+            CalciteRelNode node, @Nullable DBSPExpression function, DBSPType outputType,
             OutputPort delta, OutputPort integral) {
         super(node, "AggregateIncremental", function, outputType, false, delta, integral);
         assert delta.getOutputIndexedZSetType().sameType(integral.getOutputIndexedZSetType());
@@ -25,7 +26,7 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPPrimitiveAggregateOperator(this.getNode(), expression,
+        return new DBSPPrimitiveAggregateOperator(this.getRelNode(), expression,
                 outputType, this.left(), this.right()).copyAnnotations(this);
     }
 
@@ -33,7 +34,7 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         assert newInputs.size() == 2: "Expected 2 inputs";
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPPrimitiveAggregateOperator(this.getNode(), this.function,
+            return new DBSPPrimitiveAggregateOperator(this.getRelNode(), this.function,
                     this.outputType, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
@@ -50,7 +51,7 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
     @SuppressWarnings("unused")
     public static DBSPPrimitiveAggregateOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        return new DBSPPrimitiveAggregateOperator(CalciteObject.EMPTY, info.function(),
+        return new DBSPPrimitiveAggregateOperator(CalciteEmptyRel.INSTANCE, info.function(),
                 info.getIndexedZsetType(), info.getInput(0), info.getInput(1));
     }
 }

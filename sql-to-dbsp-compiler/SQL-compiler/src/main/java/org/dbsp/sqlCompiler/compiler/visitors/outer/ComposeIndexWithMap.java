@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.util.Maybe;
 
@@ -23,8 +24,9 @@ public class ComposeIndexWithMap extends CircuitCloneWithGraphsVisitor {
             DBSPClosureExpression expression = mx.getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
                     .applyAfterMapIndex(this.compiler(), expression, Maybe.MAYBE);
+            CalciteRelNode node = mx.getRelNode().after(operator.getRelNode());
             DBSPSimpleOperator result = new DBSPMapOperator(
-                    operator.getNode(), newFunction, operator.getOutputZSetType(), mx.input());
+                    node, newFunction, operator.getOutputZSetType(), mx.input());
             this.map(operator, result);
             return;
         }

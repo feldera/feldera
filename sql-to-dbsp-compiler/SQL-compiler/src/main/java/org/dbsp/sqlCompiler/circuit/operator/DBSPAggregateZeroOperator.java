@@ -4,7 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -45,7 +46,7 @@ public class DBSPAggregateZeroOperator extends DBSPUnaryOperator {
      * @param source Input from aggregation.
      */
     public DBSPAggregateZeroOperator(
-            CalciteObject node, DBSPExpression zero, OutputPort source) {
+            CalciteRelNode node, DBSPExpression zero, OutputPort source) {
         super(node, "aggregate_zero", zero, TypeCompiler.makeZSet(zero.getType()),
                 false, source);
     }
@@ -53,7 +54,7 @@ public class DBSPAggregateZeroOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPAggregateZeroOperator(this.getNode(), this.getFunction(),
+            return new DBSPAggregateZeroOperator(this.getRelNode(), this.getFunction(),
                     newInputs.get(0))
                     .copyAnnotations(this);
         return this;
@@ -73,7 +74,7 @@ public class DBSPAggregateZeroOperator extends DBSPUnaryOperator {
     @SuppressWarnings("unused")
     public static DBSPAggregateZeroOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPAggregateZeroOperator(CalciteObject.EMPTY, info.getFunction(), info.getInput(0))
+        return new DBSPAggregateZeroOperator(CalciteEmptyRel.INSTANCE, info.getFunction(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPAggregateZeroOperator.class);
     }
 }

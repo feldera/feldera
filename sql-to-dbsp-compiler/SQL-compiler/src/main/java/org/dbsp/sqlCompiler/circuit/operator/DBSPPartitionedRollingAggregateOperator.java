@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -27,7 +28,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
 
     // TODO: support the linear version of this operator.
     public DBSPPartitionedRollingAggregateOperator(
-            CalciteObject node,
+            CalciteRelNode node,
             DBSPExpression partitioningFunction,
             // Initially 'function' is null, and the 'aggregate' is not.
             // After lowering 'aggregate' is not null, and 'function' has its expected shape
@@ -49,7 +50,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPartitionedRollingAggregateOperator(
-                this.getNode(), this.partitioningFunction,
+                this.getRelNode(), this.partitioningFunction,
                 expression, this.aggregate, this.lower, this.upper,
                 outputType.to(DBSPTypeIndexedZSet.class),
                 this.input()).copyAnnotations(this);
@@ -59,7 +60,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPartitionedRollingAggregateOperator(
-                    this.getNode(), this.partitioningFunction, this.function, this.aggregate,
+                    this.getRelNode(), this.partitioningFunction, this.function, this.aggregate,
                     this.lower, this.upper, this.getOutputIndexedZSetType(),
                     newInputs.get(0)).copyAnnotations(this);
         return this;
@@ -113,7 +114,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
         DBSPWindowBoundExpression lower = fromJsonInner(node, "lower", decoder, DBSPWindowBoundExpression.class);
         DBSPWindowBoundExpression upper = fromJsonInner(node, "upper", decoder, DBSPWindowBoundExpression.class);
         return new DBSPPartitionedRollingAggregateOperator(
-                CalciteObject.EMPTY, partitioningFunction, info.function(),
+                CalciteEmptyRel.INSTANCE, partitioningFunction, info.function(),
                 aggregate, lower, upper, info.getIndexedZsetType(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPPartitionedRollingAggregateOperator.class);
     }

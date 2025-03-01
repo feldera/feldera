@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -16,7 +17,7 @@ import java.util.List;
 @NonCoreIR
 public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator {
     // In the DBSP paper this operator was called H
-    public DBSPDistinctIncrementalOperator(CalciteObject node, OutputPort integral, OutputPort delta) {
+    public DBSPDistinctIncrementalOperator(CalciteRelNode node, OutputPort integral, OutputPort delta) {
         super(node, "distinct_incremental", null, delta.outputType(), false, integral, delta);
     }
 
@@ -39,14 +40,14 @@ public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator {
         assert newInputs.size() == 2;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDistinctIncrementalOperator(
-                    this.getNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+                    this.getRelNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
 
     @SuppressWarnings("unused")
     public static DBSPDistinctIncrementalOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPDistinctIncrementalOperator(CalciteObject.EMPTY, info.getInput(0), info.getInput(1))
+        return new DBSPDistinctIncrementalOperator(CalciteEmptyRel.INSTANCE, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPDistinctIncrementalOperator.class);
     }
 }

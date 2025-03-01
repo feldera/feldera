@@ -29,8 +29,10 @@ import com.beust.jcommander.ParametersDelegate;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.Lex;
 import org.apache.calcite.sql.parser.SqlParserUtil;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.util.IDiff;
+import org.dbsp.util.IValidate;
 import org.dbsp.util.SqlLexicalRulesConverter;
 import org.dbsp.util.Utilities;
 
@@ -41,10 +43,10 @@ import java.util.Map;
 /** Command-line options for the SQL compiler */
 @SuppressWarnings("CanBeFinal")
 // These fields cannot be final, since JCommander writes them through reflection.
-public class CompilerOptions implements IDiff<CompilerOptions> {
+public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
     /** Options related to the language compiled. */
     @SuppressWarnings("CanBeFinal")
-    public static class Language implements IDiff<Language> {
+    public static class Language implements IDiff<Language>, IValidate {
         /** If true the compiler should generate an incremental streaming circuit. */
         @Parameter(names = "-i", description = "Generate an incremental circuit")
         public boolean incrementalize = false;
@@ -67,7 +69,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
                 converter = SqlLexicalRulesConverter.class)
         public Lex lexicalRules = Lex.ORACLE;
         @Parameter(names = "--lenient",
-                description = "Lenient SQL validation.  If true it allows duplicate column names in a view")
+                description = "Lenient SQL validation.  If true it allows duplicate column names in a view.")
         public boolean lenient = false;
         @Parameter(names = "--no-restrict-io",
                 description = "Do not restrict the types of columns allowed in tables and views")
@@ -98,6 +100,11 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
                     ", lenient=" + this.lenient +
                     ", unquotedCasing=" + this.unquotedCasing +
                     '}';
+        }
+
+        @Override
+        public boolean validate(IErrorReporter reporter) {
+            return true;
         }
 
         @Override
@@ -159,7 +166,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
 
     /** Options related to input and output. */
     @SuppressWarnings("CanBeFinal")
-    public static class IO implements IDiff<IO> {
+    public static class IO implements IDiff<IO>, IValidate {
         @DynamicParameter(names = "-T",
                 description = "Specify logging level for a class (can be repeated)")
         public Map<String, String> loggingLevel = new HashMap<>();
@@ -169,12 +176,14 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public boolean emitJpeg = false;
         @Parameter(names = "-png", description = "Emit a png image of the circuit instead of Rust")
         public boolean emitPng = false;
-        @Parameter(names = "--plan", description = "Emit the Calcite plan of the optimized program instead of Rust")
-        public boolean emitPlan = false;
+        @Nullable @Parameter(names = "--plan", description = "Emit the Calcite plan of the program in the specified JSON file")
+        public String emitPlan = null;
+        @Nullable @Parameter(names = "--dataflow", description = "Emit the Dataflow graph of the program in the specified JSON file")
+        public String emitDataflow = null;
         @Parameter(names = "-je", description = "Emit error messages as a JSON array to stderr")
         public boolean emitJsonErrors = false;
         @Parameter(names = "-js",
-                description = "Emit a JSON file containing the schema of all views and tables involved")
+                description = "Emit a JSON file containing the schema of all views and tables in the specified file.")
         @Nullable
         public String emitJsonSchema = null;
         @Parameter(names = "-q", description = "Quiet: do not print warnings")
@@ -206,6 +215,16 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public boolean same(IO other) {
             return this.emitHandles == other.emitHandles &&
                     this.trimInputs == other.trimInputs;
+        }
+
+        @Override
+        public boolean validate(IErrorReporter reporter) {
+            if (this.emitJpeg && this.emitPng) {
+                reporter.reportError(SourcePositionRange.INVALID, "Invalid options",
+                        "Options -png and -jpg exclusive");
+                return false;
+            }
+            return true;
         }
 
         @Override
@@ -246,24 +265,24 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
     public Language languageOptions = new Language();
 
     public boolean same(CompilerOptions other) {
-        if (!ioOptions.same(other.ioOptions)) return false;
-        return languageOptions.same(other.languageOptions);
+        if (!this.ioOptions.same(other.ioOptions)) return false;
+        return this.languageOptions.same(other.languageOptions);
     }
 
     @Override
     public int hashCode() {
-        int result = (help ? 1 : 0);
-        result = 31 * result + ioOptions.hashCode();
-        result = 31 * result + languageOptions.hashCode();
+        int result = (this.help ? 1 : 0);
+        result = 31 * result + this.ioOptions.hashCode();
+        result = 31 * result + this.languageOptions.hashCode();
         return result;
     }
 
     @Override
     public String toString() {
         return "CompilerOptions{" +
-                "help=" + help +
-                ", ioOptions=" + ioOptions +
-                ", optimizerOptions=" + languageOptions +
+                "help=" + this.help +
+                ", ioOptions=" + this.ioOptions +
+                ", optimizerOptions=" + this.languageOptions +
                 '}';
     }
 
@@ -271,5 +290,11 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
 
     public static CompilerOptions getDefault() {
         return new CompilerOptions();
+    }
+
+    @Override
+    public boolean validate(IErrorReporter reporter) {
+        return this.ioOptions.validate(reporter) &&
+                this.languageOptions.validate(reporter);
     }
 }
