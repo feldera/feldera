@@ -83,6 +83,10 @@ pub enum DeltaTableIngestMode {
     Cdc,
 }
 
+fn default_num_parsers() -> u32 {
+    4
+}
+
 /// Delta table input connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct DeltaTableReaderConfig {
@@ -173,6 +177,12 @@ pub struct DeltaTableReaderConfig {
     /// be applied. Its value must be a valid SQL expression that can be used in a query of the
     /// form `SELECT * from <table> ORDER BY <cdc_order_by>`.
     pub cdc_order_by: Option<String>,
+
+    /// The number of parallel parsing tasks the connector uses to process data read from the
+    /// table. Increasing this value can enhance performance by allowing more concurrent processing.
+    /// Recommended range: 1–10. The default is 4.
+    #[serde(default = "default_num_parsers")]
+    pub num_parsers: u32,
 
     /// Storage options for configuring backend object store.
     ///
