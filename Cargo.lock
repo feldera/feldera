@@ -3797,6 +3797,7 @@ dependencies = [
  "apache-avro",
  "arrow",
  "arrow-json",
+ "async-channel 2.3.1",
  "async-stream",
  "async-trait",
  "atomic",

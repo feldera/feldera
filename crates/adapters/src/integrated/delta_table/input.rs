@@ -5,13 +5,13 @@ use crate::integrated::delta_table::{delta_input_serde_config, register_storage_
 use crate::transport::{
     InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint, NonFtInputReaderCommand,
 };
-use crate::util::root_cause;
+use crate::util::{root_cause, JobQueue};
 use crate::{
     ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat,
     TransportInputEndpoint,
 };
 use actix_web::web::Data;
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use arrow::array::BooleanArray;
 use arrow::datatypes::Schema;
 use arrow::error::ArrowError;
@@ -66,6 +66,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::error::Error;
 use std::fmt::format;
+use std::future::Future;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -155,6 +156,10 @@ impl DeltaTableInputReader {
         let (init_status_sender, mut init_status_receiver) =
             mpsc::channel::<Result<(), ControllerError>>(1);
 
+        if config.num_parsers == 0 {
+            bail!("invalid 'num_parsers' value: 'num_parsers' must be greater than 0");
+        }
+
         let input_stream = input_handle
             .handle
             .configure_arrow_deserializer(delta_input_serde_config())?;
@@ -216,7 +221,7 @@ struct DeltaTableInputEndpointInner {
     config: DeltaTableReaderConfig,
     consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
-    queue: InputQueue,
+    queue: Arc<InputQueue>,
 }
 
 impl DeltaTableInputEndpointInner {
@@ -226,7 +231,7 @@ impl DeltaTableInputEndpointInner {
         consumer: Box<dyn InputConsumer>,
         schema: Relation,
     ) -> Self {
-        let queue = InputQueue::new(consumer.clone());
+        let queue = Arc::new(InputQueue::new(consumer.clone()));
         // Configure datafusion not to generate Utf8View arrow types, which are not yet
         // supported by the `serde_arrow` crate.
         let session_config = SessionConfig::new().set_bool(
@@ -782,7 +787,6 @@ impl DeltaTableInputEndpointInner {
 
     /// Evaluate delete filter expression against a batch of updates; returns a vector of polarities.
     async fn eval_delete_filter(
-        &self,
         delete_filter: &dyn PhysicalExpr,
         batch: &RecordBatch,
     ) -> AnyResult<Vec<bool>> {
@@ -911,6 +915,41 @@ impl DeltaTableInputEndpointInner {
         };
 
         let mut num_batches = 0;
+
+        let queue = self.queue.clone();
+
+        let num_parsers = self.config.num_parsers as usize;
+
+        // Create a job queue to efficiently parse record batches retrieved by the query.
+        let job_queue =
+            JobQueue::<RecordBatch, (Option<Box<dyn InputBuffer>>, Vec<ParseError>, usize)>::new(
+                num_parsers,
+                move || {
+                    let cdc_delete_filter: Option<Arc<dyn PhysicalExpr>> =
+                        cdc_delete_filter.clone();
+                    let input_stream = input_stream.fork();
+
+                    Box::new(move |batch| {
+                        Box::pin({
+                            let cdc_delete_filter: Option<Arc<dyn PhysicalExpr>> =
+                                cdc_delete_filter.clone();
+                            let mut input_stream = input_stream.fork();
+
+                            async move {
+                                Self::parse_record_batch(
+                                    batch,
+                                    polarity,
+                                    &cdc_delete_filter,
+                                    input_stream.as_mut(),
+                                )
+                                .await
+                            }
+                        })
+                    })
+                },
+                move |(buffer, errors, bytes)| queue.push((buffer, errors), bytes),
+            );
+
         while let Some(batch) = stream.next().await {
             wait_running(receiver).await;
             let batch = match batch {
@@ -932,43 +971,56 @@ impl DeltaTableInputEndpointInner {
             };
             // info!("schema: {}", batch.schema());
             num_batches += 1;
-            let bytes = batch.get_array_memory_size();
-            let result = if polarity {
-                if let Some(delete_filter_expr) = &cdc_delete_filter {
-                    let polarities = match self
-                        .eval_delete_filter(delete_filter_expr.as_ref(), &batch)
-                        .await
-                    {
+            job_queue.push_job(batch).await;
+        }
+
+        job_queue.flush().await
+    }
+
+    async fn parse_record_batch(
+        batch: RecordBatch,
+        polarity: bool,
+        cdc_delete_filter: &Option<Arc<dyn PhysicalExpr>>,
+        input_stream: &mut dyn ArrowStream,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>, usize) {
+        let bytes = batch.get_array_memory_size();
+        let result = if polarity {
+            if let Some(delete_filter_expr) = cdc_delete_filter {
+                let polarities =
+                    match Self::eval_delete_filter(delete_filter_expr.as_ref(), &batch).await {
                         Ok(polarities) => polarities,
                         Err(e) => {
-                            self.consumer.error(false, e);
-                            continue;
+                            return (
+                                None,
+                                vec![ParseError::bin_envelope_error(e.to_string(), &[], None)],
+                                bytes,
+                            );
                         }
                     };
-                    // println!(
-                    //     "insert_with_polarities: {} updates, {} insertions",
-                    //     polarities.len(),
-                    //     polarities.iter().filter(|x| **x == true).count()
-                    // );
-                    input_stream.insert_with_polarities(&batch, &polarities)
-                } else {
-                    input_stream.insert(&batch)
-                }
+                // println!(
+                //     "insert_with_polarities: {} updates, {} insertions",
+                //     polarities.len(),
+                //     polarities.iter().filter(|x| **x == true).count()
+                // );
+                input_stream.insert_with_polarities(&batch, &polarities)
             } else {
-                input_stream.delete(&batch)
-            };
-            let errors = result.map_or_else(
-                |e| {
-                    vec![ParseError::bin_envelope_error(
-                        format!("error deserializing table records from Parquet data: {e}"),
-                        &[],
-                        None,
-                    )]
-                },
-                |()| Vec::new(),
-            );
-            self.queue.push((input_stream.take_all(), errors), bytes);
-        }
+                input_stream.insert(&batch)
+            }
+        } else {
+            input_stream.delete(&batch)
+        };
+        let errors = result.map_or_else(
+            |e| {
+                vec![ParseError::bin_envelope_error(
+                    format!("error deserializing table records from Parquet data: {e}"),
+                    &[],
+                    None,
+                )]
+            },
+            |()| Vec::new(),
+        );
+
+        (input_stream.take_all(), errors, bytes)
     }
 
     /// Apply actions from a transaction log entry.
