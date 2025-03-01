@@ -86,6 +86,12 @@ const POLL_INTERVAL: Duration = Duration::from_millis(1000);
 /// Polling delay before retrying an unsuccessful read from a delta log.
 const RETRY_INTERVAL: Duration = Duration::from_millis(2000);
 
+/// Default object store timeout. When not explicitly set by the user,
+/// we use a large timeout value to avoid this issue:
+/// https://github.com/delta-io/delta-rs/issues/2595, which is common for
+/// tables with large files.
+const DEFAULT_OBJECT_STORE_TIMEOUT: &str = "120s";
+
 const REPORT_ERROR: &str =
     "please report this error to developers (https://github.com/feldera/feldera/issues)";
 
@@ -145,7 +151,7 @@ struct DeltaTableInputReader {
 impl DeltaTableInputReader {
     fn new(
         endpoint_name: String,
-        config: DeltaTableReaderConfig,
+        mut config: DeltaTableReaderConfig,
         consumer: Box<dyn InputConsumer>,
         input_handle: &InputCollectionHandle,
     ) -> AnyResult<Self> {
@@ -158,6 +164,13 @@ impl DeltaTableInputReader {
 
         if config.num_parsers == 0 {
             bail!("invalid 'num_parsers' value: 'num_parsers' must be greater than 0");
+        }
+
+        if !config.object_store_config.contains_key("timeout") {
+            config.object_store_config.insert(
+                "timeout".to_string(),
+                DEFAULT_OBJECT_STORE_TIMEOUT.to_string(),
+            );
         }
 
         let input_stream = input_handle

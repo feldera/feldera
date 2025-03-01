@@ -65,7 +65,7 @@ macro_rules! dyn_event {
     };
 }
 
-/// A job queue that dispatches work to a pull of tokio tasks.
+/// A job queue that dispatches work to a pool of tokio tasks.
 ///
 /// While the jobs can complete out-of-order, their outputs are consumed in the same order
 /// they were enqueued. This is useful for implementing parallel parsing, where parsed
