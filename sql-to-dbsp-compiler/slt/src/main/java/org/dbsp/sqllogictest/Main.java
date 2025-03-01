@@ -69,7 +69,7 @@ public class Main {
             if (index < list.size())
                 toRun.add(list.get(index));
         }
-        String[] args = new String[] { "-v", "-x", "-inc", "-e", "hybrid" };
+        String[] args = new String[] { "-v", "-x", "-inc", "-e", "hybrid", "-b", "skip.txt" };
 
         String wd = System.getProperty("user.dir");
         File directory = new File(wd + "/..").getAbsoluteFile();

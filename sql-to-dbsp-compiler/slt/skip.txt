@@ -5,3 +5,7 @@ SELECT DISTINCT ( + + 88 ) + 69 + - - 22 / - + 0 * - 93 * CASE - CASE ( - COUNT 
 SELECT DISTINCT - 96 * + 47 * ( + - 98 ) * + - 98 * 33 * + 9 * CASE MIN ( - 85 ) WHEN - + 96 * - COUNT ( * ) + 81 + + COUNT ( * ) * - 37 THEN - 69 * 58 WHEN + COALESCE ( + 16, 36 * + 30 ) THEN NULL END * - + CAST ( - + 95 AS INTEGER ) * - 33
 // test/random/expr/slt_good_102.test: test 197, division by zero
 SELECT ALL CASE - 6 WHEN + 70 + ( 81 ) THEN NULL WHEN COALESCE ( - 22, - + COALESCE ( - 64, + 65 / 49 + - + 62, - - NULLIF ( + 57, COUNT ( ALL - CASE 58 WHEN + 17 - 80 THEN 72 * - 40 + 54 * + 58 WHEN - CAST ( NULL AS INTEGER ) THEN NULL WHEN - 59 + 45 / + COALESCE ( 54 / 88, CAST ( NULL AS INTEGER ) * - 22 + - 58 * + 98 ) THEN - 18 / 20 ELSE NULL END ) * 3 ) ) * - MAX ( DISTINCT + 46 * - 27 ), AVG ( ALL 22 ) ) THEN NULL WHEN 23 THEN 42 - + MAX ( 52 ) END
+// test/random/expr/slt_good_116.test: test 6411, division by zero
+SELECT ALL - 23 / 19 / - 0 / ( - 13 ) * ( - MIN ( + CAST ( NULL AS INTEGER ) ) ) + - ( - + 1 )
+// test/random/expr/slt_good_118.test: test 7834, division by zero
+SELECT ALL 12 / + + 0 * - MAX ( + CASE - 75 WHEN ( 44 ) * - 15 - - ( - + 55 ) * 89 THEN 45 WHEN 67 THEN NULL ELSE NULL END ) + 39 * - 69 AS col2
