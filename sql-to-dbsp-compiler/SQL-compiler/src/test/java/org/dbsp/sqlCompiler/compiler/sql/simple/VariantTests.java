@@ -459,4 +459,33 @@ public class VariantTests extends BaseSQLTests {
                         DBSPTypeString.varchar(true).none(),
                         new DBSPTypeArray(i32, true).none()));
     }
+
+    @Test
+    public void testSparkInline() {
+        // inline(from_json(x:steps, 'Array<struct<name STRING, uuid STRING>>'))
+        // as (name, uuid)
+        String data = """
+                '{ "steps": [ { "name": "blah", "uuid": "uuid0" }, { "name": "boo", "uuid": null } ] }'
+                """;
+        var ccs = this.getCCS("""
+                -- input table with string data encoded as json
+                CREATE TABLE DATA(encoded VARCHAR);
+                -- type of array element
+                CREATE TYPE T_ELEM AS (name VARCHAR, "uuid" VARCHAR);
+                -- type that contains an array field called 'steps' with elements of type T_ELEM
+                CREATE TYPE T_STEPS AS (steps T_ELEM ARRAY);
+                -- function which takes a string and returns an object with type T_STEPS
+                CREATE FUNCTION jsonstring_as_t_steps(line VARCHAR) RETURNS T_STEPS;
+                -- parse the JSON data into a view DECODE which has elements of type T_STEPS
+                CREATE LOCAL VIEW DECODE(rec) AS SELECT jsonstring_as_t_steps(encoded) as steps FROM DATA;
+                -- extract and flatten the arrays from the DECODE view
+                CREATE VIEW OUT(name, "uuid") AS SELECT x.name, x."uuid" FROM DECODE, UNNEST(DECODE.rec.steps) AS x;
+                """);
+        ccs.step("INSERT INTO DATA VALUES (" + data + ")",
+                """
+                         name | uuid  | weight
+                        -----------------------
+                         blah | uuid0 | 1
+                         boo  |NULL   | 1""");
+    }
 }

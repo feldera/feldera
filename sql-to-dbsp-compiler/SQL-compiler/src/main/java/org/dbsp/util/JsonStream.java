@@ -9,15 +9,14 @@ public class JsonStream {
         public int index;
     }
 
-    static class InArray extends Context {
-    }
+    static class InArray extends Context {}
 
     static class InObject extends Context {
         public boolean expectLabel = true;
     }
 
-    List<Context> context = new ArrayList<>();
-    IIndentStream stream;
+    final List<Context> context = new ArrayList<>();
+    private final IIndentStream stream;
 
     public JsonStream(IIndentStream stream) {
         this.stream = stream;
@@ -85,8 +84,10 @@ public class JsonStream {
     }
 
     public JsonStream label(String label) {
+        assert !label.isEmpty();
         Context last = Utilities.last(this.context);
-        InObject io = last.to(InObject.class);
+        InObject io = last.to(InObject.class,
+                "Adding label but not within JsonObject");
         if (!io.expectLabel)
             throw new RuntimeException("Consecutive labels");
         io.expectLabel = false;

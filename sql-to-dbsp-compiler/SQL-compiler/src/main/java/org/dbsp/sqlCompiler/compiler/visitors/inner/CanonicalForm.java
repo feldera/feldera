@@ -7,22 +7,26 @@ import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.util.Utilities;
 
 /** Visitor which rewrites a {@link DBSPClosureExpression} in a canonical form,
  * by using standard names for parameters (p0, p1, ...).  Handy for writing deterministic tests. */
 public class CanonicalForm extends InnerRewriteVisitor {
     final Substitution<DBSPParameter, DBSPParameter> newParam;
     final ResolveReferences resolver;
+    int parameterCounter;
 
     public CanonicalForm(DBSPCompiler compiler) {
         super(compiler, false);
         this.newParam = new Substitution<>();
-        this.resolver = new ResolveReferences(compiler, false);
+        // Allow free variables - useful when this is called on inner closures
+        this.resolver = new ResolveReferences(compiler, true);
+        this.parameterCounter = 0;
     }
 
     @Override
     public VisitDecision preorder(DBSPParameter param) {
-        DBSPParameter replacement = this.newParam.get(param);
+        DBSPParameter replacement = Utilities.getExists(this.newParam, param);
         this.map(param, replacement);
         return VisitDecision.STOP;
     }
@@ -32,6 +36,7 @@ public class CanonicalForm extends InnerRewriteVisitor {
         IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
         if (declaration.is(DBSPParameter.class)) {
             DBSPParameter replacement = this.newParam.get(declaration.to(DBSPParameter.class));
+            assert replacement.getType().sameType(var.getType());
             this.map(var, replacement.asVariable());
             return VisitDecision.STOP;
         }
@@ -39,13 +44,22 @@ public class CanonicalForm extends InnerRewriteVisitor {
     }
 
     @Override
-    public void startVisit(IDBSPInnerNode node) {
-        this.resolver.apply(node);
-        // Only works for Closures
+    public VisitDecision preorder(DBSPClosureExpression node) {
+        node.accept(this.resolver);
         DBSPClosureExpression closure = node.to(DBSPClosureExpression.class);
-        for (int i = 0; i < closure.parameters.length; i++)
-            this.newParam.substitute(closure.parameters[i],
-                    new DBSPParameter("p" + i, closure.parameters[i].getType()));
+        for (int i = 0; i < closure.parameters.length; i++) {
+            DBSPParameter param = closure.parameters[i];
+            DBSPParameter replacement = new DBSPParameter("p" + this.parameterCounter++, param.getType());
+            this.newParam.substituteNew(param, replacement);
+        }
+        return super.preorder(node);
+    }
+
+    @Override
+    public void startVisit(IDBSPInnerNode node) {
+        this.newParam.clear();
+        this.parameterCounter = 0;
+        this.resolver.startVisit(node);
         super.startVisit(node);
     }
 }

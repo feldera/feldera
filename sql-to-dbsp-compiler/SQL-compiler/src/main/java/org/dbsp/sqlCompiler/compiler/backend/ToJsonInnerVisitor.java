@@ -585,7 +585,6 @@ public class ToJsonInnerVisitor extends InnerVisitor {
 
     @Override
     public void postorder(DBSPUSizeLiteral node) {
-        
         if (node.value != null) {
             this.property("value");
             this.stream.append(node.value.toString());
