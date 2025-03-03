@@ -44,7 +44,7 @@
     class="flex min-h-full flex-1 flex-col gap-4 rounded"
     use:selectScope
     role="textbox"
-    tabindex={99}
+    tabindex={-1}
   >
     {#if verbatimErrors.value}
       {@const stderr = [
