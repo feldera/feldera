@@ -41,7 +41,7 @@
   role="textbox"
   class="bg-white-dark h-full w-full overflow-y-auto whitespace-pre-wrap rounded pl-2 scrollbar"
   style="font-family: {theme.config.monospaceFontFamily}; user-select: contain;"
-  tabindex={99}
+  tabindex={-1}
   use:reverseScroll.action
   use:selectScope
   use:virtualSelect={{
