@@ -47,8 +47,9 @@ use crate::{
     },
     circuit_cache_key,
     operator::communication::Exchange,
+    storage::backend::StorageError,
     time::{Timestamp, UnitTimestamp},
-    Error as DbspError, Error, Runtime,
+    Error as DbspError, Runtime,
 };
 use anyhow::Error as AnyError;
 use serde::Serialize;
@@ -56,7 +57,7 @@ use std::{
     any::{type_name_of_val, Any},
     borrow::Cow,
     cell::{Ref, RefCell, RefMut},
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{self, Debug, Display, Write},
     future::Future,
     iter::repeat,
@@ -73,6 +74,8 @@ use std::{
 use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
 use tracing::info;
 use typedmap::{TypedMap, TypedMapKey};
+
+use super::dbsp_handle::Mode;
 
 const LABEL_UNIQUE_OPERATOR_NAME: &str = "unique_name";
 
@@ -876,6 +879,20 @@ pub trait Node {
     /// Global node id.
     fn global_id(&self) -> &GlobalNodeId;
 
+    fn persistent_id(&self) -> Option<String> {
+        let worker_index = Runtime::worker_index();
+
+        match Runtime::mode() {
+            Mode::Ephemeral => Some(format!(
+                "{worker_index}-{}",
+                self.global_id().persistent_id()
+            )),
+            Mode::Persistent => self
+                .get_label(LABEL_UNIQUE_OPERATOR_NAME)
+                .map(|operator_id| format!("{worker_index}-{operator_id}")),
+        }
+    }
+
     fn name(&self) -> Cow<'static, str>;
 
     /// `true` if the node encapsulates an asynchronous operator (see
@@ -928,7 +945,12 @@ pub trait Node {
 
     fn map_nodes_recursive(&self, _f: &mut dyn FnMut(&dyn Node)) {}
 
-    fn map_nodes_recursive_mut(&self, _f: &mut dyn FnMut(&mut dyn Node)) {}
+    fn map_nodes_recursive_mut(
+        &self,
+        _f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        Ok(())
+    }
 
     /// Instructs the node to commit the state of its inner operator to
     /// persistent storage within directory `base`.
@@ -1087,12 +1109,11 @@ impl GlobalNodeId {
 
     /// Generate unique id for use in persistent storage.
     pub(crate) fn persistent_id(&self) -> String {
-        let mut pid = String::with_capacity(3 + self.0.len() * 3);
-        write!(&mut pid, "{}", Runtime::worker_index()).unwrap();
-        for e in &self.0 {
-            write!(&mut pid, "-{}", e.0).unwrap();
-        }
-        pid
+        self.0
+            .iter()
+            .map(|node_id| node_id.0.to_string())
+            .collect::<Vec<_>>()
+            .join("-")
     }
 
     pub(crate) fn metrics_id(&self) -> String {
@@ -2444,11 +2465,16 @@ where
     }
 
     /// Recursively apply `f` to all nodes in `self` and its children mutably.
-    pub(crate) fn map_nodes_recursive_mut(&mut self, f: &mut dyn FnMut(&mut dyn Node)) {
+    pub(crate) fn map_nodes_recursive_mut(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
         for node in self.inner().nodes.borrow_mut().iter_mut() {
-            f(node.borrow_mut().as_mut());
-            node.borrow_mut().map_nodes_recursive_mut(f);
+            f(node.borrow_mut().as_mut())?;
+            node.borrow_mut().map_nodes_recursive_mut(f)?;
         }
+
+        Ok(())
     }
 
     fn clear(&mut self) {
@@ -3561,13 +3587,11 @@ where
     }
 
     fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -3667,13 +3691,11 @@ where
     }
 
     fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -3787,13 +3809,11 @@ where
     }
 
     fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -3899,13 +3919,11 @@ where
     }
 
     fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4069,13 +4087,11 @@ where
     }
 
     fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4238,14 +4254,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), Error> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+    fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4382,14 +4396,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), Error> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+    fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4547,14 +4559,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), Error> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+    fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4697,14 +4707,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), Error> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+    fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4833,16 +4841,16 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
         self.operator
             .borrow_mut()
-            .commit(base, &self.global_id().persistent_id())
+            .commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
         self.operator
             .borrow_mut()
-            .restore(base, &self.global_id().persistent_id())
+            .restore(base, self.persistent_id().as_deref())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4950,7 +4958,7 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn commit(&mut self, _base: &Path) -> Result<(), Error> {
+    fn commit(&mut self, _base: &Path) -> Result<(), DbspError> {
         // The Z-1 operator consists of two logical parts.
         // The first part gets invoked at the start of a clock cycle to retrieve the
         // state stored at the previous clock tick. The second one gets invoked
@@ -5118,7 +5126,7 @@ where
         self.circuit.map_nodes_recursive(f);
     }
 
-    fn commit(&mut self, _base: &Path) -> Result<(), Error> {
+    fn commit(&mut self, _base: &Path) -> Result<(), DbspError> {
         Ok(())
     }
 
@@ -5191,11 +5199,11 @@ impl CircuitHandle {
         })
     }
 
-    pub fn commit(&mut self, base: &Path) -> Result<(), SchedulerError> {
+    pub fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
                 let start = Instant::now();
-                node.commit(base).expect("committed");
+                node.commit(base)?;
                 let elapsed = start.elapsed();
                 if elapsed >= Duration::from_millis(100) {
                     info!(
@@ -5205,16 +5213,70 @@ impl CircuitHandle {
                         elapsed.as_secs_f64()
                     );
                 }
-            });
+
+                Ok(())
+            })
+    }
+
+    pub fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+        // Nodes that will run during the catchup phase of the circuit.
+        let mut catchup_nodes: BTreeSet<GlobalNodeId> = BTreeSet::new();
+
+        // Nodes that require backfill from upstream nodes.
+        let mut need_backfill: BTreeSet<GlobalNodeId> = BTreeSet::new();
+
+        // Initialize `catchup_nodes` and `need_backfill` to operators without a checkpoint.
+        // Fail if there are any other errors.
+        self.circuit.map_nodes_recursive_mut(
+            &mut |node: &mut dyn Node| match node.restore(base) {
+                Err(DbspError::Storage(StorageError::OperatorCheckpointNotFound(_))) => {
+                    catchup_nodes.insert(node.global_id().clone());
+                    need_backfill.insert(node.global_id().clone());
+                    Ok(())
+                }
+                Err(e) => Err(e),
+                Ok(()) => Ok(()),
+            },
+        )?;
+
+        todo!();
+
+        // Make sure a subcircuit is added to both sets if at least one of its nodes is.
+
         Ok(())
     }
 
-    pub fn restore(&mut self, base: &Path) -> Result<(), SchedulerError> {
-        self.circuit
-            .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
-                node.restore(base).expect("restored");
+    fn restore_step(
+        &self,
+        catchup_nodes: &mut BTreeSet<GlobalNodeId>,
+        need_backfill: &mut BTreeSet<GlobalNodeId>,
+    ) {
+        let mut ancestors = BTreeSet::new();
+
+        // Find all ancestors of nodes in `need_backfill`` that are not in `catchup_nodes` yet.
+        // Add them to catchup_nodes.
+        // Additionally, add them to `need_backfill` if the node requires backfill from its upstream
+        // ancestors.
+        for gid in need_backfill.iter() {
+            let mut ancestors = self.circuit.map_node(gid, &mut |node| {
+                node.inputs()
+                    .iter()
+                    .map(|stream| stream.origin_node_id())
+                    .collect()
             });
-        Ok(())
+            for ancestor_gid in ancestors.into_iter() {
+                if !catchup_nodes.contains(&ancestor_gid) {
+                    catchup_nodes.insert(ancestor_gid.clone());
+
+                    if !self
+                        .circuit
+                        .map_node_mut(&ancestor_gid, &mut |node| node.start_catchup())
+                    {
+                        need_backfill.insert(ancestor_gid.clone());
+                    }
+                }
+            }
+        }
     }
 
     pub fn fingerprint(&self) -> u64 {

@@ -22,6 +22,8 @@ use size_of::{Context, SizeOf};
 use std::path::Path;
 use std::{borrow::Cow, fs, mem::replace, path::PathBuf};
 
+use super::require_persistent_id;
+
 circuit_cache_key!(DelayedId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(NestedDelayedId<C, D>(StreamId => Stream<C, D>));
 
@@ -206,6 +208,8 @@ where
 /// ```
 pub struct Z1<T> {
     zero: T,
+    // For error reporting,
+    global_id: GlobalNodeId,
     empty_output: bool,
     values: T,
     // Handle to update the metric `total_size`.
@@ -237,6 +241,7 @@ where
     pub fn new(zero: T) -> Self {
         Self {
             empty_output: false,
+            global_id: GlobalNodeId::root(),
             zero: zero.clone(),
             values: zero,
             total_size_metric: None,
@@ -269,6 +274,7 @@ where
     }
 
     fn init(&mut self, global_id: &GlobalNodeId) {
+        self.global_id = global_id.clone();
         self.total_size_metric = Some(Gauge::new(
             NUM_ENTRIES_LABEL,
             Some("Total number of entries stored by the operator".to_owned()),
@@ -304,7 +310,9 @@ where
         }
     }
 
-    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path, persistent_id: Option<&str>) -> Result<(), Error> {
+        let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
+
         let committed: CommittedZ1 = (self as &Self).try_into()?;
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedZ1 should work.");
         write_commit_metadata(
@@ -315,7 +323,9 @@ where
         Ok(())
     }
 
-    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &Path, persistent_id: Option<&str>) -> Result<(), Error> {
+        let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
+
         let z1_path = Self::checkpoint_file(base, persistent_id);
         let content = fs::read(z1_path)?;
         let committed = unsafe { rkyv::archived_root::<CommittedZ1>(&content) };

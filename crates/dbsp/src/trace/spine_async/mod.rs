@@ -13,7 +13,7 @@ use crate::{
         GlobalNodeId,
     },
     dynamic::{DynVec, Factory, Weight},
-    storage::buffer_cache::CacheStats,
+    storage::{backend::StorageError, buffer_cache::CacheStats},
     time::Timestamp,
     trace::{
         cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Builder,
@@ -1200,6 +1200,11 @@ where
 
     fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         let pspine_path = Self::checkpoint_file(base, persistent_id);
+        if !pspine_path.exists() {
+            return Err(Error::Storage(StorageError::OperatorCheckpointNotFound(
+                persistent_id.to_string(),
+            )));
+        }
         let content = fs::read(pspine_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedSpine>(&content) };
 

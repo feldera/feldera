@@ -4,13 +4,16 @@ use crate::{
     algebra::{IndexedZSet, NegByRef, ZBatchReader},
     circuit::{
         operator_traits::{Operator, TernaryOperator},
-        Circuit, OwnershipPreference, Scope, Stream,
+        Circuit, GlobalNodeId, OwnershipPreference, Scope, Stream,
     },
     dynamic::{
         rkyv::{DeserializableDyn, SerializeDyn},
         ClonableTrait, DataTrait, DynData, WeightTrait,
     },
-    operator::dynamic::{trace::TraceBound, MonoIndexedZSet},
+    operator::{
+        dynamic::{trace::TraceBound, MonoIndexedZSet},
+        require_persistent_id,
+    },
     storage::{
         file::{to_bytes, with_serializer},
         write_commit_metadata,
@@ -93,6 +96,8 @@ where
     B: IndexedZSet,
     T: ZBatchReader,
 {
+    // For error reporting.
+    global_id: GlobalNodeId,
     factories: B::Factories,
     left_inclusive: bool,
     right_inclusive: bool,
@@ -109,6 +114,7 @@ where
 {
     pub fn new(factories: &B::Factories, (left_inclusive, right_inclusive): (bool, bool)) -> Self {
         Self {
+            global_id: GlobalNodeId::root(),
             factories: factories.clone(),
             left_inclusive,
             right_inclusive,
@@ -132,6 +138,10 @@ where
         Cow::from("Window")
     }
 
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.global_id = global_id.clone();
+    }
+
     fn clock_start(&mut self, _scope: Scope) {
         self.window = None;
     }
@@ -142,7 +152,9 @@ where
         panic!("'Window' operator used in fixedpoint iteration")
     }
 
-    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path, persistent_id: Option<&str>) -> Result<(), Error> {
+        let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
+
         let committed: CommittedWindow = (self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         write_commit_metadata(
@@ -152,7 +164,9 @@ where
         Ok(())
     }
 
-    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &Path, persistent_id: Option<&str>) -> Result<(), Error> {
+        let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
+
         let window_path = Self::checkpoint_file(base, persistent_id);
         let content = fs::read(window_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedWindow>(&content) };

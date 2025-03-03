@@ -210,7 +210,7 @@ pub trait Operator: 'static {
     ///
     /// For most operators this method is a no-op.
     #[allow(unused_variables)]
-    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path, persistent_id: Option<&str>) -> Result<(), Error> {
         Ok(())
     }
 
@@ -219,7 +219,7 @@ pub trait Operator: 'static {
     ///
     /// For most operators this method is a no-op.
     #[allow(unused_variables)]
-    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &Path, persistent_id: Option<&str>) -> Result<(), Error> {
         Ok(())
     }
 }

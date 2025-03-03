@@ -1,6 +1,7 @@
 use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metadata::NUM_INPUTS;
 use crate::circuit::metrics::Gauge;
+use crate::operator::require_persistent_id;
 use crate::{
     circuit::{
         metadata::{
@@ -886,6 +887,8 @@ where
 }
 
 pub struct Z1Trace<T: Trace> {
+    // For error reporting.
+    global_id: GlobalNodeId,
     time: T::Time,
     trace: Option<T>,
     factories: T::Factories,
@@ -913,6 +916,7 @@ where
         bounds: TraceBounds<T::Key, T::Val>,
     ) -> Self {
         Self {
+            global_id: GlobalNodeId::root(),
             time: <T::Time as Timestamp>::clock_start(),
             trace: None,
             factories: factories.clone(),
@@ -952,6 +956,7 @@ where
     }
 
     fn init(&mut self, global_id: &GlobalNodeId) {
+        self.global_id = global_id.clone();
         self.total_size_metric = Some(Gauge::new(
             "total_size",
             None,
@@ -1010,14 +1015,17 @@ where
         !self.dirty[scope as usize]
     }
 
-    fn commit(&mut self, base: &Path, pid: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &Path, pid: Option<&str>) -> Result<(), Error> {
+        let pid = require_persistent_id(pid, &self.global_id)?;
         self.trace
             .as_mut()
             .map(|trace| trace.commit(base, pid))
             .unwrap_or(Ok(()))
     }
 
-    fn restore(&mut self, base: &Path, pid: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &Path, pid: Option<&str>) -> Result<(), Error> {
+        let pid = require_persistent_id(pid, &self.global_id)?;
+
         self.trace
             .as_mut()
             .map(|trace| trace.restore(base, pid))

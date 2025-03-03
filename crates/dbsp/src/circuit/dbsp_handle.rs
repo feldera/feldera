@@ -209,6 +209,13 @@ impl Display for LayoutError {
 
 impl StdError for LayoutError {}
 
+#[derive(Clone, Default)]
+pub enum Mode {
+    Persistent,
+    #[default]
+    Ephemeral,
+}
+
 /// A config for instantiating a multithreaded/multihost runtime to execute
 /// circuits.
 ///
@@ -222,6 +229,8 @@ pub struct CircuitConfig {
 
     /// Optionally, CPU numbers for pinning the worker threads.
     pub pin_cpus: Vec<usize>,
+
+    pub mode: Mode,
 
     /// Storage configuration. If present, then storage is enabled..
     pub storage: Option<CircuitStorageConfig>,
@@ -252,8 +261,14 @@ impl CircuitConfig {
         Self {
             layout: Layout::new_solo(n),
             pin_cpus: Vec::new(),
+            mode: Mode::Ephemeral,
             storage: None,
         }
+    }
+
+    pub fn with_mode(mut self, mode: Mode) -> Self {
+        self.mode = mode;
+        self
     }
 }
 
@@ -796,7 +811,7 @@ pub(crate) mod tests {
     use std::time::Duration;
     use std::{fs, vec};
 
-    use super::CircuitStorageConfig;
+    use super::{CircuitStorageConfig, Mode};
     use crate::circuit::checkpointer::Checkpointer;
     use crate::circuit::{CircuitConfig, Layout};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
@@ -1057,6 +1072,7 @@ pub(crate) mod tests {
         let temp = tempdir().expect("Can't create temp dir for storage");
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
+            mode: Mode::Ephemeral,
             pin_cpus: Vec::new(),
             storage: Some(CircuitStorageConfig {
                 config: StorageConfig {

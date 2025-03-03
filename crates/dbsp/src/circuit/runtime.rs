@@ -39,7 +39,7 @@ use std::{
 use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
 
-use super::dbsp_handle::{CircuitStorageConfig, Layout};
+use super::dbsp_handle::{CircuitStorageConfig, Layout, Mode};
 use super::CircuitConfig;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -226,6 +226,7 @@ impl WorkerPanicInfo {
 
 struct RuntimeInner {
     layout: Layout,
+    mode: Mode,
     storage: Option<CircuitStorageConfig>,
     store: LocalStore,
     kill_signal: AtomicBool,
@@ -329,6 +330,7 @@ impl RuntimeInner {
 
         Ok(Self {
             layout: config.layout,
+            mode: config.mode,
             storage: config.storage,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
@@ -578,6 +580,12 @@ impl Runtime {
     /// multihost runtime, this is a global index across all hosts.
     pub fn worker_index() -> usize {
         WORKER_INDEX.get()
+    }
+
+    pub fn mode() -> Mode {
+        RUNTIME
+            .with(|rt| Some(rt.borrow().as_ref()?.inner().mode.clone()))
+            .unwrap_or_default()
     }
 
     /// Returns the worker index as a string.
@@ -867,7 +875,7 @@ mod tests {
     use super::Runtime;
     use crate::{
         circuit::{
-            dbsp_handle::CircuitStorageConfig,
+            dbsp_handle::{CircuitStorageConfig, Mode},
             schedule::{DynamicScheduler, Scheduler},
             CircuitConfig, Layout,
         },
@@ -891,6 +899,7 @@ mod tests {
         let path_clone = path.clone();
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
+            mode: Mode::Ephemeral,
             pin_cpus: Vec::new(),
             storage: Some(CircuitStorageConfig {
                 config: StorageConfig {
