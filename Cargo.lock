@@ -7768,6 +7768,7 @@ dependencies = [
  "log",
  "metrics",
  "metrics-exporter-prometheus",
+ "nix 0.29.0",
  "openssl",
  "pg-client-config",
  "pg-embed",

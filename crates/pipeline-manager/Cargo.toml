@@ -67,6 +67,7 @@ hex = "0.4.3"
 indoc = "2.0.5"
 urlencoding = "2.1.3"
 crossbeam = "0.8.4"
+nix = { version = "0.29.0", features = ["signal"] }
 
 [features]
 integration-test = []
