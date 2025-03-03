@@ -347,6 +347,7 @@ build-pipeline-manager-container:
     ENV PATH="$PATH:/home/feldera/.cargo/bin"
 
     RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler --compilation-cargo-lock-path=/home/feldera/Cargo.lock --compilation-profile=unoptimized --dbsp-override-path=/home/feldera/database-stream-processor --precompile
+    RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler --compilation-cargo-lock-path=/home/feldera/Cargo.lock --compilation-profile=unoptimized --dbsp-override-path=/home/feldera/database-stream-processor --preinstall-pg-embed
     ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--compilation-cargo-lock-path=/home/feldera/Cargo.lock", "--dbsp-override-path=/home/feldera/database-stream-processor", "--compilation-profile=unoptimized", "--demos-dir", "/home/feldera/demos"]
 
 # Same as the above, but with a permissive CORS setting, else playwright doesn't work

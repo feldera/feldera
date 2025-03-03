@@ -140,5 +140,7 @@ ENV PATH="$PATH:/home/feldera/.cargo/bin:/home/feldera/mold/bin"
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler --compilation-cargo-lock-path=/home/feldera/Cargo.lock --dbsp-override-path=/home/feldera/lib --precompile
+# Run the pg-embed preinstall such that it doesn't need to download the Postgres binaries afterward
+RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler --compilation-cargo-lock-path=/home/feldera/Cargo.lock --dbsp-override-path=/home/feldera/lib --preinstall-pg-embed
 ENV BANNER_ADDR=localhost
 ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler", "--compilation-cargo-lock-path=/home/feldera/Cargo.lock", "--dbsp-override-path=/home/feldera/lib", "--demos-dir", "/home/feldera/demos"]
