@@ -128,12 +128,15 @@ const sidebars = {
                 },
                 {
                     type: 'category',
-                    label: 'Batch Processing to Feldera',
+                    label: 'Accelerating Batch Analytics',
                     link: {
                         type: 'doc',
-                        id: 'use_cases/batch_to_streaming/tpch-intro'
+                        id: 'use_cases/batch_to_streaming/intro'
                     },
-                    items: []
+                    items: [
+                        'use_cases/batch_to_streaming/spark',
+                        'use_cases/batch_to_streaming/part1'
+                    ]
                 },
                 'tutorials/rest_api/index',
                 'tutorials/monitoring/index'

@@ -1,62 +1,3 @@
-# Spark to Feldera: TPC-H
-
-In this article, we will build a simple batch processing pipeline using Apache
-Spark with TPC-H queries and demonstrate how easily it can be converted into a
-Feldera pipeline.
-
-The raw data, stored in Delta Lake format, is publicly available in a S3 bucket
-at `s3://batchtofeldera`.
-
-The dataset is sourced from the [TPC-H Tiny Dataset](https://github.com/dbtoaster/dbtoaster-experiments-data/tree/master/tpch/tiny).
-
-![Data Flow Architecture](./tpch1-arch.png)
-
-For Apache Spark, we will use Databricks, while for Feldera, we will use Docker.
-
-Ensure Docker is installed and run:
-
-```sh
-docker run -p 8080:8080 --tty --rm -it ghcr.io/feldera/pipeline-manager:0.38.0
-```
-
-## TPC-H Schema
-
-![TPC-H Schema](./tpch-schema.png)
-
-## Table Definitions
-
-### Spark
-
-Create a new Databricks notebook and connect it to a cluster. You can either set
-up a S3 bucket with Delta Tables or use
-[Databricks Sample Datasets](https://docs.databricks.com/aws/en/discover/databricks-datasets#unity-catalog-datasets).
-If using Databricks' sample dataset, tables should be avaiable in `samples.tpch`.
-
-To list the tables, run:
-
-```sql
-SHOW TABLES IN samples.tpch;
-```
-
-**Creating tables from Delta Tables in Spark:**
-
-```sql
--- Spark SQL
-CREATE TABLE IF NOT EXISTS lineitem LOCATION 's3://batchtofeldera/lineitem';
-CREATE TABLE IF NOT EXISTS orders LOCATION 's3://batchtofeldera/orders';
-CREATE TABLE IF NOT EXISTS part LOCATION 's3://batchtofeldera/part';
-CREATE TABLE IF NOT EXISTS customer LOCATION 's3://batchtofeldera/customer';
-CREATE TABLE IF NOT EXISTS supplier LOCATION 's3://batchtofeldera/supplier';
-CREATE TABLE IF NOT EXISTS nation LOCATION 's3://batchtofeldera/nation';
-CREATE TABLE IF NOT EXISTS region LOCATION 's3://batchtofeldera/region';
-CREATE TABLE IF NOT EXISTS partsupp LOCATION 's3://batchtofeldera/partsupp';
-```
-
-### Feldera
-
-**Creating tables in Feldera:**
-
-```sql
 -- Feldera SQL
 CREATE TABLE LINEITEM (
         L_ORDERKEY    INTEGER NOT NULL,
@@ -238,29 +179,7 @@ CREATE TABLE REGION  (
     }
  }]'
 );
-```
 
-Similar to Spark, we define tables in Feldera that takes input from our Delta
-Tables in S3. In the connector configuration, we specify the
-`snapshot_and_follow` mode allowing Feldera to load an initial snapshot and
-*follow* updates.
-
-For details on the Delta Lake input connector see:
-[Delta Table Input Connector Docs](https://docs.feldera.com/connectors/sources/delta).
-
-## Queries
-
-For the TPC-H queries, no modification is required to convert the SparkSQL
-queries to Feldera.
-
-:::important
-Feldera SQL is not totally compatible with Spark SQL. You may need to modify
-your query.
-:::
-
-### Q1: Pricing Summary Report
-
-```sql
 create materialized view q1
 as select
 	l_returnflag,
@@ -283,11 +202,7 @@ group by
 order by
 	l_returnflag,
 	l_linestatus;
-```
 
-### Q2: Lowest Cost Supplier
-
-```sql
 create materialized view q2
 as select
 	s_acctbal,
@@ -333,10 +248,7 @@ order by
 	s_name,
 	p_partkey
 limit 100;
-```
-### Q3: Transportation Priority
 
-```sql
 create materialized view q3
 as select
 	l_orderkey,
@@ -361,11 +273,7 @@ order by
 	revenue desc,
 	o_orderdate
 limit 10;
-```
 
-### Q4: Order Priority
-
-```sql
 create materialized view q4
 as select
 	o_orderpriority,
@@ -388,11 +296,7 @@ group by
 	o_orderpriority
 order by
 	o_orderpriority;
-```
 
-### Q5: Local Supplier Revenue
-
-```sql
 create materialized view q5
 as select
 	n_name,
@@ -418,11 +322,7 @@ group by
 	n_name
 order by
 	revenue desc;
-```
 
-### Q6: Forecast Revenue Change
-
-```sql
 create materialized view q6
 as select
 	sum(l_extendedprice * l_discount) as revenue
@@ -433,11 +333,7 @@ where
 	and l_shipdate < date '1994-01-01' + interval '1' year
 	and l_discount between .06 - 0.01 and .06 + 0.01
 	and l_quantity < 24;
-```
 
-### Q7: Batch Shipment
-
-```sql
 create materialized view q7
 as select
 	supp_nation,
@@ -478,11 +374,8 @@ order by
 	supp_nation,
 	cust_nation,
 	l_year;
-```
 
-### Q8: National Market Share
 
-```sql
 create materialized view q8
 as select
 	o_year,
@@ -521,10 +414,7 @@ group by
 	o_year
 order by
 	o_year;
-```
-### Q9: Product Type Profit Measurement
 
-```sql
 create materialized view q9
 as select
 	nation,
@@ -558,11 +448,8 @@ group by
 order by
 	nation,
 	o_year desc;
-```
 
-### Q10: Return Report
 
-```sql
 create materialized view q10
 as select
 	c_custkey,
@@ -596,98 +483,4 @@ group by
 order by
 	revenue desc
 limit 20;
-```
 
-## Outputs
-
-Feldera provides multiple ways to consume the outputs it generates.
-Outputs can be exported to data sinks like Delta Lake, Kafka and Redis (see:
-[Output Connectors](http://localhost:3000/connectors/sinks/)).
-
-The easiest way to consume results is by making
-[Ad-Hoc queries](https://docs.feldera.com/sql/ad-hoc).
-
-### Ad-Hoc Query
-
-Ad-hoc queries provide a way to query the state of a
-[materialized](https://docs.feldera.com/sql/materialized) tables and views.
-
-It is possible to make ad-hoc queries via HTTP, Feldera Web Console, Feldera CLI
-tool `fda` and Feldera Python SDK.
-
-Getting the output of `q1`:
-
-```sql
-SELECT * FROM q1;
-```
-
-Output:
-
-```
-+--------------+--------------+---------+----------------+----------------+----------------+---------+-----------+----------+-------------+
-| l_returnflag | l_linestatus | sum_qty | sum_base_price | sum_disc_price | sum_charge     | avg_qty | avg_price | avg_disc | count_order |
-+--------------+--------------+---------+----------------+----------------+----------------+---------+-----------+----------+-------------+
-| N            | O            | 7917.00 | 7922719.62     | 7540013.3753   | 7850451.283091 | 25.95   | 25976.12  | 0.04     | 305         |
-| R            | F            | 3269.00 | 3260914.61     | 3079298.8793   | 3200628.933332 | 24.39   | 24335.18  | 0.05     | 134         |
-| A            | F            | 3608.00 | 3617399.80     | 3415815.6154   | 3550622.388098 | 25.58   | 25655.31  | 0.05     | 141         |
-| N            | F            | 98.00   | 96050.28       | 93793.9484     | 94868.950100   | 32.66   | 32016.76  | 0.02     | 3           |
-+--------------+--------------+---------+----------------+----------------+----------------+---------+-----------+----------+-------------+
-```
-
-### Writing to Delta Table
-
-Just as data can be read from a Delta Table as input, Feldera also supports
-outputs to a Delta Table. To enable this, the view definition must include an
-output connector configuration.
-
-```sql
-CREATE VIEW q1
-WITH (
-  'connectors' = '[{
-    "transport": {
-      "name": "delta_table_output",
-      "config": {
-        "uri": "s3://batchtofeldera/q1",
-        "mode": "truncate",
-        "aws_access_key_id": <AWS_ACCESS_KEY_ID>,
-        "aws_secret_access_key": <AWS_SECRET_ACCESS_KEY>,
-        "aws_region": "ap-southeast-2"
-      }
-    },
-    "enable_output_buffer": true,
-    "max_output_buffer_time_millis": 10000
-  }]'
-)
-AS SELECT ...;
-```
-
-## What happens when the input Delta Tables are updated?
-
-Delta Tables can be read in three different modes:
-
-- **snapshot** - Only the snapshot of the table is read. **All following updates
-  to the Delta Table are ignored.**
-- **follow** - **All updates to the Delta Table (new and deleted rows) are
-  read.** The current snapshot of the table is not read.
-- **snapshot_and_follow** - Read a snapshot of the table before switching to the
-  follow mode. This mode implements the backfill pattern where we load
-  historical data for the table before ingesting the stream of real-time updates.
-  **All following updates to the table are read.**
-
-## Takeaways
-
-In this example, we recreated the TPC-H Spark batch processing job to a
-streaming Feldera pipeline, without making any changes to the query!
-
-- **Effortless Deployment**: Feldera is trivially easy to setup and deploy with
-docker.
-- **Real-Time Updates**: With the **snapshot_and_follow** mode for Delta Table
-input, any updates to it are ingested as a stream of real-time updates.
-Meaning you do not need to restart the pipeline and wait for it to compute, you
-always have fresh results.
-- **Seemless Integration**: External tools can query the results of materialized
-views by making ad-hoc queries, or you can setup Feldera to directly write to
-them.
-
-In a follow up article, we will demonstrate how to load historical data from
-Delta Lake and real-time updates from Kafka seemlessly.
