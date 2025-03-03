@@ -798,7 +798,8 @@ async fn call_compiler(
         .arg(profile.to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_file.into_std().await))
-        .stderr(Stdio::from(stderr_file.into_std().await));
+        .stderr(Stdio::from(stderr_file.into_std().await))
+        .kill_on_drop(true);
 
     // Start process
     let mut process = command.spawn().map_err(|e| {

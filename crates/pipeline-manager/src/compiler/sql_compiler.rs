@@ -376,7 +376,8 @@ pub(crate) async fn perform_sql_compilation(
         .arg("lower")
         .stdin(Stdio::null())
         .stdout(Stdio::from(output_stdout_file.into_std().await))
-        .stderr(Stdio::from(output_stderr_file.into_std().await));
+        .stderr(Stdio::from(output_stderr_file.into_std().await))
+        .kill_on_drop(true);
 
     // Start process
     let mut process = command.spawn().map_err(|e| {
