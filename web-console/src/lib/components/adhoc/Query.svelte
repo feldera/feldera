@@ -42,6 +42,9 @@
   import List from '$lib/components/common/virtualList/HeadlessVirtualList.svelte'
   import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
   import ScrollDownFab from '$lib/components/other/ScrollDownFab.svelte'
+  import type { Snippet } from 'svelte'
+  import type { UIEventHandler } from 'svelte/elements'
+  import { selectScope } from '$lib/compositions/common/userSelect'
 
   let {
     query = $bindable(),
@@ -159,72 +162,99 @@
       {#key result.columns}
         <div class="pr-4 pt-2">
           <div class="relative h-full w-fit max-w-full">
-            <List itemSize={28} itemCount={rows.length} stickyIndices={[]} marginTop={28}>
-              {#snippet listContainer(items, { height, onscroll, setClientHeight })}
-                {@const _ = {
-                  set clientHeight(value: number) {
-                    setClientHeight(value)
-                  }
-                }}
-                <div
-                  class="relative h-full max-h-64 w-fit max-w-full overflow-auto rounded scrollbar"
-                  use:reverseScroll.action
-                  {onscroll}
-                  bind:clientHeight={_.clientHeight}
-                >
-                  <table style:height class="w-fit" use:keepMaxWidth>
-                    {#if result.columns.length}
-                      <thead>
-                        <tr>
-                          {#each result.columns as column}
-                            <SqlColumnHeader
-                              {column}
-                              class="bg-white-dark sticky top-0 z-10 {itemHeight}"
-                            ></SqlColumnHeader>
-                          {/each}
-                        </tr>
-                      </thead>
-                    {/if}
-                    <tbody>
-                      {@render items()}
-                    </tbody>
-                  </table>
-                </div>
-              {/snippet}
-              {#snippet item({ index, style, padding, isSticky })}
-                {@const row = rows[index]}
-                {#if !row}{:else if 'cells' in row}
-                  <tr {style} class="{itemHeight} whitespace-nowrap odd:bg-white odd:even:bg-black">
-                    {#each row.cells as value}
-                      <SQLValue
-                        {value}
-                        class="cursor-pointer"
-                        props={(format) => ({
-                          onclick: tooltip.showTooltip(format(value)),
-                          onmouseleave: tooltip.onmouseleave
-                        })}
-                      ></SQLValue>
-                    {/each}
-                  </tr>
-                {:else if 'error' in row}
-                  <tr {style} class={itemHeight}>
-                    <td colspan="99999999" class="px-2 preset-tonal-error">{row.error}</td>
-                  </tr>
-                {:else}
-                  <tr {style} class={itemHeight}>
-                    <td colspan="99999999" class="px-2 preset-tonal-warning">{row.warning}</td>
-                  </tr>
-                {/if}
-              {/snippet}
-              {#snippet emptyItem()}
-                <tr class="h-0"></tr>
-              {/snippet}
-              {#snippet footer()}
-                <tr style="height: auto; ">
-                  <td></td>
+            {#snippet listContainer(
+              items: Snippet,
+              {
+                height,
+                onscroll,
+                setClientHeight
+              }: {
+                height?: string
+                onscroll?: UIEventHandler<HTMLDivElement>
+                setClientHeight?: (value: number) => void
+              }
+            )}
+              {@const _ = {
+                set clientHeight(value: number) {
+                  setClientHeight?.(value)
+                }
+              }}
+              <div
+                class="relative h-full max-h-64 w-fit max-w-full overflow-auto rounded scrollbar"
+                use:reverseScroll.action
+                {onscroll}
+                bind:clientHeight={_.clientHeight}
+              >
+                <table style:height class="w-fit" use:keepMaxWidth>
+                  {#if result.columns.length}
+                    <thead>
+                      <tr>
+                        {#each result.columns as column}
+                          <SqlColumnHeader
+                            {column}
+                            class="bg-white-dark sticky top-0 z-10 {itemHeight}"
+                          ></SqlColumnHeader>
+                        {/each}
+                      </tr>
+                    </thead>
+                  {/if}
+                  <tbody>
+                    {@render items()}
+                  </tbody>
+                </table>
+              </div>
+            {/snippet}
+            {#snippet item({ index, style }: { index: number; style?: string })}
+              {@const row = rows[index]}
+              {#if !row}{:else if 'cells' in row}
+                <tr {style} class="{itemHeight} whitespace-nowrap odd:bg-white odd:even:bg-black">
+                  {#each row.cells as value}
+                    <SQLValue
+                      {value}
+                      class="cursor-pointer"
+                      props={(format) => ({
+                        onclick: tooltip.showTooltip(format(value)),
+                        onmouseleave: tooltip.onmouseleave
+                      })}
+                    ></SQLValue>
+                  {/each}
                 </tr>
+              {:else if 'error' in row}
+                <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
+                  <td colspan="99999999" class="px-2 preset-tonal-error">{row.error}</td>
+                </tr>
+              {:else}
+                <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
+                  <td colspan="99999999" class="px-2 preset-tonal-warning">{row.warning}</td>
+                </tr>
+              {/if}
+            {/snippet}
+            {#if rows.length < 2}
+              {#snippet items()}
+                {#each rows as _, i}
+                  {@render item({ index: i })}
+                {/each}
               {/snippet}
-            </List>
+              {@render listContainer(items, {})}
+            {:else}
+              <List
+                itemSize={28}
+                itemCount={rows.length}
+                stickyIndices={[]}
+                marginTop={28}
+                {listContainer}
+                {item}
+              >
+                {#snippet emptyItem()}
+                  <tr class="h-0"></tr>
+                {/snippet}
+                {#snippet footer()}
+                  <tr style="height: auto; ">
+                    <td></td>
+                  </tr>
+                {/snippet}
+              </List>
+            {/if}
             <ScrollDownFab {reverseScroll}></ScrollDownFab>
           </div>
         </div>
