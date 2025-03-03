@@ -3,6 +3,7 @@
 use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;
+use log::info;
 use pipeline_manager::api::main::ApiDoc;
 use pipeline_manager::compiler::main::{compiler_main, compiler_precompile};
 #[cfg(feature = "pg-embed")]
@@ -67,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
     let metrics_handle = pipeline_manager::metrics::init();
     if compiler_config.precompile {
         compiler_precompile(common_config, compiler_config).await?;
+        info!("Pre-compilation finished");
         return Ok(());
     }
     let database_config = DatabaseConfig::from_arg_matches(&matches)
@@ -75,10 +77,16 @@ async fn main() -> anyhow::Result<()> {
     let db: StoragePostgres = StoragePostgres::connect(
         &database_config,
         #[cfg(feature = "pg-embed")]
-        pg_embed_config,
+        pg_embed_config.clone(),
     )
     .await
     .expect("Could not open connection to database");
+    #[cfg(feature = "pg-embed")]
+    if pg_embed_config.preinstall_pg_embed {
+        // If the goal is to only preinstall pg-embed, we return immediately afterward
+        info!("Pg-embed pre-installation finished");
+        return Ok(());
+    }
 
     // Run migrations before starting any service
     db.run_migrations().await?;

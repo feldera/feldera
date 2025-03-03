@@ -159,6 +159,12 @@ pub struct PgEmbedConfig {
     #[serde(default = "default_pg_embed_working_directory")]
     #[arg(long, default_value_t = default_pg_embed_working_directory())]
     pub pg_embed_working_directory: String,
+
+    /// Whether to preinstall a Postgres embedded instance and immediately return.
+    /// The --precompile flag takes precedence over this flag and is checked before.
+    /// As such, if both are specified, pg-embed pre-installation will not occur.
+    #[arg(long)]
+    pub preinstall_pg_embed: bool,
 }
 
 impl PgEmbedConfig {
