@@ -20,16 +20,24 @@
         'SystemError',
         () => 'fd fd-circle-check-big text-[20px] text-success-500'
       )
-      // .with({ SqlWarning: P.any }, () => 'fd fd-circle-alert text-[20px] text-warning-500')
       .with('Pending', 'CompilingSql', undefined, () => spinnerClass)
       .with('SqlError', () => 'fd fd-circle-x inline-block text-[20px] text-error-500')
       .exhaustive()
   )
   let rustClass = $derived(
     match(programStatus)
-      .with('SqlCompiled', 'CompilingRust', () => spinnerClass)
+      .with('CompilingRust', () => spinnerClass)
       .with('RustError', () => 'fd fd-circle-x text-[20px] text-error-500')
-      .with('Success', 'Pending', 'CompilingSql', 'SqlError', 'SystemError', undefined, () => 'hidden')
+      .with(
+        'Success',
+        'Pending',
+        'CompilingSql',
+        'SqlCompiled',
+        'SqlError',
+        'SystemError',
+        undefined,
+        () => 'hidden'
+      )
       .exhaustive()
   )
 </script>
