@@ -16,6 +16,8 @@ use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
 use indoc::formatdoc;
 use log::{debug, error, info, trace, warn};
+use nix::sys::signal::{killpg, Signal};
+use nix::unistd::Pid;
 use openssl::sha;
 use openssl::sha::sha256;
 use std::collections::{BTreeMap, HashSet};
@@ -798,8 +800,17 @@ async fn call_compiler(
         .arg(profile.to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_file.into_std().await))
-        .stderr(Stdio::from(stderr_file.into_std().await))
-        .kill_on_drop(true);
+        .stderr(Stdio::from(stderr_file.into_std().await));
+
+    // Run cargo as a new process group, so that we can send SIGKILL to the entire group if necessary.
+    unsafe {
+        command.pre_exec(|| {
+            if let Err(e) = nix::unistd::setsid() {
+                error!("Error creating a new session for the 'cargo' process: {e}");
+            }
+            Ok(())
+        })
+    };
 
     // Start process
     let mut process = command.spawn().map_err(|e| {
@@ -823,10 +834,28 @@ async fn call_compiler(
                         {
                             Ok(pipeline) => {
                                 if pipeline.program_version != program_version {
+                                    if let Some(pid) = process.id() {
+                                        // Send SIGKILL to all processes in the group, including any `rustc` process `cargo` has spawned.
+                                        if let Err(e) =
+                                            killpg(Pid::from_raw(pid as i32), Signal::SIGKILL)
+                                        {
+                                            error!("Failed to cancel Rust compilation: attempt to kill the 'cargo' process (PID: {pid}) failed: {e}");
+                                        }
+                                    }
+
                                     return Err(RustCompilationError::Outdated);
                                 }
                             }
                             Err(DBError::UnknownPipeline { .. }) => {
+                                if let Some(pid) = process.id() {
+                                    // Send SIGKILL to all processes in the group, including any `rustc` process `cargo` has spawned.
+                                    if let Err(e) =
+                                        killpg(Pid::from_raw(pid as i32), Signal::SIGKILL)
+                                    {
+                                        error!("Failed to cancel Rust compilation: attempt to kill the 'cargo' process (PID: {pid}) failed: {e}");
+                                    }
+                                }
+
                                 return Err(RustCompilationError::NoLongerExists);
                             }
                             Err(e) => {
