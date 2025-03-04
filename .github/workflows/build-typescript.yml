@@ -1,10 +1,10 @@
-name: Build TypeScript Web Console
+name: Build TypeScript Sources
 
 on:
   push:
 
 jobs:
-  build-web:
+  build:
     runs-on: [self-hosted, skylake40]
 
     container:

@@ -1,7 +1,10 @@
 name: Build Rust Sources
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Build TypeScript Sources"]
+    types:
+      - completed
 
 env:
   CARGO_FLAGS: "--release --locked --all-targets"
