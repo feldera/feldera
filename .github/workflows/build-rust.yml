@@ -1,4 +1,4 @@
-name: Build Rust Binaries
+name: Build Rust Sources
 
 on:
   push:
@@ -28,15 +28,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
 
       - name: Build Rust binaries
         run: |

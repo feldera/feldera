@@ -1,0 +1,36 @@
+name: Build TypeScript Web Console
+
+on:
+  push:
+
+jobs:
+  build-web:
+    runs-on: [self-hosted, skylake40]
+
+    container:
+      image: ghcr.io/gz/feldera-dev:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.bun/install/cache
+            web-console/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('web-console/bun.lockb') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Build Web Console
+        working-directory: web-console
+        run: |
+          bun run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: feldera-web-console
+          path: web-console/build
+          retention-days: 7
