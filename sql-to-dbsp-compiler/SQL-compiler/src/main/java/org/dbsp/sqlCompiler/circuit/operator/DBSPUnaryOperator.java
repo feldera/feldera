@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
@@ -32,7 +32,7 @@ import javax.annotation.Nullable;
 
 /** Base class for all DBSP query operators that have a single input. */
 public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
-    protected DBSPUnaryOperator(CalciteObject node, String operation,
+    protected DBSPUnaryOperator(CalciteRelNode node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
                                 boolean isMultiset, OutputPort source) {
         super(node, operation, function, outputType, isMultiset);
@@ -40,7 +40,7 @@ public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
     }
 
     @SuppressWarnings("SameParameterValue")
-    protected DBSPUnaryOperator(CalciteObject node, String operation,
+    protected DBSPUnaryOperator(CalciteRelNode node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
                                 boolean isMultiset, OutputPort source,
                                 @Nullable String comment) {

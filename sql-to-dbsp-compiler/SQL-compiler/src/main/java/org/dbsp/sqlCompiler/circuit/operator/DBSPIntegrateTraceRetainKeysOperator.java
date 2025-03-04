@@ -4,7 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
@@ -26,7 +27,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         extends DBSPBinaryOperator implements GCOperator
 {
     public DBSPIntegrateTraceRetainKeysOperator(
-            CalciteObject node, DBSPExpression expression,
+            CalciteRelNode node, DBSPExpression expression,
             OutputPort data, OutputPort control) {
         super(node, "integrate_trace_retain_keys", expression,
                 data.outputType(), data.isMultiset(), data, control);
@@ -35,7 +36,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     /** Create a operator to retain keys and returns it.  May return null if the keys contain no fields. */
     @Nullable
     public static DBSPIntegrateTraceRetainKeysOperator create(
-            CalciteObject node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
+            CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
         DBSPType controlType = control.outputType();
         assert controlType.is(DBSPTypeTupleBase.class) : "Control type is not a tuple: " + controlType;
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
@@ -80,7 +81,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIntegrateTraceRetainKeysOperator(
-                this.getNode(), Objects.requireNonNull(expression),
+                this.getRelNode(), Objects.requireNonNull(expression),
                 this.left(), this.right()).copyAnnotations(this);
     }
 
@@ -89,7 +90,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateTraceRetainKeysOperator(
-                    this.getNode(), this.getFunction(),
+                    this.getRelNode(), this.getFunction(),
                     newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
@@ -108,7 +109,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     @SuppressWarnings("unused")
     public static DBSPIntegrateTraceRetainKeysOperator fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPIntegrateTraceRetainKeysOperator(CalciteObject.EMPTY,
+        return new DBSPIntegrateTraceRetainKeysOperator(CalciteEmptyRel.INSTANCE,
                 info.getFunction(), info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPIntegrateTraceRetainKeysOperator.class);
     }

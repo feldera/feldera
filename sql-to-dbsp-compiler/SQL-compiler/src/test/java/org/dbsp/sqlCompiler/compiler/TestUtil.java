@@ -12,18 +12,21 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 public class TestUtil {
-    /**
-     * Read the contents of a test resource file and return it as a string.
-     * @param filename Path under test/resources
-     */
+    /** Read the contents of a test resource file and return it as a string.
+     * @param filename Path under test/resources */
     public static String readStringFromResourceFile(String filename) throws IOException {
         StringBuilder result = new StringBuilder();
+        boolean first = true;
         try (InputStream is = TestUtil.class.getClassLoader().getResourceAsStream(filename);
              InputStreamReader streamReader = new InputStreamReader(Objects.requireNonNull(is), StandardCharsets.UTF_8);
              BufferedReader reader = new BufferedReader(streamReader)) {
             String line;
-            while ((line = reader.readLine()) != null)
-                result.append(line).append("\n");
+            while ((line = reader.readLine()) != null) {
+                if (!first)
+                    result.append("\n");
+                first = false;
+                result.append(line);
+            }
         }
         return result.toString();
     }

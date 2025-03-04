@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
-import com.beust.jcommander.Parameter;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;

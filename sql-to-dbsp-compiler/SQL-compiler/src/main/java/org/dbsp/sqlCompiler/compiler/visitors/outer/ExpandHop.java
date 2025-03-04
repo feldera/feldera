@@ -8,7 +8,6 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -39,7 +38,7 @@ public class ExpandHop extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPHopOperator operator) {
         OutputPort source = this.mapped(operator.input());
-        CalciteObject node = operator.getNode();
+        var node = operator.getRelNode();
 
         DBSPTypeTuple type = operator.getOutputZSetElementType().to(DBSPTypeTuple.class);
         DBSPTypeTuple inputRowType = source.getOutputZSetElementType().to(DBSPTypeTuple.class);
@@ -74,10 +73,10 @@ public class ExpandHop extends CircuitCloneVisitor {
                 argType = t.baseTypeWithSuffix();
             functionName.append("_").append(argType);
         }
-        results[nextIndex] = new DBSPApplyExpression(node, functionName.toString(), resultType, operands);
+        results[nextIndex] = new DBSPApplyExpression(node.intermediate(), functionName.toString(), resultType, operands);
         DBSPTupleExpression mapBody = new DBSPTupleExpression(results);
         DBSPClosureExpression func = mapBody.closure(row);
-        DBSPMapOperator map = new DBSPMapOperator(node, func, source);
+        DBSPMapOperator map = new DBSPMapOperator(node.intermediate(), func, source);
         this.addOperator(map);
 
         // Flatmap flattens the array

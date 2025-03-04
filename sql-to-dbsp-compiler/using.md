@@ -45,6 +45,8 @@ Usage: sql-to-dbsp [options] Input file to compile
       Generate an input for each CREATE TABLE, even if the table is not used
       by any view
       Default: false
+    --dataflow
+      Emit the Dataflow graph of the program in the specified JSON file
     --handles
       Use handles (true) or Catalog (false) in the emitted Rust code
       Default: false
@@ -70,8 +72,7 @@ Usage: sql-to-dbsp [options] Input file to compile
       Ensure that outputs never contain duplicates
       Default: false
     --plan
-      Emit the Calcite plan of the optimized program instead of Rust
-      Default: false
+      Emit the Calcite plan of the program in the specified JSON file
     --streaming
       Compiling a streaming program, where only inserts are allowed
       Default: false
@@ -103,7 +104,8 @@ Usage: sql-to-dbsp [options] Input file to compile
       Emit a jpg image of the circuit instead of Rust
       Default: false
     -js
-      Emit a JSON file containing the schema of all views and tables involved
+      Emit a JSON file containing the schema of all views and tables
+      in the specified file.
     -o
       Output file; stdout if null
       Default: <empty string>

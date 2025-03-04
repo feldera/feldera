@@ -6,7 +6,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -53,7 +53,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     /** Always {@link DBSPSimpleOperator#outputType} wrapped in a stream type */
     public final DBSPType outputStreamType;
 
-    protected DBSPSimpleOperator(CalciteObject node, String operation,
+    protected DBSPSimpleOperator(CalciteRelNode node, String operation,
                                  @Nullable DBSPExpression function, DBSPType outputType,
                                  boolean isMultiset, @Nullable String comment) {
         super(node);
@@ -94,7 +94,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
         return this.getNodeName();
     }
 
-    public DBSPSimpleOperator(CalciteObject node, String operation,
+    public DBSPSimpleOperator(CalciteRelNode node, String operation,
                               @Nullable DBSPExpression function,
                               DBSPType outputType, boolean isMultiset) {
         this(node, operation, function, outputType, isMultiset, null);
