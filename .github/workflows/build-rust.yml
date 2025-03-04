@@ -1,17 +1,20 @@
 name: Build Rust Sources
 
 on:
-  workflow_run:
-    workflows: ["Build TypeScript Sources"]
-    types:
-      - completed
+  workflow_call:
 
 env:
   CARGO_FLAGS: "--release --locked --all-targets"
   TOOLCHAIN_VERSION: 1.2.3
+  WEBCONSOLE_BUILD_DIR: web-console/build
 
 jobs:
-  build:
+  build-typescript:
+    uses: ./.github/workflows/build-typescript.yml
+
+  build-rust:
+    needs: build-typescript
+
     # We run this on two different architectures (x86_64 and aarch64)
     strategy:
       matrix:
@@ -22,6 +25,7 @@ jobs:
           #- runner: blacksmith-8vcpu-ubuntu-2204-arm
           #  arch: aarch64
           #  target: aarch64-unknown-linux-gnu
+
     runs-on: ${{ matrix.runner }}
 
     container:
@@ -33,6 +37,12 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: Download TypeScript Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-web-console  # This must match the upload artifact name
+          path: web-console/build
 
       - name: Build Rust binaries
         run: |

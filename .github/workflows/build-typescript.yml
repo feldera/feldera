@@ -1,10 +1,10 @@
 name: Build TypeScript Sources
 
 on:
-  push:
+  workflow_call:
 
 jobs:
-  build:
+  build-typescript:
     runs-on: [self-hosted, skylake40]
 
     container:

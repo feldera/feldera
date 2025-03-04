@@ -1,0 +1,10 @@
+name: Build Code
+
+on:
+  push:
+
+jobs:
+  build-rust:
+    uses: ./.github/workflows/build-rust.yml
+  #build-java:
+  #  uses: ./.github/workflows/build-java.yml
