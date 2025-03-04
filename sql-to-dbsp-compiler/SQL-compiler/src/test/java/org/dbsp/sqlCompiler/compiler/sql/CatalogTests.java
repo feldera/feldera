@@ -590,8 +590,7 @@ public class CatalogTests extends BaseSQLTests {
                 AS SELECT id,
                     -- Delta lake output connector using field type Null instead of using the explicit VARCHAR
                     NULL AS parent_id
-                FROM t
-                ;""");
+                FROM t;""");
         var circuit = ccs.getCircuit();
         DBSPSinkOperator v = circuit.getSink(new ProgramIdentifier("v", false));
         Assert.assertNotNull(v);

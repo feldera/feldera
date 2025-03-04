@@ -93,7 +93,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -3367,6 +3367,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         .pointwiseCast(sinkType);
                 op = new DBSPMapOperator(view.getCalciteObject(), cast.closure(var), op.outputPort());
                 this.addOperator(op);
+                view.replaceColumns(declare.columns);
             }
         }
         ViewMetadata meta = new ViewMetadata(view.relationName,
@@ -3378,7 +3379,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Create two operators chained, a ViewOperator and a SinkOperator.
             DBSPViewOperator vo = new DBSPViewOperator(
                     view.getCalciteObject(), view.relationName, view.getStatement(),
-                    struct, meta, op.outputPort());
+                    declaredStruct, meta, op.outputPort());
             this.addOperator(vo);
             o = new DBSPSinkOperator(
                     view.getCalciteObject(), view.relationName,

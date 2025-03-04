@@ -27,17 +27,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.util.Properties;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -84,5 +78,10 @@ public class CreateViewStatement extends CreateRelationStatement {
     /** Column number specified by "emit_final" annotation.  -1 if no such annotation */
     public int emitFinalColumn() {
         return this.emitFinal;
+    }
+
+    public void replaceColumns(List<RelColumnMetadata> columns) {
+        this.columns.clear();
+        this.columns.addAll(columns);
     }
 }
