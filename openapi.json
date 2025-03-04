@@ -3002,14 +3002,26 @@
         "type": "object",
         "required": [
           "telemetry",
-          "version"
+          "edition",
+          "version",
+          "revision"
         ],
         "properties": {
+          "edition": {
+            "type": "string",
+            "description": "Feldera edition: \"Open source\" or \"Enterprise\""
+          },
+          "revision": {
+            "type": "string",
+            "description": "Specific revision corresponding to the edition `version` (e.g., git commit hash).\nThis is an empty string if it is unspecified."
+          },
           "telemetry": {
-            "type": "string"
+            "type": "string",
+            "description": "Telemetry key."
           },
           "version": {
-            "type": "string"
+            "type": "string",
+            "description": "The version corresponding to the type of `edition`.\nFormat is `x.y.z`."
           }
         }
       },
@@ -3951,6 +3963,22 @@
           "auction",
           "person"
         ]
+      },
+      "ObjectStorageConfig": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL.\n\nThe following URL schemes are supported:\n\n* S3:\n- `s3://<bucket>/<path>`\n- `s3a://<bucket>/<path>`\n- `https://s3.<region>.amazonaws.com/<bucket>`\n- `https://<bucket>.s3.<region>.amazonaws.com`\n- `https://ACCOUNT_ID.r2.cloudflarestorage.com/bucket`\n* Google Cloud Storage:\n- `gs://<bucket>/<path>`\n* Microsoft Azure Blob Storage:\n- `abfs[s]://<container>/<path>` (according to [fsspec](https://github.com/fsspec/adlfs))\n- `abfs[s]://<file_system>@<account_name>.dfs.core.windows.net/<path>`\n- `abfs[s]://<file_system>@<account_name>.dfs.fabric.microsoft.com/<path>`\n- `az://<container>/<path>` (according to [fsspec](https://github.com/fsspec/adlfs))\n- `adl://<container>/<path>` (according to [fsspec](https://github.com/fsspec/adlfs))\n- `azure://<container>/<path>` (custom)\n- `https://<account>.dfs.core.windows.net`\n- `https://<account>.blob.core.windows.net`\n- `https://<account>.blob.core.windows.net/<container>`\n- `https://<account>.dfs.fabric.microsoft.com`\n- `https://<account>.dfs.fabric.microsoft.com/<container>`\n- `https://<account>.blob.fabric.microsoft.com`\n- `https://<account>.blob.fabric.microsoft.com/<container>`\n\nSettings derived from the URL will override other settings."
+          }
+        },
+        "additionalProperties": {
+          "type": "string",
+          "description": "Additional options as key-value pairs.\n\nThe following keys are supported:\n\n* S3:\n- `access_key_id`: AWS Access Key.\n- `secret_access_key`: AWS Secret Access Key.\n- `region`: Region.\n- `default_region`: Default region.\n- `endpoint`: Custom endpoint for communicating with S3,\ne.g. `https://localhost:4566` for testing against a localstack\ninstance.\n- `token`: Token to use for requests (passed to underlying provider).\n- [Other keys](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants).\n* Google Cloud Storage:\n- `service_account`: Path to the service account file.\n- `service_account_key`: The serialized service account key.\n- `google_application_credentials`: Application credentials path.\n- [Other keys](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html).\n* Microsoft Azure Blob Storage:\n- `access_key`: Azure Access Key.\n- `container_name`: Azure Container Name.\n- `account`: Azure Account.\n- `bearer_token_authorization`: Static bearer token for authorizing requests.\n- `client_id`: Client ID for use in client secret or Kubernetes federated credential flow.\n- `client_secret`: Client secret for use in client secret flow.\n- `tenant_id`: Tenant ID for use in client secret or Kubernetes federated credential flow.\n- `endpoint`: Override the endpoint for communicating with blob storage.\n- [Other keys](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants).\n\nOptions set through the URL take precedence over those set with these\noptions."
+        }
       },
       "OutputBufferConfig": {
         "type": "object",

@@ -150,7 +150,23 @@ export type ColumnType = {
 export type CompilationProfile = 'dev' | 'unoptimized' | 'optimized'
 
 export type Configuration = {
+  /**
+   * Feldera edition: "Open source" or "Enterprise"
+   */
+  edition: string
+  /**
+   * Specific revision corresponding to the edition `version` (e.g., git commit hash).
+   * This is an empty string if it is unspecified.
+   */
+  revision: string
+  /**
+   * Telemetry key.
+   */
   telemetry: string
+  /**
+   * The version corresponding to the type of `edition`.
+   * Format is `x.y.z`.
+   */
   version: string
 }
 
@@ -401,6 +417,12 @@ export type DeltaTableReaderConfig = {
    */
   datetime?: string | null
   mode: DeltaTableIngestMode
+  /**
+   * The number of parallel parsing tasks the connector uses to process data read from the
+   * table. Increasing this value can enhance performance by allowing more concurrent processing.
+   * Recommended range: 1–10. The default is 4.
+   */
+  num_parsers?: number
   /**
    * Optional row filter.
    *
@@ -1163,6 +1185,75 @@ export type NexmarkInputOptions = {
  * Table in Nexmark.
  */
 export type NexmarkTable = 'bid' | 'auction' | 'person'
+
+export type ObjectStorageConfig = {
+  /**
+   * URL.
+   *
+   * The following URL schemes are supported:
+   *
+   * * S3:
+   * - `s3://<bucket>/<path>`
+   * - `s3a://<bucket>/<path>`
+   * - `https://s3.<region>.amazonaws.com/<bucket>`
+   * - `https://<bucket>.s3.<region>.amazonaws.com`
+   * - `https://ACCOUNT_ID.r2.cloudflarestorage.com/bucket`
+   * * Google Cloud Storage:
+   * - `gs://<bucket>/<path>`
+   * * Microsoft Azure Blob Storage:
+   * - `abfs[s]://<container>/<path>` (according to [fsspec](https://github.com/fsspec/adlfs))
+   * - `abfs[s]://<file_system>@<account_name>.dfs.core.windows.net/<path>`
+   * - `abfs[s]://<file_system>@<account_name>.dfs.fabric.microsoft.com/<path>`
+   * - `az://<container>/<path>` (according to [fsspec](https://github.com/fsspec/adlfs))
+   * - `adl://<container>/<path>` (according to [fsspec](https://github.com/fsspec/adlfs))
+   * - `azure://<container>/<path>` (custom)
+   * - `https://<account>.dfs.core.windows.net`
+   * - `https://<account>.blob.core.windows.net`
+   * - `https://<account>.blob.core.windows.net/<container>`
+   * - `https://<account>.dfs.fabric.microsoft.com`
+   * - `https://<account>.dfs.fabric.microsoft.com/<container>`
+   * - `https://<account>.blob.fabric.microsoft.com`
+   * - `https://<account>.blob.fabric.microsoft.com/<container>`
+   *
+   * Settings derived from the URL will override other settings.
+   */
+  url: string
+  /**
+   * Additional options as key-value pairs.
+   *
+   * The following keys are supported:
+   *
+   * * S3:
+   * - `access_key_id`: AWS Access Key.
+   * - `secret_access_key`: AWS Secret Access Key.
+   * - `region`: Region.
+   * - `default_region`: Default region.
+   * - `endpoint`: Custom endpoint for communicating with S3,
+   * e.g. `https://localhost:4566` for testing against a localstack
+   * instance.
+   * - `token`: Token to use for requests (passed to underlying provider).
+   * - [Other keys](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants).
+   * * Google Cloud Storage:
+   * - `service_account`: Path to the service account file.
+   * - `service_account_key`: The serialized service account key.
+   * - `google_application_credentials`: Application credentials path.
+   * - [Other keys](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html).
+   * * Microsoft Azure Blob Storage:
+   * - `access_key`: Azure Access Key.
+   * - `container_name`: Azure Container Name.
+   * - `account`: Azure Account.
+   * - `bearer_token_authorization`: Static bearer token for authorizing requests.
+   * - `client_id`: Client ID for use in client secret or Kubernetes federated credential flow.
+   * - `client_secret`: Client secret for use in client secret flow.
+   * - `tenant_id`: Tenant ID for use in client secret or Kubernetes federated credential flow.
+   * - `endpoint`: Override the endpoint for communicating with blob storage.
+   * - [Other keys](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants).
+   *
+   * Options set through the URL take precedence over those set with these
+   * options.
+   */
+  '[key: string]': string | undefined
+}
 
 export type OutputBufferConfig = {
   /**
@@ -2084,17 +2175,17 @@ export type SqlType =
  */
 export type StorageBackendConfig =
   | {
-      config: 'default'
-      name: 'config'
+      name: 'default'
     }
   | {
-      config: 'io_uring'
-      name: 'config'
+      name: 'io_uring'
+    }
+  | {
+      config: ObjectStorageConfig
+      name: 'object'
     }
 
-export type config = 'default'
-
-export type name = 'config'
+export type name = 'default'
 
 /**
  * How to cache access to storage within a Feldera pipeline.
