@@ -10,17 +10,30 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// The default `platform_version` is formed using two compilation environment variables:
+/// The default `platform_version` is formed using three compilation environment variables:
 /// - `CARGO_PKG_VERSION` set by Cargo
+/// - `FELDERA_ENTERPRISE_VERSION` set by the custom `build.rs` script,
+///   which is determined using the similarly named environment variable
 /// - `FELDERA_PLATFORM_VERSION_SUFFIX` set by the custom `build.rs` script,
 ///   which is determined using the similarly named environment variable
+///
+/// ... and whether the `feldera-enterprise` feature is enabled.
 fn default_platform_version() -> String {
-    let package_version = env!("CARGO_PKG_VERSION").to_string();
     let suffix = env!("FELDERA_PLATFORM_VERSION_SUFFIX").to_string();
-    if suffix.is_empty() {
-        package_version
+    if cfg!(feature = "feldera-enterprise") {
+        let enterprise_version = env!("FELDERA_ENTERPRISE_VERSION").to_string();
+        if suffix.is_empty() {
+            format!("{enterprise_version}+enterprise")
+        } else {
+            format!("{enterprise_version}+enterprise.{suffix}")
+        }
     } else {
-        format!("{package_version}+{suffix}")
+        let package_version = env!("CARGO_PKG_VERSION").to_string();
+        if suffix.is_empty() {
+            package_version
+        } else {
+            format!("{package_version}+{suffix}")
+        }
     }
 }
 

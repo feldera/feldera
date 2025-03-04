@@ -1,7 +1,6 @@
 // Configuration API to retrieve the current authentication configuration and list of demos
 use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
 use serde::Serialize;
-use serde_json::json;
 use utoipa::ToSchema;
 
 use crate::api::main::ServerState;
@@ -9,8 +8,16 @@ use crate::error::ManagerError;
 
 #[derive(Clone, Serialize, ToSchema)]
 pub(crate) struct Configuration {
+    /// Telemetry key.
     pub telemetry: String,
+    /// Feldera edition: "Open source" or "Enterprise"
+    pub edition: String,
+    /// The version corresponding to the type of `edition`.
+    /// Format is `x.y.z`.
     pub version: String,
+    /// Specific revision corresponding to the edition `version` (e.g., git commit hash).
+    /// This is an empty string if it is unspecified.
+    pub revision: String,
 }
 
 /// Retrieve general configuration.
@@ -32,20 +39,22 @@ async fn get_config(
     state: WebData<ServerState>,
     _req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    Ok(HttpResponse::Ok().json(json!({
-        "telemetry": state._config.telemetry,
-        "edition": if cfg!(feature = "feldera-enterprise") {
+    Ok(HttpResponse::Ok().json(Configuration {
+        telemetry: state._config.telemetry.clone(),
+        edition: if cfg!(feature = "feldera-enterprise") {
             "Enterprise"
         } else {
             "Open source"
-        },
-        "version": if cfg!(feature = "feldera-enterprise") {
+        }
+        .to_string(),
+        version: if cfg!(feature = "feldera-enterprise") {
             env!("FELDERA_ENTERPRISE_VERSION")
         } else {
             env!("CARGO_PKG_VERSION")
-        },
-        "revision": env!("FELDERA_PLATFORM_VERSION_SUFFIX")
-    })))
+        }
+        .to_string(),
+        revision: env!("FELDERA_PLATFORM_VERSION_SUFFIX").to_string(),
+    }))
 }
 
 /// Retrieve authentication provider configuration.
