@@ -10,6 +10,7 @@ import { goto } from '$app/navigation'
 import posthog from 'posthog-js'
 import { getConfig } from '$lib/services/pipelineManager'
 import type { Configuration } from '$lib/services/manager'
+import type { LatestVersionSource } from '$lib/compositions/latestVersion.svelte'
 import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
 
@@ -32,14 +33,24 @@ const initPosthog = async (config: Configuration) => {
   })
 }
 
-export const load = async ({
-  fetch,
-  url
-}): Promise<{ auth: AuthDetails; felderaVersion: string }> => {
+type LayoutData = {
+  auth: AuthDetails
+  feldera: {
+    version: string
+    edition: string
+    changelog?: string
+  }
+  latestVersionSource?: LatestVersionSource
+}
+
+export const load = async ({ fetch, url }): Promise<LayoutData> => {
   if (!('window' in globalThis)) {
     return {
       auth: 'none',
-      felderaVersion: ''
+      feldera: {
+        version: '',
+        edition: ''
+      }
     }
   } else {
   }
@@ -48,7 +59,14 @@ export const load = async ({
   if (!authConfig) {
     return {
       auth: 'none',
-      felderaVersion: config.version
+      feldera: {
+        version: config.version,
+        edition: (config as any).edition,
+        changelog:
+          (config as any).changelog ??
+          `https://github.com/feldera/feldera/releases/tag/v${config.version}`
+      },
+      latestVersionSource: (config as any).latestVersionSource
     }
   }
   const axaOidcConfig = toAxaOidcConfig(authConfig.oidc)
@@ -82,7 +100,11 @@ export const load = async ({
   })
   return {
     auth,
-    felderaVersion: config.version
+    feldera: {
+      version: config.version,
+      edition: (config as any).edition
+    },
+    latestVersionSource: (config as any).latestVersionSource
   }
 }
 
