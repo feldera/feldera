@@ -657,6 +657,10 @@ public class MetadataTests extends BaseSQLTests {
                       Default: false
                     --dataflow
                       Emit the Dataflow graph of the program in the specified JSON file
+                    --crates
+                      Generate code using multiple crates; `outputFile` is interpreted as a\s
+                      directory.\s
+                      Default: false
                     --handles
                       Use handles (true) or Catalog (false) in the emitted Rust code
                       Default: false

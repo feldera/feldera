@@ -210,6 +210,9 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--raw", hidden = true,
                 description = "Do not generate any internal tables (ERROR, NOW, etc).")
         public boolean raw = false;
+        @Parameter(names = "--crates", description = "Generate code using multiple crates; " +
+                "`outputFile` is interpreted as a directory.")
+        public boolean crates = false;
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {
