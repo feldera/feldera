@@ -222,6 +222,10 @@ pub trait Operator: 'static {
     fn restore(&mut self, base: &Path, persistent_id: Option<&str>) -> Result<(), Error> {
         Ok(())
     }
+
+    fn start_catchup(&mut self) -> Result<bool, Error> {
+        Ok(false)
+    }
 }
 
 /// A source operator that injects data from the outside world or from the

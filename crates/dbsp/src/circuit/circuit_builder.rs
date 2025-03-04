@@ -893,6 +893,8 @@ pub trait Node {
         }
     }
 
+    fn ancestors(&self) -> Vec<GlobalNodeId>;
+
     fn name(&self) -> Cow<'static, str>;
 
     /// `true` if the node encapsulates an asynchronous operator (see
@@ -959,6 +961,8 @@ pub trait Node {
     /// Instructs the node to restore the state of its inner operator to
     /// the given checkpoint in directory `base`.
     fn restore(&mut self, base: &Path) -> Result<(), DbspError>;
+
+    fn start_catchup(&mut self) -> Result<bool, DbspError>;
 
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
     fn fingerprint(&self, fip: &mut Fingerprinter) {
@@ -3533,6 +3537,10 @@ where
         &self.id
     }
 
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![self.parent_stream.origin_node_id().clone()]
+    }
+
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -3594,6 +3602,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.start_catchup()
+    }
+
     fn set_label(&mut self, key: &str, value: &str) {
         self.labels.insert(key.to_string(), value.to_string());
     }
@@ -3647,6 +3659,10 @@ where
         &self.id
     }
 
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![]
+    }
+
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -3696,6 +3712,10 @@ where
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
         self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.start_catchup()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -3752,6 +3772,10 @@ where
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
+    }
+
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![self.input_stream.origin_node_id().clone()]
     }
 
     fn is_async(&self) -> bool {
@@ -3816,6 +3840,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.start_catchup()
+    }
+
     fn set_label(&mut self, key: &str, value: &str) {
         self.labels.insert(key.to_string(), value.to_string());
     }
@@ -3863,6 +3891,10 @@ where
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
+    }
+
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![self.input_stream.origin_node_id().clone()]
     }
 
     fn is_async(&self) -> bool {
@@ -3924,6 +3956,10 @@ where
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
         self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.start_catchup()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -3988,6 +4024,13 @@ where
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
+    }
+
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![
+            self.input_stream1.origin_node_id().clone(),
+            self.input_stream2.origin_node_id().clone(),
+        ]
     }
 
     fn is_async(&self) -> bool {
@@ -4094,6 +4137,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.start_catchup()
+    }
+
     fn set_label(&mut self, key: &str, value: &str) {
         self.labels.insert(key.to_string(), value.to_string());
     }
@@ -4161,6 +4208,13 @@ where
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
+    }
+
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![
+            self.input_stream1.origin_node_id().clone(),
+            self.input_stream2.origin_node_id().clone(),
+        ]
     }
 
     fn is_async(&self) -> bool {
@@ -4262,6 +4316,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.start_catchup()
+    }
+
     fn set_label(&mut self, key: &str, value: &str) {
         self.labels.insert(key.to_string(), value.to_string());
     }
@@ -4336,6 +4394,14 @@ where
         &self.id
     }
 
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![
+            self.input_stream1.origin_node_id().clone(),
+            self.input_stream2.origin_node_id().clone(),
+            self.input_stream3.origin_node_id().clone(),
+        ]
+    }
+
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -4402,6 +4468,10 @@ where
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
         self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.start_catchup()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4497,6 +4567,15 @@ where
         &self.id
     }
 
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![
+            self.input_stream1.origin_node_id().clone(),
+            self.input_stream2.origin_node_id().clone(),
+            self.input_stream3.origin_node_id().clone(),
+            self.input_stream4.origin_node_id().clone(),
+        ]
+    }
+
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -4565,6 +4644,10 @@ where
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
         self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.start_catchup()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4648,6 +4731,13 @@ where
         &self.id
     }
 
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        self.input_streams
+            .iter()
+            .map(|stream| stream.origin_node_id().clone())
+            .collect()
+    }
+
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -4713,6 +4803,10 @@ where
 
     fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
         self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.start_catchup()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4788,6 +4882,10 @@ where
         &self.id
     }
 
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![]
+    }
+
     fn name(&self) -> Cow<'static, str> {
         self.operator.borrow().name()
     }
@@ -4853,6 +4951,10 @@ where
             .restore(base, self.persistent_id().as_deref())
     }
 
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.borrow_mut().start_catchup()
+    }
+
     fn set_label(&mut self, key: &str, value: &str) {
         self.labels.insert(key.to_string(), value.to_string());
     }
@@ -4903,6 +5005,10 @@ where
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
+    }
+
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![self.input_stream.origin_node_id().clone()]
     }
 
     fn is_async(&self) -> bool {
@@ -4971,6 +5077,10 @@ where
     fn restore(&mut self, _base: &Path) -> Result<(), DbspError> {
         // See comment in `commit`.
         Ok(())
+    }
+
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        self.operator.borrow_mut().start_catchup()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -5096,6 +5206,10 @@ where
         &self.id
     }
 
+    fn ancestors(&self) -> Vec<GlobalNodeId> {
+        vec![]
+    }
+
     fn is_async(&self) -> bool {
         false
     }
@@ -5132,6 +5246,10 @@ where
 
     fn restore(&mut self, _base: &Path) -> Result<(), DbspError> {
         Ok(())
+    }
+
+    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+        Ok(false)
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -5239,9 +5357,14 @@ impl CircuitHandle {
             },
         )?;
 
-        todo!();
+        let mut need_backfill_new = need_backfill.clone();
 
-        // Make sure a subcircuit is added to both sets if at least one of its nodes is.
+        while !need_backfill_new.is_empty() {
+            need_backfill_new =
+                self.restore_step(&mut catchup_nodes, &mut need_backfill, need_backfill_new)?;
+        }
+
+        // TODO: Make sure a subcircuit is added to both sets if at least one of its nodes is.
 
         Ok(())
     }
@@ -5250,33 +5373,36 @@ impl CircuitHandle {
         &self,
         catchup_nodes: &mut BTreeSet<GlobalNodeId>,
         need_backfill: &mut BTreeSet<GlobalNodeId>,
-    ) {
+        need_backfill_new: BTreeSet<GlobalNodeId>,
+    ) -> Result<BTreeSet<GlobalNodeId>, DbspError> {
         let mut ancestors = BTreeSet::new();
 
-        // Find all ancestors of nodes in `need_backfill`` that are not in `catchup_nodes` yet.
+        // Find all ancestors of nodes in `need_backfill` that are not in `catchup_nodes` yet.
         // Add them to catchup_nodes.
         // Additionally, add them to `need_backfill` if the node requires backfill from its upstream
         // ancestors.
-        for gid in need_backfill.iter() {
-            let mut ancestors = self.circuit.map_node(gid, &mut |node| {
-                node.inputs()
-                    .iter()
-                    .map(|stream| stream.origin_node_id())
-                    .collect()
-            });
-            for ancestor_gid in ancestors.into_iter() {
-                if !catchup_nodes.contains(&ancestor_gid) {
-                    catchup_nodes.insert(ancestor_gid.clone());
+        for gid in need_backfill_new.iter() {
+            let predecessors = self.circuit.map_node(gid, &mut |node| node.ancestors());
+            predecessors.into_iter().map(|gid| ancestors.insert(gid));
+        }
 
-                    if !self
-                        .circuit
-                        .map_node_mut(&ancestor_gid, &mut |node| node.start_catchup())
-                    {
-                        need_backfill.insert(ancestor_gid.clone());
-                    }
+        let mut need_backfill_new = BTreeSet::new();
+
+        for ancestor_gid in ancestors.into_iter() {
+            if !catchup_nodes.contains(&ancestor_gid) {
+                catchup_nodes.insert(ancestor_gid.clone());
+
+                if !self
+                    .circuit
+                    .map_node_mut(&ancestor_gid, &mut |node| node.start_catchup())?
+                {
+                    need_backfill.insert(ancestor_gid.clone());
+                    need_backfill_new.insert(ancestor_gid.clone());
                 }
             }
         }
+
+        Ok(need_backfill_new)
     }
 
     pub fn fingerprint(&self) -> u64 {
