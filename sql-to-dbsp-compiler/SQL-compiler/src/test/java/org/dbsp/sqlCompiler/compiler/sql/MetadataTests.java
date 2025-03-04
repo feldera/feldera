@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.jdbc.CalciteConnection;
@@ -50,6 +51,39 @@ public class MetadataTests extends BaseSQLTests {
         // Create a view named like a system view
         this.statementsFailingInCompilation("CREATE VIEW ERROR_VIEW AS SELECT 2;",
                 "error: Duplicate declaration: 'error_view' already defined");
+    }
+
+    @Test
+    public void issue3637() throws IOException, SQLException {
+        String sql = """
+                CREATE TABLE t (id VARCHAR);
+                
+                DECLARE RECURSIVE VIEW v(
+                    id VARCHAR,
+                    parent_id VARCHAR
+                );
+                
+                CREATE MATERIALIZED VIEW v
+                AS SELECT id,
+                    -- Delta lake output connector using field type Null instead of using the explicit VARCHAR
+                    NULL AS parent_id
+                FROM t""";
+        File file = createInputScript(sql);
+        File json = File.createTempFile("out", ".json", new File("."));
+        json.deleteOnExit();
+        File tmp = File.createTempFile("out", ".rs", new File(rustDirectory));
+        CompilerMessages message = CompilerMain.execute(
+                "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
+        Assert.assertEquals(0, message.exitCode);
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        for (JsonNode out: parsed.get("outputs")) {
+            if (out.get("name").asText().equals("v'")) {
+                ArrayNode fields = (ArrayNode)out.get("fields");
+                String type = fields.get(1).get("columnType").get("type").asText();
+                Assert.assertEquals("VARCHAR", type);
+            }
+        }
     }
 
     @Test
