@@ -26,6 +26,7 @@ jobs:
       - name: Build Web Console
         working-directory: web-console
         run: |
+          bun install
           bun run build
 
       - name: Upload build artifact
