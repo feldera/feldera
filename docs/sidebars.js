@@ -86,6 +86,18 @@ const sidebars = {
                     ]
                 },
                 {
+                    type: 'category',
+                    label: 'Accelerating Batch Analytics',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/batch/intro'
+                    },
+                    items: [
+                        'use_cases/batch/spark',
+                        'use_cases/batch/part1'
+                    ]
+                },
+                {
                     type: 'doc',
                     id: 'use_cases/fraud_detection/fraud_detection',
                     label: 'Real-time Fraud Detection',
@@ -124,18 +136,6 @@ const sidebars = {
                         'use_cases/otel/preprocessing',
                         'use_cases/otel/insights',
                         'use_cases/otel/grafana'
-                    ]
-                },
-                {
-                    type: 'category',
-                    label: 'Accelerating Batch Analytics',
-                    link: {
-                        type: 'doc',
-                        id: 'use_cases/batch_to_streaming/intro'
-                    },
-                    items: [
-                        'use_cases/batch_to_streaming/spark',
-                        'use_cases/batch_to_streaming/part1'
                     ]
                 },
                 'tutorials/rest_api/index',
