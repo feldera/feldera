@@ -32,6 +32,7 @@ import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.rust.RustCratesWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
@@ -229,11 +230,17 @@ public class CompilerMain {
             return compiler.messages;
         }
         try {
-            PrintStream stream = this.getOutputStream();
-            RustFileWriter writer = new RustFileWriter(stream);
-            writer.add(circuit);
-            writer.write(compiler);
-            stream.close();
+            if (!compiler.options.ioOptions.crates) {
+                PrintStream stream = this.getOutputStream();
+                RustFileWriter writer = new RustFileWriter(stream);
+                writer.add(circuit);
+                writer.write(compiler);
+                stream.close();
+            } else {
+                RustCratesWriter writer = new RustCratesWriter(options.ioOptions.outputFile);
+                writer.add(circuit);
+                writer.write(compiler);
+            }
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
                     "Error writing to output file", e.getMessage());

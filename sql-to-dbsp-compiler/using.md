@@ -47,7 +47,11 @@ Usage: sql-to-dbsp [options] Input file to compile
       Default: false
     --dataflow
       Emit the Dataflow graph of the program in the specified JSON file
-    --handles
+    --crates
+      Generate code using multiple crates; `outputFile` is interpreted as a
+      directory.
+      Default: false
+     --handles
       Use handles (true) or Catalog (false) in the emitted Rust code
       Default: false
     -h, --help, -?
