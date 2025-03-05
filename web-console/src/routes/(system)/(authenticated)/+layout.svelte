@@ -16,7 +16,10 @@
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
-  import { useLatestVersion } from '$lib/compositions/latestVersion.svelte'
+  import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
+  import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
+  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+  import Dayjs from 'dayjs'
 
   const dialog = useGlobalDialog()
 
@@ -28,14 +31,65 @@
   const { showPipelinesPanel: leftDrawer } = useLayoutSettings()
   const pipelineList = usePipelineList(data.preloaded)
 
-  const { fetchLatestVersion } = useLatestVersion(fetch)
-  $effect(() => {
-    fetchLatestVersion()
-  })
+  const systemMessages = useSystemMessages()
+  const now = useInterval(() => new Date(), 3600000, 3600000 - (Date.now() % 3600000))
+  const displayedMessages = $derived(systemMessages.displayedMessages.map(message => {
+    const text = message.text
+    .replace(/\{toDaysHoursFromNow (\d+)\}/, (_match, milliseconds) => {
+      const duration = Dayjs.duration(parseInt(milliseconds) - now.current.valueOf(), 'milliseconds')
+      const days = duration.asDays()
+      const hours = duration.hours()
+      return (days > 1 ? `${days.toFixed()} ${'days'}` : (hours > 0 ? `${hours.toFixed()} ${hours > 1 ? 'hours' : 'hour'}` : 'less than an hour') )
+    })
+    return {...message, text}
+  }))
 </script>
 
 <SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}
 ></SvelteKitTopLoader>
+{#each displayedMessages as message}
+  {#if message.id.startsWith('expiring_license_')}
+    <LineBanner
+      dismiss={message.dismissable !== 'never'
+        ? () => systemMessages.dismiss(message.id)
+        : undefined}
+    >
+      {#snippet start()}
+        {message.text}
+        {#if message.action}
+          {@render BannerButton(message.action)}
+        {/if}
+      {/snippet}
+    </LineBanner>
+  {:else if message.id.startsWith('version_available_')}
+    <LineBanner
+      dismiss={message.dismissable !== 'never'
+        ? () => systemMessages.dismiss(message.id)
+        : undefined}
+      variant="aether"
+    >
+      {#snippet center()}
+        {message.text}
+        {#if message.action}
+          {@render BannerButton(message.action)}
+        {/if}
+      {/snippet}
+    </LineBanner>
+  {:else}
+    <LineBanner
+      dismiss={message.dismissable !== 'never'
+        ? () => systemMessages.dismiss(message.id)
+        : undefined}
+    >
+      {#snippet start()}
+        {message.text}
+        {#if message.action}
+          {@render BannerButton(message.action)}
+        {/if}
+      {/snippet}
+    </LineBanner>
+  {/if}
+{/each}
 <div class="flex h-full w-full justify-center">
   <!-- <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
     <div class="flex h-full w-full flex-col gap-1">

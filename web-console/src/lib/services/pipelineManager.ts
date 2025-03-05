@@ -88,10 +88,6 @@ export const programStatusOf = (status: PipelineStatus) =>
     .with('SqlError', 'RustError', 'SystemError', (programStatus) => programStatus)
     .exhaustive()
 
-// export const toDddProgramStatus = (status: _ProgramStatus, errors: ProgramError) => {
-
-// }
-
 const toPipelineThumb = (
   pipeline: Omit<ExtendedPipelineDescr, 'program_code' | 'udf_rust' | 'udf_toml'>
 ) => ({

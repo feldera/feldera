@@ -151,9 +151,14 @@ export type CompilationProfile = 'dev' | 'unoptimized' | 'optimized'
 
 export type Configuration = {
   /**
+   * URL that navigates to the changelog of the current version
+   */
+  changelog_url: string
+  /**
    * Feldera edition: "Open source" or "Enterprise"
    */
   edition: string
+  license_info?: LicenseInformation | null
   /**
    * Specific revision corresponding to the edition `version` (e.g., git commit hash).
    * This is an empty string if it is unspecified.
@@ -163,6 +168,7 @@ export type Configuration = {
    * Telemetry key.
    */
   telemetry: string
+  update_info?: UpdateInformation | null
   /**
    * The version corresponding to the type of `edition`.
    * Format is `x.y.z`.
@@ -1109,6 +1115,28 @@ export type KafkaOutputFtConfig = {
   }
 }
 
+export type LicenseInformation = {
+  /**
+   * Optional description of the advantages of extending the license / upgrading from a trial
+   */
+  description_html: string
+  expires_at: string
+  expires_in_seconds: number
+  /**
+   * URL that navigates the user to extend/upgrade their license
+   */
+  extension_url: string
+  /**
+   * Is current license expired
+   */
+  is_expired: boolean
+  /**
+   * Is current license a trial
+   */
+  is_trial: boolean
+  suggested_reminder: RepeatSchedule
+}
+
 /**
  * Request to create a new API key.
  */
@@ -1788,6 +1816,15 @@ export type Relation = SqlIdentifier & {
   }
 }
 
+export type RepeatSchedule =
+  | 'Once'
+  | 'Session'
+  | {
+      Every: {
+        seconds: number
+      }
+    }
+
 export type ResourceConfig = {
   /**
    * The maximum number of CPU cores to reserve
@@ -2316,6 +2353,15 @@ export type TransportConfig =
     }
 
 export type name2 = 'file_input'
+
+export type UpdateInformation = {
+  /**
+   * URL that navigates the user to instructions on how to upgrade their deployment's version
+   */
+  instructions_url: string
+  is_latest_version: boolean
+  latest_version: string
+}
 
 /**
  * Configuration for reading data from an HTTP or HTTPS URL with

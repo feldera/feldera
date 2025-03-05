@@ -1,12 +1,44 @@
 // Configuration API to retrieve the current authentication configuration and list of demos
 use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::main::ServerState;
 use crate::error::ManagerError;
 
-#[derive(Clone, Serialize, ToSchema)]
+#[derive(Serialize, ToSchema)]
+pub enum RepeatSchedule {
+    Once,
+    Session,
+    Every { seconds: u64 },
+}
+
+#[derive(Serialize, ToSchema)]
+pub(crate) struct LicenseInformation {
+    expires_in_seconds: u64,
+    expires_at: DateTime<Utc>,
+    /// Is current license expired
+    is_expired: bool,
+    /// Is current license a trial
+    is_trial: bool,
+    /// Optional description of the advantages of extending the license / upgrading from a trial
+    description_html: String,
+    /// URL that navigates the user to extend/upgrade their license
+    extension_url: String,
+    /// Suggested frequency of reminding the user to extend/upgrade their license
+    suggested_reminder: RepeatSchedule,
+}
+
+#[derive(Serialize, ToSchema)]
+pub(crate) struct UpdateInformation {
+    pub latest_version: String,
+    pub is_latest_version: bool,
+    /// URL that navigates the user to instructions on how to upgrade their deployment's version
+    pub instructions_url: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub(crate) struct Configuration {
     /// Telemetry key.
     pub telemetry: String,
@@ -18,6 +50,10 @@ pub(crate) struct Configuration {
     /// Specific revision corresponding to the edition `version` (e.g., git commit hash).
     /// This is an empty string if it is unspecified.
     pub revision: String,
+    /// URL that navigates to the changelog of the current version
+    pub changelog_url: String,
+    pub license_info: Option<LicenseInformation>,
+    pub update_info: Option<UpdateInformation>,
 }
 
 /// Retrieve general configuration.
@@ -54,6 +90,9 @@ async fn get_config(
         }
         .to_string(),
         revision: env!("FELDERA_PLATFORM_VERSION_SUFFIX").to_string(),
+        changelog_url: "".to_string(),
+        license_info: None,
+        update_info: None,
     }))
 }
 
