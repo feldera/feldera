@@ -41,6 +41,7 @@
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import Dayjs from 'dayjs'
   import { unionName, type NamesInUnion } from '$lib/functions/common/union'
+  import { match } from 'ts-pattern'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   let pipelineName = $derived(pipeline.current.name)
@@ -72,20 +73,35 @@
     }
   })
   const bufferSize = 10000
-  const areLogsAbsent = (pipelineStatusName: NamesInUnion<PipelineStatus>) =>
-    new Array<NamesInUnion<PipelineStatus>>('Preparing', 'Shutdown', 'ShuttingDown').includes(
-      pipelineStatusName
-    )
+
   const areLogsExpected = (pipelineStatusName: NamesInUnion<PipelineStatus>) =>
-    new Array<NamesInUnion<PipelineStatus>>(
-      'Provisioning',
-      'Initializing',
-      'Running',
-      'Pausing',
-      'Paused',
-      'Resuming',
-      'PipelineError'
-    ).includes(pipelineStatusName)
+    match(pipelineStatusName)
+      .with(
+        'Queued',
+        'CompilingSql',
+        'SqlCompiled',
+        'CompilingRust',
+        'Preparing',
+        'SqlError',
+        'RustError',
+        'SystemError',
+        'Shutdown',
+        'ShuttingDown',
+        () => false
+      )
+      .with(
+        'Provisioning',
+        'Initializing',
+        'Running',
+        'Pausing',
+        'Paused',
+        'Resuming',
+        'PipelineError',
+        'Unavailable',
+        () => true
+      )
+      .exhaustive()
+
   const startStream = (pipelineName: string) => {
     if ('open' in streams[pipelineName].stream) {
       return
@@ -109,7 +125,7 @@
           },
           onParseEnded: (reason) => {
             streams[pipelineName].stream = { closed: {} }
-            if (reason === 'cancelled' || areLogsAbsent(pipelineStatusName)) {
+            if (reason === 'cancelled' || !areLogsExpected(pipelineStatusName)) {
               return
             }
             tryRestartStream(pipelineName, 5000)
@@ -196,7 +212,7 @@
           Retrying now...
         {/if}
       </WarningBanner>
-    {:else if areLogsAbsent(pipelineStatusName)}
+    {:else if !areLogsExpected(pipelineStatusName)}
       {#if getStreams()[pipelineName].rows.length}
         <WarningBanner variant="info">
           Displaying log history from the last pipeline run. When the pipeline is started again this
