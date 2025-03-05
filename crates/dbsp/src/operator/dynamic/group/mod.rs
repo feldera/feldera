@@ -435,8 +435,6 @@ where
                 &mut cb_desc as &mut dyn FnMut(&mut OB::Val, &mut B::R)
             };
 
-            input_trace_cursor.seek_key(&key);
-
             let mut delta_group_cursor = CursorGroup::new(&mut delta_cursor, ());
 
             // I was not able to avoid 4-way code duplication below.  Depending on
@@ -445,12 +443,10 @@ where
             // empty/non-empty cursors.  Since the cursors have different types
             // (`CursorEmpty` and `CursorGroup`), we can't bind them to the same
             // variable.
-            if input_trace_cursor.key_valid() && input_trace_cursor.key() == key.as_ref() {
+            if input_trace_cursor.seek_key_exact(&key) {
                 let mut input_group_cursor = CursorGroup::new(&mut input_trace_cursor, ());
 
-                output_trace_cursor.seek_key(&key);
-
-                if output_trace_cursor.key_valid() && output_trace_cursor.key() == key.as_ref() {
+                if output_trace_cursor.seek_key_exact(&key) {
                     let mut output_group_cursor = CursorGroup::new(&mut output_trace_cursor, ());
 
                     self.transformer.transform(
@@ -474,9 +470,7 @@ where
                 let mut input_group_cursor =
                     CursorEmpty::new(self.output_factories.weight_factory());
 
-                output_trace_cursor.seek_key(&key);
-
-                if output_trace_cursor.key_valid() && output_trace_cursor.key() == key.as_ref() {
+                if output_trace_cursor.seek_key_exact(&key) {
                     let mut output_group_cursor = CursorGroup::new(&mut output_trace_cursor, ());
 
                     self.transformer.transform(

@@ -257,8 +257,7 @@ where
         R: WeightTrait + ?Sized,
         C: Cursor<K, V, T, R>,
     {
-        cursor.seek_key(key);
-        if cursor.get_key() == Some(key) {
+        if cursor.seek_key_exact(key) {
             Some(cursor)
         } else {
             None

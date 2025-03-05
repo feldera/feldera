@@ -135,10 +135,8 @@ where
             let mut key = clone_box(delta_cursor.key());
             let mut retract = false;
 
-            output_trace_cursor.seek_key(&key);
-
             // Read the current value of the aggregate, be careful to skip entries with weight 0.
-            if output_trace_cursor.key_valid() && output_trace_cursor.key() == key.as_ref() {
+            if output_trace_cursor.seek_key_exact(&key) {
                 while output_trace_cursor.val_valid() {
                     if **output_trace_cursor.weight() == 0 {
                         output_trace_cursor.step_val();

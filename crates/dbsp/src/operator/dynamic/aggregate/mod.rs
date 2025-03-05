@@ -847,15 +847,12 @@ where
         //     time
         // );
 
-        // Lookup key in input.
-        input_cursor.seek_key(key);
-
         let (output_key, aggregate) = key_aggregate.split_mut();
         key.clone_to(output_key);
 
         // If found, compute `agg` using formula (1) above; otherwise the aggregate is
         // `0`.
-        if input_cursor.key_valid() && input_cursor.key() == key {
+        if input_cursor.seek_key_exact(key) {
             // Apply aggregator to a `CursorGroup` that iterates over the nested
             // Z-set associated with `input_cursor.key()` at time `time`.
             self.aggregator.aggregate_and_finalize(

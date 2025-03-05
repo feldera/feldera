@@ -353,9 +353,7 @@ where
                 key_updates.push_val(&mut *item);
             }
 
-            trace_cursor.seek_key(key);
-
-            if trace_cursor.key_valid() && trace_cursor.key() == key {
+            if trace_cursor.seek_key_exact(key) {
                 // println!("{}: found key in trace_cursor", Runtime::worker_index());
                 while trace_cursor.val_valid() {
                     let mut weight = ZWeight::zero();

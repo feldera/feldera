@@ -616,65 +616,59 @@ where
         output: &mut TupleBuilder<Z::Builder, Z>,
         item: &mut DynPair<DynPair<Z::Key, Z::Val>, Z::R>,
     ) {
-        if trace_cursor.key_valid() && trace_cursor.key() == key {
-            trace_cursor.seek_val(val);
+        trace_cursor.seek_val(val);
 
-            if trace_cursor.val_valid() && trace_cursor.val() == val {
-                // The nearest future timestamp when we need to update this
-                // key/value pair.
-                let mut time_of_interest = None;
+        if trace_cursor.val_valid() && trace_cursor.val() == val {
+            // The nearest future timestamp when we need to update this
+            // key/value pair.
+            let mut time_of_interest = None;
 
-                // Reset all counters to 0.
-                self.clear_distinct_vals();
+            // Reset all counters to 0.
+            self.clear_distinct_vals();
 
-                trace_cursor.map_times(&mut |trace_ts, weight| {
-                    // Update weights in `distinct_vals`.
-                    for (ts, total_weight) in self.distinct_vals.iter_mut() {
-                        if let Some(ts) = ts {
-                            if trace_ts.less_equal(ts) {
-                                *total_weight += **weight;
-                            }
+            trace_cursor.map_times(&mut |trace_ts, weight| {
+                // Update weights in `distinct_vals`.
+                for (ts, total_weight) in self.distinct_vals.iter_mut() {
+                    if let Some(ts) = ts {
+                        if trace_ts.less_equal(ts) {
+                            *total_weight += **weight;
                         }
                     }
-                    // Timestamp in the future - update `time_of_interest`.
-                    if !trace_ts.less_equal(time) {
-                        time_of_interest = match time_of_interest.take() {
-                            None => Some(time.join(trace_ts)),
-                            Some(time_of_interest) => {
-                                Some(min(time_of_interest, time.join(trace_ts)))
-                            }
-                        }
-                    }
-                });
-
-                // Compute `dist` for each entry in `distinct_vals`.
-                for (_time, weight) in self.distinct_vals.iter_mut() {
-                    if weight.le0() {
-                        *weight = HasZero::zero();
-                    } else {
-                        *weight = HasOne::one();
+                }
+                // Timestamp in the future - update `time_of_interest`.
+                if !trace_ts.less_equal(time) {
+                    time_of_interest = match time_of_interest.take() {
+                        None => Some(time.join(trace_ts)),
+                        Some(time_of_interest) => Some(min(time_of_interest, time.join(trace_ts))),
                     }
                 }
+            });
 
-                // We have computed `f` at all the relevant points in times; we can now
-                // compute the partial derivative.
-                let output_weight = Self::partial_derivative(&self.distinct_vals);
-                if !output_weight.is_zero() {
-                    output.push_refs(key, val, &(), output_weight.erase());
+            // Compute `dist` for each entry in `distinct_vals`.
+            for (_time, weight) in self.distinct_vals.iter_mut() {
+                if weight.le0() {
+                    *weight = HasZero::zero();
+                } else {
+                    *weight = HasOne::one();
                 }
+            }
 
-                let (kv, weight) = item.split_mut();
-                **weight = HasOne::one();
-                kv.from_refs(key, val);
+            // We have computed `f` at all the relevant points in times; we can now
+            // compute the partial derivative.
+            let output_weight = Self::partial_derivative(&self.distinct_vals);
+            if !output_weight.is_zero() {
+                output.push_refs(key, val, &(), output_weight.erase());
+            }
 
-                if let Some(t) = time_of_interest {
-                    self.keys_of_interest
-                        .entry(t)
-                        .or_insert_with(|| {
-                            self.aux_factories.weighted_items_factory().default_box()
-                        })
-                        .push_val(&mut *item);
-                }
+            let (kv, weight) = item.split_mut();
+            **weight = HasOne::one();
+            kv.from_refs(key, val);
+
+            if let Some(t) = time_of_interest {
+                self.keys_of_interest
+                    .entry(t)
+                    .or_insert_with(|| self.aux_factories.weighted_items_factory().default_box())
+                    .push_val(&mut *item);
             }
         }
     }
@@ -856,106 +850,105 @@ where
             match delta_cursor.key().cmp(keys_of_interest_cursor.key()) {
                 // Key only appears in `delta`.
                 Ordering::Less => {
-                    trace_cursor.seek_key(delta_cursor.key());
-
-                    while delta_cursor.val_valid() {
-                        self.eval_keyval(
-                            &time,
-                            delta_cursor.key(),
-                            delta_cursor.val(),
-                            &mut trace_cursor,
-                            &mut result_builder,
-                            &mut *item,
-                        );
-                        delta_cursor.step_val();
+                    if trace_cursor.seek_key_exact(delta_cursor.key()) {
+                        while delta_cursor.val_valid() {
+                            self.eval_keyval(
+                                &time,
+                                delta_cursor.key(),
+                                delta_cursor.val(),
+                                &mut trace_cursor,
+                                &mut result_builder,
+                                &mut *item,
+                            );
+                            delta_cursor.step_val();
+                        }
                     }
                     delta_cursor.step_key();
                 }
                 // Key only appears in `keys_of_interest`.
                 Ordering::Greater => {
-                    trace_cursor.seek_key(keys_of_interest_cursor.key());
-
-                    while keys_of_interest_cursor.val_valid() {
-                        self.eval_keyval(
-                            &time,
-                            keys_of_interest_cursor.key(),
-                            keys_of_interest_cursor.val(),
-                            &mut trace_cursor,
-                            &mut result_builder,
-                            &mut *item,
-                        );
-                        keys_of_interest_cursor.step_val();
+                    if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
+                        while keys_of_interest_cursor.val_valid() {
+                            self.eval_keyval(
+                                &time,
+                                keys_of_interest_cursor.key(),
+                                keys_of_interest_cursor.val(),
+                                &mut trace_cursor,
+                                &mut result_builder,
+                                &mut *item,
+                            );
+                            keys_of_interest_cursor.step_val();
+                        }
                     }
                     keys_of_interest_cursor.step_key();
                 }
                 // Key appears in both `delta` and `keys_of_interest`:
                 // Iterate over all values in both cursors.
                 Ordering::Equal => {
-                    trace_cursor.seek_key(keys_of_interest_cursor.key());
-
-                    while delta_cursor.val_valid() && keys_of_interest_cursor.val_valid() {
-                        match delta_cursor.val().cmp(keys_of_interest_cursor.val()) {
-                            Ordering::Less => {
-                                self.eval_keyval(
-                                    &time,
-                                    delta_cursor.key(),
-                                    delta_cursor.val(),
-                                    &mut trace_cursor,
-                                    &mut result_builder,
-                                    &mut *item,
-                                );
-                                delta_cursor.step_val();
-                            }
-                            Ordering::Greater => {
-                                self.eval_keyval(
-                                    &time,
-                                    keys_of_interest_cursor.key(),
-                                    keys_of_interest_cursor.val(),
-                                    &mut trace_cursor,
-                                    &mut result_builder,
-                                    &mut *item,
-                                );
-                                keys_of_interest_cursor.step_val();
-                            }
-                            Ordering::Equal => {
-                                self.eval_keyval(
-                                    &time,
-                                    delta_cursor.key(),
-                                    delta_cursor.val(),
-                                    &mut trace_cursor,
-                                    &mut result_builder,
-                                    &mut *item,
-                                );
-                                delta_cursor.step_val();
-                                keys_of_interest_cursor.step_val();
+                    if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
+                        while delta_cursor.val_valid() && keys_of_interest_cursor.val_valid() {
+                            match delta_cursor.val().cmp(keys_of_interest_cursor.val()) {
+                                Ordering::Less => {
+                                    self.eval_keyval(
+                                        &time,
+                                        delta_cursor.key(),
+                                        delta_cursor.val(),
+                                        &mut trace_cursor,
+                                        &mut result_builder,
+                                        &mut *item,
+                                    );
+                                    delta_cursor.step_val();
+                                }
+                                Ordering::Greater => {
+                                    self.eval_keyval(
+                                        &time,
+                                        keys_of_interest_cursor.key(),
+                                        keys_of_interest_cursor.val(),
+                                        &mut trace_cursor,
+                                        &mut result_builder,
+                                        &mut *item,
+                                    );
+                                    keys_of_interest_cursor.step_val();
+                                }
+                                Ordering::Equal => {
+                                    self.eval_keyval(
+                                        &time,
+                                        delta_cursor.key(),
+                                        delta_cursor.val(),
+                                        &mut trace_cursor,
+                                        &mut result_builder,
+                                        &mut *item,
+                                    );
+                                    delta_cursor.step_val();
+                                    keys_of_interest_cursor.step_val();
+                                }
                             }
                         }
-                    }
+                        // Iterate over remaining `delta_cursor` values.
+                        while delta_cursor.val_valid() {
+                            self.eval_keyval(
+                                &time,
+                                delta_cursor.key(),
+                                delta_cursor.val(),
+                                &mut trace_cursor,
+                                &mut result_builder,
+                                &mut *item,
+                            );
+                            delta_cursor.step_val();
+                        }
 
-                    // Iterate over remaining `delta_cursor` values.
-                    while delta_cursor.val_valid() {
-                        self.eval_keyval(
-                            &time,
-                            delta_cursor.key(),
-                            delta_cursor.val(),
-                            &mut trace_cursor,
-                            &mut result_builder,
-                            &mut *item,
-                        );
-                        delta_cursor.step_val();
-                    }
-
-                    // Iterate over remaining `keys_of_interest` values.
-                    while keys_of_interest_cursor.val_valid() {
-                        self.eval_keyval(
-                            &time,
-                            keys_of_interest_cursor.key(),
-                            keys_of_interest_cursor.val(),
-                            &mut trace_cursor,
-                            &mut result_builder,
-                            &mut *item,
-                        );
-                        keys_of_interest_cursor.step_val();
+                        // Iterate over remaining `keys_of_interest` values.
+                        while keys_of_interest_cursor.val_valid() {
+                            self.eval_keyval(
+                                &time,
+                                keys_of_interest_cursor.key(),
+                                keys_of_interest_cursor.val(),
+                                &mut trace_cursor,
+                                &mut result_builder,
+                                &mut *item,
+                            );
+                            keys_of_interest_cursor.step_val();
+                        }
                     }
 
                     delta_cursor.step_key();
@@ -966,36 +959,36 @@ where
 
         // Iterate over remaining `delta_cursor` keys.
         while delta_cursor.key_valid() {
-            trace_cursor.seek_key(delta_cursor.key());
-
-            while delta_cursor.val_valid() {
-                self.eval_keyval(
-                    &time,
-                    delta_cursor.key(),
-                    delta_cursor.val(),
-                    &mut trace_cursor,
-                    &mut result_builder,
-                    &mut *item,
-                );
-                delta_cursor.step_val();
+            if trace_cursor.seek_key_exact(delta_cursor.key()) {
+                while delta_cursor.val_valid() {
+                    self.eval_keyval(
+                        &time,
+                        delta_cursor.key(),
+                        delta_cursor.val(),
+                        &mut trace_cursor,
+                        &mut result_builder,
+                        &mut *item,
+                    );
+                    delta_cursor.step_val();
+                }
             }
             delta_cursor.step_key();
         }
 
         // Iterate over remaining `keys_of_interest_cursor` keys.
         while keys_of_interest_cursor.key_valid() {
-            trace_cursor.seek_key(keys_of_interest_cursor.key());
-
-            while keys_of_interest_cursor.val_valid() {
-                self.eval_keyval(
-                    &time,
-                    keys_of_interest_cursor.key(),
-                    keys_of_interest_cursor.val(),
-                    &mut trace_cursor,
-                    &mut result_builder,
-                    &mut *item,
-                );
-                keys_of_interest_cursor.step_val();
+            if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
+                while keys_of_interest_cursor.val_valid() {
+                    self.eval_keyval(
+                        &time,
+                        keys_of_interest_cursor.key(),
+                        keys_of_interest_cursor.val(),
+                        &mut trace_cursor,
+                        &mut result_builder,
+                        &mut *item,
+                    );
+                    keys_of_interest_cursor.step_val();
+                }
             }
             keys_of_interest_cursor.step_key();
         }

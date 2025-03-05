@@ -392,12 +392,12 @@ where
 
             let delta_partition_cursor = PartitionCursor::new(&mut delta_cursor);
 
-            input_cursor.seek_key(&key);
-            output_cursor.seek_key(&key);
+            let found_input = input_cursor.seek_key_exact(&key);
+            let found_output = output_cursor.seek_key_exact(&key);
 
             updates.clear();
 
-            if input_cursor.key_valid() && input_cursor.key() == &*key {
+            if found_input {
                 // println!("input partition exists");
                 /*while input_cursor.val_valid() {
                     // println!("input val: {:x?}", input_cursor.val());
@@ -405,7 +405,7 @@ where
                 }*/
                 //input_cursor.rewind_vals();
 
-                if output_cursor.key_valid() && output_cursor.key() == &*key {
+                if found_output {
                     // println!("tree partition exists");
 
                     radix_tree_update::<TS, V, Acc, _, _, _, _>(
@@ -428,7 +428,7 @@ where
                         &mut *updates,
                     );
                 }
-            } else if output_cursor.key_valid() && output_cursor.key() == &*key {
+            } else if found_output {
                 radix_tree_update::<TS, V, Acc, _, _, _, _>(
                     &self.factories.radix_tree_factories,
                     delta_partition_cursor,
