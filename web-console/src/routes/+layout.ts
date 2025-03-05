@@ -12,6 +12,8 @@ import { getConfig } from '$lib/services/pipelineManager'
 import type { Configuration } from '$lib/services/manager'
 import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
+import { initSystemMessages } from '$lib/compositions/initSystemMessages'
+import { P, match } from 'ts-pattern'
 
 Dayjs.extend(duration)
 
@@ -32,23 +34,85 @@ const initPosthog = async (config: Configuration) => {
   })
 }
 
-export const load = async ({
-  fetch,
-  url
-}): Promise<{ auth: AuthDetails; felderaVersion: string }> => {
+type LayoutData = {
+  auth: AuthDetails
+  feldera: {
+    version: string
+    edition: string
+    changelog?: string
+    update?: {
+      version: string
+      url: string
+    }
+  }
+}
+
+export const load = async ({ fetch, url }): Promise<LayoutData> => {
   if (!('window' in globalThis)) {
     return {
       auth: 'none',
-      felderaVersion: ''
+      feldera: {
+        version: '',
+        edition: ''
+      }
     }
   } else {
   }
 
   const [config, authConfig] = await Promise.all([getConfig(), loadAuthConfig()])
+
+  if (config.license_info) {
+    const time = {
+      in: `{toDaysHoursFromNow ${new Date(config.license_info.expires_at).valueOf()}}`,
+      at: Dayjs(config.license_info.expires_at).format('h A'),
+      on: Dayjs(config.license_info.expires_at).format('MMM D')
+    }
+    initSystemMessages.push({
+      id: `expiring_license_${config.edition}`,
+      dismissable: match(config.license_info.suggested_reminder)
+        .with('Once', () => 'once' as const)
+        .with('Session', () => 'session' as const)
+        .with({ Every: P.select() }, ({ seconds }) => ({ milliseconds: seconds * 1000 }))
+        .exhaustive(),
+      text:
+        (config.license_info.is_trial
+          ? `Your trial ends in ${time.in} at ${time.at} on ${time.on}`
+          : `Your Feldera ${config.edition} license expires in ${time.in} at ${time.at} on ${time.on}`) +
+        (config.license_info.description_html ? `. ${config.license_info.description_html}` : ''),
+      action: {
+        text: config.license_info.is_trial ? 'Upgrade Subscription' : 'Extend Your License',
+        href: config.license_info.extension_url
+      }
+    })
+  }
+  if (config.update_info && !config.update_info.is_latest_version) {
+    initSystemMessages.push({
+      id: `version_available_${config.edition}_${config.update_info.latest_version}`,
+      dismissable: 'session',
+      text: `New version ${config.update_info.latest_version} available`,
+      action: {
+        text: 'Update Now',
+        href: config.update_info.instructions_url
+      }
+    })
+  }
   if (!authConfig) {
     return {
       auth: 'none',
-      felderaVersion: config.version
+      feldera: {
+        version: config.version,
+        edition: config.edition,
+        update:
+          config.update_info && !config.update_info.is_latest_version
+            ? {
+                version: config.update_info.latest_version,
+                url: config.update_info.instructions_url
+              }
+            : undefined,
+        changelog:
+          config.changelog_url ??
+          `https://github.com/feldera/feldera/releases/tag/v${config.version}`
+      }
     }
   }
   const axaOidcConfig = toAxaOidcConfig(authConfig.oidc)
@@ -82,7 +146,10 @@ export const load = async ({
   })
   return {
     auth,
-    felderaVersion: config.version
+    feldera: {
+      version: config.version,
+      edition: (config as any).edition
+    }
   }
 }
 

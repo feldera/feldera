@@ -107,6 +107,9 @@ only the program-related core fields, and is used by the compiler to discern whe
 
         // Common
         crate::db::types::version::Version,
+        crate::api::endpoints::config::RepeatSchedule,
+        crate::api::endpoints::config::LicenseInformation,
+        crate::api::endpoints::config::UpdateInformation,
         crate::api::endpoints::config::Configuration,
 
         // Pipeline
@@ -151,6 +154,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::config::FtConfig,
         feldera_types::config::InputEndpointConfig,
         feldera_types::config::ConnectorConfig,
+        feldera_types::config::ObjectStorageConfig,
         feldera_types::config::OutputBufferConfig,
         feldera_types::config::OutputEndpointConfig,
         feldera_types::config::TransportConfig,

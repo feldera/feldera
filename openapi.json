@@ -3004,12 +3004,25 @@
           "telemetry",
           "edition",
           "version",
-          "revision"
+          "revision",
+          "changelog_url"
         ],
         "properties": {
+          "changelog_url": {
+            "type": "string",
+            "description": "URL that navigates to the changelog of the current version"
+          },
           "edition": {
             "type": "string",
             "description": "Feldera edition: \"Open source\" or \"Enterprise\""
+          },
+          "license_info": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LicenseInformation"
+              }
+            ],
+            "nullable": true
           },
           "revision": {
             "type": "string",
@@ -3018,6 +3031,14 @@
           "telemetry": {
             "type": "string",
             "description": "Telemetry key."
+          },
+          "update_info": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpdateInformation"
+              }
+            ],
+            "nullable": true
           },
           "version": {
             "type": "string",
@@ -3861,6 +3882,48 @@
             "additionalProperties": {
               "type": "string"
             }
+          }
+        }
+      },
+      "LicenseInformation": {
+        "type": "object",
+        "required": [
+          "expires_in_seconds",
+          "expires_at",
+          "is_expired",
+          "is_trial",
+          "description_html",
+          "extension_url",
+          "suggested_reminder"
+        ],
+        "properties": {
+          "description_html": {
+            "type": "string",
+            "description": "Optional description of the advantages of extending the license / upgrading from a trial"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_in_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "extension_url": {
+            "type": "string",
+            "description": "URL that navigates the user to extend/upgrade their license"
+          },
+          "is_expired": {
+            "type": "boolean",
+            "description": "Is current license expired"
+          },
+          "is_trial": {
+            "type": "boolean",
+            "description": "Is current license a trial"
+          },
+          "suggested_reminder": {
+            "$ref": "#/components/schemas/RepeatSchedule"
           }
         }
       },
@@ -4786,6 +4849,43 @@
           }
         ],
         "description": "A SQL table or view. It has a name and a list of fields.\n\nMatches the Calcite JSON format."
+      },
+      "RepeatSchedule": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "Once"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Session"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Every"
+            ],
+            "properties": {
+              "Every": {
+                "type": "object",
+                "required": [
+                  "seconds"
+                ],
+                "properties": {
+                  "seconds": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        ]
       },
       "ResourceConfig": {
         "type": "object",
@@ -5848,6 +5948,26 @@
         "description": "Transport-specific endpoint configuration passed to\n`crate::OutputTransport::new_endpoint`\nand `crate::InputTransport::new_endpoint`.",
         "discriminator": {
           "propertyName": "name"
+        }
+      },
+      "UpdateInformation": {
+        "type": "object",
+        "required": [
+          "latest_version",
+          "is_latest_version",
+          "instructions_url"
+        ],
+        "properties": {
+          "instructions_url": {
+            "type": "string",
+            "description": "URL that navigates the user to instructions on how to upgrade their deployment's version"
+          },
+          "is_latest_version": {
+            "type": "boolean"
+          },
+          "latest_version": {
+            "type": "string"
+          }
         }
       },
       "UrlInputConfig": {
