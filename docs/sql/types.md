@@ -115,6 +115,10 @@ CREATE TYPE employee_typ AS (
   address           address_typ);
 ```
 
+Recursive or mutually-recursive user-defined types are currently not
+supported (i.e.  a user-defined type cannot have a field that refers
+to the type itself).
+
 An expression that constructs a structure uses the type name, e.g.:
 
 ```sql

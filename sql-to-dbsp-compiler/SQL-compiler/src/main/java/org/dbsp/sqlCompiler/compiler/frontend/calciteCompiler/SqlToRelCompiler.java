@@ -1970,8 +1970,8 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
         };
         ProgramIdentifier typeName = Utilities.toIdentifier(ct.name);
-        this.rootSchema.add(typeName.name(), proto);
         RelDataType relDataType = proto.apply(TYPE_FACTORY);
+        this.rootSchema.add(typeName.name(), proto);
         CreateTypeStatement result = new CreateTypeStatement(node, ct, typeName, relDataType);
         boolean success = this.calciteCatalog.addType(typeName, this.errorReporter, result);
         if (!success)

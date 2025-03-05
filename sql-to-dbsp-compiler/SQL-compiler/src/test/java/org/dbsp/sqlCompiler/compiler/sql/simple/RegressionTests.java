@@ -19,6 +19,12 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void issue3653() {
+        this.statementsFailingInCompilation("CREATE TYPE t AS (related t ARRAY);",
+                "error: Error in SQL statement: Unknown identifier 't'");
+    }
+
+    @Test
     public void issue3418() {
         this.compileRustTestCase("""
                 create table t (r ROW(j VARCHAR));
