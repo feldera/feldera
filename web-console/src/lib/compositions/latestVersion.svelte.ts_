@@ -25,7 +25,8 @@ const fetchLatestVersion = async (
   recipe: LatestVersionSource | undefined
 ) => {
   if (!recipe) {
-    return undefined
+    // return undefined
+    return '0.39.0'
   }
   let result = [] as string[]
   for (const step of recipe) {

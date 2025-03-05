@@ -228,11 +228,23 @@ and runtime speed (the performance while running).`,
 
 export const $Configuration = {
   type: 'object',
-  required: ['telemetry', 'edition', 'version', 'revision'],
+  required: ['telemetry', 'edition', 'version', 'revision', 'changelog_url'],
   properties: {
+    changelog_url: {
+      type: 'string',
+      description: 'URL that navigates to the changelog of the current version'
+    },
     edition: {
       type: 'string',
       description: 'Feldera edition: "Open source" or "Enterprise"'
+    },
+    license_info: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/LicenseInformation'
+        }
+      ],
+      nullable: true
     },
     revision: {
       type: 'string',
@@ -242,6 +254,14 @@ This is an empty string if it is unspecified.`
     telemetry: {
       type: 'string',
       description: 'Telemetry key.'
+    },
+    update_info: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/UpdateInformation'
+        }
+      ],
+      nullable: true
     },
     version: {
       type: 'string',
@@ -1415,6 +1435,50 @@ These options override \`kafka_options\` for producers, and may be empty.`,
   }
 } as const
 
+export const $LicenseInformation = {
+  type: 'object',
+  required: [
+    'expires_in_seconds',
+    'expires_at',
+    'is_expired',
+    'is_trial',
+    'description_html',
+    'extension_url',
+    'suggested_reminder'
+  ],
+  properties: {
+    description_html: {
+      type: 'string',
+      description:
+        'Optional description of the advantages of extending the license / upgrading from a trial'
+    },
+    expires_at: {
+      type: 'string',
+      format: 'date-time'
+    },
+    expires_in_seconds: {
+      type: 'integer',
+      format: 'int64',
+      minimum: 0
+    },
+    extension_url: {
+      type: 'string',
+      description: 'URL that navigates the user to extend/upgrade their license'
+    },
+    is_expired: {
+      type: 'boolean',
+      description: 'Is current license expired'
+    },
+    is_trial: {
+      type: 'boolean',
+      description: 'Is current license a trial'
+    },
+    suggested_reminder: {
+      $ref: '#/components/schemas/RepeatSchedule'
+    }
+  }
+} as const
+
 export const $NewApiKeyRequest = {
   type: 'object',
   description: 'Request to create a new API key.',
@@ -2566,6 +2630,36 @@ export const $Relation = {
 Matches the Calcite JSON format.`
 } as const
 
+export const $RepeatSchedule = {
+  oneOf: [
+    {
+      type: 'string',
+      enum: ['Once']
+    },
+    {
+      type: 'string',
+      enum: ['Session']
+    },
+    {
+      type: 'object',
+      required: ['Every'],
+      properties: {
+        Every: {
+          type: 'object',
+          required: ['seconds'],
+          properties: {
+            seconds: {
+              type: 'integer',
+              format: 'int64',
+              minimum: 0
+            }
+          }
+        }
+      }
+    }
+  ]
+} as const
+
 export const $ResourceConfig = {
   type: 'object',
   properties: {
@@ -3604,6 +3698,24 @@ export const $TransportConfig = {
 and \`crate::InputTransport::new_endpoint\`.`,
   discriminator: {
     propertyName: 'name'
+  }
+} as const
+
+export const $UpdateInformation = {
+  type: 'object',
+  required: ['latest_version', 'is_latest_version', 'instructions_url'],
+  properties: {
+    instructions_url: {
+      type: 'string',
+      description:
+        "URL that navigates the user to instructions on how to upgrade their deployment's version"
+    },
+    is_latest_version: {
+      type: 'boolean'
+    },
+    latest_version: {
+      type: 'string'
+    }
   }
 } as const
 
