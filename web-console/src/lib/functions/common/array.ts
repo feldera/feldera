@@ -147,21 +147,24 @@ export const groupBy = <T, K extends string | number>(list: T[], getKey: (item: 
 }
 
 /**
- * Return array containing only unique element from the original array in the same order
+ * Return an array containing only unique elements from the original array in the same order.
  * Keep the first occurrence of the element in the array
  */
-export const nubLast = <T>(array: T[]) =>
-  array.filter((value, index, arr) => arr.indexOf(value) === index)
+export const nubLast = <T>(array: T[], getKey = (v: T): string | number => v as any) =>
+  array.filter((value, index, arr) => {
+    const key = getKey(value)
+    return arr.findIndex((item) => getKey(item) === key) === index
+  })
 
 /**
- * Return array containing only unique element from the original array in the same order
- * Keep the first occurrence of the element in the array
+ * Return an array containing only unique elements from the original array in the same order.
+ * Keep the last occurrence of the element in the array
  */
-export const nubFirst = <T>(array: T[]) =>
-  array
-    .reverse()
-    .filter((value, index, arr) => arr.indexOf(value) === index)
-    .reverse()
+export const nubFirst = <T>(array: T[], getKey = (v: T): string | number => v as any) =>
+  array.filter((value, index, arr) => {
+    const key = getKey(value)
+    return arr.findLastIndex((item) => getKey(item) === key) === index
+  })
 
 /**
  * Performs no checks on uniqueness of inputs
