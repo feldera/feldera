@@ -57,7 +57,7 @@ use std::{
     },
     time::Duration,
 };
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {
@@ -411,14 +411,14 @@ impl ControllerStatus {
     }
 
     pub fn pause_input_endpoint(&self, endpoint: &EndpointId) {
-        if let Some(ep) = self.inputs.write().unwrap().get_mut(endpoint) {
-            ep.paused = true;
+        if let Some(ep) = self.inputs.read().unwrap().get(endpoint) {
+            ep.paused.store(true, Ordering::Release);
         }
     }
 
     pub fn start_input_endpoint(&self, endpoint: &EndpointId) {
-        if let Some(ep) = self.inputs.write().unwrap().get_mut(endpoint) {
-            ep.paused = false;
+        if let Some(ep) = self.inputs.read().unwrap().get(endpoint) {
+            ep.paused.store(false, Ordering::Release);
         }
     }
 
@@ -438,7 +438,7 @@ impl ControllerStatus {
         }
 
         for (endpoint_id, input) in inputs.iter() {
-            if !input.paused {
+            if !input.paused.load(Ordering::Acquire) {
                 continue;
             }
             if let Some(start_after) = &input.config.connector_config.start_after {
@@ -446,7 +446,7 @@ impl ControllerStatus {
                     .iter()
                     .all(|label| !unfinished_labels.contains(label))
                 {
-                    debug!("starting endpoint {}, whose 'start_after' dependencies have been satisfied", input.endpoint_name);
+                    info!("starting endpoint {}, whose 'start_after' dependencies have been satisfied", input.endpoint_name);
                     endpoints_to_start.push(*endpoint_id);
                 }
             }
@@ -871,7 +871,7 @@ pub struct InputEndpointStatus {
     /// endpoint configuration is `true`. At runtime, the value of the flag is
     /// controlled via the `/tables/<table_name>/connectors/<connector_name>/start` and
     /// `/tables/<table_name>/connectors/<connector_name>/pause` endpoints.
-    pub paused: bool,
+    pub paused: AtomicBool,
 }
 
 impl InputEndpointStatus {
@@ -889,7 +889,7 @@ impl InputEndpointStatus {
             metrics: Default::default(),
             fatal_error: Mutex::new(None),
             progress: Mutex::new(None),
-            paused: paused_by_user,
+            paused: AtomicBool::new(paused_by_user),
             reader,
         }
     }
@@ -949,7 +949,7 @@ impl InputEndpointStatus {
 
     /// True if the endpoint's `paused_by_user` flag is set to `true`.
     pub fn is_paused_by_user(&self) -> bool {
-        self.paused
+        self.paused.load(Ordering::Acquire)
     }
 
     /// True if the number of records buffered by the endpoint exceeds
