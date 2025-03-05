@@ -795,8 +795,7 @@ where
             // println!("affected_ranges: {ranges:?}");
 
             // Clear old outputs.
-            output_trace_cursor.seek_key(delta_cursor.key());
-            if output_trace_cursor.key_valid() && output_trace_cursor.key() == delta_cursor.key() {
+            if output_trace_cursor.seek_key_exact(delta_cursor.key()) {
                 let mut range_cursor = RangeCursor::new(
                     PartitionCursor::new(&mut output_trace_cursor),
                     ranges.clone(),
@@ -820,15 +819,10 @@ where
             };
 
             // Compute new outputs.
-            input_trace_cursor.seek_key(delta_cursor.key());
-            tree_cursor.seek_key(delta_cursor.key());
-
-            if input_trace_cursor.key_valid()
-                && input_trace_cursor.key() == delta_cursor.key()
+            if input_trace_cursor.seek_key_exact(delta_cursor.key())
                 // It's possible that the key is in the input trace with weight 0, but it's no longer in the tree, which
                 // caused `test_empty_tree()` to fail without this check.
-                && tree_cursor.key_valid()
-                && tree_cursor.key() == delta_cursor.key()
+                && tree_cursor.seek_key_exact(delta_cursor.key())
             {
                 let mut tree_partition_cursor = PartitionCursor::new(&mut tree_cursor);
                 let mut input_range_cursor =
