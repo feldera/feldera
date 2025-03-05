@@ -7,6 +7,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;

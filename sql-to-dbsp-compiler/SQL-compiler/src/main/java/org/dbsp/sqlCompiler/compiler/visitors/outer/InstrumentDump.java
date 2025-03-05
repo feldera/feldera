@@ -49,7 +49,7 @@ public class InstrumentDump extends CircuitCloneVisitor {
         DBSPExpression dump = new DBSPApplyExpression(operator.getNode(), "dump", zset.elementType,
                 new DBSPStringLiteral(Long.toString(operator.id)), row);
         DBSPExpression function = dump.closure(row.asParameter());
-        DBSPSimpleOperator map = new DBSPMapOperator(operator.getNode(), function, zset, input.outputPort());
+        DBSPSimpleOperator map = new DBSPMapOperator(operator.getRelNode(), function, zset, input.outputPort());
         this.map(operator, map);
     }
 

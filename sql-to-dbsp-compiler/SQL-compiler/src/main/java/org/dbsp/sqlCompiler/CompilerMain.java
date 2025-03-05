@@ -41,8 +41,11 @@ import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import javax.sql.DataSource;
@@ -140,6 +143,7 @@ public class CompilerMain {
     /** Run compiler, return exit code. */
     CompilerMessages run() throws SQLException {
         DBSPCompiler compiler = new DBSPCompiler(this.options);
+        this.options.validate(compiler);
         String conn = this.options.ioOptions.metadataSource;
         if (!conn.isEmpty()) {
             // This requires the JDBC drivers for the respective databases to be loaded
@@ -157,7 +161,8 @@ public class CompilerMain {
             compiler.setEntireInput(this.options.ioOptions.inputFile, input);
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
-                    "Error reading file", e.getMessage());
+                    "Error reading file",
+                    Utilities.singleQuote(this.options.ioOptions.inputFile) + " " + e.getMessage());
             return compiler.messages;
         }
         if (this.options.ioOptions.verbosity >= 1)
@@ -167,9 +172,10 @@ public class CompilerMain {
         if (compiler.hasErrors())
             return compiler.messages;
         // The following runs all compilation stages
-        DBSPCircuit dbsp = compiler.getFinalCircuit(false);
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
         if (compiler.hasErrors())
             return compiler.messages;
+        assert circuit != null;
         if (this.options.ioOptions.emitJsonSchema != null) {
             try {
                 PrintStream outputStream = new PrintStream(
@@ -183,17 +189,24 @@ public class CompilerMain {
                 return compiler.messages;
             }
         }
-        if (this.options.ioOptions.emitPlan) {
-            if (this.options.ioOptions.outputFile.isEmpty()) {
-                compiler.reportError(SourcePositionRange.INVALID, "Invalid output",
-                        "Must specify an output file when outputting the plan");
-                return compiler.messages;
-            }
+        if (this.options.ioOptions.emitPlan != null) {
             try {
                 PrintStream outputStream = new PrintStream(
-                        Files.newOutputStream(Paths.get(this.options.ioOptions.outputFile)));
-                String plan = compiler.getPlans();
-                outputStream.println(plan);
+                        Files.newOutputStream(Paths.get(this.options.ioOptions.emitPlan)));
+                IIndentStream stream = new IndentStream(outputStream).setIndentAmount(2);
+                compiler.getPlans(stream);
+                outputStream.close();
+            } catch (IOException e) {
+                compiler.reportError(SourcePositionRange.INVALID,
+                        "Error writing to file", e.getMessage());
+            }
+            return compiler.messages;
+        }
+        if (this.options.ioOptions.emitDataflow != null) {
+            try {
+                PrintStream outputStream = new PrintStream(
+                        Files.newOutputStream(Paths.get(this.options.ioOptions.emitDataflow)));
+                compiler.getDataflow(outputStream, circuit);
                 outputStream.close();
             } catch (IOException e) {
                 compiler.reportError(SourcePositionRange.INVALID,
@@ -212,13 +225,13 @@ public class CompilerMain {
                 return compiler.messages;
             }
             ToDot.dump(compiler, this.options.ioOptions.outputFile,
-                    this.options.ioOptions.verbosity, dotFormat, dbsp);
+                    this.options.ioOptions.verbosity, dotFormat, circuit);
             return compiler.messages;
         }
         try {
             PrintStream stream = this.getOutputStream();
             RustFileWriter writer = new RustFileWriter(stream);
-            writer.add(dbsp);
+            writer.add(circuit);
             writer.write(compiler);
             stream.close();
         } catch (IOException e) {

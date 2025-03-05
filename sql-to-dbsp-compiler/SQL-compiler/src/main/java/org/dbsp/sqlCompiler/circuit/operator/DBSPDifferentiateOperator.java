@@ -26,14 +26,15 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
 import java.util.List;
 
 public final class DBSPDifferentiateOperator extends DBSPUnaryOperator {
-    public DBSPDifferentiateOperator(CalciteObject node, OutputPort source) {
+    public DBSPDifferentiateOperator(CalciteRelNode node, OutputPort source) {
         super(node, "differentiate", null, source.outputType(), source.isMultiset(), source);
     }
 
@@ -50,14 +51,14 @@ public final class DBSPDifferentiateOperator extends DBSPUnaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDifferentiateOperator(
-                    this.getNode(), newInputs.get(0)).copyAnnotations(this);
+                    this.getRelNode(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 
     @SuppressWarnings("unused")
     public static DBSPDifferentiateOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPDifferentiateOperator(CalciteObject.EMPTY, info.getInput(0))
+        return new DBSPDifferentiateOperator(CalciteEmptyRel.INSTANCE, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPDifferentiateOperator.class);
     }
 }

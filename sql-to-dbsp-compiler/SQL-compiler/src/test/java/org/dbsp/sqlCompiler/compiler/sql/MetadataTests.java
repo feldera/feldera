@@ -635,6 +635,8 @@ public class MetadataTests extends BaseSQLTests {
                       Generate an input for each CREATE TABLE, even if the table is not used\s
                       by any view
                       Default: false
+                    --dataflow
+                      Emit the Dataflow graph of the program in the specified JSON file
                     --handles
                       Use handles (true) or Catalog (false) in the emitted Rust code
                       Default: false
@@ -648,7 +650,7 @@ public class MetadataTests extends BaseSQLTests {
                       Default: <empty string>
                     --lenient
                       Lenient SQL validation.  If true it allows duplicate column names in a\s
-                      view\s
+                      view.\s
                       Default: false
                     --no-restrict-io
                       Do not restrict the types of columns allowed in tables and views
@@ -660,8 +662,7 @@ public class MetadataTests extends BaseSQLTests {
                       Ensure that outputs never contain duplicates
                       Default: false
                     --plan
-                      Emit the Calcite plan of the optimized program instead of Rust
-                      Default: false
+                      Emit the Calcite plan of the program in the specified JSON file
                     --streaming
                       Compiling a streaming program, where only inserts are allowed
                       Default: false
@@ -693,7 +694,8 @@ public class MetadataTests extends BaseSQLTests {
                       Emit a jpg image of the circuit instead of Rust
                       Default: false
                     -js
-                      Emit a JSON file containing the schema of all views and tables involved
+                      Emit a JSON file containing the schema of all views and tables in the\s
+                      specified file.
                     -o
                       Output file; stdout if null
                       Default: <empty string>
@@ -719,98 +721,65 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         File json = File.createTempFile("out", ".json", new File("."));
         json.deleteOnExit();
-        CompilerMain.execute("--plan", "-o", json.getPath(), file.getPath());
+        CompilerMain.execute("--plan", json.getPath(), file.getPath());
         String jsonContents = Utilities.readFile(json.toPath());
-        Assert.assertEquals("""
-                {"error_view":{
-                  "rels": [
-                    {
-                      "id": "0",
-                      "relOp": "LogicalTableScan",
-                      "table": [
-                        "schema",
-                        "error_table"
-                      ],
-                      "inputs": []
-                    }
-                  ]
-                },
-                "v1":{
-                  "rels": [
-                    {
-                      "id": "0",
-                      "relOp": "LogicalTableScan",
-                      "table": [
-                        "schema",
-                        "t"
-                      ],
-                      "inputs": []
-                    },
-                    {
-                      "id": "1",
-                      "relOp": "LogicalProject",
-                      "fields": [
-                        "col1"
-                      ],
-                      "exprs": [
-                        {
-                          "input": 0,
-                          "name": "$0"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                "v2":{
-                  "rels": [
-                    {
-                      "id": "0",
-                      "relOp": "LogicalTableScan",
-                      "table": [
-                        "schema",
-                        "t"
-                      ],
-                      "inputs": []
-                    },
-                    {
-                      "id": "1",
-                      "relOp": "LogicalProject",
-                      "fields": [
-                        "col1"
-                      ],
-                      "exprs": [
-                        {
-                          "input": 0,
-                          "name": "$0"
-                        }
-                      ]
-                    },
-                    {
-                      "id": "2",
-                      "relOp": "LogicalAggregate",
-                      "group": [],
-                      "aggs": [
-                        {
-                          "agg": {
-                            "name": "SUM",
-                            "kind": "SUM",
-                            "syntax": "FUNCTION"
-                          },
-                          "type": {
-                            "type": "INTEGER",
-                            "nullable": true
-                          },
-                          "distinct": false,
-                          "operands": [
-                            0
-                          ],
-                          "name": "EXPR$0"
-                        }
-                      ]
-                    }
-                  ]
-                }
-                }""", jsonContents);
+        String expected = TestUtil.readStringFromResourceFile("metadataTests-generatePlan.json");
+        Assert.assertEquals(expected, jsonContents);
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        Assert.assertNotNull(parsed);
+    }
+
+    @Test
+    public void generateDFTest() throws IOException, SQLException {
+        String sql = """
+            CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
+            CREATE VIEW V AS SELECT SUM(COL1) FROM T;""";
+        File file = createInputScript(sql);
+        File json = File.createTempFile("out", ".json", new File("."));
+        json.deleteOnExit();
+        CompilerMessages msg = CompilerMain.execute("--dataflow", json.getPath(), file.getPath());
+        assert msg.exitCode == 0;
+        String jsonContents = Utilities.readFile(json.toPath());
+        String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDF.json");
+        Assert.assertEquals(expected, jsonContents);
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        Assert.assertNotNull(parsed);
+    }
+
+    @Test
+    public void generateDFRecursiveTest() throws IOException, SQLException {
+        String sql = """
+                DECLARE RECURSIVE view fibonacci(n INT, value INT);
+                create table input (x int);
+                
+                create view fibonacci AS
+                (
+                    -- Base case: first two Fibonacci numbers
+                    select 0 as n, 0 as value
+                    union all
+                    select 1 as n, 1 as value
+                )
+                union all
+                (
+                    -- Compute F(n)=F(n-1)+F(n-2)
+                    select
+                        prev.n + 1 as n,
+                        (prev.value + curr.value) as value
+                    from fibonacci as curr
+                    join fibonacci as prev
+                    on prev.n = curr.n - 1
+                    where curr.n < 10 and prev.n < 10
+                );""";
+        File file = createInputScript(sql);
+        File json = File.createTempFile("out", ".json", new File("."));
+        json.deleteOnExit();
+        CompilerMessages msg = CompilerMain.execute("--dataflow", json.getPath(), file.getPath());
+        assert msg.exitCode == 0;
+        String jsonContents = Utilities.readFile(json.toPath());
+        String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDFRecursive.json");
+        Assert.assertEquals(expected, jsonContents);
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);

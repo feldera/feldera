@@ -8,35 +8,17 @@ import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParserPos;
+import org.dbsp.util.IIndentStream;
 
-public class CalciteRelNode extends CalciteObject {
-    final RelNode relNode;
+import java.util.Map;
+
+public abstract class CalciteRelNode extends CalciteObject {
     public static final SqlDialect DIALECT = SqlDialect.DatabaseProduct.UNKNOWN.getDialect();
     static final RelToSqlConverter CONVERTER = new RelToSqlConverter(DIALECT);
-
-    CalciteRelNode(RelNode relNode) {
-        this.relNode = relNode;
-    }
 
     @Override
     public boolean isEmpty() {
         return false;
-    }
-
-    @Override
-    public String toString() {
-        try {
-            SqlNode node = CONVERTER.visitRoot(this.relNode).asStatement();
-            return node.toString();
-        } catch (Throwable ex) {
-            // Sometimes Calcite crashes when converting rel to SQL
-            return this.relNode.toString();
-        }
-    }
-
-    @Override
-    public String toInternalString() {
-        return this.relNode.toString();
     }
 
     /** Convert a closed expression into SQL. */
@@ -47,4 +29,16 @@ public class CalciteRelNode extends CalciteObject {
         SqlNode sql = context.toSql(null, node);
         return sql.toString();
     }
+
+    public abstract IIndentStream asJson(IIndentStream stream, Map<RelNode, Integer> idRemap);
+
+    public abstract CalciteRelNode remove(RelNode node);
+
+    public abstract boolean contains(RelNode node);
+
+    /** Create a CalciteRelNode that represents a step running after 'after' */
+    public abstract CalciteRelNode after(CalciteRelNode first);
+
+    /** Return a version of this node where all final nodes are marked partial */
+    public abstract CalciteRelNode intermediate();
 }

@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -22,7 +22,7 @@ public abstract class DBSPOperatorWithError extends DBSPOperator {
     public final DBSPTypeStream outputStreamType;
     public final DBSPTypeStream errorStreamType;
 
-    protected DBSPOperatorWithError(CalciteObject node, String operation, DBSPType outputType, DBSPType errorType,
+    protected DBSPOperatorWithError(CalciteRelNode node, String operation, DBSPType outputType, DBSPType errorType,
                                     DBSPClosureExpression function, DBSPClosureExpression error) {
         super(node);
         this.operation = operation;

@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -25,7 +26,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     public final DBSPExpression start;
     public final DBSPExpression size;
 
-    public DBSPHopOperator(CalciteObject node, int timestampIndex,
+    public DBSPHopOperator(CalciteRelNode node, int timestampIndex,
                            DBSPExpression interval,
                            DBSPExpression start, DBSPExpression size,
                            DBSPTypeZSet outputType, OutputPort input) {
@@ -61,7 +62,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPHopOperator(
-                this.getNode(), this.timestampIndex, this.interval, this.start, this.size,
+                this.getRelNode(), this.timestampIndex, this.interval, this.start, this.size,
                 outputType.to(DBSPTypeZSet.class), this.input())
                 .copyAnnotations(this);
     }
@@ -70,7 +71,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPHopOperator(
-                    this.getNode(), this.timestampIndex, this.interval, this.start, this.size,
+                    this.getRelNode(), this.timestampIndex, this.interval, this.start, this.size,
                     this.getOutputZSetType(), newInputs.get(0))
                     .copyAnnotations(this);
         return this;
@@ -83,7 +84,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
         DBSPExpression interval = fromJsonInner(node, "interval", decoder, DBSPExpression.class);
         DBSPExpression start = fromJsonInner(node, "start", decoder, DBSPExpression.class);
         DBSPExpression size = fromJsonInner(node, "size", decoder, DBSPExpression.class);
-        return new DBSPHopOperator(CalciteObject.EMPTY, timestampIndex, interval, start, size,
+        return new DBSPHopOperator(CalciteEmptyRel.INSTANCE, timestampIndex, interval, start, size,
                 info.getZsetType(), info.getInput(0));
     }
 }

@@ -64,4 +64,19 @@ public class SourcePositionRange implements IHasSourcePositionRange {
     public String toRustConstant() {
         return "\"line " + this.start.line + " column " + this.start.column + "\"";
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+
+        SourcePositionRange that = (SourcePositionRange) o;
+        return start.equals(that.start) && end.equals(that.end);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = start.hashCode();
+        result = 31 * result + end.hashCode();
+        return result;
+    }
 }

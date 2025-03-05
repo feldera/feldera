@@ -27,7 +27,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -59,7 +60,7 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator {
         }
     }
 
-    public DBSPNoopOperator(CalciteObject node, OutputPort source,
+    public DBSPNoopOperator(CalciteRelNode node, OutputPort source,
                             @Nullable String comment) {
         super(node, "noop", getClosure(source.outputType()),
                 source.outputType(), source.isMultiset(), source, comment);
@@ -77,7 +78,7 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPNoopOperator(this.getNode(), newInputs.get(0), this.comment)
+            return new DBSPNoopOperator(this.getRelNode(), newInputs.get(0), this.comment)
                     .copyAnnotations(this);
         return this;
     }
@@ -87,7 +88,7 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator {
     @SuppressWarnings("unused")
     public static DBSPNoopOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        return new DBSPNoopOperator(CalciteObject.EMPTY, info.getInput(0), null)
+        return new DBSPNoopOperator(CalciteEmptyRel.INSTANCE, info.getInput(0), null)
                 .addAnnotations(info.annotations(), DBSPNoopOperator.class);
     }
 }
