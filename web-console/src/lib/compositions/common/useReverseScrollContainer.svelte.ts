@@ -13,7 +13,7 @@ export const useReverseScrollContainer = (
   let ref = <HTMLDivElement>undefined!
   let stickToBottom = $state(true)
 
-  const scrollToBottom = (lastOffset?: number) => {
+  const scrollToBottomImpl = () => {
     if (!ref) {
       return
     }
@@ -23,6 +23,11 @@ export const useReverseScrollContainer = (
         ref.scrollHeight -
         (Math.round(ref.scrollHeight - ref.clientHeight) >= 0 ? ref.clientHeight : 0)
     })
+  }
+
+  const scrollToBottom = () => {
+    scrollToBottomImpl()
+    requestAnimationFrame(scrollToBottomImpl)
   }
 
   let lastSize: number = 0
