@@ -61,21 +61,21 @@
 <div
   class="{variants[
     variant
-  ]} flex h-12 flex-nowrap items-center justify-between px-2 text-base font-medium sm:px-8"
+  ]} flex min-h-12 flex-nowrap items-center justify-between gap-1 px-2 py-2 text-base font-medium sm:px-8"
 >
-  <div class="flex flex-nowrap items-center gap-6">
+  <div class="flex flex-nowrap items-center gap-2 sm:gap-6">
     {@render start?.()}
   </div>
-  <div class="flex flex-nowrap items-center gap-6">
+  <div class="flex flex-nowrap items-center gap-2 sm:gap-6">
     {@render center?.()}
   </div>
-  <div class="flex flex-nowrap items-center gap-6">
+  <div class="flex flex-nowrap items-center gap-2 sm:gap-6">
     {@render end?.()}
     {#if dismiss}
       <button
         onclick={dismiss}
         aria-label="Dismiss message"
-        class="fd fd-x text-2xl hover:brightness-90"
+        class="fd fd-x px-1 text-2xl hover:brightness-90"
       ></button>
     {/if}
   </div>

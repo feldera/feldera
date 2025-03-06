@@ -69,7 +69,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
 
   const [config, authConfig] = await Promise.all([getConfig(), loadAuthConfig()])
 
-  if (config.license_info && new Date(config.license_info.remind_starting_at) >= new Date()) {
+  if (config.license_info && new Date(config.license_info.remind_starting_at) <= new Date()) {
     const time = {
       in: `{toDaysHoursFromNow ${new Date(config.license_info.expires_at).valueOf()}}`,
       at: Dayjs(config.license_info.expires_at).format('h A'),

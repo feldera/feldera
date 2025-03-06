@@ -55,50 +55,50 @@
 
 <SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}
 ></SvelteKitTopLoader>
-{#each displayedMessages as message}
-  {#if message.id.startsWith('expiring_license_')}
-    <LineBanner
-      dismiss={message.dismissable !== 'never'
-        ? () => systemMessages.dismiss(message.id)
-        : undefined}
-    >
-      {#snippet start()}
-        {message.text}
-        {#if message.action}
-          {@render BannerButton(message.action)}
-        {/if}
-      {/snippet}
-    </LineBanner>
-  {:else if message.id.startsWith('version_available_')}
-    <LineBanner
-      dismiss={message.dismissable !== 'never'
-        ? () => systemMessages.dismiss(message.id)
-        : undefined}
-      variant="aether"
-    >
-      {#snippet center()}
-        {message.text}
-        {#if message.action}
-          {@render BannerButton(message.action)}
-        {/if}
-      {/snippet}
-    </LineBanner>
-  {:else}
-    <LineBanner
-      dismiss={message.dismissable !== 'never'
-        ? () => systemMessages.dismiss(message.id)
-        : undefined}
-    >
-      {#snippet start()}
-        {message.text}
-        {#if message.action}
-          {@render BannerButton(message.action)}
-        {/if}
-      {/snippet}
-    </LineBanner>
-  {/if}
-{/each}
-<div class="flex h-full w-full justify-center">
+<div class="flex h-full w-full flex-col">
+  {#each displayedMessages as message}
+    {#if message.id.startsWith('expiring_license_')}
+      <LineBanner
+        dismiss={message.dismissable !== 'never'
+          ? () => systemMessages.dismiss(message.id)
+          : undefined}
+      >
+        {#snippet start()}
+          {@html message.text}
+          {#if message.action}
+            {@render BannerButton(message.action)}
+          {/if}
+        {/snippet}
+      </LineBanner>
+    {:else if message.id.startsWith('version_available_')}
+      <LineBanner
+        dismiss={message.dismissable !== 'never'
+          ? () => systemMessages.dismiss(message.id)
+          : undefined}
+        variant="aether"
+      >
+        {#snippet center()}
+          {@html message.text}
+          {#if message.action}
+            {@render BannerButton(message.action)}
+          {/if}
+        {/snippet}
+      </LineBanner>
+    {:else}
+      <LineBanner
+        dismiss={message.dismissable !== 'never'
+          ? () => systemMessages.dismiss(message.id)
+          : undefined}
+      >
+        {#snippet start()}
+          {@html message.text}
+          {#if message.action}
+            {@render BannerButton(message.action)}
+          {/if}
+        {/snippet}
+      </LineBanner>
+    {/if}
+  {/each}
   <!-- <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
     <div class="flex h-full w-full flex-col gap-1">
       <span class="mx-5 my-4 flex items-end justify-center">
