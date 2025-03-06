@@ -33,16 +33,24 @@
 
   const systemMessages = useSystemMessages()
   const now = useInterval(() => new Date(), 3600000, 3600000 - (Date.now() % 3600000))
-  const displayedMessages = $derived(systemMessages.displayedMessages.map(message => {
-    const text = message.text
-    .replace(/\{toDaysHoursFromNow (\d+)\}/, (_match, milliseconds) => {
-      const duration = Dayjs.duration(parseInt(milliseconds) - now.current.valueOf(), 'milliseconds')
-      const days = duration.asDays()
-      const hours = duration.hours()
-      return (days > 1 ? `${days.toFixed()} ${'days'}` : (hours > 0 ? `${hours.toFixed()} ${hours > 1 ? 'hours' : 'hour'}` : 'less than an hour') )
+  const displayedMessages = $derived(
+    systemMessages.displayedMessages.map((message) => {
+      const text = message.text.replace(/\{toDaysHoursFromNow (\d+)\}/, (_match, milliseconds) => {
+        const duration = Dayjs.duration(
+          parseInt(milliseconds) - now.current.valueOf(),
+          'milliseconds'
+        )
+        const days = duration.asDays()
+        const hours = duration.hours()
+        return days > 1
+          ? `${days.toFixed()} ${'days'}`
+          : hours > 0
+            ? `${hours.toFixed()} ${hours > 1 ? 'hours' : 'hour'}`
+            : 'less than an hour'
+      })
+      return { ...message, text }
     })
-    return {...message, text}
-  }))
+  )
 </script>
 
 <SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}

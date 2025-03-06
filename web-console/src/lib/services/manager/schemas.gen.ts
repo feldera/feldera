@@ -722,6 +722,40 @@ export const $Demo = {
   }
 } as const
 
+export const $DisplaySchedule = {
+  oneOf: [
+    {
+      type: 'string',
+      enum: ['Once']
+    },
+    {
+      type: 'string',
+      enum: ['Session']
+    },
+    {
+      type: 'object',
+      required: ['Every'],
+      properties: {
+        Every: {
+          type: 'object',
+          required: ['seconds'],
+          properties: {
+            seconds: {
+              type: 'integer',
+              format: 'int64',
+              minimum: 0
+            }
+          }
+        }
+      }
+    },
+    {
+      type: 'string',
+      enum: ['Always']
+    }
+  ]
+} as const
+
 export const $ErrorResponse = {
   type: 'object',
   description: 'Information returned by REST API endpoints on error.',
@@ -1444,7 +1478,8 @@ export const $LicenseInformation = {
     'is_trial',
     'description_html',
     'extension_url',
-    'suggested_reminder'
+    'remind_schedule',
+    'remind_starting_at'
   ],
   properties: {
     description_html: {
@@ -1473,8 +1508,12 @@ export const $LicenseInformation = {
       type: 'boolean',
       description: 'Is current license a trial'
     },
-    suggested_reminder: {
-      $ref: '#/components/schemas/RepeatSchedule'
+    remind_schedule: {
+      $ref: '#/components/schemas/DisplaySchedule'
+    },
+    remind_starting_at: {
+      type: 'string',
+      format: 'date-time'
     }
   }
 } as const
@@ -2630,36 +2669,6 @@ export const $Relation = {
 Matches the Calcite JSON format.`
 } as const
 
-export const $RepeatSchedule = {
-  oneOf: [
-    {
-      type: 'string',
-      enum: ['Once']
-    },
-    {
-      type: 'string',
-      enum: ['Session']
-    },
-    {
-      type: 'object',
-      required: ['Every'],
-      properties: {
-        Every: {
-          type: 'object',
-          required: ['seconds'],
-          properties: {
-            seconds: {
-              type: 'integer',
-              format: 'int64',
-              minimum: 0
-            }
-          }
-        }
-      }
-    }
-  ]
-} as const
-
 export const $ResourceConfig = {
   type: 'object',
   properties: {
@@ -3703,7 +3712,7 @@ and \`crate::InputTransport::new_endpoint\`.`,
 
 export const $UpdateInformation = {
   type: 'object',
-  required: ['latest_version', 'is_latest_version', 'instructions_url'],
+  required: ['latest_version', 'is_latest_version', 'instructions_url', 'remind_schedule'],
   properties: {
     instructions_url: {
       type: 'string',
@@ -3715,6 +3724,9 @@ export const $UpdateInformation = {
     },
     latest_version: {
       type: 'string'
+    },
+    remind_schedule: {
+      $ref: '#/components/schemas/DisplaySchedule'
     }
   }
 } as const

@@ -553,6 +553,16 @@ export type Demo = {
   udf_toml: string
 }
 
+export type DisplaySchedule =
+  | 'Once'
+  | 'Session'
+  | {
+      Every: {
+        seconds: number
+      }
+    }
+  | 'Always'
+
 /**
  * Information returned by REST API endpoints on error.
  */
@@ -1134,7 +1144,8 @@ export type LicenseInformation = {
    * Is current license a trial
    */
   is_trial: boolean
-  suggested_reminder: RepeatSchedule
+  remind_schedule: DisplaySchedule
+  remind_starting_at: string
 }
 
 /**
@@ -1816,15 +1827,6 @@ export type Relation = SqlIdentifier & {
   }
 }
 
-export type RepeatSchedule =
-  | 'Once'
-  | 'Session'
-  | {
-      Every: {
-        seconds: number
-      }
-    }
-
 export type ResourceConfig = {
   /**
    * The maximum number of CPU cores to reserve
@@ -2361,6 +2363,7 @@ export type UpdateInformation = {
   instructions_url: string
   is_latest_version: boolean
   latest_version: string
+  remind_schedule: DisplaySchedule
 }
 
 /**
