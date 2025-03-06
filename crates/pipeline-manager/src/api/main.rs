@@ -154,7 +154,6 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::config::FtConfig,
         feldera_types::config::InputEndpointConfig,
         feldera_types::config::ConnectorConfig,
-        feldera_types::config::ObjectStorageConfig,
         feldera_types::config::OutputBufferConfig,
         feldera_types::config::OutputEndpointConfig,
         feldera_types::config::TransportConfig,
@@ -230,7 +229,6 @@ fn public_scope() -> Scope {
     // or route resolution does not work correctly.
     web::scope("")
         .service(endpoints::config::get_config_authentication)
-        .service(endpoints::config::get_config)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(healthz)
         .service(ResourceFiles::new("/", generate()).resolve_not_found_to_root())
@@ -267,6 +265,7 @@ fn api_scope() -> Scope {
         .service(endpoints::api_key::post_api_key)
         .service(endpoints::api_key::delete_api_key)
         // Configuration endpoints
+        .service(endpoints::config::get_config)
         .service(endpoints::config::get_config_demos)
         // Metrics of all pipelines belonging to this tenant
         .service(endpoints::metrics::get_metrics)
