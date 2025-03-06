@@ -74,7 +74,8 @@ pub(crate) struct Configuration {
 
 /// Retrieve general configuration.
 #[utoipa::path(
-    path="/config",
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
     responses(
         (status = OK
             , description = "The response body contains basic configuration information about this host."
