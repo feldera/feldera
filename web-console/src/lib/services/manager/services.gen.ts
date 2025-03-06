@@ -2,6 +2,8 @@
 
 import { client, type Options } from '@hey-api/client-fetch'
 import type {
+  GetConfigError,
+  GetConfigResponse,
   GetConfigAuthenticationError,
   GetConfigAuthenticationResponse,
   ListApiKeysError,
@@ -15,8 +17,6 @@ import type {
   DeleteApiKeyData,
   DeleteApiKeyError,
   DeleteApiKeyResponse,
-  GetConfigError,
-  GetConfigResponse,
   GetConfigDemosError,
   GetConfigDemosResponse,
   GetMetricsError,
@@ -78,6 +78,16 @@ import type {
 } from './types.gen'
 
 /**
+ * Retrieve general configuration.
+ */
+export const getConfig = (options?: Options) => {
+  return (options?.client ?? client).get<GetConfigResponse, GetConfigError>({
+    ...options,
+    url: '/config'
+  })
+}
+
+/**
  * Retrieve authentication provider configuration.
  */
 export const getConfigAuthentication = (options?: Options) => {
@@ -127,16 +137,6 @@ export const deleteApiKey = (options: Options<DeleteApiKeyData>) => {
   return (options?.client ?? client).delete<DeleteApiKeyResponse, DeleteApiKeyError>({
     ...options,
     url: '/v0/api_keys/{api_key_name}'
-  })
-}
-
-/**
- * Retrieve general configuration.
- */
-export const getConfig = (options?: Options) => {
-  return (options?.client ?? client).get<GetConfigResponse, GetConfigError>({
-    ...options,
-    url: '/v0/config'
   })
 }
 
