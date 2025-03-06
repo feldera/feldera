@@ -107,7 +107,7 @@ only the program-related core fields, and is used by the compiler to discern whe
 
         // Common
         crate::db::types::version::Version,
-        crate::api::endpoints::config::RepeatSchedule,
+        crate::api::endpoints::config::DisplaySchedule,
         crate::api::endpoints::config::LicenseInformation,
         crate::api::endpoints::config::UpdateInformation,
         crate::api::endpoints::config::Configuration,

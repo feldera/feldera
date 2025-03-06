@@ -9,7 +9,7 @@ import type { AuthDetails } from '$lib/types/auth'
 import { goto } from '$app/navigation'
 import posthog from 'posthog-js'
 import { getConfig } from '$lib/services/pipelineManager'
-import type { Configuration } from '$lib/services/manager'
+import type { Configuration, DisplaySchedule } from '$lib/services/manager'
 import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
 import { initSystemMessages } from '$lib/compositions/initSystemMessages'
@@ -47,6 +47,14 @@ type LayoutData = {
   }
 }
 
+const displayScheduleToDismissable = (schedule: DisplaySchedule) =>
+  match(schedule)
+    .with('Once', () => 'once' as const)
+    .with('Session', () => 'session' as const)
+    .with({ Every: P.select() }, ({ seconds }) => ({ milliseconds: seconds * 1000 }))
+    .with('Always', () => 'never' as const)
+    .exhaustive()
+
 export const load = async ({ fetch, url }): Promise<LayoutData> => {
   if (!('window' in globalThis)) {
     return {
@@ -61,7 +69,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
 
   const [config, authConfig] = await Promise.all([getConfig(), loadAuthConfig()])
 
-  if (config.license_info) {
+  if (config.license_info && new Date(config.license_info.remind_starting_at) >= new Date()) {
     const time = {
       in: `{toDaysHoursFromNow ${new Date(config.license_info.expires_at).valueOf()}}`,
       at: Dayjs(config.license_info.expires_at).format('h A'),
@@ -69,11 +77,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
     }
     initSystemMessages.push({
       id: `expiring_license_${config.edition}`,
-      dismissable: match(config.license_info.suggested_reminder)
-        .with('Once', () => 'once' as const)
-        .with('Session', () => 'session' as const)
-        .with({ Every: P.select() }, ({ seconds }) => ({ milliseconds: seconds * 1000 }))
-        .exhaustive(),
+      dismissable: displayScheduleToDismissable(config.license_info.remind_schedule),
       text:
         (config.license_info.is_trial
           ? `Your trial ends in ${time.in} at ${time.at} on ${time.on}`
@@ -88,7 +92,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
   if (config.update_info && !config.update_info.is_latest_version) {
     initSystemMessages.push({
       id: `version_available_${config.edition}_${config.update_info.latest_version}`,
-      dismissable: 'session',
+      dismissable: displayScheduleToDismissable(config.update_info.remind_schedule),
       text: `New version ${config.update_info.latest_version} available`,
       action: {
         text: 'Update Now',
@@ -109,9 +113,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
                 url: config.update_info.instructions_url
               }
             : undefined,
-        changelog:
-          config.changelog_url ??
-          `https://github.com/feldera/feldera/releases/tag/v${config.version}`
+        changelog: config.changelog_url
       }
     }
   }

@@ -8,26 +8,28 @@ use crate::api::main::ServerState;
 use crate::error::ManagerError;
 
 #[derive(Serialize, ToSchema)]
-pub enum RepeatSchedule {
+pub enum DisplaySchedule {
     Once,
     Session,
     Every { seconds: u64 },
+    Always,
 }
 
 #[derive(Serialize, ToSchema)]
 pub(crate) struct LicenseInformation {
-    expires_in_seconds: u64,
-    expires_at: DateTime<Utc>,
+    pub expires_in_seconds: u64,
+    pub expires_at: DateTime<Utc>,
     /// Is current license expired
-    is_expired: bool,
+    pub is_expired: bool,
     /// Is current license a trial
-    is_trial: bool,
+    pub is_trial: bool,
     /// Optional description of the advantages of extending the license / upgrading from a trial
-    description_html: String,
+    pub description_html: String,
     /// URL that navigates the user to extend/upgrade their license
-    extension_url: String,
+    pub extension_url: String,
     /// Suggested frequency of reminding the user to extend/upgrade their license
-    suggested_reminder: RepeatSchedule,
+    pub remind_schedule: DisplaySchedule,
+    pub remind_starting_at: DateTime<Utc>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -36,6 +38,7 @@ pub(crate) struct UpdateInformation {
     pub is_latest_version: bool,
     /// URL that navigates the user to instructions on how to upgrade their deployment's version
     pub instructions_url: String,
+    pub remind_schedule: DisplaySchedule,
 }
 
 #[derive(Serialize, ToSchema)]
