@@ -726,10 +726,12 @@ export const $DisplaySchedule = {
   oneOf: [
     {
       type: 'string',
+      description: 'Display it only once: after dismissal do not show it again',
       enum: ['Once']
     },
     {
       type: 'string',
+      description: 'Display it again the next session if it is dismissed',
       enum: ['Session']
     },
     {
@@ -738,6 +740,7 @@ export const $DisplaySchedule = {
       properties: {
         Every: {
           type: 'object',
+          description: 'Display it again after a certain period of time after it is dismissed',
           required: ['seconds'],
           properties: {
             seconds: {
@@ -751,6 +754,7 @@ export const $DisplaySchedule = {
     },
     {
       type: 'string',
+      description: 'Always display it, do not allow it to be dismissed',
       enum: ['Always']
     }
   ]
@@ -1478,8 +1482,8 @@ export const $LicenseInformation = {
     'is_trial',
     'description_html',
     'extension_url',
-    'remind_schedule',
-    'remind_starting_at'
+    'remind_starting_at',
+    'remind_schedule'
   ],
   properties: {
     description_html: {
@@ -1489,31 +1493,34 @@ export const $LicenseInformation = {
     },
     expires_at: {
       type: 'string',
-      format: 'date-time'
+      format: 'date-time',
+      description: 'Timestamp at which the license expires'
     },
     expires_in_seconds: {
       type: 'integer',
       format: 'int64',
+      description: 'Duration until the license expires',
       minimum: 0
     },
     extension_url: {
       type: 'string',
-      description: 'URL that navigates the user to extend/upgrade their license'
+      description: 'URL that navigates the user to extend / upgrade their license'
     },
     is_expired: {
       type: 'boolean',
-      description: 'Is current license expired'
+      description: 'Whether the license is expired'
     },
     is_trial: {
       type: 'boolean',
-      description: 'Is current license a trial'
+      description: 'Whether the license is a trial'
     },
     remind_schedule: {
       $ref: '#/components/schemas/DisplaySchedule'
     },
     remind_starting_at: {
       type: 'string',
-      format: 'date-time'
+      format: 'date-time',
+      description: 'Timestamp from which the user should be reminded of the license expiring soon'
     }
   }
 } as const
@@ -3717,13 +3724,15 @@ export const $UpdateInformation = {
     instructions_url: {
       type: 'string',
       description:
-        "URL that navigates the user to instructions on how to upgrade their deployment's version"
+        "URL that navigates the user to instructions on how to update their deployment's version"
     },
     is_latest_version: {
-      type: 'boolean'
+      type: 'boolean',
+      description: 'Whether the current version matches the latest version'
     },
     latest_version: {
-      type: 'string'
+      type: 'string',
+      description: 'Latest version corresponding to the edition'
     },
     remind_schedule: {
       $ref: '#/components/schemas/DisplaySchedule'

@@ -557,6 +557,9 @@ export type DisplaySchedule =
   | 'Once'
   | 'Session'
   | {
+      /**
+       * Display it again after a certain period of time after it is dismissed
+       */
       Every: {
         seconds: number
       }
@@ -1130,21 +1133,30 @@ export type LicenseInformation = {
    * Optional description of the advantages of extending the license / upgrading from a trial
    */
   description_html: string
+  /**
+   * Timestamp at which the license expires
+   */
   expires_at: string
+  /**
+   * Duration until the license expires
+   */
   expires_in_seconds: number
   /**
-   * URL that navigates the user to extend/upgrade their license
+   * URL that navigates the user to extend / upgrade their license
    */
   extension_url: string
   /**
-   * Is current license expired
+   * Whether the license is expired
    */
   is_expired: boolean
   /**
-   * Is current license a trial
+   * Whether the license is a trial
    */
   is_trial: boolean
   remind_schedule: DisplaySchedule
+  /**
+   * Timestamp from which the user should be reminded of the license expiring soon
+   */
   remind_starting_at: string
 }
 
@@ -2358,10 +2370,16 @@ export type name2 = 'file_input'
 
 export type UpdateInformation = {
   /**
-   * URL that navigates the user to instructions on how to upgrade their deployment's version
+   * URL that navigates the user to instructions on how to update their deployment's version
    */
   instructions_url: string
+  /**
+   * Whether the current version matches the latest version
+   */
   is_latest_version: boolean
+  /**
+   * Latest version corresponding to the edition
+   */
   latest_version: string
   remind_schedule: DisplaySchedule
 }
@@ -2391,10 +2409,6 @@ export type UrlInputConfig = {
  * Version number.
  */
 export type Version = number
-
-export type GetConfigResponse = Configuration
-
-export type GetConfigError = ErrorResponse
 
 export type GetConfigAuthenticationResponse = AuthProvider
 
@@ -2437,6 +2451,10 @@ export type DeleteApiKeyData = {
 export type DeleteApiKeyResponse = unknown
 
 export type DeleteApiKeyError = ErrorResponse
+
+export type GetConfigResponse = Configuration
+
+export type GetConfigError = ErrorResponse
 
 export type GetConfigDemosResponse = Array<Demo>
 
@@ -2786,20 +2804,6 @@ export type PostPipelineActionResponse = unknown
 export type PostPipelineActionError = ErrorResponse
 
 export type $OpenApiTs = {
-  '/config': {
-    get: {
-      res: {
-        /**
-         * The response body contains basic configuration information about this host.
-         */
-        '200': Configuration
-        /**
-         * Request failed.
-         */
-        '500': ErrorResponse
-      }
-    }
-  }
   '/config/authentication': {
     get: {
       res: {
@@ -2863,6 +2867,20 @@ export type $OpenApiTs = {
          * API key with that name does not exist
          */
         '404': ErrorResponse
+      }
+    }
+  }
+  '/v0/config': {
+    get: {
+      res: {
+        /**
+         * The response body contains basic configuration information about this host.
+         */
+        '200': Configuration
+        /**
+         * Request failed.
+         */
+        '500': ErrorResponse
       }
     }
   }
