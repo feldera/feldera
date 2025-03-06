@@ -50,6 +50,7 @@
       endResultStream: () => {}
     }
     if (result instanceof Error) {
+      adhocQueries[pipelineName].queries[i].progress = false
       adhocQueries[pipelineName].queries[i].result.rows().push({
         error: result.message
       })

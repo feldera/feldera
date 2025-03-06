@@ -109,6 +109,7 @@
     pipelineLogsStream(pipelineName).then((result) => {
       if (result instanceof Error) {
         streams[pipelineName].stream = { closed: {} }
+        streams[pipelineName].rows.push(result.message)
         tryRestartStream(pipelineName, 5000)
         return
       }
