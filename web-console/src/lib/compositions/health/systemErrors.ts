@@ -144,7 +144,7 @@ export const extractRustCompilerError = <Report>(
     const startLineNumber = parseInt(match[1]) + lineOffset
     const startColumn = parseInt(match[2])
     return {
-      name: `Error compiling ${pipelineName}`,
+      name: `${warning ? 'Warning in' : 'Error compiling'} ${pipelineName}`,
       message: stderr, // 'Program compilation error. See details below:\n' + stderr
       cause: {
         entityName: pipelineName,
@@ -183,20 +183,22 @@ export const extractRustCompilerError = <Report>(
     }
 
     return {
-      name: `Error compiling ${pipelineName}`,
+      name: `${warning ? 'Warning in' : 'Error compiling'} ${pipelineName}`,
       message: stderr,
       cause: {
         entityName: pipelineName,
         tag: 'unrecognizedProgramError',
         source: source + '#program.sql',
         report: getReport(pipelineName, stderr),
-        body: {
-          startLineNumber: 0,
-          endLineNumber: 9999,
-          startColumn: 0,
-          endColumn: 9999,
-          message: stderr
-        },
+        body: warning
+          ? stderr
+          : {
+              startLineNumber: 0,
+              endLineNumber: 9999,
+              startColumn: 0,
+              endColumn: 9999,
+              message: stderr
+            },
         warning
       }
     }

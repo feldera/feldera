@@ -93,7 +93,6 @@ type ErrorRange = {
   startColumn: number
   endColumn: number
   message: string
-  warning?: boolean
 }
 
 export const felderaCompilerMarkerSource = 'feldera compiler'
@@ -102,7 +101,7 @@ export const extractErrorMarkers = (
   errors: SystemError<string | SqlCompilerMessage | ErrorRange>[]
 ) => {
   return errors
-    .map(({ cause: { body: error } }) => {
+    .map(({ cause: { body: error, warning } }) => {
       if (typeof error === 'string') {
         return null
       }
@@ -113,7 +112,7 @@ export const extractErrorMarkers = (
           startColumn: error.startColumn,
           endColumn: error.endColumn + 1,
           message: error.message,
-          severity: error.warning ? MarkerSeverity.Warning : MarkerSeverity.Error
+          severity: warning ? MarkerSeverity.Warning : MarkerSeverity.Error
         }
       }
       return {
@@ -122,7 +121,7 @@ export const extractErrorMarkers = (
         startColumn: error.start_column,
         endColumn: error.end_column + 1,
         message: showSqlCompilerMessage(error),
-        severity: error.warning ? MarkerSeverity.Warning : MarkerSeverity.Error
+        severity: warning ? MarkerSeverity.Warning : MarkerSeverity.Error
       }
     })
     .filter(nonNull)
