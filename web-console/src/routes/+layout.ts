@@ -70,18 +70,25 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
   const [config, authConfig] = await Promise.all([getConfig(), loadAuthConfig()])
 
   if (config.license_info && new Date(config.license_info.remind_starting_at) <= new Date()) {
-    const time = {
-      in: `{toDaysHoursFromNow ${new Date(config.license_info.expires_at).valueOf()}}`,
-      at: Dayjs(config.license_info.expires_at).format('h A'),
-      on: Dayjs(config.license_info.expires_at).format('MMM D')
-    }
+    const expiresAt = Dayjs(config.license_info.expires_at)
+    const time = expiresAt.isBefore()
+      ? null
+      : {
+          in: `{toDaysHoursFromNow ${new Date(config.license_info.expires_at).valueOf()}}`,
+          at: expiresAt.format('h A'),
+          on: expiresAt.format('MMM D')
+        }
     initSystemMessages.push({
       id: `expiring_license_${config.edition}`,
       dismissable: displayScheduleToDismissable(config.license_info.remind_schedule),
       text:
         (config.license_info.is_trial
-          ? `Your trial ends in ${time.in} at ${time.at} on ${time.on}`
-          : `Your Feldera ${config.edition} license expires in ${time.in} at ${time.at} on ${time.on}`) +
+          ? time
+            ? `Your trial ends in ${time.in} at ${time.at} on ${time.on}`
+            : 'Your trial has ended'
+          : time
+            ? `Your Feldera ${config.edition} license expires in ${time.in} at ${time.at} on ${time.on}`
+            : `Your Feldera ${config.edition} license has expired`) +
         (config.license_info.description_html ? `. ${config.license_info.description_html}` : ''),
       action: {
         text: config.license_info.is_trial ? 'Upgrade Subscription' : 'Extend Your License',

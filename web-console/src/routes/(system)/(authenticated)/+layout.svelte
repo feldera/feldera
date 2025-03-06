@@ -64,7 +64,7 @@
           : undefined}
       >
         {#snippet start()}
-          {@html message.text}
+          <span>{@html message.text}</span>
           {#if message.action}
             {@render BannerButton(message.action)}
           {/if}
@@ -78,7 +78,7 @@
         variant="aether"
       >
         {#snippet center()}
-          {@html message.text}
+          <span>{@html message.text}</span>
           {#if message.action}
             {@render BannerButton(message.action)}
           {/if}
@@ -91,7 +91,7 @@
           : undefined}
       >
         {#snippet start()}
-          {@html message.text}
+          <span>{@html message.text}</span>
           {#if message.action}
             {@render BannerButton(message.action)}
           {/if}
