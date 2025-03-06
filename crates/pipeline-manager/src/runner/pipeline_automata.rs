@@ -108,7 +108,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     const DEFAULT_PIPELINE_POLL_PERIOD: Duration = Duration::from_millis(2_500);
 
     /// Maximum time to wait for the pipeline to initialize its connectors and web server.
-    const INITIALIZATION_TIMEOUT: Duration = Duration::from_millis(60_000);
+    const INITIALIZATION_TIMEOUT: Duration = Duration::from_millis(300_000);
 
     /// How often to poll the pipeline during initialization.
     const INITIALIZATION_POLL_PERIOD: Duration = Duration::from_millis(250);
