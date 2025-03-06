@@ -2410,6 +2410,10 @@ export type UrlInputConfig = {
  */
 export type Version = number
 
+export type GetConfigResponse = Configuration
+
+export type GetConfigError = ErrorResponse
+
 export type GetConfigAuthenticationResponse = AuthProvider
 
 export type GetConfigAuthenticationError = ErrorResponse
@@ -2451,10 +2455,6 @@ export type DeleteApiKeyData = {
 export type DeleteApiKeyResponse = unknown
 
 export type DeleteApiKeyError = ErrorResponse
-
-export type GetConfigResponse = Configuration
-
-export type GetConfigError = ErrorResponse
 
 export type GetConfigDemosResponse = Array<Demo>
 
@@ -2804,6 +2804,20 @@ export type PostPipelineActionResponse = unknown
 export type PostPipelineActionError = ErrorResponse
 
 export type $OpenApiTs = {
+  '/config': {
+    get: {
+      res: {
+        /**
+         * The response body contains basic configuration information about this host.
+         */
+        '200': Configuration
+        /**
+         * Request failed.
+         */
+        '500': ErrorResponse
+      }
+    }
+  }
   '/config/authentication': {
     get: {
       res: {
@@ -2867,20 +2881,6 @@ export type $OpenApiTs = {
          * API key with that name does not exist
          */
         '404': ErrorResponse
-      }
-    }
-  }
-  '/v0/config': {
-    get: {
-      res: {
-        /**
-         * The response body contains basic configuration information about this host.
-         */
-        '200': Configuration
-        /**
-         * Request failed.
-         */
-        '500': ErrorResponse
       }
     }
   }
