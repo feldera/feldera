@@ -238,8 +238,8 @@ public class CompilerMain {
                 writer.write(compiler);
                 stream.close();
             } else {
-                if (!options.ioOptions.emitHandles)
-                    throw new CompilationError("The option '--crates' also requires '--handles'");
+                if (options.ioOptions.emitHandles)
+                    throw new CompilationError("The option '--crates' cannot be used with '--handles'");
                 RustCratesWriter writer = new RustCratesWriter(options.ioOptions.outputFile);
                 writer.add(circuit);
                 writer.write(compiler);

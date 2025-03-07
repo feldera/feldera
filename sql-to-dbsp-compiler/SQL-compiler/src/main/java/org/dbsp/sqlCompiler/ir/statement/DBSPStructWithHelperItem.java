@@ -53,7 +53,7 @@ public final class DBSPStructWithHelperItem extends DBSPItem implements IHasType
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append(this.type);
+        return builder.append("StructWithHelper ").append(this.type);
     }
 
     @Override

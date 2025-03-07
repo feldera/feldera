@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -24,9 +23,15 @@ import java.util.stream.IntStream;
 /** Base class for writing code to Rust files */
 public abstract class RustWriter {
     final List<IDBSPNode> toWrite;
+    final List<String> dependencies;
 
     public RustWriter() {
         this.toWrite = new ArrayList<>();
+        this.dependencies = new ArrayList<>();
+    }
+
+    public void addDependencies(List<String> dependencies) {
+        this.dependencies.addAll(dependencies);
     }
 
     /** Various visitors gather here information about the program prior to generating code. */
@@ -267,29 +272,31 @@ public abstract class RustWriter {
                     .append("}").newline();
         }
 
-        stream.append("declare_tuples! {").increase();
-        for (int i: used.tupleSizesUsed) {
-            if (i <= 10)
-                // These are already pre-declared
-                continue;
-            stream.append(this.tup(i));
-            stream.append(",\n");
-        }
-        stream.decrease().append("}\n\n");
-
-        for (int i: used.tupleSizesUsed) {
-            if (i <= 10)
-                // These are already pre-declared
-                continue;
-            stream.append("feldera_types::deserialize_without_context!(");
-            stream.append(DBSPTypeCode.TUPLE.rustName)
-                    .append(i);
-            for (int j = 0; j < i; j++) {
-                stream.append(", ");
-                stream.append("T")
-                        .append(j);
+        if (!used.tupleSizesUsed.isEmpty()) {
+            stream.append("declare_tuples! {").increase();
+            for (int i : used.tupleSizesUsed) {
+                if (i <= 10)
+                    // These are already pre-declared
+                    continue;
+                stream.append(this.tup(i));
+                stream.append(",\n");
             }
-            stream.append(");\n");
+            stream.decrease().append("}\n\n");
+
+            for (int i : used.tupleSizesUsed) {
+                if (i <= 10)
+                    // These are already pre-declared
+                    continue;
+                stream.append("feldera_types::deserialize_without_context!(");
+                stream.append(DBSPTypeCode.TUPLE.rustName)
+                        .append(i);
+                for (int j = 0; j < i; j++) {
+                    stream.append(", ");
+                    stream.append("T")
+                            .append(j);
+                }
+                stream.append(");\n");
+            }
         }
         stream.append("\n");
     }
@@ -307,13 +314,17 @@ public abstract class RustWriter {
         }
 
         stream.append("""
-            #[cfg(test)]
-            use hashing::*;""")
+                        #[cfg(test)]
+                        use hashing::*;""")
                 .newline();
         stream.append(this.rustPreamble())
                 .newline();
         this.generateStructures(used, stream);
+        return stream.toString();
+    }
 
+    String generateUdfInclude() {
+        IndentStream stream = new IndentStream(new StringBuilder());
         String stubs = Utilities.getBaseName(DBSPCompiler.STUBS_FILE_NAME);
         stream.append("mod ")
                 .append(stubs)
@@ -342,7 +353,7 @@ public abstract class RustWriter {
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
                 // Find the resources used to generate the correct Rust preamble
-                outer = findCircuitResources.apply(outer);
+                findCircuitResources.apply(outer);
             }
         }
         return used;
