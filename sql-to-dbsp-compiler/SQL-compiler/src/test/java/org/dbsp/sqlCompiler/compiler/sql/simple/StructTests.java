@@ -137,10 +137,22 @@ public class StructTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3671() {
+        this.getCCS("""
+                CREATE TABLE row_of_arr_tbl(
+                c2 ROW(i2 INT ARRAY NULL, v2 VARCHAR ARRAY NOT NULL));
+                
+                CREATE VIEW v AS SELECT
+                row_of_arr_tbl.c2.i2[2],
+                row_of_arr_tbl.c2.v2[2],
+                row_of_arr_tbl.c2[2][2]
+                FROM row_of_arr_tbl;""");
+    }
+
+    @Test
     public void structArrayTest() {
         String ddl = """
-            CREATE TYPE address_typ AS (
-               street          VARCHAR ARRAY);
+            CREATE TYPE address_typ AS (street VARCHAR ARRAY);
             CREATE TABLE PERS(p0 address_typ);
             CREATE VIEW V AS SELECT PERS.p0.street[1] FROM PERS;
             """;

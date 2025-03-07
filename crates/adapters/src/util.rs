@@ -6,11 +6,7 @@ use std::{
 };
 
 #[cfg(feature = "with-deltalake")]
-use std::{
-    error::Error,
-    future::Future,
-    pin::Pin,
-};
+use std::{error::Error, future::Future, pin::Pin};
 
 #[cfg(feature = "with-deltalake")]
 use futures::channel::oneshot;
