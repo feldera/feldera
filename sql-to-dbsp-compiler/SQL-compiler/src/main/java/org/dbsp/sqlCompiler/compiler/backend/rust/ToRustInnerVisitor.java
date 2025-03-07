@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
@@ -1067,25 +1066,52 @@ public class ToRustInnerVisitor extends InnerVisitor {
             case SQL_INDEX: {
                 DBSPType collectionType = expression.left.getType();
                 DBSPType indexType = expression.right.getType();
-                DBSPTypeArray vec = collectionType.to(DBSPTypeArray.class);
+                DBSPTypeArray arrayType = collectionType.to(DBSPTypeArray.class);
                 this.builder.append("index")
                         .append(expression.left.getType().nullableUnderlineSuffix())
-                        .append(vec.getElementType().nullableUnderlineSuffix())
+                        .append(arrayType.getElementType().nullableUnderlineSuffix())
                         .append(indexType.nullableUnderlineSuffix())
                         .append("(");
-                // Special case for Tuple<Option<Vec<>>>
                 boolean leftDone = false;
+                // Cases:
+                // - t: Tuple<Array<>>: &t.0
+                // - t: Tuple<Option<Array<>>>: &t.0
+                // - t: Option<Tuple<Array<>>>: &match t { None => None, Some(x) => Some(x.0.clone()) }
+                // - t: Option<Tuple<Option<Array>>>>: &match t { None => None, Some(x) => x.0.clone() }
                 if (expression.left.is(DBSPFieldExpression.class) && collectionType.mayBeNull) {
+                    // One of last 3 cases
                     DBSPFieldExpression field = expression.left.to(DBSPFieldExpression.class);
-                    if (field.expression.is(DBSPFieldExpression.class)) {
-                        this.builder.append("match &");
-                        field.expression.accept(this);
+                    DBSPTypeTupleBase tupleType = field.expression
+                            .getType()
+                            .to(DBSPTypeTupleBase.class);
+                    boolean tupleMaybeNull = tupleType.mayBeNull;
+                    boolean arrayMayBeNull = tupleType
+                            .getFieldType(field.fieldNo).mayBeNull;
+                    if (tupleMaybeNull) {
+                        // one of last 2 cases
                         leftDone = true;
-                        this.builder.append(" {").increase()
-                                .append("None => &None,").newline()
-                                .append("Some(x) => &x.")
-                                .append(field.fieldNo).newline()
-                                .decrease().append("}");
+                        if (arrayMayBeNull) {
+                            this.builder.append("&match &");
+                            field.expression.accept(this);
+                            this.builder.append(" {").increase()
+                                    .append("None => None,").newline()
+                                    .append("Some(x) => x.")
+                                    .append(field.fieldNo);
+                            this.builder.append(".clone()")
+                                    .newline()
+                                    .decrease().append("}");
+                        } else {
+                            this.builder.append("&match &");
+                            field.expression.accept(this);
+                            this.builder.append(" {").increase()
+                                    .append("None => None,").newline()
+                                    .append("Some(x) => ");
+                            this.builder.append("Some(x.")
+                                    .append(field.fieldNo)
+                                    .append(".clone())")
+                                    .newline()
+                                    .decrease().append("}");
+                        }
                     }
                 }
                 if (!leftDone) {
