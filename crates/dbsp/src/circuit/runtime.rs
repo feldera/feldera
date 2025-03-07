@@ -11,7 +11,7 @@ use crate::{
     DetailedError,
 };
 use core_affinity::{get_core_ids, CoreId};
-use enum_map::{enum_map, EnumMap};
+use enum_map::{enum_map, Enum, EnumMap};
 use feldera_types::config::StorageCompression;
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
@@ -319,9 +319,9 @@ impl RuntimeInner {
             storage
                 .options
                 .cache_mib
-                .unwrap_or(nworkers * 256)
-                .saturating_mul(1024 * 1024)
-                / nworkers
+                .map_or(256 * 1024 * 1024, |cache_mib| {
+                    cache_mib.saturating_mul(1024 * 1024) / nworkers / ThreadType::LENGTH
+                })
         } else {
             // Dummy buffer cache.
             1
