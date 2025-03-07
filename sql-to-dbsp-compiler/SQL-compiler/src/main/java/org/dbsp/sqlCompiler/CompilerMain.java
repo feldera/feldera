@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustCratesWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -237,6 +238,8 @@ public class CompilerMain {
                 writer.write(compiler);
                 stream.close();
             } else {
+                if (!options.ioOptions.emitHandles)
+                    throw new CompilationError("The option '--crates' also requires '--handles'");
                 RustCratesWriter writer = new RustCratesWriter(options.ioOptions.outputFile);
                 writer.add(circuit);
                 writer.write(compiler);

@@ -67,7 +67,7 @@ public class RustFileWriter extends RustWriter {
     String generatePreamble(StructuresUsed used) {
         IndentStream stream = new IndentStreamBuilder();
         stream.append(commonPreamble);
-        long max = this.used.getMaxTupleSize();
+        long max = used.getMaxTupleSize();
         if (max > 120) {
             // this is just a guess
             stream.append("#![recursion_limit = \"")
@@ -106,19 +106,14 @@ public class RustFileWriter extends RustWriter {
         this.add(pt.tester());
     }
 
-    public void add(DBSPCircuit circuit) {
-        this.toWrite.add(circuit);
-    }
-
-    public void add(DBSPFunction function) {
-        this.toWrite.add(function);
+    public void add(IDBSPNode node) {
+        this.toWrite.add(node);
     }
 
     public void write(DBSPCompiler compiler) {
-        List<IDBSPNode> objects = this.analyze(compiler);
-        // Emit code
+        StructuresUsed used = this.analyze(compiler);
         this.outputStream.println(generatePreamble(used));
-        for (IDBSPNode node: objects) {
+        for (IDBSPNode node: this.toWrite) {
             String str;
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {

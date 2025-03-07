@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -29,7 +30,7 @@ public abstract class RustWriter {
     }
 
     /** Various visitors gather here information about the program prior to generating code. */
-    static class StructuresUsed {
+    public static class StructuresUsed {
         /** The set of all tuple sizes used in the program. */
         final Set<Integer> tupleSizesUsed = new HashSet<>();
         /** The set of all semigroup sizes used. */
@@ -43,28 +44,30 @@ public abstract class RustWriter {
             return max;
         }
     }
-    final StructuresUsed used = new StructuresUsed();
 
     /** Visitor which discovers some data structures used.
      * Stores the result in the "used" structure. */
-    class FindResources extends InnerVisitor {
-        public FindResources(DBSPCompiler compiler) {
+    static class FindResources extends InnerVisitor {
+        final StructuresUsed used;
+
+        public FindResources(DBSPCompiler compiler, StructuresUsed used) {
             super(compiler);
+            this.used = used;
         }
 
         @Override
         public void postorder(DBSPTypeTuple type) {
-            RustWriter.this.used.tupleSizesUsed.add(type.size());
+            this.used.tupleSizesUsed.add(type.size());
         }
 
         @Override
         public void postorder(DBSPTypeStruct type) {
-            RustWriter.this.used.tupleSizesUsed.add(type.fields.size());
+            this.used.tupleSizesUsed.add(type.fields.size());
         }
 
         @Override
         public void postorder(DBSPTypeSemigroup type) {
-            RustWriter.this.used.semigroupSizesUsed.add(type.semigroupSize());
+            this.used.semigroupSizesUsed.add(type.semigroupSize());
         }
     }
 
@@ -294,7 +297,7 @@ public abstract class RustWriter {
     String generatePreamble(StructuresUsed used) {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.append(commonPreamble);
-        long max = this.used.getMaxTupleSize();
+        long max = used.getMaxTupleSize();
         if (max > 120) {
             // this is just a guess
             stream.append("#![recursion_limit = \"")
@@ -327,23 +330,21 @@ public abstract class RustWriter {
         return stream.toString();
     }
 
-    public List<IDBSPNode> analyze(DBSPCompiler compiler) {
-        List<IDBSPNode> objects = new ArrayList<>();
-        FindResources findResources = new FindResources(compiler);
+    public StructuresUsed analyze(DBSPCompiler compiler) {
+        StructuresUsed used = new StructuresUsed();
+        FindResources findResources = new FindResources(compiler, used);
         CircuitRewriter findCircuitResources = findResources.getCircuitVisitor(true);
 
         for (IDBSPNode node : this.toWrite) {
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {
                 inner.accept(findResources);
-                objects.add(inner);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
                 // Find the resources used to generate the correct Rust preamble
                 outer = findCircuitResources.apply(outer);
-                objects.add(outer);
             }
         }
-        return objects;
+        return used;
     }
 }

@@ -19,6 +19,10 @@ public final class DBSPDeclaration extends DBSPNode implements IDBSPOuterNode {
         this.item = item;
     }
 
+    public String getName() {
+        return this.item.getName();
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
         visitor.property("item");
