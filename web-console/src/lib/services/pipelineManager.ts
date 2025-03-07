@@ -398,7 +398,7 @@ export const postPipelineAction = async (
 export const getAuthConfig = () =>
   handled(getConfigAuthentication)({ client: unauthenticatedClient })
 
-export const getConfig = () => handled(_getConfig)({ client: unauthenticatedClient })
+export const getConfig = () => handled(_getConfig)()
 
 export const getApiKeys = () => handled(listApiKeys, `Failed to fetch API keys`)()
 

@@ -9,37 +9,6 @@
     "version": "0.38.0"
   },
   "paths": {
-    "/config": {
-      "get": {
-        "tags": [
-          "Configuration"
-        ],
-        "summary": "Retrieve general configuration.",
-        "operationId": "get_config",
-        "responses": {
-          "200": {
-            "description": "The response body contains basic configuration information about this host.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Configuration"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Request failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/config/authentication": {
       "get": {
         "tags": [
@@ -247,6 +216,42 @@
                   "details": {
                     "name": "non-existent-api-key"
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/config": {
+      "get": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "Retrieve general configuration.",
+        "operationId": "get_config",
+        "responses": {
+          "200": {
+            "description": "The response body contains basic configuration information about this host.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Configuration"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

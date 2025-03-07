@@ -64,10 +64,51 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
         edition: ''
       }
     }
-  } else {
   }
 
-  const [config, authConfig] = await Promise.all([getConfig(), loadAuthConfig()])
+  const authConfig = await loadAuthConfig()
+
+  const auth = authConfig
+    ? await axaOidcAuth({
+        oidcConfig: toAxaOidcConfig(authConfig.oidc),
+        logoutExtras: authConfig.logoutExtras,
+        onBeforeLogin: () => window.sessionStorage.setItem('redirect_to', window.location.href),
+        onAfterLogin: async () => {
+          {
+            const redirectTo = window.sessionStorage.getItem('redirect_to')
+            if (!redirectTo) {
+              return
+            }
+            window.sessionStorage.removeItem('redirect_to')
+            goto(redirectTo)
+          }
+        },
+        onBeforeLogout() {
+          posthog.reset()
+        }
+      })
+    : 'none'
+
+  if (typeof auth === 'object' && 'login' in auth) {
+    return {
+      auth,
+      feldera: undefined!
+    }
+  }
+
+  const config = await getConfig()
+
+  if (typeof auth === 'object' && 'logout' in auth) {
+    initPosthog(config).then(() => {
+      if (auth.profile.email) {
+        posthog.identify(auth.profile.email, {
+          email: auth.profile.email,
+          name: auth.profile.name,
+          auth_id: auth.profile.id
+        })
+      }
+    })
+  }
 
   if (config.license_info && new Date(config.license_info.remind_starting_at) <= new Date()) {
     const expiresAt = Dayjs(config.license_info.expires_at)
@@ -107,57 +148,20 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
       }
     })
   }
-  if (!authConfig) {
-    return {
-      auth: 'none',
-      feldera: {
-        version: config.version,
-        edition: config.edition,
-        update:
-          config.update_info && !config.update_info.is_latest_version
-            ? {
-                version: config.update_info.latest_version,
-                url: config.update_info.instructions_url
-              }
-            : undefined,
-        changelog: config.changelog_url
-      }
-    }
-  }
-  const axaOidcConfig = toAxaOidcConfig(authConfig.oidc)
-  const auth = await axaOidcAuth({
-    oidcConfig: axaOidcConfig,
-    logoutExtras: authConfig.logoutExtras,
-    onBeforeLogin: () => window.sessionStorage.setItem('redirect_to', window.location.href),
-    onAfterLogin: async (idTokenPayload) => {
-      {
-        initPosthog(config).then(() => {
-          if (idTokenPayload?.email) {
-            posthog.identify(idTokenPayload.email, {
-              email: idTokenPayload.email,
-              name: idTokenPayload.name
-            })
-          }
-        })
-      }
-      {
-        const redirectTo = window.sessionStorage.getItem('redirect_to')
-        if (!redirectTo) {
-          return
-        }
-        window.sessionStorage.removeItem('redirect_to')
-        goto(redirectTo)
-      }
-    },
-    onBeforeLogout() {
-      posthog.reset()
-    }
-  })
+
   return {
     auth,
     feldera: {
       version: config.version,
-      edition: (config as any).edition
+      edition: config.edition,
+      update:
+        config.update_info && !config.update_info.is_latest_version
+          ? {
+              version: config.update_info.latest_version,
+              url: config.update_info.instructions_url
+            }
+          : undefined,
+      changelog: config.changelog_url
     }
   }
 }
