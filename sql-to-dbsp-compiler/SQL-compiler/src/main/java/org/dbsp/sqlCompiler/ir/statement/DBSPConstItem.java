@@ -96,4 +96,9 @@ public final class DBSPConstItem extends DBSPItem implements IHasType {
         DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
         return new DBSPConstItem(name, type, expression);
     }
+
+    @Override
+    public String getName() {
+        return this.name;
+    }
 }

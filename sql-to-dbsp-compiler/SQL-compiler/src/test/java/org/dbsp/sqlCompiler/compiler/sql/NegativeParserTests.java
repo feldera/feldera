@@ -157,7 +157,7 @@ public class NegativeParserTests extends BaseSQLTests {
     @Test
     public void errorTest() throws IOException, SQLException {
         File file = createInputScript("This is not SQL");
-        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertEquals(1, messages.exitCode);
         Assert.assertEquals(1, messages.errorCount());
         CompilerMessages.Error msg = messages.getError(0);
@@ -165,7 +165,7 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertEquals("Non-query expression encountered in illegal context", msg.message);
 
         file = createInputScript("CREATE VIEW V AS SELECT * FROM T;");
-        messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertEquals(1, messages.exitCode);
         Assert.assertEquals(1, messages.errorCount());
         msg = messages.getError(0);
@@ -173,7 +173,7 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertEquals("Object 't' not found", msg.message);
 
         file = createInputScript("CREATE VIEW V AS SELECT ST_MAKELINE(ST_POINT(0,0), ST_POINT(0, 0));");
-        messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertEquals(1, messages.exitCode);
         Assert.assertEquals(1, messages.errorCount());
         msg = messages.getError(0);

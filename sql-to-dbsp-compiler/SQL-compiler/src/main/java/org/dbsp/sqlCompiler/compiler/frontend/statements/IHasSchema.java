@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.externalize.RelJson;
 import org.apache.calcite.rel.externalize.RelJsonReader;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rel.type.RelDataTypeFieldImpl;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -94,7 +95,7 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             return CalciteObject.EMPTY;
         }
 
-        public static AbstractIHasSchema fromJson(JsonNode node) {
+        public static AbstractIHasSchema fromJson(JsonNode node, RelDataTypeFactory typeFactory) {
             // The inverse of the asJson function
             String name = Utilities.getStringProperty(node, "name");
             boolean caseSensitive = Utilities.getBooleanProperty(node, "case_sensitive");
@@ -107,7 +108,7 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             var it = Utilities.getProperty(node, "fields").elements();
             int index = 0;
             while (it.hasNext()) {
-                var col = IHasSchema.relMetaFromJson(it.next(), index);
+                var col = IHasSchema.relMetaFromJson(it.next(), index, typeFactory);
                 index++;
                 columns.add(col);
             }
@@ -116,14 +117,14 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
     }
 
     // Inverse of asJson below
-    static RelColumnMetadata relMetaFromJson(JsonNode node, int index) {
+    static RelColumnMetadata relMetaFromJson(JsonNode node, int index, RelDataTypeFactory typeFactory) {
         try {
             String name = Utilities.getStringProperty(node, "name");
             boolean caseSensitive = Utilities.getBooleanProperty(node, "case_sensitive");
             boolean isPrimaryKey = node.has("primary_key");
             JsonNode jsonType = Utilities.getProperty(node, "columntype");
             String json = Utilities.deterministicObjectMapper().writeValueAsString(jsonType);
-            RelDataType type = RelJsonReader.readType(SqlToRelCompiler.TYPE_FACTORY, json);
+            RelDataType type = RelJsonReader.readType(typeFactory, json);
             RelDataTypeField field = new RelDataTypeFieldImpl(name, index, type);
             // Do we need lateness, watermark, etc?
             return new RelColumnMetadata(CalciteObject.EMPTY, field, isPrimaryKey, caseSensitive,

@@ -1013,7 +1013,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                 // Create external tables table
                 JdbcTableScan jscan = (JdbcTableScan) scan;
-                RelDataType tableRowType = jscan.jdbcTable.getRowType(SqlToRelCompiler.TYPE_FACTORY);
+                RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.sqlToRelCompiler.typeFactory);
                 DBSPTypeStruct originalRowType = this.convertType(tableRowType, true)
                         .to(DBSPTypeStruct.class)
                         .rename(tableName);
@@ -3692,7 +3692,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPType returnType = stat.function.getFunctionReturnType(this.compiler.getTypeCompiler());
             if (returnType.is(DBSPTypeStruct.class)) {
                 this.getCircuit().addDeclaration(new DBSPDeclaration(
-                        new DBSPStructWithHelperItem(returnType.to(DBSPTypeStruct.class))));
+                        new DBSPStructWithHelperItem(returnType.to(DBSPTypeStruct.class), null)));
             }
             this.getCircuit().addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(function)));
             return function;

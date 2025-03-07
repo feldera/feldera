@@ -7,4 +7,5 @@ public abstract class DBSPItem extends DBSPStatement {
     protected DBSPItem() {
         super(CalciteObject.EMPTY);
     }
+    public abstract String getName();
 }

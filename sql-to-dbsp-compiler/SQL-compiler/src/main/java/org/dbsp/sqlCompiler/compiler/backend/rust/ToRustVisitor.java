@@ -436,7 +436,7 @@ public class ToRustVisitor extends CircuitVisitor {
         for (DBSPDeclaration item: circuit.declarations) {
             if (item.item.is(DBSPStructWithHelperItem.class)) {
                 DBSPStructWithHelperItem i = item.item.to(DBSPStructWithHelperItem.class);
-                this.generateStructHelpers(i.type, null);
+                this.generateStructHelpers(i.type, i.metadata);
             }
         }
 

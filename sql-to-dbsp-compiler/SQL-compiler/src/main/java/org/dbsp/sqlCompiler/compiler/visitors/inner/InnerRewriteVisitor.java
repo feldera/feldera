@@ -1320,7 +1320,7 @@ public abstract class InnerRewriteVisitor
         this.push(item);
         DBSPType type = this.transform(item.type);
         this.pop(item);
-        DBSPItem result = new DBSPStructWithHelperItem(type.to(DBSPTypeStruct.class));
+        DBSPItem result = new DBSPStructWithHelperItem(type.to(DBSPTypeStruct.class), item.metadata);
         this.map(item, result);
         return VisitDecision.STOP;
     }

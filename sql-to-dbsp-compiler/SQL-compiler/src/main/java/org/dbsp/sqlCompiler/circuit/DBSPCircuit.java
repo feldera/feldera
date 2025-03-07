@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -51,15 +52,18 @@ import org.dbsp.util.graph.Port;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** A DBSP circuit. */
 public final class DBSPCircuit extends DBSPNode
         implements IDBSPOuterNode, IWritesLogs, ICircuit, DiGraph<DBSPOperator> {
     public final List<DBSPDeclaration> declarations;
+    public final Map<String, DBSPDeclaration> declarationMap = new HashMap<>();
     public final LinkedHashMap<ProgramIdentifier, DBSPSourceTableOperator> sourceOperators = new LinkedHashMap<>();
     public final LinkedHashMap<ProgramIdentifier, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
     public final LinkedHashMap<ProgramIdentifier, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
@@ -152,6 +156,15 @@ public final class DBSPCircuit extends DBSPNode
 
     public void addDeclaration(DBSPDeclaration decl) {
         this.declarations.add(decl);
+        /*
+        if (this.declarationMap.containsKey(decl.getName())) {
+            DBSPDeclaration prev = Utilities.getExists(this.declarationMap, decl.getName());
+            throw new CompilationError(
+                    "Declaration " + decl + " has the same name as an existing declaration " + prev,
+                    decl.item.getNode());
+        }
+        Utilities.putNew(this.declarationMap, decl.getName(), decl);
+         */
     }
 
     public void addOperator(DBSPOperator operator) {
@@ -297,7 +310,7 @@ public final class DBSPCircuit extends DBSPNode
                 fromJsonOuterList(node, "declarations", decoder, DBSPDeclaration.class);
         List<DBSPOperator> operators =
                 fromJsonOuterList(node, "allOperators", decoder, DBSPOperator.class);
-        ProgramMetadata metadata = ProgramMetadata.fromJson(Utilities.getProperty(node, "metadata"));
+        ProgramMetadata metadata = ProgramMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder.typeFactory);
         return new DBSPCircuit(metadata, declarations, operators);
     }
 }

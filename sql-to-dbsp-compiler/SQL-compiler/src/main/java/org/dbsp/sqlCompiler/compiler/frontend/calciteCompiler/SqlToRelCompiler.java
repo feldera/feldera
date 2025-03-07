@@ -95,6 +95,10 @@ import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.pretty.SqlPrettyWriter;
+import org.apache.calcite.sql.type.ArraySqlType;
+import org.apache.calcite.sql.type.BasicSqlType;
+import org.apache.calcite.sql.type.IntervalSqlType;
+import org.apache.calcite.sql.type.MapSqlType;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -153,6 +157,7 @@ import org.dbsp.util.Properties;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -271,7 +276,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         // We use a series of planner stages later to perform the real optimizations.
         RelOptPlanner planner = new HepPlanner(new HepProgramBuilder().build());
         planner.setExecutor(RexUtil.EXECUTOR);
-        this.cluster = RelOptCluster.create(planner, new RexBuilder(TYPE_FACTORY));
+        this.cluster = RelOptCluster.create(planner, new RexBuilder(typeFactory));
         this.converterConfig = SqlToRelConverter.config()
                 // Calcite recommends not using withExpand, but there are no
                 // rules to decorrelate some queries that withExpand will produce,
@@ -347,40 +352,65 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         @Override
         public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
-
-        /*
-        @Override
-        public @org.checkerframework.checker.nullness.qual.Nullable RelDataType deriveDecimalMultiplyType(
-                RelDataTypeFactory typeFactory, RelDataType type1, RelDataType type2) {
-            if (SqlTypeUtil.isExactNumeric(type1)
-                && SqlTypeUtil.isExactNumeric(type2)) {
-                if (SqlTypeUtil.isDecimal(type1) || SqlTypeUtil.isDecimal(type2)) {
-                    int p1 = type1.getPrecision();
-                    int p2 = type2.getPrecision();
-                    int s1 = type1.getScale();
-                    int s2 = type2.getScale();
-
-                    int precision = p1 + p2;
-                    int excessPrecision = getMaxNumericPrecision() - precision;
-                    precision = Math.min(precision, getMaxNumericPrecision());
-
-                    int scale = s1 + s2;
-                    scale = Math.min(scale, getMaxNumericScale());
-                    if (excessPrecision < 0)
-                        scale = scale + excessPrecision;
-                    if (scale < 0)
-                        scale = 0;
-
-                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, precision, scale);
-                }
-            }
-
-            return null;
-        }
-         */
     };
 
-    public static final RelDataTypeFactory TYPE_FACTORY = new SqlTypeFactoryImpl(TYPE_SYSTEM);
+    /** A TypeFactory that knows about RelStruct, our representation of user-defined types */
+    public static class CustomTypeFactory extends SqlTypeFactoryImpl {
+        static int currentId = 0;
+        public final int id;
+
+        CustomTypeFactory() {
+            super(TYPE_SYSTEM);
+            this.id = currentId++;
+        }
+
+        private RelDataType copyRelStruct(RelDataType type, boolean nullable) {
+            RelStruct strct = (RelStruct) type;
+            return new RelStruct(strct.id, strct.typeName, type.getFieldList(), nullable);
+        }
+
+        public RelStruct createRelStruct(SqlIdentifier name, List<RelDataTypeField> fields, boolean nullable) {
+            return new RelStruct(this.id, name, fields, nullable);
+        }
+
+        @Override
+        public RelDataType enforceTypeWithNullability(RelDataType type, boolean nullable) {
+            if (type.isNullable() == nullable)
+                return type;
+            RelDataType newType;
+            if (type instanceof RelStruct) {
+                newType = this.copyRelStruct(type, nullable);
+            } else if (type instanceof BasicSqlType) {
+                newType = ((BasicSqlType)type).createWithNullability(nullable);
+            } else if (type instanceof MapSqlType) {
+                newType = new MapSqlType(Objects.requireNonNull(type.getKeyType()),
+                        Objects.requireNonNull(type.getValueType()), nullable);
+            } else if (type instanceof ArraySqlType) {
+                newType = new ArraySqlType(Objects.requireNonNull(type.getComponentType()), nullable);
+            } else if (type instanceof IntervalSqlType) {
+                newType = new IntervalSqlType(this.typeSystem,
+                        Objects.requireNonNull(type.getIntervalQualifier(), () -> "type.getIntervalQualifier() for " + type),
+                        nullable);
+            } else if (type instanceof RelRecordType) {
+                return this.canonize(type.getStructKind(), type.getFieldNames(), new AbstractList<>() {
+                    public RelDataType get(int index) {
+                        return (type.getFieldList().get(index)).getType();
+                    }
+                    public int size() {
+                        return type.getFieldCount();
+                    }
+                }, nullable);
+            } else {
+                throw new UnimplementedException("Unsupported SQL type ", CalciteObject.create(type));
+            }
+
+            return this.canonize(newType);
+        }
+    }
+
+    // A new typeFactory will be created for each program compiled.
+    // Useful when compiling together many tests.
+    public final CustomTypeFactory typeFactory = new CustomTypeFactory();
 
     /** Invoked when front-end compilation is finished, to do additional validation */
     public void endCompilation(IErrorReporter reporter) {
@@ -524,11 +554,11 @@ public class SqlToRelCompiler implements IWritesLogs {
         validatorConfig = validatorConfig.withConformance(new Conformance(validatorConfig.conformance()));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
                 CalciteSchema.from(this.rootSchema), Collections.singletonList(calciteCatalog.schemaName),
-                TYPE_FACTORY, connectionConfig);
+                typeFactory, connectionConfig);
         this.validator = SqlValidatorUtil.newValidator(
                 newOperatorTable,
                 catalogReader,
-                TYPE_FACTORY,
+                typeFactory,
                 validatorConfig
         );
         this.converter = new SqlToRelConverter(
@@ -660,12 +690,7 @@ public class SqlToRelCompiler implements IWritesLogs {
     }
 
     private RelDataType createNullableType(RelDataType type) {
-        if (type instanceof RelRecordType) {
-            // This function seems to be buggy in Calcite:
-            // there is sets the nullability of all record fields.
-            return new RelRecordType(type.getStructKind(), type.getFieldList(), true);
-        }
-        return TYPE_FACTORY.createTypeWithNullability(type, true);
+        return typeFactory.enforceTypeWithNullability(type, true);
     }
 
     private RelDataType deriveType(SqlDataTypeSpec typeSpec) {
@@ -702,7 +727,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             // Don't need 'collectionType', but there is no other way to check whether the typeName is for an ARRAY
             RelDataType collectionType = collection.deriveType(this.getValidator());
             if (collectionType.getSqlTypeName() == SqlTypeName.ARRAY) {
-                RelDataType result = TYPE_FACTORY.createArrayType(elementType, -1);
+                RelDataType result = typeFactory.createArrayType(elementType, -1);
                 if (typeSpec.getNullable() != null && typeSpec.getNullable())
                     result = this.createNullableType(result);
                 return result;
@@ -719,7 +744,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 // Nullability *can* be specified for ROW fields!
                 fields.add(elementType);
             }
-            RelDataType result = TYPE_FACTORY.createStructType(
+            RelDataType result = typeFactory.createStructType(
                     fields,
                     fieldNames.stream()
                             .map(SqlIdentifier::toString)
@@ -734,7 +759,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             RelDataType valueType = this.specToRel(value, false);
             // keyType = this.createNullableType(keyType);
             valueType = this.createNullableType(valueType);
-            RelDataType result = TYPE_FACTORY.createMapType(keyType, valueType);
+            RelDataType result = typeFactory.createMapType(keyType, valueType);
             if (typeSpec.getNullable() != null && typeSpec.getNullable())
                 result = this.createNullableType(result);
             return result;
@@ -749,19 +774,23 @@ public class SqlToRelCompiler implements IWritesLogs {
      * @param neverNullable   If true never return a nullable type.  Used for primary keys. */
     public RelDataType specToRel(SqlDataTypeSpec spec, boolean neverNullable) {
         SqlTypeNameSpec typeSpec = spec.getTypeNameSpec();
-        ProgramIdentifier name = new ProgramIdentifier("", false);
         RelDataType result;
 
         result = this.deriveType(spec);
         if (neverNullable) {
-            result = TYPE_FACTORY.createTypeWithNullability(result, false);
+            result = typeFactory.createTypeWithNullability(result, false);
         }
         if (typeSpec instanceof SqlUserDefinedTypeNameSpec udtObject) {
             if (result.isStruct()) {
-                RelStruct retval = new RelStruct(udtObject.getTypeName(), result.getFieldList(), result.isNullable());
-                if (!this.udt.containsKey(name)) {
+                RelStruct retval;
+                if (result instanceof RelStruct)
+                    retval = (RelStruct) result;
+                else
+                    retval = this.typeFactory.createRelStruct(
+                            udtObject.getTypeName(), result.getFieldList(), result.isNullable());
+                ProgramIdentifier name = new ProgramIdentifier(retval.getFullTypeString(), false);
+                if (!this.udt.containsKey(name))
                     Utilities.putNew(this.udt, name, retval);
-                }
                 return retval;
             }
         }
@@ -773,7 +802,7 @@ public class SqlToRelCompiler implements IWritesLogs {
      * - non-null to null
      * - char(n) to varchar */
     @SuppressWarnings("RedundantIfStatement")
-    public static boolean canBeTriviallyCastTo(RelDataType left, RelDataType right) {
+    public boolean canBeTriviallyCastTo(RelDataTypeFactory typeFactory, RelDataType left, RelDataType right) {
         if (left.equals(right))
             return true;
         SqlTypeName leftName = left.getSqlTypeName();
@@ -808,20 +837,20 @@ public class SqlToRelCompiler implements IWritesLogs {
 
                 RelDataType lt = lf.getType();
                 RelDataType rt = rf.getType();
-                if (!canBeTriviallyCastTo(lt, rt))
+                if (!canBeTriviallyCastTo(typeFactory, lt, rt))
                     return false;
             }
         } else if (left.getComponentType() != null) {
             assert right.getComponentType() != null;
-            return canBeTriviallyCastTo(left.getComponentType(), right.getComponentType());
+            return canBeTriviallyCastTo(typeFactory, left.getComponentType(), right.getComponentType());
         } else if (left.getKeyType() != null) {
             assert right.getKeyType() != null;
             assert left.getValueType() != null;
             assert right.getValueType() != null;
-            return canBeTriviallyCastTo(left.getKeyType(), right.getKeyType()) &&
-                    canBeTriviallyCastTo(left.getValueType(), right.getValueType());
+            return canBeTriviallyCastTo(typeFactory, left.getKeyType(), right.getKeyType()) &&
+                    canBeTriviallyCastTo(typeFactory, left.getValueType(), right.getValueType());
         } else {
-            left = TYPE_FACTORY.enforceTypeWithNullability(left, true);
+            left = typeFactory.enforceTypeWithNullability(left, true);
             return left.equals(right);
         }
         return true;
@@ -1681,7 +1710,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     RelDataType type = this.specToRel(attr.dataType, false);
                     return new MapEntry<>(name, type);
                 });
-        RelDataType structType = TYPE_FACTORY.createStructType(parameters);
+        RelDataType structType = typeFactory.createStructType(parameters);
         SqlDataTypeSpec retType = decl.getReturnType();
         RelDataType returnType = this.specToRel(retType, false);
         Boolean nullableResult = retType.getNullable();
@@ -1832,7 +1861,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             DeclareViewStatement dv = this.declaredViews.get(view.relationName);
             RelDataType viewType = view.getRowType();
             RelDataType declaredType = dv.getRowType();
-            if (!canBeTriviallyCastTo(viewType, declaredType)) {
+            if (!canBeTriviallyCastTo(this.typeFactory, viewType, declaredType)) {
                this.errorReporter.reportError(view.getPosition(), "Type mismatch",
                         "Type inferred for view " + view.relationName.singleQuote() +
                         " is " + typeToColumns(view.relationName, viewType));
@@ -1963,19 +1992,19 @@ public class SqlToRelCompiler implements IWritesLogs {
                     if (typeSpec.getNullable() != null && typeSpec.getNullable()) {
                         // This is tricky, because it is not using the typeFactory that is
                         // the lambda argument above, but hopefully it should be the same
-                        assert typeFactory == TYPE_FACTORY;
+                        assert typeFactory == this.typeFactory;
                         type = this.createNullableType(type);
                     }
                     builder.add(attributeDef.name.getSimple(), type);
                 }
                 RelDataType result = builder.build();
-                RelStruct retval = new RelStruct(ct.name, result.getFieldList(), result.isNullable());
+                RelStruct retval = this.typeFactory.createRelStruct(ct.name, result.getFieldList(), result.isNullable());
                 Utilities.putNew(SqlToRelCompiler.this.udt, name, retval);
                 return retval;
             }
         };
         ProgramIdentifier typeName = Utilities.toIdentifier(ct.name);
-        RelDataType relDataType = proto.apply(TYPE_FACTORY);
+        RelDataType relDataType = proto.apply(typeFactory);
         this.rootSchema.add(typeName.name(), proto);
         CreateTypeStatement result = new CreateTypeStatement(node, ct, typeName, relDataType);
         boolean success = this.calciteCatalog.addType(typeName, this.errorReporter, result);
