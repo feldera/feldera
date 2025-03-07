@@ -3691,7 +3691,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (function != null) {
             DBSPType returnType = stat.function.getFunctionReturnType(this.compiler.getTypeCompiler());
             if (returnType.is(DBSPTypeStruct.class)) {
-                this.getCircuit().addDeclaration(new DBSPDeclaration(
+                // We expect that the declaration of the struct (a UDT) is already there.
+                this.getCircuit().replaceDeclaration(new DBSPDeclaration(
                         new DBSPStructWithHelperItem(returnType.to(DBSPTypeStruct.class), null)));
             }
             this.getCircuit().addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(function)));

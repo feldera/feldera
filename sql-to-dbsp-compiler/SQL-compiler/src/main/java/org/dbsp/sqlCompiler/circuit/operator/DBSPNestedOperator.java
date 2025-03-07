@@ -94,7 +94,18 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
 
     @Override
     public void addDeclaration(DBSPDeclaration declaration) {
-        throw new InternalCompilerError("Adding declaration to CircuitOperator");
+        throw new InternalCompilerError("Adding declaration to NestedOperator");
+    }
+
+    @Override
+    public void replaceDeclaration(DBSPDeclaration declaration) {
+        throw new InternalCompilerError("Adding declaration to NestedOperator");
+    }
+
+    @Nullable
+    @Override
+    public DBSPDeclaration getDeclaration(String name) {
+        throw new InternalCompilerError("Searching declaration to NestedOperator");
     }
 
     @Nullable

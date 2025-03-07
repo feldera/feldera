@@ -154,9 +154,20 @@ public final class DBSPCircuit extends DBSPNode
         this.name = name;
     }
 
+    public void replaceDeclaration(DBSPDeclaration decl) {
+        DBSPDeclaration existing = Utilities.getExists(this.declarationMap, decl.getName());
+        this.declarations.remove(existing);
+        this.declarations.add(decl);
+        this.declarationMap.put(decl.getName(), decl);
+    }
+
+    @Nullable @Override
+    public DBSPDeclaration getDeclaration(String name) {
+        return this.declarationMap.get(name);
+    }
+
     public void addDeclaration(DBSPDeclaration decl) {
         this.declarations.add(decl);
-        /*
         if (this.declarationMap.containsKey(decl.getName())) {
             DBSPDeclaration prev = Utilities.getExists(this.declarationMap, decl.getName());
             throw new CompilationError(
@@ -164,7 +175,6 @@ public final class DBSPCircuit extends DBSPNode
                     decl.item.getNode());
         }
         Utilities.putNew(this.declarationMap, decl.getName(), decl);
-         */
     }
 
     public void addOperator(DBSPOperator operator) {
@@ -265,13 +275,15 @@ public final class DBSPCircuit extends DBSPNode
         visitor.pop(this);
     }
 
-    /** Return true if this circuit and other are identical (have the exact same operators). */
+    /** Return true if this circuit and other are identical (have the exact same operators and declarations). */
     public boolean sameCircuit(ICircuit other) {
         if (this == other)
             return true;
         if (!other.is(DBSPCircuit.class))
             return false;
-        return Linq.same(this.allOperators, other.to(DBSPCircuit.class).allOperators);
+        if (!Linq.same(this.allOperators, other.to(DBSPCircuit.class).allOperators))
+            return false;
+        return Linq.same(this.declarations, other.to(DBSPCircuit.class).declarations);
     }
 
     @Override

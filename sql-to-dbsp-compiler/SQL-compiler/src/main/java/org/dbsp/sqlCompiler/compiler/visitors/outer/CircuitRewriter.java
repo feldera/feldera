@@ -664,9 +664,13 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPDeclaration decl) {
         DBSPItem rewritten = decl.item;
-        if (this.processDeclarations)
+        DBSPDeclaration toAdd = decl;
+        if (this.processDeclarations) {
             rewritten = this.transform.apply(decl.item).to(DBSPItem.class);
-        this.getUnderConstruction().addDeclaration(new DBSPDeclaration(rewritten));
+            if (!rewritten.sameFields(decl.item))
+                toAdd = new DBSPDeclaration(rewritten);
+        }
+        this.getUnderConstruction().addDeclaration(toAdd);
     }
 
     @Override

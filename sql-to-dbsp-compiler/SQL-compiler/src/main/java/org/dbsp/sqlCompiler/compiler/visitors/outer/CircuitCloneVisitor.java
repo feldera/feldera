@@ -55,7 +55,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     protected final Map<ICircuit, ICircuit> circuitRemap;
     protected final boolean force;
     protected final Set<IDBSPOuterNode> visited = new HashSet<>();
-    /** Stack of circuits under construction.  Not the same as 'currrent': current
+    /** Stack of circuits under construction.  Not the same as 'current': current
      * has nodes from the *old* circuit, whereas these are nodes in the *new* circuit. */
     protected final List<ICircuit> underConstruction;
 
@@ -508,6 +508,9 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         if (result.sameCircuit(circuit)) {
             DBSPNode.discardOuterNode(result);
             result = circuit;
+        } else {
+            Logger.INSTANCE.belowLevel(this, 1)
+                    .append("Circuit has changed").newline();
         }
         this.map(circuit, result);
     }

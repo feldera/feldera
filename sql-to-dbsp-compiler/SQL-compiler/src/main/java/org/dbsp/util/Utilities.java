@@ -72,7 +72,7 @@ public class Utilities {
         if (self) {
             boolean success = file.delete();
             if (!success)
-                throw new RuntimeException("Could not delete file " + singleQuote(file.getName()));
+                throw new RuntimeException("Could not delete file " + singleQuote(file.getPath()));
         }
     }
 
