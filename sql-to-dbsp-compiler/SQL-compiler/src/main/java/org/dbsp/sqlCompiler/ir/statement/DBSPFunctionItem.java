@@ -59,4 +59,9 @@ public final class DBSPFunctionItem extends DBSPItem {
         DBSPFunction function = fromJsonInner(node, "function", decoder, DBSPFunction.class);
         return new DBSPFunctionItem(function);
     }
+
+    @Override
+    public String getName() {
+        return this.function.name;
+    }
 }

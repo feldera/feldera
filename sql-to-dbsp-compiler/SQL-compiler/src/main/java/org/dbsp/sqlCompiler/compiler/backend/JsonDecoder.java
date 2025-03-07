@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.backend;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -39,10 +40,12 @@ public class JsonDecoder {
 
     Cache<IDBSPInnerNode> inner;
     Cache<IDBSPOuterNode> outer;
+    public final RelDataTypeFactory typeFactory;
 
-    public JsonDecoder() {
+    public JsonDecoder(RelDataTypeFactory typeFactory) {
         this.inner = new Cache<>();
         this.outer = new Cache<>();
+        this.typeFactory = typeFactory;
     }
 
     static final String OUTER_ROOT = "org.dbsp.sqlCompiler.circuit";

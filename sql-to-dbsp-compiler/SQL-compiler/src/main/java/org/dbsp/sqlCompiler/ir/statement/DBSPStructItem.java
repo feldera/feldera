@@ -66,4 +66,9 @@ public final class DBSPStructItem extends DBSPItem implements IHasType {
         DBSPTypeStruct type = fromJsonInner(node, "type", decoder, DBSPTypeStruct.class);
         return new DBSPStructItem(type);
     }
+
+    @Override
+    public String getName() {
+        return this.type.name.name();
+    }
 }

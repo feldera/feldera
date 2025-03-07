@@ -30,7 +30,7 @@ public class TestSerialize implements CircuitTransform {
         // System.out.println(str);
         try {
             JsonNode node = Utilities.deterministicObjectMapper().readTree(str);
-            JsonDecoder decoder = new JsonDecoder();
+            JsonDecoder decoder = new JsonDecoder(this.compiler.sqlToRelCompiler.typeFactory);
             DBSPCircuit result = decoder.decodeOuter(node, DBSPCircuit.class);
             assert circuit.declarations.size() == result.declarations.size();
             assert circuit.allOperators.size() == result.allOperators.size();
