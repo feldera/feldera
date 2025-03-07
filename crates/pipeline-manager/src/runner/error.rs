@@ -4,6 +4,7 @@ use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
 use feldera_types::error::{DetailedError, ErrorResponse};
+use indoc::writedoc;
 use serde::Serialize;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, time::Duration};
 
@@ -214,21 +215,37 @@ impl Display for RunnerError {
                 )
             }
             Self::AutomatonProvisioningTimeout { timeout } => {
-                write!(
+                writedoc! {
                     f,
-                    "Waiting for provisioning timed out after {}s \
-                    -- this occurs when the required resources requested by the runner \
-                    for deployment took too long to be provisioned",
+                    "
+                    Waiting for provisioning of pipeline resources timed out after {}s. This can be due to two reasons:
+
+                    (1) The provisioning timeout is set too short in comparison to how long it should normally take
+                        to provision the resources backing the pipeline. In this case the resolution is to
+                        set the `provisioning_timeout_s` in the runtime configuration to a value higher than {}s.
+
+                    (2) It is unable to provision one or more resources but does not detect it will never succeed,
+                        as such still attempting or waiting for them to become available. The pipeline logs might
+                        provide more insight into what is not being provisioned if this is the case.
+                    ",
+                    timeout.as_secs(),
                     timeout.as_secs()
-                )
+                }
             }
             Self::AutomatonInitializingTimeout { timeout } => {
-                write!(
+                writedoc! {
                     f,
-                    "Waiting for initialization timed out after {}s \
-                    -- additional information about the cause can likely be found in the pipeline logs",
+                    "
+                    Waiting for initialization of pipeline timed out after {}s. This can be due to two reasons:
+
+                    (1) The initializing timeout is set too short in comparison to how long it should normally take
+                        to initialize the internal state and connectors of the pipeline.
+
+                    (2) The pipeline cannot be reached at all, or initialization encountered an uncaught problem.
+                        The pipeline logs might provide more insight if this is the case.
+                    ",
                     timeout.as_secs()
-                )
+                }
             }
             Self::AutomatonAfterInitializationBecameRunning => {
                 write!(

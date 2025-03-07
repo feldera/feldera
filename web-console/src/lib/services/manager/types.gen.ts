@@ -1466,6 +1466,11 @@ export type PipelineConfig = {
    * different CPUs.
    */
   pin_cpus?: Array<number>
+  /**
+   * Timeout in seconds for the `Provisioning` phase of the pipeline.
+   * Setting this value will override the default of the runner.
+   */
+  provisioning_timeout_s?: number | null
   resources?: ResourceConfig
   storage?: StorageOptions | null
   /**
@@ -2057,6 +2062,11 @@ export type RuntimeConfig = {
    * different CPUs.
    */
   pin_cpus?: Array<number>
+  /**
+   * Timeout in seconds for the `Provisioning` phase of the pipeline.
+   * Setting this value will override the default of the runner.
+   */
+  provisioning_timeout_s?: number | null
   resources?: ResourceConfig
   storage?: StorageOptions | null
   /**

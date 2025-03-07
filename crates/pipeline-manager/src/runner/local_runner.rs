@@ -383,12 +383,8 @@ impl LocalRunner {
 impl PipelineExecutor for LocalRunner {
     type Config = LocalRunnerConfig;
 
-    // Provisioning is over once the pipeline port file has been detected.
-    const PROVISIONING_TIMEOUT: Duration = Duration::from_millis(20_000);
-    const PROVISIONING_POLL_PERIOD: Duration = Duration::from_millis(250);
-
-    // Shutdown is over once the process has exited.
-    const SHUTDOWN_POLL_PERIOD: Duration = Duration::from_millis(500);
+    // Provisioning is over once the process is spawned and the port file created by it is detected.
+    const DEFAULT_PROVISIONING_TIMEOUT: Duration = Duration::from_millis(20_000);
 
     /// Creation steps:
     /// - Spawn a log rejection thread
