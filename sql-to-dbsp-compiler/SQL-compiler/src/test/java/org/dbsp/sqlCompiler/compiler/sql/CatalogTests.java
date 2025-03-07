@@ -47,6 +47,7 @@ public class CatalogTests extends BaseSQLTests {
     public void testArray() {
         this.getCCS("""
                   CREATE TYPE X AS (x INT);
+                  CREATE FUNCTION R() RETURNS X NOT NULL AS X(1);
                   CREATE TABLE T(p int array, m MAP<INT, X ARRAY>);
                   CREATE VIEW V AS SELECT p[1], m[2][3] FROM T;""");
     }
@@ -284,8 +285,7 @@ public class CatalogTests extends BaseSQLTests {
                    r ROW(le s, ri INT)
                 );
 
-                CREATE VIEW V AS SELECT * FROM T;
-                """;
+                CREATE VIEW V AS SELECT * FROM T;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(sql);
         DBSPCircuit circuit = getCircuit(compiler);

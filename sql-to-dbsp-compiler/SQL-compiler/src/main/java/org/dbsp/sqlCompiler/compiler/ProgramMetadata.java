@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
@@ -69,18 +70,18 @@ public class ProgramMetadata implements IJson {
         this.outputViews.put(description.getName(), description);
     }
 
-    public static ProgramMetadata fromJson(JsonNode node) {
+    public static ProgramMetadata fromJson(JsonNode node, RelDataTypeFactory typeFactory) {
         ProgramMetadata result = new ProgramMetadata();
         var it = Utilities.getProperty(node, "inputs").elements();
         while (it.hasNext()) {
             JsonNode tbl = it.next();
-            IHasSchema sch = IHasSchema.AbstractIHasSchema.fromJson(tbl);
+            IHasSchema sch = IHasSchema.AbstractIHasSchema.fromJson(tbl, typeFactory);
             result.addTable(sch);
         }
         it = Utilities.getProperty(node, "outputs").elements();
         while (it.hasNext()) {
             JsonNode tbl = it.next();
-            IHasSchema sch = IHasSchema.AbstractIHasSchema.fromJson(tbl);
+            IHasSchema sch = IHasSchema.AbstractIHasSchema.fromJson(tbl, typeFactory);
             result.addView(sch);
         }
         return result;

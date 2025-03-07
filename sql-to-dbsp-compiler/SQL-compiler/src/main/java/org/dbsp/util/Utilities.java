@@ -59,6 +59,27 @@ import java.util.Set;
 public class Utilities {
     private Utilities() {}
 
+    public static void deleteRecursive(File file, boolean self) {
+        if (!file.exists())
+            return;
+        if (file.isDirectory()) {
+            File[] files = file.listFiles();
+            if (files == null)
+                return;
+            for (File f : files)
+                deleteRecursive(f, true);
+        }
+        if (self) {
+            boolean success = file.delete();
+            if (!success)
+                throw new RuntimeException("Could not delete file " + singleQuote(file.getName()));
+        }
+    }
+
+    public static void deleteContents(File file) {
+        deleteRecursive(file, false);
+    }
+
     public static String getBaseName(String filePath) {
         File file = new File(filePath);
         String fileName = file.getName();

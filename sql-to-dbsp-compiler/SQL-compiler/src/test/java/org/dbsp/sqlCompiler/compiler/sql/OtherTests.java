@@ -179,8 +179,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 CREATE VIEW V AS SELECT COL1 FROM T;""";
         File file = createInputScript(sql);
         CompilerMain.execute("-TSqlToRelCompiler=2", "-TPasses=2",
-                "-o", BaseSQLTests.testFilePath, file.getPath());
-        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
+                "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
         Logger.INSTANCE.setDebugStream(save);
         String messages = builder.toString();
         Assert.assertTrue(messages.contains("After optimizer"));
@@ -208,7 +208,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     public void rustCsvTest() throws IOException, InterruptedException {
         DBSPCompiler compiler = testCompiler();
         DBSPZSetExpression data = new DBSPZSetExpression(EndToEndTests.E0, EndToEndTests.E1);
-        File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.rustDirectory));
+        File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.RUST_DIRECTORY));
         file.deleteOnExit();
         ToCsvVisitor.toCsv(compiler, file, data);
         List<DBSPStatement> list = new ArrayList<>();
@@ -223,10 +223,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
-        RustFileWriter writer = new RustFileWriter(BaseSQLTests.testFilePath);
+        RustFileWriter writer = new RustFileWriter(BaseSQLTests.TEST_FILE_PATH);
         writer.add(tester);
         writer.writeAndClose(compiler);
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
     }
 
     @Test
@@ -238,7 +238,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 new DBSPTupleExpression(DBSPI32Literal.none(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))
         );
-        File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.rustDirectory));
+        File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.RUST_DIRECTORY));
         file.deleteOnExit();
         ToCsvVisitor.toCsv(compiler, file, data);
         List<DBSPStatement> list = new ArrayList<>();
@@ -253,11 +253,11 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
-        PrintStream outputStream = new PrintStream(BaseSQLTests.testFilePath, StandardCharsets.UTF_8);
+        PrintStream outputStream = new PrintStream(BaseSQLTests.TEST_FILE_PATH, StandardCharsets.UTF_8);
         RustFileWriter writer = new RustFileWriter(outputStream);
         writer.add(tester);
         writer.writeAndClose(compiler);
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
     }
 
     @Test
@@ -283,10 +283,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 WITH LOW_PRICE_CTE AS (select part, MIN(price) as price from PRICE group by part)
                 SELECT * FROM LOW_PRICE_CTE""";
         File file = createInputScript(statement);
-        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
+        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
     }
 
     @Test
@@ -312,13 +312,32 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     void compileFile(String file, boolean run) throws SQLException, IOException, InterruptedException {
         CompilerMessages messages = CompilerMain.execute(
-                "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.testFilePath, file);
+                "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.TEST_FILE_PATH, file);
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
         if (run)
-            Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
         // cleanup after ourselves
         createEmptyStubs();
+    }
+
+    void compileMultiCrate(String file, boolean run) throws SQLException, IOException, InterruptedException {
+        CompilerMessages messages = CompilerMain.execute(
+                "-i", "--alltables", "-q", "--ignoreOrder", "--crates", "--handles",
+                "-o", BaseSQLTests.RUST_CRATES_DIRECTORY, file);
+        messages.print();
+        Assert.assertEquals(0, messages.errorCount());
+        if (run)
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
+    }
+
+    @Test
+    public void testMultiCrate() throws IOException, SQLException, InterruptedException {
+        String sql = """
+                 CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
+                 CREATE VIEW V AS SELECT COL1 FROM T""";
+        File file = createInputScript(sql);
+        this.compileMultiCrate(file.getAbsolutePath(), true);
     }
 
     @Test
@@ -421,10 +440,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
                 CREATE VIEW V AS SELECT COL1 FROM T;""";
         File file = createInputScript(sql);
-        CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.exitCode);
-        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
+        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
     }
 
     @Test
@@ -499,27 +518,27 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 """;
         File file = createInputScript(sql);
         CompilerMessages message = CompilerMain.execute(
-                "--handles", "-o", BaseSQLTests.testFilePath, file.getPath());
+                "--handles", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertEquals(0, message.exitCode);
         Assert.assertTrue(file.exists());
 
-        File rust = new File(BaseSQLTests.testFilePath);
+        File rust = new File(BaseSQLTests.TEST_FILE_PATH);
         try (FileWriter fr = new FileWriter(rust, true)) { // append
             fr.write(rustHandlesTest);
         }
-        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
+        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
 
         // Second test
         message = CompilerMain.execute(
-                "-i", "-o", BaseSQLTests.testFilePath, file.getPath());
+                "-i", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertEquals(0, message.exitCode);
         Assert.assertTrue(file.exists());
 
-        rust = new File(BaseSQLTests.testFilePath);
+        rust = new File(BaseSQLTests.TEST_FILE_PATH);
         try (FileWriter fr = new FileWriter(rust, true)) { // append
             fr.write(rustCatalogTest);
         }
-        Utilities.compileAndCheckRust(BaseSQLTests.rustDirectory, true);
+        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
     }
 
     @Test
@@ -642,7 +661,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String str = visitor.getJsonString();
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(str);
-        JsonDecoder decoder = new JsonDecoder();
+        JsonDecoder decoder = new JsonDecoder(cc.compiler.sqlToRelCompiler.typeFactory);
         DBSPCircuit decoded = decoder.decodeOuter(parsed, DBSPCircuit.class);
         Assert.assertNotNull(decoded);
     }
@@ -661,9 +680,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         if (System.getenv("CI") != null)
             return;
         // Check that the rust library is properly formatted
-        Utilities.runProcess(BaseSQLTests.projectDirectory + "/../crates/sqllib",
+        Utilities.runProcess(BaseSQLTests.PROJECT_DIRECTORY + "/../crates/sqllib",
                 "cargo", "fmt", "--all", "--", "--check");
-        Utilities.runProcess(BaseSQLTests.projectDirectory + "/../crates/sqllib",
+        Utilities.runProcess(BaseSQLTests.PROJECT_DIRECTORY + "/../crates/sqllib",
                 "cargo", "clippy", "--", "-D", "warnings");
     }
 }

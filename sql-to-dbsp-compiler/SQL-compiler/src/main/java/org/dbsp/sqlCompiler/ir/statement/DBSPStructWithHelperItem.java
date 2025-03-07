@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -12,13 +13,18 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
 
+import javax.annotation.Nullable;
+
 /** An item that declares a struct and a bunch of helper functions for serialization. */
 @NonCoreIR
 public final class DBSPStructWithHelperItem extends DBSPItem implements IHasType {
     public final DBSPTypeStruct type;
+    @Nullable
+    public final TableMetadata metadata;
 
-    public DBSPStructWithHelperItem(DBSPTypeStruct type) {
+    public DBSPStructWithHelperItem(DBSPTypeStruct type, @Nullable TableMetadata metadata) {
         this.type = type;
+        this.metadata = metadata;
     }
 
     @Override
@@ -52,7 +58,7 @@ public final class DBSPStructWithHelperItem extends DBSPItem implements IHasType
 
     @Override
     public DBSPStatement deepCopy() {
-        return new DBSPStructWithHelperItem(this.type);
+        return new DBSPStructWithHelperItem(this.type, this.metadata);
     }
 
     @Override
@@ -64,6 +70,14 @@ public final class DBSPStructWithHelperItem extends DBSPItem implements IHasType
     @SuppressWarnings("unused")
     public static DBSPStructWithHelperItem fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPTypeStruct type = fromJsonInner(node, "type", decoder, DBSPTypeStruct.class);
-        return new DBSPStructWithHelperItem(type);
+        TableMetadata metadata = null;
+        if (node.has("metadata"))
+            metadata = TableMetadata.fromJson(node.get("metadata"), decoder);
+        return new DBSPStructWithHelperItem(type, metadata);
+    }
+
+    @Override
+    public String getName() {
+        return this.type.name.name();
     }
 }

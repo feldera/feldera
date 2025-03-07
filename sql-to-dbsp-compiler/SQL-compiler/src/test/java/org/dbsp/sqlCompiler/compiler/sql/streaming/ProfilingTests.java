@@ -26,18 +26,18 @@ public class ProfilingTests extends StreamingTestBase {
     Long[] measure(String program, String main) throws IOException, InterruptedException, SQLException {
         File script = createInputScript(program);
         CompilerMessages messages = CompilerMain.execute(
-                "-o", BaseSQLTests.testFilePath, "--handles", "-i",
+                "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i",
                 script.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
 
-        String mainFilePath = rustDirectory + "/main.rs";
+        String mainFilePath = RUST_DIRECTORY + "/main.rs";
         File file = new File(mainFilePath);
         try (PrintWriter mainFile = new PrintWriter(file, StandardCharsets.UTF_8)) {
             mainFile.print(main);
         }
         //file.deleteOnExit();
-        Utilities.compileAndTestRust(rustDirectory, true, "--release");
+        Utilities.compileAndTestRust(RUST_DIRECTORY, true, "--release");
         File mainFile = new File(mainFilePath);
         boolean deleted;
         deleted = mainFile.delete();
@@ -46,7 +46,7 @@ public class ProfilingTests extends StreamingTestBase {
         // After executing this Rust program the output is in file "mem.txt"
         // It contains three numbers: time taken (ms), memory used (bytes), and late records.
         String outFile = "mem.txt";
-        Path outFilePath = Paths.get(rustDirectory, "..", outFile);
+        Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
         List<String> strings = Files.readAllLines(outFilePath);
         // System.out.println(strings);
         Assert.assertEquals(1, strings.size());
