@@ -4308,7 +4308,7 @@
               "workers": {
                 "type": "integer",
                 "format": "int32",
-                "description": "Number of DBSP worker threads.",
+                "description": "Number of DBSP worker threads.\n\nEach DBSP \"foreground\" worker thread is paired with a \"background\"\nthread for LSM merging, making the total number of threads twice the\nspecified number.",
                 "default": 8,
                 "minimum": 0
               }
@@ -5189,7 +5189,7 @@
           "workers": {
             "type": "integer",
             "format": "int32",
-            "description": "Number of DBSP worker threads.",
+            "description": "Number of DBSP worker threads.\n\nEach DBSP \"foreground\" worker thread is paired with a \"background\"\nthread for LSM merging, making the total number of threads twice the\nspecified number.",
             "default": 8,
             "minimum": 0
           }
@@ -5641,7 +5641,7 @@
           },
           "cache_mib": {
             "type": "integer",
-            "description": "The maximum size of the in-memory storage cache, in mebibytes.\n\nThe default is 256 MiB, times the number of workers.",
+            "description": "The maximum size of the in-memory storage cache, in MiB.\n\nIf set, the specified cache size is spread across all the foreground and\nbackground threads. If unset, each foreground or background thread cache\nis limited to 256 MiB.",
             "default": null,
             "nullable": true,
             "minimum": 0
