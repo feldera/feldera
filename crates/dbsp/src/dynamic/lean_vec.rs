@@ -1,5 +1,5 @@
 use rkyv::{
-    from_archived, out_field,
+    out_field,
     ser::{ScratchSpace, Serializer},
     Archive, Archived, Deserialize, DeserializeUnsized, Fallible, RelPtr, Serialize,
     SerializeUnsized,
@@ -934,7 +934,7 @@ impl<T> ArchivedLeanVec<T> {
     /// Returns the number of elements in the archived vec.
     #[inline]
     pub fn len(&self) -> usize {
-        from_archived!(self.len) as usize
+        self.len as usize
     }
 
     /// Returns whether the archived vec is empty.
