@@ -1,3 +1,4 @@
+use num_format::{Locale, ToFormattedString};
 use size_of::{HumanBytes, TotalSize};
 use std::{
     borrow::Cow,
@@ -171,7 +172,9 @@ impl MetaItem {
 
     pub fn format(&self, output: &mut dyn Write) -> fmt::Result {
         match self {
-            Self::Int(int) | Self::Count(int) => write!(output, "{int}"),
+            Self::Int(int) | Self::Count(int) => {
+                write!(output, "{}", int.to_formatted_string(&Locale::en))
+            }
             Self::Percent {
                 numerator,
                 denominator,
