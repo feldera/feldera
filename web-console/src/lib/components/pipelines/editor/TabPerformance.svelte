@@ -9,7 +9,10 @@
   import { getDeploymentStatusLabel } from '$lib/functions/pipelines/status'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
 
-  const formatQty = (v: number) => format(v >= 1000 ? '.3s' : '.0f')(v)
+  const formatQty = (v: number) =>
+    format(v >= 1000 ? '.3s' : '.0f')(v)
+      .replace(/G/, 'B')
+      .replace(/P/, 'Q')
 
   let {
     pipeline,
