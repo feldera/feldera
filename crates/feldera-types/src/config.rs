@@ -153,9 +153,11 @@ pub struct StorageOptions {
     /// performance.
     pub compression: StorageCompression,
 
-    /// The maximum size of the in-memory storage cache, in mebibytes.
+    /// The maximum size of the in-memory storage cache, in MiB.
     ///
-    /// The default is 256 MiB, times the number of workers.
+    /// If set, the specified cache size is spread across all the foreground and
+    /// background threads. If unset, each foreground or background thread cache
+    /// is limited to 256 MiB.
     pub cache_mib: Option<usize>,
 }
 
@@ -282,6 +284,10 @@ pub struct ObjectStorageConfig {
 #[serde(default)]
 pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
+    ///
+    /// Each DBSP "foreground" worker thread is paired with a "background"
+    /// thread for LSM merging, making the total number of threads twice the
+    /// specified number.
     pub workers: u16,
 
     /// Storage configuration.
