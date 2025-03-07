@@ -26,12 +26,16 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -122,6 +126,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
@@ -138,11 +143,13 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
@@ -150,6 +157,8 @@ import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -759,6 +768,243 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
         this.pop(literal);
         return VisitDecision.STOP;
+    }
+
+    void generateStructDeclaration(DBSPTypeStruct struct) {
+        DBSPStructItem item = new DBSPStructItem(struct);
+        item.accept(this);
+    }
+
+    void generateStructHelpers(DBSPTypeStruct s, @Nullable TableMetadata metadata) {
+        s = s.withMayBeNull(false).to(DBSPTypeStruct.class);
+        this.generateStructDeclaration(s);
+        this.generateFromTrait(s);
+        this.generateRenameMacro(s, metadata);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPStructWithHelperItem item) {
+        this.generateStructHelpers(item.type, item.metadata);
+        this.builder.newline();
+        return VisitDecision.STOP;
+    }
+
+    void generateInto(String field, DBSPType sourceType, DBSPType targetType) {
+        if (sourceType.is(DBSPTypeOption.class)) {
+            DBSPType fieldType;
+            if (targetType.is(DBSPTypeOption.class)) {
+                fieldType = targetType.to(DBSPTypeOption.class).typeArgs[0];
+            } else {
+                assert targetType.mayBeNull;
+                fieldType = targetType.withMayBeNull(false);
+            }
+            this.builder.append(field);
+            DBSPTypeOption option = sourceType.to(DBSPTypeOption.class);
+            this.builder.append(".map(|x| ");
+            this.generateInto("x", option.typeArgs[0], fieldType);
+            this.builder.append(")");
+        } else if (sourceType.mayBeNull && !sourceType.is(DBSPTypeNull.class)) {
+            this.builder.append(field);
+            this.builder.append(".map(|x|").increase();
+            this.generateInto("x", sourceType.withMayBeNull(false), targetType.withMayBeNull(false));
+            this.builder.decrease().append(")");
+        } else if (sourceType.is(DBSPTypeArray.class)) {
+            this.builder.append("Arc::new(Arc::unwrap_or_clone(");
+            this.builder.append(field);
+            DBSPTypeArray vec = sourceType.to(DBSPTypeArray.class);
+            DBSPTypeArray targetArray = targetType.to(DBSPTypeArray.class);
+            this.builder.append(").into_iter().map(|y|").increase();
+            this.generateInto("y", vec.getElementType(), targetArray.getElementType());
+            this.builder.decrease().append(")")
+                    .newline()
+                    .append(".collect::<");
+            targetArray.innerType().accept(this);
+            this.builder.append(">())");
+        } else if (sourceType.is(DBSPTypeMap.class)) {
+            this.builder.append("Arc::new(Arc::unwrap_or_clone(");
+            this.builder.append(field);
+            DBSPTypeMap map = sourceType.to(DBSPTypeMap.class);
+            DBSPTypeMap tMap = targetType.to(DBSPTypeMap.class);
+            this.builder.append(").into_iter().map(|(k,v)|").increase()
+                    .append("(");
+            this.generateInto("k", map.getKeyType(), tMap.getKeyType());
+            this.builder.append(", ");
+            this.generateInto("v", map.getValueType(), tMap.getValueType());
+            this.builder.decrease().append("))")
+                    .newline()
+                    .append(".collect::<");
+            tMap.innerType().accept(this);
+            this.builder.append(">())");
+        } else {
+            this.builder.append(field);
+            this.builder.append(".into()");
+        }
+    }
+
+    protected void generateFromTrait(DBSPTypeStruct type) {
+        EliminateStructs es = new EliminateStructs(this.compiler());
+        DBSPTypeTuple tuple = es.apply(type).to(DBSPTypeTuple.class);
+        this.builder.append("impl From<")
+                .append(type.sanitizedName)
+                .append("> for ");
+        tuple.accept(this);
+        this.builder.append(" {")
+                .increase()
+                .append("fn from(t: ")
+                .append(type.sanitizedName)
+                .append(") -> Self");
+        this.builder.append(" {")
+                .increase()
+                .append(tuple.getName())
+                .append("::new(");
+        int index = 0;
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            this.generateInto("t." + field.getSanitizedName(), field.type, tuple.tupFields[index]);
+            this.builder.append(", ");
+            index++;
+        }
+        this.builder.append(")").newline();
+        this.builder.decrease()
+                .append("}")
+                .newline()
+                .decrease()
+                .append("}")
+                .newline();
+
+        this.builder.append("impl From<");
+        tuple.accept(this);
+        this.builder.append("> for ")
+                .append(type.sanitizedName);
+        this.builder.append(" {")
+                .increase()
+                .append("fn from(t: ");
+        tuple.accept(this);
+        this.builder.append(") -> Self");
+        this.builder.append(" {")
+                .increase()
+                .append("Self {")
+                .increase();
+        index = 0;
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            this.builder
+                    .append(field.getSanitizedName())
+                    .append(": ");
+            this.generateInto("t." + index, field.type, field.type);
+            this.builder.append(", ")
+                    .newline();
+            index++;
+        }
+        this.builder.decrease().append("}").newline();
+        this.builder.decrease()
+                .append("}")
+                .newline()
+                .decrease()
+                .append("}")
+                .newline();
+    }
+
+    /**
+     * Generate calls to the Rust macros that generate serialization and deserialization code
+     * for the struct.
+     *
+     * @param type      Type of record in the table.
+     * @param metadata  Metadata for the input columns (null for an output view). */
+    protected void generateRenameMacro(DBSPTypeStruct type,
+                                       @Nullable TableMetadata metadata) {
+        this.builder.append("deserialize_table_record!(");
+        this.builder.append(type.sanitizedName)
+                .append("[")
+                .append(Utilities.doubleQuote(type.name.name()))
+                .append(", ")
+                .append(type.fields.size())
+                .append("] {")
+                .increase();
+        boolean first = true;
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            DBSPTypeUser user = field.type.as(DBSPTypeUser.class);
+            boolean isOption = user != null && user.name.equals("Option");
+            if (!first)
+                this.builder.append(",").newline();
+            first = false;
+            ProgramIdentifier name = field.name;
+            String simpleName = name.name();
+            InputColumnMetadata meta = null;
+            if (metadata == null) {
+                // output
+                simpleName = this.options.canonicalName(name);
+            } else {
+                meta = metadata.getColumnMetadata(field.name);
+            }
+            this.builder.append("(")
+                    .append(field.getSanitizedName())
+                    .append(", ")
+                    .append(Utilities.doubleQuote(simpleName))
+                    .append(", ")
+                    .append(Boolean.toString(name.isQuoted()))
+                    .append(", ");
+            field.type.accept(this);
+            this.builder.append(", ");
+            if (isOption)
+                this.builder.append("Some(");
+            if (meta == null || meta.defaultValue == null) {
+                this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
+            } else {
+                this.builder.append("Some(");
+                meta.defaultValue.accept(this);
+                this.builder.append(")");
+            }
+            if (isOption)
+                this.builder.append(")");
+
+            if (isOption && user.typeArgs[0].mayBeNull) {
+                // Option<Option<...>>
+                this.builder.append(", |x| if x.is_none() { Some(None) } else {x}");
+            }
+            this.builder.append(")");
+        }
+        this.builder.newline()
+                .decrease()
+                .append("});")
+                .newline();
+
+        this.builder.append("serialize_table_record!(");
+        this.builder.append(type.sanitizedName)
+                .append("[")
+                .append(type.fields.size())
+                .append("]{")
+                .increase();
+        first = true;
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            if (!first)
+                this.builder.append(",").newline();
+            first = false;
+            ProgramIdentifier name = field.name;
+            String simpleName = name.name();
+            if (metadata == null) {
+                // output
+                switch (this.options.languageOptions.unquotedCasing) {
+                    case "upper":
+                        simpleName = name.name().toUpperCase(Locale.ENGLISH);
+                        break;
+                    case "lower":
+                        simpleName = name.name().toLowerCase(Locale.ENGLISH);
+                        break;
+                    default:
+                        break;
+                }
+            }
+            this.builder
+                    .append(field.getSanitizedName())
+                    .append("[")
+                    .append(Utilities.doubleQuote(simpleName))
+                    .append("]")
+                    .append(": ");
+            field.type.accept(this);
+        }
+        this.builder.newline()
+                .decrease()
+                .append("});")
+                .newline();
     }
 
     @Override
@@ -2029,7 +2275,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(item);
         this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default)]")
                 .newline();
-        builder.append("struct ")
+        builder.append("pub struct ")
                     .append(Objects.requireNonNull(item.type.sanitizedName))
                 .append(" {")
                 .increase();

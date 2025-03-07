@@ -289,27 +289,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
     }
 
-    @Test
-    public void testIOT() throws IOException {
-        // Iot code from different repository checked out in a specific place
-        String[] iotSql = new String[] {
-                "../../../iot/iot.sql",
-                "../../../iot/net.sql"
-        };
-        for (String sql: iotSql) {
-            File file = new File(sql);
-            if (!file.exists())
-                continue;
-            String script = Utilities.readFile(file.toPath());
-            DBSPCompiler compiler = this.testCompiler();
-            compiler.options.languageOptions.throwOnError = true;
-            compiler.options.ioOptions.emitHandles = false;
-            compiler.options.languageOptions.incrementalize = true;
-            compiler.submitStatementsForCompilation(script);
-            this.getCCS(compiler);
-        }
-    }
-
     void compileFile(String file, boolean run) throws SQLException, IOException, InterruptedException {
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.TEST_FILE_PATH, file);
@@ -323,7 +302,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     void compileMultiCrate(String file, boolean run) throws SQLException, IOException, InterruptedException {
         CompilerMessages messages = CompilerMain.execute(
-                "-i", "--alltables", "-q", "--ignoreOrder", "--crates", "--handles",
+                "-i", "--alltables", "-q", "--ignoreOrder", "--crates",
                 "-o", BaseSQLTests.RUST_CRATES_DIRECTORY, file);
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
@@ -335,7 +314,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     public void testMultiCrate() throws IOException, SQLException, InterruptedException {
         String sql = """
                  CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
-                 CREATE VIEW V AS SELECT COL1 FROM T""";
+                 CREATE VIEW V AS SELECT STDDEV(COL1) FROM T""";
         File file = createInputScript(sql);
         this.compileMultiCrate(file.getAbsolutePath(), true);
     }

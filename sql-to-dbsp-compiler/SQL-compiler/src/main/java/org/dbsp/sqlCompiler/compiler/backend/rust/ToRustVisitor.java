@@ -66,8 +66,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -75,7 +73,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -101,20 +98,14 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
@@ -122,14 +113,12 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 /** This visitor generates a Rust implementation of a circuit. */
@@ -139,7 +128,6 @@ public class ToRustVisitor extends CircuitVisitor {
     final boolean useHandles;
     final CompilerOptions options;
     final ProgramMetadata metadata;
-    final Set<ProgramIdentifier> structsGenerated;
 
     /* Example output generated when 'generateCatalog' is true:
      * pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
@@ -160,7 +148,6 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder = builder;
         this.useHandles = compiler.options.ioOptions.emitHandles;
         this.metadata = metadata;
-        this.structsGenerated = new HashSet<>();
         this.innerVisitor = this.createInnerVisitor(builder);
     }
 
@@ -168,223 +155,6 @@ public class ToRustVisitor extends CircuitVisitor {
         return new ToRustInnerVisitor(this.compiler(), builder, false);
     }
 
-    void generateInto(String field, DBSPType sourceType, DBSPType targetType) {
-        if (sourceType.is(DBSPTypeOption.class)) {
-            DBSPType fieldType;
-            if (targetType.is(DBSPTypeOption.class)) {
-                fieldType = targetType.to(DBSPTypeOption.class).typeArgs[0];
-            } else {
-                assert targetType.mayBeNull;
-                fieldType = targetType.withMayBeNull(false);
-            }
-            this.builder.append(field);
-            DBSPTypeOption option = sourceType.to(DBSPTypeOption.class);
-            this.builder.append(".map(|x| ");
-            this.generateInto("x", option.typeArgs[0], fieldType);
-            this.builder.append(")");
-        } else if (sourceType.mayBeNull && !sourceType.is(DBSPTypeNull.class)) {
-            this.builder.append(field);
-            this.builder.append(".map(|x|").increase();
-            this.generateInto("x", sourceType.withMayBeNull(false), targetType.withMayBeNull(false));
-            this.builder.decrease().append(")");
-        } else if (sourceType.is(DBSPTypeArray.class)) {
-            this.builder.append("Arc::new(Arc::unwrap_or_clone(");
-            this.builder.append(field);
-            DBSPTypeArray vec = sourceType.to(DBSPTypeArray.class);
-            DBSPTypeArray targetArray = targetType.to(DBSPTypeArray.class);
-            this.builder.append(").into_iter().map(|y|").increase();
-            this.generateInto("y", vec.getElementType(), targetArray.getElementType());
-            this.builder.decrease().append(")")
-                    .newline()
-                    .append(".collect::<");
-            targetArray.innerType().accept(this.innerVisitor);
-            this.builder.append(">())");
-        } else if (sourceType.is(DBSPTypeMap.class)) {
-            this.builder.append("Arc::new(Arc::unwrap_or_clone(");
-            this.builder.append(field);
-            DBSPTypeMap map = sourceType.to(DBSPTypeMap.class);
-            DBSPTypeMap tMap = targetType.to(DBSPTypeMap.class);
-            this.builder.append(").into_iter().map(|(k,v)|").increase()
-                    .append("(");
-            this.generateInto("k", map.getKeyType(), tMap.getKeyType());
-            this.builder.append(", ");
-            this.generateInto("v", map.getValueType(), tMap.getValueType());
-            this.builder.decrease().append("))")
-                    .newline()
-                    .append(".collect::<");
-            tMap.innerType().accept(this.innerVisitor);
-            this.builder.append(">())");
-        } else {
-            this.builder.append(field);
-            this.builder.append(".into()");
-        }
-    }
-
-    protected void generateFromTrait(DBSPTypeStruct type) {
-        EliminateStructs es = new EliminateStructs(this.compiler());
-        DBSPTypeTuple tuple = es.apply(type).to(DBSPTypeTuple.class);
-        this.builder.append("impl From<")
-                .append(type.sanitizedName)
-                .append("> for ");
-        tuple.accept(this.innerVisitor);
-        this.builder.append(" {")
-                .increase()
-                .append("fn from(t: ")
-                .append(type.sanitizedName)
-                .append(") -> Self");
-        this.builder.append(" {")
-                .increase()
-                .append(tuple.getName())
-                .append("::new(");
-        int index = 0;
-        for (DBSPTypeStruct.Field field: type.fields.values()) {
-            this.generateInto("t." + field.getSanitizedName(), field.type, tuple.tupFields[index]);
-            this.builder.append(", ");
-            index++;
-        }
-        this.builder.append(")").newline();
-        this.builder.decrease()
-                .append("}")
-                .newline()
-                .decrease()
-                .append("}")
-                .newline();
-
-        this.builder.append("impl From<");
-        tuple.accept(this.innerVisitor);
-        this.builder.append("> for ")
-                .append(type.sanitizedName);
-        this.builder.append(" {")
-                .increase()
-                .append("fn from(t: ");
-        tuple.accept(this.innerVisitor);
-        this.builder.append(") -> Self");
-        this.builder.append(" {")
-                .increase()
-                .append("Self {")
-                .increase();
-        index = 0;
-        for (DBSPTypeStruct.Field field: type.fields.values()) {
-            this.builder
-                    .append(field.getSanitizedName())
-                    .append(": ");
-            this.generateInto("t." + index, field.type, field.type);
-            this.builder.append(", ")
-                .newline();
-            index++;
-        }
-        this.builder.decrease().append("}").newline();
-        this.builder.decrease()
-                .append("}")
-                .newline()
-                .decrease()
-                .append("}")
-                .newline();
-    }
-
-    /**
-     * Generate calls to the Rust macros that generate serialization and deserialization code
-     * for the struct.
-     *
-     * @param type      Type of record in the table.
-     * @param metadata  Metadata for the input columns (null for an output view). */
-    protected void generateRenameMacro(DBSPTypeStruct type,
-                                       @Nullable TableMetadata metadata) {
-        this.builder.append("deserialize_table_record!(");
-        this.builder.append(type.sanitizedName)
-                .append("[")
-                .append(Utilities.doubleQuote(type.name.name()))
-                .append(", ")
-                .append(type.fields.size())
-                .append("] {")
-                .increase();
-        boolean first = true;
-        for (DBSPTypeStruct.Field field: type.fields.values()) {
-            DBSPTypeUser user = field.type.as(DBSPTypeUser.class);
-            boolean isOption = user != null && user.name.equals("Option");
-            if (!first)
-                this.builder.append(",").newline();
-            first = false;
-            ProgramIdentifier name = field.name;
-            String simpleName = name.name();
-            InputColumnMetadata meta = null;
-            if (metadata == null) {
-                // output
-                simpleName = this.options.canonicalName(name);
-            } else {
-                meta = metadata.getColumnMetadata(field.name);
-            }
-            this.builder.append("(")
-                    .append(field.getSanitizedName())
-                    .append(", ")
-                    .append(Utilities.doubleQuote(simpleName))
-                    .append(", ")
-                    .append(Boolean.toString(name.isQuoted()))
-                    .append(", ");
-            field.type.accept(this.innerVisitor);
-            this.builder.append(", ");
-            if (isOption)
-                this.builder.append("Some(");
-            if (meta == null || meta.defaultValue == null) {
-                this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
-            } else {
-                this.builder.append("Some(");
-                meta.defaultValue.accept(this.innerVisitor);
-                this.builder.append(")");
-            }
-            if (isOption)
-                this.builder.append(")");
-
-            if (isOption && user.typeArgs[0].mayBeNull) {
-                // Option<Option<...>>
-                this.builder.append(", |x| if x.is_none() { Some(None) } else {x}");
-            }
-            this.builder.append(")");
-        }
-        this.builder.newline()
-                .decrease()
-                .append("});")
-                .newline();
-
-        this.builder.append("serialize_table_record!(");
-        this.builder.append(type.sanitizedName)
-                .append("[")
-                .append(type.fields.size())
-                .append("]{")
-                .increase();
-        first = true;
-        for (DBSPTypeStruct.Field field: type.fields.values()) {
-            if (!first)
-                this.builder.append(",").newline();
-            first = false;
-            ProgramIdentifier name = field.name;
-            String simpleName = name.name();
-            if (metadata == null) {
-                // output
-                switch (this.options.languageOptions.unquotedCasing) {
-                    case "upper":
-                        simpleName = name.name().toUpperCase(Locale.ENGLISH);
-                        break;
-                    case "lower":
-                        simpleName = name.name().toLowerCase(Locale.ENGLISH);
-                        break;
-                    default:
-                        break;
-                }
-            }
-            this.builder
-                    .append(field.getSanitizedName())
-                    .append("[")
-                    .append(Utilities.doubleQuote(simpleName))
-                    .append("]")
-                    .append(": ");
-            field.type.accept(this.innerVisitor);
-        }
-        this.builder.newline()
-                .decrease()
-                .append("});")
-                .newline();
-    }
 
     void processNode(IDBSPNode node) {
         DBSPOperator op = node.as(DBSPOperator.class);
@@ -433,11 +203,8 @@ public class ToRustVisitor extends CircuitVisitor {
         IndentStream signature = new IndentStreamBuilder();
         ToRustInnerVisitor inner = this.createInnerVisitor(signature);
 
-        for (DBSPDeclaration item: circuit.declarations) {
-            if (item.item.is(DBSPStructWithHelperItem.class)) {
-                DBSPStructWithHelperItem i = item.item.to(DBSPStructWithHelperItem.class);
-                this.generateStructHelpers(i.type, i.metadata);
-            }
+        for (DBSPDeclaration decl: circuit.declarations) {
+            decl.accept(this.innerVisitor);
         }
 
         this.builder.append("pub fn ")
@@ -613,47 +380,6 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    static class FindNestedStructs extends InnerVisitor {
-        final List<DBSPTypeStruct> structs;
-
-        public FindNestedStructs(DBSPCompiler compiler, List<DBSPTypeStruct> result) {
-            super(compiler);
-            this.structs = result;
-        }
-
-        @Override
-        public void postorder(DBSPTypeStruct struct) {
-            for (DBSPTypeStruct str: this.structs)
-                if (str.name.equals(struct.name))
-                    return;
-            this.structs.add(struct);
-        }
-    }
-
-    void findNestedStructs(DBSPType struct, List<DBSPTypeStruct> result) {
-        FindNestedStructs fn = new FindNestedStructs(this.compiler, result);
-        fn.apply(struct);
-    }
-
-    void generateStructDeclarations(DBSPTypeStruct struct) {
-        DBSPStructItem item = new DBSPStructItem(struct);
-        item.accept(this.innerVisitor);
-    }
-
-    void generateStructHelpers(DBSPType type, @Nullable TableMetadata metadata) {
-        List<DBSPTypeStruct> nested = new ArrayList<>();
-        findNestedStructs(type, nested);
-        for (DBSPTypeStruct s: nested) {
-            if (this.structsGenerated.contains(s.name))
-                continue;
-            s = s.withMayBeNull(false).to(DBSPTypeStruct.class);
-            this.generateStructDeclarations(s);
-            this.generateFromTrait(s);
-            this.generateRenameMacro(s, metadata);
-            this.structsGenerated.add(s.name);
-        }
-    }
-
     /** Remove properties.connectors from a json tree.
      * If the properties become empty, remove them too. */
     JsonNode stripConnectors(JsonNode json) {
@@ -671,10 +397,6 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
-        DBSPTypeStruct type = operator.originalRowType;
-        if (!this.useHandles)
-            this.generateStructHelpers(type, operator.metadata);
-
         this.writeComments(operator, false)
                 .append("let (")
                 .append(operator.getOutputName())
@@ -725,19 +447,10 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceMapOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        if (!this.useHandles)
-            this.generateStructHelpers(type, operator.metadata);
-
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
                 new ProgramIdentifier(operator.originalRowType.sanitizedName + "_key", false));
-        if (!this.useHandles)
-            this.generateStructHelpers(keyStructType, operator.metadata);
-
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
                 new ProgramIdentifier(operator.originalRowType.sanitizedName + "_upsert", false));
-        if (!this.useHandles)
-            this.generateStructHelpers(upsertStruct, operator.metadata);
-
         this.writeComments(operator, false)
                 .append("let (")
                 .append(operator.getOutputName())
@@ -949,7 +662,6 @@ public class ToRustVisitor extends CircuitVisitor {
         this.writeComments(operator);
         DBSPType type = operator.originalRowType;
         if (!this.useHandles) {
-            this.generateStructHelpers(type, null);
             if (operator.isIndex()) {
                 DBSPTypeRawTuple raw = operator.originalRowType.to(DBSPTypeRawTuple.class);
                 assert raw.size() == 2;
