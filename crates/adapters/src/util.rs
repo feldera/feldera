@@ -1,17 +1,24 @@
 use std::borrow::Cow;
 use std::path::Path;
 use std::{
-    error::Error,
     fs::File,
-    future::Future,
     io::{Error as IoError, Write},
+};
+
+#[cfg(feature = "with-deltalake")]
+use std::{
+    error::Error,
+    future::Future,
     pin::Pin,
 };
 
+#[cfg(feature = "with-deltalake")]
 use futures::channel::oneshot;
 use tempfile::NamedTempFile;
+#[cfg(feature = "with-deltalake")]
 use tokio::{spawn, task::JoinHandle};
 
+#[cfg(feature = "with-deltalake")]
 pub(crate) fn root_cause(mut err: &dyn Error) -> &dyn Error {
     while let Some(source) = err.source() {
         err = source;
@@ -100,6 +107,7 @@ producer  ─┬─►│ │ │ │ │ │ ├─┼─►│worker2├──
   sends a special Sync message to the completions queue. Upon receiving
   this message, the consumer sends an acknowledgement to the sync channel.
 */
+#[cfg(feature = "with-deltalake")]
 pub(crate) struct JobQueue<I, O> {
     /// The producer side of the job queue.
     job_sender: async_channel::Sender<(I, oneshot::Sender<O>)>,
@@ -120,11 +128,13 @@ pub(crate) struct JobQueue<I, O> {
 // Every message in the completions channel contains the receiving side of the
 // oneshot channel that will contain the result of the completed job, or a special
 // Sync message.
+#[cfg(feature = "with-deltalake")]
 enum Completion<O> {
     Completion(oneshot::Receiver<O>),
     Sync,
 }
 
+#[cfg(feature = "with-deltalake")]
 impl<I, O> JobQueue<I, O>
 where
     I: Send + 'static,
@@ -222,6 +232,7 @@ where
     }
 }
 
+#[cfg(feature = "with-deltalake")]
 impl<I, O> Drop for JobQueue<I, O> {
     fn drop(&mut self) {
         self.consumer.abort();
@@ -232,6 +243,7 @@ impl<I, O> Drop for JobQueue<I, O> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "with-deltalake")]
 mod test {
     use std::sync::{Arc, Mutex};
 
