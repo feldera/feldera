@@ -45,3 +45,9 @@ pub struct InvalidBlockLocation {
     /// Number of bytes.
     pub size: usize,
 }
+
+impl Display for InvalidBlockLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} bytes at offset {}", self.size, self.offset)
+    }
+}

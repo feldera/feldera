@@ -3713,7 +3713,6 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "binrw",
- "bytemuck",
  "chrono",
  "clap 4.5.31",
  "core_affinity",

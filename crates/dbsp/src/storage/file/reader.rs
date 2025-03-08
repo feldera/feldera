@@ -3,8 +3,9 @@
 //! [`Reader`] is the top-level interface for reading layer files.
 
 use super::format::{Compression, FileTrailer};
-use super::{AnyFactories, BloomFilterState, Factories, BLOOM_FILTER_FALSE_POSITIVE_RATE};
+use super::{AnyFactories, Factories};
 use crate::storage::buffer_cache::{CacheAccess, CacheEntry};
+use crate::storage::file::format::FilterBlock;
 use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
@@ -28,8 +29,6 @@ use crc32c::crc32c;
 use fastbloom::BloomFilter;
 use snap::raw::{decompress_len, Decoder};
 use std::any::Any;
-use std::fs::File;
-use std::io::ErrorKind;
 use std::mem::replace;
 use std::time::Instant;
 use std::{
@@ -296,6 +295,10 @@ pub enum CorruptionError {
     /// Multiple paths to block.
     #[error("Multiple paths to block ({0}).")]
     MultiplePaths(BlockLocation),
+
+    /// Invalid filter block location.
+    #[error("Invalid file block location ({0}).")]
+    InvalidFilterLocation(InvalidBlockLocation),
 }
 
 #[derive(Clone)]
@@ -1031,6 +1034,13 @@ struct Column {
     n_rows: u64,
 }
 
+impl FilterBlock {
+    fn new(file_handle: &dyn FileReader, location: BlockLocation) -> Result<Self, Error> {
+        let block = file_handle.read_block(location)?;
+        Ok(Self::read_le(&mut io::Cursor::new(block.as_slice()))?)
+    }
+}
+
 impl Column {
     fn new(factories: &AnyFactories, info: &FileTrailerColumn) -> Result<Self, Error> {
         let FileTrailerColumn {
@@ -1224,7 +1234,7 @@ where
         path: PathBuf,
         cache: fn() -> Arc<BufferCache>,
         file_handle: Arc<dyn FileReader>,
-        bloom_filter: BloomFilter,
+        bloom_filter: Option<BloomFilter>,
     ) -> Result<Self, Error> {
         let file_size = file_handle.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
@@ -1276,6 +1286,21 @@ where
             }
         }
 
+        let bloom_filter = match bloom_filter {
+            Some(bloom_filter) => bloom_filter,
+            None => FilterBlock::new(
+                &*file_handle,
+                BlockLocation::new(
+                    file_trailer.filter_offset,
+                    file_trailer.filter_size as usize,
+                )
+                .map_err(|error: InvalidBlockLocation| {
+                    Error::Corruption(CorruptionError::InvalidFilterLocation(error))
+                })?,
+            )?
+            .into(),
+        };
+
         Ok(Self {
             file: ImmutableFileRef::new(cache, file_handle, path, file_trailer.compression, stats),
             columns,
@@ -1296,29 +1321,12 @@ where
         storage_backend: &dyn StorageBackend,
         path: &IoPath,
     ) -> Result<Self, Error> {
-        // Recover the bloom filter from the bloom filter file.
-        let bloom_path = path.with_extension("bloom");
-        let bf_file = File::open(bloom_path.as_path());
-        let bloom_filter = match bf_file {
-            Ok(mut bf_file) => {
-                let bloom_storage: BloomFilterState = BloomFilterState::read(&mut bf_file)?;
-                let bloom_filter: BloomFilter = bloom_storage.try_into()?;
-                bloom_filter
-            }
-            Err(e) if e.kind() == ErrorKind::NotFound => {
-                // If the bloom filter file does not exist because we're not writing them atm,
-                // we create an empty bloom filter.
-                BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE).expected_items(0)
-            }
-            Err(e) => return Err(e.into()),
-        };
-
         Self::new(
             factories,
             path.to_path_buf(),
             cache,
             storage_backend.open(path)?,
-            bloom_filter,
+            None,
         )
     }
 
