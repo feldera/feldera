@@ -7,7 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.IndentStream;
+import org.dbsp.util.IndentStreamBuilder;
 
 import java.util.List;
 
@@ -105,8 +105,7 @@ public class CircuitToString {
 
     public static String toString(IDBSPOuterNode node) {
         DBSPCircuit circuit = node.to(DBSPCircuit.class);
-        StringBuilder builder1 = new StringBuilder();
-        IIndentStream stream = new IndentStream(builder1);
+        IIndentStream stream = new IndentStreamBuilder();
         CircuitToString cts = new CircuitToString(stream);
         return cts.convert(circuit);
     }

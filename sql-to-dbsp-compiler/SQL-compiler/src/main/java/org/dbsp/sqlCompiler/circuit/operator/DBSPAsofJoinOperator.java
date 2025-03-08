@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -42,7 +43,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
      * @param left            Left input
      * @param right           Right input
      */
-    public DBSPAsofJoinOperator(CalciteObject node, DBSPTypeZSet outputType,
+    public DBSPAsofJoinOperator(CalciteRelNode node, DBSPTypeZSet outputType,
                                 DBSPExpression function,
                                 DBSPClosureExpression leftTimestamp,
                                 DBSPClosureExpression rightTimestamp,
@@ -99,7 +100,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
 
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPAsofJoinOperator(this.getNode(),
+        return new DBSPAsofJoinOperator(this.getRelNode(),
                 outputType.to(DBSPTypeZSet.class), Objects.requireNonNull(expression),
                 this.leftTimestamp, this.rightTimestamp,
                 this.comparator, this.isMultiset, this.isLeft, this.left(), this.right());
@@ -110,7 +111,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
         assert newInputs.size() == 2;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAsofJoinOperator(
-                    this.getNode(), this.getOutputZSetType(),
+                    this.getRelNode(), this.getOutputZSetType(),
                     this.getFunction(), this.leftTimestamp, this.rightTimestamp,
                     this.comparator, this.isMultiset, this.isLeft,
                     newInputs.get(0), newInputs.get(1))
@@ -136,7 +137,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
 
     @Override
     public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
-        return new DBSPAsofJoinOperator(this.getNode(), this.getOutputZSetType(), function,
+        return new DBSPAsofJoinOperator(this.getRelNode(), this.getOutputZSetType(), function,
                 this.leftTimestamp, this.rightTimestamp, this.comparator, this.isMultiset, this.isLeft, left, right);
     }
 
@@ -160,7 +161,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
         DBSPComparatorExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPComparatorExpression.class);
         boolean isLeft = Utilities.getBooleanProperty(node, "isLeft");
         return new DBSPAsofJoinOperator(
-                CalciteObject.EMPTY, info.getZsetType(), info.getFunction(),
+                CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getFunction(),
                 leftTimestamp, rightTimestamp, comparator,
                 info.isMultiset(), isLeft, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPAsofJoinOperator.class);

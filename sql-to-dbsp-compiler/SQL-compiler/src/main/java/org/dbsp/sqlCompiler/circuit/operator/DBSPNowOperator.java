@@ -3,7 +3,9 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -25,7 +27,7 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
                         "now", DBSPTypeTimestamp.create(node, false))));
     }
 
-    public DBSPNowOperator(CalciteObject node) {
+    public DBSPNowOperator(CalciteRelNode node) {
         super(node, "now", createFunction(node),
                 createFunction(node).getType(),
                 false);
@@ -53,7 +55,7 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
     @SuppressWarnings("unused")
     public static DBSPNowOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPNowOperator(CalciteObject.EMPTY)
+        return new DBSPNowOperator(CalciteEmptyRel.INSTANCE)
                 .addAnnotations(info.annotations(), DBSPNowOperator.class);
     }
 }

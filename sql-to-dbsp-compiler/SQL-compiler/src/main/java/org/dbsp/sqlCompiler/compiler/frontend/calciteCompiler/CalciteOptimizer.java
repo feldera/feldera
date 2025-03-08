@@ -105,7 +105,7 @@ public class CalciteOptimizer implements IWritesLogs {
                         .append("After ")
                         .appendSupplier(step::getName)
                         .increase()
-                        .appendSupplier(() -> SqlToRelCompiler.getPlan(optimized, false))
+                        .appendSupplier(() -> SqlToRelCompiler.getPlan(optimized))
                         .decrease()
                         .newline();
             }

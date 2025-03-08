@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.statements;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteSqlNode;
 import org.dbsp.util.ICastable;
 
 /** Base class for statements produced by the compiler front-end.
@@ -38,7 +39,7 @@ public abstract class RelStatement implements ICastable {
         this.parsedStatement = parsedStatement;
     }
 
-    public CalciteObject getCalciteObject() {
+    public CalciteSqlNode getCalciteObject() {
         return CalciteObject.create(this.parsedStatement.statement());
     }
 

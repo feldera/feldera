@@ -26,7 +26,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -51,7 +52,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
 
     // TODO: support the linear version of this operator.
     public DBSPPartitionedRollingAggregateWithWaterlineOperator(
-            CalciteObject node,
+            CalciteRelNode node,
             DBSPExpression partitioningFunction,
             // Initially 'function' is null, and the 'aggregate' is not.
             // After lowering 'aggregate' is not null, and 'function' has its expected shape
@@ -76,7 +77,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
-                this.getNode(),
+                this.getRelNode(),
                 this.partitioningFunction,
                 expression, this.aggregate, this.lower, this.upper,
                 outputType.to(DBSPTypeIndexedZSet.class),
@@ -88,7 +89,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
-                    this.getNode(),
+                    this.getRelNode(),
                     this.partitioningFunction, this.function, this.aggregate,
                     this.lower, this.upper, this.getOutputIndexedZSetType(),
                     newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
@@ -143,7 +144,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         DBSPWindowBoundExpression lower = fromJsonInner(node, "lower", decoder, DBSPWindowBoundExpression.class);
         DBSPWindowBoundExpression upper = fromJsonInner(node, "upper", decoder, DBSPWindowBoundExpression.class);
         return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
-                CalciteObject.EMPTY, partitioningFunction, info.function(),
+                CalciteEmptyRel.INSTANCE, partitioningFunction, info.function(),
                 aggregate, lower, upper, info.getIndexedZsetType(), info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
     }

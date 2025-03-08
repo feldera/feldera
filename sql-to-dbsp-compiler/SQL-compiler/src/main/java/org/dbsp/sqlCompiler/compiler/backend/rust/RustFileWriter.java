@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Linq;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
@@ -333,7 +334,7 @@ public class RustFileWriter {
     }
 
     String generatePreamble(StructuresUsed used) {
-        IndentStream stream = new IndentStream(new StringBuilder());
+        IndentStream stream = new IndentStreamBuilder();
         stream.append(commonPreamble);
         long max = this.used.getMaxTupleSize();
         if (max > 120) {

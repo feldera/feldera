@@ -4,7 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -21,7 +22,7 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
 
     // This operator is incremental-only
     public DBSPAggregateLinearPostprocessOperator(
-            CalciteObject node,
+            CalciteRelNode node,
             DBSPTypeIndexedZSet outputType,
             DBSPExpression function,
             DBSPClosureExpression postProcess, OutputPort input) {
@@ -54,7 +55,7 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateLinearPostprocessOperator(
-                    this.getNode(), this.outputType.to(DBSPTypeIndexedZSet.class),
+                    this.getRelNode(), this.outputType.to(DBSPTypeIndexedZSet.class),
                     this.getFunction(), this.postProcess, newInputs.get(0))
                     .copyAnnotations(this);
         return this;
@@ -73,7 +74,7 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
     public static DBSPAggregateLinearPostprocessOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
         DBSPClosureExpression postProcess = fromJsonInner(node, "postProcess", decoder, DBSPClosureExpression.class);
-        return new DBSPAggregateLinearPostprocessOperator(CalciteObject.EMPTY, info.getIndexedZsetType(),
+        return new DBSPAggregateLinearPostprocessOperator(CalciteEmptyRel.INSTANCE, info.getIndexedZsetType(),
                 info.getFunction(), postProcess, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPAggregateLinearPostprocessOperator.class);
     }
