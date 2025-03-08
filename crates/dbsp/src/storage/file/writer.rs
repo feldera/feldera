@@ -9,8 +9,9 @@ use crate::storage::{
     buffer_cache::{BufferCache, CacheEntry, FBuf, FBufSerializer, LimitExceeded},
     file::{
         format::{
-            BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen,
-            IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
+            BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FilterBlockRef, FixedLen,
+            IndexBlockHeader, NodeType, Varint, DATA_BLOCK_MAGIC, FILE_TRAILER_BLOCK_MAGIC,
+            INDEX_BLOCK_MAGIC, VERSION_NUMBER,
         },
         with_serializer, BLOOM_FILTER_SEED,
     },
@@ -592,7 +593,7 @@ impl DataBlockBuilder {
 
         let n_values = self.value_offsets.len();
         let header = DataBlockHeader {
-            header: BlockHeader::new(b"LFDB"),
+            header: BlockHeader::new(&DATA_BLOCK_MAGIC),
             n_values: n_values as u32,
             value_map_varint,
             row_group_varint,
@@ -917,7 +918,7 @@ impl IndexBlockBuilder {
         );
 
         let header = IndexBlockHeader {
-            header: BlockHeader::new(b"LFIB"),
+            header: BlockHeader::new(&INDEX_BLOCK_MAGIC),
             bound_map_offset: specs.bound_map.start as u32,
             row_totals_offset: specs.row_totals.start as u32,
             child_offsets_offset: specs.child_offsets.start as u32,
@@ -1092,8 +1093,6 @@ impl Writer {
         let worker = format!("w{}-", Runtime::worker_index());
         let writer = Self {
             writer: BlockWriter::new(buffer_cache, storage_backend.create_with_prefix(&worker)?),
-            // It would be good to know the expected number of items in the bloom filter
-            // but don't have that information here.
             bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
                 .seed(&BLOOM_FILTER_SEED)
                 .expected_items(estimated_keys),
@@ -1145,12 +1144,19 @@ impl Writer {
     pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf, BloomFilter), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
+        // Write the Bloom filter.
+        let (_block, filter_location) = self
+            .writer
+            .write_block(FilterBlockRef::from(&self.bloom_filter).into_block(), None)?;
+
         // Write the file trailer block.
         let file_trailer = FileTrailer {
-            header: BlockHeader::new(b"LFFT"),
+            header: BlockHeader::new(&FILE_TRAILER_BLOCK_MAGIC),
             version: VERSION_NUMBER,
             columns: take(&mut self.finished_columns),
             compression: self.cws[0].parameters.compression,
+            filter_offset: filter_location.offset,
+            filter_size: filter_location.size.try_into().unwrap(),
         };
         let (_block, location) = self
             .writer
@@ -1159,18 +1165,6 @@ impl Writer {
             .insert_cache_entry(location, Arc::new(file_trailer));
 
         let (reader, pbuf) = self.writer.complete()?;
-
-        // Write out the bloom filter to a separate file (for now)
-        /*
-        let mut bloom_path = pbuf.clone();
-        bloom_path.set_extension("bloom");
-        let mut bf = File::create(bloom_path.as_path())?;
-        let bf_file_state = BloomFilterState::from(&self.bloom_filter);
-        bf_file_state.write(&mut bf).map_err(|e| match e {
-            binrw::Error::Io(e) => StorageError::StdIo(e.kind()),
-            _ => StorageError::BloomFilter,
-        })?;
-         */
 
         Ok((reader, pbuf, self.bloom_filter))
     }
@@ -1310,7 +1304,7 @@ where
             path,
             Runtime::buffer_cache,
             file_handle,
-            bloom_filter,
+            Some(bloom_filter),
         )
     }
 }
@@ -1490,7 +1484,7 @@ where
             path,
             Runtime::buffer_cache,
             file_handle,
-            bloom_filter,
+            Some(bloom_filter),
         )
     }
 }

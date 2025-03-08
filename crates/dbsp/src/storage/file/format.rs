@@ -76,11 +76,12 @@
 //!
 //! Decompressing a compressed block yields the regular index or data block
 //! format starting with a [`BlockHeader`].
-use crate::storage::buffer_cache::FBuf;
+use crate::storage::{buffer_cache::FBuf, file::BLOOM_FILTER_SEED};
 
-use binrw::{binrw, BinRead, BinResult, BinWrite, Error as BinError};
+use binrw::{binrw, binwrite, BinRead, BinResult, BinWrite, Error as BinError};
 #[cfg(doc)]
 use crc32c;
+use fastbloom::BloomFilter;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
@@ -95,6 +96,9 @@ pub const INDEX_BLOCK_MAGIC: [u8; 4] = *b"LFIB";
 
 /// Magic number for the file trailer block.
 pub const FILE_TRAILER_BLOCK_MAGIC: [u8; 4] = *b"LFFT";
+
+/// Magic number for filter blocks.
+pub const FILTER_BLOCK_MAGIC: [u8; 4] = *b"LFFB";
 
 /// 8-byte header at the beginning of each block.
 ///
@@ -148,6 +152,12 @@ pub struct FileTrailer {
     /// The columns.
     #[br(count = n_columns)]
     pub columns: Vec<FileTrailerColumn>,
+
+    /// File offset in bytes of the [FilterBlock].
+    pub filter_offset: u64,
+
+    /// Size in bytes of the [FilterBlock].
+    pub filter_size: u32,
 }
 
 /// Information about a column.
@@ -439,5 +449,62 @@ impl Compression {
         value
             .map_or(0, |value| value as u8)
             .write_options(writer, endian, ())
+    }
+}
+
+/// A block representing a Bloom filter.
+///
+/// The Bloom filter contains a member for each key in column 0.
+#[binrw]
+pub struct FilterBlock {
+    /// Block header with "LFFB" magic.
+    #[brw(assert(header.magic == FILTER_BLOCK_MAGIC, "filter block has bad magic"))]
+    pub header: BlockHeader,
+
+    /// [BloomFilter::num_hashes].
+    pub num_hashes: u32,
+
+    /// Number of elements in `data`.
+    #[bw(try_calc(u64::try_from(data.len())))]
+    pub len: u64,
+
+    /// Bloom filter contents.
+    #[br(count = len)]
+    pub data: Vec<u64>,
+}
+
+impl From<FilterBlock> for BloomFilter {
+    fn from(block: FilterBlock) -> Self {
+        BloomFilter::from_vec(block.data)
+            .seed(&BLOOM_FILTER_SEED)
+            .hashes(block.num_hashes)
+    }
+}
+
+/// A block representing a Bloom filter (with data by reference).
+#[binwrite]
+pub struct FilterBlockRef<'a> {
+    /// Block header with "LFFB" magic.
+    #[bw(assert(header.magic == FILTER_BLOCK_MAGIC, "filter block has bad magic"))]
+    pub header: BlockHeader,
+
+    /// [BloomFilter::num_hashes].
+    pub num_hashes: u32,
+
+    /// Number of elements in `data`.
+    #[bw(try_calc(u64::try_from(data.len())))]
+    pub len: u64,
+
+    /// Bloom filter contents.
+    pub data: &'a [u64],
+}
+
+impl<'a> From<&'a BloomFilter> for FilterBlockRef<'a> {
+    fn from(value: &'a BloomFilter) -> Self {
+        FilterBlockRef {
+            header: BlockHeader::new(&FILTER_BLOCK_MAGIC),
+            num_hashes: value.num_hashes(),
+            data: value.as_slice(),
+        }
     }
 }

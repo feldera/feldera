@@ -72,10 +72,6 @@
 
 use crate::dynamic::ArchivedDBData;
 use crate::storage::buffer_cache::{FBuf, FBufSerializer};
-use binrw::binrw;
-use bytemuck::cast_slice;
-use crc32c::{crc32c, crc32c_append};
-use fastbloom::BloomFilter;
 use rkyv::de::deserializers::SharedDeserializeMap;
 use rkyv::{
     ser::{
@@ -104,59 +100,6 @@ pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 
 const BLOOM_FILTER_SEED: u128 = 42;
 const BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.001;
-
-/// Format to store a bloom filter in a file.
-#[binrw]
-#[brw(little)]
-struct BloomFilterState {
-    crc: u32,
-    num_hashes: u32,
-    #[bw(try_calc(u64::try_from(data.len())))]
-    len: u64,
-    #[br(count = len)]
-    data: Vec<u64>,
-}
-
-impl From<&BloomFilter> for BloomFilterState {
-    fn from(bloom_filter: &BloomFilter) -> Self {
-        let bytes: &[u8] = cast_slice(bloom_filter.as_slice());
-        let crc = crc32c(bytes);
-        let crc = crc32c_append(
-            crc,
-            cast_slice(&[bloom_filter.num_hashes() as u64, bytes.len() as u64]),
-        );
-
-        Self {
-            crc,
-            num_hashes: bloom_filter.num_hashes(),
-            data: Vec::from(bloom_filter.as_slice()),
-        }
-    }
-}
-
-impl TryInto<BloomFilter> for BloomFilterState {
-    type Error = std::io::Error;
-
-    fn try_into(self) -> Result<BloomFilter, Self::Error> {
-        let bytes: &[u8] = cast_slice(self.data.as_slice());
-        let crc = crc32c(bytes);
-        let crc = crc32c_append(
-            crc,
-            cast_slice(&[self.num_hashes as u64, bytes.len() as u64]),
-        );
-
-        if self.crc != crc {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Bloom filter data is corrupted",
-            ));
-        }
-
-        Ok(BloomFilter::from_vec(self.data)
-            .seed(&BLOOM_FILTER_SEED)
-            .hashes(self.num_hashes))
-    }
-}
 
 /// Factory objects used by file reader and writer.
 pub struct Factories<K, A>
@@ -352,9 +295,14 @@ where
 mod test {
     use std::sync::Arc;
 
-    use crate::storage::{
-        backend::StorageBackend, buffer_cache::BufferCache, file::format::Compression,
-        test::init_test_logger,
+    use crate::{
+        storage::{
+            backend::StorageBackend,
+            buffer_cache::BufferCache,
+            file::{format::Compression, reader::Reader},
+            test::init_test_logger,
+        },
+        Runtime,
     };
 
     use super::{
@@ -612,6 +560,36 @@ mod test {
         })
     }
 
+    fn test_bloom<K, A, N>(
+        reader: &Reader<(&'static DynData, &'static DynData, N)>,
+        n: usize,
+        expected: impl Fn(usize) -> (K, K, K, A),
+    ) where
+        K: DBData,
+        A: DBData,
+        N: ColumnSpec,
+    {
+        let mut false_positives = 0;
+        for row in 0..n {
+            let (before, key, after, _aux) = expected(row);
+            assert!(reader.maybe_contains_key(&key));
+            if reader.maybe_contains_key(&before) {
+                false_positives += 1;
+            }
+            if reader.maybe_contains_key(&after) {
+                false_positives += 1;
+            }
+        }
+        if n >= 5 {
+            // Note that, usually, `after` for row `i` is the same as `before`
+            // for row `i + 1`, so the values in the data are not necessarily
+            // *unique* values.
+            assert!(false_positives < n,
+                    "Out of {} values not in the data, {} appeared in the Bloom filter ({:.1}% false positive rate)",
+                    2 * n, false_positives, false_positives as f64 / (2 * n) as f64);
+        }
+    }
+
     fn test_two_columns<T>(parameters: Parameters)
     where
         T: TwoColumns,
@@ -651,12 +629,14 @@ mod test {
         let reader = layer_file.into_reader().unwrap();
         reader.evict();
         let rows0 = reader.rows();
-        test_cursor(&rows0, n0, |row0| {
+        let expected0 = |row0| {
             let key0 = T::key0(row0);
             let (before0, after0) = T::near0(row0);
             let aux0 = T::aux0(row0);
             (before0, key0, after0, aux0)
-        });
+        };
+        test_cursor(&rows0, n0, expected0);
+        test_bloom(&reader, n0, expected0);
 
         for row0 in 0..n0 {
             let rows1 = rows0.nth(row0 as u64).unwrap().next_column().unwrap();
@@ -733,28 +713,45 @@ mod test {
         A: DBData,
     {
         for_each_compression_type(parameters, |parameters| {
-            let factories = Factories::<DynData, DynData>::new::<K, A>();
-            let cache = Arc::new(BufferCache::new(1024 * 1024));
-            let tempdir = tempdir().unwrap();
-            let storage_backend = <dyn StorageBackend>::new(
-                &StorageConfig {
-                    path: tempdir.path().to_string_lossy().to_string(),
-                    cache: Default::default(),
-                },
-                &StorageOptions::default(),
-            )
-            .unwrap();
-            let mut writer =
-                Writer1::new(&factories, cache, &*storage_backend, parameters, n).unwrap();
-            for row in 0..n {
-                let (_before, key, _after, aux) = expected(row);
-                writer.write0((&key, &aux)).unwrap();
-            }
+            for reopen in [false, true] {
+                let factories = Factories::<DynData, DynData>::new::<K, A>();
+                let cache = Arc::new(BufferCache::new(1024 * 1024));
+                let tempdir = tempdir().unwrap();
+                let storage_backend = <dyn StorageBackend>::new(
+                    &StorageConfig {
+                        path: tempdir.path().to_string_lossy().to_string(),
+                        cache: Default::default(),
+                    },
+                    &StorageOptions::default(),
+                )
+                .unwrap();
+                let mut writer =
+                    Writer1::new(&factories, cache, &*storage_backend, parameters.clone(), n)
+                        .unwrap();
+                for row in 0..n {
+                    let (_before, key, _after, aux) = expected(row);
+                    writer.write0((&key, &aux)).unwrap();
+                }
 
-            let reader = writer.into_reader().unwrap();
-            reader.evict();
-            assert_eq!(reader.rows().len(), n as u64);
-            test_cursor(&reader.rows(), n, &expected);
+                let reader = if reopen {
+                    println!("closing writer and reopening as reader");
+                    let (_file_handle, path, _bloom_filter) = writer.close().unwrap();
+                    Reader::open(
+                        &[&factories.any_factories()],
+                        Runtime::buffer_cache,
+                        &*storage_backend,
+                        &path,
+                    )
+                    .unwrap()
+                } else {
+                    println!("transforming writer into reader");
+                    writer.into_reader().unwrap()
+                };
+                reader.evict();
+                assert_eq!(reader.rows().len(), n as u64);
+                test_cursor(&reader.rows(), n, &expected);
+                test_bloom(&reader, n, &expected);
+            }
         })
     }
 
