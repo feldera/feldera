@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQuestionExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
@@ -1090,7 +1091,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression cond = this.transform(expression.condition);
         DBSPExpression positive = this.transform(expression.positive);
-        DBSPExpression negative = this.transform(expression.negative);
+        DBSPExpression negative = this.transformN(expression.negative);
         this.pop(expression);
         DBSPExpression result = new DBSPIfExpression(expression.getNode(), cond, positive, negative);
         this.map(expression, result);
@@ -1195,6 +1196,16 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.initializer);
         this.pop(expression);
         DBSPExpression result = new DBSPStaticExpression(expression.getNode(), source);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPReturnExpression expression) {
+        this.push(expression);
+        DBSPExpression argument = this.transform(expression.argument);
+        this.pop(expression);
+        DBSPExpression result = new DBSPReturnExpression(expression.getNode(), argument);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

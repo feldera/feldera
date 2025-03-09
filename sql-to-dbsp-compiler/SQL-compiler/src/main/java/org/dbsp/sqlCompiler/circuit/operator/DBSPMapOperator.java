@@ -49,7 +49,7 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
             // Could also be a SortExpression
             this.checkParameterCount(function,  1);
         this.checkResultType(function, elementType);
-        this.checkArgumentFunctionType(function, 0, input);
+        checkArgumentFunctionType(function, input);
     }
 
     public DBSPMapOperator(CalciteObject node, DBSPClosureExpression function, OutputPort input) {

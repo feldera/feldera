@@ -22,7 +22,7 @@ public final class DBSPFlatMapIndexOperator extends DBSPUnaryOperator {
         // We use this operator in a very restricted way,
         // to implement a MapIndex preceded or followed by a Filter.
         // So the iterator is always over an Option().
-        this.checkArgumentFunctionType(expression, 0, input);
+        this.checkArgumentFunctionType(expression, input);
     }
 
     @Override

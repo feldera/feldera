@@ -34,13 +34,16 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
 
+import javax.annotation.Nullable;
+
 public final class DBSPIfExpression extends DBSPExpression {
     public final DBSPExpression condition;
     public final DBSPExpression positive;
+    @Nullable
     public final DBSPExpression negative;
 
     public DBSPIfExpression(CalciteObject node, DBSPExpression condition,
-                            DBSPExpression positive, DBSPExpression negative) {
+                            DBSPExpression positive, @Nullable DBSPExpression negative) {
         super(node, positive.getType());
         this.condition = condition;
         this.positive = positive;
@@ -50,7 +53,7 @@ public final class DBSPIfExpression extends DBSPExpression {
                     this.condition.getType(), this);
         if (this.condition.getType().mayBeNull)
             throw new InternalCompilerError("Nullable condition in if expression", condition);
-        if (!this.positive.getType().sameType(this.negative.getType()))
+        if (this.negative != null && !this.positive.getType().sameType(this.negative.getType()))
             throw new InternalCompilerError("Mismatched types in conditional expression " + this.positive +
                     "/" + this.positive.getType() + " vs " + this.negative + "/" + this.negative.getType(), this);
     }
@@ -66,8 +69,10 @@ public final class DBSPIfExpression extends DBSPExpression {
         this.condition.accept(visitor);
         visitor.property("positive");
         this.positive.accept(visitor);
-        visitor.property("negative");
-        this.negative.accept(visitor);
+        if (this.negative != null) {
+            visitor.property("negative");
+            this.negative.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }
@@ -98,16 +103,18 @@ public final class DBSPIfExpression extends DBSPExpression {
                     .decrease()
                     .append("}");
         }
-        builder.append(" else ");
-        if (this.negative.is(DBSPBlockExpression.class))
-            builder.append(this.negative);
-        else {
-            builder.append("{")
-                    .increase()
-                    .append(this.negative)
-                    .newline()
-                    .decrease()
-                    .append("}");
+        if (this.negative != null) {
+            builder.append(" else ");
+            if (this.negative.is(DBSPBlockExpression.class))
+                builder.append(this.negative);
+            else {
+                builder.append("{")
+                        .increase()
+                        .append(this.negative)
+                        .newline()
+                        .decrease()
+                        .append("}");
+            }
         }
         return builder;
     }
@@ -115,7 +122,8 @@ public final class DBSPIfExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPIfExpression(this.getNode(), this.condition.deepCopy(),
-                this.positive.deepCopy(), this.negative.deepCopy());
+                this.positive.deepCopy(),
+                this.negative != null ? this.negative.deepCopy() : null);
     }
 
     @Override
@@ -133,7 +141,9 @@ public final class DBSPIfExpression extends DBSPExpression {
         getJsonType(node, decoder);
         DBSPExpression condition = fromJsonInner(node, "condition", decoder, DBSPExpression.class);
         DBSPExpression positive = fromJsonInner(node, "positive", decoder, DBSPExpression.class);
-        DBSPExpression negative = fromJsonInner(node, "negative", decoder, DBSPExpression.class);
+        DBSPExpression negative = null;
+        if (node.has("negative"))
+            negative = fromJsonInner(node, "negative", decoder, DBSPExpression.class);
         return new DBSPIfExpression(CalciteObject.EMPTY, condition, positive, negative);
     }
 }

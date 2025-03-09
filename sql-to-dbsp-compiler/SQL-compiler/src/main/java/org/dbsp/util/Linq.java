@@ -143,6 +143,12 @@ public class Linq {
         return result;
     }
 
+    public static <T> List<T> append(List<T> list, T element) {
+        ArrayList<T> result = new ArrayList<>(list);
+        result.add(element);
+        return result;
+    }
+
     public static <T> boolean same(@Nullable Collection<T> left, @Nullable Collection<T> right) {
         if (left == null)
             return right == null;

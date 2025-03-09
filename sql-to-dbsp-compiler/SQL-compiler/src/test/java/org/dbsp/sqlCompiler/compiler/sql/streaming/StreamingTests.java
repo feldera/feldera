@@ -1,10 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
-import com.beust.jcommander.Parameter;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
@@ -1665,15 +1665,14 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE TABLE T2(l INT, m INT, n INT);
                 CREATE VIEW V0 AS
                 select a, l from t1 full outer join t2 on t1.a = t2.l and t1.b < 5 and t2.m > 0;""");
-        int[] filters = new int[1];
+        int[] fmi = new int[1];
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
-            public void postorder(DBSPFlatMapOperator unused) {
-                filters[0]++;
+            public void postorder(DBSPFlatMapIndexOperator unused) {
+                fmi[0]++;
             }
         };
         ccs.visit(visitor);
-        // Filters combined with maps into flatmaps
-        assert filters[0] == 4;
+        assert fmi[0] == 3;
         ccs.step("""
                 INSERT INTO T1 VALUES(0, 1, 2);
                 INSERT INTO T2 VALUES(0, 1, 2);

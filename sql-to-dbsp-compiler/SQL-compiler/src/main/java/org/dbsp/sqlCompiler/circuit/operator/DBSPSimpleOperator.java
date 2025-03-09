@@ -142,11 +142,11 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     /**
      * Check that the specified source operator produces a ZSet/IndexedZSet with element types that can be fed
      * to the specified function.
-     * @param function Function with multiple arguments
+     *
+     * @param function Function with a single argument.
      * @param source   Source operator producing the arg input to function.
-     * @param arg      Argument number of the function supplied from source operator. */
-    protected void checkArgumentFunctionType(
-            DBSPExpression function, @SuppressWarnings("SameParameterValue") int arg, OutputPort source) {
+     */
+    static void checkArgumentFunctionType(DBSPExpression function, OutputPort source) {
         if (function.getType().is(DBSPTypeAny.class))
             return;
         DBSPType sourceElementType;
@@ -159,15 +159,15 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
         } else {
             throw new InternalCompilerError(
                     "Source " + source + " does not produce an (Indexed)ZSet, but "
-                    + source, this);
+                    + source);
         }
         DBSPTypeFunction funcType = function.getType().to(DBSPTypeFunction.class);
-        DBSPType argType = funcType.parameterTypes[arg];
+        DBSPType argType = funcType.parameterTypes[0];
         if (argType.is(DBSPTypeAny.class))
             return;
         if (!sourceElementType.sameType(argType))
             throw new InternalCompilerError("Expected function to accept\n" + sourceElementType +
-                    " as argument " + arg + " but it expects\n" + funcType.parameterTypes[arg], this);
+                    " as argument, but it expects\n" + funcType.parameterTypes[0]);
     }
 
     @Override

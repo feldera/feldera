@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -77,6 +78,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
@@ -362,7 +364,8 @@ public class Simplify extends InnerRewriteVisitor {
         } else if (source.is(DBSPIfExpression.class)) {
             DBSPIfExpression conditional = source.to(DBSPIfExpression.class);
             result = new DBSPIfExpression(source.getNode(), conditional.condition,
-                    conditional.positive.field(expression.fieldNo), conditional.negative.field(expression.fieldNo));
+                    conditional.positive.field(expression.fieldNo),
+                    conditional.negative != null ? conditional.negative.field(expression.fieldNo) : null);
         } else if (source.is(DBSPCloneExpression.class)) {
             result = new DBSPFieldExpression(expression.getNode(),
                     source.to(DBSPCloneExpression.class).expression,
@@ -402,7 +405,7 @@ public class Simplify extends InnerRewriteVisitor {
     public VisitDecision preorder(DBSPIfExpression expression) {
         this.push(expression);
         DBSPExpression condition = this.transform(expression.condition);
-        DBSPExpression negative = this.transform(expression.negative);
+        @Nullable DBSPExpression negative = this.transformN(expression.negative);
         DBSPExpression positive = this.transform(expression.positive);
         this.pop(expression);
         DBSPExpression result = new DBSPIfExpression(expression.getNode(), condition, positive, negative);
@@ -413,6 +416,8 @@ public class Simplify extends InnerRewriteVisitor {
                     result = positive;
                 } else {
                     result = negative;
+                    if (result == null)
+                        result = new DBSPRawTupleExpression();
                 }
             }
         } else if (condition != expression.condition ||

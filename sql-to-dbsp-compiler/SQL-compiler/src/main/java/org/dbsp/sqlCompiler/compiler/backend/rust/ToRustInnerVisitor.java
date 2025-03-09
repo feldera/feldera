@@ -67,6 +67,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQuestionExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
@@ -1090,28 +1091,22 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     if (tupleMaybeNull) {
                         // one of last 2 cases
                         leftDone = true;
+                        this.builder.append("&match &");
+                        field.expression.accept(this);
+                        this.builder.append(" {").increase()
+                                .append("None => None,").newline();
                         if (arrayMayBeNull) {
-                            this.builder.append("&match &");
-                            field.expression.accept(this);
-                            this.builder.append(" {").increase()
-                                    .append("None => None,").newline()
+                            this.builder
                                     .append("Some(x) => x.")
-                                    .append(field.fieldNo);
-                            this.builder.append(".clone()")
-                                    .newline()
-                                    .decrease().append("}");
-                        } else {
-                            this.builder.append("&match &");
-                            field.expression.accept(this);
-                            this.builder.append(" {").increase()
-                                    .append("None => None,").newline()
-                                    .append("Some(x) => ");
-                            this.builder.append("Some(x.")
                                     .append(field.fieldNo)
-                                    .append(".clone())")
-                                    .newline()
-                                    .decrease().append("}");
+                                    .append(".clone()");
+                        } else {
+                            this.builder
+                                    .append("Some(x) => Some(x.")
+                                    .append(field.fieldNo)
+                                    .append(".clone())");
                         }
+                        this.builder.newline().append("}");
                     }
                 }
                 if (!leftDone) {
@@ -1717,12 +1712,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         this.builder.append("&");
                     this.builder.append("x.");
                 }
-                /*
-                if (this.options.ioOptions.verbosity > 0) {
-                    this.builder.append(": ");
-                    sourceType.withMayBeNull(false).ref().accept(this);
-                }
-                 */
                 this.builder.append(expression.fieldNo);
                 if (fieldTypeIsNullable &&
                         expression.getType().mayBeNull &&
@@ -1738,9 +1727,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPReturnExpression expression) {
+        this.push(expression);
+        this.builder.append("return ");
+        expression.argument.accept(this);
+        this.pop(expression);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPIfExpression expression) {
         this.push(expression);
-        builder.append("(if ");
+        this.builder.append("(if ");
         expression.condition.accept(this);
         this.builder.append(" ");
         if (!expression.positive.is(DBSPBlockExpression.class))
@@ -1750,14 +1748,16 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (!expression.positive.is(DBSPBlockExpression.class))
             this.builder.decrease()
                     .append("\n}");
-        this.builder.append(" else ");
-        if (!expression.negative.is(DBSPBlockExpression.class))
-            this.builder.append("{")
-                    .increase();
-        expression.negative.accept(this);
-        if (!expression.negative.is(DBSPBlockExpression.class))
-            this.builder.decrease()
-                    .append("\n}");
+        if (expression.negative != null) {
+            this.builder.append(" else ");
+            if (!expression.negative.is(DBSPBlockExpression.class))
+                this.builder.append("{")
+                        .increase();
+            expression.negative.accept(this);
+            if (!expression.negative.is(DBSPBlockExpression.class))
+                this.builder.decrease()
+                        .append("\n}");
+        }
         this.builder.append(")");
         this.pop(expression);
         return VisitDecision.STOP;

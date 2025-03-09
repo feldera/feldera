@@ -243,7 +243,8 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     public void postorder(DBSPIfExpression expression) {
         this.used(expression.condition);
         this.used(expression.positive);
-        this.used(expression.negative);
+        if (expression.negative != null)
+            this.used(expression.negative);
     }
 
     @Override

@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetai
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
@@ -199,6 +200,29 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !input.equals(operator.input())) {
             result = new DBSPSinkOperator(operator.getNode(), operator.viewName, operator.query,
                     originalRowType, operator.metadata, input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator.outputPort(), result.outputPort());
+    }
+
+    @Override
+    public void postorder(DBSPChainOperator operator) {
+        if (!this.toOptimize.test(operator)) {
+            super.replace(operator);
+            return;
+        }
+        OutputPort input = this.mapped(operator.input());
+        DBSPSimpleOperator result = operator;
+
+        DBSPChainOperator.ComputationChain chain = new DBSPChainOperator.ComputationChain(input.outputType());
+        for (var operation: operator.chain.computations()) {
+            DBSPClosureExpression closure = this.transform(operation.closure()).to(DBSPClosureExpression.class);
+            DBSPChainOperator.Computation computation = new DBSPChainOperator.Computation(operation.kind(), closure);
+            chain = chain.add(computation);
+        }
+        if (!input.equals(operator.input()) ||
+            !chain.equals(operator.chain)) {
+            result = new DBSPChainOperator(operator.getNode(), chain, operator.isMultiset, input)
                     .copyAnnotations(operator);
         }
         this.map(operator.outputPort(), result.outputPort());
