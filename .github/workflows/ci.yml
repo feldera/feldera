@@ -6,31 +6,31 @@ on:
 # It would be nice if any failure here leads to fast-failing the build
 # but this seems hard (?) https://github.com/orgs/community/discussions/38361
 jobs:
-  build-rust:
+  invoke-build-rust:
     name: "" # Don't set a name for this job, it will display the one in build-rust.yml workflow
     uses: ./.github/workflows/build-rust.yml
-  build-java:
+  invoke-build-java:
     name: ""
     uses: ./.github/workflows/build-java.yml
-  tests-unit:
+  invoke-tests-unit:
     name: ""
-    needs: [build-rust, build-java]
+    needs: [invoke-build-rust, invoke-build-java]
     uses: ./.github/workflows/test-unit.yml
-  tests-adapter:
+  invoke-tests-adapter:
     name: ""
-    needs: [build-rust]
+    needs: [invoke-build-rust]
     uses: ./.github/workflows/test-adapters.yml
     # We need to inherit secrets from here because we use workflow composition (stupid github nonsense)
     secrets: inherit
-  build-docker:
+  invoke-build-docker:
     name: ""
-    needs: [build-rust, build-java]
+    needs: [invoke-build-rust, invoke-build-java]
     uses: ./.github/workflows/build-docker.yml
-  tests-integration:
+  invoke-tests-integration:
     name: ""
-    needs: [build-docker]
+    needs: [invoke-build-docker]
     uses: ./.github/workflows/test-integration.yml
-  tests-java:
+  invoke-tests-java:
     name: ""
-    needs: [build-java] # Don't really need it atm but doesn't make sense to run before we know we know can build it
+    needs: [invoke-build-java] # Don't really need it atm but doesn't make sense to run before we know we know can build it
     uses: ./.github/workflows/test-java.yml
