@@ -1,7 +1,6 @@
 name: Pre Merge Queue Tasks
 
 on:
-  merge_group:
   pull_request:
     types: [opened, synchronize]
 jobs:
