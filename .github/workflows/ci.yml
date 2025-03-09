@@ -4,34 +4,52 @@ on:
   merge_group:
   workflow_dispatch:
 
-# It would be nice if any failure here leads to fast-failing the build
-# but this seems hard (?) https://github.com/orgs/community/discussions/38361
 jobs:
   invoke-build-rust:
-    name: "" # Don't set a name for this job, it will display the one in build-rust.yml workflow
+    name: Build Rust
     uses: ./.github/workflows/build-rust.yml
+
   invoke-build-java:
-    name: ""
+    name: Build Java
     uses: ./.github/workflows/build-java.yml
+
   invoke-tests-unit:
-    name: ""
+    name: Unit Tests
     needs: [invoke-build-rust, invoke-build-java]
     uses: ./.github/workflows/test-unit.yml
+
   invoke-tests-adapter:
-    name: ""
+    name: Adapter Tests
     needs: [invoke-build-rust]
     uses: ./.github/workflows/test-adapters.yml
-    # We need to inherit secrets from here because we use workflow composition (stupid github nonsense)
     secrets: inherit
+
   invoke-build-docker:
-    name: ""
+    name: Build Docker
     needs: [invoke-build-rust, invoke-build-java]
     uses: ./.github/workflows/build-docker.yml
+
   invoke-tests-integration:
-    name: ""
+    name: Integration Tests
     needs: [invoke-build-docker]
     uses: ./.github/workflows/test-integration.yml
+
   invoke-tests-java:
-    name: ""
-    needs: [invoke-build-java] # Don't really need it atm but doesn't make sense to run before we know we know can build it
+    name: Java Tests
+    needs: [invoke-build-java]
     uses: ./.github/workflows/test-java.yml
+
+  main:
+    name: Merge Queue Tasks
+    runs-on: ubuntu-latest
+    needs:
+      - invoke-build-rust
+      - invoke-build-java
+      - invoke-tests-unit
+      - invoke-tests-adapter
+      - invoke-build-docker
+      - invoke-tests-integration
+      - invoke-tests-java
+    steps:
+      - name: Finalize Workflow
+        run: echo "All tasks completed successfully!"
