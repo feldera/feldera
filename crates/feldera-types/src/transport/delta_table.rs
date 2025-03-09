@@ -213,7 +213,7 @@ fn test_delta_reader_config_serde() {
 
     let serialized_config = serde_json::to_string(&config).unwrap();
 
-    let expected = r#"{"uri":"protocol:/path/to/somewhere","timestamp_column":"ts","mode":"follow","snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","customoption1":"val1","customoption2":"val2","cdc_delete_filter":null,"cdc_order_by":null}"#;
+    let expected = r#"{"uri":"protocol:/path/to/somewhere","timestamp_column":"ts","mode":"follow","snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","customoption1":"val1","customoption2":"val2","cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4}"#;
 
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),
