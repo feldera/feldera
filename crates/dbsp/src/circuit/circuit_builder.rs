@@ -375,9 +375,8 @@ impl<D> RefStreamValue<D> {
 /// batch.  These functions apply to both streams of deltas and streams of data.
 ///
 /// The following methods are available for streams of indexed and non-indexed
-/// Z-sets that implement trait [`FilterMap`](`crate::FilterMap`).  Each of
-/// these takes a function that accepts a key (for non-indexed Z-sets) or a
-/// key-value pair (for indexed Z-sets):
+/// Z-sets.  Each of these takes a function that accepts a key (for non-indexed
+/// Z-sets) or a key-value pair (for indexed Z-sets):
 ///
 ///   * Use [`Stream::map`] to output a non-indexed Z-set using an
 ///     arbitrary mapping function, or [`Stream::map_index`] to map to

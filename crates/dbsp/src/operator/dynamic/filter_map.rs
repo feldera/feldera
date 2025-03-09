@@ -23,7 +23,6 @@ use std::{borrow::Cow, marker::PhantomData};
 
 use super::{MonoIndexedZSet, MonoIndexedZSetFactories, MonoZSet, MonoZSetFactories};
 
-/// See [`crate::operator::FilterMap`].
 pub trait DynFilterMap: BatchReader {
     /// A borrowed version of the record type, e.g., `(&K, &V)` for a stream of
     /// `(key, value, weight)` tuples or `&K` if the value type is `()`.
