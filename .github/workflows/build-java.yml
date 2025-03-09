@@ -1,0 +1,42 @@
+name: Build Java Sources
+
+on:
+  workflow_call:
+
+jobs:
+  build-jar:
+    name: Build Compiler
+    runs-on: [self-hosted, skylake40]
+    container:
+      image: ghcr.io/feldera/feldera-dev:0a775f772b2ebde13708744d3e6a219ca4a492d2
+      options: --user=ubuntu
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-${{ runner.os }}-
+
+      - name: Build JAR
+        run: bash build.sh
+        working-directory: ./sql-to-dbsp-compiler
+
+      - name: Copy JAR to artifacts directory
+        run: |
+          mkdir -p build-artifacts
+          cp ./sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp.jar build-artifacts/
+          cp ./sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar build-artifacts/
+          cp ./sql-to-dbsp-compiler/slt/target/slt-jar-with-dependencies.jar build-artifacts/
+          cp ./sql-to-dbsp-compiler/slt/target/slt.jar build-artifacts/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: feldera-sql-compiler
+          path: build-artifacts
+          retention-days: 7

@@ -1,0 +1,41 @@
+name: Test Java Sources
+
+on:
+  workflow_call:
+
+jobs:
+  java-tests:
+    name: Execute Java Tests
+    runs-on: [self-hosted, skylake40]
+    container:
+      image: ghcr.io/feldera/feldera-dev:0a775f772b2ebde13708744d3e6a219ca4a492d2
+      options: --user=ubuntu
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The docker container when executed in the action runs with a different home directory
+      # than we set in the dev container (?), hence this step is necessary (sigh)
+      # https://github.com/actions/runner/issues/863
+      - name: Rustup set default toolchain
+        run: rustup default stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-${{ runner.os }}-
+
+      # TODO: Avoid doing this twice and ideally download & reuse the JAR from build-java.yml workflow
+      - name: Run build.sh
+        run: ./build.sh
+        working-directory: ./sql-to-dbsp-compiler
+
+      - name: Run mvn test
+        run: mvn test --no-transfer-progress -q -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false -Dtest=!OtherTests.rustFmt
+        working-directory: ./sql-to-dbsp-compiler

@@ -1,0 +1,52 @@
+# Run all the things we can run once we have a working docker image
+name: Integration Tests
+
+on:
+  workflow_call:
+
+jobs:
+  manager-tests:
+    name: Integration Tests
+    runs-on: [self-hosted, skylake40]
+    container:
+      image: ghcr.io/feldera/feldera-dev:0a775f772b2ebde13708744d3e6a219ca4a492d2
+
+    services:
+      pipeline-manager:
+        image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
+        options: >-
+          --health-cmd "curl --fail --request GET --url http://localhost:8080/healthz || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Download Test Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-test-binaries-x86_64-unknown-linux-gnu
+          path: build
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make binaries executable
+        run: chmod +x ./build/*
+
+      - name: Run manager tests
+        run: ./build/integration_test-*
+        env:
+          TEST_DBSP_URL: http://pipeline-manager:8080
+          RUST_BACKTRACE: 1
+
+      - name: Run python tests
+        run: uv run --locked pytest . --timeout=600
+        working-directory: python/tests
+        env:
+          FELDERA_BASE_URL: http://pipeline-manager:8080
+          IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
+
+      - name: Run python aggregate tests
+        run: uv run --locked ./tests/aggregate_tests/main.py
+        working-directory: python
+        env:
+          FELDERA_BASE_URL: http://pipeline-manager:8080
+          PYTHONPATH: ${{ github.workspace }}/python

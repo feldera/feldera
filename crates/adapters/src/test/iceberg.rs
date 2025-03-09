@@ -288,7 +288,6 @@ fn iceberg_localfs_input_test(
 #[cfg(feature = "iceberg-tests-glue")]
 fn iceberg_glue_s3_input_test() {
     use dbsp::trace::BatchReader;
-
     // Read delta table unordered.
     let mut json_file = iceberg_snapshot_to_json::<IcebergTestStruct>(
         &IcebergTestStruct::schema_with_lateness(),

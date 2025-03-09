@@ -18,11 +18,9 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-# Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
-# main.yml and coverage.yml:
-default = []
+default = ["backend-mode"]
 
-# Enable when using with compiler-generated code.
+# For use with compiler-generated code.
 # See comments in `mono/mod.rs`
 backend-mode = []
 

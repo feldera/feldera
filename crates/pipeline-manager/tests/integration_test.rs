@@ -3,15 +3,7 @@
 //!
 //! There are two ways to run these tests:
 //!
-//! 1. Self-contained mode, spinning up a pipeline manager instance on each run.
-//!    This is good for running tests from a clean state, but is very slow, as it
-//!    involves pre-compiling all dependencies from scratch:
-//!
-//! ```text
-//! cargo test --features integration-test --features=pg-embed integration_test::
-//! ```
-//!
-//! 2. Using an external pipeline manager instance.
+//! 1. Using an external pipeline manager instance.
 //!
 //! Start the pipeline manager by running `scripts/start_manager.sh` or using
 //! the following command line:
@@ -29,173 +21,31 @@
 //! Run the tests in a different terminal:
 //!
 //! ```text
-//! TEST_DBSP_URL=http://localhost:8080 cargo test integration_test:: --package=pipeline-manager --features integration-test  -- --nocapture
+//! TEST_DBSP_URL=http://localhost:8080 cargo test --test integration_test --package=pipeline-manager  -- --nocapture
 //! ```
-use std::{
-    process::Command,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use actix_http::{encoding::Decoder, Payload, StatusCode};
 use awc::error::SendRequestError;
 use awc::{http, ClientRequest, ClientResponse};
 use aws_sdk_cognitoidentityprovider::config::Region;
-use colored::Colorize;
 use feldera_types::transport::http::Chunk;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
 use serial_test::serial;
-use tempfile::TempDir;
-use tokio::{
-    sync::OnceCell,
-    time::{sleep, timeout},
-};
+use tokio::time::{sleep, timeout};
 
-use crate::compiler::main::{compiler_main, compiler_precompile};
-use crate::config::CommonConfig;
-#[cfg(feature = "pg-embed")]
-use crate::config::PgEmbedConfig;
-use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramStatus};
-use crate::runner::local_runner::LocalRunner;
-use crate::runner::pipeline_executor::LOGS_END_MESSAGE;
-use crate::{
-    config::{ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig},
-    db::types::pipeline::PipelineStatus,
-};
 use anyhow::{bail, Result as AnyResult};
 use feldera_types::config::{ResourceConfig, RuntimeConfig, StorageOptions};
-use std::sync::Arc;
-use tokio::sync::Mutex;
+
+use pipeline_manager::db::types::pipeline::PipelineStatus;
+use pipeline_manager::db::types::program::CompilationProfile;
+use pipeline_manager::db::types::program::ProgramConfig;
+use pipeline_manager::db::types::program::ProgramStatus;
+use pipeline_manager::runner::pipeline_executor::LOGS_END_MESSAGE;
 
 const TEST_DBSP_URL_VAR: &str = "TEST_DBSP_URL";
-const TEST_DBSP_DEFAULT_PORT: u16 = 8089;
 const MANAGER_INITIALIZATION_TIMEOUT: Duration = Duration::from_secs(100);
-
-// Used if we are testing against a local DBSP instance
-// whose lifecycle is managed by this test file
-static LOCAL_DBSP_INSTANCE: OnceCell<TempDir> = OnceCell::const_new();
-
-async fn initialize_local_pipeline_manager_instance() -> TempDir {
-    crate::logging::init_logging("[manager]".cyan());
-    println!("Performing one time initialization for integration tests.");
-    println!("Initializing a postgres container");
-    let _output = Command::new("docker")
-        .args([
-            "compose",
-            "-f",
-            "../../deploy/docker-compose.yml",
-            "-f",
-            "../../deploy/docker-compose-dev.yml",
-            "up",
-            "--renew-anon-volumes",
-            "--force-recreate",
-            "-d",
-            "db", // run only the DB service
-        ])
-        .output()
-        .unwrap();
-    tokio::time::sleep(Duration::from_millis(5000)).await;
-    let tmp_dir = TempDir::new().unwrap();
-    let workdir = tmp_dir.path().to_owned();
-    let common_config = CommonConfig {
-        platform_version: "v0".to_string(),
-    };
-    let database_config = DatabaseConfig {
-        db_connection_string: "postgresql://postgres:postgres@localhost:6666".to_owned(),
-    };
-    let api_config = ApiServerConfig {
-        port: TEST_DBSP_DEFAULT_PORT,
-        bind_address: "0.0.0.0".to_owned(),
-        auth_provider: crate::config::AuthProviderType::None,
-        dev_mode: false,
-        dump_openapi: false,
-        allowed_origins: None,
-        demos_dir: vec![],
-        telemetry: "".to_string(),
-        runner_hostname_port: "127.0.0.1:8089".to_string(),
-    };
-    let compiler_config = CompilerConfig {
-        compiler_working_directory: workdir.join("compiler").to_string_lossy().to_string(),
-        sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
-        compilation_cargo_lock_path: "../../Cargo.lock".to_owned(),
-        dbsp_override_path: "../../".to_owned(),
-        compilation_profile: CompilationProfile::Unoptimized,
-        precompile: true,
-        binary_ref_host: "127.0.0.1".to_string(),
-        binary_ref_port: 8085,
-    }
-    .canonicalize()
-    .unwrap();
-    let local_runner_config = LocalRunnerConfig {
-        runner_main_port: 8089,
-        runner_working_directory: workdir.join("local-runner").to_string_lossy().to_string(),
-        pipeline_host: "127.0.0.1".to_owned(),
-    }
-    .canonicalize()
-    .unwrap();
-    println!("Using ApiServerConfig: {:?}", api_config);
-    println!("Issuing Compiler::precompile_dependencies(). This will be slow.");
-    compiler_precompile(common_config.clone(), compiler_config.clone())
-        .await
-        .unwrap();
-    println!("Completed Compiler::precompile_dependencies().");
-
-    // We cannot reuse the tokio runtime instance created by the test (e.g., the one
-    // implicitly created via [actix_web::test]) to create the compiler, local
-    // runner and api futures below. The reason is that when that first test
-    // completes, these futures will get cancelled.
-    //
-    // To avoid that problem, and for general integration test hygiene, we force
-    // another tokio runtime to be created here to run the server processes. We
-    // obviously can't create one runtime within another, so the easiest way to
-    // work around that is to do so within std::thread::spawn().
-    std::thread::spawn(|| {
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async move {
-                let db = StoragePostgres::connect(
-                    &database_config,
-                    #[cfg(feature = "pg-embed")]
-                    PgEmbedConfig {
-                        pg_embed_working_directory: workdir
-                            .join("data")
-                            .to_string_lossy()
-                            .to_string(),
-                    },
-                )
-                .await
-                .unwrap();
-                db.run_migrations().await.unwrap();
-                let db = Arc::new(Mutex::new(db));
-                let db_clone = db.clone();
-                let common_config_clone = common_config.clone();
-                let _compiler = tokio::spawn(async move {
-                    compiler_main(common_config_clone, compiler_config, db_clone)
-                        .await
-                        .unwrap();
-                });
-                let db_clone = db.clone();
-                let common_config_clone = common_config.clone();
-                let _local_runner = tokio::spawn(async move {
-                    crate::runner::main::runner_main::<LocalRunner>(
-                        db_clone,
-                        common_config_clone,
-                        local_runner_config.clone(),
-                        local_runner_config.runner_main_port,
-                    )
-                    .await
-                    .unwrap();
-                });
-                // The api-server blocks forever
-                crate::api::main::run(db, common_config, api_config)
-                    .await
-                    .unwrap();
-            })
-    });
-    tokio::time::sleep(Duration::from_millis(3000)).await;
-    tmp_dir
-}
 
 struct TestConfig {
     dbsp_url: String,
@@ -700,19 +550,16 @@ async fn bearer_token() -> Option<String> {
 }
 
 async fn setup() -> TestConfig {
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
     let dbsp_url = match std::env::var(TEST_DBSP_URL_VAR) {
         Ok(val) => {
             println!("Running integration test against TEST_DBSP_URL: {}", val);
             val
         }
         Err(e) => {
-            println!(
-                "TEST_DBSP_URL is unset (reason: {}). Running integration test against: localhost:{}", e, TEST_DBSP_DEFAULT_PORT
-            );
-            LOCAL_DBSP_INSTANCE
-                .get_or_init(initialize_local_pipeline_manager_instance)
-                .await;
-            format!("http://localhost:{}", TEST_DBSP_DEFAULT_PORT).to_owned()
+            panic!("Set TEST_DBSP_URL to run this test (reason: {})", e);
         }
     };
     let client = awc::ClientBuilder::new()
@@ -1491,7 +1338,6 @@ async fn pipeline_program_config() {
             serde_json::to_value(ProgramConfig {
                 profile: Some(CompilationProfile::Dev),
                 cache: false,
-                ..Default::default()
             })
             .unwrap(),
         ),
@@ -1548,7 +1394,6 @@ async fn pipeline_program_config() {
         serde_json::to_value(ProgramConfig {
             profile: Some(CompilationProfile::Unoptimized),
             cache: false,
-            ..Default::default()
         })
         .unwrap()
     );
@@ -2813,8 +2658,8 @@ async fn pipeline_orchestration_basic() {
         sleep(Duration::from_millis(500)).await;
         let (pipeline_paused, connector_paused, num_processed) =
             basic_orchestration_info(&config, "test", table_name, connector_name).await;
-        assert_eq!(pipeline_paused, true);
-        assert_eq!(connector_paused, false);
+        assert!(pipeline_paused);
+        assert!(!connector_paused);
         assert_eq!(num_processed, 0);
 
         // Pause the connector
@@ -2832,8 +2677,8 @@ async fn pipeline_orchestration_basic() {
         sleep(Duration::from_millis(500)).await;
         let (pipeline_paused, connector_paused, num_processed) =
             basic_orchestration_info(&config, "test", table_name, connector_name).await;
-        assert_eq!(pipeline_paused, true);
-        assert_eq!(connector_paused, true);
+        assert!(pipeline_paused);
+        assert!(connector_paused);
         assert_eq!(num_processed, 0);
 
         // Start the pipeline
@@ -2851,8 +2696,8 @@ async fn pipeline_orchestration_basic() {
         sleep(Duration::from_millis(500)).await;
         let (pipeline_paused, connector_paused, num_processed) =
             basic_orchestration_info(&config, "test", table_name, connector_name).await;
-        assert_eq!(pipeline_paused, false);
-        assert_eq!(connector_paused, true);
+        assert!(!pipeline_paused);
+        assert!(connector_paused);
         assert_eq!(num_processed, 0);
 
         // Start the connector
@@ -2870,8 +2715,8 @@ async fn pipeline_orchestration_basic() {
         sleep(Duration::from_millis(500)).await;
         let (pipeline_paused, connector_paused, num_processed) =
             basic_orchestration_info(&config, "test", table_name, connector_name).await;
-        assert_eq!(pipeline_paused, false);
-        assert_eq!(connector_paused, false);
+        assert!(!pipeline_paused);
+        assert!(!connector_paused);
         assert!(num_processed > 0);
     }
 }
@@ -2894,7 +2739,7 @@ async fn pipeline_orchestration_errors() {
             }]'
         );
     "#;
-    create_and_deploy_test_pipeline(&config, &sql).await;
+    create_and_deploy_test_pipeline(&config, sql).await;
 
     // ACCEPTED
     for endpoint in ["/v0/pipelines/test/start", "/v0/pipelines/test/pause"] {
@@ -2990,7 +2835,7 @@ async fn pipeline_orchestration_scenarios() {
             ]'
         );
     "#;
-    create_and_deploy_test_pipeline(&config, &sql).await;
+    create_and_deploy_test_pipeline(&config, sql).await;
 
     // Shutdown for the first scenario
     assert_eq!(

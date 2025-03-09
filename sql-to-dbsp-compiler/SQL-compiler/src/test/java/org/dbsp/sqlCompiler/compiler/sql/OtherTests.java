@@ -638,6 +638,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void rustFmt() throws IOException, InterruptedException {
+        // Don't run this in CI we don't recompile at the point where we run the tests
+        if (System.getenv("CI") != null)
+            return;
         // Check that the rust library is properly formatted
         Utilities.runProcess(BaseSQLTests.projectDirectory + "/../crates/sqllib",
                 "cargo", "fmt", "--all", "--", "--check");

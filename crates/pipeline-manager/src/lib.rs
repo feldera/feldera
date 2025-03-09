@@ -2,9 +2,6 @@ use log::debug;
 use rustls::crypto::CryptoProvider;
 
 mod auth;
-#[cfg(test)]
-#[cfg(feature = "integration-test")]
-mod integration_test;
 
 pub mod api;
 pub mod common_error;

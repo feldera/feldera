@@ -9,6 +9,7 @@ use rust_decimal::Decimal;
 use serde_json::json;
 use std::{
     collections::{BTreeMap, HashSet},
+    env,
     io::Write,
     str::FromStr,
 };
@@ -18,6 +19,10 @@ use crate::{
     test::{data::TestStruct, test_circuit, wait, DeltaTestStruct},
     Controller,
 };
+
+fn redis_url() -> String {
+    env::var("REDIS_URL").unwrap_or("redis://localhost:6379/0".to_string())
+}
 
 #[test]
 fn test_redis_output() {
@@ -153,7 +158,7 @@ outputs:
     transport:
       name: redis_output
       config:
-        connection_string: redis://localhost:6379/0
+        connection_string: {}
         key_separator: ':'
     format:
       name: json
@@ -164,6 +169,7 @@ outputs:
 "#,
         temp_input_file1.path().display(),
         temp_input_file2.path().display(),
+        redis_url()
     );
 
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
@@ -195,7 +201,7 @@ outputs:
     )
     .expect("timeout");
 
-    let client = redis::Client::open("redis://localhost:6379/0").unwrap();
+    let client = redis::Client::open(redis_url()).unwrap();
     let mut conn = client.get_connection().unwrap();
 
     wait(
@@ -278,7 +284,7 @@ outputs:
     transport:
       name: redis_output
       config:
-        connection_string: redis://localhost:6379/0
+        connection_string: {}
         key_separator: ':'
     format:
       name: csv
@@ -287,7 +293,8 @@ outputs:
         - s
         - id
 "#,
-        temp_input_file1.path().display()
+        temp_input_file1.path().display(),
+        redis_url()
     );
 
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();

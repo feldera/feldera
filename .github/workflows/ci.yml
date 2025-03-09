@@ -1,122 +1,36 @@
-# .github/workflows/ci.yml
-
-name: Build & Tests
+name: Merge Queue Tasks
 
 on:
-  push:
-    paths-ignore:
-      - 'README.md'
-      - 'CODE_OF_CONDUCT.md'
-      - 'CONTRIBUTING.md'
-      - './vscode/**'
-  pull_request:
-    paths-ignore:
-      - 'README.md'
-      - 'CODE_OF_CONDUCT.md'
-      - 'CONTRIBUTING.md'
-      - './vscode/**'
+  merge_group:
 
-env:
-  CARGO_TERM_COLOR: always
-  CARGO_NET_RETRY: 10
-  RUST_BACKTRACE: short
-  RUSTUP_MAX_RETRIES: 10
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/dbspmanager
-
-permissions:
-  contents: read
-  packages: write
-
+# It would be nice if any failure here leads to fast-failing the build
+# but this seems hard (?) https://github.com/orgs/community/discussions/38361
 jobs:
-  pre_job:
-    runs-on: ubuntu-latest
-    outputs:
-      should_skip: ${{ steps.skip_check.outputs.should_skip }}
-    steps:
-      - id: skip_check
-        uses: fkirc/skip-duplicate-actions@master
-        with:
-          concurrent_skipping: "same_content_newer"
-          cancel_others: "true"
-          skip_after_successful_duplicate: "true"
-          do_not_skip: '["workflow_dispatch", "schedule"]'
-  build:
-    runs-on: [ self-hosted, skylake40 ]
-    needs: [ pre_job ]
-    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
-    env:
-      FORCE_COLOR: 1
-    steps:
-      - name: Install earthly
-        uses: earthly/actions-setup@v1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          version: 0.8.15
-      - uses: actions/checkout@v3
-        # By default a merge commit is checked out. If you look at the SHA that
-        # is checked out, it doesn't match your local commit SHA. Rather it's
-        # the SHA of a merge commit (your branch + base branch). So for
-        # pull_request actions it won't match the commit ID on the branch. This
-        # is confusing for storing benchmark results because the commit ID we
-        # find during `git rev-parse` exists nowhere in the history. Since we
-        # don't do merge commits anyways, we make sure we check out the head
-        # commit (which will exist in the history).
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          submodules: true
-
-      - name: Integration test .env
-        run: echo ${itest_config} > deploy/.env
-        env:
-          itest_config: ${{ secrets.itest_config }}
-
-      # Ship secrets for the Snowflake CI account to Earthly.
-      - name: Snowflake .env
-        run: |
-          echo SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE="${snowflake_passphrase}" >> deploy/.env && \
-          echo SNOWFLAKE_CI_USER_PRIVATE_KEY="${snowflake_key}" >> deploy/.env && \
-          echo SNOWFLAKE_CI_USER_PASSWORD="${snowflake_password}" >> deploy/.env
-        env:
-          snowflake_key: ${{ secrets.snowflake_ci_user_private_key }}
-          snowflake_passphrase: ${{ secrets.snowflake_ci_user_private_key_passphrase }}
-          snowflake_password: ${{ secrets.snowflake_ci_user_password }}
-
-      # Ship secrets for the S3 CI account for the S3 input transport test to Earthly.
-      - name: S3 .env
-        run: |
-          echo CI_S3_AWS_ACCESS_KEY="${s3_access_key}" >> deploy/.env && \
-          echo CI_S3_AWS_SECRET="${s3_secret}" >> deploy/.env
-        env:
-          s3_access_key: ${{ secrets.ci_s3_aws_access_key }}
-          s3_secret: ${{ secrets.ci_s3_aws_secret }}
-
-      # Ship secrets for the AWS CI account for Deltalake and Iceberg adapters tests to Earthly.
-      - name: Delta/Iceberg S3 secrets
-        run: |
-          echo DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID="${delta_table_test_aws_access_key_id}" >> .arg && \
-          echo DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY="${delta_table_test_aws_secret_access_key}" >> .arg && \
-          echo ICEBERG_TEST_AWS_ACCESS_KEY_ID="${delta_table_test_aws_access_key_id}" >> .arg && \
-          echo ICEBERG_TEST_AWS_SECRET_ACCESS_KEY="${delta_table_test_aws_secret_access_key}" >> .arg
-        env:
-          delta_table_test_aws_access_key_id: ${{ secrets.delta_table_test_aws_access_key_id }}
-          delta_table_test_aws_secret_access_key: ${{ secrets.delta_table_test_aws_secret_access_key }}
-
-
-      - name: Print ulimit
-        run: ulimit -a
-
-      - name: Earthly version
-        run: earthly --version
-
-      - name: Run CI
-        run: earthly -P --ci +ci-tests
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-artifacts
-          path: playwright-artifacts/
-          retention-days: 10
-      - name: Remove test artifacts from the CI machine
-        run: rm -f playwright-artifacts/*
+  build-rust:
+    name: "" # Don't set a name for this job, it will display the one in build-rust.yml workflow
+    uses: ./.github/workflows/build-rust.yml
+  build-java:
+    name: ""
+    uses: ./.github/workflows/build-java.yml
+  tests-unit:
+    name: ""
+    needs: [build-rust, build-java]
+    uses: ./.github/workflows/test-unit.yml
+  tests-adapter:
+    name: ""
+    needs: [build-rust]
+    uses: ./.github/workflows/test-adapters.yml
+    # We need to inherit secrets from here because we use workflow composition (stupid github nonsense)
+    secrets: inherit
+  build-docker:
+    name: ""
+    needs: [build-rust, build-java]
+    uses: ./.github/workflows/build-docker.yml
+  tests-integration:
+    name: ""
+    needs: [build-docker]
+    uses: ./.github/workflows/test-integration.yml
+  tests-java:
+    name: ""
+    needs: [build-java] # Don't really need it atm but doesn't make sense to run before we know we know can build it
+    uses: ./.github/workflows/test-java.yml

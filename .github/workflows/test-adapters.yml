@@ -1,0 +1,92 @@
+name: Adapter Tests
+
+on:
+  workflow_call:
+
+jobs:
+  adapter-tests:
+    name: Test Adapters
+    runs-on: [ubuntu-latest]
+    # TODO: this neds ubuntu 24.04 due to glibc being outdated on runner XD
+    # can't run in container because see below
+    #runs-on: [self-hosted, skylake40]
+    # For some dumb reason we can't run these tests in the dev container
+    # because while it finds redis on the docker network it doesn't find
+    # redpanda or pubsub (wtf?)
+    #container:
+    #  image: ghcr.io/feldera/feldera-dev:0a775f772b2ebde13708744d3e6a219ca4a492d2
+    #  options: --user=ubuntu
+    services:
+      redpanda:
+        image: redpandadata/redpanda:v24.2.20
+        ports:
+          - 8081:8081
+          - 8082:8082
+          - 9092:9092
+          - 9644:9644
+        options: >-
+          --health-cmd "rpk cluster health"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --cpuset-cpus 0-1
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      pubsub:
+        image: thekevjames/gcloud-pubsub-emulator:e852273e07
+        ports:
+          - 8681:8681
+        options: >-
+          -e PUBSUB_PROJECT1=feldera-test,test_pubsub_input-0
+          --health-cmd "nc -z 127.0.0.1 8681"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      # This is needed because we need some python to run the tests
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Test Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-test-binaries-x86_64-unknown-linux-gnu
+          path: build
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make binaries executable
+        run: chmod +x ./build/*
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.6.5"
+
+      - name: Install python deps
+        run: |
+          uv venv
+          uv pip install -r ../iceberg/src/test/requirements.ci.txt
+        working-directory: crates/adapters
+
+      - name: Run adapters tests
+        run: |
+          source .venv/bin/activate
+          ../../build/dbsp_adapters-*
+        working-directory: crates/adapters
+        env:
+          RUST_BACKTRACE: 1
+          REDIS_URL: redis://localhost:6379/0
+          REDPANDA_BROKERS: localhost
+          # This thing can't resolve `localhost` (?), needs to be an IP address
+          PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
+          ICEBERG_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
+          ICEBERG_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
+          DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
+          DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}

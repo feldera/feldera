@@ -1,11 +1,12 @@
-name: Pre-commit
+name: Pre Merge Queue Tasks
 
 on:
+  merge_group:
   pull_request:
-
+    types: [opened, synchronize]
 jobs:
   main:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: oven-sh/setup-bun@v2
@@ -16,6 +17,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.x
+      - name: Install cargo-machete
+        uses: clechasseur/rs-cargo@v2
+        with:
+          command: install
+          args: cargo-machete@0.7.0
       - uses: Swatinem/rust-cache@v2
       - uses: pre-commit/action@v3.0.1
       - uses: pre-commit-ci/lite-action@v1.1.0

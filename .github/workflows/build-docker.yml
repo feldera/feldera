@@ -1,0 +1,158 @@
+name: Build and Publish Docker Image
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+# This would be easier if we could just build all platforms in one job, but
+# building the ARM version on x86 is very slow due to the pre-compile step we do
+# in the Dockerfile.
+#
+# See also https://github.com/docker/build-push-action/issues/671 and especially the linked solution
+# https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
+# for more details on how this produces a single image with multiple architectures from different runners.
+jobs:
+  build-docker:
+    name: Package Docker Image
+
+    strategy:
+      matrix:
+        include:
+          - runner: [self-hosted, skylake40]
+            rust_target: x86_64-unknown-linux-gnu
+            docker_arch: amd64
+            docker_platform: linux/amd64
+          - runner: blacksmith-16vcpu-ubuntu-2204-arm
+            rust_target: aarch64-unknown-linux-gnu
+            docker_arch: arm64
+            docker_platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Binaries
+        id: binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-binaries-${{ matrix.rust_target }}
+          path: build
+          #run-id: ${{ inputs.run-id }}
+          # Token is only needed when run-id is set
+          #github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Compiler Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-sql-compiler
+          path: build
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make binaries executable
+        run: |
+          chmod +x ${{ steps.binaries.outputs.download-path }}/*
+          ls -la ${{ steps.binaries.outputs.download-path }}
+
+      - name: Prepare Platform Environment Variable
+        run: |
+          platform=${{ matrix.docker_platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ vars.FELDERA_IMAGE_NAME }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          # `context` is somehow important to set, otherwise the build will use it's own git checkout instead of the one
+          # checkout out earlier that also has the artifacts (!?)
+          context: .
+          file: deploy/Dockerfile
+          platforms: ${{ matrix.docker_platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ vars.FELDERA_IMAGE_NAME }}
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Export digest
+        run: |
+          mkdir -p ${{ runner.temp }}/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # One problem with this workflow is the unknown/unknown architecture
+  # it adds in the github UI. It's a github bug:
+  # https://github.com/orgs/community/discussions/45969
+  merge-manifests:
+    name: Merge Docker Manifests
+    runs-on: ubuntu-latest
+    needs: build-docker
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ vars.FELDERA_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ vars.FELDERA_IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ vars.FELDERA_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
