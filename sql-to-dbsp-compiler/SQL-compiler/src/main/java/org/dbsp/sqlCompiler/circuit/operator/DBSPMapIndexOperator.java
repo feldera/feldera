@@ -81,7 +81,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
         DBSPType outputElementType = outputType.getKVType();
         // Expression must return a tuple that is composed of a key and a value
         this.checkResultType(indexFunction, outputElementType);
-        this.checkArgumentFunctionType(indexFunction, 0, input);
+        this.checkArgumentFunctionType(indexFunction, input);
         this.checkParameterCount(indexFunction, 1);
     }
 

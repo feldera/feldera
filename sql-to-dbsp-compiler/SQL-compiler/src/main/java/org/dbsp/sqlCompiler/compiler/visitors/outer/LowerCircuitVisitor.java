@@ -3,6 +3,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -14,7 +16,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -364,6 +365,22 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(),
                 this.mapped(node.left()), this.mapped(node.right()));
+        this.map(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPChainOperator node) {
+        DBSPClosureExpression function = node.chain.collapse();
+        DBSPSimpleOperator result;
+        if (node.outputType.is(DBSPTypeZSet.class)) {
+            result = new DBSPFlatMapOperator(
+                    node.getNode(), function, node.getOutputZSetType(),
+                    node.isMultiset, this.mapped(node.input()));
+        } else {
+            result = new DBSPFlatMapIndexOperator(
+                    node.getNode(), function, node.getOutputIndexedZSetType(),
+                    node.isMultiset, this.mapped(node.input()));
+        }
         this.map(node, result);
     }
 }

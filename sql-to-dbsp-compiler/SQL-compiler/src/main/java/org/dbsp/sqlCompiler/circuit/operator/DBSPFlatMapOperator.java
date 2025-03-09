@@ -41,7 +41,7 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
                                DBSPTypeZSet outputType, boolean isMultiset, OutputPort input) {
         super(node, "flat_map", expression, outputType, isMultiset, input);
-        this.checkArgumentFunctionType(expression, 0, input);
+        this.checkArgumentFunctionType(expression, input);
     }
 
     // When implementing UNNEST, initially the expression is DBSPFlatmap, but later it is lowered

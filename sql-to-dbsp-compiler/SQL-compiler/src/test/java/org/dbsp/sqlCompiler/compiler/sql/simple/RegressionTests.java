@@ -1,18 +1,30 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -1623,8 +1635,8 @@ public class RegressionTests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                // We expect 7 MapIndex operators instead of 11 if CSE works
-                Assert.assertEquals(7, this.mapIndex);
+                // We expect 5 MapIndex operators instead of 11 if CSE works
+                Assert.assertEquals(5, this.mapIndex);
             }
         };
         visitor.apply(circuit);
@@ -1972,6 +1984,30 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void testChain() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT);
+                CREATE LOCAL VIEW V0 AS SELECT * FROM T WHERE x < 10;
+                CREATE LOCAL VIEW V1 AS SELECT x + 1 AS x FROM V0;
+                CREATE LOCAL VIEW V2 AS SELECT * FROM V1 WHERE x > 0;
+                CREATE VIEW V3 AS SELECT x / 2 AS x FROM V2;
+                """);
+        // Map and Filter operators should have been collapsed
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPMapOperator operator) {
+                assert false;
+            }
+
+            @Override
+            public void postorder(DBSPFilterOperator operator) {
+                assert false;
+            }
+        };
+        ccs.visit(visitor);
+    }
+
+    @Test
     public void issue3278() {
         this.compileRustTestCase("""
                 CREATE TABLE t1(c0 varchar);
@@ -1986,5 +2022,31 @@ public class RegressionTests extends SqlIoTest {
                 CREATE VIEW Y
                 AS select xx from X
                 group by 1""");
+    }
+
+    @Test
+    public void testPullUp() {
+        var ccs = this.getCCS("""
+                   CREATE TABLE X(x INT);
+                   CREATE TABLE Y(x INT, y INT);
+                   CREATE VIEW V AS SELECT X.x, Y.y FROM X JOIN Y ON X.x = Y.x WHERE Y.y = 23;""");
+        var circuit = ccs.getCircuit();
+        DBSPSourceTableOperator y = circuit.getInput(new ProgramIdentifier("Y", false));
+        // Check that 23 is pulled right after the Y input table, before the join.
+        for (DBSPOperator op: circuit.allOperators) {
+            if (!op.inputs.isEmpty() && op.inputs.get(0).node() == y) {
+                Assert.assertTrue(op.is(DBSPFlatMapIndexOperator.class));
+                var clo = op.to(DBSPFlatMapIndexOperator.class).getClosureFunction();
+                final boolean[] found = {false};
+                InnerVisitor visitor = new InnerVisitor(ccs.compiler) {
+                    public void postorder(DBSPI32Literal lit) {
+                        found[0] = true;
+                        Assert.assertEquals((Integer)23, lit.value);
+                    }
+                };
+                clo.accept(visitor);
+                Assert.assertTrue(found[0]);
+            }
+        }
     }
 }
