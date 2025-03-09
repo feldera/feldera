@@ -399,9 +399,9 @@
 //! skeleton.
 //!
 //! Let's do just enough computation to demonstrate the concept.  Suppose we
-//! want to pick out a subset of the records.  We can use the [`FilterMap`]
-//! trait implemented for [`Stream`] to do that.  For example, we can take just
-//! the records for locations in the United Kingdom:
+//! want to pick out a subset of the records.  We can use [`Stream::filter`] to
+//! do that.  For example, we can take just the records for locations in the
+//! United Kingdom:
 //!
 //! ```
 //! # use anyhow::Result;
@@ -1972,7 +1972,7 @@
 //! let (mut circuit, (/*handles*/)) = Runtime::init_circuit(4, build_circuit)?;
 //! ```
 use crate::{
-    operator::{Aggregator, FilterMap, Max},
+    operator::{Aggregator, Max},
     CircuitHandle, IndexedZSet, OrdPartitionedIndexedZSet, OutputHandle, RootCircuit, Runtime,
     Stream, ZSet, ZSetHandle,
 };
