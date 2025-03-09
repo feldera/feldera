@@ -2,7 +2,7 @@ name: Merge Queue Tasks
 
 on:
   merge_group:
-  workflow_call:
+  workflow_dispatch:
 
 # It would be nice if any failure here leads to fast-failing the build
 # but this seems hard (?) https://github.com/orgs/community/discussions/38361
