@@ -111,7 +111,7 @@ pub use typed_batch::{
     OrdIndexedWSet, OrdIndexedZSet, OrdWSet, OrdZSet, Trace, TypedBox, ZSet,
 };
 
-#[cfg(all(doc, not(feature = "backend-mode")))]
+#[cfg(doc)]
 pub mod tutorial;
 
 // TODO: import from `circuit`.
