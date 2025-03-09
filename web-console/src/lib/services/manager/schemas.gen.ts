@@ -1945,6 +1945,15 @@ as long as different pipelines running on the same machine are pinned to
 different CPUs.`,
           default: []
         },
+        provisioning_timeout_s: {
+          type: 'integer',
+          format: 'int64',
+          description: `Timeout in seconds for the \`Provisioning\` phase of the pipeline.
+Setting this value will override the default of the runner.`,
+          default: null,
+          nullable: true,
+          minimum: 0
+        },
         resources: {
           allOf: [
             {
@@ -3006,6 +3015,15 @@ CPU pinning can make pipelines run faster and perform more consistently,
 as long as different pipelines running on the same machine are pinned to
 different CPUs.`,
       default: []
+    },
+    provisioning_timeout_s: {
+      type: 'integer',
+      format: 'int64',
+      description: `Timeout in seconds for the \`Provisioning\` phase of the pipeline.
+Setting this value will override the default of the runner.`,
+      default: null,
+      nullable: true,
+      minimum: 0
     },
     resources: {
       allOf: [
