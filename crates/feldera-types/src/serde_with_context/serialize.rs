@@ -388,6 +388,7 @@ macro_rules! serialize_struct {
             $($arg: $crate::serde_with_context::SerializeWithContext<C>),*
             $($($arg : $bound,)?),*
         {
+            #[inline(never)]
             fn serialize_with_context<S>(&self, serializer: S, context: &C) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
@@ -399,6 +400,7 @@ macro_rules! serialize_struct {
                 serde::ser::SerializeStruct::end(struct_serializer)
             }
 
+            #[inline(never)]
             fn serialize_fields_with_context<S>(
                 &self,
                 serializer: S,
@@ -427,6 +429,7 @@ macro_rules! serialize_table_record {
         #[allow(unused_variables)]
         #[allow(unused_mut)]
         impl $crate::serde_with_context::SerializeWithContext<$crate::serde_with_context::SqlSerdeConfig> for $struct {
+            #[inline(never)]
             fn serialize_with_context<S>(&self, serializer: S, context: & $crate::serde_with_context::SqlSerdeConfig) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
@@ -438,7 +441,7 @@ macro_rules! serialize_table_record {
                 serde::ser::SerializeStruct::end(struct_serializer)
             }
 
-
+            #[inline(never)]
             fn serialize_fields_with_context<S>(&self, serializer: S, context: & $crate::serde_with_context::SqlSerdeConfig, fields: &std::collections::HashSet<String>) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,

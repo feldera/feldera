@@ -6,15 +6,12 @@ See [top-level connector documentation](/connectors/) for general information
 about configuring input and output connectors.
 :::
 
-[Delta Lake](https://delta.io/) is an open-source storage framework for the
-[Lakehouse architecture](https://www.cidrdb.org/cidr2021/papers/cidr2021_paper17.pdf).
+[Delta Lake](https://delta.io/) is a popular open table format based on Parquet files.
 It is typically used with the [Apache Spark](https://spark.apache.org/) runtime.
-Data in a Delta Lake is organized in tables (called Delta Tables), stored in
+Data in a Delta Lake is organized in tables, stored in
 a file system or an object stores like [AWS S3](https://aws.amazon.com/s3/),
 [Google GCS](https://cloud.google.com/storage), or
 [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
-Like other Lakehouse-native storage formats, Delta Lake is optimized for both
-batch and stream processing, offering a bridge between the two worlds.
 
 The Delta Lake input connector does not yet support [fault
 tolerance](..#fault-tolerance).

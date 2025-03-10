@@ -166,7 +166,7 @@ async fn wait_for_count_records_materialized(
             break;
         }
 
-        if start.elapsed() > Duration::from_millis(20_000) {
+        if start.elapsed() > Duration::from_millis(30_000) {
             panic!("timeout");
         }
 
@@ -189,44 +189,6 @@ where
         &SerializeWithContextWrapper::new(&data.to_vec(), &delta_output_serde_config()),
     )
     .unwrap();
-
-    // Write it to the input table.
-    DeltaOps(table)
-        .write(vec![batch])
-        .with_save_mode(SaveMode::Append)
-        .await
-        .unwrap()
-}
-
-/// Write `data` to `table` adding an extra boolean column with the specified contents.
-async fn write_data_to_table_with_extra_boolean_column<T>(
-    table: DeltaTable,
-    arrow_schema: &ArrowSchema,
-    data: &[T],
-    extra_column_name: &str,
-    extra_column: &[bool],
-) -> DeltaTable
-where
-    T: DBData + SerializeWithContext<SqlSerdeConfig> + Sync,
-{
-    // Convert data to RecordBatch
-    let batch = serde_arrow::to_record_batch(
-        arrow_schema.fields(),
-        &SerializeWithContextWrapper::new(&data.to_vec(), &delta_output_serde_config()),
-    )
-    .unwrap();
-
-    let mut columns = batch.columns().to_vec();
-    columns.push(Arc::new(BooleanArray::from(extra_column.to_vec())));
-
-    let mut fields = arrow_schema.fields().to_vec();
-    fields.push(Arc::new(ArrowField::new(
-        extra_column_name,
-        ArrowDataType::Boolean,
-        false,
-    )));
-
-    let batch = RecordBatch::try_new(Arc::new(ArrowSchema::new(fields)), columns).unwrap();
 
     // Write it to the input table.
     DeltaOps(table)
@@ -419,6 +381,66 @@ inputs:
         |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema())),
         &config,
         Box::new(move |e| panic!("delta_read pipeline: error: {e}")),
+    )
+    .unwrap()
+}
+
+/// Build a pipeline that continuously follows a JSON file and writes changes
+/// (both inserts and deletes) to a delta table.
+fn delta_write_pipeline<T>(
+    input_file_path: &str,
+    table_uri: &str,
+    config: &HashMap<String, String>,
+) -> Controller
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Sync,
+{
+    info!("creating a pipeline to write delta table '{table_uri}'");
+
+    let mut storage_options = String::new();
+    for (key, val) in config.iter() {
+        storage_options += &format!("                {key}: \"{val}\"\n");
+    }
+
+    // Create controller.
+    let config_str = format!(
+        r#"
+name: test
+workers: 4
+inputs:
+    test_intput1:
+        stream: test_input1
+        transport:
+            name: "file_input"
+            config:
+                path: "{input_file_path}"
+                follow: true
+        format:
+            name: json
+            config:
+                update_format: "insert_delete"
+outputs:
+    test_output1:
+        stream: test_output1
+        enable_output_buffer: true
+        max_output_buffer_time_millis: 1000
+        transport:
+            name: "delta_table_output"
+            config:
+                uri: "{table_uri}"
+{}"#,
+        storage_options,
+    );
+
+    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+
+    Controller::with_config(
+        |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema())),
+        &config,
+        Box::new(move |e| panic!("delta_write pipeline: error: {e}")),
     )
     .unwrap()
 }
@@ -707,79 +729,99 @@ async fn test_follow(
     pipeline.stop().unwrap();
 }
 
-/// Read delta table in cdc mode.
+fn write_updates_as_json<T>(file: &mut File, data: &[T], polarity: bool)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Sync,
+{
+    let mut buffer = Vec::new();
+    for v in data.iter() {
+        let record_buffer: Vec<u8> = Vec::new();
+        let mut serializer = serde_json::Serializer::new(record_buffer);
+        v.serialize_with_context(
+            &mut serializer,
+            &SqlSerdeConfig::from(JsonFlavor::default()),
+        )
+        .unwrap();
+        let record = serializer.into_inner();
+        let update = if polarity {
+            format!("{{\"insert\": {} }}\n", String::from_utf8(record).unwrap())
+        } else {
+            format!("{{\"delete\": {} }}\n", String::from_utf8(record).unwrap())
+        };
+
+        buffer.append(&mut update.into_bytes());
+    }
+    file.write_all(&buffer).unwrap();
+}
+
+/// Write and read delta table in cdc mode:
 ///
 /// ```text
-/// data --> input table in S3 ---> [pipeline]
+/// json data --> [pipeline 1] --> delta table --> [pipeline 2]
 /// ```
+///
+/// pipeline 2 is configured in CDC mode to correctly interpret
+/// __feldera_op and __feldera_ts fields output by pipelines 1.
 #[allow(clippy::too_many_arguments)]
 async fn test_cdc(
     schema: &[Field],
-    input_table_uri: &str,
+    table_uri: &str,
     storage_options: &HashMap<String, String>,
     data: Vec<DeltaTestStruct>,
 ) {
     init_logging();
 
+    let mut input_file = NamedTempFile::new().unwrap();
+    let input_file_path = input_file.path().display().to_string();
+
     let datafusion = SessionContext::new();
+    let table_uri_clone = table_uri.to_string();
 
-    // Create arrow schema
-    let arrow_fields = relation_to_arrow_fields(schema, true);
+    // Build pipeline 1.
+    let mut output_config = storage_options.clone();
 
-    info!("arrow_fields: {arrow_fields:?}");
+    output_config.insert("mode".to_string(), "truncate".to_string());
 
-    let arrow_schema = Arc::new(ArrowSchema::new(arrow_fields));
-    info!("arrow_schema: {arrow_schema:?}");
+    let write_pipeline = tokio::task::spawn_blocking(move || {
+        delta_write_pipeline::<DeltaTestStruct>(&input_file_path, &table_uri_clone, &output_config)
+    })
+    .await
+    .unwrap();
 
-    let mut struct_fields: Vec<_> = vec![];
+    write_pipeline.start();
 
-    for f in arrow_schema.fields.iter() {
-        let data_type = DataType::try_from(f.data_type()).unwrap();
-        struct_fields.push(StructField::new(f.name(), data_type, f.is_nullable()));
-    }
-
-    // Delta table has the same schema as the SQL table plus __delete column.
-    struct_fields.push(StructField::new("__delete", DataType::BOOLEAN, false));
-
-    // Create delta table at `input_table_uri`.
-    let mut input_table = create_table(input_table_uri, storage_options, &struct_fields).await;
-
-    // Start pipeline.
+    // Build pipeline 2.
     let mut input_config = storage_options.clone();
 
     input_config.insert("mode".to_string(), "cdc".to_string());
     input_config.insert(
         "cdc_delete_filter".to_string(),
-        "__delete = true".to_string(),
+        "__feldera_op = 'd'".to_string(),
     );
-    input_config.insert("cdc_order_by".to_string(), "bigint".to_string());
+    input_config.insert("cdc_order_by".to_string(), "__feldera_ts".to_string());
 
-    let input_table_uri_clone = input_table_uri.to_string();
+    let table_uri_clone = table_uri.to_string();
 
-    let pipeline = tokio::task::spawn_blocking(move || {
-        delta_read_pipeline::<DeltaTestStruct>(&input_table_uri_clone, &input_config)
+    let read_pipeline = tokio::task::spawn_blocking(move || {
+        delta_read_pipeline::<DeltaTestStruct>(&table_uri_clone, &input_config)
     })
     .await
     .unwrap();
 
-    pipeline.start();
+    read_pipeline.start();
 
     let mut total_count = 0;
 
     // Write data in 10 chunks, wait for it to show up in the output view.
     for chunk in data.chunks(std::cmp::max(data.len() / 10, 1)) {
-        input_table = write_data_to_table_with_extra_boolean_column(
-            input_table,
-            &arrow_schema,
-            chunk,
-            "__delete",
-            &vec![false; chunk.len()],
-        )
-        .await;
+        write_updates_as_json(input_file.as_file_mut(), chunk, true);
         total_count += chunk.len();
 
         wait_for_count_records_materialized(
-            &pipeline,
+            &read_pipeline,
             &SqlIdentifier::from("test_output1"),
             total_count,
         )
@@ -788,25 +830,20 @@ async fn test_cdc(
 
     // Delete data chunk by chunk.
     for chunk in data.chunks(std::cmp::max(data.len() / 10, 1)) {
-        input_table = write_data_to_table_with_extra_boolean_column(
-            input_table,
-            &arrow_schema,
-            chunk,
-            "__delete",
-            &vec![true; chunk.len()],
-        )
-        .await;
+        write_updates_as_json(input_file.as_file_mut(), chunk, false);
+
         total_count -= chunk.len();
 
         wait_for_count_records_materialized(
-            &pipeline,
+            &read_pipeline,
             &SqlIdentifier::from("test_output1"),
             total_count,
         )
         .await;
     }
 
-    pipeline.stop().unwrap();
+    read_pipeline.stop().unwrap();
+    write_pipeline.stop().unwrap();
 }
 
 /// Generate up to `max_records` _unique_ records.

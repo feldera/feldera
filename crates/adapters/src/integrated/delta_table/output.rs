@@ -11,7 +11,8 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use arrow::array::RecordBatch;
-use arrow::datatypes::Schema as ArrowSchema;
+use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
+use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
 use deltalake::kernel::{Action, DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
@@ -26,6 +27,7 @@ use feldera_types::serde_with_context::serde_config::{
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use feldera_types::transport::delta_table::DeltaTableWriteMode;
 use feldera_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
+use serde::Serialize;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
 use std::cmp::min;
@@ -60,7 +62,6 @@ pub struct DeltaTableWriter {
     inner: Arc<DeltaTableWriterInner>,
     command_sender: Sender<Command>,
     response_receiver: Receiver<Result<(), (AnyError, bool)>>,
-    skipped_deletes: usize,
 }
 
 /// Limit on the number of records buffered in memory in the encoder.
@@ -85,7 +86,9 @@ impl DeltaTableWriter {
         register_storage_handlers();
 
         // Create arrow schema
-        let arrow_fields = relation_to_arrow_fields(&schema.fields, true);
+        let mut arrow_fields = relation_to_arrow_fields(&schema.fields, true);
+        arrow_fields.push(ArrowField::new("__feldera_op", ArrowDataType::Utf8, true));
+        arrow_fields.push(ArrowField::new("__feldera_ts", ArrowDataType::Int64, true));
 
         // Create serde arrow schema.
         let serde_arrow_schema =
@@ -146,7 +149,6 @@ impl DeltaTableWriter {
             inner,
             command_sender,
             response_receiver,
-            skipped_deletes: 0,
         };
 
         Ok(writer)
@@ -440,12 +442,33 @@ impl OutputConsumer for DeltaTableWriter {
     }
 }
 
+/// Metadata added to each record, representing the type and order of operations.
+#[derive(Serialize)]
+struct Meta<'a> {
+    /// `i` for insert, `d` for delete.
+    __feldera_op: &'a str,
+
+    /// Timestamp in microseconds since UNIX epoch when the batch of updates
+    /// was output by the pipeline.
+    __feldera_ts: i64,
+}
+
+impl<'a> Meta<'a> {
+    fn new(op: &'a str, ts: i64) -> Self {
+        Meta {
+            __feldera_op: op,
+            __feldera_ts: ts,
+        }
+    }
+}
+
 impl Encoder for DeltaTableWriter {
     fn consumer(&mut self) -> &mut dyn OutputConsumer {
         self
     }
 
     fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
+        let micros = Utc::now().timestamp_micros();
         let mut insert_builder = ArrayBuilder::new(self.inner.serde_arrow_schema.clone())?;
 
         let mut num_insert_records = 0;
@@ -463,25 +486,20 @@ impl Encoder for DeltaTableWriter {
                 bail!("Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.");
             }
 
-            if w < 0 {
-                // TODO: we don't support deletes in the parquet format yet.
-                // Log the first delete, and then each 10,000's delete.
-                if self.skipped_deletes % 10_000 == 0 {
-                    error!(
-                        "delta table {}: received a 'delete' record, but deletes are not currently supported; record will be dropped (total number of dropped deletes: {})",
-                        self.inner.endpoint_name,
-                        self.skipped_deletes + 1,
-                    );
-                }
-                self.skipped_deletes += 1;
-
-                cursor.step_key();
-                continue;
-            }
-
             while w != 0 {
-                cursor.serialize_key_to_arrow(&mut insert_builder)?;
-                w -= 1;
+                if w > 0 {
+                    cursor.serialize_key_to_arrow_with_metadata(
+                        &Meta::new("i", micros),
+                        &mut insert_builder,
+                    )?;
+                    w -= 1;
+                } else {
+                    cursor.serialize_key_to_arrow_with_metadata(
+                        &Meta::new("d", micros),
+                        &mut insert_builder,
+                    )?;
+                    w += 1;
+                }
                 num_insert_records += 1;
                 // Split batch into chunks.  This does not affect the number or size of generated
                 // parquet files, since that is controlled by the `DeltaWriter`, but it limits
