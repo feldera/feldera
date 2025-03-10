@@ -254,7 +254,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream outputStream = new PrintStream(BaseSQLTests.TEST_FILE_PATH, StandardCharsets.UTF_8);
-        RustFileWriter writer = new RustFileWriter(outputStream);
+        RustFileWriter writer = new RustFileWriter();
+        writer.setPrintStream(outputStream);
         writer.add(tester);
         writer.writeAndClose(compiler);
         Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);

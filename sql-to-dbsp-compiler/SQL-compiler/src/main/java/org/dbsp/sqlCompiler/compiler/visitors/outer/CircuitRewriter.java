@@ -552,8 +552,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         DBSPType type = this.transform(operator.getType());
         OutputPort input = this.mapped(operator.input());
         DBSPExpression function = this.transform(operator.getFunction());
-        DBSPComparatorExpression comparator = this.transform(operator.comparator)
-                .to(DBSPComparatorExpression.class);
+        DBSPExpression comparator = this.transform(operator.comparator);
         DBSPExpression projection = this.transform(operator.projection);
         DBSPSimpleOperator result = operator;
         if (!type.sameType(operator.getType())

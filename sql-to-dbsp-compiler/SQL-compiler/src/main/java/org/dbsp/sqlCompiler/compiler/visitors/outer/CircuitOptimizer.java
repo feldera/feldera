@@ -132,8 +132,10 @@ public class CircuitOptimizer extends Passes {
         this.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         // Beta reduction after implementing aggregates.
         this.add(new BetaReduction(compiler).getCircuitVisitor(false));
-        this.add(new ExpandJoins(compiler));
         this.add(new CSE(compiler));
+        this.add(new StaticDeclarations(compiler, new LazyStatics(compiler)));
+        this.add(new ExpandJoins(compiler));
+        this.add(new ComparatorDeclarations(compiler, new FindComparators(compiler)));
         this.add(new RemoveViewOperators(compiler, true));
         this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), false, InnerCSE::process));
         this.add(new LazyStatics(compiler).circuitRewriter(false));
