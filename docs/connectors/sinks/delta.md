@@ -1,30 +1,48 @@
 # Delta Lake output connector
 
-[Delta Lake](https://delta.io/) is an open-source storage framework for the
-[Lakehouse architecture](https://www.cidrdb.org/cidr2021/papers/cidr2021_paper17.pdf).
+[Delta Lake](https://delta.io/) is a popular open table format based on Parquet files.
 It is typically used with the [Apache Spark](https://spark.apache.org/) runtime.
-Data in a Delta Lake is organized in tables (called Delta Tables), stored in
+Data in a Delta Lake is organized in tables, stored in
 a file system or an object stores like [AWS S3](https://aws.amazon.com/s3/),
 [Google GCS](https://cloud.google.com/storage), or
 [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
-Like other Lakehouse-native storage formats, Delta Lake is optimized for both
-batch and stream processing, offering a bridge between the two worlds.
 
 The Delta Lake output connector does not yet support [fault
 tolerance](..#fault-tolerance).
 
+## Support for delete operations
+
+The Delta Lake format does not support efficient real-time deletes and updates.
+To delete a record from a Delta table, one must first locate the record, which
+often requires an expensive table scan. This limitation makes it inefficient to
+directly write the output of a Feldera pipeline, which consists of both inserts
+and deletes, to a Delta table.
+
+To address this issue, the Delta Lake connector transforms both inserts and deletes
+into table records with additional metadata columns that describe the type and order
+of operations. Specifically, the connector adds the following columns to the output
+Delta table:
+
+| Column         | Type      | Description                                                                   |
+|----------------|-----------|-------------------------------------------------------------------------------|
+| `__feldera_op` | `VARCHAR` | Operation that this record represents: `i` for "insert" or `d` for "delete".  |
+| `__feldera_ts` | `BIGINT`  | Timestamp of the update, used to establish the order of updates. Updates with smaller timestamps are applied before those with larger timestamps. |
+
+Effectively, we treat the table as a change log, where every record corresponds to
+either an insert or delete operation. The user can run a periodic Spark job to
+incorporate these change log into another Delta table, using the SQL `MERGE INTO` operation.
+
 ## Delta Lake output connector configuration
 
-### Required parameters
+| Parameter  | Description |
+|------------|------------|
+| `uri`*     | Table URI, e.g., `"s3://feldera-fraud-detection-data/feature_train"`. |
+| `mode`*    | Determines how the Delta table connector handles an existing table at the target location. Options: |
+|            | - `append`: New updates will be appended to the existing table at the target location. |
+|            | - `truncate`: Existing table at the specified location will be truncated. The connector achieves this by outputting delete actions for all files in the latest snapshot of the table. |
+|            | - `error_if_exists`: If a table exists at the specified location, the operation will fail. |
 
-* `uri` - Table URI, e.g., "s3://feldera-fraud-detection-data/feature_train"
-* `mode` - Determines how the Delta table connector handles an existing table at the target
-   location.  Three options are available:
-  * `append` - New updates will be appended to the existing table at the target location
-  * `truncate` - Existing table at the specified location will get truncated. The connector
-     truncates the table by outputing delete actions for all files in the latest snapshot
-     of the table.
-  * `error_if_exists` - If a table exists at the specified location, the operation will fail.
+[*]: Required fields
 
 ### Storage parameters
 
@@ -55,12 +73,6 @@ for up to a user-defined period of time or until accumulating a user-defined num
 of updates and writing them to the Delta Table as a small number of large files.
 
 See [output buffer](/connectors#configuring-the-output-buffer) for details on configuring the output buffer mechanism.
-
-## Limitations
-
-This connector currently only appends new records to the Delta Table.  Deletions
-output by the pipeline are discarded.  The reason for this limitation is that the
-Delta Lake format only supports appending new data to a table in streaming mode.
 
 ## Example usage
 

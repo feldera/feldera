@@ -282,6 +282,14 @@ pub trait SerCursor: Send {
     /// Serialize current key into arrow format. Panics if invalid.
     fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()>;
 
+    /// Serialize current key into arrow format, adding additional metadata columns.
+    /// `metadata` must be a struct or a map.
+    fn serialize_key_to_arrow_with_metadata(
+        &mut self,
+        metadata: &dyn erased_serde::Serialize,
+        dst: &mut ArrayBuilder,
+    ) -> AnyResult<()>;
+
     #[cfg(feature = "with-avro")]
     /// Convert current key to an Avro value.
     fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue>;
@@ -442,6 +450,15 @@ impl SerCursor for CursorWithPolarity<'_> {
 
     fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
         self.cursor.serialize_key_to_arrow(dst)
+    }
+
+    fn serialize_key_to_arrow_with_metadata(
+        &mut self,
+        metadata: &dyn erased_serde::Serialize,
+        dst: &mut ArrayBuilder,
+    ) -> AnyResult<()> {
+        self.cursor
+            .serialize_key_to_arrow_with_metadata(metadata, dst)
     }
 
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {

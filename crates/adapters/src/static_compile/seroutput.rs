@@ -22,6 +22,7 @@ use feldera_types::{
     format::csv::CsvParserConfig,
     serde_with_context::{SerializationContext, SerializeWithContext, SqlSerdeConfig},
 };
+use serde::Serialize;
 use serde_arrow::ArrayBuilder;
 use std::{any::Any, collections::HashSet, fmt::Debug};
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
@@ -69,6 +70,29 @@ where
     }
 }
 
+/// A wrapper type that adds the columns from E to records of type T.
+/// Both `T` and `E` must be structs or maps.
+#[derive(Serialize)]
+struct ExtraColumns<'a, T: Serialize, E: Serialize + ?Sized> {
+    #[serde(flatten)]
+    value: &'a T,
+    #[serde(flatten)]
+    extra_columns: &'a E,
+}
+
+impl<C, T, E> SerializeWithContext<C> for ExtraColumns<'_, T, E>
+where
+    T: Serialize,
+    E: Serialize + ?Sized,
+{
+    fn serialize_with_context<S>(&self, serializer: S, _context: &C) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(self, serializer)
+    }
+}
+
 /// A serializer that encodes values to a byte array.
 trait BytesSerializer<C>: Send {
     fn serialize<T: SerializeWithContext<C>>(
@@ -87,6 +111,20 @@ trait BytesSerializer<C>: Send {
     }
 
     fn serialize_arrow<T>(&mut self, _val: &T, _buf: &mut ArrayBuilder) -> AnyResult<()>
+    where
+        T: SerializeWithContext<C>,
+    {
+        unimplemented!()
+    }
+
+    /// Serialize `val` to Arrow format, adding metadata columns from `metadata`.
+    /// `metadata` must be a struct or a map.
+    fn serialize_arrow_with_metadata<T>(
+        &mut self,
+        _val: &T,
+        _metadata: &dyn erased_serde::Serialize,
+        _buf: &mut ArrayBuilder,
+    ) -> AnyResult<()>
     where
         T: SerializeWithContext<C>,
     {
@@ -252,6 +290,27 @@ impl BytesSerializer<SqlSerdeConfig> for ParquetSerializer {
         //let fields = Vec::<Field>::from_type::<T>(TracingOptions::default())?;
         builder.push(SerializeWithContextWrapper::new(val, &self.context))?;
         Ok(())
+    }
+
+    fn serialize_arrow_with_metadata<T>(
+        &mut self,
+        val: &T,
+        metadata: &dyn erased_serde::Serialize,
+        builder: &mut ArrayBuilder,
+    ) -> AnyResult<()>
+    where
+        T: SerializeWithContext<SqlSerdeConfig>,
+    {
+        {
+            let wrapper = SerializeWithContextWrapper::new(val, &self.context);
+            let with_extras = ExtraColumns {
+                value: &wrapper,
+                extra_columns: metadata,
+            };
+
+            builder.push(with_extras)?;
+            Ok(())
+        }
     }
 }
 
@@ -628,6 +687,15 @@ where
     fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
         self.serializer
             .serialize_arrow(self.key.as_ref().unwrap(), dst)
+    }
+
+    fn serialize_key_to_arrow_with_metadata(
+        &mut self,
+        metadata: &dyn erased_serde::Serialize,
+        dst: &mut ArrayBuilder,
+    ) -> AnyResult<()> {
+        self.serializer
+            .serialize_arrow_with_metadata(self.key.as_ref().unwrap(), metadata, dst)
     }
 
     #[cfg(feature = "with-avro")]
