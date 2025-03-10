@@ -75,3 +75,28 @@ class cmpxtst_arr_of_udt_elmnt_access(TstView):
                       c1_arr[1][2] AS c12_elmnt,
                       c2_arr[2][1] AS c21_elmnt
                       FROM arr_of_udt_tbl"""
+
+
+class cmpxtst_arr_of_udt_idx_outbound(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"id": 0, "c15_val": None, "c151_elmnt": None},
+            {"id": 1, "c15_val": None, "c151_elmnt": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW arr_of_udt_idx_outbound AS SELECT
+                      id,
+                      c1_arr[5] AS c15_val,
+                      c1_arr[5].i1 AS c151_elmnt
+                      FROM arr_of_udt_tbl"""
+
+
+# ignore => error: Unknown field 'i5' when inner user-defined column does not exist
+class ignoretst_arr_of_udt_idx_nexist(TstView):
+    def __init__(self):
+        # no result because of SQL error
+        self.data = []
+        self.sql = """CREATE MATERIALIZED VIEW arr_of_udt_idx_nexist AS SELECT
+                      id,
+                      c1_arr[2].i5 AS c12_val
+                      FROM arr_of_udt_tbl"""
