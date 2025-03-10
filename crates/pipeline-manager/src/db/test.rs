@@ -214,6 +214,7 @@ struct RuntimeConfigPropVal {
     val11: Option<u64>,
     val12: Option<String>,
     val13: Option<u64>,
+    val14: Option<u64>,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -252,6 +253,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             },
             clock_resolution_usecs: val.val13,
             pin_cpus: Vec::new(),
+            provisioning_timeout_secs: val.val14,
         })
         .unwrap()
     }
@@ -982,6 +984,7 @@ async fn pipeline_versioning() {
         },
         clock_resolution_usecs: None,
         pin_cpus: Vec::new(),
+        provisioning_timeout_secs: None,
     })
     .unwrap();
     handle
@@ -1443,6 +1446,7 @@ async fn pipeline_provision_version_guard() {
                     resources: Default::default(),
                     clock_resolution_usecs: None,
                     pin_cpus: Vec::new(),
+                    provisioning_timeout_secs: None,
                 })
                 .unwrap(),
             ),

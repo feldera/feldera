@@ -1945,6 +1945,15 @@ as long as different pipelines running on the same machine are pinned to
 different CPUs.`,
           default: []
         },
+        provisioning_timeout_secs: {
+          type: 'integer',
+          format: 'int64',
+          description: `Timeout in seconds for the \`Provisioning\` phase of the pipeline.
+Setting this value will override the default of the runner.`,
+          default: null,
+          nullable: true,
+          minimum: 0
+        },
         resources: {
           allOf: [
             {
@@ -1982,7 +1991,11 @@ different CPUs.`,
         workers: {
           type: 'integer',
           format: 'int32',
-          description: 'Number of DBSP worker threads.',
+          description: `Number of DBSP worker threads.
+
+Each DBSP "foreground" worker thread is paired with a "background"
+thread for LSM merging, making the total number of threads twice the
+specified number.`,
           default: 8,
           minimum: 0
         }
@@ -3007,6 +3020,15 @@ as long as different pipelines running on the same machine are pinned to
 different CPUs.`,
       default: []
     },
+    provisioning_timeout_secs: {
+      type: 'integer',
+      format: 'int64',
+      description: `Timeout in seconds for the \`Provisioning\` phase of the pipeline.
+Setting this value will override the default of the runner.`,
+      default: null,
+      nullable: true,
+      minimum: 0
+    },
     resources: {
       allOf: [
         {
@@ -3044,7 +3066,11 @@ different CPUs.`,
     workers: {
       type: 'integer',
       format: 'int32',
-      description: 'Number of DBSP worker threads.',
+      description: `Number of DBSP worker threads.
+
+Each DBSP "foreground" worker thread is paired with a "background"
+thread for LSM merging, making the total number of threads twice the
+specified number.`,
       default: 8,
       minimum: 0
     }
@@ -3455,9 +3481,11 @@ export const $StorageOptions = {
     },
     cache_mib: {
       type: 'integer',
-      description: `The maximum size of the in-memory storage cache, in mebibytes.
+      description: `The maximum size of the in-memory storage cache, in MiB.
 
-The default is 256 MiB, times the number of workers.`,
+If set, the specified cache size is spread across all the foreground and
+background threads. If unset, each foreground or background thread cache
+is limited to 256 MiB.`,
       default: null,
       nullable: true,
       minimum: 0

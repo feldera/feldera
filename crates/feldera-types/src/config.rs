@@ -358,6 +358,10 @@ pub struct RuntimeConfig {
     /// as long as different pipelines running on the same machine are pinned to
     /// different CPUs.
     pub pin_cpus: Vec<usize>,
+
+    /// Timeout in seconds for the `Provisioning` phase of the pipeline.
+    /// Setting this value will override the default of the runner.
+    pub provisioning_timeout_secs: Option<u64>,
 }
 
 /// Accepts "true" and "false" and converts them to the new format.
@@ -480,6 +484,7 @@ impl Default for RuntimeConfig {
                 Some(100_000)
             },
             pin_cpus: Vec::new(),
+            provisioning_timeout_secs: None,
         }
     }
 }
