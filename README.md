@@ -11,13 +11,7 @@
     <img src="https://img.shields.io/badge/License-MIT-green.svg">
   </a>
   <a href="https://github.com/feldera/feldera/actions/workflows/ci.yml">
-    <img src="https://github.com/feldera/feldera/actions/workflows/ci.yml/badge.svg?branch=main">
-  </a>
-  <a href="https://github.com/feldera/feldera/actions/workflows/ci-nightly.yml" >
-    <img alt="Nightly" src="https://github.com/feldera/feldera/actions/workflows/ci-nightly.yml/badge.svg?event=merge_group">
-  </a>
-  <a href="https://github.com/feldera/feldera/actions/workflows/containers.yml">
-    <img src="https://github.com/feldera/feldera/actions/workflows/containers.yml/badge.svg">
+    <img src="https://github.com/feldera/feldera/actions/workflows/ci.yml/badge.svg?event=merge_group">
   </a>
   <a href="https://www.feldera.com/community">
     <img salt="Slack" src="https://img.shields.io/badge/slack-blue.svg?logo=slack">
