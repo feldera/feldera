@@ -99,6 +99,7 @@ jobs:
 
       - name: Export digest
         run: |
+          rm -rf ${{ runner.temp }}/digests
           mkdir -p ${{ runner.temp }}/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "${{ runner.temp }}/digests/${digest#sha256:}"

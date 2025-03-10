@@ -55,6 +55,6 @@ jobs:
       - invoke-tests-java
     steps:
       - name: Finalize Workflow
-        run: echo "All tasks completed successfully!"
+        run: echo "All tasks completed!"
       - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')  || contains(needs.*.result, 'skipped') }}
         run: exit 1
