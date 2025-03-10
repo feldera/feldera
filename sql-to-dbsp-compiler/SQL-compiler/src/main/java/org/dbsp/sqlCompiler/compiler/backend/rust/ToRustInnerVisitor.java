@@ -52,11 +52,13 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
@@ -121,10 +123,12 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComparatorItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -158,9 +162,11 @@ import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /** This visitor generates a Rust implementation of the program. */
 public class ToRustInnerVisitor extends InnerVisitor {
@@ -198,6 +204,126 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPNullLiteral literal) {
         this.builder.append("None::<()>");
+        return VisitDecision.STOP;
+    }
+
+    /**
+     * Helper function for generateComparator and generateCmpFunc.
+     * @param fieldNo  Field index that is compared.
+     * @param ascending Comparison direction.
+     */
+    void emitCompareField(int fieldNo, boolean ascending) {
+        this.builder.append("let ord = left.")
+                .append(fieldNo)
+                .append(".cmp(&right.")
+                .append(fieldNo)
+                .append(");")
+                .newline();
+        this.builder.append("if ord != Ordering::Equal { return ord");
+        if (!ascending)
+            this.builder.append(".reverse()");
+        this.builder.append(" };")
+                .newline();
+    }
+
+    /** Helper function for generateComparator and generateCmpFunc.
+     * @param ascending Comparison direction. */
+    void emitCompare(boolean ascending) {
+        this.builder.append("let ord = left.cmp(&right);")
+                .newline()
+                .append("if ord != Ordering::Equal { return ord");
+        if (!ascending)
+            this.builder.append(".reverse()");
+        this.builder.append(" };")
+                .newline();
+    }
+
+    /**
+     * Helper function for generateCmpFunc.
+     * This could be part of an inner visitor too.
+     * But we don't handle DBSPComparatorExpressions in the same way in
+     * any context: we do it differently in TopK and Sort.
+     * This is for TopK.
+     * @param comparator  Comparator expression to generate Rust for.
+     * @param fieldsCompared  Accumulate here a list of all fields compared.
+     */
+    void generateComparator(DBSPComparatorExpression comparator, Set<Integer> fieldsCompared) {
+        // This could be done with a visitor... but there are only two cases
+        if (comparator.is(DBSPNoComparatorExpression.class))
+            return;
+        if (comparator.is(DBSPFieldComparatorExpression.class)) {
+            DBSPFieldComparatorExpression fieldComparator = comparator.to(DBSPFieldComparatorExpression.class);
+            this.generateComparator(fieldComparator.source, fieldsCompared);
+            if (fieldsCompared.contains(fieldComparator.fieldNo))
+                throw new InternalCompilerError("Field " + fieldComparator.fieldNo + " used twice in sorting");
+            fieldsCompared.add(fieldComparator.fieldNo);
+            this.emitCompareField(fieldComparator.fieldNo, fieldComparator.ascending);
+        } else {
+            DBSPDirectComparatorExpression direct = comparator.to(DBSPDirectComparatorExpression.class);
+            this.generateComparator(direct.source, fieldsCompared);
+            this.emitCompare(direct.ascending);
+        }
+    }
+
+    /** Generate a comparator */
+    void generateCmpFunc(DBSPComparatorExpression comparator) {
+        // impl CmpFunc<(String, i32, i32)> for CmpXX {
+        //     fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
+        //         let ord = left.1.cmp(&right.1);
+        //         if ord != Ordering::Equal { return ord; }
+        //         let ord = right.2.cmp(&left.2);
+        //         if ord != Ordering::Equal { return ord; }
+        //         let ord = left.3.cmp(&right.3);
+        //         if ord != Ordering::Equal { return ord; }
+        //         return Ordering::Equal;
+        //     }
+        // }
+        String structName = comparator.getComparatorStructName();
+        this.builder.append("struct ")
+                .append(structName)
+                .append(";")
+                .newline();
+
+        DBSPType type = comparator.comparedValueType();
+        this.builder.append("impl CmpFunc<");
+        type.accept(this);
+        this.builder.append("> for ")
+                .append(structName)
+                .append(" {")
+                .increase()
+                .append("fn cmp(left: &");
+        type.accept(this);
+        this.builder.append(", right: &");
+        type.accept(this);
+        this.builder.append(") -> std::cmp::Ordering {")
+                .increase();
+        // This is a subtle aspect. The comparator compares on some fields,
+        // but we have to generate a comparator on ALL the fields, to avoid
+        // declaring values as equal when they aren't really.
+        Set<Integer> fieldsCompared = new HashSet<>();
+        this.generateComparator(comparator, fieldsCompared);
+        // Now compare on the fields that we didn't compare on.
+        // The order doesn't really matter.
+        if (type.is(DBSPTypeTuple.class)) {
+            for (int i = 0; i < type.to(DBSPTypeTuple.class).size(); i++) {
+                if (fieldsCompared.contains(i)) continue;
+                this.emitCompareField(i, true);
+            }
+        }
+        this.builder.append("return Ordering::Equal;")
+                .newline();
+        this.builder
+                .decrease()
+                .append("}")
+                .newline()
+                .decrease()
+                .append("}")
+                .newline();
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPComparatorItem item) {
+        this.generateCmpFunc(item.expression);
         return VisitDecision.STOP;
     }
 
@@ -1905,6 +2031,21 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(")");
         this.builder.decrease().append("}").newline();
         this.pop(expression);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPStaticItem item) {
+        DBSPStaticExpression stat = item.expression;
+        // static NAME: LazyLock<type> = LazyLock::new(|| expression);
+        String name = stat.getName();
+        this.builder.append("static ")
+                .append(name)
+                .append(": LazyLock<");
+        stat.getType().accept(this);
+        this.builder.append("> = LazyLock::new(|| ");
+        stat.initializer.accept(this);
+        this.builder.append(");").newline();
         return VisitDecision.STOP;
     }
 

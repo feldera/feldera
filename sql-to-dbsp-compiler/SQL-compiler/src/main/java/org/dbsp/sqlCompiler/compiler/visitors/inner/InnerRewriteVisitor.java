@@ -91,6 +91,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -1164,8 +1165,7 @@ public abstract class InnerRewriteVisitor
         DBSPType elementType = this.transform(expression.elementType);
         @Nullable DBSPExpression limit = this.transformN(expression.limit);
         this.pop(expression);
-        DBSPExpression result = new DBSPSortExpression(
-                expression.getNode(), elementType, comparator.to(DBSPComparatorExpression.class), limit);
+        DBSPExpression result = new DBSPSortExpression(expression.getNode(), elementType, comparator, limit);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -1331,6 +1331,16 @@ public abstract class InnerRewriteVisitor
         DBSPType type = this.transform(item.type);
         this.pop(item);
         DBSPItem result = new DBSPStructItem(type.to(DBSPTypeStruct.class));
+        this.map(item, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPStaticItem item) {
+        this.push(item);
+        DBSPExpression expression = this.transform(item.expression);
+        this.pop(item);
+        DBSPItem result = new DBSPStaticItem(expression.to(DBSPStaticExpression.class));
         this.map(item, result);
         return VisitDecision.STOP;
     }

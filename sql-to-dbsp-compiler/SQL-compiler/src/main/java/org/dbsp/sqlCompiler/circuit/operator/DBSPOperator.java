@@ -42,7 +42,7 @@ import java.util.function.Predicate;
 public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     public final List<OutputPort> inputs;
     public final Annotations annotations;
-    /** id of the operator this one is derived from.  -1 for "new" operators */
+    /** id of the operator this one is derived from. */
     public long derivedFrom;
 
     protected DBSPOperator(CalciteRelNode node) {

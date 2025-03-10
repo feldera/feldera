@@ -73,23 +73,15 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -104,7 +96,6 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -115,11 +106,8 @@ import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
 
 /** This visitor generates a Rust implementation of a circuit. */
 public class ToRustVisitor extends CircuitVisitor {
@@ -130,7 +118,7 @@ public class ToRustVisitor extends CircuitVisitor {
     final ProgramMetadata metadata;
 
     /* Example output generated when 'generateCatalog' is true:
-     * pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
+     * pub fn circuit0(workers: usize) -> (DBSPHandle, Catalog) {
      *     let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
      *         let mut catalog = Catalog::new();
      *         let (input, handle0) = circuit.add_input_zset::<TestStruct, i32>();
@@ -154,7 +142,6 @@ public class ToRustVisitor extends CircuitVisitor {
     ToRustInnerVisitor createInnerVisitor(IndentStream builder) {
         return new ToRustInnerVisitor(this.compiler(), builder, false);
     }
-
 
     void processNode(IDBSPNode node) {
         DBSPOperator op = node.as(DBSPOperator.class);
@@ -204,7 +191,9 @@ public class ToRustVisitor extends CircuitVisitor {
         ToRustInnerVisitor inner = this.createInnerVisitor(signature);
 
         for (DBSPDeclaration decl: circuit.declarations) {
-            decl.accept(this.innerVisitor);
+            if (!decl.item.is(DBSPFunctionItem.class))
+                // Functions are generated only inside each circuit, not globally
+                decl.accept(this.innerVisitor);
         }
 
         this.builder.append("pub fn ")
@@ -250,37 +239,20 @@ public class ToRustVisitor extends CircuitVisitor {
         if (!this.useHandles)
             this.builder.append("let mut catalog = Catalog::new();").newline();
 
-        FindFunctions funcFinder = new FindFunctions(this.compiler);
-        funcFinder.getCircuitVisitor(true).apply(circuit);
-
         for (DBSPDeclaration item: circuit.declarations) {
             // Generate functions used locally
             if (item.item.is(DBSPFunctionItem.class)) {
-                // Do not generate code for functions not used.
-                // TODO: does not work, need to compute the transitive closure
-                // if (!funcFinder.found.contains(func.function.name)) continue;
-
                 item.accept(this);
                 this.builder.newline().newline();
             }
         }
 
         // Process sources first
-        for (IDBSPNode node : circuit.getAllOperators())
+        for (DBSPOperator node : circuit.getAllOperators())
             if (node.is(DBSPSourceBaseOperator.class))
                 this.processNode(node);
 
-        FindComparators compFinder = new FindComparators(this.compiler);
-        FindStatics staticsFinder = new FindStatics(this.compiler);
-        compFinder.getCircuitVisitor(false).apply(circuit);
-        staticsFinder.getCircuitVisitor(false).apply(circuit);
-
-        for (DBSPComparatorExpression comparator: compFinder.found)
-            this.generateCmpFunc(comparator);
-        for (DBSPStaticExpression comparator: staticsFinder.found)
-            this.generateStatic(comparator);
-
-        for (IDBSPNode node : circuit.getAllOperators())
+        for (DBSPOperator node : circuit.getAllOperators())
             if (!node.is(DBSPSourceBaseOperator.class))
                 this.processNode(node);
 
@@ -397,7 +369,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
-        this.writeComments(operator, false)
+        this.writeComments(operator, this.compiler.options.ioOptions.verbosity > 0)
                 .append("let (")
                 .append(operator.getOutputName())
                 .append(", ")
@@ -660,7 +632,6 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSinkOperator operator) {
         this.writeComments(operator);
-        DBSPType type = operator.originalRowType;
         if (!this.useHandles) {
             if (operator.isIndex()) {
                 DBSPTypeRawTuple raw = operator.originalRowType.to(DBSPTypeRawTuple.class);
@@ -791,133 +762,6 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    /**
-     * Helper function for generateComparator and generateCmpFunc.
-     * @param fieldNo  Field index that is compared.
-     * @param ascending Comparison direction.
-     */
-    void emitCompareField(int fieldNo, boolean ascending) {
-        this.builder.append("let ord = left.")
-                .append(fieldNo)
-                .append(".cmp(&right.")
-                .append(fieldNo)
-                .append(");")
-                .newline();
-        this.builder.append("if ord != Ordering::Equal { return ord");
-        if (!ascending)
-            this.builder.append(".reverse()");
-        this.builder.append(" };")
-                .newline();
-    }
-
-    /** Helper function for generateComparator and generateCmpFunc.
-     * @param ascending Comparison direction. */
-    void emitCompare(boolean ascending) {
-        this.builder.append("let ord = left.cmp(&right);")
-                .newline()
-                .append("if ord != Ordering::Equal { return ord");
-        if (!ascending)
-            this.builder.append(".reverse()");
-        this.builder.append(" };")
-                .newline();
-    }
-
-    /**
-     * Helper function for generateCmpFunc.
-     * This could be part of an inner visitor too.
-     * But we don't handle DBSPComparatorExpressions in the same way in
-     * any context: we do it differently in TopK and Sort.
-     * This is for TopK.
-     * @param comparator  Comparator expression to generate Rust for.
-     * @param fieldsCompared  Accumulate here a list of all fields compared.
-     */
-    void generateComparator(DBSPComparatorExpression comparator, Set<Integer> fieldsCompared) {
-        // This could be done with a visitor... but there are only two cases
-        if (comparator.is(DBSPNoComparatorExpression.class))
-            return;
-        if (comparator.is(DBSPFieldComparatorExpression.class)) {
-            DBSPFieldComparatorExpression fieldComparator = comparator.to(DBSPFieldComparatorExpression.class);
-            this.generateComparator(fieldComparator.source, fieldsCompared);
-            if (fieldsCompared.contains(fieldComparator.fieldNo))
-                throw new InternalCompilerError("Field " + fieldComparator.fieldNo + " used twice in sorting");
-            fieldsCompared.add(fieldComparator.fieldNo);
-            this.emitCompareField(fieldComparator.fieldNo, fieldComparator.ascending);
-        } else {
-            DBSPDirectComparatorExpression direct = comparator.to(DBSPDirectComparatorExpression.class);
-            this.generateComparator(direct.source, fieldsCompared);
-            this.emitCompare(direct.ascending);
-        }
-    }
-
-    /** Generate a comparator */
-    void generateCmpFunc(DBSPComparatorExpression comparator) {
-        // impl CmpFunc<(String, i32, i32)> for AscDesc {
-        //     fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
-        //         let ord = left.1.cmp(&right.1);
-        //         if ord != Ordering::Equal { return ord; }
-        //         let ord = right.2.cmp(&left.2);
-        //         if ord != Ordering::Equal { return ord; }
-        //         let ord = left.3.cmp(&right.3);
-        //         if ord != Ordering::Equal { return ord; }
-        //         return Ordering::Equal;
-        //     }
-        // }
-        String structName = comparator.getComparatorStructName();
-        this.builder.append("struct ")
-                .append(structName)
-                .append(";")
-                .newline();
-
-        DBSPType type = comparator.comparedValueType();
-        this.builder.append("impl CmpFunc<");
-        type.accept(this.innerVisitor);
-        this.builder.append("> for ")
-                .append(structName)
-                .append(" {")
-                .increase()
-                .append("fn cmp(left: &");
-        type.accept(this.innerVisitor);
-        this.builder.append(", right: &");
-        type.accept(this.innerVisitor);
-        this.builder.append(") -> std::cmp::Ordering {")
-                .increase();
-        // This is a subtle aspect. The comparator compares on some fields,
-        // but we have to generate a comparator on ALL the fields, to avoid
-        // declaring values as equal when they aren't really.
-        Set<Integer> fieldsCompared = new HashSet<>();
-        this.generateComparator(comparator, fieldsCompared);
-        // Now compare on the fields that we didn't compare on.
-        // The order doesn't really matter.
-        if (type.is(DBSPTypeTuple.class)) {
-            for (int i = 0; i < type.to(DBSPTypeTuple.class).size(); i++) {
-                if (fieldsCompared.contains(i)) continue;
-                this.emitCompareField(i, true);
-            }
-        }
-        this.builder.append("return Ordering::Equal;")
-                .newline();
-        this.builder
-                .decrease()
-                .append("}")
-                .newline()
-                .decrease()
-                .append("}")
-                .newline();
-    }
-
-    /** Generate a static value */
-    void generateStatic(DBSPStaticExpression stat) {
-        // static NAME: LazyLock<type> = LazyLock::new(|| expression);
-        String name = stat.getName();
-        this.builder.append("static ")
-                .append(name)
-                .append(": LazyLock<");
-        stat.getType().accept(this.innerVisitor);
-        this.builder.append("> = LazyLock::new(|| ");
-        stat.initializer.accept(this.innerVisitor);
-        this.builder.append(");").newline();
-    }
-
     DBSPClosureExpression generateEqualityComparison(DBSPExpression comparator) {
         CalciteObject node = comparator.getNode();
         DBSPExpression result = new DBSPBoolLiteral(true);
@@ -937,8 +781,8 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIndexedTopKOperator operator) {
-        DBSPComparatorExpression comparator = operator.getFunction().to(DBSPComparatorExpression.class);
-        this.generateCmpFunc(comparator);
+        DBSPExpression comparator = operator.getFunction();
+        //comparator.accept(this.innerVisitor);
         String streamOperation = "topk_custom_order";
         if (operator.outputProducer != null) {
             streamOperation = switch (operator.numbering) {
@@ -958,14 +802,14 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.input().getOutputName())
                 .append(".")
                 .append(streamOperation)
-                .append("::<")
-                .append(comparator.getComparatorStructName());
-                if (operator.outputProducer != null) {
-                    this.builder.append(", _, _");
-                    if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER)
-                        this.builder.append(", _");
-                }
-                this.builder.append(">(");
+                .append("::<");
+        comparator.accept(this.innerVisitor);
+        if (operator.outputProducer != null) {
+            this.builder.append(", _, _");
+            if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER)
+                this.builder.append(", _");
+        }
+        this.builder.append(">(");
         DBSPExpression cast = operator.limit.cast(
                 DBSPTypeUSize.create(operator.limit.getType().mayBeNull), false);
         cast.accept(this.innerVisitor);
@@ -1061,7 +905,6 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPLagOperator operator) {
-        this.generateCmpFunc(operator.comparator);
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
         this.writeComments(operator)
                 .append("let ")
@@ -1072,9 +915,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.input().getOutputName())
                 .append(".")
                 .append(operator.operation)
-                .append("::<_, _, _, ")
-                .append(operator.comparator.getComparatorStructName())
-                .append(", _>")
+                .append("::<_, _, _, ");
+        operator.comparator.accept(this.innerVisitor);
+        this.builder.append(", _>")
                 .append("(");
         DBSPISizeLiteral offset = new DBSPISizeLiteral(operator.offset);
         offset.accept(this.innerVisitor);
@@ -1295,61 +1138,6 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    /** Collects all {@link DBSPComparatorExpression} that appear in some
-     * {@link DBSPCustomOrdExpression}. */
-    static class FindComparators extends InnerVisitor {
-        final List<DBSPComparatorExpression> found = new ArrayList<>();
-
-        public FindComparators(DBSPCompiler compiler) {
-            super(compiler);
-        }
-
-        @Override
-        public void postorder(DBSPCustomOrdExpression expression) {
-            this.found.add(expression.comparator);
-        }
-    }
-
-    /** Collects all {@link DBSPComparatorExpression} that appear in some
-     * {@link DBSPCustomOrdExpression}. */
-    static class FindFunctions extends InnerVisitor {
-        final Set<String> found = new HashSet<>();
-
-        public FindFunctions(DBSPCompiler compiler) {
-            super(compiler);
-        }
-
-        void add(DBSPExpression function) {
-            if (function.is(DBSPPathExpression.class)) {
-                String name = function.to(DBSPPathExpression.class).toString();
-                this.found.add(name);
-            }
-        }
-
-        @Override
-        public void postorder(DBSPApplyExpression expression) {
-            this.add(expression.function);
-        }
-
-        public void postorder(DBSPApplyMethodExpression expression) {
-            this.add(expression.function);
-        }
-    }
-
-    /** Collects all {@link DBSPStaticExpression}s that appear in an expression */
-    static class FindStatics extends InnerVisitor {
-        final Set<DBSPStaticExpression> found = new HashSet<>();
-
-        public FindStatics(DBSPCompiler compiler) {
-            super(compiler);
-        }
-
-        @Override
-        public void postorder(DBSPStaticExpression expression) {
-            this.found.add(expression);
-        }
-    }
-
     VisitDecision constantLike(DBSPSimpleOperator operator) {
         assert operator.function != null;
         this.builder.append("let ")
@@ -1384,10 +1172,10 @@ public class ToRustVisitor extends CircuitVisitor {
         return this.constantLike(operator);
     }
 
-    public static String toRustString(DBSPCompiler compiler, DBSPCircuit node) {
+    public static String toRustString(DBSPCompiler compiler, DBSPCircuit circuit) {
         IndentStream stream = new IndentStreamBuilder();
-        ToRustVisitor visitor = new ToRustVisitor(compiler, stream, node.getMetadata());
-        visitor.apply(node);
+        ToRustVisitor visitor = new ToRustVisitor(compiler, stream, circuit.getMetadata());
+        visitor.apply(circuit);
         return stream.toString();
     }
 }
