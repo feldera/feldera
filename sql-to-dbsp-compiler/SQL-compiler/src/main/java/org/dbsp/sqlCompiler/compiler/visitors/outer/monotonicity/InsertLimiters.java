@@ -1332,7 +1332,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         DBSPSimpleOperator replacement = operator.withInputs(sources, this.force);
-        replacement.setDerivedFrom(operator.id);
+        replacement.setDerivedFrom(operator.derivedFrom);
         this.addOperator(replacement);
 
         // The waterline operator will compute the *minimum legal value* of all the

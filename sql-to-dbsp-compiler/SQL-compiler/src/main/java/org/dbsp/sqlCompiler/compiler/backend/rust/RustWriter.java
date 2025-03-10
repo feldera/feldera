@@ -14,25 +14,13 @@ import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.stream.IntStream;
 
 /** Base class for writing code to Rust files */
-public abstract class RustWriter {
-    final List<IDBSPNode> toWrite;
-    final List<String> dependencies;
-
-    public RustWriter() {
-        this.toWrite = new ArrayList<>();
-        this.dependencies = new ArrayList<>();
-    }
-
-    public void addDependencies(List<String> dependencies) {
-        this.dependencies.addAll(dependencies);
-    }
+public abstract class RustWriter extends BaseCodeGenerator {
+    public RustWriter() {}
 
     /** Various visitors gather here information about the program prior to generating code. */
     public static class StructuresUsed {
@@ -76,99 +64,9 @@ public abstract class RustWriter {
         }
     }
 
-    /** Preamble used for all compilations. */
-    static final String commonPreamble =
-            """
-            // Automatically-generated file
-            #![allow(dead_code)]
-            #![allow(non_snake_case)]
-            #![allow(non_camel_case_types)]
-            #![allow(unused_imports)]
-            #![allow(unused_parens)]
-            #![allow(unused_variables)]
-            #![allow(unused_mut)]
-            #![allow(unconditional_panic)]
-            """;
-
     /** Preamble used when generating Rust code. */
-    @SuppressWarnings("SpellCheckingInspection")
     String rustPreamble() {
-        return """
-                use dbsp::{
-                    algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
-                         UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
-                         AddAssignByRef,
-                    },
-                    circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, Stream},
-                    operator::{
-                        Generator,
-                        Fold,
-                        group::WithCustomOrd,
-                        time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},
-                        MaxSemigroup,
-                        MinSemigroup,
-                        CmpFunc,
-                    },
-                    OrdIndexedZSet, OrdZSet,
-                    TypedBox,
-                    utils::*,
-                    zset,
-                    indexed_zset,
-                    DBWeight,
-                    DBData,
-                    DBSPHandle,
-                    Error,
-                    Runtime,
-                    NumEntries,
-                    MapHandle, ZSetHandle, OutputHandle,
-                    dynamic::{DynData,DynDataTyped},
-                };
-                use rust_decimal_macros::dec;
-                use feldera_types::program_schema::SqlIdentifier;
-                use dbsp_adapters::Catalog;
-                use feldera_types::{deserialize_table_record, serialize_table_record};
-                use size_of::*;
-                use ::serde::{Deserialize,Serialize};
-                use compare::{Compare, Extract};
-                use std::{
-                    collections::BTreeMap,
-                    convert::identity,
-                    ops::Neg,
-                    fmt::{Debug, Formatter, Result as FmtResult},
-                    path::Path,
-                    marker::PhantomData,
-                    sync::{Arc, LazyLock},
-                };
-                use core::cmp::Ordering;
-                use rust_decimal::Decimal;
-                use dbsp::declare_tuples;
-                use feldera_sqllib::{
-                    *,
-                    array::*,
-                    casts::*,
-                    binary::*,
-                    decimal::*,
-                    geopoint::*,
-                    timestamp::*,
-                    interval::*,
-                    map::*,
-                    string::*,
-                    operators::*,
-                    aggregates::*,
-                    uuid::*,
-                    variant::*,
-                };
-
-                #[cfg(not(target_env = "msvc"))]
-                #[global_allocator]
-                static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-
-                #[allow(non_upper_case_globals)]
-                #[export_name = "malloc_conf"]
-                pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\\0";
-                #[cfg(test)]
-                use readers::*;
-                """;
+        return STANDARD_PREAMBLE;
     }
 
     /** Generate TupN[T0, T1, ...] */
@@ -299,28 +197,6 @@ public abstract class RustWriter {
             }
         }
         stream.append("\n");
-    }
-
-    String generatePreamble(StructuresUsed used) {
-        IndentStream stream = new IndentStream(new StringBuilder());
-        stream.append(commonPreamble);
-        long max = used.getMaxTupleSize();
-        if (max > 120) {
-            // this is just a guess
-            stream.append("#![recursion_limit = \"")
-                    .append(max * 2)
-                    .append("\"]")
-                    .newline();
-        }
-
-        stream.append("""
-                        #[cfg(test)]
-                        use hashing::*;""")
-                .newline();
-        stream.append(this.rustPreamble())
-                .newline();
-        this.generateStructures(used, stream);
-        return stream.toString();
     }
 
     String generateUdfInclude() {

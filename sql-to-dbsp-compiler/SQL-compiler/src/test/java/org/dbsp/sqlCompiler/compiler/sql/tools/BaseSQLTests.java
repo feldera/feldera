@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.sql.tools;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ICodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
@@ -234,7 +235,8 @@ public class BaseSQLTests {
 
         if (!toRun.isEmpty()) {
             PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(TEST_FILE_PATH)));
-            RustFileWriter writer = new RustFileWriter(outputStream);
+            RustFileWriter writer = new RustFileWriter();
+            writer.setPrintStream(outputStream);
             createEmptyStubs();
             // Use the compiler from the first test case.
             DBSPCompiler firstCompiler = null;
@@ -255,14 +257,16 @@ public class BaseSQLTests {
                 writer.add(pt);
             }
             assert firstCompiler != null;
-            writer.writeAndClose(firstCompiler);
+            writer.write(firstCompiler);
+            outputStream.close();
             Utilities.compileAndTestRust(RUST_DIRECTORY, true);
         }
 
         if (!toCheck.isEmpty()) {
             createEmptyStubs();
             PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(TEST_FILE_PATH)));
-            RustFileWriter writer = new RustFileWriter(outputStream);
+            RustFileWriter writer = new RustFileWriter();
+            writer.setPrintStream(outputStream);
             DBSPCompiler firstCompiler = null;
             for (TestCase test : toCheck) {
                 if (firstCompiler == null)

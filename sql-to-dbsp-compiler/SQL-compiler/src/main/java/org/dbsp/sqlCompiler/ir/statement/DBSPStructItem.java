@@ -13,7 +13,6 @@ import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
 
 /** An item that declares a struct. */
-@NonCoreIR
 public final class DBSPStructItem extends DBSPItem implements IHasType {
     public final DBSPTypeStruct type;
 
@@ -57,7 +56,7 @@ public final class DBSPStructItem extends DBSPItem implements IHasType {
 
     @Override
     public EquivalenceResult equivalent(EquivalenceContext context, DBSPStatement other) {
-        // Since this is NonCoreIR we leave this for later
+        // Two different struct items are never equivalent
         return new EquivalenceResult(false, context);
     }
 

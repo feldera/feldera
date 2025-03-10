@@ -11,17 +11,21 @@ public class FunctionsTest extends SqlIoTest {
                 CREATE TABLE ARR_TABLE (VALS INTEGER ARRAY NOT NULL,ID INTEGER NOT NULL);
                 INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 6);
                 INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 7);
+                CREATE FUNCTION dbl(x INTEGER) RETURNS INTEGER AS x * 2;
+                CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER)
+                RETURNS BOOLEAN NOT NULL
+                AS (str LIKE ('%' || COALESCE(CAST(value AS VARCHAR), 'NULL') || '%'));""";
+        compiler.submitStatementsForCompilation(setup);
+    }
+
+    @Test
+    public void testSqlFunction() {
+        this.getCCS("""
                 CREATE FUNCTION displayIPv4(ip BINARY(4)) RETURNS VARCHAR(15)
                 AS CAST( TO_INT( SUBSTRING( ip, 1, 1)) AS VARCHAR(3) ) || '.'
                     || CAST( TO_INT( SUBSTRING( ip, 2, 1)) AS VARCHAR(3) ) || '.'
                     || CAST( TO_INT( SUBSTRING( ip, 3, 1)) AS VARCHAR(3) ) || '.'
-                    || CAST( TO_INT( SUBSTRING( ip, 4, 1)) AS VARCHAR(3) );
-                CREATE FUNCTION dbl(x INTEGER) RETURNS INTEGER AS x * 2;
-                CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER)
-                RETURNS BOOLEAN NOT NULL
-                AS (str LIKE ('%' || COALESCE(CAST(value AS VARCHAR), 'NULL') || '%'));
-                """;
-        compiler.submitStatementsForCompilation(setup);
+                    || CAST( TO_INT( SUBSTRING( ip, 4, 1)) AS VARCHAR(3) );""");
     }
 
     @Test

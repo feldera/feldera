@@ -47,14 +47,15 @@ import javax.annotation.Nullable;
  * move |(k, v): (&(), &Vec<Tup<...>>)| -> Vec<Tup<...>>
  */
 public final class DBSPSortExpression extends DBSPExpression {
-    public final DBSPComparatorExpression comparator;
+    // Usually a DBSPComparatorExpression, but can be a PathExpression too.
+    public final DBSPExpression comparator;
     public final DBSPType elementType;
     @Nullable
     public final DBSPExpression limit;
 
     public DBSPSortExpression(
             CalciteObject node, DBSPType elementType,
-            DBSPComparatorExpression comparator, @Nullable DBSPExpression limit) {
+            DBSPExpression comparator, @Nullable DBSPExpression limit) {
         super(node, new DBSPTypeFunction(
                 // Return type
                 new DBSPTypeArray(elementType, false),
@@ -120,7 +121,7 @@ public final class DBSPSortExpression extends DBSPExpression {
 
     @SuppressWarnings("unused")
     public static DBSPSortExpression fromJson(JsonNode node, JsonDecoder decoder) {
-        DBSPComparatorExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPComparatorExpression.class);
+        DBSPExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPExpression.class);
         DBSPType elementType = fromJsonInner(node, "elementType", decoder, DBSPType.class);
         DBSPExpression limit = null;
         if (node.has("limit"))

@@ -32,7 +32,7 @@ import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.rust.RustCratesWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
@@ -233,14 +233,15 @@ public class CompilerMain {
         try {
             if (!compiler.options.ioOptions.crates) {
                 PrintStream stream = this.getOutputStream();
-                RustFileWriter writer = new RustFileWriter(stream);
+                RustFileWriter writer = new RustFileWriter();
+                writer.setPrintStream(stream);
                 writer.add(circuit);
                 writer.write(compiler);
                 stream.close();
             } else {
                 if (options.ioOptions.emitHandles)
                     throw new CompilationError("The option '--crates' cannot be used with '--handles'");
-                RustCratesWriter writer = new RustCratesWriter(options.ioOptions.outputFile);
+                MultiCratesWriter writer = new MultiCratesWriter(options.ioOptions.outputFile);
                 writer.add(circuit);
                 writer.write(compiler);
             }

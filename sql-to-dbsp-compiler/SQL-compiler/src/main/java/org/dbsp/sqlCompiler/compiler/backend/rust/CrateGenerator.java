@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
-import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import java.io.File;
@@ -17,19 +16,24 @@ import java.util.List;
 public class CrateGenerator {
     public final File baseDirectory;
     public final String crateName;
-    public RustWriter.StructuresUsed used;
 
     public static final String CARGO = "Cargo.toml";
     public static final String LIB = "lib.rs";
     final List<IDBSPNode> toWrite;
-    final List<CrateGenerator> dependencies;
+    private final List<CrateGenerator> dependencies;
+    final ICodeGenerator codeGenerator;
 
-    public CrateGenerator(File baseDirectory, String crateName) {
+    public CrateGenerator(File baseDirectory, String crateName, ICodeGenerator codeGenerator) {
         this.crateName = crateName;
         this.baseDirectory = baseDirectory;
         this.toWrite = new ArrayList<>();
-        this.used = new RustWriter.StructuresUsed();
         this.dependencies = new ArrayList<>();
+        this.codeGenerator = codeGenerator;
+    }
+
+    public void addDependency(CrateGenerator generator) {
+        this.dependencies.add(generator);
+        this.codeGenerator.addDependency(generator.crateName);
     }
 
     void generateCargo(PrintStream stream) {
@@ -104,19 +108,10 @@ public class CrateGenerator {
             throw new RuntimeException("Could not create directory " + Utilities.singleQuote(src.getPath()));
         File lib = new File(src, LIB);
         PrintStream rustStream = new PrintStream(Files.newOutputStream(lib.toPath()));
-        RustFileWriter writer = new RustFileWriter(rustStream).withUdf(false);
-        writer.setUsed(this.used);
-        writer.addDependencies(Linq.map(this.dependencies, d -> d.crateName));
+        this.codeGenerator.setPrintStream(rustStream);
         for (IDBSPNode node: this.toWrite)
-            writer.add(node);
-        writer.writeAndClose(compiler);
-    }
-
-    public void addDependence(CrateGenerator crate) {
-        this.dependencies.add(crate);
-    }
-
-    public void setUsed(RustWriter.StructuresUsed used) {
-        this.used = used;
+            this.codeGenerator.add(node);
+        this.codeGenerator.write(compiler);
+        rustStream.close();
     }
 }

@@ -133,9 +133,10 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         // Beta reduction after implementing aggregates.
         passes.add(new BetaReduction(compiler).getCircuitVisitor(false));
-        passes.add(new LazyStatics(compiler).circuitRewriter(false));
-        passes.add(new ExpandJoins(compiler));
         passes.add(new CSE(compiler));
+        passes.add(new StaticDeclarations(compiler, new LazyStatics(compiler)));
+        passes.add(new ComparatorDeclarations(compiler, new FindComparators(compiler)));
+        passes.add(new ExpandJoins(compiler));
         passes.add(new RemoveViewOperators(compiler, true));
         // passes.add(new TestSerialize(compiler));
         // The canonical form is needed if we want the Merkle hashes to be "stable".

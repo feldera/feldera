@@ -576,7 +576,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         String genFileName = Main.testFileName + ".rs";
         String testFilePath = Main.getAbsoluteRustDirectory() + "/" + genFileName;
         PrintStream stream = new PrintStream(testFilePath, StandardCharsets.UTF_8);
-        RustFileWriter rust = new RustFileWriter(stream).forSlt();
+        RustFileWriter rust = new RustFileWriter().forSlt();
+        rust.setPrintStream(stream);
 
         for (DBSPFunction function : inputFunctions)
             rust.add(function);

@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
 /** A function declaration. */
@@ -63,5 +64,10 @@ public final class DBSPFunctionItem extends DBSPItem {
     @Override
     public String getName() {
         return this.function.name;
+    }
+
+    @Override
+    public DBSPType getType() {
+        return this.function.getType();
     }
 }

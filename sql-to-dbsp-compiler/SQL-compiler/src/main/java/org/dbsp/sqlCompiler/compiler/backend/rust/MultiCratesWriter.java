@@ -2,8 +2,11 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.Utilities;
@@ -15,10 +18,10 @@ import java.nio.file.Files;
 
 /** This class helps generate Rust code.
  * It is given a set of circuit and functions and generates a code in multiple crates. */
-public class RustCratesWriter extends RustWriter {
+public class MultiCratesWriter extends RustWriter {
     public final String outputDirectory;
 
-    public RustCratesWriter(String outputDirectory) {
+    public MultiCratesWriter(String outputDirectory) {
         this.outputDirectory = outputDirectory;
     }
 
@@ -31,10 +34,16 @@ public class RustCratesWriter extends RustWriter {
         return file;
     }
 
-    public void add(DBSPCircuit circuit) {
+    @Override
+    public void setPrintStream(PrintStream stream) {
+        throw new UnimplementedException();
+    }
+
+    public void add(IDBSPNode circuit) {
         this.toWrite.add(circuit);
     }
 
+    @Override
     public void write(DBSPCompiler compiler) throws IOException {
         StructuresUsed used = this.analyze(compiler);
         File rootDirectory = this.rootDirectory();
@@ -44,11 +53,13 @@ public class RustCratesWriter extends RustWriter {
         cargoStream.println("[workspace]");
         cargoStream.println("members = [");
 
-        CrateGenerator main = new CrateGenerator(rootDirectory, "main");
-        CrateGenerator types = new CrateGenerator(rootDirectory, "types");
-        main.addDependence(types);
-        types.setUsed(used);
-        main.setUsed(new StructuresUsed());
+        CircuitWriter mainWriter = new CircuitWriter();
+        RustFileWriter typesWriter = new RustFileWriter().withUdf(false);
+        CrateGenerator main = new CrateGenerator(rootDirectory, "main", mainWriter);
+        CrateGenerator types = new CrateGenerator(rootDirectory, "types", typesWriter);
+        main.addDependency(types);
+
+        typesWriter.setUsed(used);
         cargoStream.println("   " + Utilities.doubleQuote(types.crateName) + ",");
         for (IDBSPNode node: this.toWrite) {
             if (node.is(IDBSPInnerNode.class))
@@ -61,6 +72,16 @@ public class RustCratesWriter extends RustWriter {
                     types.add(decl.item);
                 circuit.declarationMap.clear();
                 circuit.declarations.clear();
+                for (DBSPOperator operator: circuit.allOperators) {
+                    String name = CompactName.getCompactName(operator);
+                    assert name != null;
+                    SingleOperatorWriter single = new SingleOperatorWriter(circuit);
+                    CrateGenerator op = new CrateGenerator(rootDirectory, name, single);
+                    op.addDependency(types);
+                    op.add(operator);
+                    main.addDependency(op);
+                    op.write(compiler);
+                }
             }
         }
         types.write(compiler);
