@@ -1466,6 +1466,11 @@ export type PipelineConfig = {
    * different CPUs.
    */
   pin_cpus?: Array<number>
+  /**
+   * Timeout in seconds for the `Provisioning` phase of the pipeline.
+   * Setting this value will override the default of the runner.
+   */
+  provisioning_timeout_secs?: number | null
   resources?: ResourceConfig
   storage?: StorageOptions | null
   /**
@@ -1478,6 +1483,10 @@ export type PipelineConfig = {
   tracing_endpoint_jaeger?: string
   /**
    * Number of DBSP worker threads.
+   *
+   * Each DBSP "foreground" worker thread is paired with a "background"
+   * thread for LSM merging, making the total number of threads twice the
+   * specified number.
    */
   workers?: number
 } & {
@@ -2057,6 +2066,11 @@ export type RuntimeConfig = {
    * different CPUs.
    */
   pin_cpus?: Array<number>
+  /**
+   * Timeout in seconds for the `Provisioning` phase of the pipeline.
+   * Setting this value will override the default of the runner.
+   */
+  provisioning_timeout_secs?: number | null
   resources?: ResourceConfig
   storage?: StorageOptions | null
   /**
@@ -2069,6 +2083,10 @@ export type RuntimeConfig = {
   tracing_endpoint_jaeger?: string
   /**
    * Number of DBSP worker threads.
+   *
+   * Each DBSP "foreground" worker thread is paired with a "background"
+   * thread for LSM merging, making the total number of threads twice the
+   * specified number.
    */
   workers?: number
 }
@@ -2272,9 +2290,11 @@ export type StorageConfig = {
 export type StorageOptions = {
   backend?: StorageBackendConfig
   /**
-   * The maximum size of the in-memory storage cache, in mebibytes.
+   * The maximum size of the in-memory storage cache, in MiB.
    *
-   * The default is 256 MiB, times the number of workers.
+   * If set, the specified cache size is spread across all the foreground and
+   * background threads. If unset, each foreground or background thread cache
+   * is limited to 256 MiB.
    */
   cache_mib?: number | null
   compression?: StorageCompression

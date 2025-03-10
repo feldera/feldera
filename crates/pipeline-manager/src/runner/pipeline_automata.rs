@@ -88,30 +88,43 @@ where
     /// In the first run cycle, the pipeline handle's initialization is called.
     first_run_cycle: bool,
 
-    /// Whether provision() has been called in the `Provisioning` stage.
-    provision_called: bool,
+    /// Set when provision() is called in the `Provisioning` stage.
+    /// Content is the provisioning timeout in seconds.
+    provision_called: Option<u64>,
 
     /// Maximum time to wait for the pipeline resources to be provisioned.
     /// This can differ significantly between the type of runner.
-    provisioning_timeout: Duration,
-
-    /// How often to poll during provisioning.
-    provisioning_poll_period: Duration,
-
-    /// How often to poll during shutting down.
-    shutdown_poll_period: Duration,
+    default_provisioning_timeout: Duration,
 }
 
 impl<T: PipelineExecutor> PipelineAutomaton<T> {
-    /// The frequency of polling the pipeline during normal operation
-    /// when we don't normally expect its state to change.
-    const DEFAULT_PIPELINE_POLL_PERIOD: Duration = Duration::from_millis(2_500);
+    /// While shutdown, database notifications should trigger when the user sets
+    /// the desired status, which will preempt the waiting.
+    const POLL_PERIOD_SHUTDOWN: Duration = Duration::from_millis(2_500);
 
-    /// Maximum time to wait for the pipeline to initialize its connectors and web server.
-    const INITIALIZATION_TIMEOUT: Duration = Duration::from_millis(300_000);
+    /// During initialization, there is regular polling to check whether the pipeline
+    /// resources have become available. Usually nothing will change in the database,
+    /// which means no notifications will occur in this phase: as such, this poll
+    /// period is frequent.
+    const POLL_PERIOD_PROVISIONING: Duration = Duration::from_millis(500);
 
-    /// How often to poll the pipeline during initialization.
-    const INITIALIZATION_POLL_PERIOD: Duration = Duration::from_millis(250);
+    /// During initialization, there is regular polling to check whether the pipeline
+    /// process has come up. Usually nothing will change in the database, which means no
+    /// notifications will occur in this phase: as such, this poll period is frequent.
+    const POLL_PERIOD_INITIALIZING: Duration = Duration::from_millis(250);
+
+    /// While deployed, polling should happen regularly to check the deployment
+    /// is still operational. Generally this is the case, and changes are usually
+    /// caused by the user changing the desired state, thus triggering a database
+    /// notification which will preempt the waiting.
+    const POLL_PERIOD_RUNNING_PAUSED_UNAVAILABLE_FAILED: Duration = Duration::from_millis(2_500);
+
+    /// The shutdown operation is done synchronously, as such this period is
+    /// for when to retry shutting down if it failed.
+    const POLL_PERIOD_SHUTTING_DOWN: Duration = Duration::from_millis(1_000);
+
+    // Initialization is over once its internal state and connectors are ready.
+    const DEFAULT_INITIALIZING_TIMEOUT: Duration = Duration::from_secs(600);
 
     /// Timeout for an HTTP request of the automaton to a pipeline.
     const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -126,9 +139,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         notifier: Arc<Notify>,
         client: reqwest::Client,
         pipeline_handle: T,
-        provisioning_timeout: Duration,
-        provisioning_poll_period: Duration,
-        shutdown_poll_period: Duration,
+        default_provisioning_timeout: Duration,
     ) -> Self {
         Self {
             platform_version: platform_version.to_string(),
@@ -139,10 +150,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             notifier,
             client,
             first_run_cycle: true,
-            provision_called: false,
-            provisioning_timeout,
-            provisioning_poll_period,
-            shutdown_poll_period,
+            provision_called: None,
+            default_provisioning_timeout,
         }
     }
 
@@ -150,7 +159,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     pub async fn run(mut self) -> Result<(), ManagerError> {
         let pipeline_id = self.pipeline_id;
         debug!("Automaton started: pipeline {pipeline_id}");
-        let mut poll_timeout = Self::DEFAULT_PIPELINE_POLL_PERIOD;
+        let mut poll_timeout = Duration::from_secs(0);
         loop {
             // Wait until the timeout expires, or we get notified that the
             // pipeline has been updated
@@ -211,7 +220,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 self.tenant_id,
                 self.pipeline_id,
                 &self.platform_version,
-                self.provision_called,
+                self.provision_called.is_some(),
             )
             .await?;
         let pipeline = &pipeline_monitoring_or_complete.only_monitoring();
@@ -269,7 +278,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 PipelineStatus::Provisioning,
                 PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
             ) => {
-                if !self.provision_called {
+                if self.provision_called.is_none() {
                     if let ExtendedPipelineDescrRunner::Complete(pipeline) =
                         pipeline_monitoring_or_complete
                     {
@@ -518,15 +527,17 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             );
         }
 
+        // Determine the poll timeout based on the current status.
+        // It will be preempted by a database notification if it changed.
         let poll_timeout = match pipeline.deployment_status {
-            PipelineStatus::Shutdown => self.shutdown_poll_period,
-            PipelineStatus::Provisioning => self.provisioning_poll_period,
-            PipelineStatus::Initializing => Self::INITIALIZATION_POLL_PERIOD,
-            PipelineStatus::Paused => Self::DEFAULT_PIPELINE_POLL_PERIOD,
-            PipelineStatus::Running => Self::DEFAULT_PIPELINE_POLL_PERIOD,
-            PipelineStatus::Unavailable => Self::DEFAULT_PIPELINE_POLL_PERIOD,
-            PipelineStatus::ShuttingDown => self.shutdown_poll_period,
-            PipelineStatus::Failed => Self::DEFAULT_PIPELINE_POLL_PERIOD,
+            PipelineStatus::Shutdown => Self::POLL_PERIOD_SHUTDOWN,
+            PipelineStatus::Provisioning => Self::POLL_PERIOD_PROVISIONING,
+            PipelineStatus::Initializing => Self::POLL_PERIOD_INITIALIZING,
+            PipelineStatus::Paused => Self::POLL_PERIOD_RUNNING_PAUSED_UNAVAILABLE_FAILED,
+            PipelineStatus::Running => Self::POLL_PERIOD_RUNNING_PAUSED_UNAVAILABLE_FAILED,
+            PipelineStatus::Unavailable => Self::POLL_PERIOD_RUNNING_PAUSED_UNAVAILABLE_FAILED,
+            PipelineStatus::ShuttingDown => Self::POLL_PERIOD_SHUTTING_DOWN,
+            PipelineStatus::Failed => Self::POLL_PERIOD_RUNNING_PAUSED_UNAVAILABLE_FAILED,
         };
         Ok(poll_timeout)
     }
@@ -844,7 +855,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     }
 
     /// Starts the pipeline provisioning by calling `provision()`
-    /// and setting the `provision_called` boolean state variable
+    /// and setting the `provision_called` state variable
     /// to initiate the next phase of awaiting its finish.
     /// The call is idempotent, as such it can be called again if the
     /// runner unexpectedly restarts and the boolean is reset.
@@ -852,7 +863,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         &mut self,
         pipeline: &ExtendedPipelineDescr,
     ) -> State {
-        assert!(!self.provision_called);
+        assert!(self.provision_called.is_none());
 
         // The runner is only able to provision a pipeline of the current platform version.
         // If in the meanwhile (e.g., due to runner restart during upgrade) the platform
@@ -916,7 +927,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .await
         {
             Ok(()) => {
-                self.provision_called = true;
+                self.provision_called = Some(
+                    deployment_config
+                        .global
+                        .provisioning_timeout_secs
+                        .unwrap_or(self.default_provisioning_timeout.as_secs()),
+                );
                 info!(
                     "Provisioning pipeline {} (tenant: {})",
                     self.pipeline_id, self.tenant_id
@@ -936,7 +952,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> State {
-        assert!(self.provision_called);
+        assert!(self.provision_called.is_some());
+        let provisioning_timeout = Duration::from_secs(
+            self.provision_called
+                .expect("Provision must have been called"),
+        );
         match self.pipeline_handle.is_provisioned().await {
             Ok(Some(location)) => State::TransitionToInitializing {
                 version_guard: pipeline.version,
@@ -947,10 +967,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     "Pipeline provisioning: pipeline {} is not yet provisioned",
                     pipeline.id
                 );
-                if Self::has_timeout_expired(
-                    pipeline.deployment_status_since,
-                    self.provisioning_timeout,
-                ) {
+                if Self::has_timeout_expired(pipeline.deployment_status_since, provisioning_timeout)
+                {
                     error!(
                         "Pipeline provisioning: timed out for pipeline {}",
                         pipeline.id
@@ -958,7 +976,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     State::TransitionToFailed {
                         version_guard: pipeline.version,
                         error: RunnerError::AutomatonProvisioningTimeout {
-                            timeout: self.provisioning_timeout,
+                            timeout: provisioning_timeout,
                         }
                         .into(),
                     }
@@ -1025,7 +1043,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 );
                 if Self::has_timeout_expired(
                     pipeline.deployment_status_since,
-                    Self::INITIALIZATION_TIMEOUT,
+                    Self::DEFAULT_INITIALIZING_TIMEOUT,
                 ) {
                     error!(
                         "Pipeline initialization: timed out for pipeline {}",
@@ -1034,7 +1052,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     State::TransitionToFailed {
                         version_guard: pipeline.version,
                         error: RunnerError::AutomatonInitializingTimeout {
-                            timeout: Self::INITIALIZATION_TIMEOUT,
+                            timeout: Self::DEFAULT_INITIALIZING_TIMEOUT,
                         }
                         .into(),
                     }
@@ -1199,7 +1217,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             error!("Pipeline {} could not be shutdown: {e}", pipeline.id);
             State::Unchanged
         } else {
-            self.provision_called = false;
+            self.provision_called = None;
             State::TransitionToShutdown {
                 version_guard: pipeline.version,
             }
@@ -1238,9 +1256,7 @@ mod test {
     #[async_trait]
     impl PipelineExecutor for MockPipeline {
         type Config = ();
-        const PROVISIONING_TIMEOUT: Duration = Duration::from_millis(1);
-        const PROVISIONING_POLL_PERIOD: Duration = Duration::from_millis(1);
-        const SHUTDOWN_POLL_PERIOD: Duration = Duration::from_millis(1);
+        const DEFAULT_PROVISIONING_TIMEOUT: Duration = Duration::from_millis(1);
 
         fn new(
             _pipeline_id: PipelineId,
@@ -1440,9 +1456,7 @@ mod test {
             notifier.clone(),
             client,
             MockPipeline { uri },
-            Duration::from_secs(10),
-            Duration::from_millis(300),
-            Duration::from_millis(300),
+            Duration::from_secs(1),
         );
         AutomatonTest {
             db: db.clone(),
