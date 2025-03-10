@@ -722,7 +722,9 @@ pub(crate) async fn get_pipeline_heap_profile(
         .await
 }
 
-/// Execute an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental.
+/// Execute an ad-hoc SQL query in a running or paused pipeline.
+///
+/// The evaluation is not incremental.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),

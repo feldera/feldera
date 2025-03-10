@@ -2043,7 +2043,8 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "Execute an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental.",
+        "summary": "Execute an ad-hoc SQL query in a running or paused pipeline.",
+        "description": "The evaluation is not incremental.",
         "operationId": "pipeline_adhoc_sql",
         "parameters": [
           {

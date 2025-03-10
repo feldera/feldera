@@ -314,7 +314,8 @@ export const getPipelineLogs = (options: Options<GetPipelineLogsData>) => {
 }
 
 /**
- * Execute an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental.
+ * Execute an ad-hoc SQL query in a running or paused pipeline.
+ * The evaluation is not incremental.
  */
 export const pipelineAdhocSql = (options: Options<PipelineAdhocSqlData>) => {
   return (options?.client ?? client).get<PipelineAdhocSqlResponse, PipelineAdhocSqlError>({
