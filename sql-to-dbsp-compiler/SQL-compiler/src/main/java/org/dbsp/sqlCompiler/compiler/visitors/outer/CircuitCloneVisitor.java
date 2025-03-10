@@ -106,8 +106,6 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         this.map(old, newOp, true);
         assert old.node() == this.getCurrent();
         long derivedFrom = old.node().derivedFrom;
-        if (derivedFrom == -1)
-            derivedFrom = old.node().id;
         newOp.node().setDerivedFrom(derivedFrom);
         assert old.outputType().sameType(newOp.outputType()) :
           "Replacing operator with type\n" + old.outputType() +
@@ -199,7 +197,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                     .decrease();
         }
         DBSPOperatorWithError result = operator.withInputs(sources, this.force);
-        result.setDerivedFrom(operator.id);
+        result.setDerivedFrom(operator.derivedFrom);
         this.map(operator.getOutput(0), result.getOutput(0), true);
         this.map(operator.getOutput(1), result.getOutput(1), false);
     }
@@ -478,7 +476,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     @Override
     public void postorder(DBSPNestedOperator operator) {
         DBSPNestedOperator result = Utilities.removeLast(this.underConstruction).to(DBSPNestedOperator.class);
-        result.setDerivedFrom(operator.id);
+        result.setDerivedFrom(operator.derivedFrom);
         result.copyAnnotations(operator);
         if (result.sameCircuit(operator))
             result = operator;

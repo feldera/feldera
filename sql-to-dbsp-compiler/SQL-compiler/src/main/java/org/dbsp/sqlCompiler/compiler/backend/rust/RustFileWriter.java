@@ -15,11 +15,12 @@ import java.nio.charset.StandardCharsets;
 /** This class helps generate Rust code.
  * It is given a set of circuit and functions and generates a compilable Rust file. */
 public class RustFileWriter extends RustWriter {
-    final PrintStream outputStream;
     boolean slt = false;
     boolean generateUdfInclude = true;
     boolean findUsed = true;
     StructuresUsed used = new StructuresUsed();
+
+    public RustFileWriter() {}
 
     /** Preamble used when generating Rust code. */
     String rustPreamble() {
@@ -31,10 +32,6 @@ public class RustFileWriter extends RustWriter {
                 """;
         }
         return preamble;
-    }
-
-    public RustFileWriter(PrintStream outputStream) {
-        this.outputStream = outputStream;
     }
 
     /** Special support for running the SLT tests */
@@ -50,7 +47,7 @@ public class RustFileWriter extends RustWriter {
 
     public RustFileWriter(String outputFile)
             throws IOException {
-        this(new PrintStream(outputFile, StandardCharsets.UTF_8));
+        this.outputStream = new PrintStream(outputFile, StandardCharsets.UTF_8);
     }
 
     void generateStructures(IndentStream stream) {
@@ -71,7 +68,7 @@ public class RustFileWriter extends RustWriter {
 
     String generatePreamble() {
         IndentStream stream = new IndentStreamBuilder();
-        stream.append(commonPreamble);
+        stream.append(COMMON_PREAMBLE);
         long max = this.used.getMaxTupleSize();
         if (max > 120) {
             // this is just a guess
@@ -97,16 +94,13 @@ public class RustFileWriter extends RustWriter {
         this.add(pt.tester());
     }
 
-    public void add(IDBSPNode node) {
-        this.toWrite.add(node);
-    }
-
     public void setUsed(StructuresUsed used) {
         this.used = used;
         this.findUsed = false;
     }
 
     public void write(DBSPCompiler compiler) {
+        assert this.outputStream != null;
         if (this.findUsed)
             this.used = this.analyze(compiler);
         this.outputStream.println(generatePreamble());
@@ -129,6 +123,7 @@ public class RustFileWriter extends RustWriter {
     }
 
     public void writeAndClose(DBSPCompiler compiler) {
+        assert this.outputStream != null;
         this.write(compiler);
         this.outputStream.close();
     }

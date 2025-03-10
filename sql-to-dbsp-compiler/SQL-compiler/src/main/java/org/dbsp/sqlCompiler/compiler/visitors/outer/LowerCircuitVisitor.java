@@ -55,7 +55,6 @@ import org.dbsp.util.Linq;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /** Lowers a circuit's representation; most changes are about
  * generating compilable Rust for operator functions. */

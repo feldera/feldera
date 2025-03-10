@@ -74,7 +74,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
      * @param source          Input operator.
      */
     public DBSPIndexedTopKOperator(CalciteRelNode node, TopKNumbering numbering,
-                                   DBSPComparatorExpression comparator, DBSPExpression limit,
+                                   DBSPExpression comparator, DBSPExpression limit,
                                    @Nullable DBSPClosureExpression outputProducer, OutputPort source) {
         super(node, "topK", comparator,
                 outputType(source.getOutputIndexedZSetType(), outputProducer), source.isMultiset(), source);
@@ -110,7 +110,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     @Override
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIndexedTopKOperator(this.getRelNode(), this.numbering,
-                Objects.requireNonNull(expression).to(DBSPComparatorExpression.class), this.limit,
+                Objects.requireNonNull(expression), this.limit,
                 this.outputProducer, this.input()).copyAnnotations(this);
     }
 
@@ -132,7 +132,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
         if (node.has("outputProducer"))
             outputProducer = fromJsonInner(node, "outputProducer", decoder, DBSPClosureExpression.class);
         return new DBSPIndexedTopKOperator(CalciteEmptyRel.INSTANCE, numbering,
-                info.getFunction().to(DBSPComparatorExpression.class),
+                info.getFunction(),
                 limit, outputProducer, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPIndexedTopKOperator.class);
     }
