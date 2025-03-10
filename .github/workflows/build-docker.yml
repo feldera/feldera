@@ -69,7 +69,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ vars.FELDERA_IMAGE_NAME }}
+          images: |
+            ${{ vars.FELDERA_IMAGE_NAME }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -141,8 +142,6 @@ jobs:
         with:
           images: ${{ vars.FELDERA_IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=long
