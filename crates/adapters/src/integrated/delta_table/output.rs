@@ -324,6 +324,11 @@ impl WriterTask {
                 .close()
                 .await
                 .map_err(|e| anyhow!("error flushing {} Parquet rows: {e}", self.num_rows))?;
+
+            if actions.is_empty() {
+                return Ok(());
+            }
+
             let num_bytes = actions.iter().map(|action| action.size as usize).sum();
 
             // The snapshot version for the next commit is computed as the current version + 1.
