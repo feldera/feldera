@@ -265,9 +265,7 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                                     notifier.clone(),
                                     client.clone(),
                                     pipeline_handle,
-                                    E::PROVISIONING_TIMEOUT,
-                                    E::PROVISIONING_POLL_PERIOD,
-                                    E::SHUTDOWN_POLL_PERIOD,
+                                    E::DEFAULT_PROVISIONING_TIMEOUT,
                                 )
                                 .run(),
                             );

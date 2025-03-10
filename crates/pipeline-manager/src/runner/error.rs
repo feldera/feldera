@@ -4,6 +4,7 @@ use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
 use feldera_types::error::{DetailedError, ErrorResponse};
+use indoc::writedoc;
 use serde::Serialize;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, time::Duration};
 
@@ -214,21 +215,33 @@ impl Display for RunnerError {
                 )
             }
             Self::AutomatonProvisioningTimeout { timeout } => {
-                write!(
+                writedoc! {
                     f,
-                    "Waiting for provisioning timed out after {}s \
-                    -- this occurs when the required resources requested by the runner \
-                    for deployment took too long to be provisioned",
+                    "
+                    Pipeline could not be provisioned within the timeout of {}s. Possible reasons:
+
+                    1) It takes too long to bring up the pipeline (e.g., cloud resources) compared to the timeout.
+                       If so, try increasing `provisioning_timeout_secs` in the Pipeline settings.
+
+                    2) Your cloud environment could not provision some required resources like volumes or containers.
+                       The pipeline logs might provide more insight if this is the case.
+                    ",
                     timeout.as_secs()
-                )
+                }
             }
             Self::AutomatonInitializingTimeout { timeout } => {
-                write!(
+                writedoc! {
                     f,
-                    "Waiting for initialization timed out after {}s \
-                    -- additional information about the cause can likely be found in the pipeline logs",
+                    "
+                    Pipeline could not be initialized within the timeout of {}s. Possible reasons:
+
+                    (1) It takes too long to initialize the internal state and connectors compared to the timeout.
+
+                    (2) Initialization encountered an unexpected issue.
+                        The pipeline logs might provide more insight if this is the case.
+                    ",
                     timeout.as_secs()
-                )
+                }
             }
             Self::AutomatonAfterInitializationBecameRunning => {
                 write!(

@@ -30,10 +30,8 @@ pub trait PipelineExecutor: Sync + Send {
     /// Configuration unique to the runner type.
     type Config: Clone;
 
-    // Timing constants, which should be set based on the runner type.
-    const PROVISIONING_TIMEOUT: Duration;
-    const PROVISIONING_POLL_PERIOD: Duration;
-    const SHUTDOWN_POLL_PERIOD: Duration;
+    /// Timeout for the `Provisioning` stage in which resources are provisioned.
+    const DEFAULT_PROVISIONING_TIMEOUT: Duration;
 
     // Logs buffer size limit constants.
     const LOGS_BUFFER_LIMIT_BYTE: usize = 1_000_000; // 1 MB
