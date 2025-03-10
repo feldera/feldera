@@ -41,7 +41,9 @@ jobs:
 
   # This job needs to be called main (the same as the ci-pre-mergequeue.yml workflow)
   # because of how merge queues work: https://stackoverflow.com/a/78030618
+  # and https://github.com/orgs/community/discussions/103114
   main:
+    if: always()
     runs-on: ubuntu-latest
     needs:
       - invoke-build-rust
@@ -54,3 +56,5 @@ jobs:
     steps:
       - name: Finalize Workflow
         run: echo "All tasks completed successfully!"
+      - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')  || contains(needs.*.result, 'skipped') }}
+        run: exit 1
