@@ -4,6 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize]
 jobs:
+  # This job needs to be called main (the same as the ci.yml workflow)
+  # because of how merge queues work: https://stackoverflow.com/a/78030618
   main:
     runs-on: ubuntu-latest
     steps:

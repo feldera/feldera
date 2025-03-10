@@ -39,8 +39,9 @@ jobs:
     needs: [invoke-build-java]
     uses: ./.github/workflows/test-java.yml
 
+  # This job needs to be called main (the same as the ci-pre-mergequeue.yml workflow)
+  # because of how merge queues work: https://stackoverflow.com/a/78030618
   main:
-    name: Merge Queue Tasks
     runs-on: ubuntu-latest
     needs:
       - invoke-build-rust
