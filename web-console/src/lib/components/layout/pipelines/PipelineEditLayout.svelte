@@ -263,7 +263,7 @@ example = "1.0"`
               </span>
             </DoubleClickInput>
             {#if editDisabled}
-              <Tooltip class="z-10 rounded bg-white text-surface-950-50 dark:bg-black">
+              <Tooltip class="z-10 rounded bg-white text-base text-surface-950-50 dark:bg-black">
                 Cannot edit the pipeline's name while it's running
               </Tooltip>
             {/if}

@@ -3,11 +3,10 @@
   import { superForm, setError } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
   import { Field, FieldErrors, Control, Label } from 'formsnap'
-  import { clipboard } from '@svelte-bin/clipboard'
 
   import * as va from 'valibot'
-  import { clickedClass } from '$lib/compositions/actions/clickedClass'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
 
   let { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
 
@@ -110,15 +109,7 @@
             <div class="flex w-full flex-nowrap items-center gap-2">
               <span>{name}:</span>
               <span class="w-full overflow-hidden overflow-ellipsis">{key}</span>
-              <button
-                class="btn-icon flex-none"
-                use:clipboard={key}
-                use:clickedClass={{
-                  base: 'fd fd-copy',
-                  clicked: 'fd fd-check text-success-500 text-[20px] pointer-events-none'
-                }}
-                aria-label="Copy to clipboard"
-              ></button>
+              <ClipboardCopyButton value={key}></ClipboardCopyButton>
               <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="top">
                 Copy to clipboard
               </Tooltip>
