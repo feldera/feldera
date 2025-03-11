@@ -40,6 +40,7 @@ type LayoutData = {
     version: string
     edition: string
     changelog?: string
+    revision: string
     update?: {
       version: string
       url: string
@@ -61,7 +62,8 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
       auth: 'none',
       feldera: {
         version: '',
-        edition: ''
+        edition: '',
+        revision: ''
       }
     }
   }
@@ -161,7 +163,8 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
               url: config.update_info.instructions_url
             }
           : undefined,
-      changelog: config.changelog_url
+      changelog: config.changelog_url,
+      revision: config.revision
     }
   }
 }
