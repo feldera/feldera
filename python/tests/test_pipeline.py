@@ -15,6 +15,7 @@ class TestPipeline(unittest.TestCase):
     def test_delete_all_pipelines(self):
         pipelines = TEST_CLIENT.pipelines()
         for pipeline in pipelines:
+            TEST_CLIENT.shutdown_pipeline(pipeline.name)
             TEST_CLIENT.delete_pipeline(pipeline.name)
 
     def test_create_pipeline(
