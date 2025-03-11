@@ -112,7 +112,7 @@ pub(crate) async fn ws_handler(
 
 Let's look at the main logic which is in `handle_socket`. This function internally spawns **two asynchronous tasks**:
 
-- **Client messages** – The first task listens for messages from the client in the form `{ from: x, to: y }`, indicating which cells the client wants. When such a request arrives, we send an [ad-hoc query](https://docs.feldera.com/api/execute-an-ad-hoc-query-in-a-running-or-paused-pipeline) to Feldera to fetch that range and forward the result to the client:
+- **Client messages** – The first task listens for messages from the client in the form `{ from: x, to: y }`, indicating which cells the client wants. When such a request arrives, we send an [ad-hoc query](https://docs.feldera.com/api/execute-an-ad-hoc-sql-query-in-a-running-or-paused-pipeline) to Feldera to fetch that range and forward the result to the client:
 
 ```rust
 match process_message(msg, who) {
@@ -177,7 +177,7 @@ loop {
 
 #### Sending ad-hoc queries to Feldera
 
-In the first task, the complexity of sending an [ad-hoc query](https://docs.feldera.com/api/execute-an-ad-hoc-query-in-a-running-or-paused-pipeline) to Feldera is hidden behind the `adhoc_query` function. Below is the implementation.
+In the first task, the complexity of sending an [ad-hoc query](https://docs.feldera.com/api/execute-an-ad-hoc-sql-query-in-a-running-or-paused-pipeline) to Feldera is hidden behind the `adhoc_query` function. Below is the implementation.
 
 ```rust
 pub(crate) async fn adhoc_query(sql: &str) -> Result<String, XlsError> {
