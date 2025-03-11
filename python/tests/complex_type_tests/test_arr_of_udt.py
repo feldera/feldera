@@ -91,12 +91,12 @@ class cmpxtst_arr_of_udt_idx_outbound(TstView):
                       FROM arr_of_udt_tbl"""
 
 
-# ignore => error: Unknown field 'i5' when inner user-defined column does not exist
-class ignoretst_arr_of_udt_idx_nexist(TstView):
+class cmpxtst_arr_of_udt_elmnt_nexist(TstView):
     def __init__(self):
-        # no result because of SQL error
-        self.data = []
-        self.sql = """CREATE MATERIALIZED VIEW arr_of_udt_idx_nexist AS SELECT
+        # checked manually
+        self.data = [{"id": 1, "c11_val": None}]
+        self.sql = """CREATE MATERIALIZED VIEW arr_of_udt_elmnt_nexist AS SELECT
                       id,
-                      c1_arr[2].i5 AS c12_val
-                      FROM arr_of_udt_tbl"""
+                      c1_arr[1] AS c11_val
+                      FROM arr_of_udt_tbl
+                      WHERE id = 1"""

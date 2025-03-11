@@ -14,7 +14,7 @@ class cmpxtst_row_of_udt_tbl(TstTable):
             {
                 "id": 0,
                 "c1": {"c1_int": (1, 2), "c1_var": ("bye", None)},
-                "c2": {"c2_int": (5, 6), "c2_var": ("hi", "konichiwa")},
+                "c2": {"c2_int": (5, None), "c2_var": ("hi", "konichiwa")},
             },
             {
                 "id": 1,
@@ -32,7 +32,7 @@ class cmpxtst_row_of_udt_field_access(TstView):
                 "id": 0,
                 "c1_int": {"i1": 1, "i2": 2},
                 "c1_var": {"v1": "bye", "v2": None},
-                "c2_int": {"i1": 5, "i2": 6},
+                "c2_int": {"i1": 5, "i2": None},
                 "c2_var": {"v1": "hi", "v2": "konichiwa"},
             },
             {
@@ -66,14 +66,12 @@ class cmpxtst_row_of_udt_elmnt_access(TstView):
                       FROM row_of_udt_tbl"""
 
 
-# ignore => error: Column 'c1.c3_int' not found in table 'row_of_udt_tbl' when row column does not exist
-# ignore => error: Column 'c1.c1_var.v5' not found in table 'row_of_udt_tbl' when inner UDT column does not exist
-class ignoretst_row_of_udt_idx_outbound(TstView):
+class cmpxtst_row_of_udt_elmnt_nexist(TstView):
     def __init__(self):
-        # no result because of SQL error
-        self.data = []
-        self.sql = """CREATE MATERIALIZED VIEW row_of_udt_idx_outbound AS SELECT
-                              id,
-                              row_of_udt_tbl.c1.c3_int,
-                              row_of_udt_tbl.c1.c1_var.v5
-                              FROM row_of_udt_tbl"""
+        # checked manually
+        self.data = [{"id": 0, "c12_val": None}]
+        self.sql = """CREATE MATERIALIZED VIEW row_of_udt_elmnt_nexist AS SELECT
+                      id,
+                      row_of_udt_tbl.c1.c1_var.v2 AS c12_val
+                      FROM row_of_udt_tbl
+                      WHERE id = 0"""
