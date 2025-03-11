@@ -65,6 +65,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IWritesLogs;
+import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -120,21 +121,21 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String expected = """
                 Circuit circuit {
                     // DBSPConstantOperator s0
-                    let s0: stream<WSet<Tup3<s, s, s>>> = constant(zset!());
+                    let s0 = constant(zset!());
                     // DBSPSourceMultisetOperator s1
                     // CREATE TABLE `t` (`col1` INTEGER NOT NULL, `col2` DOUBLE NOT NULL, `col3` BOOLEAN NOT NULL, `col4` VARCHAR NOT NULL, `col5` INTEGER, `col6` DOUBLE)
                     let s1 = t();
                     // DBSPMapOperator s2
-                    let s2: stream<WSet<Tup1<b>>> = s1.map((|p0: &Tup6<i32, d, b, s, i32?, d?>|
+                    let s2 = s1.map((|p0: &Tup6<i32, d, b, s, i32?, d?>|
                     Tup1::new(((*p0).2), )));
                     // CREATE VIEW `v` AS
                     // SELECT `t`.`col3`
                     // FROM `schema`.`t` AS `t`
-                    let s3: stream<WSet<Tup1<b>>> = s2;
+                    let s3 = s2;
                     // CREATE VIEW `error_view` AS
                     // SELECT `error_table`.`table_or_view_name`, `error_table`.`message`, `error_table`.`metadata`
                     // FROM `schema`.`error_table` AS `error_table`
-                    let s4: stream<WSet<Tup3<s, s, s>>> = s0;
+                    let s4 = s0;
                 }
                 """;
         Assert.assertEquals(expected, str);
@@ -223,9 +224,12 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
-        RustFileWriter writer = new RustFileWriter(BaseSQLTests.TEST_FILE_PATH);
+        PrintStream stream = new PrintStream(BaseSQLTests.TEST_FILE_PATH);
+        RustFileWriter writer = new RustFileWriter();
+        writer.setOutputStream(new IndentStream(stream));
         writer.add(tester);
-        writer.writeAndClose(compiler);
+        writer.write(compiler);
+        stream.close();
         Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
     }
 
@@ -255,9 +259,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
         PrintStream outputStream = new PrintStream(BaseSQLTests.TEST_FILE_PATH, StandardCharsets.UTF_8);
         RustFileWriter writer = new RustFileWriter();
-        writer.setPrintStream(outputStream);
+        writer.setOutputStream(new IndentStream(outputStream));
         writer.add(tester);
-        writer.writeAndClose(compiler);
+        writer.write(compiler);
+        outputStream.close();
         Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
     }
 

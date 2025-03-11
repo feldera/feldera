@@ -32,18 +32,22 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STREAM;
 
-/** A type of the form 'Stream<_, elementType>' */
+/** A type of the form 'Stream<Circuit, elementType>' */
 public class DBSPTypeStream extends DBSPType {
+    /** Currently only 2 levels of nesting are supported */
+    public final boolean outerCircuit;
     public final DBSPType elementType;
 
-    public DBSPTypeStream(DBSPType elementType) {
+    public DBSPTypeStream(DBSPType elementType, boolean outerCircuit) {
         super(elementType.getNode(), STREAM, elementType.mayBeNull);
         this.elementType = elementType;
+        this.outerCircuit = outerCircuit;
     }
 
     @Override
@@ -66,7 +70,8 @@ public class DBSPTypeStream extends DBSPType {
         if (!this.sameNullability(other)) return false;
         DBSPTypeStream s = other.as(DBSPTypeStream.class);
         if (s == null) return false;
-        return this.elementType == s.elementType;
+        return this.elementType == s.elementType &&
+                this.outerCircuit == s.outerCircuit;
     }
 
     @Override
@@ -82,7 +87,9 @@ public class DBSPTypeStream extends DBSPType {
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), this.elementType.hashCode());
+        return Objects.hash(super.hashCode(),
+                this.elementType.hashCode(),
+                Objects.hash(this.outerCircuit));
     }
 
     @Override
@@ -92,12 +99,13 @@ public class DBSPTypeStream extends DBSPType {
         DBSPTypeStream oRef = other.as(DBSPTypeStream.class);
         if (oRef == null)
             return false;
-        return this.elementType.sameType(oRef.elementType);
+        return this.elementType.sameType(oRef.elementType) &&
+                this.outerCircuit == oRef.outerCircuit;
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("stream<")
+        return builder.append("Stream<")
                 .append(this.elementType)
                 .append(">");
     }
@@ -105,6 +113,7 @@ public class DBSPTypeStream extends DBSPType {
     @SuppressWarnings("unused")
     public static DBSPTypeStream fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPType elementType = fromJsonInner(node, "elementType", decoder, DBSPType.class);
-        return new DBSPTypeStream(elementType);
+        boolean outerCircuit = Utilities.getBooleanProperty(node, "outerCircuit");
+        return new DBSPTypeStream(elementType, outerCircuit);
     }
 }

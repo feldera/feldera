@@ -16,7 +16,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
@@ -50,8 +49,6 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     public final boolean isMultiset;
     @Nullable
     public final String comment;
-    /** Always {@link DBSPSimpleOperator#outputType} wrapped in a stream type */
-    public final DBSPType outputStreamType;
 
     protected DBSPSimpleOperator(CalciteRelNode node, String operation,
                                  @Nullable DBSPExpression function, DBSPType outputType,
@@ -62,7 +59,6 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
         this.outputType = outputType;
         this.isMultiset = isMultiset;
         this.comment = comment;
-        this.outputStreamType = new DBSPTypeStream(this.outputType());
         if (!operation.startsWith("waterline") &&
                 !operation.startsWith("apply") &&
                 !operation.startsWith("delay") &&
@@ -88,10 +84,6 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
 
     public OutputPort outputPort() {
         return new OutputPort(this, 0);
-    }
-
-    public String getOutputName() {
-        return this.getNodeName();
     }
 
     public DBSPSimpleOperator(CalciteRelNode node, String operation,
@@ -190,6 +182,10 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
      */
     public abstract DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force);
 
+    public String getOutputName() {
+        return this.getNodeName(false);
+    }
+
     @Override
     public String toString() {
         return this.getClass()
@@ -222,12 +218,10 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     public IIndentStream toString(IIndentStream builder) {
         this.writeComments(builder)
                 .append("let ")
-                .append(this.getOutputName())
-                .append(": ")
-                .append(this.outputStreamType)
+                .append(this.getNodeName(false))
                 .append(" = ");
         if (!this.inputs.isEmpty())
-            builder.append(this.inputs.get(0).getOutputName())
+            builder.append(this.inputs.get(0).getNodeName(false))
                     .append(".");
         builder.append(this.operation)
                 .append("(");
@@ -235,7 +229,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
             if (i > 1)
                 builder.append(",");
             builder.append("&")
-                    .append(this.inputs.get(i).getOutputName());
+                    .append(this.inputs.get(i).getNodeName(false));
         }
         if (this.function != null) {
             if (this.inputs.size() > 1)
@@ -274,19 +268,8 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     }
 
     @Override
-    public String getOutputName(int outputNo) {
-        assert outputNo == 0;
-        return this.getOutputName();
-    }
-
-    @Override
     public int outputCount() {
         return 1;
-    }
-
-    @Override
-    public DBSPType streamType(int outputNumber) {
-        return this.outputStreamType;
     }
 
     record CommonInfo(

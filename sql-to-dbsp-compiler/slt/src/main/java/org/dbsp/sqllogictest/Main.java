@@ -88,7 +88,7 @@ public class Main {
     public static void main(String[] argv) throws IOException, ClassNotFoundException {
         Class.forName("org.hsqldb.jdbcDriver");
         List<String> files = Linq.list(
-                "random/select/slt_good_70.test"
+                // "test/random/expr/slt_good_102.test"
                 /*
                 "select1.test"
                 "select2.test",

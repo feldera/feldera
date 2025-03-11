@@ -58,8 +58,6 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
         this.writeComments(builder)
                 .append("let ")
                 .append(this.getOutputName())
-                .append(": ")
-                .append(this.outputStreamType)
                 .append(" = ")
                 .append(this.input().getOutputName())
                 .append(".")

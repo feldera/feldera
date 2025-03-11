@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -24,7 +23,8 @@ import java.util.Objects;
 
 /** This operator is purely incremental, it does not have a non-incremental form */
 public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
-    public final DBSPComparatorExpression comparator;
+    // Usually a DBSPComparatorExpression
+    public final DBSPExpression comparator;
     public final DBSPClosureExpression leftTimestamp;
     public final DBSPClosureExpression rightTimestamp;
     public final boolean isLeft;
@@ -47,7 +47,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
                                 DBSPExpression function,
                                 DBSPClosureExpression leftTimestamp,
                                 DBSPClosureExpression rightTimestamp,
-                                DBSPComparatorExpression comparator,
+                                DBSPExpression comparator,
                                 boolean isMultiset, boolean isLeft,
                                 OutputPort left, OutputPort right) {
         super(node, "asof_join", function, outputType, isMultiset, left, right);
@@ -158,7 +158,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         DBSPClosureExpression leftTimestamp = fromJsonInner(node, "leftTimestamp", decoder, DBSPClosureExpression.class);
         DBSPClosureExpression rightTimestamp = fromJsonInner(node, "rightTimestamp", decoder, DBSPClosureExpression.class);
-        DBSPComparatorExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPComparatorExpression.class);
+        DBSPExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPExpression.class);
         boolean isLeft = Utilities.getBooleanProperty(node, "isLeft");
         return new DBSPAsofJoinOperator(
                 CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getFunction(),

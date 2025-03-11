@@ -18,6 +18,7 @@ import java.util.List;
 
 /** Implements the LAG/LEAD operators for an SQL OVER Window */
 public final class DBSPLagOperator extends DBSPUnaryOperator {
+    // Usually a DBSPComparatorExpression, replaced with a PathExpression later.
     public final DBSPExpression comparator;
     public final DBSPExpression projection;
     public final int offset;

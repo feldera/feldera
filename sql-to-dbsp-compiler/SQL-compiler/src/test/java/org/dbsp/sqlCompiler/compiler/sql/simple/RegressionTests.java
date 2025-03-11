@@ -656,10 +656,10 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE t (
                     bin VARBINARY
                 ) with ('materialized' = 'true');
-                CREATE FUNCTION nbin2nbin(i VARBINARY NOT NULL) RETURNS VARBINARY NOT NULL AS CAST(x'ABCD' as VARBINARY);
+                CREATE FUNCTION nbin2nbin2(i VARBINARY NOT NULL) RETURNS VARBINARY NOT NULL AS CAST(x'ABCD' as VARBINARY);
                 CREATE MATERIALIZED VIEW v AS
                 SELECT
-                    nbin2nbin(bin)
+                    nbin2nbin2(bin)
                 FROM t;""";
         this.compileRustTestCase(sql);
     }
@@ -1236,16 +1236,15 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue2094() {
-        String sql = "CREATE FUNCTION F() RETURNS INT NOT NULL AS 0;";
+        String sql = "CREATE FUNCTION F0() RETURNS INT NOT NULL AS 0;";
         this.compileRustTestCase(sql);
     }
 
     @Test
     public void issue2095() {
         String sql = """
-        CREATE FUNCTION F() RETURNS INT NOT NULL AS 0;
-        CREATE FUNCTION G() RETURNS INT NOT NULL AS F();
-        """;
+        CREATE FUNCTION F1() RETURNS INT NOT NULL AS 0;
+        CREATE FUNCTION G() RETURNS INT NOT NULL AS F1();""";
         this.compileRustTestCase(sql);
     }
 
