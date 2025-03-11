@@ -262,6 +262,11 @@ example = "1.0"`
                 {pipeline.current.name}
               </span>
             </DoubleClickInput>
+            {#if editDisabled}
+              <Tooltip class="z-10 rounded bg-white text-surface-950-50 dark:bg-black">
+                Cannot edit the pipeline's name while it's running
+              </Tooltip>
+            {/if}
           {/snippet}
         </PipelineBreadcrumbs>
         <PipelineStatus class="h-6 sm:mt-0.5" status={pipeline.current.status}></PipelineStatus>

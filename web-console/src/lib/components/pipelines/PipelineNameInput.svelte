@@ -10,7 +10,6 @@
     createButton,
     afterInput,
     inputClass,
-    assistCreatingPipeline,
     onHideInput,
     onSuccess
   }: {
@@ -18,7 +17,6 @@
     createButton: Snippet<[onclick: () => void]>
     afterInput?: Snippet<[error?: string]>
     inputClass?: string
-    assistCreatingPipeline?: boolean
     onHideInput?: () => void
     onSuccess?: () => void
   } = $props()
