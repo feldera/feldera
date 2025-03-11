@@ -95,12 +95,12 @@ class cmpxtst_arr_of_row_arr_idx_outbound(TstView):
                       FROM arr_of_row_tbl"""
 
 
-# ignore => error: Unknown field 'i5' when inner row column does not exist
-class ignoretst_arr_of_row_idx_nexist(TstView):
+class cmpxtst_arr_of_row_elmnt_nexist(TstView):
     def __init__(self):
-        # no result because of SQL error
-        self.data = []
-        self.sql = """CREATE MATERIALIZED VIEW arr_of_row_idx_nexist AS SELECT
+        # checked manually
+        self.data = [{"id": 0, "c22_val": None}]
+        self.sql = """CREATE MATERIALIZED VIEW arr_of_row_elmnt_nexist AS SELECT
                       id,
-                      c1_arr[2].i5 AS c12_val
-                      FROM arr_of_row_tbl"""
+                      c2_arr[2] AS c22_val
+                      FROM arr_of_row_tbl
+                      WHERE id = 0"""
