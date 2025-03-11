@@ -10,11 +10,7 @@ public class FunctionsTest extends SqlIoTest {
         String setup = """
                 CREATE TABLE ARR_TABLE (VALS INTEGER ARRAY NOT NULL,ID INTEGER NOT NULL);
                 INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 6);
-                INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 7);
-                CREATE FUNCTION dbl(x INTEGER) RETURNS INTEGER AS x * 2;
-                CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER)
-                RETURNS BOOLEAN NOT NULL
-                AS (str LIKE ('%' || COALESCE(CAST(value AS VARCHAR), 'NULL') || '%'));""";
+                INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 7);""";
         compiler.submitStatementsForCompilation(setup);
     }
 
@@ -98,16 +94,22 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testSqlFunc() {
-        this.q("""
-                SELECT dbl(3);
-                 result
-                ---------
-                 6""");
-        this.q("""
-                SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5);
-                 result
-                ---------
-                 t""");
+        var ccs = this.getCCS("""
+                CREATE FUNCTION dbl(x INTEGER) RETURNS INTEGER AS x * 2;
+                CREATE VIEW V AS SELECT dbl(3);""");
+        ccs.step("", """
+                 r | weight
+                ------------
+                 6 | 1""");
+        ccs = this.getCCS("""
+                CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER)
+                RETURNS BOOLEAN NOT NULL
+                AS (str LIKE ('%' || COALESCE(CAST(value AS VARCHAR), 'NULL') || '%'));
+                CREATE VIEW V AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5)""");
+        ccs.step("", """
+                 result | weight
+                -----------------
+                 t      | 1""");
     }
 
     @Test

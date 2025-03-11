@@ -81,9 +81,9 @@ public final class DBSPCircuit extends DBSPNode
     }
 
     private DBSPCircuit(ProgramMetadata metadata, List<DBSPDeclaration> declarations, List<DBSPOperator> allOperators) {
-        super(CalciteObject.EMPTY);
-        this.metadata = metadata;
-        this.declarations = declarations;
+        this(metadata);
+        for (DBSPDeclaration decl: declarations)
+            this.addDeclaration(decl);
         for (DBSPOperator op: allOperators) {
             this.addOperator(op);
         }
@@ -161,7 +161,7 @@ public final class DBSPCircuit extends DBSPNode
         this.declarationMap.put(decl.getName(), decl);
     }
 
-    @Nullable @Override
+    @Nullable
     public DBSPDeclaration getDeclaration(String name) {
         return this.declarationMap.get(name);
     }

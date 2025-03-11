@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
@@ -252,7 +253,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         List<DBSPTypeStruct> nested = new ArrayList<>();
         FindNestedStructs fn = new FindNestedStructs(this.compiler, nested);
         fn.apply(struct);
-        ICircuit underConstruction = this.getUnderConstruction();
+        DBSPCircuit underConstruction = this.getUnderConstructionCircuit();
         for (DBSPTypeStruct s: nested) {
             DBSPStructWithHelperItem item = new DBSPStructWithHelperItem(s, metadata);
             DBSPDeclaration previous = underConstruction.getDeclaration(item.getName());

@@ -19,8 +19,6 @@ public abstract class DBSPOperatorWithError extends DBSPOperator {
     protected final DBSPType errorType;
     public final DBSPClosureExpression function;
     public final DBSPClosureExpression error;
-    public final DBSPTypeStream outputStreamType;
-    public final DBSPTypeStream errorStreamType;
 
     protected DBSPOperatorWithError(CalciteRelNode node, String operation, DBSPType outputType, DBSPType errorType,
                                     DBSPClosureExpression function, DBSPClosureExpression error) {
@@ -30,8 +28,6 @@ public abstract class DBSPOperatorWithError extends DBSPOperator {
         this.errorType = errorType;
         this.function = function;
         this.error = error;
-        this.outputStreamType = new DBSPTypeStream(this.outputType);
-        this.errorStreamType = new DBSPTypeStream(this.errorType);
     }
 
     @Override
@@ -80,24 +76,9 @@ public abstract class DBSPOperatorWithError extends DBSPOperator {
     }
 
     @Override
-    public String getOutputName(int outputNumber) {
-        String name = this.getNodeName();
-        return name + "_" + outputNumber;
-    }
-
-    @Override
     public int outputCount() {
         return 2;
     }
 
-    @Override
-    public DBSPType streamType(int outputNumber) {
-        if (outputNumber == 0)
-            return this.outputStreamType;
-        else if (outputNumber == 1)
-            return this.errorStreamType;
-        throw new InternalCompilerError("No output " + outputNumber);
-    }
-    
     public abstract DBSPOperatorWithError withInputs(List<OutputPort> sources, boolean force);
 }

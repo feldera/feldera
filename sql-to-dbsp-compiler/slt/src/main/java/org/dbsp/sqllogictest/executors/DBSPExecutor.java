@@ -79,6 +79,7 @@ import org.dbsp.sqllogictest.Main;
 import org.dbsp.sqllogictest.SqlTestPrepareInput;
 import org.dbsp.sqllogictest.SqlTestPrepareTables;
 import org.dbsp.sqllogictest.SqlTestPrepareViews;
+import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.TableValue;
@@ -577,13 +578,14 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         String testFilePath = Main.getAbsoluteRustDirectory() + "/" + genFileName;
         PrintStream stream = new PrintStream(testFilePath, StandardCharsets.UTF_8);
         RustFileWriter rust = new RustFileWriter().forSlt();
-        rust.setPrintStream(stream);
+        rust.setOutputStream(new IndentStream(stream));
 
         for (DBSPFunction function : inputFunctions)
             rust.add(function);
         for (ProgramAndTester pt: functions)
             rust.add(pt);
-        rust.writeAndClose(compiler);
+        rust.write(compiler);
+        stream.close();
     }
 
     public static void register(OptionsParser parser, AtomicReference<Integer> skip) {

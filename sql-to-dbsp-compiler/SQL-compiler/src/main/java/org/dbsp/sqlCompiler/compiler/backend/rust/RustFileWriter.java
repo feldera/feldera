@@ -4,19 +4,14 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
-import org.dbsp.util.IndentStream;
-import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.ProgramAndTester;
-
-import java.io.IOException;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 
 /** This class helps generate Rust code.
  * It is given a set of circuit and functions and generates a compilable Rust file. */
 public class RustFileWriter extends RustWriter {
     boolean slt = false;
     boolean generateUdfInclude = true;
+    boolean generateMalloc = true;
     boolean findUsed = true;
     StructuresUsed used = new StructuresUsed();
 
@@ -45,47 +40,44 @@ public class RustFileWriter extends RustWriter {
         return this;
     }
 
-    public RustFileWriter(String outputFile)
-            throws IOException {
-        this.outputStream = new PrintStream(outputFile, StandardCharsets.UTF_8);
+    public RustFileWriter withMalloc(boolean malloc) {
+        this.generateMalloc = malloc;
+        return this;
     }
 
-    void generateStructures(IndentStream stream) {
-        super.generateStructures(this.used, stream);
+    void generateStructures() {
+        super.generateStructures(this.used);
         if (this.slt) {
-            stream.append("#[cfg(test)]").newline()
+            this.getOutputStream().append("#[cfg(test)]").newline()
                     .append("sltsqlvalue::to_sql_row_impl! {").increase();
             for (int i : this.used.tupleSizesUsed) {
                 if (i <= 10)
                     // These are already pre-declared
                     continue;
-                stream.append(this.tup(i));
-                stream.append(",\n");
+                this.getOutputStream().append(this.tup(i)).append(",").newline();
             }
-            stream.decrease().append("}\n\n");
+            this.getOutputStream().decrease().append("}").newline().newline();
         }
     }
 
-    String generatePreamble() {
-        IndentStream stream = new IndentStreamBuilder();
-        stream.append(COMMON_PREAMBLE);
+    void generatePreamble() {
+        this.getOutputStream().append(COMMON_PREAMBLE);
         long max = this.used.getMaxTupleSize();
         if (max > 120) {
             // this is just a guess
-            stream.append("#![recursion_limit = \"")
+            this.getOutputStream().append("#![recursion_limit = \"")
                     .append(max * 2)
                     .append("\"]")
                     .newline();
         }
 
-        stream.append("""
+        this.getOutputStream().append("""
                       #[cfg(test)]
                       use hashing::*;""")
                 .newline();
-        stream.append(this.rustPreamble())
+        this.getOutputStream().append(this.rustPreamble())
                 .newline();
-        this.generateStructures(stream);
-        return stream.toString();
+        this.generateStructures();
     }
 
     public void add(ProgramAndTester pt) {
@@ -103,11 +95,13 @@ public class RustFileWriter extends RustWriter {
         assert this.outputStream != null;
         if (this.findUsed)
             this.used = this.analyze(compiler);
-        this.outputStream.println(generatePreamble());
+        this.generatePreamble();
+        if (this.generateMalloc)
+            this.outputStream.append(BaseRustCodeGenerator.ALLOC_PREAMBLE);
         if (this.generateUdfInclude)
-            this.outputStream.println(generateUdfInclude());
+            this.generateUdfInclude();
         for (String dep: this.dependencies)
-            this.outputStream.println("use " + dep + "::*;");
+            this.getOutputStream().append("use ").append(dep).append("::*;");
         for (IDBSPNode node: this.toWrite) {
             String str;
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
@@ -117,14 +111,7 @@ public class RustFileWriter extends RustWriter {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
                 str = ToRustVisitor.toRustString(compiler, outer);
             }
-            this.outputStream.println(str);
-            this.outputStream.println();
+            this.getOutputStream().append(str).newline();
         }
-    }
-
-    public void writeAndClose(DBSPCompiler compiler) {
-        assert this.outputStream != null;
-        this.write(compiler);
-        this.outputStream.close();
     }
 }

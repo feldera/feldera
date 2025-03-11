@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
+import org.dbsp.sqlCompiler.circuit.annotation.MerkleHash;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -139,18 +140,19 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     /** True if the specified output is a multiset */
     public abstract boolean isMultiset(int outputNumber);
 
-    public String getNodeName() {
+    public String getNodeName(boolean preferHash) {
+        if (preferHash) {
+            String name = MerkleHash.getHash(this);
+            if (name != null)
+                return "s" + name;
+        }
         String name = CompactName.getCompactName(this);
         if (name == null)
             name = "stream" + this.getId();
         return name;
     }
 
-    public abstract String getOutputName(int outputNumber);
-
     public abstract int outputCount();
-
-    public abstract DBSPType streamType(int outputNumber);
 
     public String getCompactName() {
         String name = CompactName.getCompactName(this);

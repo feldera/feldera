@@ -157,6 +157,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Utilities;
@@ -170,14 +171,14 @@ import java.util.Set;
 
 /** This visitor generates a Rust implementation of the program. */
 public class ToRustInnerVisitor extends InnerVisitor {
-    protected final IndentStream builder;
+    protected final IIndentStream builder;
     /** If set use a more compact display, which is not necessarily compilable. */
     protected final boolean compact;
     protected final CompilerOptions options;
     /** Set by binary expressions */
     int visitingChild;
 
-    public ToRustInnerVisitor(DBSPCompiler compiler, IndentStream builder, boolean compact) {
+    public ToRustInnerVisitor(DBSPCompiler compiler, IIndentStream builder, boolean compact) {
         super(compiler);
         this.builder = builder;
         this.compact = compact;
@@ -208,7 +209,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     /**
-     * Helper function for generateComparator and generateCmpFunc.
+     * Helper function for {@link ToRustInnerVisitor#generateComparator} and
+     * {@link ToRustInnerVisitor#generateCmpFunc}.
      * @param fieldNo  Field index that is compared.
      * @param ascending Comparison direction.
      */
@@ -226,7 +228,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .newline();
     }
 
-    /** Helper function for generateComparator and generateCmpFunc.
+    /** Helper function for {@link ToRustInnerVisitor#generateComparator} and
+     * {@link ToRustInnerVisitor#generateCmpFunc}.
      * @param ascending Comparison direction. */
     void emitCompare(boolean ascending) {
         this.builder.append("let ord = left.cmp(&right);")
@@ -239,9 +242,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     /**
-     * Helper function for generateCmpFunc.
+     * Helper function for {@link ToRustInnerVisitor#generateCmpFunc}.
      * This could be part of an inner visitor too.
-     * But we don't handle DBSPComparatorExpressions in the same way in
+     * But we don't handle {@link DBSPComparatorExpression}s in the same way in
      * any context: we do it differently in TopK and Sort.
      * This is for TopK.
      * @param comparator  Comparator expression to generate Rust for.
@@ -351,20 +354,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(">)| -> Array<");
         expression.elementType.accept(this);
         this.builder.append("> {").increase();
-        if (!expression.comparator.is(DBSPNoComparatorExpression.class)) {
-            this.builder.append("let ec = ");
-            expression.comparator.accept(this);
-            this.builder.append(";").newline();
-            this.builder.append("let comp = move |a: &");
-            expression.elementType.accept(this);
-            this.builder.append(", b: &");
-            expression.elementType.accept(this);
-            this.builder.append("| { ec.compare(a, b) };").newline();
-            this.builder.append("let mut v = (**array).clone();").newline()
-                    // we don't use sort_unstable_by because it is
-                    // non-deterministic
-                    .append("v.sort_by(comp);").newline();
-        } // otherwise the vector doesn't need to be sorted at all
+        this.builder.append("let comp = move |a: &");
+        expression.elementType.accept(this);
+        this.builder.append(", b: &");
+        expression.elementType.accept(this);
+        this.builder.append("| { ");
+        expression.comparator.accept(this);
+        this.builder.append("::cmp(a, b) };").newline();
+        this.builder.append("let mut v = (**array).clone();").newline()
+                // we don't use sort_unstable_by because it is
+                // non-deterministic
+                .append("v.sort_by(comp);").newline();
         if (expression.limit != null) {
             this.builder.append("let mut v = (**array).clone();").newline();
             this.builder.append("v.truncate(");
@@ -1993,9 +1993,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         this.builder.append("WithCustomOrd::<");
         expression.source.getType().accept(this);
-        this.builder.append(", ")
-                .append(expression.comparator.getComparatorStructName())
-                .append(">::new(");
+        this.builder.append(", ");
+        expression.comparator.accept(this);
+        this.builder.append(">::new(");
         expression.source.accept(this);
         this.builder.append(")");
         this.pop(expression);
@@ -2393,8 +2393,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPTypeStream type) {
         this.push(type);
-        this.builder.append("Stream<")
-                .append("_, "); // Circuit type
+        this.builder.append("Stream<");
+        if (type.outerCircuit)
+            this.builder.append("RootCircuit");
+        else
+            this.builder.append("ChildCircuit<RootCircuit>");
+        this.builder.append(", ");
         type.elementType.accept(this);
         this.builder.append(">");
         this.pop(type);

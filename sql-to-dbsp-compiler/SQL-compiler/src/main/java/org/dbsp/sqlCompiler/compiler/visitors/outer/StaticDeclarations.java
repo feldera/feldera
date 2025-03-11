@@ -17,7 +17,7 @@ public class StaticDeclarations extends CircuitRewriter {
     @Override
     public void postorder(DBSPCircuit circuit) {
         for (var decl: this.lazyStatics.newDeclarations)
-            this.getUnderConstruction().addDeclaration(new DBSPDeclaration(decl));
+            this.getUnderConstructionCircuit().addDeclaration(new DBSPDeclaration(decl));
         super.postorder(circuit);
     }
 }

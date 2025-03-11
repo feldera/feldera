@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
@@ -60,7 +61,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
@@ -253,6 +254,31 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPIndexedTopKOperator operator) {
+        DBSPExpression function = this.transform(operator.getFunction());
+        @Nullable DBSPClosureExpression outputProducer = null;
+        if (operator.outputProducer != null)
+            outputProducer = this.transform(operator.outputProducer)
+                    .to(DBSPClosureExpression.class);
+        DBSPExpression limit = this.transform(operator.limit);
+        DBSPEqualityComparatorExpression equalityComparator =
+                this.transform(operator.equalityComparator).to(DBSPEqualityComparatorExpression.class);
+        OutputPort input = this.mapped(operator.input());
+        DBSPSimpleOperator result = operator;
+        if (function != operator.function
+                || limit != operator.limit
+                || equalityComparator != operator.equalityComparator
+                || outputProducer != operator.outputProducer
+                || !input.equals(operator.input())) {
+            result = new DBSPIndexedTopKOperator(operator.getRelNode(),
+                    operator.numbering, function, limit, equalityComparator,
+                    outputProducer, input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
     public void postorder(DBSPStreamAggregateOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         @Nullable DBSPExpression function = this.transformN(operator.function);
@@ -430,7 +456,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     public void postorder(DBSPAsofJoinOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         DBSPExpression function = this.transform(operator.getFunction());
-        DBSPComparatorExpression comparator = this.transform(operator.comparator).to(DBSPComparatorExpression.class);
+        DBSPExpression comparator = this.transform(operator.comparator);
         DBSPClosureExpression leftTimestamp = this.transform(operator.leftTimestamp).to(DBSPClosureExpression.class);
         DBSPClosureExpression rightTimestamp = this.transform(operator.rightTimestamp).to(DBSPClosureExpression.class);
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
@@ -662,14 +688,13 @@ public class CircuitRewriter extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPDeclaration decl) {
-        DBSPItem rewritten = decl.item;
         DBSPDeclaration toAdd = decl;
         if (this.processDeclarations) {
-            rewritten = this.transform.apply(decl.item).to(DBSPItem.class);
+            DBSPItem rewritten = this.transform.apply(decl.item).to(DBSPItem.class);
             if (!rewritten.sameFields(decl.item))
                 toAdd = new DBSPDeclaration(rewritten);
         }
-        this.getUnderConstruction().addDeclaration(toAdd);
+        this.getUnderConstructionCircuit().addDeclaration(toAdd);
     }
 
     @Override

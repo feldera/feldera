@@ -39,7 +39,7 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
-import org.dbsp.util.IndentStream;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -61,7 +61,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         this(CalciteObject.EMPTY, code, mayBeNull);
     }
 
-    public void wrapOption(IndentStream builder, String type) {
+    public void wrapOption(IIndentStream builder, String type) {
         if (this.mayBeNull) {
             builder.append("Option<").append(type).append(">");
             return;
