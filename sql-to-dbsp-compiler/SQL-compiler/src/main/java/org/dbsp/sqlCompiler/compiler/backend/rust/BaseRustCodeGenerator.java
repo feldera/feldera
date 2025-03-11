@@ -1,26 +1,40 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
-import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
-public abstract class BaseCodeGenerator implements ICodeGenerator {
-    final List<IDBSPNode> toWrite;
-    final List<String> dependencies;
+/** Base class for generating Rust code */
+public abstract class BaseRustCodeGenerator implements ICodeGenerator {
+    static int crdId = 0;
+    final int id;
+    /** List of nodes to generate code for */
+    protected final List<IDBSPNode> toWrite;
+    /** List of crate names that are dependencies for this one */
+    protected final List<String> dependencies;
+    /** Stream where code is generated; set by {@link BaseRustCodeGenerator#setOutputStream} */
     @Nullable
-    protected PrintStream outputStream = null;
+    protected IIndentStream outputStream = null;
+    /** What kind of names to use for the generated operators */
+    public static final boolean USE_HASH_NAMES = false;
 
-    protected BaseCodeGenerator() {
+    protected BaseRustCodeGenerator() {
+        this.id = crdId++;
         this.toWrite = new ArrayList<>();
         this.dependencies = new ArrayList<>();
     }
 
     @Override
-    public void setPrintStream(PrintStream stream) {
+    public void setOutputStream(IIndentStream stream) {
         this.outputStream = stream;
+    }
+
+    public IIndentStream getOutputStream() {
+        return Objects.requireNonNull(this.outputStream);
     }
 
     @Override
@@ -34,8 +48,7 @@ public abstract class BaseCodeGenerator implements ICodeGenerator {
     }
 
     /** Preamble used for all compilations. */
-    static final String COMMON_PREAMBLE =
-            """
+    public static final String COMMON_PREAMBLE = """
             // Automatically-generated file
             #![allow(dead_code)]
             #![allow(non_snake_case)]
@@ -47,14 +60,21 @@ public abstract class BaseCodeGenerator implements ICodeGenerator {
             #![allow(unconditional_panic)]
             """;
 
-    static final String STANDARD_PREAMBLE =
-            """
+    public static final String ALLOC_PREAMBLE = """
+            #[cfg(not(target_env = "msvc"))]
+            #[global_allocator]
+            static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+            #[allow(non_upper_case_globals)]
+            #[export_name = "malloc_conf"]
+            pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\\0";""";
+
+    public static final String STANDARD_PREAMBLE = """
             use dbsp::{
                 algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
                      UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
                      AddAssignByRef,
                 },
-                circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, RootCircuit, Stream},
+                circuit::{checkpointer::Checkpoint, ChildCircuit, Circuit, CircuitConfig, RootCircuit, Stream},
                 operator::{
                     Generator,
                     Fold,
@@ -113,12 +133,6 @@ public abstract class BaseCodeGenerator implements ICodeGenerator {
                 uuid::*,
                 variant::*,
             };
-            #[cfg(not(target_env = "msvc"))]
-            #[global_allocator]
-            static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-            #[allow(non_upper_case_globals)]
-            #[export_name = "malloc_conf"]
-            pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\\0";
             #[cfg(test)]
             use readers::*;
             """;

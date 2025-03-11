@@ -64,6 +64,15 @@ public class LazyStatics extends InnerRewriteVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPStaticExpression expression) {
+        DBSPStaticItem item = new DBSPStaticItem(expression);
+        this.newDeclarations.add(item);
+        DBSPExpression result = item.getReference();
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPArrayExpression expression) {
         if (!expression.isConstant()) {
             return super.preorder(expression);
@@ -73,7 +82,7 @@ public class LazyStatics extends InnerRewriteVisitor {
         DBSPStaticItem item = new DBSPStaticItem(stat);
         this.newDeclarations.add(item);
         DBSPExpression result = item.getReference();
-        this.map(expression, result);
+        this.map(expression, result.applyClone());
         return VisitDecision.STOP;
     }
 }

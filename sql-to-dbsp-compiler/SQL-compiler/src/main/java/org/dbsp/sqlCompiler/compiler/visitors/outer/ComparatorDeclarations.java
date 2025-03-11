@@ -4,7 +4,8 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
-/** Create LazyStatic expressions, and insert declarations in the circuit */
+/** Convert Comparator expressions into declarations using {@link FindComparators},
+ *  and insert the declarations in the circuit */
 public class ComparatorDeclarations extends CircuitRewriter {
     final FindComparators findComparators;
 
@@ -16,7 +17,7 @@ public class ComparatorDeclarations extends CircuitRewriter {
     @Override
     public void postorder(DBSPCircuit circuit) {
         for (var decl: this.findComparators.newDeclarations)
-            this.getUnderConstruction().addDeclaration(new DBSPDeclaration(decl));
+            this.getUnderConstructionCircuit().addDeclaration(new DBSPDeclaration(decl));
         super.postorder(circuit);
     }
 }

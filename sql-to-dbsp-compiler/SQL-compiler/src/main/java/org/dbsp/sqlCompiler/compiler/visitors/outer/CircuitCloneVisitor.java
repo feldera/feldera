@@ -204,7 +204,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
 
     @Override
     public void postorder(DBSPDeclaration declaration) {
-        this.getUnderConstruction().addDeclaration(declaration);
+        this.getUnderConstructionCircuit().addDeclaration(declaration);
     }
 
     @Override
@@ -450,6 +450,10 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
 
     @Override
     public void postorder(DBSPOperatorWithError operator) { this.replace(operator); }
+
+    public DBSPCircuit getUnderConstructionCircuit() {
+        return this.underConstruction.get(0).to(DBSPCircuit.class);
+    }
 
     public ICircuit getUnderConstruction() {
         return Utilities.last(this.underConstruction);

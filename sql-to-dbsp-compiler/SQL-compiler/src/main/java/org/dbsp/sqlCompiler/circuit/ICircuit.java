@@ -10,10 +10,6 @@ import javax.annotation.Nullable;
 /** Something that looks like a circuit: contains operators, and possibly declarations */
 public interface ICircuit extends IDBSPOuterNode {
     void addOperator(DBSPOperator operator);
-    void addDeclaration(DBSPDeclaration declaration);
-    /** Replace an existing declaration with a new one with the same name */
-    void replaceDeclaration(DBSPDeclaration declaration);
-    @Nullable DBSPDeclaration getDeclaration(String name);
     @Nullable
     DBSPViewOperator getView(ProgramIdentifier name);
     Iterable<DBSPOperator> getAllOperators();

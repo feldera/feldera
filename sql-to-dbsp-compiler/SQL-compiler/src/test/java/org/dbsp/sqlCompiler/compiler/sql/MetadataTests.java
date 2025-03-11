@@ -77,6 +77,8 @@ public class MetadataTests extends BaseSQLTests {
         //noinspection ResultOfMethodCallIgnored
         tmp.delete();
         Assert.assertEquals(0, message.exitCode);
+        //noinspection ResultOfMethodCallIgnored
+        tmp.delete();
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         for (JsonNode out: parsed.get("outputs")) {
@@ -846,6 +848,8 @@ public class MetadataTests extends BaseSQLTests {
         assert message.exitCode == 0;
         String js = Utilities.readFile(json.toPath());
         Assert.assertFalse(js.contains("fibonacci" + DeclareViewStatement.declSuffix));
+        //noinspection ResultOfMethodCallIgnored
+        tmp.delete();
     }
 
     @Test

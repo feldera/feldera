@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
+/** An item holding a comparator */
 public class DBSPComparatorItem extends DBSPItem {
     public final DBSPComparatorExpression expression;
 

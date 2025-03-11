@@ -59,19 +59,19 @@ public class SerdeTest extends SqlIoTest {
     public void jsonStructTest2() {
         // Matches the example in the documentation json.md
         String ddl = """
-            CREATE TYPE address AS (
+            CREATE TYPE address2 AS (
                city VARCHAR,
                street VARCHAR,
                number INT
             );
             CREATE TABLE data(addr VARCHAR);
-            CREATE FUNCTION jsonstring_as_address(addr VARCHAR) RETURNS address;
+            CREATE FUNCTION jsonstring_as_address2(addr VARCHAR) RETURNS address2;
 
             CREATE VIEW decoded0 AS
-            SELECT CAST(PARSE_JSON(data.addr) AS address) FROM data;
+            SELECT CAST(PARSE_JSON(data.addr) AS address2) FROM data;
 
             CREATE VIEW decoded1
-            AS SELECT jsonstring_as_address(data.addr) FROM data;
+            AS SELECT jsonstring_as_address2(data.addr) FROM data;
             """;
         DBSPCompiler compiler = this.testCompiler();
         // This test behaves very differently if we don't use this option.
