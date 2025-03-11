@@ -1,12 +1,10 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -14,7 +12,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -92,22 +89,6 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         return new OutputPort(this, this.internalOutputs.size() - 1);
     }
 
-    @Override
-    public void addDeclaration(DBSPDeclaration declaration) {
-        throw new InternalCompilerError("Adding declaration to NestedOperator");
-    }
-
-    @Override
-    public void replaceDeclaration(DBSPDeclaration declaration) {
-        throw new InternalCompilerError("Adding declaration to NestedOperator");
-    }
-
-    @Nullable
-    @Override
-    public DBSPDeclaration getDeclaration(String name) {
-        throw new InternalCompilerError("Searching declaration to NestedOperator");
-    }
-
     @Nullable
     @Override
     public DBSPViewOperator getView(ProgramIdentifier name) {
@@ -163,12 +144,11 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         return this.internalOutputs.get(outputNumber).isMultiset();
     }
 
-    @Override
     public String getOutputName(int outputNo) {
         OutputPort port = this.internalOutputs.get(outputNo);
         if (port == null)
             return "_";
-        return port.getOutputName();
+        return port.getNodeName(false);
     }
 
     @Override
@@ -195,14 +175,6 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     @Override
     public int outputCount() {
         return this.internalOutputs.size();
-    }
-
-    @Override
-    public DBSPType streamType(int outputNumber) {
-        OutputPort port = this.internalOutputs.get(outputNumber);
-        if (port == null)
-            return DBSPTypeVoid.INSTANCE;
-        return port.node().streamType(port.outputNumber);
     }
 
     @SuppressWarnings("unused")

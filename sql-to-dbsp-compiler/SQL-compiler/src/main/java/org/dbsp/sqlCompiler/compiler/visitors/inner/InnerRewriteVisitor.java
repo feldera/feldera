@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -359,7 +360,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType elementType = this.transform(type.elementType);
         this.pop(type);
-        DBSPType result = new DBSPTypeStream(elementType);
+        DBSPType result = new DBSPTypeStream(elementType, type.outerCircuit);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -934,6 +935,17 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPEqualityComparatorExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.comparator);
+        this.pop(expression);
+        DBSPExpression result = new DBSPEqualityComparatorExpression(
+                expression.getNode(), source.to(DBSPComparatorExpression.class));
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPDirectComparatorExpression expression) {
         this.push(expression);
         DBSPExpression source = this.transform(expression.source);
@@ -961,8 +973,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.source);
         DBSPExpression comparator = this.transform(expression.comparator);
         this.pop(expression);
-        DBSPExpression result = new DBSPCustomOrdExpression(
-                expression.getNode(), source, comparator.to(DBSPComparatorExpression.class));
+        DBSPExpression result = new DBSPCustomOrdExpression(expression.getNode(), source, comparator);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

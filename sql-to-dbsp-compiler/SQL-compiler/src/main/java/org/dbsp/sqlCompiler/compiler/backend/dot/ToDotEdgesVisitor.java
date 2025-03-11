@@ -46,7 +46,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     String getPortName(OutputPort port) {
-        String name = port.getOutputName();
+        String name = port.getNodeName(false);
         // The following is used for operators with multiple outputs
         return name.replace("_", ":p");
     }
@@ -57,7 +57,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
             DBSPOperator input = i.node();
             this.stream.append(this.getPortName(i))
                     .append(" -> ")
-                    .append(node.getNodeName());
+                    .append(node.getNodeName(false));
             if (this.details >= 2 && !this.edgesLabeled.contains(input)) {
                 String label = this.getEdgeLabel(i);
                 this.stream.append(" [xlabel=")

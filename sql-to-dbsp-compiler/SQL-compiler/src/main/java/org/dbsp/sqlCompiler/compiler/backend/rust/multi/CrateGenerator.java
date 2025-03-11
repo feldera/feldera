@@ -1,8 +1,10 @@
-package org.dbsp.sqlCompiler.compiler.backend.rust;
+package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ICodeGenerator;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
 
 import java.io.File;
@@ -12,21 +14,24 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Generates a Rust crate in a specified directory. */
-public class CrateGenerator {
+/** Generates a Rust crate in a specified directory.
+ * Calls a ICodeGenerator to generate the Rust code. */
+public final class CrateGenerator {
     public final File baseDirectory;
     public final String crateName;
 
+    /** Cargo file name */
     public static final String CARGO = "Cargo.toml";
+    /** Rust file name */
     public static final String LIB = "lib.rs";
-    final List<IDBSPNode> toWrite;
+    /** Crates that we depend on */
     private final List<CrateGenerator> dependencies;
+    /** Generates the actual Rust code */
     final ICodeGenerator codeGenerator;
 
     public CrateGenerator(File baseDirectory, String crateName, ICodeGenerator codeGenerator) {
         this.crateName = crateName;
         this.baseDirectory = baseDirectory;
-        this.toWrite = new ArrayList<>();
         this.dependencies = new ArrayList<>();
         this.codeGenerator = codeGenerator;
     }
@@ -55,9 +60,6 @@ public class CrateGenerator {
                 path = "src/lib.rs"
                 doctest = false
                 
-                [target.'cfg(not(target_env = "msvc"))'.dependencies]
-                tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
-
                 [dependencies]
                 paste = { version = "1.0.12" }
                 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
@@ -72,6 +74,9 @@ public class CrateGenerator {
                 rust_decimal_macros = { version = "1.36" }
                 serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }
                 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
+                
+                [target.'cfg(not(target_env = "msvc"))'.dependencies]
+                tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
                 """;
         cargo = cargo.replace("$ROOT", relativePath);
         stream.println(cargo);
@@ -81,7 +86,7 @@ public class CrateGenerator {
     }
 
     public void add(IDBSPNode node) {
-        this.toWrite.add(node);
+        this.codeGenerator.add(node);
     }
 
     public void write(DBSPCompiler compiler) throws IOException {
@@ -108,9 +113,7 @@ public class CrateGenerator {
             throw new RuntimeException("Could not create directory " + Utilities.singleQuote(src.getPath()));
         File lib = new File(src, LIB);
         PrintStream rustStream = new PrintStream(Files.newOutputStream(lib.toPath()));
-        this.codeGenerator.setPrintStream(rustStream);
-        for (IDBSPNode node: this.toWrite)
-            this.codeGenerator.add(node);
+        this.codeGenerator.setOutputStream(new IndentStream(rustStream));
         this.codeGenerator.write(compiler);
         rustStream.close();
     }

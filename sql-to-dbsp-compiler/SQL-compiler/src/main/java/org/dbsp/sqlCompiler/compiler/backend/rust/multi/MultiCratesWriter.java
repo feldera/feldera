@@ -1,14 +1,17 @@
-package org.dbsp.sqlCompiler.compiler.backend.rust;
+package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
 import java.io.File;
@@ -17,10 +20,11 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 
 /** This class helps generate Rust code.
- * It is given a set of circuit and functions and generates a code in multiple crates. */
-public class MultiCratesWriter extends RustWriter {
+ * It is given a set of circuit and functions and generates code in multiple crates. */
+public final class MultiCratesWriter extends RustWriter {
     public final String outputDirectory;
 
+    /** Create a writer which will generate code in the specified directory */
     public MultiCratesWriter(String outputDirectory) {
         this.outputDirectory = outputDirectory;
     }
@@ -35,12 +39,8 @@ public class MultiCratesWriter extends RustWriter {
     }
 
     @Override
-    public void setPrintStream(PrintStream stream) {
+    public void setOutputStream(IIndentStream stream) {
         throw new UnimplementedException();
-    }
-
-    public void add(IDBSPNode circuit) {
-        this.toWrite.add(circuit);
     }
 
     @Override
@@ -54,7 +54,7 @@ public class MultiCratesWriter extends RustWriter {
         cargoStream.println("members = [");
 
         CircuitWriter mainWriter = new CircuitWriter();
-        RustFileWriter typesWriter = new RustFileWriter().withUdf(false);
+        RustFileWriter typesWriter = new RustFileWriter().withUdf(false).withMalloc(false);
         CrateGenerator main = new CrateGenerator(rootDirectory, "main", mainWriter);
         CrateGenerator types = new CrateGenerator(rootDirectory, "types", typesWriter);
         main.addDependency(types);
@@ -73,12 +73,11 @@ public class MultiCratesWriter extends RustWriter {
                 circuit.declarationMap.clear();
                 circuit.declarations.clear();
                 for (DBSPOperator operator: circuit.allOperators) {
-                    String name = CompactName.getCompactName(operator);
-                    assert name != null;
-                    SingleOperatorWriter single = new SingleOperatorWriter(circuit);
+                    String name = operator.getNodeName(USE_HASH_NAMES);
+                    // One crate per operator
+                    SingleOperatorWriter single = new SingleOperatorWriter(operator, circuit, true);
                     CrateGenerator op = new CrateGenerator(rootDirectory, name, single);
                     op.addDependency(types);
-                    op.add(operator);
                     main.addDependency(op);
                     op.write(compiler);
                 }

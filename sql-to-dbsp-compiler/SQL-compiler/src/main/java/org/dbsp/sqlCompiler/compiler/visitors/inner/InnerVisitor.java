@@ -526,6 +526,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPComparatorExpression) node);
     }
 
+    public VisitDecision preorder(DBSPEqualityComparatorExpression node) {
+        return this.preorder((DBSPExpression) node);
+    }
+
     public VisitDecision preorder(DBSPCustomOrdExpression node) {
         return this.preorder((DBSPExpression) node);
     }
@@ -1130,6 +1134,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
 
     public void postorder(DBSPDirectComparatorExpression node) {
         this.postorder((DBSPComparatorExpression) node);
+    }
+
+    public void postorder(DBSPEqualityComparatorExpression node) {
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPCustomOrdExpression node) {

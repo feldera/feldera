@@ -57,6 +57,11 @@ import java.util.Objects;
 public class Utilities {
     private Utilities() {}
 
+    /** Delete a file/directory recursively
+     *
+     * @param file File to delete.
+     * @param self If true, delete the file too, otherwise delete only children.
+     */
     public static void deleteRecursive(File file, boolean self) {
         if (!file.exists())
             return;
@@ -74,6 +79,7 @@ public class Utilities {
         }
     }
 
+    /** Delete recursively the contents of a directory. */
     public static void deleteContents(File file) {
         deleteRecursive(file, false);
     }

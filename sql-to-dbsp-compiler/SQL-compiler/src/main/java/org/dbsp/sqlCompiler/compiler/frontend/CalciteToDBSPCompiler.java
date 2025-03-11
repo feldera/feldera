@@ -164,6 +164,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -2408,8 +2409,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, index.outputPort());
         this.addOperator(diff);
         DBSPI32Literal limitValue = new DBSPI32Literal(limit);
+        DBSPEqualityComparatorExpression eq = new DBSPEqualityComparatorExpression(node, comparator);
         DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
-                node, numbering, comparator, limitValue, outputProducer, diff.outputPort());
+                node, numbering, comparator, limitValue, eq, outputProducer, diff.outputPort());
         this.addOperator(topK);
         DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK.outputPort());
         this.addOperator(integral);
@@ -3275,9 +3277,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Since TopK is always incremental we have to wrap it into a D-I pair
             DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, index.outputPort());
             this.addOperator(diff);
+            DBSPEqualityComparatorExpression eq = new DBSPEqualityComparatorExpression(node, comparator);
             DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
                     node, DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER,
-                    comparator, limit, null, diff.outputPort());
+                    comparator, limit, eq, null, diff.outputPort());
             this.addOperator(topK);
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK.outputPort());
             this.addOperator(integral);

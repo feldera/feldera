@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
-import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -19,8 +18,8 @@ import java.util.Set;
 import java.util.stream.IntStream;
 
 /** Base class for writing code to Rust files */
-public abstract class RustWriter extends BaseCodeGenerator {
-    public RustWriter() {}
+public abstract class RustWriter extends BaseRustCodeGenerator {
+    protected RustWriter() {}
 
     /** Various visitors gather here information about the program prior to generating code. */
     public static class StructuresUsed {
@@ -85,7 +84,7 @@ public abstract class RustWriter extends BaseCodeGenerator {
         return builder.toString();
     }
 
-    void generateStructures(StructuresUsed used, IndentStream stream) {
+    void generateStructures(StructuresUsed used) {
         /*
         #[derive(Clone)]
         pub struct Semigroup2<T0, T1, TS0, TS1>(PhantomData<(T0, T1, TS0, TS1)>);
@@ -109,7 +108,7 @@ public abstract class RustWriter extends BaseCodeGenerator {
             String[] ts = Linq.map(indexes, ix -> "T" + ix, String.class);
             String[] tts = Linq.map(indexes, ix -> "TS" + ix, String.class);
 
-            stream.append("#[derive(Clone)]").newline()
+            this.getOutputStream().append("#[derive(Clone)]").newline()
                     .append("pub struct Semigroup")
                     .append(i)
                     .append("<")
@@ -122,7 +121,7 @@ public abstract class RustWriter extends BaseCodeGenerator {
                     .newline()
                     .newline();
 
-            stream.append("impl<")
+            this.getOutputStream().append("impl<")
                     .intercalate(", ", ts)
                     .join(", ", tts)
                     .append("> Semigroup")
@@ -171,38 +170,39 @@ public abstract class RustWriter extends BaseCodeGenerator {
         }
 
         if (!used.tupleSizesUsed.isEmpty()) {
-            stream.append("declare_tuples! {").increase();
+            this.getOutputStream().append("declare_tuples! {").increase();
             for (int i : used.tupleSizesUsed) {
                 if (i <= 10)
                     // These are already pre-declared
                     continue;
-                stream.append(this.tup(i));
-                stream.append(",\n");
+                this.getOutputStream().append(this.tup(i));
+                this.getOutputStream().append(",").newline();
             }
-            stream.decrease().append("}\n\n");
+            this.getOutputStream().decrease().append("}").newline().newline();
 
             for (int i : used.tupleSizesUsed) {
                 if (i <= 10)
                     // These are already pre-declared
                     continue;
-                stream.append("feldera_types::deserialize_without_context!(");
-                stream.append(DBSPTypeCode.TUPLE.rustName)
+                this.getOutputStream()
+                        .append("feldera_types::deserialize_without_context!(")
+                        .append(DBSPTypeCode.TUPLE.rustName)
                         .append(i);
                 for (int j = 0; j < i; j++) {
-                    stream.append(", ");
-                    stream.append("T")
+                    this.getOutputStream()
+                            .append(", ")
+                            .append("T")
                             .append(j);
                 }
-                stream.append(");\n");
+                this.getOutputStream().append(");").newline();
             }
         }
-        stream.append("\n");
+        this.getOutputStream().newline();
     }
 
-    String generateUdfInclude() {
-        IndentStream stream = new IndentStream(new StringBuilder());
+    void generateUdfInclude() {
         String stubs = Utilities.getBaseName(DBSPCompiler.STUBS_FILE_NAME);
-        stream.append("mod ")
+        this.getOutputStream().append("mod ")
                 .append(stubs)
                 .append(";")
                 .newline()
@@ -214,10 +214,10 @@ public abstract class RustWriter extends BaseCodeGenerator {
                 .append(stubs)
                 .append("::*;")
                 .newline();
-        return stream.toString();
     }
 
-    public StructuresUsed analyze(DBSPCompiler compiler) {
+    /** Analyze the nodes to generate code for and find structures used */
+    protected StructuresUsed analyze(DBSPCompiler compiler) {
         StructuresUsed used = new StructuresUsed();
         FindResources findResources = new FindResources(compiler, used);
         CircuitRewriter findCircuitResources = findResources.getCircuitVisitor(true);

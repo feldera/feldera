@@ -50,8 +50,14 @@ public class OutputPort {
         return this.outputNumber;
     }
 
+    public String getNodeName(boolean preferHash) {
+        return this.node().getNodeName(preferHash);
+    }
+
     public String getOutputName() {
-        return this.node().getOutputName(this.outputNumber);
+        if (this.isSimpleNode())
+            return this.getNodeName(false);
+        return this.getNodeName(false) + "." + this.outputNumber;
     }
 
     public DBSPTypeZSet getOutputZSetType() { return this.outputType().to(DBSPTypeZSet.class); }
