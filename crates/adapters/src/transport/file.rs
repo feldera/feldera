@@ -213,7 +213,7 @@ impl FileInputReader {
                     queue.push_back((start..end, buffer));
                 }
             }
-            if n == 0 {
+            if n == 0 && !follow {
                 consumer.eoi();
             }
         }
