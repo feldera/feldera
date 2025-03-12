@@ -680,7 +680,6 @@ using ad-hoc queries.  The corresponding changes will show up in the Change Stre
 ## Takeaways
 
 - We converted the Spark batch job into an **always-on**, incremental pipeline.
-
 - We demonstrated incremental computation by adding a new record and **instantly**
   observing changes in the output the view, without needing to re-run the pipeline.
 
