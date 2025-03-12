@@ -1456,7 +1456,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     .append(")");
     }
 
-    public void toSql(RelDataType type, StringBuilder builder, boolean topLevel) {
+    public static void toSql(RelDataType type, StringBuilder builder, boolean topLevel) {
         switch (type.getSqlTypeName()) {
             case BOOLEAN: builder.append("BOOLEAN"); break;
             case TINYINT: builder.append("TINYINT"); break;
@@ -1831,10 +1831,10 @@ public class SqlToRelCompiler implements IWritesLogs {
             if (!canBeTriviallyCastTo(viewType, declaredType)) {
                this.errorReporter.reportError(view.getPosition(), "Type mismatch",
                         "Type inferred for view " + view.relationName.singleQuote() +
-                        " is " + this.typeToColumns(view.relationName, viewType));
+                        " is " + typeToColumns(view.relationName, viewType));
                 this.errorReporter.reportError(dv.getPosition(), "Type mismatch",
                         "does not match the declared type " +
-                                this.typeToColumns(view.relationName, declaredType) + ":",
+                                typeToColumns(view.relationName, declaredType) + ":",
                         true);
             }
         }
@@ -1843,7 +1843,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         return view;
     }
 
-    String typeToColumns(ProgramIdentifier view, RelDataType type) {
+    /** Convert a type to a SQL signature that resembles a TABLE declaration */
+    public static String typeToColumns(ProgramIdentifier view, RelDataType type) {
         StringBuilder builder = new StringBuilder();
         builder.append(view).append("(");
         toSql(type, builder, true);

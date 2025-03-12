@@ -55,6 +55,7 @@ import org.apache.calcite.rel.logical.LogicalValues;
 import org.apache.calcite.rel.logical.LogicalWindow;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rel.type.RelRecordType;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
@@ -1091,11 +1092,65 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return map;
     }
 
+    boolean seemsGenerated(String name) {
+        return name.contains("$EXPR");
+    }
+
+    /** Check if the fields of the left data type are a non-identical permutation
+     * of the fields of the right data type.  Return 'true' if that happens. */
+    boolean checkPermuted(CalciteObject node, String statement, RelDataType left, RelDataType right) {
+        if (left.equals(right))
+            return false;
+        if (!(left instanceof RelRecordType) || !(right instanceof  RelRecordType))
+            return false;
+        Set<String> leftNames = new HashSet<>();
+        assert left.getFieldCount() == right.getFieldCount();
+        for (var field: left.getFieldList()) {
+            String name = field.getName();
+            if (this.seemsGenerated(name))
+                return false;
+            leftNames.add(field.getName());
+        }
+        for (var field: right.getFieldList()) {
+            String name = field.getName();
+            if (this.seemsGenerated(name))
+                return false;
+            leftNames.remove(name);
+        }
+        if (!leftNames.isEmpty())
+            // Field names do not match
+            return false;
+        this.compiler.reportWarning(node.getPositionRange(), "Fields reordered",
+                        "The input collections of a " + Utilities.singleQuote(statement) +
+                                " operation have columns with the same names, but in a different order.  This may be a mistake.\n" +
+                                "Note that " + statement + " never reorders fields.");
+        this.compiler.reportWarning(node.getPositionRange(),"Fields reordered",
+                "First type: " + SqlToRelCompiler.typeToColumns(ProgramIdentifier.EMPTY, left), true);
+        this.compiler.reportWarning(node.getPositionRange(), "Fields reordered",
+                "Mismatched type: " + SqlToRelCompiler.typeToColumns(ProgramIdentifier.EMPTY, right), true);
+        return true;
+    }
+
+    private void checkPermutation(CalciteObject node, List<RelNode> inputs, String operation) {
+        if (inputs.size() > 1) {
+            RelDataType first = inputs.get(0).getRowType();
+            for (int i = 1; i < inputs.size(); i++) {
+                RelDataType nextType = inputs.get(i).getRowType();
+                if (this.checkPermuted(node, operation, first, nextType))
+                    // One warning is enough
+                    break;
+            }
+        }
+    }
+
     private void visitUnion(LogicalUnion union) {
         IntermediateRel node = CalciteObject.create(union);
         RelDataType rowType = union.getRowType();
         DBSPType outputType = this.convertType(rowType, false);
-        List<DBSPSimpleOperator> inputs = Linq.map(union.getInputs(), this::getOperator);
+        List<RelNode> unionInputs = union.getInputs();
+        List<DBSPSimpleOperator> inputs = Linq.map(unionInputs, this::getOperator);
+        this.checkPermutation(node, unionInputs, "UNION");
+
         // input type nullability may not match
         List<OutputPort> ports = Linq.map(inputs, o -> this.castOutput(node, o, outputType).outputPort());
         if (union.all) {
@@ -1115,6 +1170,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         RelDataType rowType = minus.getRowType();
         DBSPType outputType = this.convertType(rowType, false);
         List<OutputPort> inputs = new ArrayList<>();
+        this.checkPermutation(node, minus.getInputs(), "EXCEPT");
+
         for (RelNode input : minus.getInputs()) {
             DBSPSimpleOperator opInput = this.getInputAs(input, false);
             if (!first) {
@@ -2232,6 +2289,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<RelNode> inputs = intersect.getInputs();
         RelNode input = intersect.getInput(0);
         DBSPSimpleOperator previous = this.getInputAs(input, false);
+        this.checkPermutation(node, inputs, "INTERSECT");
 
         if (inputs.isEmpty())
             throw new UnsupportedException(node);
