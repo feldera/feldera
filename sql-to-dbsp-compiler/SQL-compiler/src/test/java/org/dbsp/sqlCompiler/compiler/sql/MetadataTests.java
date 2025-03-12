@@ -427,6 +427,22 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue3706() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.ioOptions.quiet = false;
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE T(x INT, y INT);
+                CREATE VIEW V as (SELECT * FROM T) UNION ALL (SELECT y, x FROM T);
+                """);
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
+        TestUtil.assertMessagesContain(compiler.messages,
+                "Fields reordered: The input collections of a 'UNION' operation " +
+                        "have columns with the same names, but in a different order");
+    }
+
+    @Test
     public void nullKey() {
         String ddl = """
                CREATE TABLE T (

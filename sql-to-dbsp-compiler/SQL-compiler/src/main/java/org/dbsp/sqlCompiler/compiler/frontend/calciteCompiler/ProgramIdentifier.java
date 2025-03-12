@@ -17,6 +17,8 @@ public final class ProgramIdentifier implements IJson {
         this.isQuoted = isQuoted;
     }
 
+    public static ProgramIdentifier EMPTY = new ProgramIdentifier("", false);
+
     public static ProgramIdentifier fromJson(JsonNode node) {
         String name = Utilities.getStringProperty(node, "name");
         boolean isQuoted = Utilities.getBooleanProperty(node, "isQuoted");

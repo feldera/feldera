@@ -16,15 +16,19 @@ public interface IErrorReporter {
                        String errorType, String message);
 
     default void reportError(SourcePositionRange range, String errorType, String message) {
-        reportProblem(range, false, false, errorType, message);
+        this.reportError(range, errorType, message, false);
     }
 
     default void reportError(SourcePositionRange range, String errorType, String message, boolean continuation) {
-        reportProblem(range, false, continuation, errorType, message);
+        this.reportProblem(range, false, continuation, errorType, message);
     }
 
     default void reportWarning(SourcePositionRange range, String errorType, String message) {
-        reportProblem(range, true, false, errorType, message);
+        this.reportWarning(range, errorType, message, false);
+    }
+
+    default void reportWarning(SourcePositionRange range, String errorType, String message, boolean continuation) {
+        this.reportProblem(range, true, continuation, errorType, message);
     }
 
     /** True if any error (but not a warning) has been reported. */
