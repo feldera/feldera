@@ -209,8 +209,37 @@ impl TestProducer {
         // println!("Data written to '{topic}'");
     }
 
+    pub fn send_to_topic_partition(&self, data: &[Vec<TestStruct>], topic: &str, partition: i32) {
+        for batch in data {
+            let mut writer = CsvWriterBuilder::new()
+                .has_headers(false)
+                .from_writer(Vec::with_capacity(batch.len() * 32));
+
+            for val in batch.iter().cloned() {
+                writer.serialize(val).unwrap();
+            }
+            writer.flush().unwrap();
+            let bytes = writer.into_inner().unwrap();
+
+            let record = <BaseRecord<(), [u8], ()>>::to(topic)
+                .partition(partition)
+                .payload(&bytes);
+            self.producer.send(record).unwrap();
+        }
+        // producer.flush(Timeout::Never).unwrap();
+        // println!("Data written to '{topic}'");
+    }
+
     pub fn send_string(&self, string: &str, topic: &str) {
         let record = <BaseRecord<(), str, ()>>::to(topic).payload(string);
+        self.producer.send(record).unwrap();
+        self.producer.flush(Timeout::Never).unwrap();
+    }
+
+    pub fn send_string_partition(&self, string: &str, topic: &str, partition: i32) {
+        let record = <BaseRecord<(), str, ()>>::to(topic)
+            .partition(partition)
+            .payload(string);
         self.producer.send(record).unwrap();
         self.producer.flush(Timeout::Never).unwrap();
     }

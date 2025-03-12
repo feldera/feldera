@@ -7,7 +7,7 @@ use crate::{
     },
     Controller, PipelineConfig,
 };
-use feldera_types::program_schema::Relation;
+use feldera_types::{program_schema::Relation, transport::kafka::KafkaStartFromConfig};
 use parquet::data_type::AsBytes;
 use proptest::prelude::*;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
@@ -21,6 +21,20 @@ use std::{
     time::Duration,
 };
 use tracing::info;
+
+enum AutoOffsetReset {
+    Latest,
+    Earliest,
+}
+
+impl AsRef<str> for AutoOffsetReset {
+    fn as_ref(&self) -> &str {
+        match self {
+            AutoOffsetReset::Latest => "latest",
+            AutoOffsetReset::Earliest => "earliest",
+        }
+    }
+}
 
 #[test]
 fn test_kafka_output_errors() {
@@ -57,6 +71,521 @@ outputs:
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("test_kafka_output_errors: error: {e}"),
     }
+}
+
+#[test]
+fn test_kafka_start_from_error() {
+    info!("test_start_from_error: Test invalid, topic listed in start from is not listed in topics list");
+
+    let config_str = r#"
+name: test
+workers: 4
+inputs:
+outputs:
+    test_input:
+        stream: test_input1
+        transport:
+            name: kafka_input
+            config:
+                bootstrap.servers: localhost:9092
+                topics:
+                - a
+                start_from:
+                - topic: b
+                  partition: 0
+                  offset: 2
+                - topic: c
+                  partition: 0
+                  offset: 2
+        format:
+            name: csv
+"#;
+
+    info!("test_kafka_start_from_errors: Creating circuit");
+
+    info!("test_kafka_start_from_errors: Starting controller");
+    let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
+
+    match Controller::with_config(
+        |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
+        &config,
+        Box::new(|e| panic!("error: {e}")),
+    ) {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => info!("test_kafka_output_errors: error: {e}"),
+    }
+}
+
+fn test_offset(
+    topic1_data: Vec<Vec<TestStruct>>,
+    mut topic2_data: Vec<Vec<TestStruct>>,
+    topic1: &str,
+    topic2: &str,
+    topic1_cfg: KafkaStartFromConfig,
+    auto_offset_reset: AutoOffsetReset,
+) {
+    let _kafka = KafkaResources::create_topics(&[(topic1, 1), (topic2, 2)]);
+
+    let config_str = format!(
+        r#"
+stream: test_input
+transport:
+  name: kafka_input
+  config:
+    group.id: test-client
+    auto.offset.reset: {}
+    bootstrap.servers: localhost:9092
+    topics:
+    - {topic1}
+    - {topic2}
+    log_level: debug
+    start_from:
+    - topic: {topic1}
+      partition: {}
+      offset: {}
+format:
+  name: csv
+"#,
+        auto_offset_reset.as_ref(),
+        topic1_cfg.partition,
+        topic1_cfg.offset
+    );
+
+    info!("proptest_kafka_input_offset: Building input pipeline");
+
+    let producer = TestProducer::new();
+    let mut expected: Vec<_> = topic1_data
+        .clone()
+        .into_iter()
+        .skip(topic1_cfg.offset as usize)
+        .collect();
+
+    // Send data to a topic with a single partition
+    for datum in topic1_data.into_iter() {
+        let x = &[datum];
+        producer.send_to_topic(x, topic1);
+    }
+
+    // Front load data if auto.offset.reset: earliest
+    if matches!(auto_offset_reset, AutoOffsetReset::Earliest) {
+        // Send data to a topic with multiple partitions
+        for datum in topic2_data.clone().into_iter() {
+            let x = &[datum];
+            producer.send_to_topic(x, topic2);
+        }
+        producer.send_string("", topic2);
+        expected.append(&mut topic2_data);
+    }
+    producer.send_string("", topic1);
+
+    let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+        serde_yaml::from_str(&config_str).unwrap(),
+        Relation::empty(),
+        false,
+    )
+    .unwrap();
+
+    endpoint.extend();
+
+    // If auto.offset.reset: latest, send data after starting the pipeline.
+    if matches!(auto_offset_reset, AutoOffsetReset::Latest) {
+        // Send data to a topic with multiple partitions
+        for datum in topic2_data.clone().into_iter() {
+            let x = &[datum];
+            producer.send_to_topic(x, topic2);
+        }
+        producer.send_string("", topic2);
+        expected.append(&mut topic2_data);
+    }
+
+    info!("proptest_kafka_input: Test: Receive from a topic with a single partition");
+
+    let flush = || {
+        endpoint.queue();
+    };
+    wait_for_output_unordered(&zset, &expected, flush);
+    zset.reset();
+
+    info!("proptest_kafka_input: Test: Disconnect");
+    // Disconnected endpoint should not receive any data.
+    endpoint.disconnect();
+    sleep(Duration::from_millis(1000));
+    flush();
+    assert_eq!(zset.state().flushed.len(), 0);
+}
+
+#[test]
+fn test_kafka_input_offset_trivial_earliest() {
+    let topic1 = "test_kafka_input_offset_trivial_earliest_topic1";
+    test_offset(
+        Vec::new(),
+        Vec::new(),
+        topic1,
+        "test_kafka_input_offset_trivial_earliest_topic2",
+        KafkaStartFromConfig {
+            topic: topic1.to_owned(),
+            partition: 0,
+            offset: 3,
+        },
+        AutoOffsetReset::Earliest,
+    );
+}
+
+#[test]
+fn test_kafka_input_offset_trivial_latest() {
+    let topic1 = "test_kafka_input_offset_trivial_latest_topic1";
+    test_offset(
+        Vec::new(),
+        Vec::new(),
+        topic1,
+        "test_kafka_input_offset_trivial_latest_topic2",
+        KafkaStartFromConfig {
+            topic: topic1.to_owned(),
+            partition: 0,
+            offset: 3,
+        },
+        AutoOffsetReset::Latest,
+    );
+}
+
+#[test]
+fn test_kafka_input_offset_earliest() {
+    let topic1 = "test_kafka_input_offset_earliest_topic1";
+    let data = vec![
+        vec![TestStruct {
+            id: 0,
+            b: true,
+            i: Some(0),
+            s: "0".to_owned(),
+        }],
+        vec![
+            TestStruct {
+                id: 1,
+                b: true,
+                i: Some(1),
+                s: "1".to_owned(),
+            },
+            TestStruct {
+                id: 2,
+                b: true,
+                i: Some(2),
+                s: "2".to_owned(),
+            },
+            TestStruct {
+                id: 3,
+                b: true,
+                i: Some(3),
+                s: "3".to_owned(),
+            },
+        ],
+    ];
+
+    let data2 = vec![vec![
+        TestStruct {
+            id: 4,
+            b: true,
+            i: Some(4),
+            s: "4".to_owned(),
+        },
+        TestStruct {
+            id: 5,
+            b: true,
+            i: Some(5),
+            s: "5".to_owned(),
+        },
+        TestStruct {
+            id: 6,
+            b: true,
+            i: Some(6),
+            s: "6".to_owned(),
+        },
+    ]];
+
+    test_offset(
+        data,
+        data2,
+        topic1,
+        "test_kafka_input_offset_earliest_topic2",
+        KafkaStartFromConfig {
+            topic: topic1.to_owned(),
+            partition: 0,
+            offset: 1,
+        },
+        AutoOffsetReset::Earliest,
+    );
+}
+
+#[test]
+fn test_kafka_input_offset_latest() {
+    let topic1 = "test_kafka_input_offset_latest_topic1";
+    let data = vec![
+        vec![TestStruct {
+            id: 0,
+            b: true,
+            i: Some(0),
+            s: "0".to_owned(),
+        }],
+        vec![
+            TestStruct {
+                id: 1,
+                b: true,
+                i: Some(1),
+                s: "1".to_owned(),
+            },
+            TestStruct {
+                id: 2,
+                b: true,
+                i: Some(2),
+                s: "2".to_owned(),
+            },
+            TestStruct {
+                id: 3,
+                b: true,
+                i: Some(3),
+                s: "3".to_owned(),
+            },
+        ],
+    ];
+
+    let data2 = vec![vec![
+        TestStruct {
+            id: 4,
+            b: true,
+            i: Some(4),
+            s: "4".to_owned(),
+        },
+        TestStruct {
+            id: 5,
+            b: true,
+            i: Some(5),
+            s: "5".to_owned(),
+        },
+        TestStruct {
+            id: 6,
+            b: true,
+            i: Some(6),
+            s: "6".to_owned(),
+        },
+    ]];
+
+    test_offset(
+        data,
+        data2,
+        topic1,
+        "test_kafka_input_offset_latest_topic2",
+        KafkaStartFromConfig {
+            topic: topic1.to_owned(),
+            partition: 0,
+            offset: 1,
+        },
+        AutoOffsetReset::Latest,
+    );
+}
+
+// Partitions not specified in the `start_from` config should be ignored.
+fn test_kafka_offset_partitions(
+    topic: &str,
+    data_part1: Vec<Vec<TestStruct>>,
+    data_part2: Vec<Vec<TestStruct>>,
+    offset: u32,
+    auto_offset_reset: AutoOffsetReset,
+) {
+    let _kafka = KafkaResources::create_topics(&[(topic, 2)]);
+
+    let config_str = format!(
+        r#"
+stream: test_input
+transport:
+  name: kafka_input
+  config:
+    group.id: test-client
+    auto.offset.reset: {}
+    bootstrap.servers: localhost:9092
+    topics:
+    - {topic}
+    log_level: debug
+    start_from:
+    - topic: {topic}
+      partition: 0
+      offset: {}
+format:
+  name: csv
+"#,
+        auto_offset_reset.as_ref(),
+        offset
+    );
+
+    info!("proptest_kafka_offset_partitions: Building input pipeline");
+
+    let producer = TestProducer::new();
+    let expected: Vec<_> = data_part1
+        .clone()
+        .into_iter()
+        .skip(offset as usize)
+        .collect();
+
+    // Send data to a topic with a single partition
+    for datum in data_part1.into_iter() {
+        let x = &[datum];
+        producer.send_to_topic_partition(x, topic, 0);
+    }
+    producer.send_string_partition("", topic, 0);
+
+    // Front load data if auto.offset.reset: earliest
+    if matches!(auto_offset_reset, AutoOffsetReset::Earliest) {
+        // Send data to a topic with multiple partitions
+        for datum in data_part2.clone().into_iter() {
+            let x = &[datum];
+            producer.send_to_topic_partition(x, topic, 1);
+        }
+        producer.send_string_partition("", topic, 1);
+    }
+
+    let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+        serde_yaml::from_str(&config_str).unwrap(),
+        Relation::empty(),
+        false,
+    )
+    .unwrap();
+
+    endpoint.extend();
+
+    // If auto.offset.reset: latest, send data after starting the pipeline.
+    if matches!(auto_offset_reset, AutoOffsetReset::Latest) {
+        // Send data to a topic with multiple partitions
+        for datum in data_part2.clone().into_iter() {
+            let x = &[datum];
+            producer.send_to_topic_partition(x, topic, 1);
+        }
+        producer.send_string_partition("", topic, 1);
+    }
+
+    info!("proptest_kafka_input: Test: Receive from a topic with a single partition");
+
+    let flush = || {
+        endpoint.queue();
+    };
+    wait_for_output_unordered(&zset, &expected, flush);
+    zset.reset();
+
+    info!("proptest_kafka_input: Test: Disconnect");
+    // Disconnected endpoint should not receive any data.
+    endpoint.disconnect();
+    sleep(Duration::from_millis(1000));
+    flush();
+    assert_eq!(zset.state().flushed.len(), 0);
+}
+
+#[test]
+fn test_kafka_input_offset_earliest_partition() {
+    let topic1 = "test_kafka_input_offset_earliest_partition_topic1";
+    let data = vec![
+        vec![TestStruct {
+            id: 0,
+            b: true,
+            i: Some(0),
+            s: "0".to_owned(),
+        }],
+        vec![
+            TestStruct {
+                id: 1,
+                b: true,
+                i: Some(1),
+                s: "1".to_owned(),
+            },
+            TestStruct {
+                id: 2,
+                b: true,
+                i: Some(2),
+                s: "2".to_owned(),
+            },
+            TestStruct {
+                id: 3,
+                b: true,
+                i: Some(3),
+                s: "3".to_owned(),
+            },
+        ],
+    ];
+
+    let data2 = vec![vec![
+        TestStruct {
+            id: 4,
+            b: true,
+            i: Some(4),
+            s: "4".to_owned(),
+        },
+        TestStruct {
+            id: 5,
+            b: true,
+            i: Some(5),
+            s: "5".to_owned(),
+        },
+        TestStruct {
+            id: 6,
+            b: true,
+            i: Some(6),
+            s: "6".to_owned(),
+        },
+    ]];
+
+    test_kafka_offset_partitions(topic1, data, data2, 1, AutoOffsetReset::Earliest);
+}
+
+#[test]
+fn test_kafka_input_offset_latest_partition() {
+    let topic1 = "test_kafka_input_offset_latest_partition_topic1";
+    let data = vec![
+        vec![TestStruct {
+            id: 0,
+            b: true,
+            i: Some(0),
+            s: "0".to_owned(),
+        }],
+        vec![
+            TestStruct {
+                id: 1,
+                b: true,
+                i: Some(1),
+                s: "1".to_owned(),
+            },
+            TestStruct {
+                id: 2,
+                b: true,
+                i: Some(2),
+                s: "2".to_owned(),
+            },
+            TestStruct {
+                id: 3,
+                b: true,
+                i: Some(3),
+                s: "3".to_owned(),
+            },
+        ],
+    ];
+
+    let data2 = vec![vec![
+        TestStruct {
+            id: 4,
+            b: true,
+            i: Some(4),
+            s: "4".to_owned(),
+        },
+        TestStruct {
+            id: 5,
+            b: true,
+            i: Some(5),
+            s: "5".to_owned(),
+        },
+        TestStruct {
+            id: 6,
+            b: true,
+            i: Some(6),
+            s: "6".to_owned(),
+        },
+    ]];
+
+    test_kafka_offset_partitions(topic1, data, data2, 1, AutoOffsetReset::Latest);
 }
 
 fn kafka_end_to_end_test(
@@ -452,10 +981,51 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(2))]
 
     #[test]
+    fn proptest_kafka_input_offset_earliest(
+        data in generate_test_batches(5, 50, 500),
+        data2 in generate_test_batches(5, 50, 500)
+    ) {
+        let topic1 = "proptest_kafka_input_offset_earliest_topic1";
+        let data_len = data.len() as u64;
+        test_offset(
+            data,
+            data2,
+            topic1,
+            "test_kafka_input_offset_earliest_topic2",
+            KafkaStartFromConfig {
+                topic: topic1.to_owned(),
+                partition: 0,
+                offset: (data_len / 2) + 1,
+            },
+        AutoOffsetReset::Earliest,
+        );
+    }
+
+    #[test]
+    fn proptest_kafka_input_offset_latest(
+        data in generate_test_batches(5, 50, 500),
+        data2 in generate_test_batches(5, 50, 500)
+    ) {
+        let topic1 = "proptest_kafka_input_offset_latest_topic1";
+        let data_len = data.len() as u64;
+        test_offset(
+            data,
+            data2,
+            topic1,
+            "proptest_kafka_input_offset_latest_topic2",
+            KafkaStartFromConfig {
+                topic: topic1.to_owned(),
+                partition: 0,
+                offset: (data_len / 2) + 1,
+            },
+        AutoOffsetReset::Latest,
+        );
+    }
+
+    #[test]
     fn proptest_kafka_input(data in generate_test_batches(0, 100, 1000)) {
         test_kafka_input(data, "input_test_topic1", "input_test_topic2", 1);
     }
-
     #[test]
     fn proptest_kafka_input_threaded(data in generate_test_batches(0, 100, 1000)) {
         test_kafka_input(data, "threaded_test_topic1", "threaded_test_topic2", 3);

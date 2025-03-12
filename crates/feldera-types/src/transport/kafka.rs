@@ -51,6 +51,24 @@ pub struct KafkaInputConfig {
     /// helps with small messages but will not harm performance with large
     /// messagee
     pub poller_threads: Option<usize>,
+
+    /// A list of offset and partitions specifying where to begin reading
+    /// the topic from.
+    #[serde(default)]
+    pub start_from: Vec<KafkaStartFromConfig>,
+}
+
+/// Configuration for starting from a specific offset in a Kafka topic partition.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct KafkaStartFromConfig {
+    /// The Kafka topic.
+    pub topic: String,
+
+    /// The parition within the topic.
+    pub partition: u32,
+
+    /// The offset in the specified partition to start reading from.
+    pub offset: u64,
 }
 
 /// Kafka logging levels.

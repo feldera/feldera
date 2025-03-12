@@ -15,6 +15,7 @@ use crossbeam::queue::ArrayQueue;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::KafkaInputConfig;
 use rdkafka::config::RDKafkaLogLevel;
+use rdkafka::TopicPartitionList;
 use rdkafka::{
     config::FromClientConfigAndContext,
     consumer::{BaseConsumer, Consumer, ConsumerContext, Rebalance, RebalanceProtocol},
@@ -374,11 +375,56 @@ impl KafkaInputReader {
 
         let topics = config.topics.iter().map(String::as_str).collect::<Vec<_>>();
 
-        // Subscribe consumer to `topics`.
-        inner
-            .kafka_consumer
-            .subscribe(&topics)
-            .map_err(|e| anyhow!("error subscribing to Kafka topic(s): {e}"))?;
+        if config.start_from.is_empty() {
+            // Subscribe consumer to `topics`.
+            inner
+                .kafka_consumer
+                .subscribe(&topics)
+                .map_err(|e| anyhow!("error subscribing to Kafka topic(s): {e}"))?;
+        } else {
+            let mut tpl = TopicPartitionList::new();
+
+            for seek in config.start_from.iter() {
+                debug!(
+                    "starting to read from topic: '{}', partition: '{}', offset: '{}'",
+                    seek.topic, seek.partition, seek.offset
+                );
+                tpl.add_partition_offset(
+                    &seek.topic,
+                    seek.partition as i32,
+                    rdkafka::Offset::Offset(seek.offset as i64),
+                )
+                .map_err(|e| anyhow!("error assigning partition and offset: {e}"))?;
+            }
+
+            let all_topics: HashSet<&str> = topics.iter().copied().collect();
+            let specified_topics: HashSet<&str> =
+                config.start_from.iter().map(|x| x.topic.as_str()).collect();
+
+            let specifed_but_not_listed: Vec<_> =
+                specified_topics.difference(&all_topics).cloned().collect();
+            if !specifed_but_not_listed.is_empty() {
+                let topics = specifed_but_not_listed.join(", ");
+                bail!("topic(s): '{topics}' defined in 'start_from' but not in the 'topics' list");
+            }
+
+            for topic in all_topics.difference(&specified_topics) {
+                let metadata = inner
+                    .kafka_consumer
+                    .fetch_metadata(Some(topic), std::time::Duration::from_secs(10))?;
+                let topic = metadata.topics().first().ok_or(anyhow!(
+                    "failed to subscribe to topic: '{topic}' doesn't exist"
+                ))?;
+                for partition in topic.partitions() {
+                    tpl.add_partition(topic.name(), partition.id());
+                }
+            }
+
+            inner
+                .kafka_consumer
+                .assign(&tpl)
+                .map_err(|e| anyhow!("error assigning partition and offset: {e}"))?;
+        };
 
         let start = Instant::now();
 
@@ -386,6 +432,11 @@ impl KafkaInputReader {
         // Wait for the consumer to join the group by waiting for the group
         // rebalance protocol to be set.
         loop {
+            // We don't need to rebalance if starting from a specific offset.
+            if !config.start_from.is_empty() {
+                debug!("start offsets specified; skipping rebalancing");
+                break;
+            }
             // We must poll in order to receive connection failures; otherwise
             // we'd have to rely on timeouts only.
             match inner
