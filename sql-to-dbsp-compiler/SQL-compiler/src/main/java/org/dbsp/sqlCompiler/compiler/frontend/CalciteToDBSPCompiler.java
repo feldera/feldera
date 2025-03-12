@@ -496,7 +496,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         if (!(correlateRight instanceof Uncollect uncollect))
             throw this.decorrelateError(node);
-        CalciteRelNode uncollectNode = CalciteObject.create(uncollect);
         RelNode uncollectInput = uncollect.getInput();
         if (!(uncollectInput instanceof LogicalProject project))
             throw this.decorrelateError(node);
@@ -779,10 +778,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             List<DBSPAggregate> aggregates) {
         DBSPSimpleOperator result = null;
         for (DBSPAggregate agg : aggregates) {
-            // We synthesize each aggregate and repeatedly join it with the previous result
-            // TODO: Today the aggregate computes the fields in the order they are expected in the output,
-            // but there are additional optimization opportunities if we reorder these fields.
-
+            // We synthesize each aggregate and repeatedly join it with the previous result.
             // The aggregate operator will not return a stream of type aggType, but a stream
             // with a type given by fd.defaultZero.
             DBSPTypeTuple typeFromAggregate = agg.getEmptySetResultType();
@@ -2322,7 +2318,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return comparator;
     }
 
-    void generateNestedTopK(LogicalWindow window, Window.Group group, int limit, SqlKind kind) {
+    void generateNestedTopK(LogicalWindow window, Window.Group group, int limit, SqlKind kind,
+                            @Nullable RexNode remainingFilter) {
         IntermediateRel node = CalciteObject.create(window);
         DBSPIndexedTopKOperator.TopKNumbering numbering = switch (kind) {
             case RANK -> RANK;
@@ -2341,7 +2338,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPComparatorExpression comparator = CalciteToDBSPCompiler.generateComparator(
                 node, group.orderKeys.getFieldCollations(), inputRowType);
 
-        // The rank must be added at the end of the input tuple (that's how Calcite expects it).
+        // The rank must be added at the end of the input collection (that's how Calcite expects it).
         DBSPVariablePath left = new DBSPVariablePath(new DBSPTypeInteger(
                 node, 64, true, false));
         DBSPVariablePath right = new DBSPVariablePath(inputRowType.ref());
@@ -2361,9 +2358,19 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK.outputPort());
         this.addOperator(integral);
         // We must drop the index we built.
-        DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getFinal(), integral.outputPort());
+        DBSPSimpleOperator deindex = new DBSPDeindexOperator(node.getFinal(), integral.outputPort());
         if (this.filterImplementation != null)
             throw new InternalCompilerError("Unexpected filter implementation ", node);
+        if (remainingFilter != null) {
+            DBSPVariablePath t = deindex.getOutputZSetElementType().ref().var();
+            ExpressionCompiler expressionCompiler = new ExpressionCompiler(window, t, this.compiler);
+            DBSPExpression condition = expressionCompiler.compile(remainingFilter);
+            condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
+            condition = new DBSPClosureExpression(
+                    CalciteObject.create(window, remainingFilter), condition, t.asParameter());
+            this.addOperator(deindex);
+            deindex = new DBSPFilterOperator(node.getFinal(), condition, deindex.outputPort());
+        }
         this.filterImplementation = deindex;
         this.assignOperator(window, deindex);
     }
@@ -2379,6 +2386,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (compared instanceof RexInputRef ri) {
             if (ri.getIndex() != expectedIndex)
                 return -1;
+        } else {
+            return -1;
         }
         if (limit instanceof RexLiteral literal) {
             SqlTypeName type = literal.getType().getSqlTypeName();
@@ -2414,6 +2423,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 int rightLimit = limitValue(left, variableIndex, right, true);
                 if (leftLimit == 1 || rightLimit == 1)
                     return 1;
+                return -1;
             }
             case LESS_THAN:
                 return limitValue(left, variableIndex, right, false);
@@ -3068,6 +3078,44 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return result;
     }
 
+    /** Decomposition of a window condition for a TopK window.
+     * This represents a condition of the form rank <= limit AND ...
+     *
+     * @param limit     A limit that is compared with the rank.
+     * @param remaining The remaining condition.
+     */
+    record WindowCondition(int limit, @Nullable RexNode remaining) {}
+
+    @Nullable
+    WindowCondition findTopKCondition(RexNode expression, int aggregationArgumentIndex) {
+        if (expression instanceof RexCall call) {
+            if (call.op.kind == SqlKind.AND) {
+                List<RexNode> conjuncts = new ArrayList<>(call.getOperands());
+                for (int i = 0; i < conjuncts.size(); i++) {
+                    RexNode node = conjuncts.get(i);
+                    if (node instanceof RexCall) {
+                        int limit = this.isLimit((RexCall) node, aggregationArgumentIndex);
+                        if (limit >= 0) {
+                            //noinspection SuspiciousListRemoveInLoop
+                            conjuncts.remove(i);
+                            if (conjuncts.size() == 1)
+                                return new WindowCondition(limit, conjuncts.get(0));
+                            else {
+                                RexNode remaining = call.clone(call.type, conjuncts);
+                                return new WindowCondition(limit, remaining);
+                            }
+                        }
+                    }
+                }
+            } else {
+                int limit = this.isLimit(call, aggregationArgumentIndex);
+                if (limit >= 0)
+                    return new WindowCondition(limit, null);
+            }
+        }
+        return null;
+    }
+
     void visitWindow(LogicalWindow window) {
         DBSPSimpleOperator input = this.getInputAs(window.getInput(0), true);
         DBSPTypeTuple inputRowType = this.convertType(
@@ -3093,12 +3141,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 if (operator instanceof SqlRankFunction rank) {
                     if (parent instanceof LogicalFilter filter) {
                         RexNode condition = filter.getCondition();
-                        if (condition instanceof RexCall) {
-                            int limit = this.isLimit((RexCall) condition, aggregationArgumentIndex);
-                            if (limit >= 0) {
-                                this.generateNestedTopK(window, group, limit, rank.kind);
-                                return;
-                            }
+                        WindowCondition winCondition = this.findTopKCondition(condition, aggregationArgumentIndex);
+                        if (winCondition != null) {
+                            this.generateNestedTopK(window, group, winCondition.limit, rank.kind, winCondition.remaining);
+                            return;
                         }
                     }
                 }
