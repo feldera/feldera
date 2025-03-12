@@ -161,6 +161,7 @@ impl KafkaFtInputReaderInner {
                 for (topic, partitions) in topics.iter().zip(offsets.into_iter()) {
                     let mut buffered_partition = Vec::with_capacity(partitions.len());
                     for (partition, offsets) in partitions.into_iter().enumerate() {
+                        // TODO: support `start_from` for FtKafkaInput
                         assignment
                             .add_partition_offset(
                                 topic.as_str(),
@@ -424,6 +425,10 @@ impl KafkaFtInputReader {
         debug!("Starting Kafka input endpoint: {:?}", config);
 
         let mut client_config = ClientConfig::new();
+
+        if !config.start_from.is_empty() {
+            anyhow::bail!("unimplemented: `start_from` is not yet supported for fault tolerant kafka connector");
+        }
 
         for (key, value) in config.kafka_options.iter() {
             client_config.set(key, resolve_secret(value)?);

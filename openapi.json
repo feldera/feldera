@@ -3973,6 +3973,13 @@
             "nullable": true,
             "minimum": 0
           },
+          "start_from": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KafkaStartFromConfig"
+            },
+            "description": "A list of offset and partitions specifying where to begin reading\nthe topic from."
+          },
           "topics": {
             "type": "array",
             "items": {

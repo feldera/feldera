@@ -55,6 +55,58 @@ CREATE TABLE INPUT (
 )
 ```
 
+### Starting from a specific offset
+
+:::caution Experimental feature
+Reading Kafka messages from a specific offset is an experimental feature.
+
+**Fault tolerant** kafka connectors **do not** yet support this.
+:::
+
+Feldera supports starting a Kafka connector from a specific offset in a specifc
+partition.
+
+```sql
+CREATE TABLE INPUT (
+   ... -- columns omitted
+) WITH (
+  'connectors' = '[
+    {
+      "transport": {
+          "name": "kafka_input",
+          "config": {
+              "bootstrap.servers": "example.com:9092",
+              "topics": ["book-fair-sales"],
+              "start_from": [{
+                "topic": "book-fair-sales",
+                "partition": 0,
+                "offset": 42
+              }]
+          }
+      },
+      "format": {
+          "name": "json",
+          "config": {
+              "update_format": "insert_delete",
+              "array": false
+          }
+      }
+  }]'
+)
+```
+
+The `start_from` field takes a list of JSON objects that must include the
+following fields:
+- `topic`: The name of the Kafka topic.
+- `partition`: The partition number within the topic.
+- `offset`: The specific offset from which to start consuming messages.
+
+:::important
+- The topic specified in `start_from` must also be included in `topics` field.
+- If a topic has multiple partitions but only one partition is defined in
+  `start_from`, only that partition will be read.
+:::
+
 ### How to write connector config
 
 Below are a couple of examples on how to connect to a Kafka broker
