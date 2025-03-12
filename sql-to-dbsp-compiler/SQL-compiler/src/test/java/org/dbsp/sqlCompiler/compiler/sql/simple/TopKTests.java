@@ -22,8 +22,7 @@ public class TopKTests extends SqlIoTest {
                 INSERT INTO DocumentStatusLog VALUES(1, 2, 'S1', '2011-07-28');
                 INSERT INTO DocumentStatusLog VALUES(4, 2, 'S2', '2011-07-30');
                 INSERT INTO DocumentStatusLog VALUES(5, 2, 'S3', '2011-08-01');
-                INSERT INTO DocumentStatusLog VALUES(6, 3, 'S1', '2011-08-02');
-                """;
+                INSERT INTO DocumentStatusLog VALUES(6, 3, 'S1', '2011-08-02');""";
         compiler.submitStatementsForCompilation(sql);
     }
 
@@ -101,8 +100,7 @@ public class TopKTests extends SqlIoTest {
                 ,      event_type_id
                 ,      site_id
                 FROM   event_t
-                WHERE  event_clear_date IS NOT NULL
-                ;
+                WHERE  event_clear_date IS NOT NULL;
 
                 CREATE VIEW TOP_EVENT_DURATIONS_V AS
                 SELECT (duration * -1) as duration
@@ -112,8 +110,7 @@ public class TopKTests extends SqlIoTest {
                         ,      ROW_NUMBER() OVER (PARTITION BY event_type_id
                                                   ORDER BY duration ASC) AS rnum
                         FROM   EVENT_DURATION_V)
-                WHERE   rnum <= 3
-                ;""";
+                WHERE   rnum <= 3;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(sql);
         Assert.assertEquals(0, compiler.messages.errorCount());
@@ -147,8 +144,7 @@ public class TopKTests extends SqlIoTest {
                                                   ORDER BY duration DESC) AS rnum
                         FROM   EVENT_DURATION_V)
                 WHERE   rnum = 1
-                ORDER BY 1 DESC
-                ;""";
+                ORDER BY 1 DESC;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(sql);
         Assert.assertEquals(0, compiler.messages.errorCount());
@@ -170,8 +166,7 @@ public class TopKTests extends SqlIoTest {
                 ,      event_type_id
                 ,      site_id
                 FROM   event_t
-                WHERE  event_clear_date IS NOT NULL
-                ;
+                WHERE  event_clear_date IS NOT NULL;
 
                 CREATE VIEW TOP_EVENT_DURATIONS_V AS
                 SELECT duration
@@ -181,8 +176,7 @@ public class TopKTests extends SqlIoTest {
                         ,      ROW_NUMBER() OVER (PARTITION BY site_id
                                                   ORDER BY duration ASC) AS rnum
                         FROM   EVENT_DURATION_V)
-                WHERE   rnum = 1
-                ;""";
+                WHERE   rnum = 1;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(sql);
         Assert.assertEquals(0, compiler.messages.errorCount());
@@ -215,11 +209,50 @@ public class TopKTests extends SqlIoTest {
                         ,      ROW_NUMBER() OVER (PARTITION BY event_type_id
                                                   ORDER BY duration ASC) AS rnum
                         FROM   EVENT_DURATION_V)
-                WHERE   rnum <= 3
-                ;""";
+                WHERE   rnum <= 3;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(sql);
         Assert.assertEquals(0, compiler.messages.errorCount());
+    }
+
+    @Test
+    public void issue3707() {
+        this.getCC("""
+                CREATE TABLE event_duration (
+                   duration int,
+                   event_type_id int,
+                   site_id int
+                );
+
+                CREATE VIEW V0 AS
+                SELECT (duration * -1) as duration
+                ,      event_type_id
+                FROM   (SELECT duration
+                        ,      event_type_id
+                        ,      ROW_NUMBER() OVER (PARTITION BY event_type_id
+                                                  ORDER BY duration ASC) AS rnum
+                        FROM   EVENT_DURATION)
+                WHERE   rnum <= 3 AND event_type_id = 1;
+                
+                CREATE VIEW V1 AS
+                SELECT (duration * -1) as duration
+                ,      event_type_id
+                FROM   (SELECT duration
+                        ,      event_type_id
+                        ,      ROW_NUMBER() OVER (PARTITION BY event_type_id
+                                                  ORDER BY duration ASC) AS rnum
+                        FROM   EVENT_DURATION)
+                WHERE   event_type_id = 1 AND rnum <= 3;
+                
+                CREATE VIEW V2 AS
+                SELECT (duration * -1) as duration
+                ,      event_type_id
+                FROM   (SELECT duration
+                        ,      event_type_id
+                        ,      ROW_NUMBER() OVER (PARTITION BY event_type_id
+                                                  ORDER BY duration ASC) AS rnum
+                        FROM   EVENT_DURATION)
+                WHERE   rnum % 2 = 1 AND rnum <= 3;""");
     }
 
     @Test @Ignore("RANK aggregate not implemented without TopK")
