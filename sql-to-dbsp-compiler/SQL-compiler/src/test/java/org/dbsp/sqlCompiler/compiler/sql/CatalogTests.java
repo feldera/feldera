@@ -212,7 +212,7 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT * FROM T;
                 CREATE INDEX IX ON V(id, id);""";
         this.statementsFailingInCompilation(sql,
-                "Duplicated name: Column 'id' duplicated in index");
+                "Column 'id' duplicated in index");
         sql = """
                 CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
                 CREATE VIEW V AS SELECT * FROM T;
@@ -224,7 +224,7 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT * FROM T;
                 CREATE INDEX IX ON Z(id);""";
         this.statementsFailingInCompilation(sql,
-                "Indexed object not found: Object with name 'z' used in CREATE INDEX statement 'ix' does not exist.");
+                "Object with name 'z' used in CREATE INDEX statement 'ix' does not exist.");
         sql = """
                 CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
                 CREATE VIEW V AS SELECT * FROM T;
@@ -234,7 +234,7 @@ public class CatalogTests extends BaseSQLTests {
         sql = """
                 CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
                 CREATE INDEX IX ON T(id);""";
-        this.shouldWarn(sql, "Indexed table: INDEX 'ix' refers to TABLE 't'; this has no effect.");
+        this.shouldWarn(sql, "INDEX 'ix' refers to TABLE 't'; this has no effect.");
     }
 
     @Test

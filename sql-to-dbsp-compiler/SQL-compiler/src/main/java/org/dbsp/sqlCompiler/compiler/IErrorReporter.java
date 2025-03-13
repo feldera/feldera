@@ -4,7 +4,11 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 
 /** Interface for reporting errors. */
 public interface IErrorReporter {
-    /** Report a problem.
+    /** Specify the source position of the code unit currently under compilation.  Usually
+     * corresponds to a view that is being compiled. */
+    void setErrorContext(SourcePositionRange range);
+
+    /** Report a problem (error or warning).
      *
      * @param range     Source position where the problem occurred.
      * @param warning   If true, this is a warning.

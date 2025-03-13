@@ -7,6 +7,9 @@ public class StderrErrorReporter implements IErrorReporter {
     int errorCount = 0;
 
     @Override
+    public void setErrorContext(SourcePositionRange range) {}
+
+    @Override
     public void reportProblem(SourcePositionRange range, boolean warning, boolean continuation,
                               String errorType, String message) {
         System.out.println("ERROR " + errorType + ": " + message);

@@ -50,7 +50,7 @@ public class MetadataTests extends BaseSQLTests {
     public void systemView() {
         // Create a view named like a system view
         this.statementsFailingInCompilation("CREATE VIEW ERROR_VIEW AS SELECT 2;",
-                "error: Duplicate declaration: 'error_view' already defined");
+                "'error_view' already defined");
     }
 
     @Test
@@ -74,6 +74,8 @@ public class MetadataTests extends BaseSQLTests {
         File tmp = File.createTempFile("out", ".rs", new File(rustDirectory));
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
+        //noinspection ResultOfMethodCallIgnored
+        tmp.delete();
         Assert.assertEquals(0, message.exitCode);
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
@@ -98,7 +100,7 @@ public class MetadataTests extends BaseSQLTests {
         compiler.submitStatementsForCompilation(sql);
         compiler.getFinalCircuit(true);
         TestUtil.assertMessagesContain(compiler,
-                "Nullable argument: Argument 0 is nullable, while 'f' expects a not nullable value");
+                "Argument 0 is nullable, while 'f' expects a not nullable value");
     }
 
     @Test
@@ -334,7 +336,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE T(used INTEGER, unused INTEGER);
                 CREATE TABLE T1(used INTEGER, unused INTEGER) with ('materialized' = 'true');
                 CREATE VIEW V AS SELECT used FROM ((SELECT * FROM T) UNION ALL (SELECT * FROM T1));""");
-        TestUtil.assertMessagesContain(compiler, "Unused column: Column 'unused' of table 't' is unused");
+        TestUtil.assertMessagesContain(compiler, "Column 'unused' of table 't' is unused");
     }
 
     @Test
@@ -423,7 +425,7 @@ public class MetadataTests extends BaseSQLTests {
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Assert.assertNotNull(circuit);
         TestUtil.assertMessagesContain(compiler.messages,
-                "Unused column: Column 'c1' of table 't1' is unused");
+                "Column 'c1' of table 't1' is unused");
     }
 
     @Test
@@ -437,9 +439,11 @@ public class MetadataTests extends BaseSQLTests {
                 """);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Assert.assertNotNull(circuit);
-        TestUtil.assertMessagesContain(compiler.messages,
-                "Fields reordered: The input collections of a 'UNION' operation " +
-                        "have columns with the same names, but in a different order");
+        TestUtil.assertMessagesContain(compiler.messages, """
+                warning: Fields reordered: While compiling:
+                    2|CREATE VIEW V as (SELECT * FROM T) UNION ALL (SELECT y, x FROM T);
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                The input collections of a 'UNION' operation have columns with the same names, but in a different order.  This may be a mistake.""");
     }
 
     @Test
@@ -833,6 +837,8 @@ public class MetadataTests extends BaseSQLTests {
         File tmp = File.createTempFile("out", ".rs", new File(rustDirectory));
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
+        //noinspection ResultOfMethodCallIgnored
+        tmp.delete();
         assert message.exitCode == 0;
         String js = Utilities.readFile(json.toPath());
         Assert.assertFalse(js.contains("fibonacci" + DeclareViewStatement.declSuffix));
@@ -1034,7 +1040,7 @@ public class MetadataTests extends BaseSQLTests {
                         CREATE TABLE T (
                            FOREIGN KEY (a) REFERENCES UNKNOWN(a)
                         );""",
-                "Table not found: Table 'unknown', referred in " +
+                "Table 'unknown', referred in " +
                         "FOREIGN KEY constraint of table 't', does not exist");
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
@@ -1051,7 +1057,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE S (
                    key INT NOT NULL PRIMARY KEY
                 );""",
-                "Column not found: Table 't' does not have a column named 'a'");
+                "Table 't' does not have a column named 'a'");
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
                    a INT,
