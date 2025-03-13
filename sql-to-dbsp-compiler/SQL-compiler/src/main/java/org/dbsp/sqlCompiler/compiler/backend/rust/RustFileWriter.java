@@ -6,6 +6,9 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.ProgramAndTester;
 
+import java.util.HashSet;
+import java.util.Set;
+
 /** This class helps generate Rust code.
  * It is given a set of circuit and functions and generates a compilable Rust file. */
 public class RustFileWriter extends RustWriter {
@@ -13,6 +16,7 @@ public class RustFileWriter extends RustWriter {
     boolean generateUdfInclude = true;
     boolean generateMalloc = true;
     boolean findUsed = true;
+    boolean test = false;
     StructuresUsed used = new StructuresUsed();
 
     public RustFileWriter() {}
@@ -32,6 +36,12 @@ public class RustFileWriter extends RustWriter {
     /** Special support for running the SLT tests */
     public RustFileWriter forSlt() {
         this.slt = true;
+        this.test = true;
+        return this;
+    }
+
+    public RustFileWriter withTest(boolean test) {
+        this.test = test;
         return this;
     }
     
@@ -48,34 +58,36 @@ public class RustFileWriter extends RustWriter {
     void generateStructures() {
         super.generateStructures(this.used);
         if (this.slt) {
-            this.getOutputStream().append("#[cfg(test)]").newline()
+            this.builder().append("#[cfg(test)]").newline()
                     .append("sltsqlvalue::to_sql_row_impl! {").increase();
             for (int i : this.used.tupleSizesUsed) {
-                if (i <= 10)
+                if (i <= StructuresUsed.PREDEFINED)
                     // These are already pre-declared
                     continue;
-                this.getOutputStream().append(this.tup(i)).append(",").newline();
+                this.builder().append(this.tup(i)).append(",").newline();
             }
-            this.getOutputStream().decrease().append("}").newline().newline();
+            this.builder().decrease().append("}").newline().newline();
         }
     }
 
     void generatePreamble() {
-        this.getOutputStream().append(COMMON_PREAMBLE);
+        this.builder().append(COMMON_PREAMBLE);
         long max = this.used.getMaxTupleSize();
         if (max > 120) {
             // this is just a guess
-            this.getOutputStream().append("#![recursion_limit = \"")
+            this.builder().append("#![recursion_limit = \"")
                     .append(max * 2)
                     .append("\"]")
                     .newline();
         }
 
-        this.getOutputStream().append("""
-                      #[cfg(test)]
-                      use hashing::*;""")
-                .newline();
-        this.getOutputStream().append(this.rustPreamble())
+        if (this.slt) {
+            this.builder().append("""
+                            #[cfg(test)]
+                            use hashing::*;""")
+                    .newline();
+        }
+        this.builder().append(this.rustPreamble())
                 .newline();
         this.generateStructures();
     }
@@ -92,16 +104,25 @@ public class RustFileWriter extends RustWriter {
     }
 
     public void write(DBSPCompiler compiler) {
-        assert this.outputStream != null;
-        if (this.findUsed)
+        assert this.outputBuilder != null;
+        if (this.findUsed) {
             this.used = this.analyze(compiler);
+        }
         this.generatePreamble();
+        if (!this.used.tupleSizesUsed.isEmpty()) {
+            this.builder().append("use dbsp::declare_tuples;").newline();
+        }
         if (this.generateMalloc)
-            this.outputStream.append(BaseRustCodeGenerator.ALLOC_PREAMBLE);
+            this.outputBuilder.append(BaseRustCodeGenerator.ALLOC_PREAMBLE);
         if (this.generateUdfInclude)
             this.generateUdfInclude();
+        if (this.test)
+            this.builder().append("""
+            #[cfg(test)]
+            use readers::*;""");
         for (String dep: this.dependencies)
-            this.getOutputStream().append("use ").append(dep).append("::*;");
+            this.builder().append("use ").append(dep).append("::*;");
+        Set<String> declarationsDone = new HashSet<>();
         for (IDBSPNode node: this.toWrite) {
             String str;
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
@@ -109,9 +130,9 @@ public class RustFileWriter extends RustWriter {
                 str = ToRustInnerVisitor.toRustString(compiler, inner, false);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
-                str = ToRustVisitor.toRustString(compiler, outer);
+                str = ToRustVisitor.toRustString(compiler, outer, declarationsDone);
             }
-            this.getOutputStream().append(str).newline();
+            this.builder().append(str).newline();
         }
     }
 }

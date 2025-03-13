@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 /** Convert Comparator expressions into declarations using {@link FindComparators},
- *  and insert the declarations in the circuit */
+ *  and insert the declarations in the circuit. */
 public class ComparatorDeclarations extends CircuitRewriter {
     final FindComparators findComparators;
 

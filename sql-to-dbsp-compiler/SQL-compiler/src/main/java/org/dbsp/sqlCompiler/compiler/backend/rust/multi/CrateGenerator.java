@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ICodeGenerator;
-import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
@@ -47,7 +46,7 @@ public final class CrateGenerator {
         stream.print("name = \"");
         stream.print(this.crateName);
         stream.println("\"");
-        final String relativePath = "../../..";
+
         String cargo = """
                 version = "0.1.0"
                 edition = "2021"
@@ -61,25 +60,26 @@ public final class CrateGenerator {
                 doctest = false
                 
                 [dependencies]
-                paste = { version = "1.0.12" }
-                derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
-                dbsp = { path = "$ROOT/crates/dbsp", features = ["backend-mode"] }
-                dbsp_adapters = { path = "$ROOT/crates/adapters", default-features = false }
-                feldera-types = { path = "$ROOT/crates/feldera-types" }
-                feldera-sqllib = { path = "$ROOT/crates/sqllib" }
-                serde = { version = "1.0", features = ["derive"] }
-                compare = { version = "0.1.0" }
-                size-of = { version = "0.1.5", package = "feldera-size-of" }
-                rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
-                rust_decimal_macros = { version = "1.36" }
-                serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }
-                rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
-                
+                paste = { workspace = true }
+                derive_more = { workspace = true }
+                dbsp = { workspace = true }
+                dbsp_adapters = { workspace = true }
+                feldera-types = { workspace = true }
+                feldera-sqllib = { workspace = true }
+                serde = { workspace = true }
+                compare = { workspace = true }
+                size-of = { workspace = true }
+                rust_decimal = { workspace = true }
+                rust_decimal_macros = { workspace = true }
+                serde_json = { workspace = true }
+                rkyv = { workspace = true }""";
+        stream.println(cargo);
+        String extraDep = """
                 [target.'cfg(not(target_env = "msvc"))'.dependencies]
                 tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
                 """;
-        cargo = cargo.replace("$ROOT", relativePath);
-        stream.println(cargo);
+        if (crateName.contains("main"))
+            stream.println(extraDep);
         for (CrateGenerator dep: this.dependencies) {
             stream.println(dep.crateName + " = { path = " + Utilities.doubleQuote("../" + dep.crateName) + " }");
         }
@@ -97,23 +97,25 @@ public final class CrateGenerator {
             throw new RuntimeException(
                     Utilities.singleQuote(this.baseDirectory.getPath()) + " is not a directory");
         File crateRoot = new File(this.baseDirectory, this.crateName);
-        if (crateRoot.exists())
-            throw new CompilationError("Directory " + Utilities.singleQuote(crateRoot.getPath()) + " already exists");
-        boolean success = crateRoot.mkdir();
-        if (!success)
-            throw new RuntimeException("Could not create directory " + Utilities.singleQuote(crateRoot.getPath()));
+        if (!crateRoot.exists()) {
+            boolean success = crateRoot.mkdir();
+            if (!success)
+                throw new RuntimeException("Could not create directory " + Utilities.singleQuote(crateRoot.getPath()));
+        }
         File cargo = new File(crateRoot, CARGO);
         PrintStream cargoStream = new PrintStream(Files.newOutputStream(cargo.toPath()));
         this.generateCargo(cargoStream);
         cargoStream.close();
 
         File src = new File(crateRoot, "src");
-        success = src.mkdir();
-        if (!success)
-            throw new RuntimeException("Could not create directory " + Utilities.singleQuote(src.getPath()));
+        if (!src.exists()) {
+            boolean success = src.mkdir();
+            if (!success)
+                throw new RuntimeException("Could not create directory " + Utilities.singleQuote(src.getPath()));
+        }
         File lib = new File(src, LIB);
         PrintStream rustStream = new PrintStream(Files.newOutputStream(lib.toPath()));
-        this.codeGenerator.setOutputStream(new IndentStream(rustStream));
+        this.codeGenerator.setOutputBuilder(new IndentStream(rustStream));
         this.codeGenerator.write(compiler);
         rustStream.close();
     }

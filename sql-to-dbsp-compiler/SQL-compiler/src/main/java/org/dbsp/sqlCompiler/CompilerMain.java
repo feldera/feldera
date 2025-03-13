@@ -230,21 +230,22 @@ public class CompilerMain {
                     this.options.ioOptions.verbosity, dotFormat, circuit);
             return compiler.messages;
         }
+        MultiCratesWriter multiWriter = null;
         try {
-            if (!compiler.options.ioOptions.crates) {
+            if (!compiler.options.ioOptions.multiCrates()) {
                 PrintStream stream = this.getOutputStream();
                 RustFileWriter writer = new RustFileWriter();
                 IIndentStream indent = new IndentStream(stream);
-                writer.setOutputStream(indent);
+                writer.setOutputBuilder(indent);
                 writer.add(circuit);
                 writer.write(compiler);
                 stream.close();
             } else {
                 if (options.ioOptions.emitHandles)
                     throw new CompilationError("The option '--crates' cannot be used with '--handles'");
-                MultiCratesWriter writer = new MultiCratesWriter(options.ioOptions.outputFile);
-                writer.add(circuit);
-                writer.write(compiler);
+                multiWriter = new MultiCratesWriter(options.ioOptions.outputFile, options.ioOptions.crates, true);
+                multiWriter.add(circuit);
+                multiWriter.write(compiler);
             }
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
@@ -256,8 +257,16 @@ public class CompilerMain {
             List<DBSPFunction> extern = Linq.where(compiler.functions, f -> f.body == null);
             String outputFile = this.options.ioOptions.outputFile;
             if (!outputFile.isEmpty()) {
+                Path stubs;
                 String outputPath = new File(outputFile).getAbsolutePath();
-                Path stubs = Paths.get(outputPath).getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
+                if (options.ioOptions.multiCrates()) {
+                    // Generate globals/src/stubs.rs
+                    String globals = multiWriter.getGlobalsName();
+                    stubs = Paths.get(outputPath).resolve(globals).resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
+                } else {
+                    // Generate stubs.rs in the same directory
+                    stubs = Paths.get(outputPath).getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
+                }
                 PrintStream protosStream = new PrintStream(Files.newOutputStream(stubs));
 
                 if (compiler.options.ioOptions.verbosity > 0)
@@ -273,9 +282,7 @@ public class CompilerMain {
 
 use feldera_sqllib::*;
 use crate::*;
-
 """);
-
                 for (DBSPFunction function : extern) {
                     function = this.generateStubBody(function);
                     String str = ToRustInnerVisitor.toRustString(compiler, function, false);

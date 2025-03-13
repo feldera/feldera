@@ -190,7 +190,6 @@ import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -2395,7 +2394,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPComparatorExpression comparator = CalciteToDBSPCompiler.generateComparator(
                 node, group.orderKeys.getFieldCollations(), inputRowType);
 
-        // The rank must be added at the end of the input collection (that's how Calcite expects it).
+        // The rank must be added at the end of the input tuple (that's how Calcite expects it).
         DBSPVariablePath left = new DBSPVariablePath(new DBSPTypeInteger(
                 node, 64, true, false));
         DBSPVariablePath right = new DBSPVariablePath(inputRowType.ref());
@@ -3003,7 +3002,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 if (originalSortType.is(DBSPTypeDecimal.class)) {
                     DBSPTypeDecimal dec = originalSortType.to(DBSPTypeDecimal.class);
                     // convert back to decimal and rescale
-                    var intermediateType = new DBSPTypeDecimal(node, dec.precision + dec.scale, 0, originalSortType.mayBeNull);
+                    var intermediateType = new DBSPTypeDecimal(
+                            node, dec.precision + dec.scale, 0, originalSortType.mayBeNull);
                     unwrap = unwrap.cast(intermediateType, false);
                     unwrap = new DBSPBinaryExpression(node, originalSortType,
                             DBSPOpcode.SHIFT_LEFT, unwrap, new DBSPI32Literal(-dec.scale));
@@ -3640,10 +3640,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             */
         }
 
-        String saneName = this.compiler.getSaneStructName(stat.typeName);
+        String saneName = this.compiler.generateStructName(stat.typeName, fields);
         DBSPTypeStruct struct = new DBSPTypeStruct(object, stat.typeName, saneName, fields, false);
         this.compiler.registerStruct(struct);
-        DBSPItem item = new DBSPStructItem(struct);
+        DBSPItem item = new DBSPStructItem(struct, null);
         this.getCircuit().addDeclaration(new DBSPDeclaration(item));
         return null;
     }
@@ -3696,12 +3696,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPFunction function = stat.function.getImplementation(
                 this.compiler.getTypeCompiler(), this.compiler);
         if (function != null) {
-            DBSPType returnType = stat.function.getFunctionReturnType(this.compiler.getTypeCompiler());
-            if (returnType.is(DBSPTypeStruct.class)) {
-                // We expect that the declaration of the struct (a UDT) is already there.
-                this.getCircuit().replaceDeclaration(new DBSPDeclaration(
-                        new DBSPStructWithHelperItem(returnType.to(DBSPTypeStruct.class), null)));
-            }
             this.getCircuit().addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(function)));
             return function;
         } else {

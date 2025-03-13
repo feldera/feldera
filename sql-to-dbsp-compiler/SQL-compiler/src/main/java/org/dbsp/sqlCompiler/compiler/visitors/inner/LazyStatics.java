@@ -14,17 +14,20 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Use static values when possible.  Creates declarations for static values
+/** Use static values when possible.  If 'declare' is true, creates declarations for static values
  * and replaces their uses with PathExpressions that refer to the declarations. */
 public class LazyStatics extends InnerRewriteVisitor {
     /** A reference to the declaration for each string literal */
     final List<Pair<DBSPStringLiteral, DBSPPathExpression>> canonical;
     public final List<DBSPStaticItem> newDeclarations;
+    /** If true, create declarations, otherwise create just static expressions */
+    final boolean declare;
 
-    public LazyStatics(DBSPCompiler compiler) {
+    public LazyStatics(DBSPCompiler compiler, boolean declare) {
         super(compiler, false);
         this.canonical = new ArrayList<>();
         this.newDeclarations = new ArrayList<>();
+        this.declare = declare;
     }
 
     @Override
@@ -33,17 +36,22 @@ public class LazyStatics extends InnerRewriteVisitor {
             return super.preorder(expression);
         }
         // No need to recurse; just do this expression
+        DBSPExpression result;
         DBSPStaticExpression stat = new DBSPStaticExpression(expression.getNode(), expression);
-        DBSPStaticItem item = new DBSPStaticItem(stat);
-        this.newDeclarations.add(item);
-        DBSPExpression result = item.getReference();
+        if (this.declare) {
+            DBSPStaticItem item = new DBSPStaticItem(stat);
+            this.newDeclarations.add(item);
+            result = item.getReference();
+        } else {
+            result = stat;
+        }
         this.map(expression, result.applyClone());
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPStringLiteral expression) {
-        DBSPPathExpression canonical = null;
+        DBSPExpression canonical = null;
         for (var e: this.canonical) {
             if (expression.getType().sameType(e.getKey().getType()) &&
                     expression.sameValue(e.getKey())) {
@@ -54,10 +62,15 @@ public class LazyStatics extends InnerRewriteVisitor {
 
         if (canonical == null) {
             DBSPStaticExpression stat = new DBSPStaticExpression(expression.getNode(), expression);
-            DBSPStaticItem item = new DBSPStaticItem(stat);
-            this.newDeclarations.add(item);
-            canonical = item.getReference();
-            this.canonical.add(new Pair<>(expression, canonical));
+            if (this.declare) {
+                DBSPStaticItem item = new DBSPStaticItem(stat);
+                this.newDeclarations.add(item);
+                DBSPPathExpression path = item.getReference();
+                canonical = path;
+                this.canonical.add(new Pair<>(expression, path));
+            } else {
+                canonical = stat;
+            }
         }
         this.map(expression, canonical.applyClone());
         return VisitDecision.STOP;
@@ -65,10 +78,14 @@ public class LazyStatics extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(DBSPStaticExpression expression) {
-        DBSPStaticItem item = new DBSPStaticItem(expression);
-        this.newDeclarations.add(item);
-        DBSPExpression result = item.getReference();
-        this.map(expression, result);
+        if (this.declare) {
+            DBSPStaticItem item = new DBSPStaticItem(expression);
+            this.newDeclarations.add(item);
+            DBSPExpression result = item.getReference();
+            this.map(expression, result);
+        } else {
+            this.map(expression, expression);
+        }
         return VisitDecision.STOP;
     }
 
@@ -79,9 +96,14 @@ public class LazyStatics extends InnerRewriteVisitor {
         }
         // No need to recurse; just do this expression
         DBSPStaticExpression stat = new DBSPStaticExpression(expression.getNode(), expression);
-        DBSPStaticItem item = new DBSPStaticItem(stat);
-        this.newDeclarations.add(item);
-        DBSPExpression result = item.getReference();
+        DBSPExpression result;
+        if (this.declare) {
+            DBSPStaticItem item = new DBSPStaticItem(stat);
+            this.newDeclarations.add(item);
+            result = item.getReference();
+        } else {
+            result = stat;
+        }
         this.map(expression, result.applyClone());
         return VisitDecision.STOP;
     }

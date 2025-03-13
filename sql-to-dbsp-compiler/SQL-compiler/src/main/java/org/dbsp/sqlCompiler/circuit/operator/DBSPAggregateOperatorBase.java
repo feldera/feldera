@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -37,6 +38,15 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
             if (function != null)
                 throw new InternalCompilerError("'function' and 'aggregate' are both non-null", node);
         }
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        if (this.aggregate != null) {
+            visitor.property("aggregate");
+            this.aggregate.accept(visitor);
+        }
+        super.accept(visitor);
     }
 
     public DBSPAggregate getAggregate() {

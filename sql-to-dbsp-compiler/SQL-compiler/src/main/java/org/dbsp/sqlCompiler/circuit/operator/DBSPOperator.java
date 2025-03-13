@@ -27,7 +27,9 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
-import org.dbsp.sqlCompiler.circuit.annotation.MerkleHash;
+import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
+import org.dbsp.util.HashString;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -142,9 +144,9 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
 
     public String getNodeName(boolean preferHash) {
         if (preferHash) {
-            String name = MerkleHash.getHash(this);
+            HashString name = OperatorHash.getHash(this, false);
             if (name != null)
-                return "s" + name;
+                return name.makeIdentifier("operator");
         }
         String name = CompactName.getCompactName(this);
         if (name == null)
@@ -159,6 +161,10 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         if (name == null)
             name = Long.toString(this.getId());
         return name;
+    }
+
+    public DBSPType outputStreamType(int outputNo, boolean outerCircuit) {
+        return new DBSPTypeStream(this.outputType(outputNo), outerCircuit);
     }
 
     public OutputPort getOutput(int outputNo) {

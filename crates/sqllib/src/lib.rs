@@ -2,34 +2,47 @@
 
 #[doc(hidden)]
 pub mod aggregates;
-#[doc(hidden)]
+pub use aggregates::*;
 pub mod array;
+pub use array::*;
 #[doc(hidden)]
 pub mod binary;
+pub use binary::*;
 #[doc(hidden)]
 pub mod casts;
+pub use casts::*;
 #[doc(hidden)]
 pub mod decimal;
+pub use decimal::*;
 #[doc(hidden)]
 pub mod error;
+pub use error::*;
 #[doc(hidden)]
 pub mod geopoint;
+pub use geopoint::*;
 #[doc(hidden)]
 pub mod interval;
+pub use interval::*;
 #[doc(hidden)]
 pub mod map;
+pub use map::*;
 #[doc(hidden)]
 pub mod operators;
+pub use operators::*;
 #[doc(hidden)]
 pub mod source;
 #[doc(hidden)]
 pub mod string;
+pub use string::*;
 #[doc(hidden)]
 pub mod timestamp;
+pub use timestamp::*;
 #[doc(hidden)]
 pub mod uuid;
+pub use uuid::*;
 #[doc(hidden)]
 pub mod variant;
+pub use variant::*;
 
 pub use array::Array;
 pub use binary::ByteArray;

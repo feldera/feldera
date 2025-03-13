@@ -27,7 +27,9 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDispatcher;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -80,7 +82,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -318,10 +319,6 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPItem) node);
     }
 
-    public VisitDecision preorder(DBSPStructItem node) {
-        return this.preorder((DBSPItem) node);
-    }
-
     public VisitDecision preorder(DBSPComparatorItem node) {
         return this.preorder((DBSPItem) node);
     }
@@ -330,7 +327,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPItem) node);
     }
 
-    public VisitDecision preorder(DBSPStructWithHelperItem node) {
+    public VisitDecision preorder(DBSPStructItem node) {
         return this.preorder((DBSPItem) node);
     }
 
@@ -912,10 +909,6 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPItem) node);
     }
 
-    public void postorder(DBSPStructItem node) {
-        this.postorder((DBSPItem) node);
-    }
-
     public void postorder(DBSPComparatorItem node) {
         this.postorder((DBSPItem) node);
     }
@@ -924,7 +917,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPItem) node);
     }
 
-    public void postorder(DBSPStructWithHelperItem node) {
+    public void postorder(DBSPStructItem node) {
         this.postorder((DBSPItem) node);
     }
 
@@ -1450,7 +1443,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return node;
     }
 
-    public CircuitRewriter getCircuitVisitor(boolean processDeclarations) {
+    public CircuitRewriter getCircuitRewriter(boolean processDeclarations) {
         return new CircuitRewriter(this.compiler(), this, processDeclarations);
+    }
+
+    public CircuitVisitor getCircuitVisitor(boolean processDeclarations) {
+        return new CircuitDispatcher(this.compiler(), this, processDeclarations);
     }
 }

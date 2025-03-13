@@ -86,11 +86,31 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    static String escapeString(String input) {
+        StringBuilder escapedString = new StringBuilder();
+        for (char c : input.toCharArray()) {
+            switch (c) {
+                case '"':
+                    escapedString.append("\\\"");
+                    break;
+                case '\r':
+                    escapedString.append("\\r");
+                    break;
+                case '\\':
+                    escapedString.append("\\\\");
+                    break;
+                default:
+                    escapedString.append(c);
+            }
+        }
+
+        return escapedString.toString();
+    }
+
     String convertFunction(DBSPExpression expression) {
         String result = ToRustInnerVisitor.toRustString(this.compiler(), expression, true);
+        result = escapeString(result);
         result = result.replace("\n", "\\l");
-        // Replace non-backslash followed by quote with a backslash followed by quote.
-        result = result.replaceAll("(?<!\\\\)\"", "\\\\\"");
         return result;
     }
 

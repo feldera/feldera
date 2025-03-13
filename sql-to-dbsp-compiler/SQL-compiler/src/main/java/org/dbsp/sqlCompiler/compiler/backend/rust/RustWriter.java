@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -23,10 +23,13 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
 
     /** Various visitors gather here information about the program prior to generating code. */
     public static class StructuresUsed {
+        /** Tuples up to this size are predefined */
+        public static final int PREDEFINED = 10;
+
         /** The set of all tuple sizes used in the program. */
-        final Set<Integer> tupleSizesUsed = new HashSet<>();
+        public final Set<Integer> tupleSizesUsed = new HashSet<>();
         /** The set of all semigroup sizes used. */
-        final Set<Integer> semigroupSizesUsed = new HashSet<>();
+        public final Set<Integer> semigroupSizesUsed = new HashSet<>();
 
         int getMaxTupleSize() {
             int max = 0;
@@ -39,7 +42,7 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
 
     /** Visitor which discovers some data structures used.
      * Stores the result in the "used" structure. */
-    static class FindResources extends InnerVisitor {
+    public static class FindResources extends InnerVisitor {
         final StructuresUsed used;
 
         public FindResources(DBSPCompiler compiler, StructuresUsed used) {
@@ -108,7 +111,7 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
             String[] ts = Linq.map(indexes, ix -> "T" + ix, String.class);
             String[] tts = Linq.map(indexes, ix -> "TS" + ix, String.class);
 
-            this.getOutputStream().append("#[derive(Clone)]").newline()
+            this.builder().append("#[derive(Clone)]").newline()
                     .append("pub struct Semigroup")
                     .append(i)
                     .append("<")
@@ -121,7 +124,7 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
                     .newline()
                     .newline();
 
-            this.getOutputStream().append("impl<")
+            this.builder().append("impl<")
                     .intercalate(", ", ts)
                     .join(", ", tts)
                     .append("> Semigroup")
@@ -170,47 +173,47 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
         }
 
         if (!used.tupleSizesUsed.isEmpty()) {
-            this.getOutputStream().append("declare_tuples! {").increase();
+            this.builder().append("declare_tuples! {").increase();
             for (int i : used.tupleSizesUsed) {
                 if (i <= 10)
                     // These are already pre-declared
                     continue;
-                this.getOutputStream().append(this.tup(i));
-                this.getOutputStream().append(",").newline();
+                this.builder().append(this.tup(i));
+                this.builder().append(",").newline();
             }
-            this.getOutputStream().decrease().append("}").newline().newline();
+            this.builder().decrease().append("}").newline().newline();
 
             for (int i : used.tupleSizesUsed) {
                 if (i <= 10)
                     // These are already pre-declared
                     continue;
-                this.getOutputStream()
+                this.builder()
                         .append("feldera_types::deserialize_without_context!(")
                         .append(DBSPTypeCode.TUPLE.rustName)
                         .append(i);
                 for (int j = 0; j < i; j++) {
-                    this.getOutputStream()
+                    this.builder()
                             .append(", ")
                             .append("T")
                             .append(j);
                 }
-                this.getOutputStream().append(");").newline();
+                this.builder().append(");").newline();
             }
         }
-        this.getOutputStream().newline();
+        this.builder().newline();
     }
 
     void generateUdfInclude() {
         String stubs = Utilities.getBaseName(DBSPCompiler.STUBS_FILE_NAME);
-        this.getOutputStream().append("mod ")
+        this.builder().append("pub mod ")
                 .append(stubs)
                 .append(";")
                 .newline()
-                .append("mod ")
+                .append("pub mod ")
                 .append(Utilities.getBaseName(DBSPCompiler.UDF_FILE_NAME))
                 .append(";")
                 .newline()
-                .append("use crate::")
+                .append("pub use crate::")
                 .append(stubs)
                 .append("::*;")
                 .newline();
@@ -220,7 +223,7 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
     protected StructuresUsed analyze(DBSPCompiler compiler) {
         StructuresUsed used = new StructuresUsed();
         FindResources findResources = new FindResources(compiler, used);
-        CircuitRewriter findCircuitResources = findResources.getCircuitVisitor(true);
+        CircuitVisitor findCircuitResources = findResources.getCircuitVisitor(true);
 
         for (IDBSPNode node : this.toWrite) {
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);

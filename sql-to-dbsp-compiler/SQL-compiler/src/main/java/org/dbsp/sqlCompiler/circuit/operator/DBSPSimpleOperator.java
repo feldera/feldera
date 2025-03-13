@@ -221,7 +221,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
                 .append(this.getNodeName(false))
                 .append(" = ");
         if (!this.inputs.isEmpty())
-            builder.append(this.inputs.get(0).getNodeName(false))
+            builder.append(this.inputs.get(0).getName(false))
                     .append(".");
         builder.append(this.operation)
                 .append("(");
@@ -229,7 +229,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
             if (i > 1)
                 builder.append(",");
             builder.append("&")
-                    .append(this.inputs.get(i).getNodeName(false));
+                    .append(this.inputs.get(i).getName(false));
         }
         if (this.function != null) {
             if (this.inputs.size() > 1)

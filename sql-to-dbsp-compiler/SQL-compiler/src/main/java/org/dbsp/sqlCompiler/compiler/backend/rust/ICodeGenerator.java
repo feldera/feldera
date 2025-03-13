@@ -9,7 +9,7 @@ import java.io.IOException;
 /** Interface implemented by classes which write Rust code */
 public interface ICodeGenerator {
     /** Set the stream where the output is generated */
-    void setOutputStream(IIndentStream stream);
+    void setOutputBuilder(IIndentStream stream);
     /** The specified crate is a dependency */
     void addDependency(String crate);
     /** The specified node will produce code */
