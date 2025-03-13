@@ -263,8 +263,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
     final ProgramMetadata metadata;
     /** Recursive views, indexed by actual view name (not rewritten name) */
     final Map<ProgramIdentifier, DeclareViewStatement> recursiveViews = new HashMap<>();
-    /** Current statement that is being compiled */
-    @Nullable CreateViewStatement currentView = null;
 
     /**
      * Create a compiler that translated from calcite to DBSP circuits.
@@ -3231,10 +3229,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
     void warnNoSort(CalciteObject node) {
         boolean isFinal = this.ancestors.isEmpty();
         String viewName = "";
-        if (this.currentView != null)
-            viewName = "producing view " + this.currentView.relationName.singleQuote() + " ";
         this.compiler.reportWarning(node.getPositionRange(), "ORDER BY is ignored",
-                "ORDER BY clause " + viewName + "is currently ignored" +
+                "ORDER BY clause " + viewName + "is currently ignored\n" +
+                        "(the result will contain the correct data, but the data is not ordered)" +
                         (isFinal ? "" :
                                 "\nThis is tracked by issue https://github.com/feldera/feldera/issues/2833"));
     }
@@ -3427,8 +3424,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     private DBSPNode compileCreateView(CreateViewStatement view) {
-        CreateViewStatement previousView = this.currentView;
-        this.currentView = view;
         RelNode rel = view.getRel();
         this.go(rel);
         DBSPSimpleOperator op = this.getOperator(rel);
@@ -3497,7 +3492,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         ViewMetadata meta = new ViewMetadata(view.relationName,
                 columnMetadata, view.getViewKind(), emitFinalIndex,
                 // The view is a system view if it's not visible
-                declare != null, !currentView.isVisible(), view.getProperties());
+                declare != null, !view.isVisible(), view.getProperties());
         IntermediateRel node = CalciteObject.create(root.rel);
         if (view.getViewKind() != SqlCreateView.ViewKind.LOCAL) {
             this.metadata.addView(view);
@@ -3517,7 +3512,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     view.getStatement(), declaredStruct, meta, op.outputPort());
         }
         this.addOperator(o);
-        this.currentView = previousView;
         return o;
     }
 

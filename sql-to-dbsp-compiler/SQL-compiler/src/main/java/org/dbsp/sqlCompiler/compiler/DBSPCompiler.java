@@ -35,7 +35,6 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
-import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
@@ -150,8 +149,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     final Map<ProgramIdentifier, CreateIndexStatement> indexes = new HashMap<>();
     /** All UDFs from the SQL program.  The ones in Rust have no bodies */
     public final List<DBSPFunction> functions = new ArrayList<>();
+    public SourcePositionRange errorContext;
 
     public DBSPCompiler(CompilerOptions options) {
+        this.errorContext = SourcePositionRange.INVALID;
         this.options = options;
         // Setting these first allows errors to be reported
         this.messages = new CompilerMessages(this);
@@ -265,6 +266,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return this.globalTypes.containsStruct(name);
     }
 
+    @Override
+    public void setErrorContext(SourcePositionRange range) {
+        this.errorContext = range;
+    }
+
     /**
      * Report an error or warning during compilation.
      * @param range      Position in source where error is located.
@@ -277,6 +283,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                               String errorType, String message) {
         if (warning)
             this.hasWarnings = true;
+        if (this.errorContext.isValid() && !continuation) {
+            String fragment = this.sources.getFragment(this.errorContext, true);
+            if (!fragment.isEmpty()) {
+                String context = "While compiling:\n" + fragment;
+                message = context + message;
+            }
+        }
+
         this.messages.reportProblem(range, warning, continuation, errorType, message);
         if (!warning && this.options.languageOptions.throwOnError) {
             System.err.println(this.messages);
@@ -410,12 +424,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
     }
 
-    void printMessages(@Nullable SqlParserPos pos) {
+    void printMessages() {
         System.err.println(this.messages);
-        if (pos != null && pos != SqlParserPos.ZERO) {
-            System.err.println("While compiling");
-            System.err.println(this.sources.getFragment(new SourcePositionRange(pos), true));
-        }
     }
 
     List<ParsedStatement> runParser() {
@@ -441,14 +451,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     this.messages.reportError((BaseCompilerException) e.getCause());
                 } else {
                     this.messages.reportError(e);
-                    this.rethrow(new RuntimeException(e), SqlParserPos.ZERO);
+                    this.rethrow(new RuntimeException(e));
                 }
             } catch (CalciteException e) {
                 this.messages.reportError(e);
-                this.rethrow(e, SqlParserPos.ZERO);
+                this.rethrow(e);
             } catch (Throwable e) {
                 this.messages.reportError(e);
-                this.rethrow(new RuntimeException(e), SqlParserPos.ZERO);
+                this.rethrow(new RuntimeException(e));
                 parsed.clear();
             }
         }
@@ -498,7 +508,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         List<ParsedStatement> parsed = this.runParser();
         if (this.hasErrors())
             return null;
-        SqlParserPos currentViewPosition = SqlParserPos.ZERO;
         try {
             // across all tables
             List<ForeignKey> foreignKeys = new ArrayList<>();
@@ -568,7 +577,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
             // Compile all statements which do not define functions or types
             for (ParsedStatement node : parsed) {
-                currentViewPosition = SqlParserPos.ZERO;
+                if (node.visible()) {
+                    this.setErrorContext(
+                            new SourcePositionRange(node.statement()
+                                    .getParserPosition()));
+                } else {
+                    this.setErrorContext(SourcePositionRange.INVALID);
+                }
                 SqlKind kind = node.statement().getKind();
                 if (kind == SqlKind.CREATE_FUNCTION || kind == SqlKind.CREATE_TYPE)
                     continue;
@@ -589,7 +604,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
                 if (fe.is(CreateViewStatement.class)) {
                     CreateViewStatement cv = fe.to(CreateViewStatement.class);
-                    currentViewPosition = cv.createView.getParserPosition();
                     Utilities.putNew(this.views, cv.getName(), cv);
                 } else if (fe.is(CreateTableStatement.class)) {
                     CreateTableStatement ct = fe.to(CreateTableStatement.class);
@@ -603,6 +617,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 }
                 this.relToDBSPCompiler.compile(fe);
             }
+            this.setErrorContext(SourcePositionRange.INVALID);
 
             this.sqlToRelCompiler.endCompilation(this.compiler());
             DBSPCircuit circuit = this.relToDBSPCompiler.getFinalCircuit();
@@ -616,13 +631,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             return circuit;
         } catch (CalciteContextException e) {
             this.messages.reportError(e);
-            this.rethrow(e, currentViewPosition);
+            this.rethrow(e);
         } catch (CalciteException e) {
             this.messages.reportError(e);
-            this.rethrow(e, currentViewPosition);
+            this.rethrow(e);
         } catch (BaseCompilerException e) {
             this.messages.reportError(e);
-            this.rethrow(e, currentViewPosition);
+            this.rethrow(e);
         } catch (RuntimeException e) {
             Throwable current = e;
             boolean handled = false;
@@ -631,25 +646,25 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 Throwable t = current.getCause();
                 if (t instanceof CalciteException ex) {
                     this.messages.reportError(ex);
-                    this.rethrow(ex, currentViewPosition);
+                    this.rethrow(ex);
                     handled = true;
                 }
                 current = t;
             }
             if (!handled) {
                 this.messages.reportError(e);
-                this.rethrow(e, currentViewPosition);
+                this.rethrow(e);
             }
         } catch (Throwable e) {
             this.messages.reportError(e);
-            this.rethrow(new RuntimeException(e), currentViewPosition);
+            this.rethrow(new RuntimeException(e));
         }
         return null;
     }
 
-    void rethrow(RuntimeException e, SqlParserPos pos) {
+    void rethrow(RuntimeException e) {
         if (this.options.languageOptions.throwOnError) {
-            this.printMessages(pos);
+            this.printMessages();
             throw e;
         }
     }

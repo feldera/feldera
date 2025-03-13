@@ -374,8 +374,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Assert.assertNotNull(source);
         DBSPTypeZSet inputType = source.getType().to(DBSPTypeZSet.class);
         Assert.assertTrue(inputType.sameType(outputType));
-        TestUtil.assertMessagesContain(compiler.messages,
-                "ORDER BY clause producing view 'v' is currently ignored");
+        TestUtil.assertMessagesContain(compiler.messages, """
+             ORDER BY clause is currently ignored
+             (the result will contain the correct data, but the data is not ordered)""");
     }
 
     // Test the outputsAreSets compiler flag
