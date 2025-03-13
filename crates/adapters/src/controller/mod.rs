@@ -580,7 +580,20 @@ impl CircuitThread {
 
             match trigger.trigger(self.last_checkpoint, self.replaying(), running) {
                 Action::Step => {
-                    if !self.step()? {
+                    let start = Instant::now();
+                    let done = !self.step()?;
+                    self.controller
+                        .status
+                        .global_metrics
+                        .runtime_elapsed_msecs
+                        .fetch_add(
+                            start.elapsed().as_millis() as u64
+                                * self.controller.status.pipeline_config.global.workers as u64
+                                * 2,
+                            Ordering::Relaxed,
+                        );
+
+                    if done {
                         break;
                     }
                 }
@@ -716,9 +729,8 @@ impl CircuitThread {
     /// Requests all of the input adapters to flush their input to the circuit,
     /// and waits for them to finish doing it.
     ///
-    /// Returns the total number of records consumed, a vector of notifications
-    /// to send when the records have been processed, and the corresponding
-    /// steps log entries.
+    /// Returns information about the input that was flushed, or `Err(())` if
+    /// the pipeline should shut down.
     fn flush_input_to_circuit(&mut self) -> Result<FlushedInput, ()> {
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //

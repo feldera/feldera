@@ -75,6 +75,10 @@ pub struct GlobalControllerMetrics {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub cpu_msecs: Option<AtomicU64>,
 
+    /// Time elapsed while the pipeline is executing a step, multiplied by the
+    /// number of foreground and background threads, in milliseconds.
+    pub runtime_elapsed_msecs: AtomicU64,
+
     /// Total number of records currently buffered by all endpoints.
     pub buffered_input_records: AtomicU64,
 
@@ -122,6 +126,7 @@ impl GlobalControllerMetrics {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             rss_bytes: Some(AtomicU64::new(0)),
             cpu_msecs: Some(AtomicU64::new(0)),
+            runtime_elapsed_msecs: AtomicU64::new(0),
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(processed_records),
             total_processed_records: AtomicU64::new(processed_records),
