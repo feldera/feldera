@@ -79,7 +79,7 @@ enum-map = "2.7.3"
 fastbloom = "0.8.0"
 core_affinity = "0.8.1"
 indexmap = "2.7.1"
-feldera-storage = { path = "../storage", version = "0.38.0" }
+feldera-storage = { path = "../storage", version = "0.39.0" }
 inventory = "0.3"
 
 [dependencies.time]
