@@ -1,14 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
-import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 
 import java.io.IOException;
 
@@ -20,20 +18,27 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
         String name = op.getNodeName(BaseRustCodeGenerator.USE_HASH_NAMES);
         if (!node.is(DBSPViewBaseOperator.class)) {
             this.getOutputStream().append("let ");
-            this.getOutputStream().append(name)
-                    .append(" = ");
+            if (node.is(DBSPSimpleOperator.class)) {
+                this.getOutputStream().append(name);
+            } else {
+                this.getOutputStream().append("(");
+                for (int i = 0; i < node.outputCount(); i++) {
+                    String portName = node.getOutput(i).getName(USE_HASH_NAMES);
+                    this.getOutputStream().append(portName)
+                            .append(",");
+                }
+                this.getOutputStream().append(")");
+            }
+            this.getOutputStream().append(" = ");
         }
         this.getOutputStream().append("create_")
                 .append(name)
                 .append("(&circuit, &mut catalog, ");
         for (var input: op.inputs) {
-            if (input.isSimpleNode()) {
-                DBSPSimpleOperator simple = input.simpleNode();
-                name = simple.getNodeName(BaseRustCodeGenerator.USE_HASH_NAMES);
-                this.getOutputStream().append("&")
-                        .append(name)
-                        .append(",");
-            }
+            name = input.getName(USE_HASH_NAMES);
+            this.getOutputStream().append("&")
+                    .append(name)
+                    .append(",");
         }
         this.getOutputStream().append(");").newline();
     }
@@ -45,13 +50,14 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
         this.outputStream.append(STANDARD_PREAMBLE);
         this.outputStream.append(ALLOC_PREAMBLE);
         for (String dep: this.dependencies)
-            this.outputStream.append("use ").append(dep).append("::*;");
+            this.outputStream.append("use ")
+                    .append(dep)
+                    .append("::*;")
+                    .newline();
         assert this.toWrite.size() == 1;
         DBSPCircuit circuit = this.toWrite.get(0).to(DBSPCircuit.class);
-        ToRustInnerVisitor inner = new ToRustInnerVisitor(compiler, this.getOutputStream(), false);
         this.getOutputStream().append("pub fn ")
-                .append(circuit.getName())
-                .append("Catalog");
+                .append(circuit.getName());
 
         this.getOutputStream()
                 .append("(cconf: CircuitConfig) -> Result<(DBSPHandle, Catalog), Error> {")

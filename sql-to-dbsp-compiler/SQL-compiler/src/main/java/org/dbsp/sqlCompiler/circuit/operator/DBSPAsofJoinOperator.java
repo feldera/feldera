@@ -37,7 +37,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
      * @param function        Closure from key, valueLeft, valueRight to result type
      * @param leftTimestamp   Function that extracts a "timestamp" from the left input
      * @param rightTimestamp  Function that extracts a "timestamp" from the right input
-     * @param comparator      Function that compares two timestamps
+     * @param comparator      Function that compares two timestamps.  Not yet used - hardwired.
      * @param isMultiset      True if output is a multiset
      * @param isLeft          True if this is a left join
      * @param left            Left input

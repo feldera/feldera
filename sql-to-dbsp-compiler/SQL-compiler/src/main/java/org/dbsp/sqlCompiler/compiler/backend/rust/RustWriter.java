@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -23,10 +23,13 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
 
     /** Various visitors gather here information about the program prior to generating code. */
     public static class StructuresUsed {
+        /** Tuples up to this size are predefined */
+        public static final int PREDEFINED = 10;
+
         /** The set of all tuple sizes used in the program. */
-        final Set<Integer> tupleSizesUsed = new HashSet<>();
+        public final Set<Integer> tupleSizesUsed = new HashSet<>();
         /** The set of all semigroup sizes used. */
-        final Set<Integer> semigroupSizesUsed = new HashSet<>();
+        public final Set<Integer> semigroupSizesUsed = new HashSet<>();
 
         int getMaxTupleSize() {
             int max = 0;
@@ -39,7 +42,7 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
 
     /** Visitor which discovers some data structures used.
      * Stores the result in the "used" structure. */
-    static class FindResources extends InnerVisitor {
+    public static class FindResources extends InnerVisitor {
         final StructuresUsed used;
 
         public FindResources(DBSPCompiler compiler, StructuresUsed used) {
@@ -202,15 +205,15 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
 
     void generateUdfInclude() {
         String stubs = Utilities.getBaseName(DBSPCompiler.STUBS_FILE_NAME);
-        this.getOutputStream().append("mod ")
+        this.getOutputStream().append("pub mod ")
                 .append(stubs)
                 .append(";")
                 .newline()
-                .append("mod ")
+                .append("pub mod ")
                 .append(Utilities.getBaseName(DBSPCompiler.UDF_FILE_NAME))
                 .append(";")
                 .newline()
-                .append("use crate::")
+                .append("pub use crate::")
                 .append(stubs)
                 .append("::*;")
                 .newline();
@@ -220,7 +223,7 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
     protected StructuresUsed analyze(DBSPCompiler compiler) {
         StructuresUsed used = new StructuresUsed();
         FindResources findResources = new FindResources(compiler, used);
-        CircuitRewriter findCircuitResources = findResources.getCircuitVisitor(true);
+        CircuitVisitor findCircuitResources = findResources.getCircuitVisitor(true);
 
         for (IDBSPNode node : this.toWrite) {
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);

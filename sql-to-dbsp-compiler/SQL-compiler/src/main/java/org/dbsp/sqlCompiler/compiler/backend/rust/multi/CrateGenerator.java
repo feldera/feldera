@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ICodeGenerator;
-import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
@@ -97,20 +96,22 @@ public final class CrateGenerator {
             throw new RuntimeException(
                     Utilities.singleQuote(this.baseDirectory.getPath()) + " is not a directory");
         File crateRoot = new File(this.baseDirectory, this.crateName);
-        if (crateRoot.exists())
-            throw new CompilationError("Directory " + Utilities.singleQuote(crateRoot.getPath()) + " already exists");
-        boolean success = crateRoot.mkdir();
-        if (!success)
-            throw new RuntimeException("Could not create directory " + Utilities.singleQuote(crateRoot.getPath()));
+        if (!crateRoot.exists()) {
+            boolean success = crateRoot.mkdir();
+            if (!success)
+                throw new RuntimeException("Could not create directory " + Utilities.singleQuote(crateRoot.getPath()));
+        }
         File cargo = new File(crateRoot, CARGO);
         PrintStream cargoStream = new PrintStream(Files.newOutputStream(cargo.toPath()));
         this.generateCargo(cargoStream);
         cargoStream.close();
 
         File src = new File(crateRoot, "src");
-        success = src.mkdir();
-        if (!success)
-            throw new RuntimeException("Could not create directory " + Utilities.singleQuote(src.getPath()));
+        if (!src.exists()) {
+            boolean success = src.mkdir();
+            if (!success)
+                throw new RuntimeException("Could not create directory " + Utilities.singleQuote(src.getPath()));
+        }
         File lib = new File(src, LIB);
         PrintStream rustStream = new PrintStream(Files.newOutputStream(lib.toPath()));
         this.codeGenerator.setOutputStream(new IndentStream(rustStream));

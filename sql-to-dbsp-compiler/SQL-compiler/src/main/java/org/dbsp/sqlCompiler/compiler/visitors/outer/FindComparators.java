@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.apache.calcite.util.ReflectiveVisitDispatcher;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
@@ -26,7 +25,7 @@ import java.util.Map;
  * the newDeclarations list. */
 public class FindComparators extends InnerRewriteVisitor {
     final Map<DBSPExpression, DBSPPathExpression> done = new HashMap<>();
-    final List<DBSPComparatorItem> newDeclarations = new ArrayList<>();
+    public final List<DBSPComparatorItem> newDeclarations = new ArrayList<>();
 
     public FindComparators(DBSPCompiler compiler) {
         super(compiler, false);

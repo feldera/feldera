@@ -242,7 +242,7 @@ public class CompilerMain {
             } else {
                 if (options.ioOptions.emitHandles)
                     throw new CompilationError("The option '--crates' cannot be used with '--handles'");
-                MultiCratesWriter writer = new MultiCratesWriter(options.ioOptions.outputFile);
+                MultiCratesWriter writer = new MultiCratesWriter(options.ioOptions.outputFile, true);
                 writer.add(circuit);
                 writer.write(compiler);
             }
@@ -256,8 +256,15 @@ public class CompilerMain {
             List<DBSPFunction> extern = Linq.where(compiler.functions, f -> f.body == null);
             String outputFile = this.options.ioOptions.outputFile;
             if (!outputFile.isEmpty()) {
+                Path stubs;
                 String outputPath = new File(outputFile).getAbsolutePath();
-                Path stubs = Paths.get(outputPath).getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
+                if (options.ioOptions.crates) {
+                    // Generate globals/src/stubs.rs
+                    stubs = Paths.get(outputPath).resolve("globals").resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
+                } else {
+                    // Generate stubs.rs in the same directory
+                    stubs = Paths.get(outputPath).getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
+                }
                 PrintStream protosStream = new PrintStream(Files.newOutputStream(stubs));
 
                 if (compiler.options.ioOptions.verbosity > 0)
@@ -273,9 +280,7 @@ public class CompilerMain {
 
 use feldera_sqllib::*;
 use crate::*;
-
 """);
-
                 for (DBSPFunction function : extern) {
                     function = this.generateStubBody(function);
                     String str = ToRustInnerVisitor.toRustString(compiler, function, false);

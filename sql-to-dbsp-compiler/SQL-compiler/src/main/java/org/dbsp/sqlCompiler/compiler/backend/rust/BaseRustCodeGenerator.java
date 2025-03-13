@@ -20,7 +20,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     @Nullable
     protected IIndentStream outputStream = null;
     /** What kind of names to use for the generated operators */
-    public static final boolean USE_HASH_NAMES = false;
+    public static final boolean USE_HASH_NAMES = true;
 
     protected BaseRustCodeGenerator() {
         this.id = crdId++;
@@ -58,6 +58,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             #![allow(unused_variables)]
             #![allow(unused_mut)]
             #![allow(unconditional_panic)]
+            #![allow(non_upper_case_globals)]
             """;
 
     public static final String ALLOC_PREAMBLE = """
@@ -79,7 +80,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                     Generator,
                     Fold,
                     group::WithCustomOrd,
-                    time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},
+                    time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet, OrdPartitionedOverStream},
                     MaxSemigroup,
                     MinSemigroup,
                     CmpFunc,
@@ -132,8 +133,5 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                 aggregates::*,
                 uuid::*,
                 variant::*,
-            };
-            #[cfg(test)]
-            use readers::*;
-            """;
+            };""";
 }

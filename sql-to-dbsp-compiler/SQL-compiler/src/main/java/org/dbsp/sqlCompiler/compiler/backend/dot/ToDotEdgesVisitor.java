@@ -46,7 +46,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     String getPortName(OutputPort port) {
-        String name = port.getNodeName(false);
+        String name = port.getName(false);
         // The following is used for operators with multiple outputs
         return name.replace("_", ":p");
     }
