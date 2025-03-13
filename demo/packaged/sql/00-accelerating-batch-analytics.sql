@@ -1,24 +1,30 @@
-# Part 2. Convert the Batch Job into a Feldera Pipeline
+-- Use Case: Accelerating Batch Analytics (accelerating-batch-analytics)
+--
+-- Speed up batch analytics with an always-on incremental Feldera pipeline.
+--
+-- ## Detailed Description
+-- This demo converts the Spark batch job to a Feldera pipeline without
+-- requiring changes to the queries.
+-- Detailed description here: https://docs.feldera.com/use_cases/batch/intro
+--
+-- Instead of a Spark job that needs to be rerun every time the input changes,
+-- with Feldera, these changes are reflected immediately in the output.
+--
+-- The queries in this demo are taken from the TPC-H benchmark.
+--
+-- ## How to Run
+--
+-- * Run the pipeline. It should take a few seconds to populate input tables
+--   from the Delta Lake and evaluate all views.
+-- * Run the ad-hoc query to display the contents of the q1 view: `SELECT * FROM q1`
+-- * To demonstrate incremental computation, insert a new record using the
+--   following ad-hoc query:
+-- ```
+-- INSERT INTO LINEITEM VALUES (1, 5, 4, 1, 50, 0.80, 0.65, 0.10, 'B', 'C', '1998-09-01', '1998-09-01', '1998-09-01', 'DELIVER IN PERSON', 'TRUCK', 'new record insertion')
+-- ```
+-- * Re-run the `SELECT` query to see the updated results.
 
-We now convert the Spark batch job from the previous section into an
-**always-on**, incremental Feldera pipeline.
-Specifically, in this section of the tutorial we:
-
-- Create Feldera tables and configure them to ingest input records from the Delta Lake.
-- Define a set of views identical to the ones we declared in Spark.
-- Load initial table snapshots and compute initial contents of the views.
-- Demonstrate incremental computation: add new records to the tables and observe
-  instant changes to the views.
-
-
-The implementation described in this section is available as a
-[pre-packaged example in the Feldera online sandbox](https://try.feldera.com/create/?name=accelerating-batch-analytics)
-as well as in your local Feldera installation.
-
-<details>
-<summary> Full Feldera SQL code </summary>
-
-```sql
+-- Lineitem
 CREATE TABLE LINEITEM (
         L_ORDERKEY    INTEGER NOT NULL,
         L_PARTKEY     INTEGER NOT NULL,
@@ -50,6 +56,7 @@ CREATE TABLE LINEITEM (
  }]'
 );
 
+-- Orders
 CREATE TABLE ORDERS  (
         O_ORDERKEY       INTEGER NOT NULL,
         O_CUSTKEY        INTEGER NOT NULL,
@@ -74,6 +81,7 @@ CREATE TABLE ORDERS  (
  }]'
 );
 
+-- Part
 CREATE TABLE PART (
         P_PARTKEY     INTEGER NOT NULL,
         P_NAME        VARCHAR(55) NOT NULL,
@@ -98,6 +106,7 @@ CREATE TABLE PART (
  }]'
 );
 
+-- Customer
 CREATE TABLE CUSTOMER (
         C_CUSTKEY     INTEGER NOT NULL,
         C_NAME        VARCHAR(25) NOT NULL,
@@ -121,6 +130,7 @@ CREATE TABLE CUSTOMER (
  }]'
 );
 
+-- Supplier
 CREATE TABLE SUPPLIER (
         S_SUPPKEY     INTEGER NOT NULL,
         S_NAME        CHAR(25) NOT NULL,
@@ -143,6 +153,7 @@ CREATE TABLE SUPPLIER (
  }]'
 );
 
+-- Part supplies
 CREATE TABLE PARTSUPP (
         PS_PARTKEY     INTEGER NOT NULL,
         PS_SUPPKEY     INTEGER NOT NULL,
@@ -163,6 +174,7 @@ CREATE TABLE PARTSUPP (
  }]'
 );
 
+-- Nation
 CREATE TABLE NATION  (
         N_NATIONKEY  INTEGER NOT NULL,
         N_NAME       CHAR(25) NOT NULL,
@@ -182,6 +194,7 @@ CREATE TABLE NATION  (
  }]'
 );
 
+-- Region
 CREATE TABLE REGION  (
         R_REGIONKEY  INTEGER NOT NULL,
         R_NAME       CHAR(25) NOT NULL,
@@ -200,6 +213,7 @@ CREATE TABLE REGION  (
  }]'
 );
 
+-- Pricing Summary Report
 create materialized view q1
 as select
 	l_returnflag,
@@ -223,6 +237,7 @@ order by
 	l_returnflag,
 	l_linestatus;
 
+-- Minimum Cost Supplier
 create materialized view q2
 as select
 	s_acctbal,
@@ -269,6 +284,7 @@ order by
 	p_partkey
 limit 100;
 
+-- Shipping Priority
 create materialized view q3
 as select
 	l_orderkey,
@@ -294,6 +310,7 @@ order by
 	o_orderdate
 limit 10;
 
+-- Order Priority Checking
 create materialized view q4
 as select
 	o_orderpriority,
@@ -317,6 +334,7 @@ group by
 order by
 	o_orderpriority;
 
+-- Local Supplier Volume
 create materialized view q5
 as select
 	n_name,
@@ -343,6 +361,7 @@ group by
 order by
 	revenue desc;
 
+-- Forecasting Revenue Change
 create materialized view q6
 as select
 	sum(l_extendedprice * l_discount) as revenue
@@ -354,6 +373,7 @@ where
 	and l_discount between .06 - 0.01 and .06 + 0.01
 	and l_quantity < 24;
 
+-- Volume Shipping
 create materialized view q7
 as select
 	supp_nation,
@@ -395,7 +415,7 @@ order by
 	cust_nation,
 	l_year;
 
-
+-- National Market Share
 create materialized view q8
 as select
 	o_year,
@@ -435,6 +455,7 @@ group by
 order by
 	o_year;
 
+-- Product Type Profit Measure
 create materialized view q9
 as select
 	nation,
@@ -469,7 +490,7 @@ order by
 	nation,
 	o_year desc;
 
-
+-- Returned Item Reporting
 create materialized view q10
 as select
 	c_custkey,
@@ -503,187 +524,3 @@ group by
 order by
 	revenue desc
 limit 20;
-```
-</details>
-
-
-## Table Definitions
-
-We create tables for the TPC-H benchmark, with input connectors configured to
-read data from our S3 bucket, e.g.:
-
-```sql
--- Feldera SQL
-CREATE TABLE LINEITEM (
-        L_ORDERKEY    INTEGER NOT NULL,
-        L_PARTKEY     INTEGER NOT NULL,
-        L_SUPPKEY     INTEGER NOT NULL,
-        L_LINENUMBER  INTEGER NOT NULL,
-        L_QUANTITY    DECIMAL(15,2) NOT NULL,
-        L_EXTENDEDPRICE  DECIMAL(15,2) NOT NULL,
-        L_DISCOUNT    DECIMAL(15,2) NOT NULL,
-        L_TAX         DECIMAL(15,2) NOT NULL,
-        L_RETURNFLAG  CHAR(1) NOT NULL,
-        L_LINESTATUS  CHAR(1) NOT NULL,
-        L_SHIPDATE    DATE NOT NULL,
-        L_COMMITDATE  DATE NOT NULL,
-        L_RECEIPTDATE DATE NOT NULL,
-        L_SHIPINSTRUCT CHAR(25) NOT NULL,
-        L_SHIPMODE     CHAR(10) NOT NULL,
-        L_COMMENT      VARCHAR(44) NOT NULL
-) WITH (
- 'connectors' = '[{
-    "transport": {
-      "name": "delta_table_input",
-      "config": {
-        "uri": "s3://batchtofeldera/lineitem",
-        "aws_skip_signature": "true",
-        "aws_region": "ap-southeast-2",
-        "mode": "snapshot_and_follow"
-      }
-    }
- }]'
-);
-```
-
-We use the following Delta Lake connector configuration:
-
-- `uri` - location of the Delta table.
-- `aws_skip_signature` - disables authentication for the public S3 bucket.
-- `aws_region` - AWS region where the bucket is hosted.
-- `mode` - Delta Lake ingest mode. The `snapshot_and_follow` mode configures the
-  connector to read the current snapshot of the Delta table on pipeline startup,
-and then switch to the `follow` mode, ingesting new updates to the table in
-real-time.
-
-Refer to [Delta Lake Input Connector documentation](/connectors/sources/delta)
-for details of Delta Lake connector configuration.
-
-:::note
-
-Note that our SQL table declaration explicitly lists table columns and their
-types.  In the future Feldera will support extracting these declarations
-automatically from Delta table metadata.
-
-:::
-
-## View definitions
-
-The TPC-H SQL queries we used with Spark can be used in Feldera without
-modification, e.g.:
-
-```sql
-create materialized view q1
-as select
-	l_returnflag,
-	l_linestatus,
-	sum(l_quantity) as sum_qty,
-	sum(l_extendedprice) as sum_base_price,
-	sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
-	sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
-	avg(l_quantity) as avg_qty,
-	avg(l_extendedprice) as avg_price,
-	avg(l_discount) as avg_disc,
-	count(*) as count_order
-from
-	lineitem
-where
-	l_shipdate <= date '1998-12-01' - interval '90' day
-group by
-	l_returnflag,
-	l_linestatus
-order by
-	l_returnflag,
-	l_linestatus;
-```
-
-:::note
-
-In general, Feldera is not fully compatible with Spark SQL. Existing Spark SQL queries
-may require porting to Feldera SQL.
-
-:::
-
-
-Note that we declare the view as [materialized](/sql/materialized), instructing Feldera
-to maintain the complete up-to-date snapshot of the view, that can be queried
-using [ad-hoc queries](/sql/ad-hoc) as described below.
-
-
-## Backfill
-
-Run the program in the [Feldera Sandbox](https://try.feldera.com).  It should take
-approximately **5 seconds** to process all data in the Delta Lake (**867k records**).
-At this point Feldera has ingested all records in the Delta tables, computed the initial
-contents of the views, and is ready to process incremental input changes.
-
-We can inspect [materialized](https://docs.feldera.com/sql/materialized) tables
-and views using [ad-hoc queries](/sql/ad-hoc), e.g., type the following query in the Ad-Hoc Queries
-tab in the Feldera Web Console:
-
-```sql
-SELECT * FROM q1;
-```
-
-**Output:**
-
-| l_returnflag | l_linestatus | sum_qty | sum_base_price | sum_disc_price | sum_charge      | avg_qty | avg_price | avg_disc | count_order |
-|--------------|--------------|---------|----------------|----------------|-----------------|---------|-----------|----------|-------------|
-| A            | F            | 3774200 | 5320753880.69  | 5054096266.682 | 5256751331.449  | 25.53   | 36002.12  | 0.05     | 147790      |
-| N            | O            | 7459297 | 10512270008.9  | 9986238338.384 | 10385578376.585 | 25.54   | 36000.92  | 0.05     | 292000      |
-| R            | F            | 3785523 | 5337950526.47  | 5071818532.942 | 5274405503.049  | 25.52   | 35994.02  | 0.04     | 148301      |
-| N            | F            | 95257   | 133737795.84   | 127132372.651  | 132286291.229   | 25.3    | 35521.32  | 0.04     | 3765        |
-
-## Incremental changes
-
-We have configured the Delta Lake connectors in the `snapshot_and_follow` mode,
-which ingests changes from the transaction log of the Delta table in real-time
-following initial backfill. Unfortunately, the tables in our demo are static, so we
-will not observe any changes this way. Instead we demonstrate incremental
-computation by using ad hoc queries to add a new `LINEITEM`:
-
-```sql
-INSERT INTO LINEITEM VALUES (1, 5, 4, 1, 50, 0.80, 0.65, 0.10, 'B', 'C', '1998-09-01', '1998-09-01', '1998-09-01', 'DELIVER IN PERSON', 'TRUCK', 'new record insertion')
-```
-
-This query completes instantly, returning the number of inserted records:
-
-| count |
-|-------|
-| 1     |
-
-At this point Feldera has added the new record to the input table and incementally
-updated all views affected by the change.  We can for instance view the updated output
-of `q1`:
-
-```sql
-SELECT * FROM q1;
-```
-
-| l_returnflag | l_linestatus | sum_qty | sum_base_price | sum_disc_price | sum_charge      | avg_qty | avg_price | avg_disc | count_order |
-|--------------|--------------|---------|----------------|----------------|-----------------|---------|-----------|----------|-------------|
-| A            | F            | 3774200 | 5320753880.69  | 5054096266.682 | 5256751331.449  | 25.53   | 36002.12  | 0.05     | 147790      |
-| N            | O            | 7459297 | 10512270008.9  | 9986238338.384 | 10385578376.585 | 25.54   | 36000.92  | 0.05     | 292000      |
-| R            | F            | 3785523 | 5337950526.47  | 5071818532.942 | 5274405503.049  | 25.52   | 35994.02  | 0.04     | 148301      |
-| N            | F            | 95257   | 133737795.84   | 127132372.651  | 132286291.229   | 25.3    | 35521.32  | 0.04     | 3765        |
-| B            | C            | 50      | 0.80           | 0.28           | 0.308           | 50      | 0.80      | 0.65     | 1           |
-
-Note the new row that has been added to the view.
-
-Recall that with Spark, every input change, no matter how small, required running the
-entire batch job from scratch.
-
-There is another way to observe incremental changes in Feldera. Select the set of views
-you are interested in in the Changes Stream tab in the Web Console and insert more records
-using ad-hoc queries.  The corresponding changes will show up in the Change Stream tab.
-
-## Takeaways
-
-- We converted the Spark batch job into an **always-on**, incremental pipeline.
-
-- We demonstrated incremental computation by adding a new record and **instantly**
-  observing changes in the output the view, without needing to re-run the pipeline.
-
-In the next part of this tutorial, we will demonstrate how to orchestrate different input
-connectors in order to ingest historical and real-time data from multiple
-sources.
