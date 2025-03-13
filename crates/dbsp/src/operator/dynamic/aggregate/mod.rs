@@ -46,7 +46,7 @@ pub use aggregator::{AggCombineFunc, AggOutputFunc, Aggregator, DynAggregator, D
 pub use average::{Avg, AvgFactories, DynAverage};
 pub use fold::Fold;
 pub use max::{Max, MaxSemigroup};
-pub use min::{Min, MinSemigroup};
+pub use min::{Min, MinSemigroup, MinSome1, MinSome1Semigroup};
 
 use super::MonoIndexedZSet;
 
@@ -1101,10 +1101,10 @@ pub mod test {
     use crate::{
         algebra::DefaultSemigroup,
         indexed_zset,
-        operator::{Fold, GeneratorNested, Min},
+        operator::{dynamic::aggregate::MinSome1, Fold, GeneratorNested, Min},
         trace::{BatchReader, Cursor},
         typed_batch::{OrdIndexedZSet, OrdZSet},
-        utils::Tup3,
+        utils::{Tup1, Tup3},
         zset, Circuit, RootCircuit, Runtime, Stream, ZWeight,
     };
 
@@ -1450,6 +1450,59 @@ pub mod test {
     #[test]
     fn count_test4() {
         count_test(4);
+    }
+
+    #[test]
+    fn min_some_test() {
+        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(4, move |circuit| {
+            let (input_stream, input_handle) =
+                circuit.add_input_indexed_zset::<u64, Tup1<Option<u64>>>();
+            let output_handle = input_stream.aggregate(MinSome1).integrate().output();
+
+            Ok((input_handle, output_handle))
+        })
+        .unwrap();
+
+        // min({None}) = None
+        // min({5}) = 5
+        input_handle.append(&mut vec![
+            Tup2(1u64, Tup2(Tup1(None), 1)),
+            Tup2(2u64, Tup2(Tup1(Some(5)), 1)),
+        ]);
+        dbsp.step().unwrap();
+        let output = output_handle.consolidate();
+        assert_eq!(
+            &output,
+            &indexed_zset! {1 => {Tup1(None) => 1}, 2 => { Tup1(Some(5)) => 1 }}
+        );
+
+        // min({None, 3}) = 3
+        // min({None, 5}) = 5
+        input_handle.append(&mut vec![
+            Tup2(1u64, Tup2(Tup1(Some(3)), 1)),
+            Tup2(2u64, Tup2(Tup1(None), 1)),
+        ]);
+        dbsp.step().unwrap();
+        let output = output_handle.consolidate();
+        assert_eq!(
+            &output,
+            &indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(Some(5)) => 1 }}
+        );
+
+        // min({3}) = 3
+        // min({None}) = None
+        input_handle.append(&mut vec![
+            Tup2(1u64, Tup2(Tup1(None), -1)),
+            Tup2(2u64, Tup2(Tup1(Some(5)), -1)),
+        ]);
+        dbsp.step().unwrap();
+        let output = output_handle.consolidate();
+        assert_eq!(
+            &output,
+            &indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(None) => 1 }}
+        );
+
+        dbsp.kill().unwrap();
     }
 
     /// Uses `aggregate_linear_postprocess` to implement SQL-style linear aggregation for nullable values:
