@@ -144,13 +144,6 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         return this.internalOutputs.get(outputNumber).isMultiset();
     }
 
-    public String getOutputName(int outputNo) {
-        OutputPort port = this.internalOutputs.get(outputNo);
-        if (port == null)
-            return "_";
-        return port.getNodeName(false);
-    }
-
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("nested_")

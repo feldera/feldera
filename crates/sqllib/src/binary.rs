@@ -245,7 +245,7 @@ pub fn octet_length_(value: ByteArray) -> i32 {
 some_function1!(octet_length, ByteArray, i32);
 
 #[doc(hidden)]
-pub fn position__(needle: ByteArray, haystack: ByteArray) -> i32 {
+pub fn binary_position__(needle: ByteArray, haystack: ByteArray) -> i32 {
     haystack
         .data
         .windows(needle.data.len())
@@ -254,10 +254,10 @@ pub fn position__(needle: ByteArray, haystack: ByteArray) -> i32 {
         .unwrap_or(0) as i32
 }
 
-some_function2!(position, ByteArray, ByteArray, i32);
+some_function2!(binary_position, ByteArray, ByteArray, i32);
 
 #[doc(hidden)]
-pub fn substring2__(source: ByteArray, left: i32) -> ByteArray {
+pub fn binary_substring2__(source: ByteArray, left: i32) -> ByteArray {
     // SQL indexing starts at 1
     let start = if left < 1 { 0 } else { left - 1 };
     let data = source.data.into_iter().skip(start as usize).collect();
@@ -265,10 +265,10 @@ pub fn substring2__(source: ByteArray, left: i32) -> ByteArray {
     ByteArray { data }
 }
 
-some_function2!(substring2, ByteArray, i32, ByteArray);
+some_function2!(binary_substring2, ByteArray, i32, ByteArray);
 
 #[doc(hidden)]
-pub fn substring3___(source: ByteArray, left: i32, count: i32) -> ByteArray {
+pub fn binary_substring3___(source: ByteArray, left: i32, count: i32) -> ByteArray {
     // SQL indexing starts at 1
     let start = if left < 1 { 0 } else { left - 1 };
     let count = usize::try_from(count).expect("negative substring length not allowed");
@@ -283,18 +283,18 @@ pub fn substring3___(source: ByteArray, left: i32, count: i32) -> ByteArray {
     ByteArray { data }
 }
 
-some_function3!(substring3, ByteArray, i32, i32, ByteArray);
+some_function3!(binary_substring3, ByteArray, i32, i32, ByteArray);
 
 #[doc(hidden)]
-pub fn overlay3___(source: ByteArray, replacement: ByteArray, position: i32) -> ByteArray {
+pub fn binary_overlay3___(source: ByteArray, replacement: ByteArray, position: i32) -> ByteArray {
     let len = replacement.length() as i32;
-    overlay4____(source, replacement, position, len)
+    binary_overlay4____(source, replacement, position, len)
 }
 
-some_function3!(overlay3, ByteArray, ByteArray, i32, ByteArray);
+some_function3!(binary_overlay3, ByteArray, ByteArray, i32, ByteArray);
 
 #[doc(hidden)]
-pub fn overlay4____(
+pub fn binary_overlay4____(
     source: ByteArray,
     mut replacement: ByteArray,
     position: i32,
@@ -310,15 +310,15 @@ pub fn overlay4____(
     } else if position > source.length() as i32 {
         source.concat(&replacement)
     } else {
-        let mut result = substring3___(source.clone(), 0, position - 1);
+        let mut result = binary_substring3___(source.clone(), 0, position - 1);
         result.data.append(&mut replacement.data);
-        let mut substr = substring2__(source, position + remove);
+        let mut substr = binary_substring2__(source, position + remove);
         result.data.append(&mut substr.data);
         result
     }
 }
 
-some_function4!(overlay4, ByteArray, ByteArray, i32, i32, ByteArray);
+some_function4!(binary_overlay4, ByteArray, ByteArray, i32, i32, ByteArray);
 
 #[doc(hidden)]
 pub fn gunzip_(source: ByteArray) -> SqlString {

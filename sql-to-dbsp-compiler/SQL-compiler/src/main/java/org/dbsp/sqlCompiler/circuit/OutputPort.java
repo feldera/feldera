@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
@@ -50,14 +51,25 @@ public class OutputPort {
         return this.outputNumber;
     }
 
-    public String getNodeName(boolean preferHash) {
+    public String getName(boolean preferHash) {
+        if (this.isSimpleNode())
+            return this.getNodeName(preferHash);
+        else if (this.node().is(DBSPNestedOperator.class))
+            return this.node().to(DBSPNestedOperator.class)
+                    .internalOutputs.get(this.outputNumber)
+                    .getName(preferHash);
+        else
+            return this.getNodeName(preferHash) + "_" + this.outputNumber;
+    }
+
+    private String getNodeName(boolean preferHash) {
         return this.node().getNodeName(preferHash);
     }
 
     public String getOutputName() {
         if (this.isSimpleNode())
             return this.getNodeName(false);
-        return this.getNodeName(false) + "." + this.outputNumber;
+        return this.getNodeName(false) + "_" + this.outputNumber;
     }
 
     public DBSPTypeZSet getOutputZSetType() { return this.outputType().to(DBSPTypeZSet.class); }
@@ -135,5 +147,9 @@ public class OutputPort {
 
     public String asJson() {
         return "{ \"node\": " + this.operator.id + ", \"output\": " + this.outputNumber + " }";
+    }
+
+    public DBSPType streamType(boolean outerCircuit) {
+        return this.node().outputStreamType(this.outputNumber, outerCircuit);
     }
 }

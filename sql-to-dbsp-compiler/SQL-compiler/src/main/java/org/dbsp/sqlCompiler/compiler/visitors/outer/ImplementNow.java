@@ -844,17 +844,28 @@ public class ImplementNow extends Passes {
         }
     }
 
+    static class OmitNow extends CircuitDispatcher {
+        public OmitNow(DBSPCompiler compiler, InnerVisitor innerVisitor) {
+            super(compiler, innerVisitor, false);
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPNowOperator node) {
+            return VisitDecision.STOP;
+        }
+    }
+
     public ImplementNow(DBSPCompiler compiler) {
         super("ImplementNow", compiler);
         boolean removeTable = !compiler.compiler().options.ioOptions.nowStream;
         ContainsNow cn = new ContainsNow(compiler, false);
         RewriteNow rewriteNow = new RewriteNow(compiler);
-        this.passes.add(cn.getCircuitVisitor(false));
+        this.passes.add(new OmitNow(compiler, cn));
         this.passes.add(new Conditional(compiler, rewriteNow, cn::found));
         this.passes.add(new Conditional(compiler,
                 new RemoveTable(compiler, DBSPCompiler.NOW_TABLE_NAME), () -> !cn.found || removeTable));
         ContainsNow cn0 = new ContainsNow(compiler, false);
-        this.passes.add(cn0.getCircuitVisitor(false));
+        this.passes.add(new OmitNow(compiler, cn0));
         this.passes.add(new Conditional(compiler,
                 new Fail(compiler, "Instances of 'now' have not been replaced"), cn0::found));
     }

@@ -182,6 +182,10 @@ public abstract class DBSPExpression
         return new DBSPApplyExpression(this, arguments);
     }
 
+    public DBSPExpression call(DBSPType resultType, DBSPExpression... arguments) {
+        return new DBSPApplyExpression(this, resultType, arguments);
+    }
+
     public DBSPExpression applyMethod(String method, DBSPType resultType, DBSPExpression... arguments) {
         return new DBSPApplyMethodExpression(method, resultType, this, arguments);
     }

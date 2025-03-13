@@ -94,7 +94,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -1327,21 +1326,11 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPStructWithHelperItem item) {
-        this.push(item);
-        DBSPType type = this.transform(item.type);
-        this.pop(item);
-        DBSPItem result = new DBSPStructWithHelperItem(type.to(DBSPTypeStruct.class), item.metadata);
-        this.map(item, result);
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPStructItem item) {
         this.push(item);
         DBSPType type = this.transform(item.type);
         this.pop(item);
-        DBSPItem result = new DBSPStructItem(type.to(DBSPTypeStruct.class));
+        DBSPItem result = new DBSPStructItem(type.to(DBSPTypeStruct.class), item.metadata);
         this.map(item, result);
         return VisitDecision.STOP;
     }

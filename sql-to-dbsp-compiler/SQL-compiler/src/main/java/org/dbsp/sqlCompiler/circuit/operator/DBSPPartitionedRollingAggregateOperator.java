@@ -14,7 +14,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -22,14 +26,14 @@ import java.util.List;
 /** This operator only operates correctly on deltas.  To operate on collections it
  * must differentiate its input, and integrate its output. */
 public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregateOperatorBase {
-    public final DBSPExpression partitioningFunction;
+    public final DBSPClosureExpression partitioningFunction;
     public final DBSPWindowBoundExpression lower;
     public final DBSPWindowBoundExpression upper;
 
     // TODO: support the linear version of this operator.
     public DBSPPartitionedRollingAggregateOperator(
             CalciteRelNode node,
-            DBSPExpression partitioningFunction,
+            DBSPClosureExpression partitioningFunction,
             // Initially 'function' is null, and the 'aggregate' is not.
             // After lowering 'aggregate' is not null, and 'function' has its expected shape
             @Nullable DBSPExpression function,
@@ -107,7 +111,8 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     @SuppressWarnings("unused")
     public static DBSPPartitionedRollingAggregateOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        DBSPExpression partitioningFunction = fromJsonInner(node, "partitioningFunction", decoder, DBSPExpression.class);
+        DBSPClosureExpression partitioningFunction = fromJsonInner(
+                node, "partitioningFunction", decoder, DBSPClosureExpression.class);
         DBSPAggregate aggregate = null;
         if (node.has("aggregate"))
             aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregate.class);
@@ -117,5 +122,23 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
                 CalciteEmptyRel.INSTANCE, partitioningFunction, info.function(),
                 aggregate, lower, upper, info.getIndexedZsetType(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPPartitionedRollingAggregateOperator.class);
+    }
+
+    @Override
+    public DBSPType outputStreamType(int outputNo, boolean outerCircuit) {
+        assert outputNo == 0;
+        assert outerCircuit;
+        DBSPType[] args = new DBSPType[3];
+        DBSPTypeRawTuple pfOut = this.partitioningFunction.getResultType().to(DBSPTypeRawTuple.class);
+        args[0] = pfOut.tupFields[0];
+        args[1] = this.lower.type;
+        if (this.aggregate != null) {
+            args[2] = this.aggregate.getType();
+        } else {
+            DBSPExpression expr = this.getFunction();
+            args[2] = expr.getType().to(DBSPTypeFunction.class).resultType;
+        }
+        return new DBSPTypeUser(this.getRelNode(), DBSPTypeCode.USER,
+                "OrdPartitionedOverStream", false, args);
     }
 }

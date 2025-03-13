@@ -307,6 +307,14 @@ public class Utilities {
         }
     }
 
+    public static void createEmptyFile(Path path) {
+        try {
+            PrintStream outputStream = new PrintStream(Files.newOutputStream(path));
+            outputStream.println();
+            outputStream.close();
+        } catch (IOException ignored) {}
+    }
+
     public static void runProcess(String directory, String... commands) throws IOException, InterruptedException {
         runProcess(directory, new HashMap<>(), commands);
     }
@@ -315,6 +323,8 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("test");
+        args.add("--jobs");
+        args.add("6");
         args.addAll(Arrays.asList(extraArgs));
         if (quiet) {
             args.add("-q");
@@ -346,6 +356,8 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("check");
+        args.add("--jobs");
+        args.add("6");
         if (quiet)
             args.add("--quiet");
         runProcess(directory, args.toArray(new String[0]));

@@ -2,8 +2,10 @@ package org.dbsp.sqlCompiler.compiler.backend;
 
 import org.apache.commons.codec.digest.DigestUtils;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.util.HashString;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Logger;
 
@@ -16,22 +18,22 @@ public class MerkleInner extends ToJsonInnerVisitor {
         super(compiler, stream, 0);
     }
 
-    public static String hash(String data) {
+    public static HashString hash(String data) {
         String result = DigestUtils.sha256Hex(data);
         Logger.INSTANCE.belowLevel("MerkleInner", 1)
                 .append("Hashing '")
                 .append(data)
                 .append("' to ")
-                .append(result);
-        return result;
+                .append(result)
+                .newline();
+        return new HashString(result);
     }
 
     @Override
     public VisitDecision preorder(IDBSPInnerNode node) {
-        String rust = node.toString();
-        String hash = hash(rust);
-        this.stream.append(hash);
-        // no traversal needed at all
+        String rust = ToRustInnerVisitor.toRustString(this.compiler, node, false);
+        HashString hash = hash(rust);
+        this.stream.append(hash.toString());
         return VisitDecision.STOP;
     }
 }

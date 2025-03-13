@@ -216,11 +216,7 @@ public class BaseSQLTests {
     }
 
     public static void createEmptyStubs() {
-        try {
-            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(RUST_DIRECTORY, DBSPCompiler.STUBS_FILE_NAME)));
-            outputStream.println();
-            outputStream.close();
-        } catch (IOException ignored) {}
+        Utilities.createEmptyFile(Paths.get(RUST_DIRECTORY, DBSPCompiler.STUBS_FILE_NAME));
     }
 
     /** Runs all the tests from the testsToRun list. */
@@ -235,8 +231,9 @@ public class BaseSQLTests {
 
         if (!toRun.isEmpty()) {
             PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(TEST_FILE_PATH)));
-            RustFileWriter writer = new RustFileWriter();
-            writer.setOutputStream(new IndentStream(outputStream));
+            RustFileWriter writer = new RustFileWriter().withTest(true);
+            writer.setOutputBuilder(new IndentStream(outputStream));
+
             createEmptyStubs();
             // Use the compiler from the first test case.
             DBSPCompiler firstCompiler = null;
@@ -265,8 +262,8 @@ public class BaseSQLTests {
         if (!toCheck.isEmpty()) {
             createEmptyStubs();
             PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(TEST_FILE_PATH)));
-            RustFileWriter writer = new RustFileWriter();
-            writer.setOutputStream(new IndentStream(outputStream));
+            RustFileWriter writer = new RustFileWriter().withTest(true);
+            writer.setOutputBuilder(new IndentStream(outputStream));
             DBSPCompiler firstCompiler = null;
             for (TestCase test : toCheck) {
                 if (firstCompiler == null)
@@ -323,7 +320,7 @@ public class BaseSQLTests {
         options.languageOptions.generateInputForEveryTable = true;
         options.ioOptions.quiet = true;
         options.ioOptions.emitHandles = true;
-        options.ioOptions.verbosity = 1;
+        options.ioOptions.verbosity = 2;
         options.languageOptions.incrementalize = incremental;
         options.languageOptions.unrestrictedIOTypes = true;
         options.languageOptions.optimizationLevel = optimize ? 2 : 1;

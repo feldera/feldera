@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.util.HashString;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
@@ -225,8 +226,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream stream = new PrintStream(BaseSQLTests.TEST_FILE_PATH);
-        RustFileWriter writer = new RustFileWriter();
-        writer.setOutputStream(new IndentStream(stream));
+        RustFileWriter writer = new RustFileWriter().withTest(true);
+        writer.setOutputBuilder(new IndentStream(stream));
         writer.add(tester);
         writer.write(compiler);
         stream.close();
@@ -258,8 +259,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream outputStream = new PrintStream(BaseSQLTests.TEST_FILE_PATH, StandardCharsets.UTF_8);
-        RustFileWriter writer = new RustFileWriter();
-        writer.setOutputStream(new IndentStream(outputStream));
+        RustFileWriter writer = new RustFileWriter().withTest(true);
+        writer.setOutputBuilder(new IndentStream(outputStream));
         writer.add(tester);
         writer.write(compiler);
         outputStream.close();
@@ -306,24 +307,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         createEmptyStubs();
     }
 
-    void compileMultiCrate(String file, boolean run) throws SQLException, IOException, InterruptedException {
-        CompilerMessages messages = CompilerMain.execute(
-                "-i", "--alltables", "-q", "--ignoreOrder", "--crates",
-                "-o", BaseSQLTests.RUST_CRATES_DIRECTORY, file);
-        messages.print();
-        Assert.assertEquals(0, messages.errorCount());
-        if (run)
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
-    }
-
-    @Test
-    public void testMultiCrate() throws IOException, SQLException, InterruptedException {
-        String sql = """
-                 CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
-                 CREATE VIEW V AS SELECT STDDEV(COL1) FROM T""";
-        File file = createInputScript(sql);
-        this.compileMultiCrate(file.getAbsolutePath(), true);
-    }
 
     @Test
     public void testProjectFiles() throws IOException, InterruptedException, SQLException {
@@ -353,7 +336,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String[] sqlFiles = dir.list(filter);
         assert sqlFiles != null;
         for (String sqlFile: sqlFiles) {
-            // if (!sqlFile.contains("feature")) continue;
             // System.out.println(sqlFile);
             String basename = Utilities.getBaseName(sqlFile);
             String udf = basename + ".udf.rs";
@@ -611,13 +593,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void merkleTest() {
-        // Compile two programs that have some query in common and check that the circuts produced
+        // Compile two programs that have some query in common and check that the circuits produced
         // have nodes in common.
         var cc0 = this.getCC("""
                 CREATE TABLE tab0(pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER);
                 CREATE VIEW V AS SELECT pk FROM tab0
                 WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
-        MerkleOuter visitor0 = new MerkleOuter(cc0.compiler);
+        MerkleOuter visitor0 = new MerkleOuter(cc0.compiler, false);
         visitor0.apply(cc0.getCircuit());
 
         var cc1 = this.getCC("""
@@ -625,11 +607,11 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 CREATE VIEW W AS SELECT pk + col0 FROM tab0;
                 CREATE VIEW V AS SELECT pk FROM tab0
                 WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
-        MerkleOuter visitor1 = new MerkleOuter(cc1.compiler);
+        MerkleOuter visitor1 = new MerkleOuter(cc1.compiler, false);
         visitor1.apply(cc1.getCircuit());
-        Set<String> c0 = new HashSet<>(visitor0.operatorHash.values());
-        Set<String> c1 = new HashSet<>(visitor1.operatorHash.values());
-        Set<String> common = new HashSet<>(c0);
+        Set<HashString> c0 = new HashSet<>(visitor0.operatorHash.values());
+        Set<HashString> c1 = new HashSet<>(visitor1.operatorHash.values());
+        Set<HashString> common = new HashSet<>(c0);
         // All nodes in circuit0 must be in circuit1
         common.retainAll(c1);
         assert common.size() == c0.size();

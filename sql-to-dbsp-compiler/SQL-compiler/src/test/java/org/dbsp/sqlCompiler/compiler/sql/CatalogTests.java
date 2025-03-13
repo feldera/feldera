@@ -122,7 +122,7 @@ public class CatalogTests extends BaseSQLTests {
                         ),
                         x BIGINT
                     );
-                CREATE VIEW V AS SELECT h, t.i['a'], t.j.k.l, t.j.m, t.j.m.n FROM T;""");
+                CREATE VIEW V AS SELECT h, t.i['b'], t.j.k.l, t.j.m, t.j.m.n FROM T;""");
     }
 
     @Test

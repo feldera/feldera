@@ -612,7 +612,6 @@ public class MetadataTests extends BaseSQLTests {
 
                 use feldera_sqllib::*;
                 use crate::*;
-
                 pub fn contains_number(str: SqlString, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
                     udf::contains_number(
                         str,
@@ -657,12 +656,12 @@ public class MetadataTests extends BaseSQLTests {
                       Generate an input for each CREATE TABLE, even if the table is not used\s
                       by any view
                       Default: false
+                    --crates
+                      Followed by a program name. Generates code using multiple crates;\s
+                      `outputFile` is interpreted as a directory.
+                      Default: <empty string>
                     --dataflow
                       Emit the Dataflow graph of the program in the specified JSON file
-                    --crates
-                      Generate code using multiple crates; `outputFile` is interpreted as a\s
-                      directory.\s
-                      Default: false
                     --handles
                       Use handles (true) or Catalog (false) in the emitted Rust code
                       Default: false

@@ -554,11 +554,11 @@ public class SqlToRelCompiler implements IWritesLogs {
         validatorConfig = validatorConfig.withConformance(new Conformance(validatorConfig.conformance()));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
                 CalciteSchema.from(this.rootSchema), Collections.singletonList(calciteCatalog.schemaName),
-                typeFactory, connectionConfig);
+                this.typeFactory, connectionConfig);
         this.validator = SqlValidatorUtil.newValidator(
                 newOperatorTable,
                 catalogReader,
-                typeFactory,
+                this.typeFactory,
                 validatorConfig
         );
         this.converter = new SqlToRelConverter(
@@ -690,7 +690,7 @@ public class SqlToRelCompiler implements IWritesLogs {
     }
 
     private RelDataType createNullableType(RelDataType type) {
-        return typeFactory.enforceTypeWithNullability(type, true);
+        return this.typeFactory.enforceTypeWithNullability(type, true);
     }
 
     private RelDataType deriveType(SqlDataTypeSpec typeSpec) {
@@ -727,7 +727,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             // Don't need 'collectionType', but there is no other way to check whether the typeName is for an ARRAY
             RelDataType collectionType = collection.deriveType(this.getValidator());
             if (collectionType.getSqlTypeName() == SqlTypeName.ARRAY) {
-                RelDataType result = typeFactory.createArrayType(elementType, -1);
+                RelDataType result = this.typeFactory.createArrayType(elementType, -1);
                 if (typeSpec.getNullable() != null && typeSpec.getNullable())
                     result = this.createNullableType(result);
                 return result;
@@ -744,7 +744,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 // Nullability *can* be specified for ROW fields!
                 fields.add(elementType);
             }
-            RelDataType result = typeFactory.createStructType(
+            RelDataType result = this.typeFactory.createStructType(
                     fields,
                     fieldNames.stream()
                             .map(SqlIdentifier::toString)
@@ -759,7 +759,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             RelDataType valueType = this.specToRel(value, false);
             // keyType = this.createNullableType(keyType);
             valueType = this.createNullableType(valueType);
-            RelDataType result = typeFactory.createMapType(keyType, valueType);
+            RelDataType result = this.typeFactory.createMapType(keyType, valueType);
             if (typeSpec.getNullable() != null && typeSpec.getNullable())
                 result = this.createNullableType(result);
             return result;
@@ -778,7 +778,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         result = this.deriveType(spec);
         if (neverNullable) {
-            result = typeFactory.createTypeWithNullability(result, false);
+            result = this.typeFactory.createTypeWithNullability(result, false);
         }
         if (typeSpec instanceof SqlUserDefinedTypeNameSpec udtObject) {
             if (result.isStruct()) {
@@ -1710,7 +1710,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     RelDataType type = this.specToRel(attr.dataType, false);
                     return new MapEntry<>(name, type);
                 });
-        RelDataType structType = typeFactory.createStructType(parameters);
+        RelDataType structType = this.typeFactory.createStructType(parameters);
         SqlDataTypeSpec retType = decl.getReturnType();
         RelDataType returnType = this.specToRel(retType, false);
         Boolean nullableResult = retType.getNullable();
@@ -2004,7 +2004,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
         };
         ProgramIdentifier typeName = Utilities.toIdentifier(ct.name);
-        RelDataType relDataType = proto.apply(typeFactory);
+        RelDataType relDataType = proto.apply(this.typeFactory);
         this.rootSchema.add(typeName.name(), proto);
         CreateTypeStatement result = new CreateTypeStatement(node, ct, typeName, relDataType);
         boolean success = this.calciteCatalog.addType(typeName, this.errorReporter, result);
