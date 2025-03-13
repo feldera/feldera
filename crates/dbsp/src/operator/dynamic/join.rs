@@ -1329,9 +1329,13 @@ where
         }
 
         self.stats.output_tuples += output_tuples.len();
+
         // Sort `output_tuples` by timestamp and push all tuples for each unique
         // timestamp to the appropriate batcher.
-        output_tuples.sort_by_key();
+        // Skip this step when using unit timestamps.
+        if size_of::<T::Time>() != 0 {
+            output_tuples.sort_by_key();
+        }
 
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         let mut start: usize = 0;
