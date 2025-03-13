@@ -1090,11 +1090,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compileFunction(call, node, type, ops, 3);
                     }
                     case "overlay": {
-                        String module_prefix;
+                        String module_prefix = "";
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
-                            module_prefix = "binary::";
-                        } else {
-                            module_prefix = "string::";
+                            module_prefix = "binary_";
                         }
                         this.ensureInteger(ops, 2);
                         if (ops.size() == 4)
@@ -1167,12 +1165,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         this.ensureInteger(ops, 1);
                         if (ops.size() == 3)
                             this.ensureInteger(ops, 2);
-                        String module_prefix;
+                        String module_prefix = "";
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
-                            module_prefix = "binary::";
+                            module_prefix = "binary_";
                         } else {
                             this.ensureString(ops, 0);
-                            module_prefix = "string::";
                         }
                         return compileFunction(module_prefix + opName, node, type, ops, 2, 3);
                     }
@@ -1338,12 +1335,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case POSITION: {
                 validateArgCount(node, operationName, ops.size(), 2);
-                String module_prefix;
+                String module_prefix = "";
                 if (ops.get(0).type.is(DBSPTypeBinary.class)) {
-                    module_prefix = "binary::";
+                    module_prefix = "binary_";
                 } else {
                     this.ensureString(ops, 0);
-                    module_prefix = "string::";
                 }
                 return compileFunction(module_prefix + getCallName(call), node, type, ops, 2);
             }

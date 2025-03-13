@@ -60,19 +60,6 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
                 outputProducer.getResultType());
     }
 
-    @Override
-    public void accept(InnerVisitor visitor) {
-        super.accept(visitor);
-        visitor.property("limit");
-        this.limit.accept(visitor);
-        if (this.outputProducer != null) {
-            visitor.property("outputProducer");
-            this.outputProducer.accept(visitor);
-        }
-        visitor.property("equalityComparator");
-        this.equalityComparator.accept(visitor);
-    }
-
     /**
      * Create an IndexedTopK operator.  This operator is incremental only.
      * For a non-incremental version it should be sandwiched between a D-I.
@@ -98,6 +85,19 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
         if (!this.outputType.is(DBSPTypeIndexedZSet.class))
             throw new InternalCompilerError("Expected the input to be an IndexedZSet type",
                     source.outputType());
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        super.accept(visitor);
+        visitor.property("limit");
+        this.limit.accept(visitor);
+        if (this.outputProducer != null) {
+            visitor.property("outputProducer");
+            this.outputProducer.accept(visitor);
+        }
+        visitor.property("equalityComparator");
+        this.equalityComparator.accept(visitor);
     }
 
     @Override

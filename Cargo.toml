@@ -16,6 +16,7 @@ members = [
 exclude = [
   "sql-to-dbsp-compiler/temp",
   "sql-to-dbsp-compiler/experiments",
+  "sql-to-dbsp-compiler/multi",
   "demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen"
 ]
 resolver = "2"

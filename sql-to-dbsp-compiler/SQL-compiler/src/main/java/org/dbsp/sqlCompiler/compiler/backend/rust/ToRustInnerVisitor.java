@@ -130,7 +130,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
@@ -163,7 +162,9 @@ import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -177,6 +178,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
     protected final CompilerOptions options;
     /** Set by binary expressions */
     int visitingChild;
+    /** List of objects that should refer to declarations when generating code. */
+    protected final Map<String, DBSPComparatorItem> comparatorDeclarations;
 
     public ToRustInnerVisitor(DBSPCompiler compiler, IIndentStream builder, boolean compact) {
         super(compiler);
@@ -184,6 +187,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.compact = compact;
         this.options = compiler.options;
         this.visitingChild = 0;
+        this.comparatorDeclarations = new HashMap<>();
+    }
+
+    void setComparatorDeclarations(List<DBSPComparatorItem> comparatorDeclarations) {
+        this.comparatorDeclarations.clear();
+        for (var item: comparatorDeclarations)
+            Utilities.putNew(this.comparatorDeclarations, item.getName(), item);
     }
 
     @SuppressWarnings("SameReturnValue")
@@ -341,7 +351,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         move |(k, array): (&(), &Vec<Tup<...>>, ), | -> Array<Tup<...>> {
             let comp = ...;    // comparator
             let mut ec: _ = move |a: &Tup<...>, b: &Tup<...>, | -> _ {
-                comp.compare(a, b)
+                Comparator::cmp(a, b)
             };
             let mut v = (**array).clone();
             v.sort_by(ec);
@@ -452,6 +462,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPFieldComparatorExpression expression) {
+        if (this.comparatorDeclarations.containsKey(expression.getComparatorStructName())) {
+            this.builder.append(expression.getComparatorStructName());
+            return VisitDecision.STOP;
+        }
+
         this.push(expression);
         expression.source.accept(this);
         boolean hasSource = expression.source.is(DBSPFieldComparatorExpression.class);
@@ -897,8 +912,20 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     void generateStructDeclaration(DBSPTypeStruct struct) {
-        DBSPStructItem item = new DBSPStructItem(struct);
-        item.accept(this);
+        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default)]")
+                .newline();
+        builder.append("pub struct ")
+                .append(Objects.requireNonNull(struct.sanitizedName))
+                .append(" {")
+                .increase();
+        for (DBSPTypeStruct.Field field: struct.fields.values()) {
+            field.accept(this);
+            this.builder.append(",")
+                    .newline();
+        }
+        this.builder.decrease()
+                .append("}")
+                .newline();
     }
 
     void generateStructHelpers(DBSPTypeStruct s, @Nullable TableMetadata metadata) {
@@ -909,9 +936,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPStructWithHelperItem item) {
+    public VisitDecision preorder(DBSPStructItem item) {
         this.generateStructHelpers(item.type, item.metadata);
-        this.builder.newline();
         return VisitDecision.STOP;
     }
 
@@ -2029,7 +2055,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(".clone()");
         if (expression.needsSome())
             this.builder.append(")");
-        this.builder.decrease().append("}").newline();
+        this.builder.decrease().newline().append("}");
         this.pop(expression);
         return VisitDecision.STOP;
     }
@@ -2039,7 +2065,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         DBSPStaticExpression stat = item.expression;
         // static NAME: LazyLock<type> = LazyLock::new(|| expression);
         String name = stat.getName();
-        this.builder.append("static ")
+        this.builder.append("pub static ")
                 .append(name)
                 .append(": LazyLock<");
         stat.getType().accept(this);
@@ -2412,27 +2438,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(": ");
         field.type.accept(this);
         this.pop(field);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPStructItem item) {
-        this.push(item);
-        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default)]")
-                .newline();
-        builder.append("pub struct ")
-                    .append(Objects.requireNonNull(item.type.sanitizedName))
-                .append(" {")
-                .increase();
-        for (DBSPTypeStruct.Field field: item.type.fields.values()) {
-            field.accept(this);
-            this.builder.append(",")
-                    .newline();
-        }
-        this.builder.decrease()
-                .append("}")
-                .newline();
-        this.pop(item);
         return VisitDecision.STOP;
     }
 

@@ -159,7 +159,7 @@ public class NonLinearAggregate extends AggregateBase {
                 this.semigroup == o.semigroup;
     }
 
-    public DBSPExpression asFold(boolean compact) {
+    public DBSPExpression asFold(DBSPType type, boolean compact) {
         DBSPType[] typeArgs;
         if (compact) {
             typeArgs = new DBSPType[0];
@@ -177,7 +177,7 @@ public class NonLinearAggregate extends AggregateBase {
                         new DBSPSimplePathSegment("Fold", typeArgs),
                         new DBSPSimplePathSegment("with_output"))
                         .toExpression();
-        return constructor.call(this.zero, this.increment, this.postProcess);
+        return constructor.call(type, this.zero, this.increment, this.postProcess);
     }
 
     @Override

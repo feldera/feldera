@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.apache.avro.data.Json;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -15,6 +14,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -84,7 +84,7 @@ public final class DBSPAggregate extends DBSPNode
         NonLinearAggregate combined = NonLinearAggregate.combine(
                 this.getNode(), compiler, this.rowVar,
                 Linq.map(this.aggregates, a -> a.to(NonLinearAggregate.class)));
-        return combined.asFold(compact);
+        return combined.asFold(this.getType(), compact);
     }
 
     public LinearAggregate asLinear(DBSPCompiler compiler) {
@@ -113,7 +113,7 @@ public final class DBSPAggregate extends DBSPNode
 
     @Override
     public DBSPType getType() {
-        return this.getEmptySetResultType();
+        return new DBSPTypeFunction(this.getEmptySetResultType(), this.rowVar.getType());
     }
 
     @Override

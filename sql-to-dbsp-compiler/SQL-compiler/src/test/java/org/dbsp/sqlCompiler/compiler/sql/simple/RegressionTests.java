@@ -23,6 +23,8 @@ import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
+import java.util.HashSet;
+
 public class RegressionTests extends SqlIoTest {
     @Test
     public void issue3653() {
@@ -781,7 +783,7 @@ public class RegressionTests extends SqlIoTest {
         // This is not executed, since the udfs have no definitions
         var cc = this.getCC(sql);
         // Test that code generation does not crash
-        ToRustVisitor.toRustString(cc.compiler, cc.getCircuit());
+        ToRustVisitor.toRustString(cc.compiler, cc.getCircuit(), new HashSet<>());
     }
 
     @Test
@@ -1486,6 +1488,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue2027() {
         // validated with Postgres 15
+        // Generates DBSPPartitionedRollingAggregateOperator
         String sql = """
                 CREATE TABLE T (
                    id INT,

@@ -133,17 +133,16 @@ public class CircuitOptimizer extends Passes {
         // Beta reduction after implementing aggregates.
         this.add(new BetaReduction(compiler).getCircuitVisitor(false));
         this.add(new CSE(compiler));
-        this.add(new StaticDeclarations(compiler, new LazyStatics(compiler)));
         this.add(new ExpandJoins(compiler));
-        this.add(new ComparatorDeclarations(compiler, new FindComparators(compiler)));
         this.add(new RemoveViewOperators(compiler, true));
         this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), false, InnerCSE::process));
-        this.add(new LazyStatics(compiler).circuitRewriter(false));
+        this.add(new StaticDeclarations(compiler, new LazyStatics(compiler, !compiler.options.ioOptions.multiCrates())));
         // this.add(new TestSerialize(compiler));
         // The canonical form is needed if we want the Merkle hashes to be "stable".
-        this.add(new CanonicalForm(compiler).getCircuitVisitor(false));
+        //this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
+        this.add(new MerkleOuter(compiler, true));
+        this.add(new MerkleOuter(compiler, false));
         this.add(new CompactNames(compiler));
-        this.add(new MerkleOuter(compiler));
     }
 
     public DBSPCircuit optimize(DBSPCircuit input) {

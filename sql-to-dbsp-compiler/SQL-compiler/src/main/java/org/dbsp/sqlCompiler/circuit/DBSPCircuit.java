@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -154,26 +153,10 @@ public final class DBSPCircuit extends DBSPNode
         this.name = name;
     }
 
-    public void replaceDeclaration(DBSPDeclaration decl) {
-        DBSPDeclaration existing = Utilities.getExists(this.declarationMap, decl.getName());
-        this.declarations.remove(existing);
-        this.declarations.add(decl);
-        this.declarationMap.put(decl.getName(), decl);
-    }
-
-    @Nullable
-    public DBSPDeclaration getDeclaration(String name) {
-        return this.declarationMap.get(name);
-    }
-
     public void addDeclaration(DBSPDeclaration decl) {
+        if (this.declarationMap.containsKey(decl.getName()))
+            return;
         this.declarations.add(decl);
-        if (this.declarationMap.containsKey(decl.getName())) {
-            DBSPDeclaration prev = Utilities.getExists(this.declarationMap, decl.getName());
-            throw new CompilationError(
-                    "Declaration " + decl + " has the same name as an existing declaration " + prev,
-                    decl.item.getNode());
-        }
         Utilities.putNew(this.declarationMap, decl.getName(), decl);
     }
 
@@ -275,7 +258,8 @@ public final class DBSPCircuit extends DBSPNode
         visitor.pop(this);
     }
 
-    /** Return true if this circuit and other are identical (have the exact same operators and declarations). */
+    /** Return true if this circuit and other are identical
+     * (have the exact same operators and declarations). */
     public boolean sameCircuit(ICircuit other) {
         if (this == other)
             return true;

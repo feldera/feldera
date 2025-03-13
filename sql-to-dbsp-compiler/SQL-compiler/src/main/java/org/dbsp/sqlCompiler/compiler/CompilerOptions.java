@@ -210,14 +210,18 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--raw", hidden = true,
                 description = "Do not generate any internal tables (ERROR, NOW, etc).")
         public boolean raw = false;
-        @Parameter(names = "--crates", description = "Generate code using multiple crates; " +
+        @Parameter(names = "--crates", description = "Followed by a program name. Generates code using multiple crates; " +
                 "`outputFile` is interpreted as a directory.")
-        public boolean crates = false;
+        public String crates = "";
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {
             return this.emitHandles == other.emitHandles &&
                     this.trimInputs == other.trimInputs;
+        }
+
+        public boolean multiCrates() {
+            return !this.crates.isEmpty();
         }
 
         @Override

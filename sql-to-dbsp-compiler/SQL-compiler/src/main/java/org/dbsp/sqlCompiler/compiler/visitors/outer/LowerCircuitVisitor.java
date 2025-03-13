@@ -1,8 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
-import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
@@ -16,15 +13,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.TableMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -41,9 +32,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -53,7 +42,6 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -249,58 +237,6 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         this.map(node, instrumented);
     }
 
-    void generateStructHelpers(DBSPType struct, @Nullable TableMetadata metadata) {
-        List<DBSPTypeStruct> nested = new ArrayList<>();
-        FindNestedStructs fn = new FindNestedStructs(this.compiler, nested);
-        fn.apply(struct);
-        DBSPCircuit underConstruction = this.getUnderConstructionCircuit();
-        for (DBSPTypeStruct s: nested) {
-            DBSPStructWithHelperItem item = new DBSPStructWithHelperItem(s, metadata);
-            DBSPDeclaration previous = underConstruction.getDeclaration(item.getName());
-            if (previous != null) {
-                if (previous.is(DBSPStructWithHelperItem.class))
-                    continue;
-                // Replace a struct declaration with a more general StructWithHelper
-                underConstruction.replaceDeclaration(new DBSPDeclaration(item));
-            } else {
-                underConstruction.addDeclaration(new DBSPDeclaration(item));
-            }
-        }
-    }
-
-    @Override
-    public void postorder(DBSPSourceMultisetOperator operator) {
-        if (!this.compiler.options.ioOptions.emitHandles) {
-            this.generateStructHelpers(operator.originalRowType, operator.metadata);
-        }
-        super.postorder(operator);
-    }
-
-    @Override
-    public void postorder(DBSPSourceMapOperator operator) {
-        if (!this.compiler.options.ioOptions.emitHandles) {
-            DBSPTypeStruct type = operator.originalRowType;
-            this.generateStructHelpers(type, operator.metadata);
-
-            DBSPTypeStruct keyStructType = operator.getKeyStructType(
-                    new ProgramIdentifier(operator.originalRowType.sanitizedName + "_key", false));
-            this.generateStructHelpers(keyStructType, operator.metadata);
-
-            DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
-                    new ProgramIdentifier(operator.originalRowType.sanitizedName + "_upsert", false));
-            this.generateStructHelpers(upsertStruct, operator.metadata);
-        }
-        super.postorder(operator);
-    }
-
-    @Override
-    public void postorder(DBSPSinkOperator operator) {
-        if (!this.compiler.options.ioOptions.emitHandles) {
-            this.generateStructHelpers(operator.originalRowType, null);
-        }
-        super.postorder(operator);
-    }
-
     @Override
     public void postorder(DBSPStreamAggregateOperator node) {
         if (node.function != null) {
@@ -447,22 +383,5 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     node.isMultiset, this.mapped(node.input()));
         }
         this.map(node, result);
-    }
-
-    static class FindNestedStructs extends InnerVisitor {
-        final List<DBSPTypeStruct> structs;
-
-        FindNestedStructs(DBSPCompiler compiler, List<DBSPTypeStruct> result) {
-            super(compiler);
-            this.structs = result;
-        }
-
-        @Override
-        public void postorder(DBSPTypeStruct struct) {
-            for (DBSPTypeStruct str: this.structs)
-                if (str.name.equals(struct.name))
-                    return;
-            this.structs.add(struct);
-        }
     }
 }

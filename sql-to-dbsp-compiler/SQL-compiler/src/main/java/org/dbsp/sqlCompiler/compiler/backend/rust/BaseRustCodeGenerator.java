@@ -16,11 +16,9 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     protected final List<IDBSPNode> toWrite;
     /** List of crate names that are dependencies for this one */
     protected final List<String> dependencies;
-    /** Stream where code is generated; set by {@link BaseRustCodeGenerator#setOutputStream} */
+    /** Stream where code is generated; set by {@link BaseRustCodeGenerator#setOutputBuilder} */
     @Nullable
-    protected IIndentStream outputStream = null;
-    /** What kind of names to use for the generated operators */
-    public static final boolean USE_HASH_NAMES = false;
+    protected IIndentStream outputBuilder = null;
 
     protected BaseRustCodeGenerator() {
         this.id = crdId++;
@@ -28,13 +26,17 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
         this.dependencies = new ArrayList<>();
     }
 
-    @Override
-    public void setOutputStream(IIndentStream stream) {
-        this.outputStream = stream;
+    protected String dbspCircuit(boolean topLevel) {
+        return topLevel ? "RootCircuit" : "ChildCircuit<RootCircuit>";
     }
 
-    public IIndentStream getOutputStream() {
-        return Objects.requireNonNull(this.outputStream);
+    @Override
+    public void setOutputBuilder(IIndentStream stream) {
+        this.outputBuilder = stream;
+    }
+
+    public IIndentStream builder() {
+        return Objects.requireNonNull(this.outputBuilder);
     }
 
     @Override
@@ -58,6 +60,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             #![allow(unused_variables)]
             #![allow(unused_mut)]
             #![allow(unconditional_panic)]
+            #![allow(non_upper_case_globals)]
             """;
 
     public static final String ALLOC_PREAMBLE = """
@@ -79,7 +82,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                     Generator,
                     Fold,
                     group::WithCustomOrd,
-                    time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},
+                    time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet, OrdPartitionedOverStream},
                     MaxSemigroup,
                     MinSemigroup,
                     CmpFunc,
@@ -99,13 +102,16 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                 dynamic::{DynData,DynDataTyped},
             };
             use rust_decimal_macros::dec;
-            use feldera_types::program_schema::SqlIdentifier;
             use dbsp_adapters::Catalog;
-            use feldera_types::{deserialize_table_record, serialize_table_record};
+            use feldera_types::{
+                program_schema::SqlIdentifier,
+                deserialize_table_record, serialize_table_record,
+            };
             use size_of::*;
             use ::serde::{Deserialize,Serialize};
             use compare::{Compare, Extract};
             use std::{
+                cell::LazyCell,
                 collections::BTreeMap,
                 convert::identity,
                 ops::Neg,
@@ -116,24 +122,5 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             };
             use core::cmp::Ordering;
             use rust_decimal::Decimal;
-            use dbsp::declare_tuples;
-            use feldera_sqllib::{
-                *,
-                array::*,
-                casts::*,
-                binary::*,
-                decimal::*,
-                geopoint::*,
-                timestamp::*,
-                interval::*,
-                map::*,
-                string::*,
-                operators::*,
-                aggregates::*,
-                uuid::*,
-                variant::*,
-            };
-            #[cfg(test)]
-            use readers::*;
-            """;
+            use feldera_sqllib::*;""";
 }

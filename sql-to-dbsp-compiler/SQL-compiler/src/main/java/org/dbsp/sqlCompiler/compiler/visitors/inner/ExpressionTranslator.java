@@ -14,7 +14,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -244,11 +243,6 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
 
     @Override
     public void postorder(DBSPStructItem node) {
-        this.map(node, node);
-    }
-
-    @Override
-    public void postorder(DBSPStructWithHelperItem node) {
         this.map(node, node);
     }
 

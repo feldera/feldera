@@ -124,20 +124,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         return this.transform.apply(type).to(DBSPType.class);
     }
 
-    // Default implementation, used for
-    // - DBSPDifferentialOperator
-    // - DBSPDistinctOperator
-    // - DBSPDistinctIncrementalOperator
-    // - DBSPFilterOperator
-    // - DBSPIncrementalDistinctOperator
-    // - DBSPIntegralOperator
-    // - DBSPNegateOperator
-    // - DBSPNoopOperator
-    // - DBSPSubtractOperator
-    // - DBSPSumOperator
-    // - DBSPDeindexOperator
-    // - DBSPApplyOperator
-    // - DBSPApply2Operator
+    // Default implementation, used for most operators
     @Override
     public void replace(DBSPSimpleOperator operator) {
         if (!this.toOptimize.test(operator)) {
@@ -649,7 +636,8 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || lower != operator.lower
                 || upper != operator.upper) {
             result = new DBSPPartitionedRollingAggregateOperator(
-                    operator.getRelNode(), partitioningFunction, function, aggregate, lower, upper, type, input)
+                    operator.getRelNode(), partitioningFunction.to(DBSPClosureExpression.class),
+                    function, aggregate, lower, upper, type, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -679,7 +667,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || lower != operator.lower
                 || upper != operator.upper) {
             result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(
-                    operator.getRelNode(), partitioningFunction, function, aggregate,
+                    operator.getRelNode(), partitioningFunction.to(DBSPClosureExpression.class), function, aggregate,
                     lower, upper, type, left, right)
                     .copyAnnotations(operator);
         }
