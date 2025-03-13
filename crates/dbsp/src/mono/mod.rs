@@ -119,6 +119,7 @@ where
 
         self.inner()
             .dyn_aggregate_linear_mono(
+                unique_name,
                 &factories,
                 Box::new(move |_k, v, r, acc| unsafe {
                     *acc.downcast_mut::<A>() = f(v.downcast::<V>()).mul_by_ref(&**r)

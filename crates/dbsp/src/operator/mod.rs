@@ -84,5 +84,5 @@ pub(self) fn require_persistent_id<'a>(
     persistent_id: Option<&'a str>,
     global_id: &GlobalNodeId,
 ) -> Result<&'a str, Error> {
-    persistent_id.ok_or_else(|| Error::Storage(StorageError::NoPersistentId(global_id.clone())))
+    persistent_id.ok_or_else(|| Error::Storage(StorageError::NoPersistentId(global_id.to_string())))
 }
