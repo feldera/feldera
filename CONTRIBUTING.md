@@ -150,21 +150,6 @@ When opening a new issue, try to roughly follow the commit message format conven
 
 # For developers
 
-## Running CI tests locally
-
-This can be done using `earthly`.  The `Earthfile` in the root
-directory has sections for tests.  You can run tests from one section
-using a command like:
-
-`earthly -P --ci +section`
-
-You can find the list of sections using `earthly ls`.
-
-For example, to run tests from the `test-python` section, the command
-would look like:
-
-`earthly -P --ci +test-python`
-
 ## Building Feldera from sources
 
 Feldera is implemented in Rust and uses Rust's `cargo` build system. The SQL
@@ -315,6 +300,7 @@ Finally, add new versions tn crates.io for the following crates:
 
 ```
 cargo publish --package feldera-types
+cargo publish --package feldera-storage
 cargo publish --package dbsp
 cargo publish --package fda
 cargo publish --package feldera-sqllib

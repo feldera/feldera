@@ -28,6 +28,7 @@ release() {
     case $1 in
         major|minor|patch)
           cargo set-version --bump $1 -p feldera-types
+          cargo set-version --bump $1 -p feldera-storage
           cargo set-version --bump $1 -p dbsp
           cargo set-version --bump $1 -p fda
           cargo set-version --bump $1 -p pipeline-manager
