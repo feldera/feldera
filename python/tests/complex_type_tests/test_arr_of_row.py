@@ -79,3 +79,28 @@ class cmpxtst_arr_of_row_elmnt_access(TstView):
                       c1_arr[1][2] AS c12_elmnt,
                       c2_arr[2][1] AS c21_elmnt
                       FROM arr_of_row_tbl"""
+
+
+class cmpxtst_arr_of_row_arr_idx_outbound(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"id": 0, "c15_val": None, "c151_elmnt": None},
+            {"id": 1, "c15_val": None, "c151_elmnt": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW arr_of_row_arr_idx_outbound AS SELECT
+                      id,
+                      c1_arr[5] AS c15_val,
+                      c1_arr[5].i1 AS c151_elmnt
+                      FROM arr_of_row_tbl"""
+
+
+class cmpxtst_arr_of_row_elmnt_nexist(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"id": 0, "c22_val": None}]
+        self.sql = """CREATE MATERIALIZED VIEW arr_of_row_elmnt_nexist AS SELECT
+                      id,
+                      c2_arr[2] AS c22_val
+                      FROM arr_of_row_tbl
+                      WHERE id = 0"""
