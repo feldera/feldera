@@ -45,6 +45,7 @@ release() {
 
     # Bump python version in pyproject.toml
     sed -i.backup "s/version = \"${old_version}\"/version = \"${new_version}\"/g" ../python/pyproject.toml
+    (cd python && uv sync)
 
     # Commit the new version
     release_branch="release-v$new_version"
