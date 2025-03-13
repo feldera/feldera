@@ -6,6 +6,9 @@ on:
 env:
   CARGO_FLAGS: "--release --locked --all-targets --features pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue"
   FELDERA_PLATFORM_VERSION_SUFFIX: ${{ github.sha }}
+  RUSTC_WRAPPER: sccache
+  SCCACHE_DIR: /sccache
+  BLACKSMITH_SCCACHE_DISK: /mnt/sccache-disk
 
 jobs:
   build-rust:
@@ -18,19 +21,46 @@ jobs:
           - runner: [self-hosted, skylake40]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
+            sccache_size: 1024G
           - runner: blacksmith-16vcpu-ubuntu-2204-arm
             arch: aarch64
             target: aarch64-unknown-linux-gnu
-
+            sccache_size: 50G
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:0a775f772b2ebde13708744d3e6a219ca4a492d2
-      options: --user=ubuntu
+      image: ghcr.io/feldera/feldera-dev:3012ef118aaaa2b7d49e1dfeda938288a70ba66c
+      options: --user=ubuntu --privileged
+      volumes:
+        - /sccache:/sccache
+      env:
+        VM_ID: ${{ env.VM_ID }}
+        GITHUB_REPO_NAME: ${{ env.GITHUB_REPO_NAME }}
+        BLACKSMITH_STICKYDISK_TOKEN: ${{ env.BLACKSMITH_STICKYDISK_TOKEN }}
+        BLACKSMITH_INSTALLATION_MODEL_ID: ${{ env.BLACKSMITH_INSTALLATION_MODEL_ID }}
+        BLACKSMITH_REGION: ${{ env.BLACKSMITH_REGION }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # We can't put it in /sccache because it's a volume mount already in the self-hosted runner
+      - name: Figure out sccache directory path on blacksmith runner
+        if: ${{ startsWith(matrix.runner, 'blacksmith') }}
+        run: |
+          sudo mkdir -p ${{ env.BLACKSMITH_SCCACHE_DISK }}
+          sudo chown ubuntu:ubuntu -R ${{ env.BLACKSMITH_SCCACHE_DISK }}
+          echo "SCCACHE_DIR=${{ env.BLACKSMITH_SCCACHE_DISK }}/sccache" >> $GITHUB_ENV
+      - name: Mount sccache directory on blacksmith runner
+        if: ${{ startsWith(matrix.runner, 'blacksmith') }}
+        uses: useblacksmith/stickydisk@v1
+        with:
+          key: ${{ github.repository }}-sccache
+          path: ${{ env.BLACKSMITH_SCCACHE_DISK }}
+
+      - name: Set sccache size environment variable
+        run: |
+          echo "SCCACHE_CACHE_SIZE=${{ matrix.sccache_size }}" >> $GITHUB_ENV
 
       # The docker container when executed in the action runs with a different home directory
       # than we set in the dev container (?), hence this step is necessary (sigh)
@@ -38,12 +68,13 @@ jobs:
       - name: Rustup set default toolchain
         run: rustup default stable
 
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-
       - name: Build Rust binaries
         run: |
           cargo build ${{ env.CARGO_FLAGS }} --target=${{ matrix.target }}
+
+      - name: Print sccache stats
+        run: |
+          sccache --show-stats
 
       # Get list of executables
       - name: Collect executables
@@ -72,7 +103,7 @@ jobs:
           mv build-artifacts/pipeline-manager build-release-artifacts/
 
       # Upload test binaries as one artifact
-      - name: Upload build artifacts
+      - name: Upload test artifacts
         uses: actions/upload-artifact@v4
         with:
           name: feldera-test-binaries-${{ matrix.target }}
@@ -80,7 +111,7 @@ jobs:
           retention-days: 7
 
       # Upload binaries to run the product as another artifact
-      - name: Upload build artifacts
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
           name: feldera-binaries-${{ matrix.target }}
