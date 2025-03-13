@@ -4,7 +4,7 @@ description = "A CLI tool for interacting with Feldera"
 homepage = "https://github.com/feldera/feldera"
 repository = "https://github.com/feldera/feldera"
 license = "MIT OR Apache-2.0"
-version = "0.38.0"
+version = "0.39.0"
 edition = "2021"
 include = ["openapi.json", "/src", "build.rs", "COPYRIGHT", "README.md"]
 
@@ -20,7 +20,7 @@ serde_json = { version = "1.0" }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.11.0", features = ["serde", "v7"] }
 tokio = { version = "1.0.0", features = ["rt-multi-thread", "macros", "io-std", "process"] }
-feldera-types = { path = "../feldera-types", version = "0.38.0" }
+feldera-types = { path = "../feldera-types", version = "0.39.0" }
 env_logger = "0.11"
 tabled = { version = "0.17", features = ["macros", "ansi"] }
 json_to_table = "0.9.0"
