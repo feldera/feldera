@@ -9,10 +9,7 @@
   import { getDeploymentStatusLabel } from '$lib/functions/pipelines/status'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
 
-  const formatQty = (v: number) =>
-    format(v >= 1000 ? '.3s' : '.0f')(v)
-      .replace(/G/, 'B')
-      .replace(/P/, 'Q')
+  const formatQty = (v: number) => format(',.0f')(v)
 
   let {
     pipeline,
@@ -81,68 +78,72 @@
         </div>
       </div>
     </div>
-    {#if metrics.current.tables.size}
-      <table class="bg-white-dark table max-w-[1000px] rounded text-base">
-        <thead>
-          <tr>
-            <th class="font-normal text-surface-600-400">Table</th>
-            <th class="!text-end font-normal text-surface-600-400">Ingested records</th>
-            <th class="!text-end font-normal text-surface-600-400">Ingested bytes</th>
-            <th class="!text-end font-normal text-surface-600-400">Parse errors</th>
-            <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each metrics.current.tables.entries() as [relation, stats]}
+    <div class="flex flex-wrap gap-4">
+      {#if metrics.current.tables.size}
+        <table class="bg-white-dark table max-w-[1000px] rounded text-base">
+          <thead>
             <tr>
-              <td>
-                {relation}
-              </td>
-              <td class="text-end">
-                {formatQty(stats.total_records)}
-              </td>
-              <td class="text-end">
-                {humanSize(stats.total_bytes)}
-              </td>
-              <td class="text-end">{formatQty(stats.num_parse_errors)} </td>
-              <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+              <th class="font-normal text-surface-600-400">Table</th>
+              <th class="!text-end font-normal text-surface-600-400">Ingested records</th>
+              <th class="!text-end font-normal text-surface-600-400">Ingested bytes</th>
+              <th class="!text-end font-normal text-surface-600-400">Parse errors</th>
+              <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
-    {/if}
-    {#if metrics.current.views.size}
-      <table class="bg-white-dark table max-w-[1200px] rounded text-base">
-        <thead>
-          <tr>
-            <th class="font-normal text-surface-600-400">View</th>
-            <th class="!text-end font-normal text-surface-600-400">Transmitted records</th>
-            <th class="!text-end font-normal text-surface-600-400">Transmitted bytes</th>
-            <th class="!text-end font-normal text-surface-600-400">Processed records</th>
-            <th class="!text-end font-normal text-surface-600-400">Encode errors</th>
-            <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each metrics.current.views.entries() as [relation, stats]}
+          </thead>
+          <tbody>
+            {#each metrics.current.tables.entries() as [relation, stats]}
+              <tr>
+                <td>
+                  {relation}
+                </td>
+                <td class="text-end">
+                  {formatQty(stats.total_records)}
+                </td>
+                <td class="text-end">
+                  {humanSize(stats.total_bytes)}
+                </td>
+                <td class="text-end">{formatQty(stats.num_parse_errors)} </td>
+                <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+      {#if metrics.current.views.size}
+        <table class="bg-white-dark table max-w-[1300px] rounded text-base">
+          <thead>
             <tr>
-              <td>
-                {relation}
-              </td>
-              <td class="text-end">
-                {formatQty(stats.transmitted_records)}
-              </td>
-              <td class="text-end">
-                {humanSize(stats.transmitted_bytes)}
-              </td>
-              <td class="text-end">{formatQty(stats.total_processed_input_records)} </td>
-              <td class="text-end">{formatQty(stats.num_encode_errors)} </td>
-              <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+              <th class="font-normal text-surface-600-400">View</th>
+              <th class="!text-end font-normal text-surface-600-400">Transmitted records</th>
+              <th class="!text-end font-normal text-surface-600-400">Transmitted bytes</th>
+              <th class="!text-end font-normal text-surface-600-400">Buffered records</th>
+              <th class="!text-end font-normal text-surface-600-400">Buffered batches</th>
+              <th class="!text-end font-normal text-surface-600-400">Encode errors</th>
+              <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
-    {/if}
+          </thead>
+          <tbody>
+            {#each metrics.current.views.entries() as [relation, stats]}
+              <tr>
+                <td>
+                  {relation}
+                </td>
+                <td class="text-end">
+                  {formatQty(stats.transmitted_records)}
+                </td>
+                <td class="text-end">
+                  {humanSize(stats.transmitted_bytes)}
+                </td>
+                <td class="text-end">{formatQty(stats.buffered_records)} </td>
+                <td class="text-end">{formatQty(stats.buffered_batches)} </td>
+                <td class="text-end">{formatQty(stats.num_encode_errors)} </td>
+                <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </div>
   </div>
 {:else}
   <span class="flex text-surface-600-400">Pipeline is not running</span>
