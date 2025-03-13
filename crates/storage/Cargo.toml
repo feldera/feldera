@@ -4,7 +4,7 @@ version = "0.38.0"
 edition = "2021"
 
 [dependencies]
-feldera-types = { path = "../feldera-types", version = "0.38.0" }
+feldera-types = { path = "../feldera-types", version = "0.39.0" }
 tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }
 libc = "0.2.153"
 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64", "validation", "uuid"] }
