@@ -7,9 +7,8 @@ jobs:
   adapter-tests:
     name: Test Adapters
     runs-on: [ubuntu-latest]
-    # TODO: this neds ubuntu 24.04 due to glibc being outdated on runner XD
-    # can't run in container because see below
     #runs-on: [self-hosted, skylake40]
+    # can't run in container because see below
     # For some dumb reason we can't run these tests in the dev container
     # because while it finds redis on the docker network it doesn't find
     # redpanda or pubsub (wtf?)
