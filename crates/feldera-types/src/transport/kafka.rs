@@ -51,6 +51,23 @@ pub struct KafkaInputConfig {
     /// helps with small messages but will not harm performance with large
     /// messagee
     pub poller_threads: Option<usize>,
+
+    /// A list of seek operations to apply to specific Kafka topic partitions.
+    #[serde(default)]
+    pub seek: Vec<KafkaSeekConfig>,
+}
+
+/// Configuration for seeking to a specific offset in a Kafka topic partition.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct KafkaSeekConfig {
+    /// The Kafka topic where the seek operation will be performed.
+    pub topic: String,
+
+    /// The parition within the topic to seek to.
+    pub partition: u32,
+
+    /// The offset in the specified partition to seek to.
+    pub offset: u64,
 }
 
 /// Kafka logging levels.
