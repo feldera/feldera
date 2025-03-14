@@ -13,8 +13,7 @@ jobs:
     runs-on: [self-hosted, skylake40]
     container:
       image: ghcr.io/feldera/feldera-dev:0a775f772b2ebde13708744d3e6a219ca4a492d2
-      # Allows dbsp unit tests to use io-uring
-      options: --user=ubuntu --security-opt seccomp=unconfined
+      options: --user=ubuntu
 
     steps:
       - name: Download Test Binaries

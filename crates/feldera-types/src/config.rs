@@ -171,13 +171,6 @@ pub enum StorageBackendConfig {
     #[default]
     Default,
 
-    /// Use `io_uring` to access the local file system.
-    ///
-    /// This falls back to ordinary access to the local file system if
-    /// `io_uring` is unavailable, as is often the case with cloud container
-    /// systems.
-    IoUring,
-
     /// Object storage.
     Object(ObjectStorageConfig),
 }
@@ -186,7 +179,6 @@ impl Display for StorageBackendConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StorageBackendConfig::Default => write!(f, "default"),
-            StorageBackendConfig::IoUring => write!(f, "io_uring"),
             StorageBackendConfig::Object(_) => write!(f, "object"),
         }
     }
