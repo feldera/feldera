@@ -2247,9 +2247,6 @@ export type StorageBackendConfig =
       name: 'default'
     }
   | {
-      name: 'io_uring'
-    }
-  | {
       config: ObjectStorageConfig
       name: 'object'
     }

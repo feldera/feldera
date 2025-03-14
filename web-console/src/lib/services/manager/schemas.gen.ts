@@ -3403,16 +3403,6 @@ export const $StorageBackendConfig = {
     },
     {
       type: 'object',
-      required: ['name'],
-      properties: {
-        name: {
-          type: 'string',
-          enum: ['io_uring']
-        }
-      }
-    },
-    {
-      type: 'object',
       required: ['name', 'config'],
       properties: {
         config: {

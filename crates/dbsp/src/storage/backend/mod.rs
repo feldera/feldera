@@ -14,8 +14,6 @@ use std::{fs::OpenOptions, path::PathBuf, sync::LazyLock};
 use tempfile::TempDir;
 use tracing::warn;
 
-#[cfg(target_os = "linux")]
-pub mod io_uring_impl;
 pub mod memory_impl;
 pub mod posixio_impl;
 

@@ -19,7 +19,6 @@ use std::time::{Duration, Instant};
 
 use clap::Parser;
 
-use feldera_storage::backend::io_uring_impl::IoUringBackend;
 use feldera_storage::backend::posixio_impl::PosixBackend;
 use feldera_storage::backend::{AtomicIncrementOnlyI64, Storage};
 use feldera_storage::buffer_cache::FBuf;
@@ -181,14 +180,12 @@ impl BenchResult {
 #[derive(Debug, Clone)]
 enum Backend {
     Posix,
-    IoUring,
 }
 
 impl From<String> for Backend {
     fn from(s: String) -> Self {
         match s.as_str() {
             "Posix" => Backend::Posix,
-            "IoUring" => Backend::IoUring,
             _ => panic!("invalid backend"),
         }
     }
@@ -346,39 +343,6 @@ fn posixio_main(args: Args) -> BenchResult {
     br
 }
 
-fn io_uring_main(args: Args) -> BenchResult {
-    let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
-    let barrier = Arc::new(Barrier::new(args.threads));
-    // spawn n-1 threads
-    let threads: Vec<_> = (1..args.threads)
-        .map(|_| {
-            let args = args.clone();
-            let barrier = barrier.clone();
-            let counter = counter.clone();
-            thread::spawn(move || {
-                let barrier = barrier.clone();
-                let io_uring_backend = IoUringBackend::new(args.path.clone(), counter);
-                benchmark(&io_uring_backend, barrier)
-            })
-        })
-        .collect();
-
-    // Run on main thread
-    let io_uring_backend = IoUringBackend::new(args.path.clone(), counter);
-
-    let mut br = BenchResult::default();
-    let main_res = benchmark(&io_uring_backend, barrier);
-    br.times.push(main_res);
-
-    // Wait for other n-1 threads
-    threads.into_iter().for_each(|t| {
-        let tres = t.join().expect("thread panicked");
-        br.times.push(tres);
-    });
-
-    br
-}
-
 fn main() {
     let args = Args::parse();
     assert!(args.per_thread_file_size > 0);
@@ -391,7 +355,6 @@ fn main() {
 
     let br = match args.backend {
         Backend::Posix => posixio_main(args.clone()),
-        Backend::IoUring => io_uring_main(args.clone()),
     };
 
     br.display(args.clone());

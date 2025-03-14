@@ -16,15 +16,6 @@ services:
       - RUST_BACKTRACE=1
       - AUTH_CLIENT_ID
       - AUTH_ISSUER
-    security_opt:
-      # The default seccomp profile disables the `io_uring_*` syscalls that we need.
-      # Ideally, we would minimally relax the default profile, which is usually in
-      # /usr/share/container/seccomp.json, but we often start via `curl` of just this
-      # `docker-compose.yml`, so there's no way to grab the specific file at the
-      # same time, so instead we just use `seccomp:unconfined`.
-      #
-      #- seccomp:seccomp.json
-      - seccomp:unconfined
     healthcheck:
       # TODO: add `/status` endpoint.
       test:
