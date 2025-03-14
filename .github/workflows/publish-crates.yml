@@ -1,0 +1,35 @@
+name: Upload crates.io packages
+
+on:
+  workflow_call:
+    secrets:
+      CARGO_REGISTRY_TOKEN:
+        required: true
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, skylake40]
+    container:
+      image: ghcr.io/feldera/feldera-dev:3012ef118aaaa2b7d49e1dfeda938288a70ba66c
+      options: --user=ubuntu
+      volumes:
+        - /sccache:/sccache
+    steps:
+      - uses: actions/checkout@v4
+
+      # The docker container when executed in the action runs with a different home directory
+      # than we set in the dev container (?), hence this step is necessary (sigh)
+      # https://github.com/actions/runner/issues/863
+      - name: Rustup set default toolchain
+        run: rustup default stable
+
+      - name: Run cargo publish
+        run: |
+          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-types
+          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-storage
+          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package dbsp
+          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package fda
+          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-sqllib
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

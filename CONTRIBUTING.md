@@ -253,73 +253,20 @@ RUST_BACKTRACE=1 RUST_LOG=warn,pipeline_manager=info,feldera_types=info,project=
 
 ## Release process
 
-There are a few steps to put out a new Feldera release. At a high-level, there
-are two phases. First, we put out a release commit which involves bumping package
-versions, which we then put out a Github release with. Second, if the previous
-phase is successful and we are happy with the released container images, we then
-put out a post-release commit that updates existing docker-compose manifests to
-make use of the newly released container images.
+The release process is done through github actions. Launch the "Create a release" action
+manually from the github actions UI. You have to provide a Git SHA which you want to release as
+the new version. The release CI scripts will then run in this order:
 
-### Phase 1: release commit
+* ci-release.yml
+  - Publishes a new release on github for the commit
+      - Adds the binaries that we built during the merge queue
+  - Tags the docker image that we also built during the merge queue as $version and `latest`
+* ci-post-release.yml
+  - Releases the python library to pypi
+  - Releases the rust crates to crates.io
+  - Determines the next version (this is controlled by a `RELEASE_NEXT_VERSION` variable in the repo settings)
+  - Bumps the versions in Cargo.toml and pyproject.toml and openapi.yaml to the next version
+  - Commits and pushes the changes to main
 
-First, make sure sure
-you have pulled the latest changes into your local main branch.
-
-```
-git pull origin main
-```
-
-Next, run the following script from the `scripts` folder:
-
-```
-cd scripts
-./bump-versions.sh <major / minor / patch>
-```
-
-Running the above command should switch to a new branch called `release-vX.Y.Z`
-where `X.Y.Z` is the new release version. You can check the changes by
-running:
-
-```
-git show
-```
-
-There will also be uncommitted changes you can view with `git diff`. We will
-merge these changes only after the commited changes are released in phase 2.
-
-Push the committed changes to Github and create a PR. Once the CI passes, merge
-it into main, and create a new release from Github. Create a new tag from
-within the `release` page on Github. Follow the versioning format of `vX.Y.Z`
-when creating the new tag. Generate a changelog for the release notes
-by pressing the `Generate changelog` button on the release page.
-Add a link to the blog post if there is one.
-
-Add `deploy/docker-compose.yml` as an asset for the release.
-
-Finally, add new versions tn crates.io for the following crates:
-
-```
-cargo publish --package feldera-types
-cargo publish --package feldera-storage
-cargo publish --package dbsp
-cargo publish --package fda
-cargo publish --package feldera-sqllib
-```
-
-### Phase 2: post-release commit
-
-Once the release is out, keep an eye on the CI on the main branch. It should
-eventually put out containers for the new release (an action called
-`containers.yml`). Test the containers locally once that action succeeds.
-
-Once the released containers look fine, it's time to switch the docker-compose
-files in the repository to point to the newly released containers. To do so,
-let's go back to the uncommitted changes in your local `release-vX.Y.Z` branch.
-Create a new branch, commit these changes and get a pull request merged for
-this new commit:
-
-```
-git checkout -b post-release-vX.Y.Z
-git commit -am "docker: point compose file to Feldera version X.Y.Z" -s
-git push origin post-release-vX.Y.Z
-```
+Note that the release process requires that the commit you want to release was merged into main
+through the merge queue, otherwise the build artifacts will not be available.

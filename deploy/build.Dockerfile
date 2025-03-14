@@ -1,9 +1,7 @@
 # This Dockerfile is used by CI to build things.
 #
 # The image is built by the `build-docker-dev.yml` action
-# whenever it changes. But you'll have to change the sha in
-# other actions that rely on this image if you want to use
-# a newer version in CI.
+# You can run it manually using the github actions UI.
 
 # We need a Java and Rust compiler to run alongside the pipeline manager
 FROM ubuntu:24.04 AS base
@@ -69,6 +67,7 @@ ENV PATH="/home/ubuntu/.local/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.cargo/bin:
 
 # Install rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.83.0
+RUN cargo install cargo-machete@0.7.0 cargo-edit@0.13.1
 
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/0.6.5/install.sh | sh
