@@ -345,17 +345,18 @@ where
 
                 circuit.region("trace", || {
                     let unique_name = self.get_unique_name();
-
+                    let mut z1 = Z1Trace::new(
+                        output_factories,
+                        false,
+                        circuit.root_scope(),
+                        bounds.clone(),
+                    );
+                    z1.set_delta_stream(self);
                     let (local, z1feedback) = circuit.add_feedback_named(
                         unique_name
                             .map(|name| format!("{name}.integral"))
                             .as_deref(),
-                        Z1Trace::new(
-                            output_factories,
-                            false,
-                            circuit.root_scope(),
-                            bounds.clone(),
-                        ),
+                        z1,
                     );
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<FileValSpine<B, C>, B, C>>::new(
@@ -508,13 +509,16 @@ where
 
                 let unique_name = self.get_unique_name();
 
+                let mut z1 = Z1Trace::new(input_factories, true, circuit.root_scope(), bounds);
+                z1.set_delta_stream(self);
+
                 circuit.region("integrate_trace", || {
                     let (ExportStream { local, export }, z1feedback) = circuit
                         .add_feedback_with_export_named(
                             unique_name
                                 .map(|name| format!("{name}.integral"))
                                 .as_deref(),
-                            Z1Trace::new(input_factories, true, circuit.root_scope(), bounds),
+                            z1,
                         );
 
                     let trace = circuit.add_binary_operator_with_preference(
@@ -549,7 +553,7 @@ where
     C: Circuit,
     T: Trace,
 {
-    feedback: FeedbackConnector<C, T, T, Z1Trace<T>>,
+    feedback: FeedbackConnector<C, T, T, Z1Trace<C, T::Batch, T>>,
     /// `delayed_trace` stream in the diagram in
     /// [`trait TraceFeedback`] documentation.
     pub delayed_trace: Stream<C, T>,
@@ -564,6 +568,8 @@ where
 {
     pub fn connect(self, stream: &Stream<C, T::Batch>) {
         let circuit = self.delayed_trace.circuit();
+
+        self.feedback.operator_mut().set_delta_stream(stream);
 
         let trace = circuit.add_binary_operator_with_preference(
             <UntimedTraceAppend<T>>::new(),
@@ -886,7 +892,7 @@ where
     }
 }
 
-pub struct Z1Trace<T: Trace> {
+pub struct Z1Trace<C: Circuit, B: BatchReader, T: Trace> {
     // For error reporting.
     global_id: GlobalNodeId,
     time: T::Time,
@@ -903,10 +909,14 @@ pub struct Z1Trace<T: Trace> {
 
     // Metrics maintained by the trace.
     trace_metrics: Option<T::Metrics>,
+    // Stream whose integral this Z1 operator stores, if any.
+    delta_stream: Option<Stream<C, B>>,
 }
 
-impl<T> Z1Trace<T>
+impl<C, B, T> Z1Trace<C, B, T>
 where
+    C: Circuit,
+    B: BatchReader,
     T: Trace,
 {
     pub fn new(
@@ -926,12 +936,19 @@ where
             bounds,
             total_size_metric: None,
             trace_metrics: None,
+            delta_stream: None,
         }
+    }
+
+    pub fn set_delta_stream(&mut self, stream: &Stream<C, B>) {
+        self.delta_stream = Some(stream.clone());
     }
 }
 
-impl<T> Operator for Z1Trace<T>
+impl<C, B, T> Operator for Z1Trace<C, B, T>
 where
+    C: Circuit,
+    B: BatchReader,
     T: Trace,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -1033,8 +1050,10 @@ where
     }
 }
 
-impl<T> StrictOperator<T> for Z1Trace<T>
+impl<C, B, T> StrictOperator<T> for Z1Trace<C, B, T>
 where
+    C: Circuit,
+    B: BatchReader,
     T: Trace,
 {
     fn get_output(&mut self) -> T {
@@ -1052,8 +1071,10 @@ where
     }
 }
 
-impl<T> StrictUnaryOperator<T, T> for Z1Trace<T>
+impl<C, B, T> StrictUnaryOperator<T, T> for Z1Trace<C, B, T>
 where
+    C: Circuit,
+    B: BatchReader,
     T: Trace,
 {
     async fn eval_strict(&mut self, _i: &T) {

@@ -220,16 +220,18 @@ where
         circuit.region("input_upsert", || {
             let bounds = <TraceBounds<K, V>>::unbounded();
 
+            let z1 = Z1Trace::new(
+                &factories.trace_factories,
+                false,
+                circuit.root_scope(),
+                bounds.clone(),
+            );
+
             let (local, z1feedback) = circuit.add_feedback_named(
                 unique_name
                     .map(|name| format!("{name}.integral"))
                     .as_deref(),
-                Z1Trace::new(
-                    &factories.trace_factories,
-                    false,
-                    circuit.root_scope(),
-                    bounds.clone(),
-                ),
+                z1,
             );
 
             local.mark_sharded();
@@ -248,6 +250,7 @@ where
                 )
                 .mark_distinct();
             delta.mark_sharded();
+            z1feedback.operator_mut().set_delta_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<ValSpine<B, C>, B, C>>::new(

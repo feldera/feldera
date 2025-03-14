@@ -158,6 +158,7 @@ where
                 )
                 .mark_distinct();
             delta.mark_sharded();
+            z1feedback.operator_mut().set_delta_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<FileKeySpine<B, C>, B, C>>::new(
@@ -257,6 +258,7 @@ where
                 )
                 .mark_distinct();
             delta.mark_sharded();
+            z1feedback.operator_mut().set_delta_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<ValSpine<B, C>, B, C>>::new(

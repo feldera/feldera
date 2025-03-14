@@ -5129,6 +5129,10 @@ where
     O: Data,
     C: Circuit,
 {
+    pub fn operator_mut(&self) -> RefMut<Op> {
+        self.operator.borrow_mut()
+    }
+
     /// Connect `input_stream` as input to the operator.
     ///
     /// See [`Circuit::add_feedback`] for details.
@@ -5369,6 +5373,10 @@ impl CircuitHandle {
         Ok(())
     }
 
+    // Find all ancestors of nodes in `need_backfill` that are not in `catchup_nodes` yet.
+    // Add them to catchup_nodes.
+    // Additionally, add them to `need_backfill` if the node requires backfill from its upstream
+    // ancestors.  Return the set of nodes newly added to `need_backfill`.
     fn restore_step(
         &self,
         catchup_nodes: &mut BTreeSet<GlobalNodeId>,
@@ -5377,13 +5385,20 @@ impl CircuitHandle {
     ) -> Result<BTreeSet<GlobalNodeId>, DbspError> {
         let mut ancestors = BTreeSet::new();
 
-        // Find all ancestors of nodes in `need_backfill` that are not in `catchup_nodes` yet.
-        // Add them to catchup_nodes.
-        // Additionally, add them to `need_backfill` if the node requires backfill from its upstream
-        // ancestors.
         for gid in need_backfill_new.iter() {
-            let predecessors = self.circuit.map_node(gid, &mut |node| node.ancestors());
-            predecessors.into_iter().map(|gid| ancestors.insert(gid));
+            let node_inputs = self.circuit.map_node(gid, &mut |node| node.input_streams());
+
+            for inputs in node_inputs.into_iter() {
+                if todo!()
+                /* input has replay_source */
+                {
+                    todo!();
+                    /* add  replay sources to catchup_nodes */
+                } else {
+                    // get global node id
+                    ancestors.insert(ancestor);
+                }
+            }
         }
 
         let mut need_backfill_new = BTreeSet::new();
