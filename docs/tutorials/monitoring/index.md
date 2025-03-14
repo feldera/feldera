@@ -104,7 +104,7 @@ A DBSP profile is a graph of the pipeline's circuit where each node represents a
 operator and each edge represents a data flow between operators. The profile includes
 information about how much CPU time or memory each operator consumes.
 
-The API endpoint `/v0/<pipeline_name>/dump_profile` can be used to download the DBSP
+The API endpoint `/v0/<pipeline_name>/circuit_profile` can be used to download the DBSP
 profile of a running pipeline. It returns a zip file containing multiple profiles (one
 for each worker) as `.dot` files, and a `Makefile` to transform the `.dot` files into
 `.pdf` files.
