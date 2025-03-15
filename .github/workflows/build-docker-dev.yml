@@ -2,10 +2,6 @@ name: "Docker CI Image"
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/build-docker-dev.yml"
-      - "deploy/build.Dockerfile"
 
 env:
   REGISTRY: ghcr.io
