@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.backend.MerkleInner;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -52,6 +53,6 @@ public abstract class DBSPComparatorExpression extends DBSPExpression {
     }
 
     public String getComparatorStructName() {
-        return "Cmp" + this.getId();
+        return MerkleInner.hash(this.toString()).makeIdentifier("CMP");
     }
 }

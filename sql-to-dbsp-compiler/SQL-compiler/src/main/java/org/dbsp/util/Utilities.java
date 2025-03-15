@@ -57,6 +57,33 @@ import java.util.Objects;
 public class Utilities {
     private Utilities() {}
 
+    /** Delete a file/directory recursively
+     *
+     * @param file File to delete.
+     * @param self If true, delete the file too, otherwise delete only children.
+     */
+    public static void deleteRecursive(File file, boolean self) {
+        if (!file.exists())
+            return;
+        if (file.isDirectory()) {
+            File[] files = file.listFiles();
+            if (files == null)
+                return;
+            for (File f : files)
+                deleteRecursive(f, true);
+        }
+        if (self) {
+            boolean success = file.delete();
+            if (!success)
+                throw new RuntimeException("Could not delete file " + singleQuote(file.getPath()));
+        }
+    }
+
+    /** Delete recursively the contents of a directory. */
+    public static void deleteContents(File file) {
+        deleteRecursive(file, false);
+    }
+
     public static String getBaseName(String filePath) {
         File file = new File(filePath);
         String fileName = file.getName();
@@ -278,6 +305,14 @@ public class Utilities {
         }
     }
 
+    public static void createEmptyFile(Path path) {
+        try {
+            PrintStream outputStream = new PrintStream(Files.newOutputStream(path));
+            outputStream.println();
+            outputStream.close();
+        } catch (IOException ignored) {}
+    }
+
     public static void runProcess(String directory, String... commands) throws IOException, InterruptedException {
         runProcess(directory, new HashMap<>(), commands);
     }
@@ -286,6 +321,8 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("test");
+        args.add("--jobs");
+        args.add("6");
         args.addAll(Arrays.asList(extraArgs));
         if (quiet) {
             args.add("-q");
@@ -317,6 +354,8 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("check");
+        args.add("--jobs");
+        args.add("6");
         if (quiet)
             args.add("--quiet");
         runProcess(directory, args.toArray(new String[0]));

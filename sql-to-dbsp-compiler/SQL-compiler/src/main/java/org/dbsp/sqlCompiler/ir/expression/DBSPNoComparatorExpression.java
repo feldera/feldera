@@ -78,7 +78,9 @@ public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("compare");
+        return builder.append("compare(")
+                .append(this.tupleType)
+                .append(")");
     }
 
     @SuppressWarnings("unused")

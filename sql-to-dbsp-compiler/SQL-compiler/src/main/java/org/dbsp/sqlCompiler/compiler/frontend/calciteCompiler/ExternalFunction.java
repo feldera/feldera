@@ -193,7 +193,7 @@ public class ExternalFunction extends SqlFunction {
                 parameters.add(p);
             }
             FunctionBodyGenerator generator = new FunctionBodyGenerator(compiler, parameters);
-            DBSPType returnType = typeCompiler.convertType(this.returnType, true);
+            DBSPType returnType = typeCompiler.convertType(this.returnType, false);
             DBSPExpression functionBody = generator.compile(this.body);
 
             DBSPType functionType = functionBody.getType();

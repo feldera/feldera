@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -90,8 +91,8 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -358,7 +359,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType elementType = this.transform(type.elementType);
         this.pop(type);
-        DBSPType result = new DBSPTypeStream(elementType);
+        DBSPType result = new DBSPTypeStream(elementType, type.outerCircuit);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -933,6 +934,17 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPEqualityComparatorExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.comparator);
+        this.pop(expression);
+        DBSPExpression result = new DBSPEqualityComparatorExpression(
+                expression.getNode(), source.to(DBSPComparatorExpression.class));
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPDirectComparatorExpression expression) {
         this.push(expression);
         DBSPExpression source = this.transform(expression.source);
@@ -960,8 +972,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.source);
         DBSPExpression comparator = this.transform(expression.comparator);
         this.pop(expression);
-        DBSPExpression result = new DBSPCustomOrdExpression(
-                expression.getNode(), source, comparator.to(DBSPComparatorExpression.class));
+        DBSPExpression result = new DBSPCustomOrdExpression(expression.getNode(), source, comparator);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -1142,8 +1153,7 @@ public abstract class InnerRewriteVisitor
         DBSPType elementType = this.transform(expression.elementType);
         @Nullable DBSPExpression limit = this.transformN(expression.limit);
         this.pop(expression);
-        DBSPExpression result = new DBSPSortExpression(
-                expression.getNode(), elementType, comparator.to(DBSPComparatorExpression.class), limit);
+        DBSPExpression result = new DBSPSortExpression(expression.getNode(), elementType, comparator, limit);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -1294,21 +1304,21 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPStructWithHelperItem item) {
+    public VisitDecision preorder(DBSPStructItem item) {
         this.push(item);
         DBSPType type = this.transform(item.type);
         this.pop(item);
-        DBSPItem result = new DBSPStructWithHelperItem(type.to(DBSPTypeStruct.class));
+        DBSPItem result = new DBSPStructItem(type.to(DBSPTypeStruct.class), item.metadata);
         this.map(item, result);
         return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPStructItem item) {
+    public VisitDecision preorder(DBSPStaticItem item) {
         this.push(item);
-        DBSPType type = this.transform(item.type);
+        DBSPExpression expression = this.transform(item.expression);
         this.pop(item);
-        DBSPItem result = new DBSPStructItem(type.to(DBSPTypeStruct.class));
+        DBSPItem result = new DBSPStaticItem(expression.to(DBSPStaticExpression.class));
         this.map(item, result);
         return VisitDecision.STOP;
     }

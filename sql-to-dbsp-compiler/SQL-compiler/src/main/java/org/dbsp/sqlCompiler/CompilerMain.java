@@ -32,9 +32,11 @@ import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -229,11 +231,21 @@ public class CompilerMain {
             return compiler.messages;
         }
         try {
-            PrintStream stream = this.getOutputStream();
-            RustFileWriter writer = new RustFileWriter(stream);
-            writer.add(circuit);
-            writer.write(compiler);
-            stream.close();
+            if (!compiler.options.ioOptions.crates) {
+                PrintStream stream = this.getOutputStream();
+                RustFileWriter writer = new RustFileWriter();
+                IIndentStream indent = new IndentStream(stream);
+                writer.setOutputStream(indent);
+                writer.add(circuit);
+                writer.write(compiler);
+                stream.close();
+            } else {
+                if (options.ioOptions.emitHandles)
+                    throw new CompilationError("The option '--crates' cannot be used with '--handles'");
+                MultiCratesWriter writer = new MultiCratesWriter(options.ioOptions.outputFile, true);
+                writer.add(circuit);
+                writer.write(compiler);
+            }
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
                     "Error writing to output file", e.getMessage());
@@ -244,8 +256,15 @@ public class CompilerMain {
             List<DBSPFunction> extern = Linq.where(compiler.functions, f -> f.body == null);
             String outputFile = this.options.ioOptions.outputFile;
             if (!outputFile.isEmpty()) {
+                Path stubs;
                 String outputPath = new File(outputFile).getAbsolutePath();
-                Path stubs = Paths.get(outputPath).getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
+                if (options.ioOptions.crates) {
+                    // Generate globals/src/stubs.rs
+                    stubs = Paths.get(outputPath).resolve("globals").resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
+                } else {
+                    // Generate stubs.rs in the same directory
+                    stubs = Paths.get(outputPath).getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
+                }
                 PrintStream protosStream = new PrintStream(Files.newOutputStream(stubs));
 
                 if (compiler.options.ioOptions.verbosity > 0)
@@ -261,9 +280,7 @@ public class CompilerMain {
 
 use feldera_sqllib::*;
 use crate::*;
-
 """);
-
                 for (DBSPFunction function : extern) {
                     function = this.generateStubBody(function);
                     String str = ToRustInnerVisitor.toRustString(compiler, function, false);

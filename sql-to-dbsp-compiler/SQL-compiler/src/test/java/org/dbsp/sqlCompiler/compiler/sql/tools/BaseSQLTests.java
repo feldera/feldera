@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
+import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.ProgramAndTester;
@@ -185,9 +186,10 @@ public class BaseSQLTests {
         }
     };
 
-    public static final String projectDirectory = "..";
-    public static final String rustDirectory = projectDirectory + "/temp/src";
-    public static final String testFilePath = rustDirectory + "/lib.rs";
+    public static final String PROJECT_DIRECTORY = "..";
+    public static final String RUST_DIRECTORY = PROJECT_DIRECTORY + "/temp/src";
+    public static final String RUST_CRATES_DIRECTORY = PROJECT_DIRECTORY + "/multi";
+    public static final String TEST_FILE_PATH = RUST_DIRECTORY + "/lib.rs";
 
     public static int testsExecuted = 0;
     public static int testsChecked = 0;
@@ -209,16 +211,12 @@ public class BaseSQLTests {
     }
 
     public static File createInputScript(String contents) throws IOException {
-        File result = File.createTempFile("script", ".sql", new File(rustDirectory));
+        File result = File.createTempFile("script", ".sql", new File(RUST_DIRECTORY));
         return createInputFile(result, contents);
     }
 
     public static void createEmptyStubs() {
-        try {
-            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(rustDirectory, DBSPCompiler.STUBS_FILE_NAME)));
-            outputStream.println();
-            outputStream.close();
-        } catch (IOException ignored) {}
+        Utilities.createEmptyFile(Paths.get(RUST_DIRECTORY, DBSPCompiler.STUBS_FILE_NAME));
     }
 
     /** Runs all the tests from the testsToRun list. */
@@ -232,8 +230,10 @@ public class BaseSQLTests {
         List<TestCase> toCheck = Linq.where(testsToRun, testCase -> !testCase.hasData());
 
         if (!toRun.isEmpty()) {
-            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
-            RustFileWriter writer = new RustFileWriter(outputStream);
+            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(TEST_FILE_PATH)));
+            RustFileWriter writer = new RustFileWriter().withTest(true);
+            writer.setOutputStream(new IndentStream(outputStream));
+
             createEmptyStubs();
             // Use the compiler from the first test case.
             DBSPCompiler firstCompiler = null;
@@ -246,7 +246,7 @@ public class BaseSQLTests {
                             " are not compiled with the same options: "
                             + test.ccs.compiler.options.diff(firstCompiler.options));
                 test.ccs.circuit.setName("circuit" + testNumber);
-                ProgramAndTester pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
+                ProgramAndTester pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, RUST_DIRECTORY));
                 BaseSQLTests.testsExecuted++;
                 testNumber++;
                 // Filter here tests
@@ -254,14 +254,16 @@ public class BaseSQLTests {
                 writer.add(pt);
             }
             assert firstCompiler != null;
-            writer.writeAndClose(firstCompiler);
-            Utilities.compileAndTestRust(rustDirectory, true);
+            writer.write(firstCompiler);
+            outputStream.close();
+            Utilities.compileAndTestRust(RUST_DIRECTORY, true);
         }
 
         if (!toCheck.isEmpty()) {
             createEmptyStubs();
-            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
-            RustFileWriter writer = new RustFileWriter(outputStream);
+            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(TEST_FILE_PATH)));
+            RustFileWriter writer = new RustFileWriter().withTest(true);
+            writer.setOutputStream(new IndentStream(outputStream));
             DBSPCompiler firstCompiler = null;
             for (TestCase test : toCheck) {
                 if (firstCompiler == null)
@@ -272,7 +274,7 @@ public class BaseSQLTests {
                             " are not compiled with the same options: "
                             + test.ccs.compiler.options.diff(firstCompiler.options));
                 test.ccs.circuit.setName("circuit" + testNumber);
-                ProgramAndTester pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
+                ProgramAndTester pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, RUST_DIRECTORY));
                 BaseSQLTests.testsChecked++;
                 testNumber++;
                 // Filter here tests
@@ -280,8 +282,9 @@ public class BaseSQLTests {
                 writer.add(pt);
             }
             assert firstCompiler != null;
-            writer.writeAndClose(firstCompiler);
-            Utilities.compileAndCheckRust(rustDirectory, true);
+            writer.write(firstCompiler);
+            outputStream.close();
+            Utilities.compileAndCheckRust(RUST_DIRECTORY, true);
         }
         testsToRun.clear();
     }
@@ -317,7 +320,7 @@ public class BaseSQLTests {
         options.languageOptions.generateInputForEveryTable = true;
         options.ioOptions.quiet = true;
         options.ioOptions.emitHandles = true;
-        options.ioOptions.verbosity = 1;
+        options.ioOptions.verbosity = 2;
         options.languageOptions.incrementalize = incremental;
         options.languageOptions.unrestrictedIOTypes = true;
         options.languageOptions.optimizationLevel = optimize ? 2 : 1;

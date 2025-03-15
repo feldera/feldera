@@ -13,11 +13,12 @@ import org.dbsp.util.IIndentStream;
 /** An expression that carries a comparator for custom ordering */
 public final class DBSPCustomOrdExpression extends DBSPExpression {
     public final DBSPExpression source;
-    public final DBSPComparatorExpression comparator;
+    // Usually a DBSPComparatorExpression, but can be a PathExpression as well.
+    public final DBSPExpression comparator;
 
     public DBSPCustomOrdExpression(
             CalciteObject node, DBSPExpression source,
-            DBSPComparatorExpression comparator) {
+            DBSPExpression comparator) {
         super(node, new DBSPTypeWithCustomOrd(node, source.getType()));
         this.source = source;
         this.comparator = comparator;
@@ -58,7 +59,7 @@ public final class DBSPCustomOrdExpression extends DBSPExpression {
     public DBSPExpression deepCopy() {
         return new DBSPCustomOrdExpression(
                 this.getNode(), this.source.deepCopy(),
-                this.comparator.deepCopy().to(DBSPComparatorExpression.class));
+                this.comparator.deepCopy());
     }
 
     @Override
@@ -73,7 +74,7 @@ public final class DBSPCustomOrdExpression extends DBSPExpression {
     @SuppressWarnings("unused")
     public static DBSPCustomOrdExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
-        DBSPComparatorExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPComparatorExpression.class);
+        DBSPExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPExpression.class);
         return new DBSPCustomOrdExpression(CalciteObject.EMPTY, source, comparator);
     }
 }

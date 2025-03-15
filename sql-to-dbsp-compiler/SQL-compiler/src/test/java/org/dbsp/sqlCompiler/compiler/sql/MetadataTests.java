@@ -71,12 +71,14 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         File json = File.createTempFile("out", ".json", new File("."));
         json.deleteOnExit();
-        File tmp = File.createTempFile("out", ".rs", new File(rustDirectory));
+        File tmp = File.createTempFile("out", ".rs", new File(RUST_DIRECTORY));
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
         //noinspection ResultOfMethodCallIgnored
         tmp.delete();
         Assert.assertEquals(0, message.exitCode);
+        //noinspection ResultOfMethodCallIgnored
+        tmp.delete();
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         for (JsonNode out: parsed.get("outputs")) {
@@ -261,8 +263,8 @@ public class MetadataTests extends BaseSQLTests {
                 WINDOW window_1_day AS (PARTITION BY cc_num ORDER BY ts RANGE BETWEEN INTERVAL 1 DAYS PRECEDING AND CURRENT ROW);
                 """;
         File file = createInputScript(sql);
-        CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
-        String rust = Utilities.readFile(Paths.get(BaseSQLTests.testFilePath));
+        CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
         Assert.assertFalse(rust.contains("connectors"));
     }
 
@@ -286,8 +288,8 @@ public class MetadataTests extends BaseSQLTests {
                   }]'
                ) AS SELECT * FROM T;""";
         File file = createInputScript(sql);
-        CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
-        String rust = Utilities.readFile(Paths.get(BaseSQLTests.testFilePath));
+        CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
         Assert.assertFalse(rust.contains("connectors"));
 
         NameGen.reset();
@@ -295,8 +297,8 @@ public class MetadataTests extends BaseSQLTests {
                CREATE TABLE T (COL1 INT);
                CREATE VIEW V AS SELECT * FROM T;""";
         file = createInputScript(sql);
-        CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
-        String rust0 = Utilities.readFile(Paths.get(BaseSQLTests.testFilePath));
+        CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        String rust0 = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
         Assert.assertEquals(rust, rust0);
     }
 
@@ -479,10 +481,10 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT COL1, rlike(COL2, 'asf') FROM "t";""";
         File file = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute("--unquotedCasing", "lower",
-                "-q", "-o", BaseSQLTests.testFilePath, file.getPath());
+                "-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
+        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
     }
 
     // Test illegal values for the --unquotedCasing command-line parameter
@@ -493,7 +495,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT COL1 FROM T;""";
         File file = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute("--unquotedCasing", "to_lower",
-                "-o", BaseSQLTests.testFilePath, file.getPath());
+                "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertTrue(messages.errorCount() > 0);
         Assert.assertTrue(messages.toString().contains("Illegal value for option --unquotedCasing"));
     }
@@ -536,7 +538,7 @@ public class MetadataTests extends BaseSQLTests {
     @Test @Ignore("Does not find system table")
     public void jdbcSchemaTest2() throws SQLException, IOException, InterruptedException,
             ServerAcl.AclFormatException, ClassNotFoundException {
-        HSQDBManager manager = new HSQDBManager(BaseSQLTests.rustDirectory);
+        HSQDBManager manager = new HSQDBManager(BaseSQLTests.RUST_DIRECTORY);
         manager.start();
         Connection connection = manager.getConnection();
         try (Statement s = connection.createStatement()) {
@@ -550,11 +552,11 @@ public class MetadataTests extends BaseSQLTests {
 
         File script = createInputScript("CREATE VIEW V AS SELECT * FROM mytable");
         CompilerMessages messages = CompilerMain.execute(
-                "--jdbcSource", manager.getConnectionString(), "-o", BaseSQLTests.testFilePath, script.getPath());
+                "--jdbcSource", manager.getConnectionString(), "-o", BaseSQLTests.TEST_FILE_PATH, script.getPath());
         manager.stop();
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
     }
 
     @Test
@@ -562,7 +564,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript("""
                 CREATE FUNCTION myfunction(d DATE, i INTEGER) RETURNS VARCHAR NOT NULL;
                 CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', '5');""");
-        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertEquals(1, messages.errorCount());
         Assert.assertTrue(messages.toString().contains(
                 "Cannot apply 'myfunction' to arguments of type 'myfunction(<DATE>, <CHAR(1)>)'. " +
@@ -577,7 +579,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE FUNCTION "EMPTY"() RETURNS VARCHAR;
                 CREATE VIEW V1 AS SELECT "empty"();""");
 
-        File udf = Paths.get(rustDirectory, "udf.rs").toFile();
+        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
         script.println("""
                 use feldera_sqllib::*;
@@ -591,12 +593,12 @@ public class MetadataTests extends BaseSQLTests {
                    Ok(Some(SqlString::new()))
                 }""");
         script.close();
-        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
 
-        Path protos = Paths.get(BaseSQLTests.rustDirectory, DBSPCompiler.STUBS_FILE_NAME);
+        Path protos = Paths.get(BaseSQLTests.RUST_DIRECTORY, DBSPCompiler.STUBS_FILE_NAME);
         Assert.assertTrue(protos.toFile().exists());
         List<String> str = Files.readAllLines(protos);
         Assert.assertEquals("""
@@ -610,7 +612,6 @@ public class MetadataTests extends BaseSQLTests {
 
                 use feldera_sqllib::*;
                 use crate::*;
-
                 pub fn contains_number(str: SqlString, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
                     udf::contains_number(
                         str,
@@ -633,10 +634,10 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE T (COL1 INT NOT NULL DEFAULT 0, COL2 DOUBLE DEFAULT 0.0, COL3 VARCHAR DEFAULT NULL);
                 CREATE VIEW V AS SELECT COL1 FROM T;""";
         File file = createInputScript(sql);
-        CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
     }
 
     @Test
@@ -654,6 +655,10 @@ public class MetadataTests extends BaseSQLTests {
                     --alltables
                       Generate an input for each CREATE TABLE, even if the table is not used\s
                       by any view
+                      Default: false
+                    --crates
+                      Generate code using multiple crates; `outputFile` is interpreted as a\s
+                      directory.\s
                       Default: false
                     --dataflow
                       Emit the Dataflow graph of the program in the specified JSON file
@@ -834,7 +839,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         File json = File.createTempFile("out", ".json", new File("."));
         json.deleteOnExit();
-        File tmp = File.createTempFile("out", ".rs", new File(rustDirectory));
+        File tmp = File.createTempFile("out", ".rs", new File(RUST_DIRECTORY));
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
         //noinspection ResultOfMethodCallIgnored
@@ -842,6 +847,8 @@ public class MetadataTests extends BaseSQLTests {
         assert message.exitCode == 0;
         String js = Utilities.readFile(json.toPath());
         Assert.assertFalse(js.contains("fibonacci" + DeclareViewStatement.declSuffix));
+        //noinspection ResultOfMethodCallIgnored
+        tmp.delete();
     }
 
     @Test
@@ -860,7 +867,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         File json = File.createTempFile("out", ".json", new File("."));
         json.deleteOnExit();
-        File tmp = File.createTempFile("out", ".rs", new File(rustDirectory));
+        File tmp = File.createTempFile("out", ".rs", new File(RUST_DIRECTORY));
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
         @SuppressWarnings("unused")

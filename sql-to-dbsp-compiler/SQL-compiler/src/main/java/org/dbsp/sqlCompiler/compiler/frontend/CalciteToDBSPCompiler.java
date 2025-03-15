@@ -164,6 +164,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -189,7 +190,6 @@ import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -1013,7 +1013,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                 // Create external tables table
                 JdbcTableScan jscan = (JdbcTableScan) scan;
-                RelDataType tableRowType = jscan.jdbcTable.getRowType(SqlToRelCompiler.TYPE_FACTORY);
+                RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.sqlToRelCompiler.typeFactory);
                 DBSPTypeStruct originalRowType = this.convertType(tableRowType, true)
                         .to(DBSPTypeStruct.class)
                         .rename(tableName);
@@ -2394,7 +2394,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPComparatorExpression comparator = CalciteToDBSPCompiler.generateComparator(
                 node, group.orderKeys.getFieldCollations(), inputRowType);
 
-        // The rank must be added at the end of the input collection (that's how Calcite expects it).
+        // The rank must be added at the end of the input tuple (that's how Calcite expects it).
         DBSPVariablePath left = new DBSPVariablePath(new DBSPTypeInteger(
                 node, 64, true, false));
         DBSPVariablePath right = new DBSPVariablePath(inputRowType.ref());
@@ -2408,8 +2408,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, index.outputPort());
         this.addOperator(diff);
         DBSPI32Literal limitValue = new DBSPI32Literal(limit);
+        DBSPEqualityComparatorExpression eq = new DBSPEqualityComparatorExpression(node, comparator);
         DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
-                node, numbering, comparator, limitValue, outputProducer, diff.outputPort());
+                node, numbering, comparator, limitValue, eq, outputProducer, diff.outputPort());
         this.addOperator(topK);
         DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK.outputPort());
         this.addOperator(integral);
@@ -3001,7 +3002,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 if (originalSortType.is(DBSPTypeDecimal.class)) {
                     DBSPTypeDecimal dec = originalSortType.to(DBSPTypeDecimal.class);
                     // convert back to decimal and rescale
-                    var intermediateType = new DBSPTypeDecimal(node, dec.precision + dec.scale, 0, originalSortType.mayBeNull);
+                    var intermediateType = new DBSPTypeDecimal(
+                            node, dec.precision + dec.scale, 0, originalSortType.mayBeNull);
                     unwrap = unwrap.cast(intermediateType, false);
                     unwrap = new DBSPBinaryExpression(node, originalSortType,
                             DBSPOpcode.SHIFT_LEFT, unwrap, new DBSPI32Literal(-dec.scale));
@@ -3275,9 +3277,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Since TopK is always incremental we have to wrap it into a D-I pair
             DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, index.outputPort());
             this.addOperator(diff);
+            DBSPEqualityComparatorExpression eq = new DBSPEqualityComparatorExpression(node, comparator);
             DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
                     node, DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER,
-                    comparator, limit, null, diff.outputPort());
+                    comparator, limit, eq, null, diff.outputPort());
             this.addOperator(topK);
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK.outputPort());
             this.addOperator(integral);
@@ -3637,10 +3640,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             */
         }
 
-        String saneName = this.compiler.getSaneStructName(stat.typeName);
+        String saneName = this.compiler.generateStructName(stat.typeName, fields);
         DBSPTypeStruct struct = new DBSPTypeStruct(object, stat.typeName, saneName, fields, false);
         this.compiler.registerStruct(struct);
-        DBSPItem item = new DBSPStructItem(struct);
+        DBSPItem item = new DBSPStructItem(struct, null);
         this.getCircuit().addDeclaration(new DBSPDeclaration(item));
         return null;
     }
@@ -3693,11 +3696,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPFunction function = stat.function.getImplementation(
                 this.compiler.getTypeCompiler(), this.compiler);
         if (function != null) {
-            DBSPType returnType = stat.function.getFunctionReturnType(this.compiler.getTypeCompiler());
-            if (returnType.is(DBSPTypeStruct.class)) {
-                this.getCircuit().addDeclaration(new DBSPDeclaration(
-                        new DBSPStructWithHelperItem(returnType.to(DBSPTypeStruct.class))));
-            }
             this.getCircuit().addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(function)));
             return function;
         } else {

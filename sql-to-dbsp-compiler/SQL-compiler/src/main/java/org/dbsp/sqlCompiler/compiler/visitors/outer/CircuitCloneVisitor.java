@@ -55,7 +55,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     protected final Map<ICircuit, ICircuit> circuitRemap;
     protected final boolean force;
     protected final Set<IDBSPOuterNode> visited = new HashSet<>();
-    /** Stack of circuits under construction.  Not the same as 'currrent': current
+    /** Stack of circuits under construction.  Not the same as 'current': current
      * has nodes from the *old* circuit, whereas these are nodes in the *new* circuit. */
     protected final List<ICircuit> underConstruction;
 
@@ -106,8 +106,6 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         this.map(old, newOp, true);
         assert old.node() == this.getCurrent();
         long derivedFrom = old.node().derivedFrom;
-        if (derivedFrom == -1)
-            derivedFrom = old.node().id;
         newOp.node().setDerivedFrom(derivedFrom);
         assert old.outputType().sameType(newOp.outputType()) :
           "Replacing operator with type\n" + old.outputType() +
@@ -199,14 +197,14 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                     .decrease();
         }
         DBSPOperatorWithError result = operator.withInputs(sources, this.force);
-        result.setDerivedFrom(operator.id);
+        result.setDerivedFrom(operator.derivedFrom);
         this.map(operator.getOutput(0), result.getOutput(0), true);
         this.map(operator.getOutput(1), result.getOutput(1), false);
     }
 
     @Override
     public void postorder(DBSPDeclaration declaration) {
-        this.getUnderConstruction().addDeclaration(declaration);
+        this.getUnderConstructionCircuit().addDeclaration(declaration);
     }
 
     @Override
@@ -453,6 +451,10 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     @Override
     public void postorder(DBSPOperatorWithError operator) { this.replace(operator); }
 
+    public DBSPCircuit getUnderConstructionCircuit() {
+        return this.underConstruction.get(0).to(DBSPCircuit.class);
+    }
+
     public ICircuit getUnderConstruction() {
         return Utilities.last(this.underConstruction);
     }
@@ -478,7 +480,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     @Override
     public void postorder(DBSPNestedOperator operator) {
         DBSPNestedOperator result = Utilities.removeLast(this.underConstruction).to(DBSPNestedOperator.class);
-        result.setDerivedFrom(operator.id);
+        result.setDerivedFrom(operator.derivedFrom);
         result.copyAnnotations(operator);
         if (result.sameCircuit(operator))
             result = operator;
@@ -508,6 +510,9 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         if (result.sameCircuit(circuit)) {
             DBSPNode.discardOuterNode(result);
             result = circuit;
+        } else {
+            Logger.INSTANCE.belowLevel(this, 1)
+                    .append("Circuit has changed").newline();
         }
         this.map(circuit, result);
     }

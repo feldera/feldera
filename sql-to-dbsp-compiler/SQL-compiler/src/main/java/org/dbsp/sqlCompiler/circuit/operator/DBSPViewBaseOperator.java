@@ -45,9 +45,7 @@ public abstract class DBSPViewBaseOperator extends DBSPUnaryOperator {
     public IIndentStream toString(IIndentStream builder) {
         return this.writeComments(builder, this.query)
                 .append("let ")
-                .append(this.getOutputName())
-                .append(": ")
-                .append(this.outputStreamType)
+                .append(this.getNodeName(false))
                 .append(" = ")
                 .append(this.input().getOutputName())
                 .append(";");

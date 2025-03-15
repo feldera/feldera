@@ -51,15 +51,18 @@ import org.dbsp.util.graph.Port;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** A DBSP circuit. */
 public final class DBSPCircuit extends DBSPNode
         implements IDBSPOuterNode, IWritesLogs, ICircuit, DiGraph<DBSPOperator> {
     public final List<DBSPDeclaration> declarations;
+    public final Map<String, DBSPDeclaration> declarationMap = new HashMap<>();
     public final LinkedHashMap<ProgramIdentifier, DBSPSourceTableOperator> sourceOperators = new LinkedHashMap<>();
     public final LinkedHashMap<ProgramIdentifier, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
     public final LinkedHashMap<ProgramIdentifier, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
@@ -77,9 +80,9 @@ public final class DBSPCircuit extends DBSPNode
     }
 
     private DBSPCircuit(ProgramMetadata metadata, List<DBSPDeclaration> declarations, List<DBSPOperator> allOperators) {
-        super(CalciteObject.EMPTY);
-        this.metadata = metadata;
-        this.declarations = declarations;
+        this(metadata);
+        for (DBSPDeclaration decl: declarations)
+            this.addDeclaration(decl);
         for (DBSPOperator op: allOperators) {
             this.addOperator(op);
         }
@@ -151,7 +154,10 @@ public final class DBSPCircuit extends DBSPNode
     }
 
     public void addDeclaration(DBSPDeclaration decl) {
+        if (this.declarationMap.containsKey(decl.getName()))
+            return;
         this.declarations.add(decl);
+        Utilities.putNew(this.declarationMap, decl.getName(), decl);
     }
 
     public void addOperator(DBSPOperator operator) {
@@ -247,13 +253,16 @@ public final class DBSPCircuit extends DBSPNode
         visitor.pop(this);
     }
 
-    /** Return true if this circuit and other are identical (have the exact same operators). */
+    /** Return true if this circuit and other are identical
+     * (have the exact same operators and declarations). */
     public boolean sameCircuit(ICircuit other) {
         if (this == other)
             return true;
         if (!other.is(DBSPCircuit.class))
             return false;
-        return Linq.same(this.allOperators, other.to(DBSPCircuit.class).allOperators);
+        if (!Linq.same(this.allOperators, other.to(DBSPCircuit.class).allOperators))
+            return false;
+        return Linq.same(this.declarations, other.to(DBSPCircuit.class).declarations);
     }
 
     @Override
@@ -292,7 +301,7 @@ public final class DBSPCircuit extends DBSPNode
                 fromJsonOuterList(node, "declarations", decoder, DBSPDeclaration.class);
         List<DBSPOperator> operators =
                 fromJsonOuterList(node, "allOperators", decoder, DBSPOperator.class);
-        ProgramMetadata metadata = ProgramMetadata.fromJson(Utilities.getProperty(node, "metadata"));
+        ProgramMetadata metadata = ProgramMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder.typeFactory);
         return new DBSPCircuit(metadata, declarations, operators);
     }
 }

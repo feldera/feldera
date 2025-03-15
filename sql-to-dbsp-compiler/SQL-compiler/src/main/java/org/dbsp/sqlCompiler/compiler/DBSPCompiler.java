@@ -38,6 +38,7 @@ import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.compiler.backend.MerkleInner;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
@@ -115,6 +116,20 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public ProgramIdentifier canonicalName(String name, boolean nameIsQuoted) {
         String canon = this.options.canonicalName(name, nameIsQuoted);
         return new ProgramIdentifier(canon, nameIsQuoted);
+    }
+
+    public String generateStructName(ProgramIdentifier typeName, List<DBSPTypeStruct.Field> fields) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(typeName);
+        builder.append("[");
+        for (var field: fields) {
+            builder.append(field.getSanitizedName())
+                    .append(":")
+                    .append(field.getType())
+                    .append(",");
+        }
+        builder.append("]");
+        return MerkleInner.hash(builder.toString()).makeIdentifier("struct");
     }
 
     /** Where does the compiled program come from? */
@@ -247,10 +262,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     public TypeCompiler getTypeCompiler() {
         return this.typeCompiler;
-    }
-
-    public String getSaneStructName(ProgramIdentifier name) {
-        return this.globalTypes.generateSaneName(name);
     }
 
     public void registerStruct(DBSPTypeStruct type) {
@@ -752,7 +763,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         if (this.getDebugLevel() > 0 && !temporary && circuit != null) {
             ToDot.dump(this, "final.png", this.getDebugLevel(), "png", circuit);
         }
-        if (this.options.ioOptions.verbosity > 1)
+        if (this.options.ioOptions.verbosity > 2)
             System.out.println("Compilation took " + elapsedTimeInMs() + "ms");
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Compilation time ")
