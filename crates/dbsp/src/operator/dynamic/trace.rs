@@ -1,6 +1,7 @@
-use crate::circuit::circuit_builder::StreamId;
+use crate::circuit::circuit_builder::{ReplaySources, StreamId};
 use crate::circuit::metadata::NUM_INPUTS;
 use crate::circuit::metrics::Gauge;
+use crate::circuit::NodeId;
 use crate::operator::require_persistent_id;
 use crate::{
     circuit::{
@@ -20,6 +21,7 @@ use crate::{
 use dyn_clone::clone_box;
 use minitrace::trace;
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::path::Path;
 use std::{
     borrow::Cow,
@@ -311,6 +313,41 @@ pub type FileValSpine<B, C> = Spine<
     >,
 >;
 
+pub(crate) fn register_trace_replay_sources<C, B, T>(
+    circuit: &C,
+    stream: &Stream<C, B>,
+    trace: &Stream<C, T>,
+    delayed_trace: &Stream<C, T>,
+    feedback_node_id: NodeId,
+) where
+    C: Circuit,
+    B: BatchReader,
+    T: Trace,
+{
+    if TypeId::of::<()>() == TypeId::of::<C::Time>()
+        && TypeId::of::<()>() == TypeId::of::<T::Time>()
+    {
+        let replay_sources = vec![
+            trace.origin_node_id().clone(),
+            delayed_trace.origin_node_id().clone(),
+            circuit.global_node_id().child(feedback_node_id),
+        ];
+
+        circuit.cache_insert(
+            ReplaySources::new(stream.stream_id()),
+            replay_sources.clone(),
+        );
+        circuit.cache_insert(
+            ReplaySources::new(trace.stream_id()),
+            replay_sources.clone(),
+        );
+        circuit.cache_insert(
+            ReplaySources::new(delayed_trace.stream_id()),
+            replay_sources.clone(),
+        );
+    }
+}
+
 impl<C, B> Stream<C, B>
 where
     C: Circuit,
@@ -352,7 +389,7 @@ where
                         bounds.clone(),
                     );
                     z1.set_delta_stream(self);
-                    let (local, z1feedback) = circuit.add_feedback_named(
+                    let (delayed_trace, z1feedback) = circuit.add_feedback_named(
                         unique_name
                             .map(|name| format!("{name}.integral"))
                             .as_deref(),
@@ -363,19 +400,28 @@ where
                             output_factories,
                             circuit.clone(),
                         ),
-                        (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                        (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
                         (&self, OwnershipPreference::PREFER_OWNED),
                     );
                     if self.is_sharded() {
-                        local.mark_sharded();
+                        delayed_trace.mark_sharded();
                         trace.mark_sharded();
                     }
-                    z1feedback.connect_with_preference(
+
+                    let feedback_node_id = z1feedback.connect_with_preference(
                         &trace,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), local);
+                    register_trace_replay_sources(
+                        circuit,
+                        self,
+                        &trace,
+                        &delayed_trace,
+                        feedback_node_id,
+                    );
+
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     trace
                 })
             })
@@ -513,31 +559,44 @@ where
                 z1.set_delta_stream(self);
 
                 circuit.region("integrate_trace", || {
-                    let (ExportStream { local, export }, z1feedback) = circuit
-                        .add_feedback_with_export_named(
-                            unique_name
-                                .map(|name| format!("{name}.integral"))
-                                .as_deref(),
-                            z1,
-                        );
+                    let (
+                        ExportStream {
+                            local: delayed_trace,
+                            export,
+                        },
+                        z1feedback,
+                    ) = circuit.add_feedback_with_export_named(
+                        unique_name
+                            .map(|name| format!("{name}.integral"))
+                            .as_deref(),
+                        z1,
+                    );
 
                     let trace = circuit.add_binary_operator_with_preference(
                         UntimedTraceAppend::<Spine<B>>::new(),
-                        (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                        (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
                         (&self, OwnershipPreference::PREFER_OWNED),
                     );
 
                     if self.is_sharded() {
-                        local.mark_sharded();
+                        delayed_trace.mark_sharded();
                         trace.mark_sharded();
                     }
 
-                    z1feedback.connect_with_preference(
+                    let feedback_node_id = z1feedback.connect_with_preference(
                         &trace,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), local);
+                    register_trace_replay_sources(
+                        circuit,
+                        self,
+                        &trace,
+                        &delayed_trace,
+                        feedback_node_id,
+                    );
+
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     circuit.cache_insert(ExportId::new(trace.stream_id()), export);
 
                     trace

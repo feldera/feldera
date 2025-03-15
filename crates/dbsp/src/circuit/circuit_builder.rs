@@ -199,6 +199,12 @@ impl<D> RefStreamValue<D> {
     }
 }
 
+pub trait StreamMetadata {
+    fn stream_id(&self) -> StreamId;
+    fn local_node_id(&self) -> NodeId;
+    fn origin_node_id(&self) -> &GlobalNodeId;
+}
+
 /// A `Stream<C, D>` stores the output value of type `D` of an operator in a
 /// circuit with type `C`.
 ///
@@ -661,6 +667,18 @@ pub struct Stream<C, D> {
     val: RefStreamValue<D>,
 }
 
+impl<C, D> StreamMetadata for Stream<C, D> {
+    fn stream_id(&self) -> StreamId {
+        self.stream_id
+    }
+    fn local_node_id(&self) -> NodeId {
+        self.local_node_id
+    }
+    fn origin_node_id(&self) -> &GlobalNodeId {
+        &self.origin_node_id
+    }
+}
+
 impl<C, D> Clone for Stream<C, D>
 where
     C: Clone,
@@ -893,7 +911,7 @@ pub trait Node {
         }
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId>;
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata>;
 
     fn name(&self) -> Cow<'static, str>;
 
@@ -962,7 +980,7 @@ pub trait Node {
     /// the given checkpoint in directory `base`.
     fn restore(&mut self, base: &Path) -> Result<(), DbspError>;
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError>;
+    fn start_catchup(&mut self) -> Result<(), DbspError>;
 
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
     fn fingerprint(&self, fip: &mut Fingerprinter) {
@@ -1274,6 +1292,8 @@ impl Edge {
 
 circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
 
+circuit_cache_key!(ReplaySources(StreamId => Vec<GlobalNodeId>));
+
 /// Trait for an object that has a clock associated with it.
 /// This is implemented trivially for root circuits.
 pub trait WithClock {
@@ -1433,6 +1453,10 @@ pub trait Circuit: WithClock + Clone + 'static {
     where
         K: TypedMapKey<CircuitStoreMarker> + 'static,
         K::Value: Clone;
+
+    fn get_replay_sources(&self, stream_id: StreamId) -> Option<Vec<GlobalNodeId>> {
+        self.cache_get(&ReplaySources::new(stream_id))
+    }
 
     /// Connect `stream` as input to `to`.
     fn connect_stream<T>(
@@ -1830,7 +1854,8 @@ pub trait Circuit: WithClock + Clone + 'static {
         operator: Rc<RefCell<Op>>,
         input_stream: &Stream<Self, I>,
         input_preference: OwnershipPreference,
-    ) where
+    ) -> NodeId
+    where
         I: Data,
         O: Data,
         Op: StrictUnaryOperator<I, O>;
@@ -3260,7 +3285,8 @@ where
         operator: Rc<RefCell<Op>>,
         input_stream: &Stream<Self, I>,
         input_preference: OwnershipPreference,
-    ) where
+    ) -> NodeId
+    where
         I: Data,
         O: Data,
         Op: StrictUnaryOperator<I, O>,
@@ -3274,8 +3300,8 @@ where
             let output_node = FeedbackInputNode::new(operator, input_stream.clone(), id);
             self.connect_stream(input_stream, id, input_preference);
             self.add_dependency(output_node_id, id);
-            (output_node, ())
-        });
+            (output_node, id)
+        })
     }
 
     fn subcircuit<F, T, E>(
@@ -3537,8 +3563,8 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
-        vec![self.parent_stream.origin_node_id().clone()]
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+        vec![&self.parent_stream]
     }
 
     fn is_async(&self) -> bool {
@@ -3602,7 +3628,7 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.start_catchup()
     }
 
@@ -3659,7 +3685,7 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
         vec![]
     }
 
@@ -3714,7 +3740,7 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.start_catchup()
     }
 
@@ -3774,8 +3800,8 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
-        vec![self.input_stream.origin_node_id().clone()]
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+        vec![&self.input_stream]
     }
 
     fn is_async(&self) -> bool {
@@ -3840,7 +3866,7 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.start_catchup()
     }
 
@@ -3893,8 +3919,8 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
-        vec![self.input_stream.origin_node_id().clone()]
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+        vec![&self.input_stream]
     }
 
     fn is_async(&self) -> bool {
@@ -3958,7 +3984,7 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.start_catchup()
     }
 
@@ -4026,11 +4052,8 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
-        vec![
-            self.input_stream1.origin_node_id().clone(),
-            self.input_stream2.origin_node_id().clone(),
-        ]
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+        vec![&self.input_stream1, &self.input_stream2]
     }
 
     fn is_async(&self) -> bool {
@@ -4137,7 +4160,7 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.start_catchup()
     }
 
@@ -4210,11 +4233,8 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
-        vec![
-            self.input_stream1.origin_node_id().clone(),
-            self.input_stream2.origin_node_id().clone(),
-        ]
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+        vec![&self.input_stream1, &self.input_stream2]
     }
 
     fn is_async(&self) -> bool {
@@ -4316,7 +4336,7 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.start_catchup()
     }
 
@@ -4394,11 +4414,11 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
         vec![
-            self.input_stream1.origin_node_id().clone(),
-            self.input_stream2.origin_node_id().clone(),
-            self.input_stream3.origin_node_id().clone(),
+            &self.input_stream1,
+            &self.input_stream2,
+            &self.input_stream3,
         ]
     }
 
@@ -4470,7 +4490,7 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.start_catchup()
     }
 
@@ -4567,12 +4587,12 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
         vec![
-            self.input_stream1.origin_node_id().clone(),
-            self.input_stream2.origin_node_id().clone(),
-            self.input_stream3.origin_node_id().clone(),
-            self.input_stream4.origin_node_id().clone(),
+            &self.input_stream1,
+            &self.input_stream2,
+            &self.input_stream3,
+            &self.input_stream4,
         ]
     }
 
@@ -4646,7 +4666,7 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.start_catchup()
     }
 
@@ -4731,10 +4751,10 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
         self.input_streams
             .iter()
-            .map(|stream| stream.origin_node_id().clone())
+            .map(|stream| stream as &dyn StreamMetadata)
             .collect()
     }
 
@@ -4805,7 +4825,7 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.start_catchup()
     }
 
@@ -4882,7 +4902,7 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
         vec![]
     }
 
@@ -4951,7 +4971,7 @@ where
             .restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.borrow_mut().start_catchup()
     }
 
@@ -5007,8 +5027,8 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
-        vec![self.input_stream.origin_node_id().clone()]
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+        vec![&self.input_stream]
     }
 
     fn is_async(&self) -> bool {
@@ -5079,7 +5099,7 @@ where
         Ok(())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
         self.operator.borrow_mut().start_catchup()
     }
 
@@ -5137,7 +5157,7 @@ where
     ///
     /// See [`Circuit::add_feedback`] for details.
     /// Returns node id of the input node.
-    pub fn connect(self, input_stream: &Stream<C, I>) {
+    pub fn connect(self, input_stream: &Stream<C, I>) -> NodeId {
         self.connect_with_preference(input_stream, OwnershipPreference::INDIFFERENT)
     }
 
@@ -5145,13 +5165,13 @@ where
         self,
         input_stream: &Stream<C, I>,
         input_preference: OwnershipPreference,
-    ) {
+    ) -> NodeId {
         self.circuit.connect_feedback_with_preference(
             self.output_node_id,
             self.operator,
             input_stream,
             input_preference,
-        );
+        )
     }
 }
 
@@ -5210,7 +5230,7 @@ where
         &self.id
     }
 
-    fn ancestors(&self) -> Vec<GlobalNodeId> {
+    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
         vec![]
     }
 
@@ -5252,8 +5272,8 @@ where
         Ok(())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, DbspError> {
-        Ok(false)
+    fn start_catchup(&mut self) -> Result<(), DbspError> {
+        Ok(())
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -5368,6 +5388,12 @@ impl CircuitHandle {
                 self.restore_step(&mut catchup_nodes, &mut need_backfill, need_backfill_new)?;
         }
 
+        // Configure all nodes to run in catchup mode.
+        for gid in catchup_nodes.iter() {
+            self.circuit
+                .map_node_mut(gid, &mut |node| node.start_catchup())?;
+        }
+
         // TODO: Make sure a subcircuit is added to both sets if at least one of its nodes is.
 
         Ok(())
@@ -5383,36 +5409,33 @@ impl CircuitHandle {
         need_backfill: &mut BTreeSet<GlobalNodeId>,
         need_backfill_new: BTreeSet<GlobalNodeId>,
     ) -> Result<BTreeSet<GlobalNodeId>, DbspError> {
-        let mut ancestors = BTreeSet::new();
+        let mut inputs = BTreeSet::new();
 
         for gid in need_backfill_new.iter() {
-            let node_inputs = self.circuit.map_node(gid, &mut |node| node.input_streams());
+            let node_inputs = self.circuit.map_node(gid, &mut |node| {
+                node.input_streams()
+                    .iter()
+                    .map(|stream| (stream.stream_id(), stream.origin_node_id().clone()))
+                    .collect::<Vec<_>>()
+            });
 
-            for inputs in node_inputs.into_iter() {
-                if todo!()
-                /* input has replay_source */
-                {
-                    todo!();
-                    /* add  replay sources to catchup_nodes */
-                } else {
-                    // get global node id
-                    ancestors.insert(ancestor);
-                }
+            for input in node_inputs.into_iter() {
+                inputs.insert(input);
             }
         }
 
         let mut need_backfill_new = BTreeSet::new();
 
-        for ancestor_gid in ancestors.into_iter() {
-            if !catchup_nodes.contains(&ancestor_gid) {
-                catchup_nodes.insert(ancestor_gid.clone());
-
-                if !self
-                    .circuit
-                    .map_node_mut(&ancestor_gid, &mut |node| node.start_catchup())?
-                {
-                    need_backfill.insert(ancestor_gid.clone());
-                    need_backfill_new.insert(ancestor_gid.clone());
+        for (stream_id, gid) in inputs.into_iter() {
+            if let Some(replay_sources) = self.circuit.get_replay_sources(stream_id) {
+                for source in replay_sources.into_iter() {
+                    catchup_nodes.insert(source);
+                }
+            } else {
+                if !catchup_nodes.contains(&gid) {
+                    catchup_nodes.insert(gid.clone());
+                    need_backfill.insert(gid.clone());
+                    need_backfill_new.insert(gid.clone());
                 }
             }
         }

@@ -223,8 +223,8 @@ pub trait Operator: 'static {
         Ok(())
     }
 
-    fn start_catchup(&mut self) -> Result<bool, Error> {
-        Ok(false)
+    fn start_catchup(&mut self) -> Result<(), Error> {
+        Ok(())
     }
 }
 
