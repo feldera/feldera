@@ -778,6 +778,10 @@ where
         }
     }
 
+    pub fn value(&self) -> RefStreamValue<D> {
+        self.val.clone()
+    }
+
     /// Export stream to the parent circuit.
     ///
     /// Creates a stream in the parent circuit that contains the last value in
@@ -1292,7 +1296,22 @@ impl Edge {
 
 circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
 
-circuit_cache_key!(ReplaySources(StreamId => Vec<GlobalNodeId>));
+#[derive(Clone)]
+pub struct ReplayStreams {
+    pub replay_nodes: Vec<GlobalNodeId>,
+    pub replay_stream: StreamId,
+}
+
+impl ReplayStreams {
+    pub fn new(replay_nodes: Vec<GlobalNodeId>, replay_stream: StreamId) -> Self {
+        Self {
+            replay_nodes,
+            replay_stream,
+        }
+    }
+}
+
+circuit_cache_key!(ReplaySources(StreamId => ReplayStreams));
 
 /// Trait for an object that has a clock associated with it.
 /// This is implemented trivially for root circuits.
@@ -1454,8 +1473,12 @@ pub trait Circuit: WithClock + Clone + 'static {
         K: TypedMapKey<CircuitStoreMarker> + 'static,
         K::Value: Clone;
 
-    fn get_replay_sources(&self, stream_id: StreamId) -> Option<Vec<GlobalNodeId>> {
+    fn get_replay_sources(&self, stream_id: StreamId) -> Option<ReplayStreams> {
         self.cache_get(&ReplaySources::new(stream_id))
+    }
+
+    fn add_replay_edges(&self, stream_id: StreamId, replay_stream_id: StreamId) {
+        todo!()
     }
 
     /// Connect `stream` as input to `to`.
@@ -5428,9 +5451,11 @@ impl CircuitHandle {
 
         for (stream_id, gid) in inputs.into_iter() {
             if let Some(replay_sources) = self.circuit.get_replay_sources(stream_id) {
-                for source in replay_sources.into_iter() {
+                for source in replay_sources.replay_nodes.into_iter() {
                     catchup_nodes.insert(source);
                 }
+                self.circuit
+                    .add_replay_edges(stream_id, replay_sources.replay_stream);
             } else {
                 if !catchup_nodes.contains(&gid) {
                     catchup_nodes.insert(gid.clone());

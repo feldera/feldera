@@ -117,6 +117,7 @@ where
 /// `Scheduler`. It can run the circuit exactly once or multiple times, until
 /// some termination condition is reached.
 pub trait Executor<C>: 'static {
+    fn prepare()
     fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 }
 

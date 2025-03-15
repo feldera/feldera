@@ -251,7 +251,7 @@ where
                 )
                 .mark_distinct();
             delta.mark_sharded();
-            z1feedback.operator_mut().set_delta_stream(&delta);
+            let replay_stream = z1feedback.operator_mut().set_delta_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<ValSpine<B, C>, B, C>>::new(
@@ -269,6 +269,7 @@ where
             register_trace_replay_sources(
                 circuit,
                 &delta,
+                &replay_stream,
                 &trace,
                 &delayed_trace,
                 feedback_node_id,

@@ -1,4 +1,4 @@
-use crate::circuit::circuit_builder::{ReplaySources, StreamId};
+use crate::circuit::circuit_builder::{ReplaySources, ReplayStreams, StreamId};
 use crate::circuit::metadata::NUM_INPUTS;
 use crate::circuit::metrics::Gauge;
 use crate::circuit::NodeId;
@@ -316,6 +316,7 @@ pub type FileValSpine<B, C> = Spine<
 pub(crate) fn register_trace_replay_sources<C, B, T>(
     circuit: &C,
     stream: &Stream<C, B>,
+    replay_stream: &Stream<C, B>,
     trace: &Stream<C, T>,
     delayed_trace: &Stream<C, T>,
     feedback_node_id: NodeId,
@@ -333,18 +334,17 @@ pub(crate) fn register_trace_replay_sources<C, B, T>(
             circuit.global_node_id().child(feedback_node_id),
         ];
 
-        circuit.cache_insert(
-            ReplaySources::new(stream.stream_id()),
-            replay_sources.clone(),
-        );
-        circuit.cache_insert(
-            ReplaySources::new(trace.stream_id()),
-            replay_sources.clone(),
-        );
-        circuit.cache_insert(
-            ReplaySources::new(delayed_trace.stream_id()),
-            replay_sources.clone(),
-        );
+        let replay = ReplayStreams::new(replay_sources, replay_stream.stream_id());
+
+        circuit.cache_insert(ReplaySources::new(stream.stream_id()), replay);
+        // circuit.cache_insert(
+        //     ReplaySources::new(trace.stream_id()),
+        //     replay_sources.clone(),
+        // );
+        // circuit.cache_insert(
+        //     ReplaySources::new(delayed_trace.stream_id()),
+        //     replay_sources.clone(),
+        // );
     }
 }
 
@@ -388,7 +388,7 @@ where
                         circuit.root_scope(),
                         bounds.clone(),
                     );
-                    z1.set_delta_stream(self);
+                    let replay_stream = z1.set_delta_stream(self);
                     let (delayed_trace, z1feedback) = circuit.add_feedback_named(
                         unique_name
                             .map(|name| format!("{name}.integral"))
@@ -416,6 +416,7 @@ where
                     register_trace_replay_sources(
                         circuit,
                         self,
+                        &replay_stream,
                         &trace,
                         &delayed_trace,
                         feedback_node_id,
@@ -556,7 +557,7 @@ where
                 let unique_name = self.get_unique_name();
 
                 let mut z1 = Z1Trace::new(input_factories, true, circuit.root_scope(), bounds);
-                z1.set_delta_stream(self);
+                let replay_stream = z1.set_delta_stream(self);
 
                 circuit.region("integrate_trace", || {
                     let (
@@ -591,6 +592,7 @@ where
                     register_trace_replay_sources(
                         circuit,
                         self,
+                        &replay_stream,
                         &trace,
                         &delayed_trace,
                         feedback_node_id,
@@ -628,7 +630,7 @@ where
     pub fn connect(self, stream: &Stream<C, T::Batch>) {
         let circuit = self.delayed_trace.circuit();
 
-        self.feedback.operator_mut().set_delta_stream(stream);
+        let replay_stream = self.feedback.operator_mut().set_delta_stream(stream);
 
         let trace = circuit.add_binary_operator_with_preference(
             <UntimedTraceAppend<T>>::new(),
@@ -644,8 +646,18 @@ where
             trace.mark_sharded();
         }
 
-        self.feedback
+        let feedback_node_id = self
+            .feedback
             .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+
+        register_trace_replay_sources(
+            circuit,
+            stream,
+            &replay_stream,
+            &trace,
+            &self.delayed_trace,
+            feedback_node_id,
+        );
 
         circuit.cache_insert(
             DelayedTraceId::new(trace.stream_id()),
@@ -999,8 +1011,15 @@ where
         }
     }
 
-    pub fn set_delta_stream(&mut self, stream: &Stream<C, B>) {
-        self.delta_stream = Some(stream.clone());
+    pub fn set_delta_stream(&mut self, stream: &Stream<C, B>) -> Stream<C, B> {
+        let replay_stream = Stream::with_value(
+            stream.circuit().clone(),
+            self.global_id.local_node_id().unwrap(),
+            stream.value(),
+        );
+
+        self.delta_stream = Some(replay_stream.clone());
+        replay_stream
     }
 }
 

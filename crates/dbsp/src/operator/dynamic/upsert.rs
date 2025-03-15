@@ -135,7 +135,7 @@ where
         circuit.region("update_set", || {
             let bounds = <TraceBounds<K, DynUnit>>::unbounded();
 
-            let (local, z1feedback) = circuit.add_feedback_named(
+            let (delayed_trace, z1feedback) = circuit.add_feedback_named(
                 unique_name
                     .map(|name| format!("{name}.integral"))
                     .as_deref(),
@@ -146,7 +146,7 @@ where
                     bounds.clone(),
                 ),
             );
-            local.mark_sharded();
+            delayed_trace.mark_sharded();
 
             let delta = circuit
                 .add_binary_operator(
@@ -154,25 +154,35 @@ where
                         &factories.batch_factories,
                         bounds.clone(),
                     ),
-                    &local,
+                    &delayed_trace,
                     &self,
                 )
                 .mark_distinct();
             delta.mark_sharded();
-            z1feedback.operator_mut().set_delta_stream(&delta);
+            let replay_stream = z1feedback.operator_mut().set_delta_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<FileKeySpine<B, C>, B, C>>::new(
                     &factories.trace_factories,
                     circuit.clone(),
                 ),
-                (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
                 (&delta, OwnershipPreference::PREFER_OWNED),
             );
             trace.mark_sharded();
 
-            z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
-            circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), local);
+            let feedback_node_id = z1feedback
+                .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+            register_trace_replay_sources(
+                circuit,
+                &delta,
+                &replay_stream,
+                &trace,
+                &delayed_trace,
+                feedback_node_id,
+            );
+
+            circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
             circuit.cache_insert(TraceId::new(delta.stream_id()), trace);
             circuit.cache_insert(BoundsId::<B>::new(delta.stream_id()), bounds);
             delta
@@ -259,7 +269,7 @@ where
                 )
                 .mark_distinct();
             delta.mark_sharded();
-            z1feedback.operator_mut().set_delta_stream(&delta);
+            let replay_stream = z1feedback.operator_mut().set_delta_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
                 <TraceAppend<ValSpine<B, C>, B, C>>::new(
@@ -277,6 +287,7 @@ where
             register_trace_replay_sources(
                 circuit,
                 &delta,
+                &replay_stream,
                 &trace,
                 &delayed_trace,
                 feedback_node_id,
