@@ -6,6 +6,7 @@ use itertools::Itertools;
 use serde::Serialize;
 use std::{
     borrow::Cow,
+    collections::BTreeSet,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     future::Future,
@@ -88,12 +89,18 @@ pub trait Scheduler
 where
     Self: Sized,
 {
+    fn new() -> Self;
+
     /// Create a scheduler for a circuit.
     ///
     /// This method is invoked at circuit construction time to perform any
     /// required preparatory computation, e.g., compute a complete static
     /// schedule or build data structures needed for dynamic scheduling.
-    fn prepare<C>(circuit: &C) -> Result<Self, Error>
+    fn prepare<C>(
+        &mut self,
+        circuit: &C,
+        nodes: Option<&BTreeSet<GlobalNodeId>>,
+    ) -> Result<(), Error>
     where
         C: Circuit;
 
@@ -117,7 +124,8 @@ where
 /// `Scheduler`. It can run the circuit exactly once or multiple times, until
 /// some termination condition is reached.
 pub trait Executor<C>: 'static {
-    fn prepare()
+    fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<GlobalNodeId>>)
+        -> Result<(), Error>;
     fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 }
 
@@ -132,15 +140,14 @@ pub(crate) struct IterativeExecutor<F, S> {
 }
 
 impl<F, S> IterativeExecutor<F, S> {
-    pub(crate) fn new<C>(circuit: &C, termination_check: F) -> Result<Self, Error>
+    pub(crate) fn new(termination_check: F) -> Self
     where
-        C: Circuit,
         S: Scheduler,
     {
-        Ok(Self {
+        Self {
             termination_check,
-            scheduler: <S as Scheduler>::prepare(circuit)?,
-        })
+            scheduler: <S as Scheduler>::new(),
+        }
     }
 }
 
@@ -168,6 +175,14 @@ where
             Ok(())
         })
     }
+
+    fn prepare(
+        &mut self,
+        circuit: &C,
+        nodes: Option<&BTreeSet<GlobalNodeId>>,
+    ) -> Result<(), Error> {
+        self.scheduler.prepare(circuit, nodes)
+    }
 }
 
 /// An executor that evaluates the circuit exactly once every time it is
@@ -181,13 +196,10 @@ where
     S: Scheduler,
     Self: Sized,
 {
-    pub(crate) fn new<C>(circuit: &C) -> Result<Self, Error>
-    where
-        C: Circuit,
-    {
-        Ok(Self {
-            scheduler: <S as Scheduler>::prepare(circuit)?,
-        })
+    pub(crate) fn new() -> Self {
+        Self {
+            scheduler: <S as Scheduler>::new(),
+        }
     }
 }
 
@@ -198,6 +210,14 @@ where
 {
     fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
         Box::pin(async { self.scheduler.step(circuit).await })
+    }
+
+    fn prepare(
+        &mut self,
+        circuit: &C,
+        nodes: Option<&BTreeSet<GlobalNodeId>>,
+    ) -> Result<(), Error> {
+        self.scheduler.prepare(circuit, nodes)
     }
 }
 

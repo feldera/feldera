@@ -41,7 +41,7 @@
 
 use std::{
     cell::{RefCell, RefMut},
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     panic,
     sync::{Arc, Mutex},
 };
@@ -200,12 +200,24 @@ impl Inner {
         }
     }
 
-    fn prepare<C>(circuit: &C) -> Result<Self, Error>
+    fn prepare<C>(circuit: &C, nodes: Option<&BTreeSet<GlobalNodeId>>) -> Result<Self, Error>
     where
         C: Circuit,
     {
+        let circuit_gid = circuit.global_node_id();
+        let nodes = nodes
+            .map(|nodes| {
+                nodes
+                    .iter()
+                    .filter(|gid| gid.is_child_of(&circuit_gid))
+                    .map(|gid| gid.local_node_id().unwrap())
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_else(|| BTreeSet::from_iter(circuit.node_ids()));
+
         // Check that ownership constraints don't introduce cycles.
-        let mut g = circuit_graph(circuit);
+        let mut g: petgraph::prelude::GraphMap<NodeId, (), petgraph::Directed> =
+            circuit_graph(circuit);
 
         let extra_constraints = ownership_constraints(circuit)?;
 
@@ -218,29 +230,30 @@ impl Inner {
             node_id: GlobalNodeId::child_of(circuit, e.node_id()),
         })?;
 
-        let num_nodes = circuit.num_nodes();
+        let num_nodes = nodes.len();
         let mut successors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
         let mut predecessors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
 
         for edge in circuit.edges().iter() {
-            successors.entry(edge.from).or_default().push(edge.to);
+            if nodes.contains(&edge.to) && nodes.contains(&edge.from) {
+                successors.entry(edge.from).or_default().push(edge.to);
 
-            predecessors.entry(edge.to).or_default().push(edge.from);
+                predecessors.entry(edge.to).or_default().push(edge.from);
+            }
         }
 
         // Add ownership constraints to the graph.
         for (from, to) in extra_constraints.into_iter() {
-            successors.entry(from).or_default().push(to);
-            predecessors.entry(to).or_default().push(from);
+            if nodes.contains(&to) && nodes.contains(&from) {
+                successors.entry(from).or_default().push(to);
+                predecessors.entry(to).or_default().push(from);
+            }
         }
 
         let mut tasks = Vec::with_capacity(num_nodes);
         let mut num_async_nodes = 0;
 
-        for (i, node_id) in circuit.node_ids().into_iter().enumerate() {
-            // We rely on node id to be equal to its index.
-            assert!(i == node_id.id());
-
+        for &node_id in nodes.iter() {
             let num_predecessors = predecessors.entry(node_id).or_default().len();
 
             let is_async = circuit.is_async_node(node_id);
@@ -267,7 +280,7 @@ impl Inner {
         };
 
         // Setup scheduler callbacks.
-        for node_id in circuit.node_ids().into_iter() {
+        for &node_id in nodes.iter() {
             if circuit.is_async_node(node_id) {
                 let notifications = scheduler.notifications.clone();
                 circuit.register_ready_callback(
@@ -405,20 +418,32 @@ impl Inner {
     }
 }
 
-pub struct DynamicScheduler(RefCell<Inner>);
+pub struct DynamicScheduler(Option<RefCell<Inner>>);
 
 impl DynamicScheduler {
     fn inner_mut(&self) -> RefMut<'_, Inner> {
-        self.0.borrow_mut()
+        self.0
+            .as_ref()
+            .expect("DynamicScheduler: prepare() must be called before running the circuit")
+            .borrow_mut()
     }
 }
 
 impl Scheduler for DynamicScheduler {
-    fn prepare<C>(circuit: &C) -> Result<Self, Error>
+    fn new() -> Self {
+        Self(None)
+    }
+
+    fn prepare<C>(
+        &mut self,
+        circuit: &C,
+        nodes: Option<&BTreeSet<GlobalNodeId>>,
+    ) -> Result<(), Error>
     where
         C: Circuit,
     {
-        Ok(Self(RefCell::new(Inner::prepare(circuit)?)))
+        self.0 = Some(RefCell::new(Inner::prepare(circuit, nodes)?));
+        Ok(())
     }
 
     #[allow(clippy::await_holding_refcell_ref)]

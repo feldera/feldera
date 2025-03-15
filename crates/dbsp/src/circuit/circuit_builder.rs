@@ -1128,6 +1128,10 @@ impl GlobalNodeId {
             .map(|(_, prefix)| GlobalNodeId::from_path(prefix))
     }
 
+    pub fn is_child_of(&self, parent: &Self) -> bool {
+        self.parent_id().as_ref() == Some(parent)
+    }
+
     /// Get the path from global.
     pub fn path(&self) -> &[NodeId] {
         &self.0
@@ -2308,8 +2312,8 @@ impl RootCircuit {
 
         let mut circuit = RootCircuit::new();
         let res = constructor(&mut circuit).map_err(DbspError::Constructor)?;
-        let executor =
-            Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<RootCircuit>>;
+        let mut executor = Box::new(<OnceExecutor<S>>::new()) as Box<dyn Executor<RootCircuit>>;
+        executor.prepare(&circuit, None)?;
 
         // Alternatively, `CircuitHandle` should expose `clock_start` and `clock_end`
         // APIs, so that the user can reset the circuit at runtime and start
@@ -3367,7 +3371,8 @@ where
     {
         self.subcircuit(true, |child| {
             let (termination_check, res) = constructor(child)?;
-            let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
+            let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
+            executor.prepare(child, None)?;
             Ok((res, executor))
         })
     }
@@ -3426,7 +3431,8 @@ where
                         }
                         Ok(global_fixedpoint)
                     };
-                    let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
+                    let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
+                    executor.prepare(child, None)?;
                     Ok((res, executor))
                 })
             }
@@ -3435,7 +3441,8 @@ where
                 let child_clone = child.clone();
 
                 let termination_check = move || Ok(child_clone.inner().fixedpoint(0));
-                let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
+                let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
+                executor.prepare(child, None)?;
                 Ok((res, executor))
             }),
         }
@@ -5416,6 +5423,8 @@ impl CircuitHandle {
             self.circuit
                 .map_node_mut(gid, &mut |node| node.start_catchup())?;
         }
+
+        self.executor.prepare(&self.circuit, Some(&catchup_nodes))?;
 
         // TODO: Make sure a subcircuit is added to both sets if at least one of its nodes is.
 
