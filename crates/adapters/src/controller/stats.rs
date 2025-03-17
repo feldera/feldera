@@ -135,6 +135,10 @@ impl GlobalControllerMetrics {
         }
     }
 
+    pub fn get_state(&self) -> PipelineState {
+        self.state.load(Ordering::Acquire)
+    }
+
     fn input_batch(&self, num_records: u64) -> u64 {
         self.total_input_records
             .fetch_add(num_records, Ordering::AcqRel);
