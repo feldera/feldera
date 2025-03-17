@@ -2,7 +2,9 @@ use crate::circuit::circuit_builder::{ReplaySources, ReplayStreams, StreamId};
 use crate::circuit::metadata::NUM_INPUTS;
 use crate::circuit::metrics::Gauge;
 use crate::circuit::NodeId;
+use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::require_persistent_id;
+use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
 use crate::{
     circuit::{
         metadata::{
@@ -22,6 +24,7 @@ use dyn_clone::clone_box;
 use minitrace::trace;
 use size_of::SizeOf;
 use std::any::TypeId;
+use std::mem::transmute;
 use std::path::Path;
 use std::{
     borrow::Cow,
@@ -38,6 +41,8 @@ circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
 circuit_cache_key!(DelayedTraceId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(SpillId<C, D>(StreamId => Stream<C, D>));
+
+const REPLAY_STEP_SIZE: usize = 10000;
 
 /// Lower bound on keys or values in a trace.
 ///
@@ -357,17 +362,24 @@ where
     pub fn dyn_trace(
         &self,
         output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
+        batch_factories: &B::Factories,
     ) -> Stream<C, FileValSpine<B, C>>
     where
         B: Batch<Time = ()>,
     {
-        self.dyn_trace_with_bound(output_factories, TraceBound::new(), TraceBound::new())
+        self.dyn_trace_with_bound(
+            output_factories,
+            batch_factories,
+            TraceBound::new(),
+            TraceBound::new(),
+        )
     }
 
     /// See [`Stream::trace_with_bound`].
     pub fn dyn_trace_with_bound(
         &self,
         output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
+        batch_factories: &B::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
     ) -> Stream<C, FileValSpine<B, C>>
@@ -384,6 +396,7 @@ where
                     let unique_name = self.get_unique_name();
                     let mut z1 = Z1Trace::new(
                         output_factories,
+                        batch_factories,
                         false,
                         circuit.root_scope(),
                         bounds.clone(),
@@ -556,7 +569,13 @@ where
 
                 let unique_name = self.get_unique_name();
 
-                let mut z1 = Z1Trace::new(input_factories, true, circuit.root_scope(), bounds);
+                let mut z1 = Z1Trace::new(
+                    input_factories,
+                    input_factories,
+                    true,
+                    circuit.root_scope(),
+                    bounds,
+                );
                 let replay_stream = z1.set_delta_stream(self);
 
                 circuit.region("integrate_trace", || {
@@ -624,7 +643,7 @@ where
 
 impl<C, T> TraceFeedbackConnector<C, T>
 where
-    T: Trace + Clone,
+    T: Trace<Time = ()> + Clone,
     C: Circuit,
 {
     pub fn connect(self, stream: &Stream<C, T::Batch>) {
@@ -709,7 +728,13 @@ pub trait TraceFeedback: Circuit {
             unique_name
                 .map(|name| format!("{name}.integral"))
                 .as_deref(),
-            Z1Trace::new(factories, true, self.root_scope(), bounds.clone()),
+            Z1Trace::new(
+                factories,
+                factories,
+                true,
+                self.root_scope(),
+                bounds.clone(),
+            ),
         );
 
         TraceFeedbackConnector {
@@ -963,12 +988,32 @@ where
     }
 }
 
-pub struct Z1Trace<C: Circuit, B: BatchReader, T: Trace> {
+struct ReplayState<T: Trace> {
+    trace: T,
+    cursor: Box<dyn MergeCursor<T::Key, T::Val, T::Time, T::R> + Send + 'static>,
+}
+
+impl<T: Trace> ReplayState<T> {
+    fn new(trace: T) -> Self {
+        let cursor: Box<dyn MergeCursor<T::Key, T::Val, T::Time, T::R> + Send + '_> =
+            trace.merge_cursor(None, None);
+        let cursor: Box<dyn MergeCursor<_, _, _, _> + Send> = unsafe {
+            transmute::<_, Box<dyn MergeCursor<T::Key, T::Val, T::Time, T::R> + Send + 'static>>(
+                cursor,
+            )
+        };
+
+        Self { trace, cursor }
+    }
+}
+
+pub struct Z1Trace<C: Circuit, B: Batch, T: Trace> {
     // For error reporting.
     global_id: GlobalNodeId,
     time: T::Time,
     trace: Option<T>,
-    factories: T::Factories,
+    replay_state: Option<ReplayState<T>>,
+    trace_factories: T::Factories,
     // `dirty[scope]` is `true` iff at least one non-empty update was added to the trace
     // since the previous clock cycle at level `scope`.
     dirty: Vec<bool>,
@@ -980,6 +1025,7 @@ pub struct Z1Trace<C: Circuit, B: BatchReader, T: Trace> {
 
     // Metrics maintained by the trace.
     trace_metrics: Option<T::Metrics>,
+    batch_factories: B::Factories,
     // Stream whose integral this Z1 operator stores, if any.
     delta_stream: Option<Stream<C, B>>,
 }
@@ -987,11 +1033,12 @@ pub struct Z1Trace<C: Circuit, B: BatchReader, T: Trace> {
 impl<C, B, T> Z1Trace<C, B, T>
 where
     C: Circuit,
-    B: BatchReader,
+    B: Batch,
     T: Trace,
 {
     pub fn new(
-        factories: &T::Factories,
+        trace_factories: &T::Factories,
+        batch_factories: &B::Factories,
         reset_on_clock_start: bool,
         root_scope: Scope,
         bounds: TraceBounds<T::Key, T::Val>,
@@ -1000,7 +1047,9 @@ where
             global_id: GlobalNodeId::root(),
             time: <T::Time as Timestamp>::clock_start(),
             trace: None,
-            factories: factories.clone(),
+            replay_state: None,
+            trace_factories: trace_factories.clone(),
+            batch_factories: batch_factories.clone(),
             dirty: vec![false; root_scope as usize + 1],
             root_scope,
             reset_on_clock_start,
@@ -1026,7 +1075,7 @@ where
 impl<C, B, T> Operator for Z1Trace<C, B, T>
 where
     C: Circuit,
-    B: BatchReader,
+    B: Batch,
     T: Trace,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -1037,7 +1086,7 @@ where
         self.dirty[scope as usize] = false;
 
         if scope == 0 && self.trace.is_none() {
-            self.trace = Some(T::new(&self.factories));
+            self.trace = Some(T::new(&self.trace_factories));
         }
     }
 
@@ -1107,7 +1156,7 @@ where
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        !self.dirty[scope as usize]
+        !self.dirty[scope as usize] && self.replay_state.is_none()
     }
 
     fn commit(&mut self, base: &Path, pid: Option<&str>) -> Result<(), Error> {
@@ -1126,15 +1175,73 @@ where
             .map(|trace| trace.restore(base, pid))
             .unwrap_or(Ok(()))
     }
+
+    fn start_replay(&mut self) -> Result<(), Error> {
+        if self.delta_stream.is_some() {
+            let trace = self.trace.take();
+            let Some(trace) = trace else {
+                return Err(todo!());
+            };
+
+            self.replay_state = Some(ReplayState::new(trace));
+        }
+
+        Ok(())
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.replay_state.is_none()
+    }
+
+    fn end_replay(&mut self) -> Result<(), Error> {
+        self.replay_state = None;
+
+        Ok(())
+    }
 }
 
 impl<C, B, T> StrictOperator<T> for Z1Trace<C, B, T>
 where
     C: Circuit,
-    B: BatchReader,
+    B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R>,
     T: Trace,
 {
     fn get_output(&mut self) -> T {
+        if let Some(replay) = &mut self.replay_state {
+            let mut builder =
+                <B::Builder as Builder<B>>::with_capacity(&self.batch_factories, REPLAY_STEP_SIZE);
+
+            let mut num_values = 0;
+            let mut weight = self.batch_factories.weight_factory().default_box();
+
+            while replay.cursor.key_valid() && num_values < REPLAY_STEP_SIZE {
+                let mut values_added = false;
+                while replay.cursor.val_valid() && num_values < REPLAY_STEP_SIZE {
+                    weight.set_zero();
+                    replay.cursor.map_times(&mut |_t, w| weight.add_assign(w));
+
+                    if !weight.is_zero() {
+                        builder.push_val_diff_mut(replay.cursor.val_mut(), weight.as_mut());
+                        values_added = true;
+                        num_values += 1;
+                    }
+                    replay.cursor.step_val();
+                }
+                if values_added {
+                    builder.push_key_mut(replay.cursor.key_mut());
+                }
+                if !replay.cursor.val_valid() {
+                    replay.cursor.step_key();
+                }
+            }
+
+            let batch = builder.done();
+            self.delta_stream.as_ref().unwrap().value().put(batch);
+            if !replay.cursor.key_valid() {
+                self.replay_state = None;
+            }
+        }
+
         let mut result = self.trace.take().unwrap();
         result.clear_dirty_flag();
         result
@@ -1152,7 +1259,7 @@ where
 impl<C, B, T> StrictUnaryOperator<T, T> for Z1Trace<C, B, T>
 where
     C: Circuit,
-    B: BatchReader,
+    B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R>,
     T: Trace,
 {
     async fn eval_strict(&mut self, _i: &T) {

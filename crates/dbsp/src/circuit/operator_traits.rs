@@ -223,7 +223,15 @@ pub trait Operator: 'static {
         Ok(())
     }
 
-    fn start_catchup(&mut self) -> Result<(), Error> {
+    fn start_replay(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn replay_complete(&self) -> bool {
+        true
+    }
+
+    fn end_replay(&mut self) -> Result<(), Error> {
         Ok(())
     }
 }

@@ -490,7 +490,7 @@ where
                     circuit.clone(),
                 ),
                 &stream,
-                &stream.dyn_trace(&factories.trace_factories),
+                &stream.dyn_trace(&factories.trace_factories, &factories.input_factories),
             )
             .mark_sharded()
             .upsert::<O>(unique_name, &factories.upsert_factories)

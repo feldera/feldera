@@ -984,7 +984,11 @@ pub trait Node {
     /// the given checkpoint in directory `base`.
     fn restore(&mut self, base: &Path) -> Result<(), DbspError>;
 
-    fn start_catchup(&mut self) -> Result<(), DbspError>;
+    fn start_replay(&mut self) -> Result<(), DbspError>;
+
+    fn replay_complete(&self) -> bool;
+
+    fn end_replay(&mut self) -> Result<(), DbspError>;
 
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
     fn fingerprint(&self, fip: &mut Fingerprinter) {
@@ -3658,8 +3662,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.replay_complete()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -3770,8 +3782,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -3896,8 +3916,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4014,8 +4042,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4190,8 +4226,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4366,8 +4410,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4520,8 +4572,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4696,8 +4756,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -4855,8 +4923,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -5001,8 +5077,16 @@ where
             .restore(base, self.persistent_id().as_deref())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.borrow_mut().start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.borrow_mut().start_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.borrow().replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.borrow_mut().end_replay()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -5129,8 +5213,16 @@ where
         Ok(())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
-        self.operator.borrow_mut().start_catchup()
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.borrow_mut().start_replay()
+    }
+
+    fn replay_complete(&self) -> bool {
+        self.operator.borrow().replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.borrow_mut().end_replay()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -5302,7 +5394,15 @@ where
         Ok(())
     }
 
-    fn start_catchup(&mut self) -> Result<(), DbspError> {
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        Ok(())
+    }
+
+    fn replay_complete(&self) -> bool {
+        true
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
         Ok(())
     }
 
@@ -5421,12 +5521,29 @@ impl CircuitHandle {
         // Configure all nodes to run in catchup mode.
         for gid in catchup_nodes.iter() {
             self.circuit
-                .map_node_mut(gid, &mut |node| node.start_catchup())?;
+                .map_node_mut(gid, &mut |node| node.start_replay())?;
         }
 
-        self.executor.prepare(&self.circuit, Some(&catchup_nodes))?;
-
         // TODO: Make sure a subcircuit is added to both sets if at least one of its nodes is.
+
+        if !catchup_nodes.is_empty() {
+            self.executor.prepare(&self.circuit, Some(&catchup_nodes))?;
+            let done = catchup_nodes.iter().all(|gid| {
+                self.circuit
+                    .map_node_mut(gid, &mut |node| node.replay_complete())
+            });
+            while !done {
+                self.step();
+            }
+
+            // End catchup mode.
+            for gid in catchup_nodes.iter() {
+                self.circuit
+                    .map_node_mut(gid, &mut |node| node.end_replay())?;
+            }
+
+            self.executor.prepare(&self.circuit, None)?;
+        }
 
         Ok(())
     }

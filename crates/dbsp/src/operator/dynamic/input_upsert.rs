@@ -223,6 +223,7 @@ where
 
             let z1 = Z1Trace::new(
                 &factories.trace_factories,
+                &factories.batch_factories,
                 false,
                 circuit.root_scope(),
                 bounds.clone(),
