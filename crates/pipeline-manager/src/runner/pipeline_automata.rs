@@ -56,7 +56,7 @@ enum State {
     Unchanged,
 }
 
-/// Outcome of a status check for a pipeline by polling its `/stats` endpoint.
+/// Outcome of a status check for a pipeline by polling its `/status` endpoint.
 enum StatusCheckResult {
     Paused,
     Running,
@@ -609,7 +609,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Checks the pipeline status by attempting to poll its `/stats` endpoint.
+    /// Checks the pipeline status by attempting to poll its `/status` endpoint.
     /// An error result is only returned if the response could not be parsed or
     /// contained an error.
     async fn check_pipeline_status(
@@ -618,38 +618,37 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         deployment_location: String,
     ) -> StatusCheckResult {
         match self
-            .http_request_pipeline_json(Method::GET, &deployment_location, "stats")
+            .http_request_pipeline_json(Method::GET, &deployment_location, "status")
             .await
         {
-            Ok((status, body)) => {
+            Ok((http_status, http_body)) => {
                 // Able to reach the pipeline web server and get a response
-                if status == StatusCode::OK {
-                    // Only fatal errors are if the state cannot be retrieved or is not Paused/Running
-                    let Some(global_metrics) = body.get("global_metrics") else {
+                if http_status == StatusCode::OK {
+                    // Fatal error: cannot deserialize status
+                    let Some(pipeline_status) = http_body.as_str() else {
                         return StatusCheckResult::Error(ErrorResponse::from_error_nolog(
                             &RunnerError::PipelineInteractionInvalidResponse {
-                                error: format!(
-                                    "Missing 'global_metrics' field in /stats response: {body}"
-                                ),
+                                error: format!("Body of /status response: {http_body}"),
                             },
                         ));
                     };
-                    let Some(serde_json::Value::String(state)) = global_metrics.get("state") else {
-                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionInvalidResponse {
-                            error: format!("Missing or non-string type of 'global_metrics.state' field in /stats response: {body}")
-                        }));
-                    };
-                    if state == "Paused" {
+
+                    // Fatal error: if it is not Paused/Running
+                    if pipeline_status == "Paused" {
                         StatusCheckResult::Paused
-                    } else if state == "Running" {
+                    } else if pipeline_status == "Running" {
                         StatusCheckResult::Running
                     } else {
                         // Notably: "Terminated"
-                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionInvalidResponse {
-                            error: format!("Pipeline is not in Running or Paused state, but in {state} state")
-                        }));
+                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(
+                            &RunnerError::PipelineInteractionInvalidResponse {
+                                error: format!(
+                                    "Pipeline status is not Paused or Running, but is: {pipeline_status}"
+                                ),
+                            },
+                        ));
                     }
-                } else if status == StatusCode::SERVICE_UNAVAILABLE {
+                } else if http_status == StatusCode::SERVICE_UNAVAILABLE {
                     // Pipeline HTTP server is running but indicates it is not yet available
                     warn!(
                         "Pipeline {} responds to status check it is not (yet) ready",
@@ -659,11 +658,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 } else {
                     // All other status codes indicate a fatal error
                     // The HTTP server is still running, but the pipeline itself failed
-                    error!("Error response to status check for pipeline {}. Status: {status}. Body: {body}", pipeline_id);
+                    error!("Error response to status check for pipeline {}. Status code: {http_status}. Body: {http_body}", pipeline_id);
                     StatusCheckResult::Error(Self::error_response_from_json(
                         pipeline_id,
-                        status,
-                        &body,
+                        http_status,
+                        &http_body,
                     ))
                 }
             }
@@ -1505,13 +1504,7 @@ mod test {
         test.check_current_state(PipelineStatus::Provisioning).await;
         test.tick().await; // is_provisioned()
         test.check_current_state(PipelineStatus::Initializing).await;
-        mock_endpoint(
-            &mut server,
-            "/stats",
-            200,
-            json!({ "global_metrics": { "state": "Paused" } }),
-        )
-        .await;
+        mock_endpoint(&mut server, "/status", 200, json!("Paused")).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Paused).await;
         test.tick().await;
@@ -1534,25 +1527,13 @@ mod test {
         test.check_current_state(PipelineStatus::Provisioning).await;
         test.tick().await; // is_provisioned()
         test.check_current_state(PipelineStatus::Initializing).await;
-        mock_endpoint(
-            &mut server,
-            "/stats",
-            200,
-            json!({ "global_metrics": { "state": "Paused" } }),
-        )
-        .await;
+        mock_endpoint(&mut server, "/status", 200, json!("Paused")).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Paused).await;
         mock_endpoint(&mut server, "/start", 200, json!({})).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Running).await;
-        mock_endpoint(
-            &mut server,
-            "/stats",
-            200,
-            json!({ "global_metrics": { "state": "Running" } }),
-        )
-        .await;
+        mock_endpoint(&mut server, "/status", 200, json!("Running")).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Running).await;
         test.set_desired_state(PipelineStatus::Shutdown).await;
@@ -1573,13 +1554,7 @@ mod test {
         test.check_current_state(PipelineStatus::Provisioning).await;
         test.tick().await; // is_provisioned()
         test.check_current_state(PipelineStatus::Initializing).await;
-        mock_endpoint(
-            &mut server,
-            "/stats",
-            200,
-            json!({ "global_metrics": { "state": "Paused" } }),
-        )
-        .await;
+        mock_endpoint(&mut server, "/status", 200, json!("Paused")).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Paused).await;
         test.tick().await;
@@ -1588,13 +1563,7 @@ mod test {
         mock_endpoint(&mut server, "/start", 200, json!({})).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Running).await;
-        mock_endpoint(
-            &mut server,
-            "/stats",
-            200,
-            json!({ "global_metrics": { "state": "Running" } }),
-        )
-        .await;
+        mock_endpoint(&mut server, "/status", 200, json!("Running")).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Running).await;
         test.set_desired_state(PipelineStatus::Shutdown).await;

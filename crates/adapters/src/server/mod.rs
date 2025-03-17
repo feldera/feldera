@@ -508,6 +508,7 @@ where
         .service(start)
         .service(pause)
         .service(shutdown)
+        .service(status)
         .service(query)
         .service(stats)
         .service(metrics)
@@ -540,6 +541,20 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
         Some(controller) => {
             controller.pause();
             Ok(HttpResponse::Ok().json("Pipeline paused"))
+        }
+        None => Err(missing_controller_error(&state)),
+    }
+}
+
+/// Retrieve pipeline status.
+///
+/// The status is either `Paused`, `Running` or `Terminated`.
+#[get("/status")]
+async fn status(state: WebData<ServerState>) -> impl Responder {
+    match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            let status = controller.status().global_metrics.get_state();
+            Ok(HttpResponse::Ok().json(status))
         }
         None => Err(missing_controller_error(&state)),
     }
