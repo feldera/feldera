@@ -875,6 +875,9 @@ pub struct Z1Trace<T: Trace> {
     bounds: TraceBounds<T::Key, T::Val>,
     // Handle to update the metric `total_size`.
     total_size_metric: Option<Gauge>,
+
+    // Metrics maintained by the trace.
+    trace_metrics: Option<T::Metrics>,
 }
 
 impl<T> Z1Trace<T>
@@ -896,6 +899,7 @@ where
             reset_on_clock_start,
             bounds,
             total_size_metric: None,
+            trace_metrics: None,
         }
     }
 }
@@ -933,6 +937,8 @@ where
             global_id,
             vec![],
         ));
+
+        self.trace_metrics = Some(T::init_operator_metrics(global_id));
     }
 
     fn metrics(&self) {
@@ -946,6 +952,9 @@ where
             .as_ref()
             .unwrap()
             .set(total_size as f64);
+        if let Some(trace) = self.trace.as_ref() {
+            trace.metrics(self.trace_metrics.as_ref().unwrap());
+        }
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {

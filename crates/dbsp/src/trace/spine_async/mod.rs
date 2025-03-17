@@ -7,7 +7,11 @@
 //! so it is beneficial to reduce the number by merging batches.
 
 use crate::{
-    circuit::metadata::{MetaItem, OperatorMeta},
+    circuit::{
+        metadata::{MetaItem, OperatorMeta},
+        metrics::Gauge,
+        GlobalNodeId,
+    },
     dynamic::{DynVec, Factory, Weight},
     storage::buffer_cache::CacheStats,
     time::Timestamp,
@@ -15,7 +19,7 @@ use crate::{
         cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Builder,
         Cursor, Filter, Trace,
     },
-    Error, NumEntries, Runtime,
+    Error, NumEntries,
 };
 
 use crate::storage::file::to_bytes;
@@ -23,7 +27,7 @@ use crate::storage::write_commit_metadata;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
 use list_merger::ArcMerger;
-use metrics::{counter, gauge};
+use metrics::counter;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{
@@ -45,7 +49,6 @@ use std::{
 };
 use std::{ops::RangeInclusive, sync::Mutex};
 use textwrap::indent;
-use uuid::Uuid;
 
 mod list_merger;
 mod snapshot;
@@ -176,9 +179,6 @@ where
     request_exit: bool,
     #[size_of(skip)]
     merge_stats: MergeStats,
-    /// Unique identifier for the spine for metrics.
-    #[size_of(skip)]
-    ident: &'static str,
 }
 
 impl<B> SharedState<B>
@@ -193,7 +193,6 @@ where
             slots: std::array::from_fn(|_| Slot::default()),
             request_exit: false,
             merge_stats: MergeStats::default(),
-            ident: String::leak(Uuid::now_v7().to_string()),
         }
     }
 
@@ -213,9 +212,6 @@ where
         debug_assert!(!batch.is_empty());
         let level = Spine::<B>::size_to_level(batch.len());
         self.slots[level].loose_batches.push_back(batch);
-
-        gauge!(BATCHES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => self.ident)
-            .set(self.slots[level].n_batches() as f64);
     }
 
     fn should_apply_backpressure(&self) -> bool {
@@ -275,8 +271,6 @@ where
         let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
             stats + batch.cache_stats()
         });
-        gauge!(ONGOING_MERGES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => self.ident)
-            .set(0);
         self.merge_stats.report_merge(
             batches.iter().map(|b| b.len()).sum(),
             new_batch.len(),
@@ -525,6 +519,19 @@ where
         cache_stats.metadata(meta);
     }
 
+    fn metrics(&self, metrics: &SpineMetrics) {
+        for (level, slot) in self.state.lock().unwrap().slots.iter().enumerate() {
+            metrics.ongoing_merges[level].set(
+                slot.merging_batches
+                    .as_ref()
+                    .map(|merging| merging.len())
+                    .unwrap_or(0) as f64,
+            );
+
+            metrics.batches[level].set(slot.n_batches() as f64);
+        }
+    }
+
     fn maybe_relieve_backpressure(
         no_backpressure: &Arc<Condvar>,
         state: &MutexGuard<SharedState<B>>,
@@ -545,7 +552,6 @@ where
         idle: &Arc<Condvar>,
         no_backpressure: &Arc<Condvar>,
     ) -> WorkerStatus {
-        let ident = state.lock().unwrap().ident;
         // Run in-progress merges.
         let ((key_filter, value_filter), frontier) = {
             let shared = state.lock().unwrap();
@@ -589,8 +595,6 @@ where
             .filter_map(|(level, slot)| slot.try_start_merge(level).map(|batches| (level, batches)))
             .collect::<Vec<_>>();
         for (level, batches) in start_merges {
-            gauge!(ONGOING_MERGES_PER_LEVEL, "worker" => Runtime::worker_index_str(), "level" => LEVELS_AS_STR[level], "id" => ident)
-                .set(batches.len() as f64);
             let factories = batches[0].factories();
             let builder = B::Builder::for_merge(&factories, &batches, None);
             mergers[level] = Some(ArcMerger::new(
@@ -1060,11 +1064,18 @@ impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B> {
     }
 }
 
+pub struct SpineMetrics {
+    ongoing_merges: [Gauge; MAX_LEVELS],
+    batches: [Gauge; MAX_LEVELS],
+}
+
 impl<B> Trace for Spine<B>
 where
     B: Batch,
 {
     type Batch = B;
+
+    type Metrics = SpineMetrics;
 
     fn new(factories: &B::Factories) -> Self {
         Self::with_effort(factories, 1)
@@ -1211,6 +1222,33 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         self.merger.metadata(meta);
+    }
+
+    fn metrics(&self, metrics: &SpineMetrics) {
+        self.merger.metrics(metrics);
+    }
+
+    fn init_operator_metrics(global_node_id: &GlobalNodeId) -> Self::Metrics {
+        SpineMetrics {
+            ongoing_merges: std::array::from_fn(|level| {
+                Gauge::new(
+                    ONGOING_MERGES_PER_LEVEL,
+                    None,
+                    Some("count"),
+                    global_node_id,
+                    vec![("level".to_string(), LEVELS_AS_STR[level].to_string())],
+                )
+            }),
+            batches: std::array::from_fn(|level| {
+                Gauge::new(
+                    BATCHES_PER_LEVEL,
+                    None,
+                    Some("count"),
+                    global_node_id,
+                    vec![("level".to_string(), LEVELS_AS_STR[level].to_string())],
+                )
+            }),
+        }
     }
 }
 
