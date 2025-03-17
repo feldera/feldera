@@ -224,6 +224,7 @@ pub struct ControllerStatus {
     outputs: OutputsStatus,
 
     /// Metrics.
+    #[serde(skip)]
     pub metrics: Mutex<Vec<ControllerMetric>>,
 }
 
