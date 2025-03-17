@@ -27,6 +27,7 @@
 //! the `(time, diff)` pairs associated with a key and value.
 
 use crate::circuit::metadata::{MetaItem, OperatorMeta};
+use crate::circuit::GlobalNodeId;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
@@ -235,6 +236,13 @@ pub trait Trace: BatchReader {
         Factories = Self::Factories,
     >;
 
+    /// Metrics output by the trace.
+    ///
+    /// We want to attribute trace metrics to the operator that created the trace.
+    /// Therefore metrics (gauges, counters, etc.) are stored in the operator and
+    /// updated by the trace on-demand.
+    type Metrics;
+
     /// Allocates a new empty trace.
     fn new(factories: &Self::Factories) -> Self;
 
@@ -307,6 +315,12 @@ pub trait Trace: BatchReader {
 
     /// Allows the trace to report additional metadata.
     fn metadata(&self, _meta: &mut OperatorMeta) {}
+
+    /// Create a set of metrics for this trace type.
+    fn init_operator_metrics(global_node_id: &GlobalNodeId) -> Self::Metrics;
+
+    /// Update trace metrics.
+    fn metrics(&self, metrics: &Self::Metrics);
 }
 
 /// Where a batch is stored.
