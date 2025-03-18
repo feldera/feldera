@@ -1,6 +1,6 @@
 [package]
 name = "feldera-storage"
-version = "0.40.0"
+version = "0.41.0"
 edition = "2021"
 description = "Storage crate for feldera"
 homepage = "https://github.com/feldera/feldera"
@@ -8,7 +8,7 @@ repository = "https://github.com/feldera/feldera"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-feldera-types = { path = "../feldera-types", version = "0.40.0" }
+feldera-types = { path = "../feldera-types", version = "0.41.0" }
 tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }
 libc = "0.2.153"
 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64", "validation", "uuid"] }
