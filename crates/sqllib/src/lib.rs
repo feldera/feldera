@@ -4,6 +4,7 @@
 pub mod aggregates;
 #[doc(hidden)]
 pub mod array;
+#[doc(hidden)]
 pub mod binary;
 #[doc(hidden)]
 pub mod casts;
@@ -13,6 +14,7 @@ pub mod decimal;
 pub mod error;
 #[doc(hidden)]
 pub mod geopoint;
+#[doc(hidden)]
 pub mod interval;
 #[doc(hidden)]
 pub mod map;
@@ -22,9 +24,11 @@ pub mod operators;
 pub mod source;
 #[doc(hidden)]
 pub mod string;
+#[doc(hidden)]
 pub mod timestamp;
 #[doc(hidden)]
 pub mod uuid;
+#[doc(hidden)]
 pub mod variant;
 
 pub use array::Array;
@@ -32,6 +36,7 @@ pub use binary::ByteArray;
 #[doc(hidden)]
 pub use geopoint::GeoPoint;
 pub use interval::{LongInterval, ShortInterval};
+pub use map::Map;
 #[doc(hidden)]
 pub use num_traits::Float;
 pub use regex::Regex;
