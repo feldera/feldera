@@ -8,6 +8,7 @@ use serde::{de, de::Error as _, Deserializer, Serializer};
 use size_of::{Context, SizeOf};
 use std::fmt::{self, Debug};
 
+/// A type for storing universally unique identifiers.
 #[derive(
     Debug,
     Default,
