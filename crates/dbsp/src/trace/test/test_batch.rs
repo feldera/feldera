@@ -1262,13 +1262,9 @@ where
         &self.value_filter
     }
 
-    fn init_operator_metrics(_global_node_id: &crate::circuit::GlobalNodeId) -> Self::Metrics {
-        ()
-    }
+    fn init_operator_metrics(_global_node_id: &crate::circuit::GlobalNodeId) -> Self::Metrics {}
 
-    fn metrics(&self, _metrics: &Self::Metrics) {
-        ()
-    }
+    fn metrics(&self, _metrics: &Self::Metrics) {}
 }
 
 /// Test random sampling methods.
