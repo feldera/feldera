@@ -23,6 +23,7 @@ use actix_web::{
 use clap::Parser;
 use colored::{ColoredString, Colorize};
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
+use feldera_types::query_params::{MetricsFormat, MetricsParameters};
 use feldera_types::{
     config::{default_max_batch_size, TransportConfig},
     transport::http::HttpInputConfig,
@@ -586,26 +587,32 @@ async fn stats(state: WebData<ServerState>) -> impl Responder {
     }
 }
 
-/// Outputs controller metrics in the format expected by Prometheus, as
-/// documented at
-/// <https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md>.
+/// Retrieve circuit metrics.
 #[get("/metrics")]
-async fn metrics(state: WebData<ServerState>) -> impl Responder {
+async fn metrics(
+    state: WebData<ServerState>,
+    query_params: web::Query<MetricsParameters>,
+) -> impl Responder {
     match &*state.controller.lock().unwrap() {
-        Some(controller) => match state
-            .prometheus
-            .read()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .metrics(controller)
-        {
-            Ok(metrics) => Ok(HttpResponse::Ok()
-                .content_type(mime::TEXT_PLAIN)
-                .body(metrics)),
-            Err(e) => Err(PipelineError::PrometheusError {
-                error: e.to_string(),
-            }),
+        Some(controller) => match &query_params.format {
+            MetricsFormat::Prometheus => {
+                match state
+                    .prometheus
+                    .read()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .metrics(controller)
+                {
+                    Ok(metrics) => Ok(HttpResponse::Ok()
+                        .content_type(mime::TEXT_PLAIN)
+                        .body(metrics)),
+                    Err(e) => Err(PipelineError::PrometheusError {
+                        error: e.to_string(),
+                    }),
+                }
+            }
+            MetricsFormat::Json => Ok(HttpResponse::Ok().json(&controller.status().metrics)),
         },
         None => Err(missing_controller_error(&state)),
     }

@@ -1161,6 +1161,21 @@ export type LicenseInformation = {
 }
 
 /**
+ * Circuit metrics output format.
+ * - `prometheus`: format expected by Prometheus, as documented at:
+ * <https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md>
+ * - `json`: JSON format
+ */
+export type MetricsFormat = 'prometheus' | 'json'
+
+/**
+ * Query parameters to retrieve pipeline circuit metrics.
+ */
+export type MetricsParameters = {
+  format?: MetricsFormat
+}
+
+/**
  * Request to create a new API key.
  */
 export type NewApiKeyRequest = {
@@ -2694,6 +2709,24 @@ export type GetPipelineLogsResponse = Blob | File
 
 export type GetPipelineLogsError = ErrorResponse
 
+export type GetPipelineMetricsData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: {
+    format?: MetricsFormat
+  }
+}
+
+export type GetPipelineMetricsResponse = {
+  [key: string]: unknown
+}
+
+export type GetPipelineMetricsError = ErrorResponse
+
 export type PipelineAdhocSqlData = {
   path: {
     /**
@@ -3130,6 +3163,25 @@ export type $OpenApiTs = {
       }
     }
   }
+  '/v0/pipelines/{pipeline_name}/metrics': {
+    get: {
+      req: GetPipelineMetricsData
+      res: {
+        /**
+         * Pipeline circuit metrics retrieved successfully
+         */
+        '200': {
+          [key: string]: unknown
+        }
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
   '/v0/pipelines/{pipeline_name}/query': {
     get: {
       req: PipelineAdhocSqlData
@@ -3156,7 +3208,7 @@ export type $OpenApiTs = {
       req: GetPipelineStatsData
       res: {
         /**
-         * Pipeline metrics retrieved successfully
+         * Pipeline statistics retrieved successfully
          */
         '200': {
           [key: string]: unknown

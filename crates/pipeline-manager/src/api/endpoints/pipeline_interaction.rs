@@ -16,6 +16,7 @@ use actix_web::{
     HttpRequest, HttpResponse,
 };
 use feldera_types::program_schema::SqlIdentifier;
+use feldera_types::query_params::MetricsParameters;
 use log::{debug, info};
 use std::time::Duration;
 
@@ -503,7 +504,7 @@ pub(crate) async fn get_pipeline_logs(
         .await
 }
 
-/// Retrieve statistics (e.g., metrics, performance counters) of a running or paused pipeline.
+/// Retrieve statistics (e.g., performance counters) of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -514,7 +515,7 @@ pub(crate) async fn get_pipeline_logs(
         // TODO: implement `ToSchema` for `ControllerStatus`, which is the
         //       actual type returned by this endpoint and move it to feldera-types.
         (status = OK
-            , description = "Pipeline metrics retrieved successfully"
+            , description = "Pipeline statistics retrieved successfully"
             , body = Object),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
@@ -550,6 +551,59 @@ pub(crate) async fn get_pipeline_stats(
             &pipeline_name,
             Method::GET,
             "stats",
+            request.query_string(),
+            None,
+        )
+        .await
+}
+
+/// Retrieve circuit metrics of a running or paused pipeline.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        MetricsParameters
+    ),
+    responses(
+        (status = OK
+            , description = "Pipeline circuit metrics retrieved successfully"
+            , body = Object),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[get("/pipelines/{pipeline_name}/metrics")]
+pub(crate) async fn get_pipeline_metrics(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    _query: web::Query<MetricsParameters>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "metrics",
             request.query_string(),
             None,
         )

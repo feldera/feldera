@@ -443,8 +443,18 @@ def main():
                 print("Failed to get stats: ", req)
             if req.status_code == 400:
                 break
-
             stats = req.json()
+
+            req = requests.get(
+                f"{api_url}/v0/pipelines/{full_name}/metrics?format=json",
+                headers=headers,
+            )
+            if req.status_code != 200:
+                print("Failed to get metrics: ", req)
+            if req.status_code == 400:
+                break
+            metrics_json = req.json()
+
             # for input in stats["inputs"]:
             #    print(input["endpoint_name"], input["metrics"]["end_of_input"])
             elapsed = time.time() - start
@@ -458,7 +468,7 @@ def main():
                 for key, value in global_metrics.items():
                     metrics_seen.add(key)
                     metrics_dict[key] = value
-                for s in stats["metrics"]:
+                for s in metrics_json:
                     key = s["key"].replace(".", "_")
                     value = s["value"]
                     if "Counter" in value and value["Counter"] is not None:

@@ -3129,3 +3129,43 @@ async fn refresh_version() {
     let value: Value = response.json().await.unwrap();
     assert_eq!(value["refresh_version"], json!(4));
 }
+
+/// Tests that circuit metrics can be retrieved from the pipeline.
+#[actix_web::test]
+#[serial]
+async fn pipeline_metrics() {
+    let config = setup().await;
+    create_and_deploy_test_pipeline(&config, "").await;
+
+    // Retrieve metrics in default format
+    let mut response = config.get("/v0/pipelines/test/metrics").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.body().await.unwrap();
+    let metrics_default = std::str::from_utf8(&body).unwrap();
+
+    // Retrieve metrics in Prometheus format
+    let mut response = config
+        .get("/v0/pipelines/test/metrics?format=prometheus")
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.body().await.unwrap();
+    let metrics_prometheus = std::str::from_utf8(&body).unwrap();
+
+    // Retrieve metrics in JSON format
+    let mut response = config.get("/v0/pipelines/test/metrics?format=json").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.body().await.unwrap();
+    let metrics_json = std::str::from_utf8(&body).unwrap();
+    let _metrics_json_value: Value = serde_json::from_str(metrics_json).unwrap();
+
+    // Unknown format
+    let response = config
+        .get("/v0/pipelines/test/metrics?format=does-not-exist")
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // Minimally check formats
+    assert!(metrics_default.contains("# TYPE total_processed_records gauge"));
+    assert!(metrics_prometheus.contains("# TYPE total_processed_records gauge"));
+    assert!(metrics_json.contains("\"key\":\"total_input_records\""));
+}

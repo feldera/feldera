@@ -1525,6 +1525,25 @@ export const $LicenseInformation = {
   }
 } as const
 
+export const $MetricsFormat = {
+  type: 'string',
+  description: `Circuit metrics output format.
+- \`prometheus\`: format expected by Prometheus, as documented at:
+<https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md>
+- \`json\`: JSON format`,
+  enum: ['prometheus', 'json']
+} as const
+
+export const $MetricsParameters = {
+  type: 'object',
+  description: 'Query parameters to retrieve pipeline circuit metrics.',
+  properties: {
+    format: {
+      $ref: '#/components/schemas/MetricsFormat'
+    }
+  }
+} as const
+
 export const $NewApiKeyRequest = {
   type: 'object',
   description: 'Request to create a new API key.',
