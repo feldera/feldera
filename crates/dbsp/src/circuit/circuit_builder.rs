@@ -200,6 +200,10 @@ impl<D> RefStreamValue<D> {
     }
 }
 
+/// An object-safe interface to a stream.
+///
+/// The `Stream` type is parameterized with circuit and content types, and is not object-safe.
+/// This abstract trait abstracts away those types, allowing to pass streams around as trait objects.
 pub trait StreamMetadata: DynClone + 'static {
     fn stream_id(&self) -> StreamId;
     fn local_node_id(&self) -> NodeId;
@@ -814,18 +818,21 @@ where
             .clone()
     }
 
+    /// Call `set_label` on the node that produces this stream.
     pub fn set_label(&self, key: &str, val: &str) -> Self {
         self.circuit
             .map_node_mut(&self.origin_node_id, &mut |node| node.set_label(key, val));
         self.clone()
     }
 
+    /// Call `get_label` on the node that produces this stream.
     pub fn get_label(&self, key: &str) -> Option<String> {
         self.circuit.map_node(&self.origin_node_id, &mut |node| {
             node.get_label(key).map(str::to_string)
         })
     }
 
+    /// Set persistent id for the operator that produces this stream.
     pub fn set_unique_name(&self, name: Option<&str>) -> Self {
         if let Some(name) = name {
             self.set_label(LABEL_UNIQUE_OPERATOR_NAME, name)
@@ -834,6 +841,7 @@ where
         }
     }
 
+    /// Get persistend it for the operator that produces this stream.
     pub fn get_unique_name(&self) -> Option<String> {
         self.get_label(LABEL_UNIQUE_OPERATOR_NAME)
     }
@@ -916,6 +924,17 @@ pub trait Node {
     /// Global node id.
     fn global_id(&self) -> &GlobalNodeId;
 
+    /// Persistent node id that remains stable across circuit restarts.  This Id can be used
+    /// to pick up operator state from a checkpoint after restart.
+    ///
+    /// * In ephemeral mode, this id is derived from the global node id. Such an Id can be used
+    ///   to cover the operator after a failure, when the circuit is identical to the one that was
+    ///   running before the failure.
+    ///
+    /// * In persistent mode, this id is derived from operator's persistent Id assigned to it
+    ///   by the compier during circuti construction.  This Id will remain stable across circuit
+    ///   restarts even if the circuit changes, as long as all ancestors of the node remain the
+    ///   same.
     fn persistent_id(&self) -> Option<String> {
         let worker_index = Runtime::worker_index();
 
@@ -930,8 +949,10 @@ pub trait Node {
         }
     }
 
+    /// List of input streams of the operator.
     fn input_streams(&self) -> Vec<&dyn StreamMetadata>;
 
+    /// Operator name, e.g., "Map", "Join", etc.
     fn name(&self) -> Cow<'static, str>;
 
     /// `true` if the node encapsulates an asynchronous operator (see
@@ -982,8 +1003,12 @@ pub trait Node {
 
     fn fixedpoint(&self, scope: Scope) -> bool;
 
+    /// Invoke closure on all children of `self`, terminate on the first
+    /// error.
     fn map_nodes_recursive(&self, _f: &mut dyn FnMut(&dyn Node)) {}
 
+    /// Invoke closure on all children of `self`, terminate on the first
+    /// error.
     fn map_nodes_recursive_mut(
         &self,
         _f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
@@ -999,10 +1024,21 @@ pub trait Node {
     /// the given checkpoint in directory `base`.
     fn restore(&mut self, base: &Path) -> Result<(), DbspError>;
 
+    /// Place operator in the replay mode.
+    ///
+    /// For most operators the replay mode is identical to the normal mode, so they
+    /// don't need to do anything here. Z1 operators are an exception, as they may
+    /// need to send their stored state to the replay stream.
     fn start_replay(&mut self) -> Result<(), DbspError>;
 
+    /// Check if the operator has finished replaying its stored state.
+    ///
+    /// Once all operators have finishe the replay, the entire circuit can exit the replay mode.
     fn replay_complete(&self) -> bool;
 
+    /// Notify the operator that the circuit is exiting the replay mode.
+    ///
+    /// The operator can cleanup any state needed for replay at this point.
     fn end_replay(&mut self) -> Result<(), DbspError>;
 
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
@@ -1147,6 +1183,7 @@ impl GlobalNodeId {
             .map(|(_, prefix)| GlobalNodeId::from_path(prefix))
     }
 
+    /// Returns `true` if `self` is a child of `parent`.
     pub fn is_child_of(&self, parent: &Self) -> bool {
         self.parent_id().as_ref() == Some(parent)
     }
@@ -1157,6 +1194,8 @@ impl GlobalNodeId {
     }
 
     /// Generate unique id for use in persistent storage.
+    ///
+    /// See Node::persistent_id.
     pub(crate) fn persistent_id(&self) -> String {
         self.0
             .iter()
@@ -1299,6 +1338,8 @@ pub struct Edge {
     /// to the local circuit, this is just the full path to the `from`
     /// node.
     pub origin: GlobalNodeId,
+    /// Stream associated with the edge, if any.  If `None`, this is a
+    /// dependency edge.
     pub stream: Option<Box<dyn StreamMetadata>>,
     /// Ownership preference associated with the consumer of this
     /// stream or `None` if this is a dependency edge.
@@ -1320,9 +1361,37 @@ impl Edge {
 
 circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
 
+/// Describes part of the circuit involved in replaying the contents of a stream.
+///
+/// Consider the following subcircuit that implements a stream integrator.
+/// In order to replay the contents of s1, we need to put all operators in this
+/// subcircuit in replay mode (note that Z-1 actually consists of two operators).
+/// The Z-1 operator will replay the contents of s1 into stream s2.
+///
+/// ```text
+///   │
+///   │
+///   ├────────────────────────┐
+///   │                        │
+///   │                        │
+///   ▼                        │
+/// ┌───┐        ┌───┐         │
+/// │ + ├───────►│Z-1├────────►│
+/// └───┘        └─┬─┘         │
+///   ▲            │           │
+///   │            │           │
+///   └────────────┘           │
+///                            │
+///                            │
+///                            ▼
+/// ```
 #[derive(Clone)]
 pub struct ReplayStreams {
+    /// List of nodes that need to be activated during replay.
     pub replay_nodes: Vec<GlobalNodeId>,
+
+    /// The replay stream, produced by one of `replay_nodes`. In the replay mode,
+    /// this stream will contain
     pub replay_stream: Box<dyn StreamMetadata>,
 }
 
@@ -1404,6 +1473,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// Returns the parent circuit of `self`.
     fn parent(&self) -> Self::Parent;
 
+    /// Return the root of the circuit tree.
     fn root_circuit(&self) -> RootCircuit;
 
     fn edges(&self) -> Ref<'_, [Edge]>;
@@ -1453,8 +1523,20 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// Circuit's global node id.
     fn global_node_id(&self) -> GlobalNodeId;
 
+    /// Apply closure to a node with specified global id.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
+    /// if there is another mutable reference to the node.
     fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T;
 
+    /// Apply closure to a node with specified global id.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
+    /// if there is another mutable or immutable reference to the node.
     fn map_node_mut<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T;
 
     /// Lookup a value in the circuit cache or create and insert a new value
@@ -1497,11 +1579,15 @@ pub trait Circuit: WithClock + Clone + 'static {
         K: TypedMapKey<CircuitStoreMarker> + 'static,
         K::Value: Clone;
 
+    /// Check if a stream can be replayed, if so, return resources needed to replay the stream.
     fn get_replay_sources(&self, stream_id: StreamId) -> Option<ReplayStreams> {
         self.cache_get(&ReplaySources::new(stream_id))
     }
 
-    fn add_replay_edges(&self, stream_id: StreamId, replay_stream_id: &dyn StreamMetadata);
+    /// For every edge in `self` with stram id equal `stream_id`, create an additional replay edge with
+    /// the same destination node and `replay_stream`. This edge will ensure that the origin node
+    /// of replay_stream is evaluated before any of its consumers.
+    fn add_replay_edges(&self, stream_id: StreamId, replay_stream: &dyn StreamMetadata);
 
     /// Connect `stream` as input to `to`.
     fn connect_stream<T: 'static>(
@@ -3506,7 +3592,7 @@ where
 
     // TODO: optimize by indexing stream edges by StreamId.
     fn add_replay_edges(&self, stream_id: StreamId, replay_stream: &dyn StreamMetadata) {
-        let edges = self.inner().edges.borrow_mut();
+        let mut edges = self.inner().edges.borrow_mut();
         let mut new_edges = Vec::new();
 
         for edge in edges.iter() {
@@ -3522,6 +3608,8 @@ where
                 }
             }
         }
+
+        edges.extend(new_edges);
     }
 }
 
