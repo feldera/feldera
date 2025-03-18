@@ -15,6 +15,7 @@ use crossbeam::sync::{Parker, Unparker};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use feldera_types::program_schema::Relation;
 use rmpv::Value as RmpValue;
+use serde_json::Value as JsonValue;
 use std::fs::create_dir;
 use std::hash::Hasher;
 use std::ops::Range;
@@ -150,7 +151,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
     let (_endpoint, receiver, reader) = create_reader(topic);
     reader.extend();
 
-    fn metadata(topic: &str, batch: &Range<u32>) -> RmpValue {
+    fn metadata(topic: &str, batch: &Range<u32>) -> JsonValue {
         #[allow(clippy::single_range_in_vec_init)]
         let metadata = Metadata {
             offsets: Some((
@@ -160,7 +161,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
             .into_iter()
             .collect(),
         };
-        rmpv::ext::to_value(metadata).unwrap()
+        serde_json::to_value(metadata).unwrap()
     }
 
     let n_batches = batch_sizes.len();
@@ -219,7 +220,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
             }
             for batch in &batches[seek..seek + replay] {
                 println!("- replaying {batch:?}");
-                reader.replay(metadata(topic, batch));
+                reader.replay(metadata(topic, batch), RmpValue::Nil);
                 println!("expecting {} records", batch.len());
                 receiver.expect(vec![ConsumerCall::Replayed {
                     num_records: batch.len(),
@@ -260,7 +261,7 @@ enum ConsumerCall {
     },
     Extended {
         num_records: usize,
-        metadata: RmpValue,
+        metadata: JsonValue,
     },
     Error(bool),
     Eoi,
@@ -495,7 +496,7 @@ impl InputConsumer for DummyInputConsumer {
         self.called(ConsumerCall::Replayed { num_records });
     }
 
-    fn extended(&self, num_records: usize, _hash: u64, metadata: RmpValue) {
+    fn extended(&self, num_records: usize, _hash: u64, metadata: JsonValue, _data: RmpValue) {
         self.called(ConsumerCall::Extended {
             num_records,
             metadata,

@@ -9,6 +9,7 @@ use dyn_clone::DynClone;
 use feldera_types::program_schema::Relation;
 use rmpv::{ext::Error as RmpDecodeError, Value as RmpValue};
 use serde::Deserialize;
+use serde_json::{Error as JsonError, Value as JsonValue};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::UnboundedReceiver;
 use xxhash_rust::xxh3::Xxh3Default;
@@ -113,11 +114,11 @@ pub enum InputReaderCommand {
     ///
     /// Only fault-tolerant input readers need to accept this. If it is given,
     /// it will be issued only once and before any of the other commands.
-    Seek(RmpValue),
+    Seek(JsonValue),
 
-    /// Tells the input reader to replay the step described in `metadata` by
-    /// reading and flushing buffers for the data in the step, and then
-    /// [InputConsumer::replayed] to signal completion.
+    /// Tells the input reader to replay the step described by `metadata` and
+    /// `data` by reading and flushing buffers for the data in the step, and
+    /// then [InputConsumer::replayed] to signal completion.
     ///
     /// The input reader should report the data that it queues to
     /// [InputConsumer::buffered] as it does the replay.
@@ -130,7 +131,7 @@ pub enum InputReaderCommand {
     /// Only fault-tolerant input readers need to accept this. It will be issued
     /// zero or more times, after [InputReaderCommand::Seek] but before any
     /// other commands.
-    Replay(RmpValue),
+    Replay { metadata: JsonValue, data: RmpValue },
 
     /// Tells the input reader to accept further input. The first time it
     /// receives this command, the reader should start from:
@@ -195,7 +196,7 @@ impl InputReaderCommand {
     /// fault-tolerant endpoints).
     pub fn as_nonft(&self) -> Option<NonFtInputReaderCommand> {
         match self {
-            InputReaderCommand::Seek(_) | InputReaderCommand::Replay(_) => None,
+            InputReaderCommand::Seek(_) | InputReaderCommand::Replay { .. } => None,
             InputReaderCommand::Queue => Some(NonFtInputReaderCommand::Queue),
             InputReaderCommand::Extend => {
                 Some(NonFtInputReaderCommand::Transition(PipelineState::Running))
@@ -342,7 +343,8 @@ impl InputQueue<()> {
                 break;
             }
         }
-        self.consumer.extended(total, 0, RmpValue::Nil);
+        self.consumer
+            .extended(total, 0, JsonValue::Null, RmpValue::Nil);
     }
 }
 
@@ -363,12 +365,12 @@ pub trait InputReader: Send + Sync {
     /// channel's sender.
     fn is_closed(&self) -> bool;
 
-    fn seek(&self, metadata: RmpValue) {
+    fn seek(&self, metadata: JsonValue) {
         self.request(InputReaderCommand::Seek(metadata));
     }
 
-    fn replay(&self, metadata: RmpValue) {
-        self.request(InputReaderCommand::Replay(metadata));
+    fn replay(&self, metadata: JsonValue, data: RmpValue) {
+        self.request(InputReaderCommand::Replay { metadata, data });
     }
 
     fn extend(&self) {
@@ -427,9 +429,13 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// records to the circuit, that hash to `hash`, in response to an
     /// [InputReaderCommand::Queue] request.
     ///
+    /// For a fault-tolerant input adapter, `metadata` must be sufficient to
+    /// support [InputReaderCommand::Seek], and `metadata` and `data` together
+    /// must be sufficient to support [InputReaderCommand::Replay].
+    ///
     /// If [InputConsumer::is_pipeline_fault_tolerant] returns false, then the
     /// value of `hash` doesn't matter.
-    fn extended(&self, num_records: usize, hash: u64, metadata: RmpValue);
+    fn extended(&self, num_records: usize, hash: u64, metadata: JsonValue, data: RmpValue);
 
     /// Reports that the endpoint has reached end of input and that no more data
     /// will be received from the endpoint.
@@ -544,10 +550,10 @@ pub trait OutputEndpoint: Send {
 ///
 /// This helps with that.
 // This is used by Kafka and Nexmark but both of those are optional.
-pub struct InputCommandReceiver<T> {
+pub struct InputCommandReceiver<M, D> {
     receiver: UnboundedReceiver<InputReaderCommand>,
     buffer: Option<InputReaderCommand>,
-    _phantom: PhantomData<T>,
+    _phantom: PhantomData<(M, D)>,
 }
 
 /// Error type returned by some [InputCommandReceiver] methods.
@@ -556,7 +562,8 @@ pub struct InputCommandReceiver<T> {
 #[derive(Debug)]
 pub enum InputCommandReceiverError {
     Disconnected,
-    DecodeError(RmpDecodeError),
+    JsonDecodeError(JsonError),
+    RmpDecodeError(RmpDecodeError),
 }
 
 impl std::error::Error for InputCommandReceiverError {}
@@ -565,19 +572,26 @@ impl Display for InputCommandReceiverError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InputCommandReceiverError::Disconnected => write!(f, "sender disconnected"),
-            InputCommandReceiverError::DecodeError(e) => e.fmt(f),
+            InputCommandReceiverError::RmpDecodeError(e) => e.fmt(f),
+            InputCommandReceiverError::JsonDecodeError(e) => e.fmt(f),
         }
     }
 }
 
 impl From<RmpDecodeError> for InputCommandReceiverError {
     fn from(value: RmpDecodeError) -> Self {
-        Self::DecodeError(value)
+        Self::RmpDecodeError(value)
+    }
+}
+
+impl From<JsonError> for InputCommandReceiverError {
+    fn from(value: JsonError) -> Self {
+        Self::JsonDecodeError(value)
     }
 }
 
 // This is used by Kafka and Nexmark but both of those are optional.
-impl<T> InputCommandReceiver<T> {
+impl<M, D> InputCommandReceiver<M, D> {
     pub fn new(receiver: UnboundedReceiver<InputReaderCommand>) -> Self {
         Self {
             receiver,
@@ -586,17 +600,17 @@ impl<T> InputCommandReceiver<T> {
         }
     }
 
-    pub fn blocking_recv_seek(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    pub fn blocking_recv_seek(&mut self) -> Result<Option<M>, InputCommandReceiverError>
     where
-        T: for<'a> Deserialize<'a>,
+        M: for<'a> Deserialize<'a>,
     {
         let command = self.blocking_recv()?;
         self.take_seek(command)
     }
 
-    pub async fn recv_seek(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    pub async fn recv_seek(&mut self) -> Result<Option<M>, InputCommandReceiverError>
     where
-        T: for<'a> Deserialize<'a>,
+        M: for<'a> Deserialize<'a>,
     {
         let command = self.recv().await?;
         self.take_seek(command)
@@ -605,13 +619,13 @@ impl<T> InputCommandReceiver<T> {
     fn take_seek(
         &mut self,
         command: InputReaderCommand,
-    ) -> Result<Option<T>, InputCommandReceiverError>
+    ) -> Result<Option<M>, InputCommandReceiverError>
     where
-        T: for<'a> Deserialize<'a>,
+        M: for<'a> Deserialize<'a>,
     {
         debug_assert!(self.buffer.is_none());
         match command {
-            InputReaderCommand::Seek(metadata) => Ok(Some(rmpv::ext::from_value::<T>(metadata)?)),
+            InputReaderCommand::Seek(metadata) => Ok(Some(serde_json::from_value::<M>(metadata)?)),
             InputReaderCommand::Disconnect => Err(InputCommandReceiverError::Disconnected),
             other => {
                 self.put_back(other);
@@ -620,17 +634,19 @@ impl<T> InputCommandReceiver<T> {
         }
     }
 
-    pub fn blocking_recv_replay(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    pub fn blocking_recv_replay(&mut self) -> Result<Option<(M, D)>, InputCommandReceiverError>
     where
-        T: for<'a> Deserialize<'a>,
+        M: for<'a> Deserialize<'a>,
+        D: for<'a> Deserialize<'a>,
     {
         let command = self.blocking_recv()?;
         self.take_replay(command)
     }
 
-    pub async fn recv_replay(&mut self) -> Result<Option<T>, InputCommandReceiverError>
+    pub async fn recv_replay(&mut self) -> Result<Option<(M, D)>, InputCommandReceiverError>
     where
-        T: for<'a> Deserialize<'a>,
+        M: for<'a> Deserialize<'a>,
+        D: for<'a> Deserialize<'a>,
     {
         let command = self.recv().await?;
         self.take_replay(command)
@@ -639,13 +655,17 @@ impl<T> InputCommandReceiver<T> {
     fn take_replay(
         &mut self,
         command: InputReaderCommand,
-    ) -> Result<Option<T>, InputCommandReceiverError>
+    ) -> Result<Option<(M, D)>, InputCommandReceiverError>
     where
-        T: for<'a> Deserialize<'a>,
+        M: for<'a> Deserialize<'a>,
+        D: for<'a> Deserialize<'a>,
     {
         match command {
             InputReaderCommand::Seek(_) => unreachable!(),
-            InputReaderCommand::Replay(metadata) => Ok(Some(rmpv::ext::from_value::<T>(metadata)?)),
+            InputReaderCommand::Replay { metadata, data } => Ok(Some((
+                serde_json::from_value::<M>(metadata)?,
+                rmpv::ext::from_value::<D>(data)?,
+            ))),
             other => {
                 self.put_back(other);
                 Ok(None)

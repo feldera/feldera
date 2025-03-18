@@ -45,6 +45,7 @@ use psutil::process::{Process, ProcessError};
 use rand::{seq::index::sample, thread_rng};
 use rmpv::Value as RmpValue;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde_json::Value as JsonValue;
 use std::{
     cmp::min,
     collections::{BTreeMap, BTreeSet},
@@ -636,18 +637,17 @@ impl ControllerStatus {
     pub fn completed(
         &self,
         endpoint_id: EndpointId,
-        num_records: u64,
-        hash: u64,
-        metadata: Option<RmpValue>,
+        step_results: StepResults,
         backpressure_thread_unparker: &Unparker,
     ) {
         let inputs = self.inputs.read().unwrap();
-        self.global_metrics.consume_buffered_inputs(num_records);
+        self.global_metrics
+            .consume_buffered_inputs(step_results.num_records);
 
         let mut finished = false;
 
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            endpoint_stats.completed(num_records, hash, metadata);
+            endpoint_stats.completed(step_results);
             finished = endpoint_stats.finished();
         };
 
@@ -833,7 +833,8 @@ pub struct InputEndpointMetrics {
 pub struct StepResults {
     pub num_records: u64,
     pub hash: u64,
-    pub metadata: Option<RmpValue>,
+    pub metadata: Option<JsonValue>,
+    pub data: Option<RmpValue>,
 }
 
 /// Input endpoint status information.
@@ -955,12 +956,9 @@ impl InputEndpointStatus {
         buffered_records >= max_queued_records
     }
 
-    fn completed(&self, num_records: u64, hash: u64, metadata: Option<RmpValue>) {
-        *self.progress.lock().unwrap() = Some(StepResults {
-            num_records,
-            hash,
-            metadata,
-        });
+    fn completed(&self, step_results: StepResults) {
+        let num_records = step_results.num_records;
+        *self.progress.lock().unwrap() = Some(step_results);
         self.metrics
             .buffered_records
             .fetch_sub(num_records, Ordering::Relaxed);

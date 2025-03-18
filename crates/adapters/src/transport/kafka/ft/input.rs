@@ -155,7 +155,7 @@ impl KafkaFtInputReaderInner {
         // beginning.
         let mut assignment = TopicPartitionList::new();
         let mut buffered_messages: Vec<Vec<MessageBuffer>> = Vec::with_capacity(topics.len());
-        let mut command_receiver = InputCommandReceiver::<Metadata>::new(command_receiver);
+        let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
         match command_receiver.blocking_recv_seek()? {
             Some(metadata) => {
                 let offsets = metadata.parse(&topics, &partition_counts)?;
@@ -199,7 +199,7 @@ impl KafkaFtInputReaderInner {
             .map_err(|error| self.refine_error(error).1)?;
 
         // Then replay as many steps as requested.
-        while let Some(metadata) = command_receiver.blocking_recv_replay()? {
+        while let Some((metadata, ())) = command_receiver.blocking_recv_replay()? {
             let metadata = metadata.parse(&topics, &partition_counts)?;
             let mut replayer = MetadataReplayer::new(&metadata);
             let mut total_records = 0;
@@ -267,7 +267,7 @@ impl KafkaFtInputReaderInner {
             while let Some(command) = command_receiver.try_recv()? {
                 match command {
                     command @ InputReaderCommand::Seek(_)
-                    | command @ InputReaderCommand::Replay(_) => {
+                    | command @ InputReaderCommand::Replay { .. } => {
                         unreachable!("{command:?} must be at the beginning of the command stream")
                     }
                     InputReaderCommand::Extend => running = true,
@@ -321,7 +321,8 @@ impl KafkaFtInputReaderInner {
                         consumer.extended(
                             total,
                             hasher.finish(),
-                            rmpv::ext::to_value(&Metadata { offsets }).unwrap(),
+                            serde_json::to_value(&Metadata { offsets }).unwrap(),
+                            rmpv::Value::Nil,
                         );
                     }
                     InputReaderCommand::Disconnect => return Ok(()),

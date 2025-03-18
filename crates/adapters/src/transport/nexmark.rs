@@ -25,7 +25,6 @@ use enum_map::EnumMap;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::nexmark::{NexmarkInputConfig, NexmarkInputOptions, NexmarkTable};
 use rand::rngs::SmallRng;
-use rmpv::Value as RmpValue;
 use serde::{Deserialize, Serialize};
 
 use super::InputCommandReceiver;
@@ -99,10 +98,13 @@ impl InputReader for InputGenerator {
             }
             _ => match command {
                 InputReaderCommand::Seek(_) => (),
-                InputReaderCommand::Replay(_) => self.consumer.replayed(0, 0),
+                InputReaderCommand::Replay { .. } => self.consumer.replayed(0, 0),
                 InputReaderCommand::Extend => (),
                 InputReaderCommand::Pause => (),
-                InputReaderCommand::Queue => self.consumer.extended(0, 0, RmpValue::Nil),
+                InputReaderCommand::Queue => {
+                    self.consumer
+                        .extended(0, 0, serde_json::Value::Null, rmpv::Value::Nil)
+                }
                 InputReaderCommand::Disconnect => (),
             },
         }
@@ -261,7 +263,7 @@ fn worker_thread(
     consumers: EnumMap<NexmarkTable, Box<dyn InputConsumer>>,
     command_receiver: UnboundedReceiver<InputReaderCommand>,
 ) -> AnyResult<()> {
-    let mut command_receiver = InputCommandReceiver::<Metadata>::new(command_receiver);
+    let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
 
     // Start all the generator threads.
     let barrier = Arc::new(Barrier::new(options.threads + 1));
@@ -299,7 +301,7 @@ fn worker_thread(
         0
     };
 
-    while let Some(Metadata { event_ids }) = command_receiver.blocking_recv_replay()? {
+    while let Some((Metadata { event_ids }, ())) = command_receiver.blocking_recv_replay()? {
         let _ = bcast_sender.send(event_ids.clone());
         barrier.wait();
         let mut total = 0;
@@ -323,7 +325,7 @@ fn worker_thread(
             Some(command_receiver.blocking_recv()?)
         };
         match command {
-            Some(InputReaderCommand::Seek(_)) | Some(InputReaderCommand::Replay(_)) => {
+            Some(InputReaderCommand::Seek(_)) | Some(InputReaderCommand::Replay { .. }) => {
                 unreachable!("{command:?} must be at the beginning of the command stream")
             }
             Some(InputReaderCommand::Extend) => running = true,
@@ -356,10 +358,11 @@ fn worker_thread(
                 consumers[NexmarkTable::Bid].extended(
                     total,
                     hasher.map_or(0, |hasher| hasher.finish()),
-                    rmpv::ext::to_value(Metadata {
+                    serde_json::to_value(Metadata {
                         event_ids: events.unwrap_or_else(|| next_event_id..next_event_id),
                     })
                     .unwrap(),
+                    rmpv::Value::Nil,
                 );
             }
             Some(InputReaderCommand::Disconnect) => break,

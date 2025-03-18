@@ -435,7 +435,7 @@ impl InputGenerator {
         drop(work_receiver);
         drop(completion_sender);
 
-        let mut command_receiver = InputCommandReceiver::<RawMetadata>::new(command_receiver);
+        let mut command_receiver = InputCommandReceiver::<RawMetadata, ()>::new(command_receiver);
 
         // Tracks work that needs to be sent to a worker for execution.
         let mut unassigned = if let Some(metadata) = command_receiver.blocking_recv_seek()? {
@@ -456,7 +456,7 @@ impl InputGenerator {
         let mut in_flight = vec![RowRangeSet::new(); config.plan.len()];
 
         // Replay steps.
-        while let Some(metadata) = command_receiver.blocking_recv_replay()? {
+        while let Some((metadata, _data)) = command_receiver.blocking_recv_replay()? {
             let metadata: Metadata = metadata.into();
             seed = metadata.seed;
             let mut rows = metadata.rows;
@@ -503,7 +503,7 @@ impl InputGenerator {
         loop {
             match command_receiver.try_recv()? {
                 Some(command @ InputReaderCommand::Seek(_))
-                | Some(command @ InputReaderCommand::Replay(_)) => {
+                | Some(command @ InputReaderCommand::Replay { .. }) => {
                     unreachable!("{command:?} must be at the beginning of the command stream")
                 }
                 Some(InputReaderCommand::Extend) => running = true,
@@ -564,7 +564,8 @@ impl InputGenerator {
                     consumer.extended(
                         num_records,
                         hasher.map_or(0, |hasher| hasher.finish()),
-                        rmpv::ext::to_value(metadata).unwrap(),
+                        serde_json::to_value(metadata).unwrap(),
+                        rmpv::Value::Nil,
                     );
                 }
                 Some(InputReaderCommand::Disconnect) => break,

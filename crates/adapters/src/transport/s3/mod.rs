@@ -236,7 +236,7 @@ impl S3InputReader {
         let mut start_position = None;
         match command_receiver.recv().await {
             Some(InputReaderCommand::Seek(metadata)) => {
-                let metadata = rmpv::ext::from_value::<Metadata>(metadata)?;
+                let metadata = serde_json::from_value::<Metadata>(metadata)?;
                 if let Some((key, value)) = metadata.offsets.last_key_value() {
                     start_position = Some((key.clone(), value.1));
                 }
@@ -254,8 +254,8 @@ impl S3InputReader {
                     unreachable!("Seek must be the first input reader command")
                 }
                 None | Some(InputReaderCommand::Disconnect) => return Ok(()),
-                Some(InputReaderCommand::Replay(metadata)) => {
-                    let metadata = rmpv::ext::from_value::<Metadata>(metadata)?;
+                Some(InputReaderCommand::Replay { metadata, .. }) => {
+                    let metadata = serde_json::from_value::<Metadata>(metadata)?;
                     if let Some((key, value)) = metadata.offsets.last_key_value() {
                         start_position = Some((key.clone(), value.1));
                     }
@@ -356,7 +356,7 @@ impl S3InputReader {
                 command = command_receiver.recv() => {
                     match command {
                         Some(command @ InputReaderCommand::Seek(_))
-                            | Some(command @ InputReaderCommand::Replay(_)) => {
+                            | Some(command @ InputReaderCommand::Replay { ..}) => {
                                 unreachable!("{command:?} must be at the beginning of the command stream")
                             }
                         Some(InputReaderCommand::Extend) => running = true,
@@ -380,7 +380,8 @@ impl S3InputReader {
                             }
                             consumer.extended(total,
                                               hasher.map_or(0, |hasher| hasher.finish()),
-                                              rmpv::ext::to_value(&Metadata { offsets }).unwrap());
+                                              serde_json::to_value(&Metadata { offsets }).unwrap(),
+                                              rmpv::Value::Nil);
                         }
                         Some(InputReaderCommand::Disconnect) | None => {
                             return Ok(())

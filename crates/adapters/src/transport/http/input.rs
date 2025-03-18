@@ -94,8 +94,8 @@ impl HttpInputEndpointInner {
         while let Some(message) = receiver.recv().await {
             input_span.in_scope(|| match message {
                 InputReaderCommand::Seek(_) => (),
-                InputReaderCommand::Replay(metadata) => {
-                    let Metadata { chunks } = rmpv::ext::from_value(metadata).unwrap();
+                InputReaderCommand::Replay { data, .. } => {
+                    let Data { chunks } = rmpv::ext::from_value(data).unwrap();
                     let mut guard = self.details.lock().unwrap();
                     let details = guard.as_mut().unwrap();
                     let mut num_records = 0;
@@ -116,15 +116,17 @@ impl HttpInputEndpointInner {
                     let mut guard = self.details.lock().unwrap();
                     let details = guard.as_mut().unwrap();
                     let (num_records, hash, chunks) = details.queue.flush_with_aux();
-                    let metadata = if details.consumer.is_pipeline_fault_tolerant() {
-                        rmpv::ext::to_value(Metadata {
+                    let data = if details.consumer.is_pipeline_fault_tolerant() {
+                        rmpv::ext::to_value(Data {
                             chunks: chunks.into_iter().map(ByteBuf::from).collect(),
                         })
                         .unwrap()
                     } else {
                         RmpValue::Nil
                     };
-                    details.consumer.extended(num_records, hash, metadata);
+                    details
+                        .consumer
+                        .extended(num_records, hash, serde_json::Value::Null, data);
                 }
                 InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
             });
@@ -319,6 +321,6 @@ impl InputReader for HttpInputEndpoint {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Metadata {
+struct Data {
     chunks: Vec<ByteBuf>,
 }

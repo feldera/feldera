@@ -2,6 +2,7 @@ use dbsp::circuit::checkpointer::CheckpointMetadata;
 use feldera_types::config::{InputEndpointConfig, PipelineConfig};
 use rmpv::Value as RmpValue;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -369,7 +370,8 @@ pub struct StepMetadata {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct InputLog {
-    pub value: RmpValue,
+    pub data: RmpValue,
+    pub metadata: JsonValue,
     pub num_records: u64,
     pub hash: u64,
 }
