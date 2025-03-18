@@ -126,6 +126,7 @@ where
 pub trait Executor<C>: 'static {
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<GlobalNodeId>>)
         -> Result<(), Error>;
+
     fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 }
 
@@ -249,7 +250,7 @@ mod util {
     /// Helper function used by schedulers to enforce ownership preferences.
     ///
     /// Individual schedulers can implement their own algorithms to enforce (or
-    /// ignore) ownership preferences.  This helper function can optionally
+    /// ignore) ownership preferences.  This helper function can optionally be
     /// used by schedulers that wish to implement one particular approach.
     /// The idea is to treat **strong** ownership preferences
     /// (`OwnershipPreference::STRONGLY_PREFER_OWNED` and above) as scheduling

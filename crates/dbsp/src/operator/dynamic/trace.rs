@@ -339,7 +339,7 @@ pub(crate) fn register_trace_replay_sources<C, B, T>(
             circuit.global_node_id().child(feedback_node_id),
         ];
 
-        let replay = ReplayStreams::new(replay_sources, replay_stream.stream_id());
+        let replay = ReplayStreams::new(replay_sources, Box::new(replay_stream.clone()));
 
         circuit.cache_insert(ReplaySources::new(stream.stream_id()), replay);
         // circuit.cache_insert(
@@ -1179,9 +1179,7 @@ where
     fn start_replay(&mut self) -> Result<(), Error> {
         if self.delta_stream.is_some() {
             let trace = self.trace.take();
-            let Some(trace) = trace else {
-                return Err(todo!());
-            };
+            let trace = trace.expect("Z1Trace::start_replay: no trace");
 
             self.replay_state = Some(ReplayState::new(trace));
         }

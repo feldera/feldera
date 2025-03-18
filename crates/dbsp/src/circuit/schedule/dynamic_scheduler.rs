@@ -233,12 +233,20 @@ impl Inner {
         let num_nodes = nodes.len();
         let mut successors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
         let mut predecessors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
+        circuit.edges().iter().for_each(|edge| {
+            if let Some(stream) = &edge.stream {
+                stream.clear_consumer_count();
+            }
+        });
 
         for edge in circuit.edges().iter() {
             if nodes.contains(&edge.to) && nodes.contains(&edge.from) {
                 successors.entry(edge.from).or_default().push(edge.to);
 
                 predecessors.entry(edge.to).or_default().push(edge.from);
+                if let Some(stream) = &edge.stream {
+                    stream.register_consumer();
+                }
             }
         }
 

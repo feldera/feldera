@@ -52,6 +52,7 @@ use crate::{
     Error as DbspError, Runtime,
 };
 use anyhow::Error as AnyError;
+use dyn_clone::{clone_box, DynClone};
 use serde::Serialize;
 use std::{
     any::{type_name_of_val, Any},
@@ -199,11 +200,15 @@ impl<D> RefStreamValue<D> {
     }
 }
 
-pub trait StreamMetadata {
+pub trait StreamMetadata: DynClone + 'static {
     fn stream_id(&self) -> StreamId;
     fn local_node_id(&self) -> NodeId;
     fn origin_node_id(&self) -> &GlobalNodeId;
+    fn clear_consumer_count(&self);
+    fn register_consumer(&self);
 }
+
+dyn_clone::clone_trait_object!(StreamMetadata);
 
 /// A `Stream<C, D>` stores the output value of type `D` of an operator in a
 /// circuit with type `C`.
@@ -667,7 +672,11 @@ pub struct Stream<C, D> {
     val: RefStreamValue<D>,
 }
 
-impl<C, D> StreamMetadata for Stream<C, D> {
+impl<C, D> StreamMetadata for Stream<C, D>
+where
+    C: Clone + 'static,
+    D: 'static,
+{
     fn stream_id(&self) -> StreamId {
         self.stream_id
     }
@@ -676,6 +685,12 @@ impl<C, D> StreamMetadata for Stream<C, D> {
     }
     fn origin_node_id(&self) -> &GlobalNodeId {
         &self.origin_node_id
+    }
+    fn clear_consumer_count(&self) {
+        self.val.get_mut().consumers = 0;
+    }
+    fn register_consumer(&self) {
+        self.val.get_mut().consumers += 1;
     }
 }
 
@@ -1284,6 +1299,7 @@ pub struct Edge {
     /// to the local circuit, this is just the full path to the `from`
     /// node.
     pub origin: GlobalNodeId,
+    pub stream: Option<Box<dyn StreamMetadata>>,
     /// Ownership preference associated with the consumer of this
     /// stream or `None` if this is a dependency edge.
     pub ownership_preference: Option<OwnershipPreference>,
@@ -1298,7 +1314,7 @@ impl Edge {
 
     /// `true` if `self` is a stream edge.
     pub(super) fn is_stream(&self) -> bool {
-        self.ownership_preference.is_some()
+        self.stream.is_some()
     }
 }
 
@@ -1307,11 +1323,11 @@ circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
 #[derive(Clone)]
 pub struct ReplayStreams {
     pub replay_nodes: Vec<GlobalNodeId>,
-    pub replay_stream: StreamId,
+    pub replay_stream: Box<dyn StreamMetadata>,
 }
 
 impl ReplayStreams {
-    pub fn new(replay_nodes: Vec<GlobalNodeId>, replay_stream: StreamId) -> Self {
+    pub fn new(replay_nodes: Vec<GlobalNodeId>, replay_stream: Box<dyn StreamMetadata>) -> Self {
         Self {
             replay_nodes,
             replay_stream,
@@ -1485,12 +1501,10 @@ pub trait Circuit: WithClock + Clone + 'static {
         self.cache_get(&ReplaySources::new(stream_id))
     }
 
-    fn add_replay_edges(&self, stream_id: StreamId, replay_stream_id: StreamId) {
-        todo!()
-    }
+    fn add_replay_edges(&self, stream_id: StreamId, replay_stream_id: &dyn StreamMetadata);
 
     /// Connect `stream` as input to `to`.
-    fn connect_stream<T>(
+    fn connect_stream<T: 'static>(
         &self,
         stream: &Stream<Self, T>,
         to: NodeId,
@@ -2478,6 +2492,7 @@ where
             from,
             to,
             origin,
+            stream: None,
             ownership_preference: None,
         });
     }
@@ -2705,7 +2720,7 @@ where
         })
     }
 
-    fn connect_stream<T>(
+    fn connect_stream<T: 'static>(
         &self,
         stream: &Stream<Self, T>,
         to: NodeId,
@@ -2717,14 +2732,12 @@ where
             ownership_preference,
         ));
 
-        // Safe because the circuit isn't running yet.
-        stream.val.get_mut().consumers += 1;
-
         debug_assert_eq!(self.global_node_id(), stream.circuit.global_node_id());
         self.inner().add_edge(Edge {
             from: stream.local_node_id(),
             to,
             origin: stream.origin_node_id().clone(),
+            stream: Some(Box::new(stream.clone())),
             ownership_preference: Some(ownership_preference),
         });
     }
@@ -3490,6 +3503,26 @@ where
             (node, output_stream)
         })
     }
+
+    // TODO: optimize by indexing stream edges by StreamId.
+    fn add_replay_edges(&self, stream_id: StreamId, replay_stream: &dyn StreamMetadata) {
+        let edges = self.inner().edges.borrow_mut();
+        let mut new_edges = Vec::new();
+
+        for edge in edges.iter() {
+            if let Some(stream) = &edge.stream {
+                if stream.stream_id() == stream_id {
+                    new_edges.push(Edge {
+                        from: replay_stream.local_node_id(),
+                        to: edge.to,
+                        origin: replay_stream.origin_node_id().clone(),
+                        stream: Some(clone_box(replay_stream)),
+                        ownership_preference: edge.ownership_preference,
+                    });
+                }
+            }
+        }
+    }
 }
 
 impl<P> ChildCircuit<P>
@@ -3581,7 +3614,7 @@ impl<C, I, O, Op> Node for ImportNode<C, I, O, Op>
 where
     C: Circuit,
     C::Parent: Circuit,
-    I: Clone,
+    I: Clone + 'static,
     O: Clone,
     Op: ImportOperator<I, O>,
 {
@@ -3834,7 +3867,7 @@ where
 impl<C, I, O, Op> Node for UnaryNode<C, I, O, Op>
 where
     C: Circuit,
-    I: Clone,
+    I: Clone + 'static,
     O: Clone,
     Op: UnaryOperator<I, O>,
 {
@@ -3962,7 +3995,7 @@ where
 impl<C, I, Op> Node for SinkNode<C, I, Op>
 where
     C: Circuit,
-    I: Clone,
+    I: Clone + 'static,
     Op: SinkOperator<I>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -4102,8 +4135,8 @@ where
 impl<C, I1, I2, Op> Node for BinarySinkNode<C, I1, I2, Op>
 where
     C: Circuit,
-    I1: Clone,
-    I2: Clone,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
     Op: BinarySinkOperator<I1, I2>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -4290,8 +4323,8 @@ where
 impl<C, I1, I2, O, Op> Node for BinaryNode<C, I1, I2, O, Op>
 where
     C: Circuit,
-    I1: Clone,
-    I2: Clone,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
     O: Clone,
     Op: BinaryOperator<I1, I2, O>,
 {
@@ -4478,9 +4511,9 @@ where
 impl<C, I1, I2, I3, O, Op> Node for TernaryNode<C, I1, I2, I3, O, Op>
 where
     C: Circuit,
-    I1: Clone,
-    I2: Clone,
-    I3: Clone,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
+    I3: Clone + 'static,
     O: Clone,
     Op: TernaryOperator<I1, I2, I3, O>,
 {
@@ -4658,10 +4691,10 @@ where
 impl<C, I1, I2, I3, I4, O, Op> Node for QuaternaryNode<C, I1, I2, I3, I4, O, Op>
 where
     C: Circuit,
-    I1: Clone,
-    I2: Clone,
-    I3: Clone,
-    I4: Clone,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
+    I3: Clone + 'static,
+    I4: Clone + 'static,
     O: Clone,
     Op: QuaternaryOperator<I1, I2, I3, I4, O>,
 {
@@ -5128,6 +5161,7 @@ impl<C, I, O, Op> Node for FeedbackInputNode<C, I, O, Op>
 where
     Op: StrictUnaryOperator<I, O>,
     I: Data,
+    C: Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         self.operator.borrow().name()
@@ -5533,7 +5567,7 @@ impl CircuitHandle {
                     .map_node_mut(gid, &mut |node| node.replay_complete())
             });
             while !done {
-                self.step();
+                self.step()?;
             }
 
             // End catchup mode.
@@ -5575,13 +5609,14 @@ impl CircuitHandle {
 
         let mut need_backfill_new = BTreeSet::new();
 
+        let mut replay_streams = BTreeMap::new();
+
         for (stream_id, gid) in inputs.into_iter() {
             if let Some(replay_sources) = self.circuit.get_replay_sources(stream_id) {
                 for source in replay_sources.replay_nodes.into_iter() {
                     catchup_nodes.insert(source);
+                    replay_streams.insert(stream_id, replay_sources.replay_stream.clone());
                 }
-                self.circuit
-                    .add_replay_edges(stream_id, replay_sources.replay_stream);
             } else {
                 if !catchup_nodes.contains(&gid) {
                     catchup_nodes.insert(gid.clone());
@@ -5589,6 +5624,11 @@ impl CircuitHandle {
                     need_backfill_new.insert(gid.clone());
                 }
             }
+        }
+
+        for (original_stream, replay_stream) in replay_streams.into_iter() {
+            self.circuit
+                .add_replay_edges(original_stream, replay_stream.as_ref());
         }
 
         Ok(need_backfill_new)
