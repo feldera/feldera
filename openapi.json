@@ -2047,6 +2047,127 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/metrics": {
+      "get": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Retrieve circuit metrics of a running or paused pipeline.",
+        "operationId": "get_pipeline_metrics",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/MetricsFormat"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline circuit metrics retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/query": {
       "get": {
         "tags": [
@@ -2195,7 +2316,7 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "Retrieve statistics (e.g., metrics, performance counters) of a running or paused pipeline.",
+        "summary": "Retrieve statistics (e.g., performance counters) of a running or paused pipeline.",
         "operationId": "get_pipeline_stats",
         "parameters": [
           {
@@ -2210,7 +2331,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Pipeline metrics retrieved successfully",
+            "description": "Pipeline statistics retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -3994,6 +4115,23 @@
             "type": "string",
             "format": "date-time",
             "description": "Timestamp from which the user should be reminded of the license expiring soon"
+          }
+        }
+      },
+      "MetricsFormat": {
+        "type": "string",
+        "description": "Circuit metrics output format.\n- `prometheus`: format expected by Prometheus, as documented at:\n<https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md>\n- `json`: JSON format",
+        "enum": [
+          "prometheus",
+          "json"
+        ]
+      },
+      "MetricsParameters": {
+        "type": "object",
+        "description": "Query parameters to retrieve pipeline circuit metrics.",
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/MetricsFormat"
           }
         }
       },

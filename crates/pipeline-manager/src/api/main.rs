@@ -80,6 +80,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_interaction::get_pipeline_output_connector_status,
         endpoints::pipeline_interaction::get_pipeline_logs,
         endpoints::pipeline_interaction::get_pipeline_stats,
+        endpoints::pipeline_interaction::get_pipeline_metrics,
         endpoints::pipeline_interaction::get_pipeline_circuit_profile,
         endpoints::pipeline_interaction::get_pipeline_heap_profile,
         endpoints::pipeline_interaction::pipeline_adhoc_sql,
@@ -205,6 +206,8 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::program_schema::SourcePosition,
         feldera_types::program_schema::PropertyValue,
         feldera_types::program_schema::SqlIdentifier,
+        feldera_types::query_params::MetricsFormat,
+        feldera_types::query_params::MetricsParameters,
         feldera_types::error::ErrorResponse,
     ),),
     tags(
@@ -254,6 +257,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_output_connector_status)
         .service(endpoints::pipeline_interaction::get_pipeline_logs)
         .service(endpoints::pipeline_interaction::get_pipeline_stats)
+        .service(endpoints::pipeline_interaction::get_pipeline_metrics)
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)

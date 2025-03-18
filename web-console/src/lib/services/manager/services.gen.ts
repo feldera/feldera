@@ -57,6 +57,9 @@ import type {
   GetPipelineLogsData,
   GetPipelineLogsError,
   GetPipelineLogsResponse,
+  GetPipelineMetricsData,
+  GetPipelineMetricsError,
+  GetPipelineMetricsResponse,
   PipelineAdhocSqlData,
   PipelineAdhocSqlError,
   PipelineAdhocSqlResponse,
@@ -314,6 +317,16 @@ export const getPipelineLogs = (options: Options<GetPipelineLogsData>) => {
 }
 
 /**
+ * Retrieve circuit metrics of a running or paused pipeline.
+ */
+export const getPipelineMetrics = (options: Options<GetPipelineMetricsData>) => {
+  return (options?.client ?? client).get<GetPipelineMetricsResponse, GetPipelineMetricsError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/metrics'
+  })
+}
+
+/**
  * Execute an ad-hoc SQL query in a running or paused pipeline.
  * The evaluation is not incremental.
  */
@@ -325,7 +338,7 @@ export const pipelineAdhocSql = (options: Options<PipelineAdhocSqlData>) => {
 }
 
 /**
- * Retrieve statistics (e.g., metrics, performance counters) of a running or paused pipeline.
+ * Retrieve statistics (e.g., performance counters) of a running or paused pipeline.
  */
 export const getPipelineStats = (options: Options<GetPipelineStatsData>) => {
   return (options?.client ?? client).get<GetPipelineStatsResponse, GetPipelineStatsError>({
