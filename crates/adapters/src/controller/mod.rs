@@ -18,6 +18,7 @@
 //! buffered via `InputConsumer::buffered`.
 
 use crate::catalog::OutputCollectionHandles;
+use crate::controller::stats::StepResults;
 use crate::create_integrated_output_endpoint;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -797,7 +798,8 @@ impl CircuitThread {
                 step_metadata.insert(
                     status.endpoint_name.clone(),
                     InputLog {
-                        value: results.metadata.unwrap_or(RmpValue::Nil),
+                        data: results.data.unwrap_or(RmpValue::Nil),
+                        metadata: results.metadata.unwrap_or(JsonValue::Null),
                         num_records: results.num_records,
                         hash: results.hash,
                     },
@@ -932,11 +934,11 @@ impl FtState {
             Some(step_rw) if step > 0 => {
                 let (step_rw, prev_step_metadata) =
                     step_rw.into_reader().unwrap().seek(step - 1)?;
-                for (endpoint_name, metadata) in &prev_step_metadata.input_logs {
+                for (endpoint_name, input_log) in &prev_step_metadata.input_logs {
                     let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
                     controller.status.input_status()[&endpoint_id]
                         .reader
-                        .seek(metadata.value.clone());
+                        .seek(input_log.metadata.clone());
                 }
                 let (step_rw, step_metadata) =
                     Self::replay_step(StepRw::Reader(step_rw), step, &controller)?;
@@ -1020,11 +1022,11 @@ impl FtState {
         for (endpoint_name, config) in &metadata.add_inputs {
             controller.connect_input(endpoint_name, config)?;
         }
-        for (endpoint_name, metadata) in &metadata.input_logs {
+        for (endpoint_name, log) in &metadata.input_logs {
             let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
             controller.status.input_status()[&endpoint_id]
                 .reader
-                .replay(metadata.value.clone());
+                .replay(log.metadata.clone(), log.data.clone());
         }
         Ok((step_rw, Some(metadata)))
     }
@@ -2629,20 +2631,26 @@ impl InputConsumer for InputProbe {
     fn replayed(&self, num_records: usize, hash: u64) {
         self.controller.status.completed(
             self.endpoint_id,
-            num_records as u64,
-            hash,
-            None,
+            StepResults {
+                num_records: num_records as u64,
+                hash,
+                metadata: None,
+                data: None,
+            },
             &self.controller.backpressure_thread_unparker,
         );
         self.controller.unpark_circuit();
     }
 
-    fn extended(&self, num_records: usize, hash: u64, metadata: RmpValue) {
+    fn extended(&self, num_records: usize, hash: u64, metadata: JsonValue, data: RmpValue) {
         self.controller.status.completed(
             self.endpoint_id,
-            num_records as u64,
-            hash,
-            Some(metadata),
+            StepResults {
+                num_records: num_records as u64,
+                hash,
+                metadata: Some(metadata),
+                data: Some(data),
+            },
             &self.controller.backpressure_thread_unparker,
         );
         self.controller.unpark_circuit();

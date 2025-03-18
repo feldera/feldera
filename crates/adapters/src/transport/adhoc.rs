@@ -263,8 +263,8 @@ impl InputReader for AdHocInputEndpoint {
     fn request(&self, command: InputReaderCommand) {
         match command {
             InputReaderCommand::Seek(_) => (),
-            InputReaderCommand::Replay(metadata) => {
-                let Metadata { batches: chunks } = rmpv::ext::from_value(metadata).unwrap();
+            InputReaderCommand::Replay { data, .. } => {
+                let Metadata { batches: chunks } = rmpv::ext::from_value(data).unwrap();
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
                 let mut num_records = 0;
@@ -285,7 +285,7 @@ impl InputReader for AdHocInputEndpoint {
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
                 let (num_records, hash, batches) = details.queue.flush_with_aux();
-                let metadata = if details.consumer.is_pipeline_fault_tolerant() {
+                let data = if details.consumer.is_pipeline_fault_tolerant() {
                     rmpv::ext::to_value(Metadata {
                         batches: batches.into_iter().map(ByteBuf::from).collect(),
                     })
@@ -293,7 +293,9 @@ impl InputReader for AdHocInputEndpoint {
                 } else {
                     RmpValue::Nil
                 };
-                details.consumer.extended(num_records, hash, metadata);
+                details
+                    .consumer
+                    .extended(num_records, hash, serde_json::Value::Null, data);
             }
             InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
         }

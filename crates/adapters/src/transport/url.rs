@@ -276,7 +276,7 @@ impl UrlInputReader {
     ) -> AnyResult<()> {
         ensure_default_crypto_provider();
 
-        let mut command_receiver = InputCommandReceiver::<Metadata>::new(command_receiver);
+        let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
         let offset = if let Some(metadata) = command_receiver.recv_seek().await? {
             metadata.offsets.end
         } else {
@@ -288,7 +288,7 @@ impl UrlInputReader {
         stream.seek(offset);
         splitter.seek(offset);
 
-        while let Some(Metadata { offsets }) = command_receiver.recv_replay().await? {
+        while let Some((Metadata { offsets }, ())) = command_receiver.recv_replay().await? {
             stream.seek(offsets.start);
             splitter.seek(offsets.start);
             let mut remainder = (offsets.end - offsets.start) as usize;
@@ -339,7 +339,7 @@ impl UrlInputReader {
                 },
                 command = command_receiver.recv() => {
                     match command? {
-                        command @ InputReaderCommand::Seek(_) | command @ InputReaderCommand::Replay(_) => {
+                        command @ InputReaderCommand::Seek(_) | command @ InputReaderCommand::Replay{..} => {
                             unreachable!("{command:?} must be at the beginning of the command stream")
                         }
                         InputReaderCommand::Extend => {
@@ -370,12 +370,13 @@ impl UrlInputReader {
                             consumer.extended(
                                 total,
                                 hasher.map_or(0, |hasher| hasher.finish()),
-                                rmpv::ext::to_value(Metadata {
+                                serde_json::to_value(Metadata {
                                     offsets: range.unwrap_or_else(|| {
                                         let ofs = splitter.position();
                                         ofs..ofs
                                     }),
                                 }).unwrap(),
+                                rmpv::Value::Nil,
                             );
                         }
                         InputReaderCommand::Disconnect => return Ok(()),
