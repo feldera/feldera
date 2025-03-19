@@ -29,7 +29,7 @@ Connecting to Feldera on localhost
 
     from feldera import FelderaClient, PipelineBuilder
 
-    client = FelderaClient('http://localhost:8080', api_key=api_key)
+    client = FelderaClient('http://127.0.0.1:8080', api_key=api_key)
 
     pipeline = PipelineBuilder(client, name, sql).create()
 
@@ -45,7 +45,7 @@ This example sets the timeout for each HTTP request to 10 seconds.
 
     from feldera import FelderaClient, PipelineBuilder
 
-    client = FelderaClient("http://localhost:8080", api_key=api_key, timeout=10)
+    client = FelderaClient("http://127.0.0.1:8080", api_key=api_key, timeout=10)
 
 .. note::
     This is for an individual HTTP request, and does not affect things like waiting for a pipeline to start,

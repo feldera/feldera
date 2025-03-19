@@ -57,7 +57,7 @@ class FelderaClient:
         Create a FelderaClient that connects to the local Feldera instance
         """
 
-        return FelderaClient(f"http://localhost:{port}")
+        return FelderaClient(f"http://127.0.0.1:{port}")
 
     def get_pipeline(self, pipeline_name) -> Pipeline:
         """
