@@ -587,16 +587,13 @@ impl CircuitThread {
 
             match trigger.trigger(self.last_checkpoint, self.replaying(), running) {
                 Action::Step => {
-                    let start = Instant::now();
                     let done = !self.step()?;
                     self.controller
                         .status
                         .global_metrics
                         .runtime_elapsed_msecs
-                        .fetch_add(
-                            start.elapsed().as_millis() as u64
-                                * self.controller.status.pipeline_config.global.workers as u64
-                                * 2,
+                        .store(
+                            self.circuit.runtime_elapsed().as_millis() as u64,
                             Ordering::Relaxed,
                         );
 
