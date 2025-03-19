@@ -15,6 +15,7 @@ use minitrace::local::LocalSpan;
 use minitrace::Span;
 use std::fs::create_dir_all;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{
     collections::HashSet,
     error::Error as StdError,
@@ -496,6 +497,10 @@ pub struct DBSPHandle {
     /// Time when the handle was created.
     start_time: Instant,
 
+    /// Time elapsed while the circuit is executing a step, multiplied by the
+    /// number of foreground and background threads.
+    runtime_elapsed: Duration,
+
     /// The underlying runtime.
     ///
     /// Normally this will be some runtime, but we take it out if we need to
@@ -530,6 +535,7 @@ impl DBSPHandle {
             command_senders,
             status_receivers,
             checkpointer,
+            runtime_elapsed: Duration::ZERO,
         })
     }
 
@@ -608,9 +614,21 @@ impl DBSPHandle {
     /// Evaluate the circuit for one clock cycle.
     pub fn step(&mut self) -> Result<(), DbspError> {
         counter!("feldera.dbsp.step").increment(1);
+        let start = Instant::now();
         let span = Arc::new(Span::root("step", SpanContext::random()));
         let _guard = span.set_local_parent();
-        self.broadcast_command(Command::Step(span), |_, _| {})
+        let result = self.broadcast_command(Command::Step(span), |_, _| {});
+        if let Some(handle) = self.runtime.as_ref() {
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+        result
+    }
+
+    /// Returns the time elapsed while the circuit is executing a step,
+    /// multiplied by the number of foreground and background threads.
+    pub fn runtime_elapsed(&self) -> Duration {
+        self.runtime_elapsed
     }
 
     /// Fingerprint of this circuit.
