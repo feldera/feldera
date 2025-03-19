@@ -126,14 +126,28 @@ pub struct DeltaTableReaderConfig {
 
     /// Optional row filter.
     ///
+    /// When specified, only rows that satisfy the filter condition are read from the delta table.
+    /// The condition must be a valid SQL Boolean expression that can be used in
+    /// the `where` clause of the `select * from my_table where ...` query.
+    pub filter: Option<String>,
+
+    /// Optional snapshot filter.
+    ///
     /// This option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.
     ///
     /// When specified, only rows that satisfy the filter condition are included in the
     /// snapshot.  The condition must be a valid SQL Boolean expression that can be used in
     /// the `where` clause of the `select * from snapshot where ...` query.
     ///
-    /// This option can be used to specify the range of event times to include in the snapshot,
+    /// Unlike the `filter` option, which applies to all records retrieved from the table, this
+    /// filter only applies to rows in the initial snapshot of the table.
+    /// For instance, it can be used to specify the range of event times to include in the snapshot,
     /// e.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.
+    ///
+    /// This option can be used together with the `filter` option. During the initial snapshot,
+    /// only rows that satisfy both `filter` and `snapshot_filter` are retrieved from the Delta table.
+    /// When subsequently following changes in the the transaction log (`mode = snapshot_and_follow`),
+    /// all rows that meet the `filter` condition are ingested, regardless of `snapshot_filter`.
     pub snapshot_filter: Option<String>,
 
     /// Optional table version.
@@ -213,7 +227,7 @@ fn test_delta_reader_config_serde() {
 
     let serialized_config = serde_json::to_string(&config).unwrap();
 
-    let expected = r#"{"uri":"protocol:/path/to/somewhere","timestamp_column":"ts","mode":"follow","snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","customoption1":"val1","customoption2":"val2","cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4}"#;
+    let expected = r#"{"uri":"protocol:/path/to/somewhere","timestamp_column":"ts","filter":null,"mode":"follow","snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","customoption1":"val1","customoption2":"val2","cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4}"#;
 
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),

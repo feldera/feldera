@@ -358,6 +358,16 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
+    fn used_column_list(&self, table: &DeltaTable) -> String {
+        let columns = self.used_columns(table);
+
+        columns
+            .iter()
+            .map(quote_sql_identifier)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     /// Load the entire table snapshot as a single "select * where <filter>" query.
     async fn read_unordered_snapshot(
         &self,
@@ -365,19 +375,12 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) {
-        let columns = self.used_columns(table);
-
-        let column_names = columns
-            .iter()
-            .map(quote_sql_identifier)
-            .collect::<Vec<_>>()
-            .join(", ");
+        let column_names = self.used_column_list(table);
 
         let mut snapshot_query = format!("select {column_names} from snapshot");
-        if let Some(filter) = &self.config.snapshot_filter {
+        if let Some(filter) = self.effective_snapshot_filter() {
             snapshot_query = format!("{snapshot_query} where {filter}");
         }
-
         // Execute the snapshot query; push snapshot data to the circuit.
         info!(
             "delta_table {}: reading initial snapshot: {snapshot_query}",
@@ -423,7 +426,7 @@ impl DeltaTableInputEndpointInner {
         // Query the table for min and max values of the timestamp column that satisfy the filter.
         let bounds_query =
             format!("select * from (select cast(min({timestamp_column}) as string) as start_ts, cast(max({timestamp_column}) as string) as end_ts from snapshot {}) where start_ts is not null",
-            if let Some(filter) = &self.config.snapshot_filter {
+            if let Some(filter) = &self.effective_snapshot_filter() {
                 format!("where {filter}")
             } else {
                 String::new()
@@ -440,7 +443,7 @@ impl DeltaTableInputEndpointInner {
             info!(
                 "delta_table {}: initial snapshot is empty; the Delta table contains no records{}",
                 &self.endpoint_name,
-                if let Some(filter) = &self.config.snapshot_filter {
+                if let Some(filter) = &self.effective_snapshot_filter() {
                     format!(" that satisfy the filter condition '{filter}'")
                 } else {
                     String::new()
@@ -496,7 +499,7 @@ impl DeltaTableInputEndpointInner {
             // Query the table for the range.
             let mut range_query =
                 format!("select {column_names} from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}");
-            if let Some(filter) = &self.config.snapshot_filter {
+            if let Some(filter) = &self.effective_snapshot_filter() {
                 range_query = format!("{range_query} and {filter}");
             }
 
@@ -721,6 +724,32 @@ impl DeltaTableInputEndpointInner {
         Ok(())
     }
 
+    /// Validate the filter expression specified in the 'filter' parameter.
+    fn validate_filter(&self) -> Result<(), ControllerError> {
+        if let Some(filter) = &self.config.filter {
+            validate_sql_expression(filter).map_err(|e| {
+                ControllerError::invalid_transport_configuration(
+                    &self.endpoint_name,
+                    &format!("error parsing 'filter' expression '{filter}': {e}"),
+                )
+            })?;
+        }
+
+        Ok(())
+    }
+
+    /// SQL expression that combines the snapshot filter and the filter is either or both are specified.
+    fn effective_snapshot_filter(&self) -> Option<String> {
+        match (&self.config.snapshot_filter, &self.config.filter) {
+            (Some(snapshot_filter), Some(filter)) => {
+                Some(format!("({snapshot_filter}) and ({filter})"))
+            }
+            (Some(snapshot_filter), None) => Some(snapshot_filter.to_string()),
+            (None, Some(filter)) => Some(filter.to_string()),
+            (None, None) => None,
+        }
+    }
+
     /// Validate the cdc_order_by expression.
     fn validate_cdc_order_by(&self) -> Result<(), ControllerError> {
         if let Some(order_by) = &self.config.cdc_order_by {
@@ -843,6 +872,7 @@ impl DeltaTableInputEndpointInner {
 
         self.register_snapshot_table(table).await?;
         self.validate_snapshot_filter()?;
+        self.validate_filter()?;
 
         if let Some(timestamp_column) = &self.config.timestamp_column {
             validate_timestamp_column(
@@ -1051,11 +1081,13 @@ impl DeltaTableInputEndpointInner {
             self.process_cdc_transaction(actions, table, cdc_delete_filter, input_stream, receiver)
                 .await;
         } else {
+            let column_names = self.used_column_list(table);
+
             // TODO: consider processing all Add actions and all Remove actions in one
             // go using `ListingTable`, which understands partitioning and can probably
             // parallelize the load.
             for action in actions {
-                self.process_action(action, table, input_stream, receiver)
+                self.process_action(action, table, &column_names, input_stream, receiver)
                     .await;
             }
         }
@@ -1126,12 +1158,20 @@ impl DeltaTableInputEndpointInner {
             anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering Parquet table: {e}")
         })?;
 
-        // Order the table by the `cdc_order_by expressions`
+        let where_clause = if let Some(filter) = &self.config.filter {
+            format!("where {filter}")
+        } else {
+            "".to_string()
+        };
+
+        // Order the table by the `cdc_order_by` expression.
+        // TODO: We don't use `used_column_list` here, as the resulting dataframe will have a different
+        // schema than the original table, and the `cdc_delete_filter` physical expression won't be valid for it.
         let order_by = self.config.cdc_order_by.as_ref().unwrap();
-        let query = format!("SELECT * FROM tmp_table ORDER BY {order_by}");
+        let query = format!("SELECT * FROM tmp_table {where_clause} ORDER BY {order_by}");
 
         let df = self.datafusion.sql(&query).await.map_err(|e| {
-            anyhow!("invalid 'cdc_order_by' expression '{order_by}': 'cdc_order_by' must be a valid SQL expression that can be used in a 'SELECT * FROM <table> ORDER BY <cdc_order_by>' query, but the following error was encountered when compiling '{query}': {e}")
+            anyhow!("invalid 'cdc_order_by' or 'filter' expression: 'cdc_order_by' and 'filter' (when specified) must be valid SQL expressions that can be used in a 'SELECT * FROM <table> WHERE <filter> ORDER BY <cdc_order_by>' query, but the following error was encountered when compiling '{query}': {e}")
         })?;
 
         self.execute_df(
@@ -1147,7 +1187,7 @@ impl DeltaTableInputEndpointInner {
         Ok(())
     }
 
-    /// Creates a table provider from a list of Parquet files
+    /// Create a table provider from a list of Parquet files.
     async fn create_parquet_table(
         &self,
         table: &DeltaTable,
@@ -1185,21 +1225,37 @@ impl DeltaTableInputEndpointInner {
         &self,
         action: &Action,
         table: &DeltaTable,
+        column_names: &str,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) {
-        match action {
+        let result = match action {
             Action::Add(add) if add.data_change => {
-                self.add_with_polarity(&add.path, true, table, input_stream, receiver)
-                    .await;
+                self.add_with_polarity(&add.path, true, table, column_names, input_stream, receiver)
+                    .await
             }
             Action::Remove(remove)
                 if remove.data_change && self.config.cdc_delete_filter.is_none() =>
             {
-                self.add_with_polarity(&remove.path, false, table, input_stream, receiver)
-                    .await;
+                self.add_with_polarity(
+                    &remove.path,
+                    false,
+                    table,
+                    column_names,
+                    input_stream,
+                    receiver,
+                )
+                .await
             }
-            _ => (),
+            _ => return,
+        };
+
+        // Deregister the table registered by `add_with_polarity`.
+        // If the table does not exist, there's no harm.
+        let _ = self.datafusion.deregister_table("tmp_table");
+
+        if let Err(e) = result {
+            self.consumer.error(false, e);
         }
     }
 
@@ -1212,35 +1268,41 @@ impl DeltaTableInputEndpointInner {
         path: &str,
         polarity: bool,
         table: &DeltaTable,
+        column_names: &str,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
-    ) {
+    ) -> AnyResult<()> {
+        let description = format!("file '{path}'");
+
         // See comment about `object_store_url` above.
         let full_path = format!("{}{}", table.log_store().object_store_url().as_str(), path);
-        let df = match self
-            .datafusion
-            .read_parquet(full_path, ParquetReadOptions::default())
-            .await
-        {
-            Err(e) => {
-                self.consumer.error(
-                    true,
-                    anyhow!("error reading Parquet file '{path}' listed in table log: {e}"),
-                );
-                return;
-            }
-            Ok(df) => df,
+
+        // Create a datafusion table backed by these files.
+        let table = Arc::new(
+            self.create_parquet_table(table, vec![full_path.clone()], &description)
+                .await?,
+        );
+
+        self.datafusion.register_table("tmp_table", table).map_err(|e| {
+            anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error registering Parquet table: {e}")
+        })?;
+
+        let df = if let Some(filter) = &self.config.filter {
+            let query = format!("SELECT {column_names} FROM tmp_table where {filter}");
+            self.datafusion.sql(&query).await.map_err(|e| {
+                anyhow!("invalid 'cdc_order_by' filter expression '{filter}': 'filter' must be a valid SQL expression that can be used in a 'SELECT * FROM <table> ORDER BY <cdc_order_by>' query, but the following error was encountered when compiling '{query}': {e}")
+            })?
+        } else {
+            let query = format!("SELECT {column_names} FROM tmp_table");
+            self.datafusion.sql(&query).await.map_err(|e| {
+                anyhow!("internal error processing file {full_path}'; {REPORT_ERROR}; error compiling query '{query}': {e}")
+            })?
         };
 
-        self.execute_df(
-            df,
-            polarity,
-            None,
-            &format!("file '{path}'"),
-            input_stream,
-            receiver,
-        )
-        .await;
+        self.execute_df(df, polarity, None, &description, input_stream, receiver)
+            .await;
+
+        Ok(())
     }
 }
 

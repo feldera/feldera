@@ -646,6 +646,8 @@ async fn test_follow(
     } else {
         input_config.insert("mode".to_string(), "follow".to_string());
     }
+    input_config.insert("filter".to_string(), "bigint % 2 = 0".to_string());
+
     let output_config = storage_options.clone();
 
     let input_table_uri_clone = input_table_uri.to_string();
@@ -681,7 +683,7 @@ async fn test_follow(
     for chunk in data[split_at..].chunks(std::cmp::max(data[split_at..].len() / 10, 1)) {
         total_count += chunk.len();
         input_table = write_data_to_table(input_table, &arrow_schema, chunk).await;
-        wait_for_count_records(&mut output_table, total_count, &datafusion).await;
+        wait_for_count_records(&mut output_table, (total_count + 1) / 2, &datafusion).await;
     }
 
     // TODO: this does not currently work because our output delta connector doesn't support
@@ -797,6 +799,7 @@ async fn test_cdc(
     let mut input_config = storage_options.clone();
 
     input_config.insert("mode".to_string(), "cdc".to_string());
+    input_config.insert("filter".to_string(), "bigint % 2 = 0".to_string());
     input_config.insert(
         "cdc_delete_filter".to_string(),
         "__feldera_op = 'd'".to_string(),
@@ -823,21 +826,22 @@ async fn test_cdc(
         wait_for_count_records_materialized(
             &read_pipeline,
             &SqlIdentifier::from("test_output1"),
-            total_count,
+            (total_count + 1) / 2,
         )
         .await;
     }
 
+    let mut deleted_count = 0;
     // Delete data chunk by chunk.
     for chunk in data.chunks(std::cmp::max(data.len() / 10, 1)) {
         write_updates_as_json(input_file.as_file_mut(), chunk, false);
 
-        total_count -= chunk.len();
+        deleted_count += chunk.len();
 
         wait_for_count_records_materialized(
             &read_pipeline,
             &SqlIdentifier::from("test_output1"),
-            total_count,
+            (total_count + 1) / 2 - (deleted_count + 1) / 2,
         )
         .await;
     }
@@ -1053,11 +1057,16 @@ proptest! {
         let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_id.as_file_mut(), "json", r#"update_format: "insert_delete""#);
         assert_eq!(zset, expected_zset);
 
-        // Order delta table by `bigint`, specify range.
-        let mut json_file_ordered_filtered = delta_table_snapshot_to_json::<DeltaTestStruct>(
+        // Order delta table by `bigint`, specify range in two differrent ways: using `snapshot_filter` and using `filter`.
+        let mut json_file_ordered_filtered1 = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
             &DeltaTestStruct::schema_with_lateness(),
             &HashMap::from([("timestamp_column".to_string(), "bigint".to_string()), ("snapshot_filter".to_string(), "bigint >= 10000 ".to_string())]));
+
+        let mut json_file_ordered_filtered2 = delta_table_snapshot_to_json::<DeltaTestStruct>(
+            &table_uri,
+            &DeltaTestStruct::schema_with_lateness(),
+            &HashMap::from([("timestamp_column".to_string(), "bigint".to_string()), ("filter".to_string(), "bigint >= 10000 ".to_string())]));
 
         let expected_filtered_zset = OrdZSet::from_tuples(
                 (),
@@ -1066,8 +1075,27 @@ proptest! {
                     .map(|x| Tup2(Tup2(x,()),1)).collect()
                 );
 
-            let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered.as_file_mut(), "json", r#"update_format: "insert_delete""#);
-            assert_eq!(zset, expected_filtered_zset);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered1.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        assert_eq!(zset, expected_filtered_zset);
+
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered2.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        assert_eq!(zset, expected_filtered_zset);
+
+        // Specify both `snapshot_filter` and `filter`.
+        let mut json_file_filtered = delta_table_snapshot_to_json::<DeltaTestStruct>(
+            &table_uri,
+            &DeltaTestStruct::schema_with_lateness(),
+            &HashMap::from([("filter".to_string(), "bigint >= 5000 ".to_string()), ("snapshot_filter".to_string(), "bigint <= 10000 ".to_string())]));
+
+        let expected_filtered_zset = OrdZSet::from_tuples(
+                (),
+                data.clone().into_iter()
+                    .filter(|x| x.bigint >= 5000 && x.bigint <= 10000)
+                    .map(|x| Tup2(Tup2(x,()),1)).collect()
+                );
+
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        assert_eq!(zset, expected_filtered_zset);
 
         // Order delta table by `timestamp`.
         let mut json_file_ordered_by_ts = delta_table_snapshot_to_json::<DeltaTestStruct>(

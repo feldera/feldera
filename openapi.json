@@ -3392,6 +3392,11 @@
             "description": "Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,\n\"2024-12-09T16:09:53+00:00\".\n\nWhen this option is set, the connector finds and opens the version of the table as of the\nspecified point in time (based on the server time recorded in the transaction log, not the\nevent time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it\nretrieves the snapshot of this version of the table.  In `follow` and `snapshot_and_follow`\nmodes, it follows transaction log records **after** this version.\n\nNote: at most one of `version` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
             "nullable": true
           },
+          "filter": {
+            "type": "string",
+            "description": "Optional row filter.\n\nWhen specified, only rows that satisfy the filter condition are read from the delta table.\nThe condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from my_table where ...` query.",
+            "nullable": true
+          },
           "mode": {
             "$ref": "#/components/schemas/DeltaTableIngestMode"
           },
@@ -3403,7 +3408,7 @@
           },
           "snapshot_filter": {
             "type": "string",
-            "description": "Optional row filter.\n\nThis option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.\n\nWhen specified, only rows that satisfy the filter condition are included in the\nsnapshot.  The condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from snapshot where ...` query.\n\nThis option can be used to specify the range of event times to include in the snapshot,\ne.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.",
+            "description": "Optional snapshot filter.\n\nThis option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.\n\nWhen specified, only rows that satisfy the filter condition are included in the\nsnapshot.  The condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from snapshot where ...` query.\n\nUnlike the `filter` option, which applies to all records retrieved from the table, this\nfilter only applies to rows in the initial snapshot of the table.\nFor instance, it can be used to specify the range of event times to include in the snapshot,\ne.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.\n\nThis option can be used together with the `filter` option. During the initial snapshot,\nonly rows that satisfy both `filter` and `snapshot_filter` are retrieved from the Delta table.\nWhen subsequently following changes in the the transaction log (`mode = snapshot_and_follow`),\nall rows that meet the `filter` condition are ingested, regardless of `snapshot_filter`.",
             "nullable": true
           },
           "timestamp_column": {
