@@ -18,6 +18,9 @@
 //! buffered via `InputConsumer::buffered`.
 
 use crate::catalog::OutputCollectionHandles;
+use crate::controller::metadata::{
+    InputChecksums, ReadResult, StepInputChecksums, StepInputMetadata,
+};
 use crate::controller::stats::StepResults;
 use crate::create_integrated_output_endpoint;
 use crate::transport::Step;
@@ -800,8 +803,10 @@ impl CircuitThread {
                     InputLog {
                         data: results.data.unwrap_or(RmpValue::Nil),
                         metadata: results.metadata.unwrap_or(JsonValue::Null),
-                        num_records: results.num_records,
-                        hash: results.hash,
+                        checksums: InputChecksums {
+                            num_records: results.num_records,
+                            hash: results.hash,
+                        },
                     },
                 );
                 false
@@ -888,7 +893,7 @@ impl CircuitThread {
     }
 
     fn replaying(&self) -> bool {
-        self.ft.as_ref().is_some_and(|ft| ft.replaying)
+        self.ft.as_ref().is_some_and(|ft| ft.is_replaying())
     }
 }
 
@@ -913,42 +918,71 @@ struct FtState {
     /// This is always non-`None` unless a fatal error occurs.
     step_rw: Option<StepRw>,
 
-    /// Whether we are currently replaying a previous step.
-    replaying: bool,
+    /// If we are currently replaying a previous step, the input data checksums
+    /// for the step, so that we can check that our replay used the same input
+    /// data as the original run.
+    ///
+    /// If we are not replaying, this is `None`.
+    input_checksums: Option<StepInputChecksums>,
 
-    /// Metadata for the last step we read or wrote. This is only `None` if
-    /// `step` is 0.
-    prev_step_metadata: Option<StepMetadata>,
+    /// Metadata for `step - 1`; that is, the metadata that would be part of a
+    /// [Checkpoint] for `step`, to allow the input endpoints to seek to the
+    /// starting point for reading data for `step`.
+    ///
+    /// This is only `None` if `step` is 0.
+    input_metadata: Option<StepInputMetadata>,
 
-    // Input endpoint ids and names at the time we wrote the last step,
-    // so that we can log changes for the replay log.
+    /// Input endpoint ids and names at the time we wrote the last step,
+    /// so that we can log changes for the replay log.
     input_endpoints: HashMap<EndpointId, String>,
 }
 
 impl FtState {
     /// Returns a new [FtState] for `ft` and `controller`.
     fn new(ft: FtInit, controller: Arc<ControllerInner>) -> Result<Self, ControllerError> {
-        let FtInit { step, step_rw } = ft;
+        let FtInit {
+            step,
+            step_rw,
+            input_metadata,
+        } = ft;
 
-        let (step_metadata, prev_step_metadata, step_rw) = match step_rw {
-            Some(step_rw) if step > 0 => {
-                let (step_rw, prev_step_metadata) =
-                    step_rw.into_reader().unwrap().seek(step - 1)?;
-                for (endpoint_name, input_log) in &prev_step_metadata.input_logs {
-                    let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
-                    controller.status.input_status()[&endpoint_id]
-                        .reader
-                        .seek(input_log.metadata.clone());
-                }
-                let (step_rw, step_metadata) =
-                    Self::replay_step(StepRw::Reader(step_rw), step, &controller)?;
-                (step_metadata, Some(prev_step_metadata), step_rw)
-            }
+        // Seek each input endpoint to its initial offset.
+        for (endpoint_name, metadata) in &input_metadata.0 {
+            let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
+            controller.status.input_status()[&endpoint_id]
+                .reader
+                .seek(metadata.clone());
+        }
+
+        let (input_metadata, input_checksums, step_rw) = match step_rw {
             Some(step_rw) => {
-                let (step_rw, step_metadata) = Self::replay_step(step_rw, step, &controller)?;
-                (step_metadata, None, step_rw)
+                // We are opening an existing checkpoint. Look for the current
+                // step in the journal.
+                match step_rw.into_reader().unwrap().seek(step)? {
+                    ReadResult::Step { reader, metadata } => {
+                        // We found the current step in the journal, as
+                        // `metadata`. Start replaying the step.
+                        let input_checksums = Self::replay_step(step, &metadata, &controller)?;
+                        (
+                            Some(StepInputMetadata::from(metadata)),
+                            Some(input_checksums),
+                            StepRw::Reader(reader),
+                        )
+                    }
+                    ReadResult::Writer(writer) => {
+                        // The current step is not in the journal, meaning that
+                        // there aren't any steps beyond the checkpoint.
+                        //
+                        // We can be somewhat confident that the journal file
+                        // was not just lost or deleted because we insist on at
+                        // least being able to open it to resume (a zero-length
+                        // file is fine).
+                        (Some(input_metadata), None, StepRw::Writer(writer))
+                    }
+                }
             }
             None => {
+                // Initialize a new fault-tolerant pipeline.
                 let config = controller.status.pipeline_config.clone();
                 let path = storage_path(&config).unwrap();
                 let state_path = state_path(&config).unwrap();
@@ -965,6 +999,7 @@ impl FtState {
                     step: 0,
                     config,
                     processed_records: 0,
+                    input_metadata: StepInputMetadata::default(),
                 };
                 checkpoint.write(&state_path)?;
 
@@ -976,9 +1011,9 @@ impl FtState {
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
             step,
+            input_checksums,
             step_rw: Some(step_rw),
-            replaying: step_metadata.is_some(),
-            prev_step_metadata: step_metadata.or(prev_step_metadata),
+            input_metadata,
         })
     }
 
@@ -994,20 +1029,10 @@ impl FtState {
     }
 
     fn replay_step(
-        step_rw: StepRw,
         step: Step,
+        metadata: &StepMetadata,
         controller: &Arc<ControllerInner>,
-    ) -> Result<(StepRw, Option<StepMetadata>), ControllerError> {
-        // Read a step.
-        let (metadata, step_rw) = step_rw.read()?;
-
-        let Some(metadata) = metadata else {
-            // No more steps to replay.
-            info!("input replay complete");
-            return Ok((step_rw, None));
-        };
-
-        // There's a step to replay.
+    ) -> Result<StepInputChecksums, ControllerError> {
         if metadata.step != step {
             return Err(ControllerError::UnexpectedStep {
                 actual: metadata.step,
@@ -1028,7 +1053,7 @@ impl FtState {
                 .reader
                 .replay(log.metadata.clone(), log.data.clone());
         }
-        Ok((step_rw, Some(metadata)))
+        Ok(metadata.into())
     }
 
     /// Writes `step_metadata` to the step writer.
@@ -1062,28 +1087,16 @@ impl FtState {
                 input_logs,
             };
             step_writer.write(&step_metadata)?;
-            self.prev_step_metadata = Some(step_metadata);
-        } else if self.replaying {
-            let prev_step_metadata = self.prev_step_metadata.as_ref().unwrap();
-            let logged = prev_step_metadata
-                .input_logs
-                .iter()
-                .map(|(endpoint_name, entry)| {
-                    (endpoint_name.as_str(), (entry.num_records, entry.hash))
-                })
-                .collect::<BTreeMap<_, _>>();
-            let replayed = input_logs
-                .iter()
-                .map(|(endpoint_name, entry)| {
-                    (endpoint_name.as_str(), (entry.num_records, entry.hash))
-                })
-                .collect::<BTreeMap<_, _>>();
-            if logged != replayed {
+            self.input_metadata = Some(step_metadata.into());
+        } else if let Some(logged) = &self.input_checksums {
+            let replayed = StepInputChecksums::from(&input_logs);
+            if &replayed != logged {
                 let error = format!("Logged and replayed step {} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}", self.step);
                 error!("{error}");
                 return Err(ControllerError::ReplayFailure { error });
             }
         }
+        self.step += 1;
         Ok(())
     }
 
@@ -1096,22 +1109,26 @@ impl FtState {
         Ok(())
     }
 
-    /// Advances to the next step.
-    ///
-    /// If we were replaying before, this attempts to replay the next step too.
+    /// If we just replayed a step, try to replay the next one too.
     fn next_step(&mut self) -> Result<(), ControllerError> {
-        self.step += 1;
-        if self.replaying {
-            let (step_rw, step_metadata) =
-                Self::replay_step(self.step_rw.take().unwrap(), self.step, &self.controller)?;
+        if self.is_replaying() {
+            // Read a step.
+            let step_rw = self.step_rw.take().unwrap();
+            let (metadata, step_rw) = step_rw.read()?;
             self.step_rw = Some(step_rw);
-            self.replaying = step_metadata.is_some();
-            if self.replaying {
-                self.prev_step_metadata = step_metadata;
-            } else {
-                info!("replay complete, starting pipeline");
-                self.input_endpoints = Self::initial_input_endpoints(&self.controller);
-            }
+            match metadata {
+                None => {
+                    // No more steps to replay.
+                    info!("replay complete, starting pipeline");
+                    self.input_checksums = None;
+                    self.input_endpoints = Self::initial_input_endpoints(&self.controller);
+                }
+                Some(metadata) => {
+                    // There's a step to replay.
+                    self.input_checksums =
+                        Some(Self::replay_step(self.step, &metadata, &self.controller)?);
+                }
+            };
         }
         Ok(())
     }
@@ -1137,6 +1154,7 @@ impl FtState {
             ..self.controller.status.pipeline_config.clone()
         };
 
+        let input_metadata = self.input_metadata.as_ref().cloned().unwrap_or_default();
         let checkpoint = circuit
             .commit()
             .map_err(ControllerError::from)
@@ -1150,30 +1168,19 @@ impl FtState {
                         .status
                         .global_metrics
                         .num_total_processed_records(),
+                    input_metadata,
                 };
                 let state_path = state_path(&self.controller.status.pipeline_config).unwrap();
                 checkpoint.write(&state_path).map(|()| checkpoint)
             })?;
 
-        if self
-            .prev_step_metadata
-            .as_ref()
-            .is_none_or(|psm| self.step > psm.step)
-        {
-            self.step_rw = Some(
-                self.step_rw
-                    .take()
-                    .unwrap()
-                    .truncate(&self.prev_step_metadata)?,
-            );
-        } else {
-            // We have the current step's metadata instead of the previous
-            // one's. This is what happens if we checkpoint immediately after
-            // resume. No big deal, we'll just skip truncating the steps file
-            // until next checkpoint.
-        }
+        self.step_rw = Some(self.step_rw.take().unwrap().truncate()?);
 
         Ok(checkpoint)
+    }
+
+    fn is_replaying(&self) -> bool {
+        self.input_checksums.is_some()
     }
 }
 
@@ -1322,6 +1329,9 @@ struct FtInit {
     /// The first step that the circuit will execute.
     step: Step,
 
+    /// Metadata for seeking to input endpoint initial positions.
+    input_metadata: StepInputMetadata,
+
     /// The step reader/writer, if we've already opened it..
     step_rw: Option<StepRw>,
 }
@@ -1383,6 +1393,7 @@ impl ControllerInit {
                 step,
                 config,
                 processed_records,
+                input_metadata,
             } = Checkpoint::read(&state_path)?;
 
             // There might be a steps file already (there must be, if
@@ -1405,6 +1416,7 @@ impl ControllerInit {
                 ft: Some(FtInit {
                     step,
                     step_rw: Some(step_rw),
+                    input_metadata,
                 }),
                 processed_records,
                 snapshotter,
@@ -1417,7 +1429,7 @@ impl ControllerInit {
             // might fail to initialize[*] and if that happens we want to be
             // able to try again with a new configuration, rather than
             // triggering the "open the existing checkpoint" flow above and
-            // mysterioulsy failing again for the same reason as before.
+            // mysteriously failing again for the same reason as before.
             //
             // [*] For example, if the configured input adapters aren't
             // fault-tolerant.
@@ -1431,6 +1443,7 @@ impl ControllerInit {
                 ft: Some(FtInit {
                     step: 0,
                     step_rw: None,
+                    input_metadata: StepInputMetadata::default(),
                 }),
                 processed_records: 0,
                 snapshotter,

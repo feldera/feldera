@@ -19,10 +19,20 @@ pub use feldera_adapterlib::errors::metadata::StepError;
 /// Checkpoint for a pipeline.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Checkpoint {
+    /// The circuit's checkpoint.
     pub circuit: Option<CheckpointMetadata>,
+
+    /// Step number.
     pub step: Step,
+
+    /// Pipeline configuration.
     pub config: PipelineConfig,
+
+    /// Number of records processed.
     pub processed_records: u64,
+
+    /// Initial offsets for the input endpoints.
+    pub input_metadata: StepInputMetadata,
 }
 
 impl Checkpoint {
@@ -116,17 +126,34 @@ impl Drop for BackgroundSync {
 
 /// Reads a `steps.bin` file that tracks per-input adapter, per-step metadata.
 pub struct StepReader {
+    /// File name.
     path: PathBuf,
+
+    /// Underlying file.
     reader: BufReader<File>,
+
+    /// `None` if we haven't yet read a step; otherwise, the expected step
+    /// number for the next step to be read.
+    next_step: Option<Step>,
 }
 
+/// Return value of [StepReader::read] and [StepReader::seek].
 #[allow(clippy::large_enum_variant)]
 pub enum ReadResult {
+    /// Step that was successfully read.
     Step {
+        /// [StepReader] for reading the next step.
         reader: StepReader,
+
+        /// Metadata that was read.
         metadata: StepMetadata,
     },
-    Writer(StepWriter),
+
+    /// End-of-file was reached, which turns the [StepReader] into a [StepWriter].
+    Writer(
+        /// [StepWriter] for writing more steps.
+        StepWriter,
+    ),
 }
 
 impl StepReader {
@@ -143,7 +170,11 @@ impl StepReader {
                 .open(&path)
                 .map_err(|io_error| StepError::io_error(&path, io_error))?,
         );
-        Ok(Self { path, reader })
+        Ok(Self {
+            path,
+            reader,
+            next_step: None,
+        })
     }
 
     /// Reads one step from this file. Returns either the step or, if end of
@@ -151,10 +182,21 @@ impl StepReader {
     pub fn read(mut self) -> Result<ReadResult, StepError> {
         let start_offset = self.reader.stream_position().unwrap();
         match rmp_serde::decode::from_read::<_, StepMetadata>(&mut self.reader) {
-            Ok(step) => Ok(ReadResult::Step {
-                reader: self,
-                metadata: step,
-            }),
+            Ok(step) => {
+                match self.next_step {
+                    Some(next) if next != step.step => {
+                        return Err(StepError::MissingStep {
+                            path: self.path,
+                            step: next,
+                        })
+                    }
+                    _ => self.next_step = Some(step.step + 1),
+                }
+                Ok(ReadResult::Step {
+                    reader: self,
+                    metadata: step,
+                })
+            }
             Err(error) => {
                 match error {
                     rmp_serde::decode::Error::InvalidMarkerRead(e)
@@ -180,16 +222,30 @@ impl StepReader {
         }
     }
 
-    /// Skips forward in this file to the given numbered `step`. If the step is
-    /// found, returns it plus a reader for further steps.
-    pub fn seek(mut self, step: Step) -> Result<(StepReader, StepMetadata), StepError> {
+    /// Skips forward in this file to the given numbered `step`:
+    ///
+    /// - If the step is found, returns it plus a reader for further steps, as
+    ///   [ReadResult::Step].
+    ///
+    /// - If the file is empty or contains only steps before `step`, returns a
+    ///   writer, as [ReadResult::Writer].
+    ///
+    /// - If the file is invalid (for example, it contains nonconsecutive steps
+    ///   or only steps after `step`) or cannot be read, returns an error.
+    pub fn seek(mut self, step: Step) -> Result<ReadResult, StepError> {
         loop {
+            let next_step = self.next_step;
             match self.read()? {
                 ReadResult::Step { reader, metadata } => {
                     self = reader;
                     match metadata.step.cmp(&step) {
                         Ordering::Less => (),
-                        Ordering::Equal => return Ok((self, metadata)),
+                        Ordering::Equal => {
+                            return Ok(ReadResult::Step {
+                                reader: self,
+                                metadata,
+                            })
+                        }
                         Ordering::Greater => {
                             return Err(StepError::MissingStep {
                                 path: self.path.clone(),
@@ -199,10 +255,14 @@ impl StepReader {
                     }
                 }
                 ReadResult::Writer(writer) => {
-                    return Err(StepError::MissingStep {
-                        path: writer.path.clone(),
-                        step,
-                    })
+                    if next_step.is_none_or(|next| next == step) {
+                        return Ok(ReadResult::Writer(writer));
+                    } else {
+                        return Err(StepError::MissingStep {
+                            path: writer.path.clone(),
+                            step,
+                        });
+                    }
                 }
             }
         }
@@ -341,39 +401,132 @@ impl StepRw {
         }
     }
 
-    /// Replaces this log by one that contains only `new_initial_step` (empty,
-    /// if `new_initial_step` is `None`) and returns it for further writing.
-    pub fn truncate(self, new_initial_step: &Option<StepMetadata>) -> Result<Self, StepError> {
+    /// Replaces this log by an empty one and returns it for further writing.
+    pub fn truncate(self) -> Result<Self, StepError> {
         let path = self.path();
-        let new_content = new_initial_step.as_ref().map_or_else(
-            || Ok(Vec::new()),
-            |step| {
-                rmp_serde::to_vec_named(step).map_err(|error| StepError::EncodeError {
-                    path: path.to_path_buf(),
-                    error,
-                })
-            },
-        )?;
-        write_file_atomically(path, &new_content)
-            .map_err(|io_error| StepError::io_error(path, io_error))?;
+        write_file_atomically(path, &[]).map_err(|io_error| StepError::io_error(path, io_error))?;
         Ok(Self::Writer(StepWriter::append(path)?))
     }
 }
 
+/// A record in the journal, useful for replaying a step.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct StepMetadata {
+    /// Step number.
     pub step: Step,
+
+    /// Names of input endpoints removed in the step.
     pub remove_inputs: HashSet<String>,
+
+    /// Input endpoints added in the step, with their configurations.
+    ///
+    /// If a given name is in both `remove_inputs` and `add_inputs`, then the
+    /// step replaced an endpoint with the given name by a new, otherwise
+    /// unrelated endpoint.
     pub add_inputs: HashMap<String, InputEndpointConfig>,
+
+    /// Logs for the endpoints included in the step.
+    ///
+    /// A given endpoint is included if it existed before the step and is not in
+    /// `remove_inputs`, or if it is included in `add_inputs`.
     pub input_logs: HashMap<String, InputLog>,
 }
 
+/// A journal record for a single endpoint for a single step.
+///
+/// The endpoint's name is the key in [StepMetadata::input_logs].
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct InputLog {
+    /// Data for replay.
+    ///
+    /// This is filled in by input adapters that log actual data records
+    /// (e.g. the HTTP and ad hoc query input adapters). For the other adapters,
+    /// which only log metadata (such as record offsets), this field is
+    /// [RmpValue::Nil].
     pub data: RmpValue,
+
+    /// Metadata for seek and replay.
+    ///
+    /// This is filled in by input adapters that log metadata (such as record
+    /// offsets).
     pub metadata: JsonValue,
+
+    /// Checksums of the input data.
+    pub checksums: InputChecksums,
+}
+
+/// Input data statistics.
+///
+/// This allows checking that an input step replayed the same data as the
+/// original run.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+pub struct InputChecksums {
+    /// Number of records.
     pub num_records: u64,
+
+    /// Hash of the records.
     pub hash: u64,
+}
+
+/// Checksums for the input endpoints in a step.
+///
+/// This is a subset of [StepMetadata] that is useful for verifying that an
+/// input step replayed the same data as the original run.
+#[derive(Serialize, Deserialize, Debug, Default, PartialEq)]
+pub struct StepInputChecksums(
+    /// Maps from an input endpoint name to its checksums.
+    pub HashMap<String, InputChecksums>,
+);
+
+impl From<&HashMap<String, InputLog>> for StepInputChecksums {
+    fn from(input_logs: &HashMap<String, InputLog>) -> Self {
+        Self(
+            input_logs
+                .iter()
+                .map(|(name, log)| (name.clone(), log.checksums.clone()))
+                .collect(),
+        )
+    }
+}
+
+impl From<&StepMetadata> for StepInputChecksums {
+    fn from(value: &StepMetadata) -> Self {
+        Self::from(&value.input_logs)
+    }
+}
+
+/// Metadata for the input endpoints in a step.
+///
+/// This is a subset of [StepMetadata] that is useful for seeking input
+/// endpoints to a starting point.
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct StepInputMetadata(
+    /// Maps from an input endpoint name to its metadata.
+    pub HashMap<String, JsonValue>,
+);
+
+impl From<StepMetadata> for StepInputMetadata {
+    fn from(value: StepMetadata) -> Self {
+        Self(
+            value
+                .input_logs
+                .into_iter()
+                .map(|(name, log)| (name, log.metadata))
+                .collect(),
+        )
+    }
+}
+
+impl From<&StepMetadata> for StepInputMetadata {
+    fn from(value: &StepMetadata) -> Self {
+        Self(
+            value
+                .input_logs
+                .iter()
+                .map(|(name, log)| (name.clone(), log.metadata.clone()))
+                .collect(),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -502,7 +655,13 @@ mod tests {
             let step_reader = StepReader::open(&path).unwrap();
 
             let mut read_data = Vec::new();
-            let (mut step_reader, metadata) = step_reader.seek(start).unwrap();
+            let ReadResult::Step {
+                reader: mut step_reader,
+                metadata,
+            } = step_reader.seek(start).unwrap()
+            else {
+                unreachable!()
+            };
             read_data.push(metadata);
             while let ReadResult::Step {
                 reader: new_reader,
