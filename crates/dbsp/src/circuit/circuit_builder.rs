@@ -5637,7 +5637,6 @@ impl CircuitHandle {
                 Err(DbspError::Storage(StorageError::OperatorCheckpointNotFound(_))) => {
                     // This indicates that this integral wasn't part of the previous incarnation
                     // of the circuit and so it needs to be rebuilt by replaying its input stream.
-                    replay_nodes.insert(node.global_id().clone());
                     need_backfill.insert(node.global_id().clone());
                     Ok(())
                 }
@@ -5656,17 +5655,23 @@ impl CircuitHandle {
             )?;
         }
 
-        // Configure all `replay_nodes` to run in replay mode.
-        for gid in replay_nodes.iter() {
-            self.circuit
-                .map_node_mut(gid, &mut |node| node.start_replay())?;
-        }
+        let nodes_involved_in_backfill = replay_nodes
+            .union(&need_backfill)
+            .cloned()
+            .collect::<BTreeSet<_>>();
 
         // TODO: Make sure a subcircuit is added to both sets if at least one of its nodes is.
 
-        if !replay_nodes.is_empty() {
-            // Prepare the scheduler to only run `replay_nodes`.
-            self.executor.prepare(&self.circuit, Some(&replay_nodes))?;
+        if !nodes_involved_in_backfill.is_empty() {
+            // Configure all `replay_nodes` to run in replay mode.
+            for gid in replay_nodes.iter() {
+                self.circuit
+                    .map_node_mut(gid, &mut |node| node.start_replay())?;
+            }
+
+            // Prepare the scheduler to only run `nodes_involved_in_backfill`.
+            self.executor
+                .prepare(&self.circuit, Some(&nodes_involved_in_backfill))?;
             let mut done = false;
             while !done {
                 self.step()?;
@@ -5691,10 +5696,10 @@ impl CircuitHandle {
 
     // Recursive step of computing the set of nodes that participate in the replay phase.
     //
-    // Find all ancestors of nodes in `need_backfill_new` that are not in `replay_nodes` yet.
-    // Add them to `replay_nodes`.
-    // Additionally, add them to `need_backfill` if the node requires backfill from its upstream
-    // ancestors.  Return the set of nodes newly added to `need_backfill`.
+    // Find all input streams of nodes in `need_backfill_new`. For streams that can be replayed
+    // from a replay source, add the corresponding nodes to `replay_nodes`. For other streams,
+    // add their origin nodes to `need_backfill`.
+    // Return the set of nodes newly added to `need_backfill`.
     fn compute_replay_nodes_step(
         &self,
         replay_nodes: &mut BTreeSet<GlobalNodeId>,
@@ -5727,8 +5732,7 @@ impl CircuitHandle {
                     replay_streams.insert(stream_id, replay_sources.replay_stream.clone());
                 }
             } else {
-                if !replay_nodes.contains(&gid) {
-                    replay_nodes.insert(gid.clone());
+                if !need_backfill.contains(&gid) {
                     need_backfill.insert(gid.clone());
                     need_backfill_new.insert(gid.clone());
                 }
