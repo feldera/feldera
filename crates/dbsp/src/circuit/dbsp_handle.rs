@@ -395,7 +395,7 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::RetrieveProfile { runtime_elapsed}) => {
+                    Ok(Command::RetrieveProfile { runtime_elapsed }) => {
                         if status_sender
                             .send(Ok(Response::Profile(profiler.profile(runtime_elapsed))))
                             .is_err()
