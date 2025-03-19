@@ -22,7 +22,7 @@ Our defining features:
 
 5. **Connectors for your favorite data sources and destinations**. Feldera connects to myriad batch and streaming data sources, like Kafka, HTTP, CDC streams, S3, Data Lakes, Warehouses and more. If you need a connector that we don't yet support, [let us know](https://github.com/feldera/feldera/issues/new/choose).
 
-6. **Fault tolerance**. Feldera can gracefully restart from the exact point of an abrupt shutdown or crash, picking up from where it left off without dropping or duplicating input or output. Fault tolerance is a preview feature that requires support from input and output connectors.
+6. [**Fault tolerance**](/pipelines/fault-tolerance). Feldera can gracefully restart from the exact point of an abrupt shutdown or crash, picking up from where it left off without dropping or duplicating input or output. Fault tolerance is a preview feature that requires support from input and output connectors.
 
 7. **Seamless ad-hoc queries**. You can run ad-hoc SQL queries on a running or paused pipeline to inspect or debug the
    state of materialized views. While these queries are evaluated in batch mode using Apache Datafusion, their

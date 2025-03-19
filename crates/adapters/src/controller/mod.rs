@@ -134,6 +134,9 @@ pub type GraphProfileCallbackFn = Box<dyn FnOnce(Result<GraphProfile, Controller
 /// Type of the callback argument to [`Controller::start_checkpoint`].
 pub type CheckpointCallbackFn = Box<dyn FnOnce(Result<Checkpoint, ControllerError>) + Send>;
 
+/// Type of the callback argument to [`Controller::start_suspend`].
+pub type SuspendCallbackFn = Box<dyn FnOnce(Result<(), ControllerError>) + Send>;
+
 /// A command that [Controller] can send to [Controller::circuit_thread].
 ///
 /// There is no type for a command reply.  Instead, the command implementation
@@ -141,6 +144,7 @@ pub type CheckpointCallbackFn = Box<dyn FnOnce(Result<Checkpoint, ControllerErro
 enum Command {
     GraphProfile(GraphProfileCallbackFn),
     Checkpoint(CheckpointCallbackFn),
+    Suspend(SuspendCallbackFn),
 }
 
 impl Controller {
@@ -452,6 +456,17 @@ impl Controller {
         receiver.blocking_recv().unwrap()
     }
 
+    /// Triggers a suspend operation. `cb` will be called when it completes.
+    ///
+    /// The callback-based nature of this function makes it useful in
+    /// asynchronous contexts.
+    pub fn start_suspend(&self, cb: SuspendCallbackFn) {
+        match self.inner.fail_if_restoring() {
+            Err(error) => cb(Err(error)),
+            Ok(()) => self.inner.suspend(cb),
+        }
+    }
+
     /// Initiate controller termination, but don't block waiting for it to finish.
     /// Can be used inside callbacks invoked by the controller without risking a deadlock.
     pub fn initiate_stop(&self) {
@@ -568,7 +583,9 @@ impl CircuitThread {
         self.finish_replaying();
 
         loop {
-            self.run_commands();
+            if !self.run_commands() {
+                break;
+            }
             let running = match self.controller.state() {
                 PipelineState::Running => true,
                 PipelineState::Paused => false,
@@ -703,7 +720,7 @@ impl CircuitThread {
 
     /// Reads and executes all the commands pending from
     /// `self.command_receiver`.
-    fn run_commands(&mut self) {
+    fn run_commands(&mut self) -> bool {
         while let Ok(command) = self.command_receiver.try_recv() {
             match command {
                 Command::GraphProfile(reply_callback) => reply_callback(
@@ -714,8 +731,13 @@ impl CircuitThread {
                 Command::Checkpoint(reply_callback) => {
                     reply_callback(self.checkpoint());
                 }
+                Command::Suspend(reply_callback) => {
+                    reply_callback(self.checkpoint().map(|_| ()));
+                    return false;
+                }
             }
         }
+        true
     }
 
     /// Reads and replies to all of the commands pending from
@@ -725,6 +747,7 @@ impl CircuitThread {
             match command {
                 Command::GraphProfile(callback) => callback(Err(ControllerError::ControllerExit)),
                 Command::Checkpoint(callback) => callback(Err(ControllerError::ControllerExit)),
+                Command::Suspend(callback) => callback(Err(ControllerError::ControllerExit)),
             }
         }
     }
@@ -2512,6 +2535,11 @@ impl ControllerInner {
 
     fn checkpoint(&self, cb: CheckpointCallbackFn) {
         self.command_sender.send(Command::Checkpoint(cb)).unwrap();
+        self.unpark_circuit();
+    }
+
+    fn suspend(&self, cb: SuspendCallbackFn) {
+        self.command_sender.send(Command::Suspend(cb)).unwrap();
         self.unpark_circuit();
     }
 
