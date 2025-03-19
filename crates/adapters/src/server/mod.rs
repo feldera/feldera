@@ -518,6 +518,7 @@ where
         .service(heap_profile)
         .service(dump_profile)
         .service(checkpoint)
+        .service(suspend)
         .service(input_endpoint)
         .service(output_endpoint)
         .service(pause_input_endpoint)
@@ -713,22 +714,43 @@ async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
     }
 }
 
+#[post("/suspend")]
+async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
+    let (sender, receiver) = oneshot::channel();
+    match &*state.controller.lock().unwrap() {
+        None => return Err(missing_controller_error(&state)),
+        Some(controller) => {
+            controller.start_suspend(Box::new(move |suspend| {
+                if sender.send(suspend).is_err() {
+                    error!("`/suspend` result could not be sent");
+                }
+            }));
+        }
+    };
+    receiver.await.unwrap()?;
+    do_shutdown(state).await
+}
+
 #[get("/shutdown")]
 async fn shutdown(state: WebData<ServerState>) -> impl Responder {
+    do_shutdown(state).await
+}
+
+async fn do_shutdown(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
     let controller = state.controller.lock().unwrap().take();
     if let Some(controller) = controller {
-        match controller.stop() {
-            Ok(()) => {
-                if let Some(sender) = &state.terminate_sender {
-                    let _ = sender.send(()).await;
-                }
-                if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
-                    warn!("Failed to remove server port file: {e}");
-                }
-                Ok(HttpResponse::Ok().json("Pipeline terminated"))
-            }
-            Err(e) => Err(e),
+        // Stop the controller.
+        controller.stop()?;
+
+        // Stop the webserver.
+        if let Some(sender) = &state.terminate_sender {
+            let _ = sender.send(()).await;
         }
+
+        if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
+            warn!("Failed to remove server port file: {e}");
+        }
+        Ok(HttpResponse::Ok().json("Pipeline terminated"))
     } else {
         // TODO: handle ongoing initialization
         Ok(HttpResponse::Ok().json("Pipeline already terminated"))

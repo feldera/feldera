@@ -572,8 +572,8 @@ pub enum ControllerError {
     /// Error parsing the checkpoint.
     CheckpointParseError { error: String },
 
-    /// Operation cannot be initiated now because the pipeline is being
-    /// restoring from a checkpoint.
+    /// Operation cannot be initiated now because the pipeline is being restored
+    /// from a checkpoint.
     RestoreInProgress,
 
     /// Error in steps metadata.
