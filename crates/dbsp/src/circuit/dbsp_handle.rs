@@ -385,17 +385,19 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::DumpProfile) => {
+                    Ok(Command::DumpProfile { runtime_elapsed }) => {
                         if status_sender
-                            .send(Ok(Response::ProfileDump(profiler.dump_profile())))
+                            .send(Ok(Response::ProfileDump(
+                                profiler.dump_profile(runtime_elapsed),
+                            )))
                             .is_err()
                         {
                             return;
                         }
                     }
-                    Ok(Command::RetrieveProfile) => {
+                    Ok(Command::RetrieveProfile { runtime_elapsed }) => {
                         if status_sender
-                            .send(Ok(Response::Profile(profiler.profile())))
+                            .send(Ok(Response::Profile(profiler.profile(runtime_elapsed))))
                             .is_err()
                         {
                             return;
@@ -476,8 +478,8 @@ impl Runtime {
 enum Command {
     Step(Arc<Span>),
     EnableProfiler,
-    DumpProfile,
-    RetrieveProfile,
+    DumpProfile { runtime_elapsed: Duration },
+    RetrieveProfile { runtime_elapsed: Duration },
     Commit(PathBuf),
     Restore(PathBuf),
 }
@@ -728,11 +730,16 @@ impl DBSPHandle {
     /// only memory usage details are reported.
     pub fn graph_profile(&mut self) -> Result<GraphProfile, DbspError> {
         let mut worker_graphs = vec![Default::default(); self.status_receivers.len()];
-        self.broadcast_command(Command::DumpProfile, |worker, resp| {
-            if let Response::ProfileDump(prof) = resp {
-                worker_graphs[worker] = prof;
-            }
-        })?;
+        self.broadcast_command(
+            Command::DumpProfile {
+                runtime_elapsed: self.runtime_elapsed(),
+            },
+            |worker, resp| {
+                if let Response::ProfileDump(prof) = resp {
+                    worker_graphs[worker] = prof;
+                }
+            },
+        )?;
         Ok(GraphProfile {
             elapsed_time: self.start_time.elapsed(),
             worker_graphs,
@@ -742,11 +749,16 @@ impl DBSPHandle {
     pub fn retrieve_profile(&mut self) -> Result<DbspProfile, DbspError> {
         let mut profiles = vec![Default::default(); self.status_receivers.len()];
 
-        self.broadcast_command(Command::RetrieveProfile, |worker, resp| {
-            if let Response::Profile(prof) = resp {
-                profiles[worker] = prof;
-            }
-        })?;
+        self.broadcast_command(
+            Command::RetrieveProfile {
+                runtime_elapsed: self.runtime_elapsed(),
+            },
+            |worker, resp| {
+                if let Response::Profile(prof) = resp {
+                    profiles[worker] = prof;
+                }
+            },
+        )?;
 
         Ok(DbspProfile::new(profiles))
     }
