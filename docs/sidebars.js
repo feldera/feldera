@@ -20,43 +20,43 @@ const sidebars = {
             label: 'Install Feldera',
             link: {
                 type: 'doc',
-                id: 'get-started'
+                id: 'get-started/index'
             },
             items: [
-                'docker',
-                'sandbox',
+                'get-started/docker',
+                'get-started/sandbox',
                 {
                     type: 'category',
                     label: 'Feldera Enterprise',
                     link: {
                         type: 'doc',
-                        id: 'enterprise/index'
+                        id: 'get-started/enterprise/index'
                     },
                     items: [
-                        'enterprise/quickstart',
-                        'enterprise/helm-guide',
+                        'get-started/enterprise/quickstart',
+                        'get-started/enterprise/helm-guide',
                         {
                             type: 'category',
                             label: 'Kubernetes guides',
                             link: {
                                 type: 'doc',
-                                id: 'enterprise/kubernetes-guides/index',
+                                id: 'get-started/enterprise/kubernetes-guides/index',
                             },
                             items: [
-                                'enterprise/kubernetes-guides/k3d',
+                                'get-started/enterprise/kubernetes-guides/k3d',
                                 {
                                     type: 'category',
                                     label: 'EKS',
                                     link: {
                                         type: 'doc',
-                                        id: 'enterprise/kubernetes-guides/eks/index',
+                                        id: 'get-started/enterprise/kubernetes-guides/eks/index',
                                     },
                                     items: [
-                                        'enterprise/kubernetes-guides/eks/cluster',
-                                        'enterprise/kubernetes-guides/eks/ingress'
+                                        'get-started/enterprise/kubernetes-guides/eks/cluster',
+                                        'get-started/enterprise/kubernetes-guides/eks/ingress'
                                     ]
                                 },
-                                'enterprise/kubernetes-guides/secret-management'
+                                'get-started/enterprise/kubernetes-guides/secret-management'
                             ]
                         }
                     ]
@@ -148,11 +148,11 @@ const sidebars = {
             collapsed: false,
             link: {
                 type: 'doc',
-                id: 'interact/index'
+                id: 'interface/index'
             },
             items: [
-                'reference/web-console',
-                'reference/cli',
+                'interface/web-console',
+                'interface/cli',
                 {
                     type: 'link',
                     label: "Python SDK",
@@ -161,7 +161,7 @@ const sidebars = {
                 {
                     type: 'link',
                     label: "REST API",
-                    href: "pathname:///api", // ../../../api
+                    href: "pathname:///api",
                 }
             ]
         },
@@ -171,7 +171,7 @@ const sidebars = {
             collapsed: false,
             link: {
                 type: 'doc',
-                id: 'writing/index'
+                id: 'pipelines/index'
             },
             items: [
                 {
@@ -179,35 +179,35 @@ const sidebars = {
                     label: 'Feldera SQL',
                     link: {
                         type: 'doc',
-                        id: 'sql/index'
+                        id: 'pipelines/sql/index'
                     },
                     items: [
-                        'sql/grammar',
-                        'sql/identifiers',
-                        'sql/types',
-                        'sql/casts',
-                        'sql/operators',
-                        'sql/aggregates',
-                        'sql/boolean',
-                        'sql/comparisons',
-                        'sql/integer',
-                        'sql/float',
-                        'sql/decimal',
-                        'sql/string',
-                        'sql/uuid',
-                        'sql/binary',
-                        'sql/array',
-                        'sql/map',
-                        'sql/datetime',
-                        'sql/json',
-                        'sql/materialized',
-                        'sql/recursion',
-                        'sql/ad-hoc',
-                        'sql/streaming',
-                        'sql/system',
-                        'sql/table',
-                        'sql/udf',
-                        'sql/function-index'
+                        'pipelines/sql/grammar',
+                        'pipelines/sql/identifiers',
+                        'pipelines/sql/types',
+                        'pipelines/sql/casts',
+                        'pipelines/sql/operators',
+                        'pipelines/sql/aggregates',
+                        'pipelines/sql/boolean',
+                        'pipelines/sql/comparisons',
+                        'pipelines/sql/integer',
+                        'pipelines/sql/float',
+                        'pipelines/sql/decimal',
+                        'pipelines/sql/string',
+                        'pipelines/sql/uuid',
+                        'pipelines/sql/binary',
+                        'pipelines/sql/array',
+                        'pipelines/sql/map',
+                        'pipelines/sql/datetime',
+                        'pipelines/sql/json',
+                        'pipelines/sql/materialized',
+                        'pipelines/sql/recursion',
+                        'pipelines/sql/ad-hoc',
+                        'pipelines/sql/streaming',
+                        'pipelines/sql/system',
+                        'pipelines/sql/table',
+                        'pipelines/sql/udf',
+                        'pipelines/sql/function-index'
                     ]
                 },
                 {
@@ -215,66 +215,66 @@ const sidebars = {
                     label: 'Connectors',
                     link: {
                         type: 'doc',
-                        id: 'connectors/index'
+                        id: 'pipelines/connectors/index'
                     },
                     items: [
-                        'connectors/orchestration',
+                        'pipelines/connectors/orchestration',
                         {
                             type: 'category',
                             label: 'Input',
                             link: {
                                 type: 'doc',
-                                id: 'connectors/sources/index',
+                                id: 'pipelines/connectors/sources/index',
                             },
                             items: [
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sources/http',
+                                    id: 'pipelines/connectors/sources/http',
                                     label: 'HTTP'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sources/http-get',
+                                    id: 'pipelines/connectors/sources/http-get',
                                     label: 'HTTP GET (URL)'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sources/delta',
+                                    id: 'pipelines/connectors/sources/delta',
                                     label: 'Delta Lake'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sources/iceberg',
+                                    id: 'pipelines/connectors/sources/iceberg',
                                     label: 'Apache Iceberg'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sources/kafka',
+                                    id: 'pipelines/connectors/sources/kafka',
                                     label: 'Kafka'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sources/pubsub',
+                                    id: 'pipelines/connectors/sources/pubsub',
                                     label: 'Google Pub/Sub'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sources/debezium',
+                                    id: 'pipelines/connectors/sources/debezium',
                                     label: 'Debezium'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sources/postgresql',
+                                    id: 'pipelines/connectors/sources/postgresql',
                                     label: 'PostgreSQL'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sources/s3',
+                                    id: 'pipelines/connectors/sources/s3',
                                     label: 'AWS S3'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sources/datagen',
+                                    id: 'pipelines/connectors/sources/datagen',
                                     label: 'Data Generator'
                                 }
                             ]
@@ -284,37 +284,37 @@ const sidebars = {
                             label: 'Output',
                             link: {
                                 type: 'doc',
-                                id: 'connectors/sinks/index',
+                                id: 'pipelines/connectors/sinks/index',
                             },
                             items: [
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sinks/http',
+                                    id: 'pipelines/connectors/sinks/http',
                                     label: 'HTTP'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sinks/delta',
+                                    id: 'pipelines/connectors/sinks/delta',
                                     label: 'Delta Lake'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sinks/kafka',
+                                    id: 'pipelines/connectors/sinks/kafka',
                                     label: 'Kafka'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sinks/confluent-jdbc',
+                                    id: 'pipelines/connectors/sinks/confluent-jdbc',
                                     label: 'Confluent JDBC Connector'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sinks/redis',
+                                    id: 'pipelines/connectors/sinks/redis',
                                     label: 'Redis'
                                 },
                                 {
                                     type: 'doc',
-                                    id: 'connectors/sinks/snowflake',
+                                    id: 'pipelines/connectors/sinks/snowflake',
                                     label: 'Snowflake (experimental)'
                                 }
                             ]
@@ -326,24 +326,26 @@ const sidebars = {
                     label: 'Formats',
                     link: {
                         type: 'doc',
-                        id: 'formats/index'
+                        id: 'pipelines/formats/index'
                     },
                     items: [
-                        'formats/json',
-                        'formats/avro',
-                        'formats/parquet',
-                        'formats/csv',
-                        'formats/raw'
+                        'pipelines/formats/json',
+                        'pipelines/formats/avro',
+                        'pipelines/formats/parquet',
+                        'pipelines/formats/csv',
+                        'pipelines/formats/raw'
                     ],
                 },
-                "fault-tolerance"
+                "pipelines/fault-tolerance"
             ]
-        }
-        ,
+        },
         {
             type: 'category',
             label: 'Literature',
-            items: ['papers', 'videos']
+            items: [
+                'literature/papers',
+                'literature/videos'
+            ]
         }
     ]
 }
