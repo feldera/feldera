@@ -371,7 +371,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPChainOperator node) {
-        DBSPClosureExpression function = node.chain.collapse();
+        DBSPClosureExpression function = node.chain.collapse(this.compiler);
         DBSPSimpleOperator result;
         if (node.outputType.is(DBSPTypeZSet.class)) {
             result = new DBSPFlatMapOperator(

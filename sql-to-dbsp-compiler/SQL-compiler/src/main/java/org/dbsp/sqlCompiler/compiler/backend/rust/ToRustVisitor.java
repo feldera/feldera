@@ -400,14 +400,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     void generateOperator(DBSPOperator operator) {
-        List<Annotation> hash = operator.annotations.get(a -> a.is(MerkleHash.class));
-        assert operator.is(DBSPNestedOperator.class) || !hash.isEmpty();
         if (this.compiler.options.ioOptions.verbosity > 0) {
-            if (!hash.isEmpty()) {
-                this.builder.append("// Hash: ")
-                        .append(hash.get(0).to(MerkleHash.class).hash)
-                        .newline();
-            }
             String str = operator.getNode().toInternalString();
             this.writeComments(str);
         }

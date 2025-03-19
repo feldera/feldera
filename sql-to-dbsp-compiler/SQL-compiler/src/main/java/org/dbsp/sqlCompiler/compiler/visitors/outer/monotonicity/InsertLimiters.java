@@ -1286,7 +1286,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             boolean mayBeNull = type.mayBeNull || right.getType().mayBeNull;
             DBSPExpression compare = ExpressionCompiler.makeBinaryExpression(left.getNode(),
                     DBSPTypeBool.create(mayBeNull), DBSPOpcode.EQ, left, right);
-            return ExpressionCompiler.wrapBoolIfNeeded(compare);
+            return compare.wrapBoolIfNeeded();
         } else if (type.is(DBSPTypeTupleBase.class)) {
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
             DBSPExpression result = new DBSPBoolLiteral(true);
@@ -1332,7 +1332,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         DBSPSimpleOperator replacement = operator.withInputs(sources, this.force);
-        replacement.setDerivedFrom(operator.id);
+        replacement.setDerivedFrom(operator.derivedFrom);
         this.addOperator(replacement);
 
         // The waterline operator will compute the *minimum legal value* of all the
@@ -1394,6 +1394,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPClosureExpression closure = compare.closure(controlArg, dataVar);
 
         // The last parameter is not used
+        DBSPVariablePath dataVar0 = dataVar.getType().var();
         DBSPVariablePath valArg = new DBSPTypeRawTuple().ref().var();
         DBSPVariablePath weightArg = DBSPTypeWeight.INSTANCE.var();
         DBSPClosureExpression error = new DBSPTupleExpression(
@@ -1402,8 +1403,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 new DBSPApplyExpression("format!",
                         DBSPTypeAny.INSTANCE,
                         new DBSPStrLiteral("{:?}"),
-                        dataVar).applyMethod("into", DBSPTypeString.varchar(false)))
-                .closure(controlArg, dataVar, valArg, weightArg);
+                        dataVar0).applyMethod("into", DBSPTypeString.varchar(false)))
+                .closure(controlArg, dataVar0, valArg, weightArg);
         DBSPControlledKeyFilterOperator result = new DBSPControlledKeyFilterOperator(
                 node, closure, error, data, control);
 

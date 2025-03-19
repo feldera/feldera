@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -114,6 +115,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeBTreeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeLazy;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
@@ -141,11 +143,18 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     static long crtId = 0;
     public final DBSPCompiler compiler;
     protected final List<IDBSPInnerNode> context;
+    @Nullable protected DBSPOperator operatorContext;
+
+    @Override
+    public void setOperatorContext(@Nullable DBSPOperator operatorContext) {
+        this.operatorContext = operatorContext;
+    }
 
     public InnerVisitor(DBSPCompiler compiler) {
         this.id = crtId++;
         this.compiler = compiler;
         this.context = new ArrayList<>();
+        this.operatorContext = null;
     }
 
     @Override
@@ -440,6 +449,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPTypeUser) node);
     }
 
+    public VisitDecision preorder(DBSPTypeLazy node) {
+        return this.preorder((DBSPTypeUser) node);
+    }
+
     public VisitDecision preorder(DBSPTypeVec node) {
         return this.preorder((DBSPTypeUser) node);
     }
@@ -661,6 +674,8 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     public VisitDecision preorder(DBSPUnsignedUnwrapExpression node) { return this.preorder((DBSPExpression) node); }
 
     public VisitDecision preorder(DBSPWindowBoundExpression node) { return this.preorder((DBSPExpression) node); }
+
+    public VisitDecision preorder(DBSPLazyCellExpression node) { return this.preorder((DBSPExpression) node); }
 
     // Literals
     public VisitDecision preorder(DBSPLiteral node) {
@@ -1042,6 +1057,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPTypeUser) node);
     }
 
+    public void postorder(DBSPTypeLazy node) {
+        this.postorder((DBSPTypeUser) node);
+    }
+
     public void postorder(DBSPTypeVec node) {
         this.postorder((DBSPTypeUser) node);
     }
@@ -1263,6 +1282,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPWindowBoundExpression node) {
+        this.postorder((DBSPExpression) node);
+    }
+
+    public void postorder(DBSPLazyCellExpression node) {
         this.postorder((DBSPExpression) node);
     }
 

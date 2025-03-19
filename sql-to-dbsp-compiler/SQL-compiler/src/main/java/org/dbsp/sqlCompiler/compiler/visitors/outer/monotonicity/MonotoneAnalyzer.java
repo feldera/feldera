@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ExpandOperators;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
@@ -90,10 +91,16 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         final boolean debug = this.getDebugLevel() >= 1;
         final int details = this.getDebugLevel();
 
-        IRTransform transform = e -> {
-            if (e.is(DBSPExpression.class))
-                return e.to(DBSPExpression.class).ensureTree(compiler);
-            return e;
+        IRTransform transform = new IRTransform() {
+            @Override
+            public void setOperatorContext(DBSPOperator operator) {}
+
+            @Override
+            public IDBSPInnerNode apply(IDBSPInnerNode e) {
+                if (e.is(DBSPExpression.class))
+                    return e.to(DBSPExpression.class).ensureTree(compiler);
+                return e;
+            }
         };
         CircuitRewriter toTree = new CircuitRewriter(this.compiler, transform, false);
         circuit = toTree.apply(circuit);

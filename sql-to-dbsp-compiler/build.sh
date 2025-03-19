@@ -54,15 +54,15 @@ if [ ${NEXT} = 'y' ]; then
     update_pom ${CALCITE_NEXT}
     pushd /tmp >/dev/null
     if [[ ! -z "${CALCITE_NEXT_COMMIT}" ]]; then
-	GIT_ARGS="--no-checkout"
+        GIT_ARGS="--no-checkout"
     else
-	GIT_ARGS="--depth 1"
+        GIT_ARGS="--depth 1"
     fi
     git clone --quiet --single-branch --branch ${CALCITE_BRANCH} ${GIT_ARGS} ${CALCITE_REPO}
     cd calcite
     if [[ ! -z "${CALCITE_NEXT_COMMIT}" ]]; then
         git fetch origin ${CALCITE_NEXT_COMMIT}
-	git checkout ${CALCITE_NEXT_COMMIT}
+        git checkout ${CALCITE_NEXT_COMMIT}
     fi
 
     GROUP=org.apache.calcite
@@ -80,4 +80,4 @@ else
     update_pom ${CALCITE_CURRENT}
 fi
 
-mvn package -DskipTests --no-transfer-progress -q -B
+mvn package -DskipTests --no-transfer-progress -DargLine="-ea" -q -B

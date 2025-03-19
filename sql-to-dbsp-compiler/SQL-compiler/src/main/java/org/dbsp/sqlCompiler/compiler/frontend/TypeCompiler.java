@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelStruct;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
@@ -271,13 +272,13 @@ public class TypeCompiler implements ICompilerComponent {
                 case BOOLEAN:
                     return new DBSPTypeBool(node, nullable);
                 case TINYINT:
-                    return new DBSPTypeInteger(node, 8, true, nullable);
+                    return DBSPTypeInteger.getType(node, DBSPTypeCode.INT8, nullable);
                 case SMALLINT:
-                    return new DBSPTypeInteger(node, 16, true, nullable);
+                    return DBSPTypeInteger.getType(node, DBSPTypeCode.INT16, nullable);
                 case INTEGER:
-                    return new DBSPTypeInteger(node, 32, true, nullable);
+                    return DBSPTypeInteger.getType(node, DBSPTypeCode.INT32, nullable);
                 case BIGINT:
-                    return new DBSPTypeInteger(node, 64, true, nullable);
+                    return DBSPTypeInteger.getType(node, DBSPTypeCode.INT64, nullable);
                 case DECIMAL: {
                     int precision = dt.getPrecision();
                     int scale = dt.getScale();

@@ -35,8 +35,7 @@ public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
     protected DBSPUnaryOperator(CalciteRelNode node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
                                 boolean isMultiset, OutputPort source) {
-        super(node, operation, function, outputType, isMultiset);
-        this.addInput(source);
+        this(node, operation, function, outputType, isMultiset, source, null);
     }
 
     @SuppressWarnings("SameParameterValue")

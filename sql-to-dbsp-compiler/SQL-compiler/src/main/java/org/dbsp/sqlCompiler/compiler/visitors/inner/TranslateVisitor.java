@@ -1,7 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Utilities;
@@ -27,6 +30,11 @@ public class TranslateVisitor<T> extends InnerVisitor {
         public void putNew(IDBSPInnerNode node, T translation) {
             Utilities.putNew(this.translation, node.getId(), translation);
             Utilities.putNew(this.node, node.getId(), node);
+        }
+
+        public void update(IDBSPInnerNode node, T translation) {
+            T old = this.translation.put(node.getId(), translation);
+            assert old != null;
         }
 
         public T get(IDBSPInnerNode node) {
@@ -57,6 +65,10 @@ public class TranslateVisitor<T> extends InnerVisitor {
             this.translation.clear();
             this.node.clear();
         }
+
+        public boolean containsKey(IDBSPInnerNode node) {
+            return this.translation.containsKey(node.getId());
+        }
     }
 
     final TranslationMap<T> translationMap;
@@ -66,8 +78,19 @@ public class TranslateVisitor<T> extends InnerVisitor {
         this.translationMap = new TranslationMap<>();
     }
 
-    public void set(IDBSPInnerNode node, T translation) {
-       this.translationMap.putNew(node, translation);
+    protected void set(IDBSPInnerNode node, T translation) {
+        if (this.translationMap.containsKey(node)) {
+            T old = this.translationMap.get(node);
+            if (old != translation)
+                throw new InternalCompilerError("Changing declaration of " + node + " from " +
+                        old + " to " + translation, node.getNode());
+            return;
+        }
+        this.translationMap.putNew(node, translation);
+    }
+
+    protected void update(IDBSPInnerNode node, T translation) {
+        this.translationMap.update(node, translation);
     }
 
     public T get(IDBSPInnerNode node) {
@@ -79,7 +102,14 @@ public class TranslateVisitor<T> extends InnerVisitor {
         return this.translationMap.maybeGet(node);
     }
 
-    public void maybeSet(IDBSPInnerNode node, @Nullable T translation) {
+    @Nullable
+    public T getN(@Nullable DBSPExpression node) {
+        if (node == null)
+            return null;
+        return this.maybeGet(node);
+    }
+
+    protected void maybeSet(IDBSPInnerNode node, @Nullable T translation) {
         if (translation != null)
             this.translationMap.putNew(node, translation);
     }

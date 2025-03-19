@@ -60,6 +60,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLazyCellExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -281,6 +282,16 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .append(", ")
                 .append(Boolean.toString(expression.nullsLast))
                 .append(")");
+        this.pop(expression);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLazyCellExpression expression) {
+        this.push(expression);
+        this.builder.append("LazyCell::new(|| { ");
+        expression.expression.accept(this);
+        this.builder.append(" })");
         this.pop(expression);
         return VisitDecision.STOP;
     }
@@ -995,7 +1006,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         DBSPTypeDecimal dec = destType.as(DBSPTypeDecimal.class);
         if (dec != null) {
             // pass precision and scale as arguments to cast method too
-            this.builder.append(",").newline()
+            this.builder.append(",")
                     .append(dec.precision)
                     .append(", ")
                     .append(dec.scale);
@@ -1136,19 +1147,34 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         .append(map.getValueType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
                         .append("(");
-                // Special case for Tuple<Option<Map<>>>
+                // See ARRAY_INDEX above.
                 boolean leftDone = false;
                 if (expression.left.is(DBSPFieldExpression.class) && collectionType.mayBeNull) {
                     DBSPFieldExpression field = expression.left.to(DBSPFieldExpression.class);
-                    if (field.expression.is(DBSPFieldExpression.class)) {
-                        this.builder.append("match &");
-                        field.expression.accept(this);
+                    DBSPTypeTupleBase tupleType = field.expression
+                            .getType()
+                            .to(DBSPTypeTupleBase.class);
+                    boolean tupleMaybeNull = tupleType.mayBeNull;
+                    boolean arrayMayBeNull = tupleType
+                            .getFieldType(field.fieldNo).mayBeNull;
+                    if (tupleMaybeNull) {
                         leftDone = true;
+                        this.builder.append("&match &");
+                        field.expression.accept(this);
                         this.builder.append(" {").increase()
-                                .append("None => &None,").newline()
-                                .append("Some(x) => &x.")
-                                .append(field.fieldNo).newline()
-                                .decrease().append("}");
+                                .append("None => None,").newline();
+                        if (arrayMayBeNull) {
+                            this.builder
+                                    .append("Some(x) => x.")
+                                    .append(field.fieldNo)
+                                    .append(".clone()");
+                        } else {
+                            this.builder
+                                    .append("Some(x) => Some(x.")
+                                    .append(field.fieldNo)
+                                    .append(".clone())");
+                        }
+                        this.builder.newline().append("}");
                     }
                 }
                 if (!leftDone) {
@@ -1233,15 +1259,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPLetExpression expression) {
         this.push(expression);
-        this.builder.append("{")
-                .increase()
+        this.builder.append("{");
+        this.builder
                 .append("let ")
                 .append(expression.variable.variable)
                 .append(" = ");
         expression.initializer.accept(this);
         this.builder.append(";").newline();
         expression.consumer.accept(this);
-        this.builder.decrease().append("}");
+        this.builder.append("}");
         this.pop(expression);
         return VisitDecision.STOP;
     }

@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
@@ -111,6 +112,11 @@ public class Simplify extends InnerRewriteVisitor {
                 .append("Result is ")
                 .appendSupplier(() -> (this.lastResult != null ? this.lastResult.toString() : ""))
                 .newline();
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
     }
 
     @Override
@@ -360,7 +366,8 @@ public class Simplify extends InnerRewriteVisitor {
         } if (source.is(DBSPBlockExpression.class)) {
             DBSPBlockExpression block = source.to(DBSPBlockExpression.class);
             assert block.lastExpression != null;
-            result = new DBSPBlockExpression(block.contents, block.lastExpression.field(expression.fieldNo));
+            result = new DBSPBlockExpression(block.contents,
+                    block.lastExpression.field(expression.fieldNo).simplify());
         } else if (source.is(DBSPIfExpression.class)) {
             DBSPIfExpression conditional = source.to(DBSPIfExpression.class);
             result = new DBSPIfExpression(source.getNode(), conditional.condition,
@@ -372,6 +379,12 @@ public class Simplify extends InnerRewriteVisitor {
                     expression.fieldNo);
         }
         this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPVariablePath variable) {
+        this.map(variable, variable);
         return VisitDecision.STOP;
     }
 
@@ -420,6 +433,11 @@ public class Simplify extends InnerRewriteVisitor {
                         result = new DBSPRawTupleExpression();
                 }
             }
+        } else if (negative != null &&
+                positive.isCompileTimeConstant() &&
+                negative.isCompileTimeConstant() &&
+                positive.equivalent(negative)) {
+            result = positive;
         } else if (condition != expression.condition ||
                 positive != expression.positive ||
                 negative != expression.negative) {

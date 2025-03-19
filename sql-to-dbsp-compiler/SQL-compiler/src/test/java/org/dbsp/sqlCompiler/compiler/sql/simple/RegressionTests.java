@@ -2047,8 +2047,32 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void testUuid() {
         this.statementsFailingInCompilation("""
-            DECLARE RECURSIVE VIEW V(u UUID);
-            CREATE VIEW V AS SELECT 1 AS u;""",
+                        DECLARE RECURSIVE VIEW V(u UUID);
+                        CREATE VIEW V AS SELECT 1 AS u;""",
                 "does not match the declared type v(u UUID)");
+    }
+
+    @Test
+    public void issue3744() {
+        this.getCCS("""
+                CREATE TABLE row_of_map_tbl(
+                  c1 ROW(m1_int MAP<VARCHAR, INT> NOT NULL));
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                c1[1]['1'] AS c1_one
+                FROM row_of_map_tbl;""");
+    }
+
+    @Test
+    public void cseTest() {
+        this.getCCS("""
+                CREATE TABLE binary_tbl(
+                id INT,
+                c1 BINARY(4),
+                c2 BINARY(4) NULL);
+                
+                CREATE VIEW binary_array_where AS SELECT
+                ARRAY_AGG(c1) FILTER(WHERE c1 < c2) AS f_c1, ARRAY_AGG(c2) FILTER(WHERE c1 < c2) AS f_c2
+                FROM binary_tbl;""");
     }
 }

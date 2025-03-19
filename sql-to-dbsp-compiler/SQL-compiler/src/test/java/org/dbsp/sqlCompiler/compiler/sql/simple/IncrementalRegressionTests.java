@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.Utilities;
@@ -658,6 +659,60 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 DECLARE RECURSIVE VIEW rv9(type_path BIGINT);
                 CREATE MATERIALIZED VIEW rv9
                 AS select 1 as type_path;""");
+    }
+
+    @Test
+    public void cseTest() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t(cco DECIMAL(8, 2), er DECIMAL(8, 2), cwr DECIMAL(8, 2), smr DECIMAL(8, 2));
+                CREATE VIEW V AS SELECT
+                (coalesce(bround(bround(t.cwr / NULLIF(coalesce(
+                        1,
+                        1
+                    ), 0), 2) / NULLIF(coalesce(
+                        CASE
+                    WHEN PARSE_JSON(t.cco)['u'] IS NULL
+                      AND PARSE_JSON(t.cco)['n'] IS NULL THEN NULL
+                    ELSE COALESCE(CAST(PARSE_JSON(t.cco)['u'] AS DECIMAL(28,0)), 0) +
+                         COALESCE(CAST(PARSE_JSON(t.cco)['n'] AS DECIMAL) / 1000000000, 0)
+                END,
+                        CASE
+                    WHEN PARSE_JSON(t.er)['u'] IS NULL
+                      AND PARSE_JSON(t.er)['n'] IS NULL THEN NULL
+                    ELSE COALESCE(CAST(PARSE_JSON(t.er)['u'] AS DECIMAL(28,0)), 0) +
+                         COALESCE(CAST(PARSE_JSON(t.er)['n'] AS DECIMAL) / 1000000000, 0)
+                END,
+                        1
+                    ), 0), 2), 0)
+                    + coalesce(bround(bround(t.smr / NULLIF(coalesce(
+                        1,
+                        1
+                    ), 0), 2) / NULLIF(coalesce(
+                        CASE
+                    WHEN PARSE_JSON(t.cco)['u'] IS NULL
+                      AND PARSE_JSON(t.cco)['n'] IS NULL THEN NULL
+                    ELSE COALESCE(CAST(PARSE_JSON(t.cco)['u'] AS DECIMAL(28,0)), 0) +
+                         COALESCE(CAST(PARSE_JSON(t.cco)['n'] AS DECIMAL) / 1000000000, 0)
+                END,
+                        CASE
+                    WHEN PARSE_JSON(t.er)['u'] IS NULL
+                      AND PARSE_JSON(t.er)['n'] IS NULL THEN NULL
+                    ELSE COALESCE(CAST(PARSE_JSON(t.er)['u'] AS DECIMAL(28,0)), 0) +
+                         COALESCE(CAST(PARSE_JSON(t.er)['n'] AS DECIMAL) / 1000000000, 0)
+                END,
+                        1
+                    ), 0), 2), 0))::decimal(28,2) as x
+                FROM t;""");
+        int[] calls = new int[1];
+        InnerVisitor visitor = new InnerVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPApplyExpression expression) {
+                if (expression.function.toString().contains("parse_json"))
+                    calls[0]++;
+            }
+        };
+        ccs.visit(visitor.getCircuitVisitor(false));
+        Assert.assertEquals(2, calls[0]);
     }
 
     // Tests that are not in the repository

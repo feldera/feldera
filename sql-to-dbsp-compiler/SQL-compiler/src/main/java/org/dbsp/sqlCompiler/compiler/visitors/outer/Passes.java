@@ -101,7 +101,7 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
                 .append(this.toString())
                 .append(" took ")
                 .append(finish - begin)
-                .append("ms")
+                .append("ms.")
                 .newline();
         return circuit;
     }

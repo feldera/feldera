@@ -77,16 +77,14 @@ public class DBSPLetExpression extends DBSPExpression implements IDBSPDeclaratio
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.increase()
-                .append("{")
-                .append("let ")
+        return builder
+                .append("{let ")
                 .append(this.variable)
                 .append(" = ")
                 .append(this.initializer)
                 .append(";")
                 .newline()
                 .append(this.consumer)
-                .decrease()
                 .append("}");
     }
 

@@ -1,16 +1,22 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
 
+import javax.annotation.CheckReturnValue;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 /** Use reflection to print an expression as a tree */
 public class ExpressionTree {
+    private ExpressionTree() {}
+
     static List<Field> getAllFields(Class<?> clazz) {
         List<Field> fields = new ArrayList<>();
         while (clazz != null) {
@@ -20,26 +26,60 @@ public class ExpressionTree {
         return fields;
     }
 
-    private static void asTree(DBSPExpression expression, IIndentStream stream) throws IllegalAccessException {
-        Class<?> clazz = expression.getClass();
-        stream.append(expression.id)
+    static boolean acceptableType(Class<?> clazz) {
+        return int.class.isAssignableFrom(clazz) ||
+                String.class.isAssignableFrom(clazz) ||
+                boolean.class.isAssignableFrom(clazz) ||
+                DBSPOpcode.class.isAssignableFrom(clazz);
+    }
+
+    private static void asTree(IDBSPInnerNode node, IIndentStream stream) throws IllegalAccessException {
+        Class<?> clazz = node.getClass();
+        stream.append(node.getId())
                 .append(" ")
-                .append(clazz.getSimpleName())
-                .increase();
+                .append(clazz.getSimpleName());
+        for (Field field : getAllFields(clazz)) {
+            if (!Modifier.isStatic(field.getModifiers()) && acceptableType(field.getType())) {
+                field.setAccessible(true);
+                stream.append(" ")
+                        .append(field.get(node).toString());
+            }
+        }
+
+        stream.increase();
         for (Field field : getAllFields(clazz)) {
             if (DBSPExpression.class.isAssignableFrom(field.getType())) {
-                asTree((DBSPExpression) field.get(expression), stream);
+                field.setAccessible(true);
+                asTree((DBSPExpression) field.get(node), stream);
+            } else if (DBSPStatement.class.isAssignableFrom(field.getType())) {
+                field.setAccessible(true);
+                asTree((DBSPStatement) field.get(node), stream);
             } else if (field.getType().isArray()) {
-                Object[] values = (Object[])field.get(expression);
-                for (Object obj: values) {
-                    if (obj instanceof DBSPExpression)
-                        asTree((DBSPExpression) obj, stream);
+                field.setAccessible(true);
+                Object[] values = (Object[])field.get(node);
+                if (values != null) {
+                    for (Object obj : values) {
+                        field.setAccessible(true);
+                        if (obj instanceof DBSPExpression || obj instanceof DBSPStatement)
+                            asTree((IDBSPInnerNode) obj, stream);
+                    }
+                }
+            }  else if (List.class.isAssignableFrom(field.getType())) {
+                field.setAccessible(true);
+                List<?> values = (List<?>)field.get(node);
+                if (values != null) {
+                    for (Object obj : values) {
+                        field.setAccessible(true);
+                        if (obj instanceof DBSPExpression || obj instanceof DBSPStatement)
+                            asTree((IDBSPInnerNode) obj, stream);
+                    }
                 }
             }
         }
         stream.decrease();
     }
 
+    @CheckReturnValue
     public static String asTree(DBSPExpression expression) {
         try {
             IndentStream stream = new IndentStreamBuilder();

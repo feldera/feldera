@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
@@ -47,8 +48,8 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
         static DBSPTypeInteger getInitialIntegerType(DBSPType sourceType) {
             return switch (sourceType.code) {
                 case INT8, INT16, INT32, INT64, INT128 -> sourceType.withMayBeNull(false).to(DBSPTypeInteger.class);
-                case DATE -> new DBSPTypeInteger(sourceType.getNode(), 32, true, false);
-                case TIMESTAMP, TIME -> new DBSPTypeInteger(sourceType.getNode(), 64, true, false);
+                case DATE -> DBSPTypeInteger.getType(sourceType.getNode(), DBSPTypeCode.INT32, false);
+                case TIMESTAMP, TIME -> DBSPTypeInteger.getType(sourceType.getNode(), DBSPTypeCode.INT64, false);
                 default -> throw new InternalCompilerError("Not yet supported wrappers for " + sourceType, sourceType.getNode());
             };
         }

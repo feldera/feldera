@@ -1,22 +1,131 @@
 package org.dbsp.sqlCompiler.compiler.ir;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionsCSE;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Test;
 
 /** Unit tests for expression equivalence */
 public class EquivalenceTests {
+    @Test
+    public void testCSE() {
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPType i = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
+        DBSPTypeTuple tuple = new DBSPTypeTuple(i, i, i);
+        DBSPVariablePath var = tuple.ref().var();
+        DBSPExpression c = new DBSPI32Literal(1);
+        DBSPExpression v0 = var.deref().field(0);
+        DBSPExpression v1 = var.deref().field(1);
+        DBSPExpression v2 = var.deref().field(2);
+        CalciteObject node = v0.getNode();
+        DBSPExpression v0m = new DBSPUnaryExpression(node, i, DBSPOpcode.NEG, v0);
+        DBSPExpression p0 = new DBSPBinaryExpression(node, i, DBSPOpcode.DIV, v0m, v1);
+        DBSPExpression a = new DBSPBinaryExpression(node, i, DBSPOpcode.MUL, p0, p0);
+        DBSPExpression b = new DBSPBinaryExpression(node, i, DBSPOpcode.ADD, v2, c);
+        DBSPExpression d = new DBSPBinaryExpression(node, i, DBSPOpcode.ADD, b, b);
+        DBSPExpression body = new DBSPTupleExpression(a, d);
+        DBSPClosureExpression closure = body.closure(var.asParameter());
+
+        DBSPOperator fake = new DBSPConstantOperator(
+                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false, false);
+        ValueNumbering numbering = new ValueNumbering(compiler);
+        numbering.setOperatorContext(fake);
+        numbering.apply(closure);
+        ExpressionsCSE cse = new ExpressionsCSE(compiler, numbering.canonical);
+        cse.setOperatorContext(fake);
+        cse.apply(closure);
+        IDBSPInnerNode translated = cse.get(closure);
+        InnerVisitor visitor = new InnerVisitor(compiler) {
+            int vars = 0;
+            public void postorder(DBSPLetExpression expression) {
+                this.vars++;
+            }
+
+            @Override
+            public void endVisit() {
+                // Find 2 common subexpressions; one has a single use
+                Assert.assertEquals(2, this.vars);
+            }
+        };
+        visitor.apply(translated);
+    }
+
+    @Test
+    public void testConditionalCSE() {
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPType i = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
+        DBSPType b = DBSPTypeBool.create(true);
+        DBSPTypeTuple tuple = new DBSPTypeTuple(i, i, i);
+        DBSPVariablePath var = tuple.ref().var();
+        DBSPExpression z = new DBSPI32Literal(1);
+        DBSPExpression cond = new DBSPBinaryExpression(
+                CalciteObject.EMPTY, b, DBSPOpcode.GTE, var.deref().field(0), z)
+                .wrapBoolIfNeeded();
+
+        DBSPExpression un = new DBSPUnaryExpression(
+                CalciteObject.EMPTY, i, DBSPOpcode.NEG, var.deref().field(1));
+
+        DBSPExpression if0 = new DBSPIfExpression(
+                CalciteObject.EMPTY, cond, un, var.deref().field(2));
+        DBSPExpression if1 = new DBSPIfExpression(
+                CalciteObject.EMPTY, cond, var.deref().field(2), un);
+
+        DBSPExpression body = new DBSPTupleExpression(if0, if1);
+        DBSPClosureExpression closure = body.closure(var.asParameter());
+
+        ValueNumbering numbering = new ValueNumbering(compiler);
+        numbering.apply(closure);
+        ExpressionsCSE cse = new ExpressionsCSE(compiler, numbering.canonical);
+        DBSPOperator fake = new DBSPConstantOperator(
+                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false, false);
+        cse.setOperatorContext(fake);
+        cse.apply(closure);
+        IDBSPInnerNode translated = cse.get(closure);
+
+        InnerVisitor visitor = new InnerVisitor(compiler) {
+            int vars = 0;
+            public void postorder(DBSPLetExpression expression) {
+                this.vars++;
+            }
+
+            @Override
+            public void endVisit() {
+                // Find 2 common subexpressions
+                Assert.assertEquals(2, this.vars);
+            }
+        };
+        visitor.apply(translated);
+    }
+
     @Test
     public void testEquiv() {
         DBSPLiteral zero0 = new DBSPI32Literal(0);
@@ -43,6 +152,7 @@ public class EquivalenceTests {
         Assert.assertThrows(AssertionError.class, () -> EquivalenceContext.equiv(var0, var1));
     }
 
+    @SuppressWarnings("SuspiciousNameCombination")
     @Test
     public void testLambdas() {
         DBSPLiteral zero0 = new DBSPI32Literal(0);

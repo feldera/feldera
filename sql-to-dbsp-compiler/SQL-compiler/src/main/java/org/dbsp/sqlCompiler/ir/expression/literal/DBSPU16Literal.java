@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
@@ -78,7 +79,7 @@ public final class DBSPU16Literal extends DBSPIntLiteral implements IsNumericLit
     }
 
     public DBSPU16Literal(@Nullable Integer value, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeInteger(CalciteObject.EMPTY, 16, false, nullable), value);
+        this(CalciteObject.EMPTY, DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.UINT16, nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
         if (value != null && value < 0)

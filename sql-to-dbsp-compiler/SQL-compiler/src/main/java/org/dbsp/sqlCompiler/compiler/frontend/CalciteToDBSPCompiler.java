@@ -1210,7 +1210,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath t = type.ref().var();
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(filter, t, this.compiler);
         DBSPExpression condition = expressionCompiler.compile(filter.getCondition());
-        condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
+        condition = condition.wrapBoolIfNeeded();
         condition = new DBSPClosureExpression(
                 CalciteObject.create(filter, filter.getCondition()), condition, t.asParameter());
         DBSPSimpleOperator input = this.getOperator(filter.getInput());
@@ -1430,7 +1430,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             result = ExpressionCompiler.makeBinaryExpression(
                     result.getNode(), DBSPTypeBool.create(nullable), DBSPOpcode.AND, result, next);
         }
-        return ExpressionCompiler.wrapBoolIfNeeded(result);
+        return result.wrapBoolIfNeeded();
     }
 
     /** Like {@link ExpressionCompiler}, but shift input references by the specified amount.
@@ -1595,9 +1595,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (leftOver != null) {
                 DBSPVariablePath t = lr.getType().ref().var();
                 ExpressionCompiler expressionCompiler = new ExpressionCompiler(join, t, this.compiler);
-                condition = expressionCompiler.compile(leftOver);
-                if (condition.getType().mayBeNull)
-                    condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
+                condition = expressionCompiler.compile(leftOver).wrapBoolIfNeeded();
                 originalCondition = condition;
                 condition = new DBSPClosureExpression(
                         CalciteObject.create(join, join.getCondition()), condition, t.asParameter());
@@ -2395,9 +2393,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 node, group.orderKeys.getFieldCollations(), inputRowType);
 
         // The rank must be added at the end of the input collection (that's how Calcite expects it).
-        DBSPVariablePath left = new DBSPVariablePath(new DBSPTypeInteger(
-                node, 64, true, false));
-        DBSPVariablePath right = new DBSPVariablePath(inputRowType.ref());
+        DBSPVariablePath left = DBSPTypeInteger.getType(node, INT64, false).var();
+        DBSPVariablePath right = inputRowType.ref().var();
         List<DBSPExpression> flattened = DBSPTypeTupleBase.flatten(right.deref());
         flattened.add(left);
         DBSPTupleExpression tuple = new DBSPTupleExpression(flattened, false);
@@ -2420,8 +2417,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (remainingFilter != null) {
             DBSPVariablePath t = deindex.getOutputZSetElementType().ref().var();
             ExpressionCompiler expressionCompiler = new ExpressionCompiler(window, t, this.compiler);
-            DBSPExpression condition = expressionCompiler.compile(remainingFilter);
-            condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
+            DBSPExpression condition = expressionCompiler.compile(remainingFilter).wrapBoolIfNeeded();
             condition = new DBSPClosureExpression(
                     CalciteObject.create(window, remainingFilter), condition, t.asParameter());
             this.addOperator(deindex);

@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.Linq;
 
+import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
@@ -87,6 +88,17 @@ public abstract class DBSPExpression
 
     public DBSPBorrowExpression borrow() {
         return new DBSPBorrowExpression(this);
+    }
+
+    @CheckReturnValue
+    public DBSPExpression wrapBoolIfNeeded() {
+        DBSPType type = this.getType();
+        if (type.mayBeNull) {
+            return new DBSPUnaryExpression(
+                    this.getNode(), type.withMayBeNull(false),
+                    DBSPOpcode.WRAP_BOOL, this);
+        }
+        return this;
     }
 
     /** Unwrap a Rust 'Result' type */

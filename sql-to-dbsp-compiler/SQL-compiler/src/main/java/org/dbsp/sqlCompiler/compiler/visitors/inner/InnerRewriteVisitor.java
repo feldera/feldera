@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLazyCellExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
@@ -104,6 +105,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeBTreeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeLazy;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
@@ -395,6 +397,16 @@ public abstract class InnerRewriteVisitor
         DBSPType elementType = this.transform(type.getElementType());
         this.pop(type);
         DBSPType result = new DBSPTypeArray(elementType, type.mayBeNull);
+        this.map(type, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeLazy type) {
+        this.push(type);
+        DBSPType elementType = this.transform(type.typeArgs[0]);
+        DBSPType result = new DBSPTypeLazy(elementType);
+        this.pop(type);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -870,6 +882,16 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
         DBSPExpression result = source.borrow(expression.mut);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLazyCellExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
+        DBSPExpression result = new DBSPLazyCellExpression(source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
