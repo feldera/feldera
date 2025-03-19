@@ -11,7 +11,7 @@ use actix_web::body::BoxBody;
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
 use anyhow::Error as AnyError;
-use dbsp::Error as DbspError;
+use dbsp::{storage::backend::StorageError, Error as DbspError};
 use feldera_types::error::{DetailedError, ErrorResponse};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 
@@ -656,6 +656,15 @@ pub enum ControllerError {
     /// Controller terminated before command could be executed.
     ControllerExit,
 
+    /// Storage error.
+    #[serde(serialize_with = "serialize_storage_error")]
+    StorageError {
+        /// Describes the context where the error occurred.
+        context: String,
+        error: StorageError,
+        backtrace: Backtrace,
+    },
+
     /// Enterprise-only feature.
     EnterpriseFeature(&'static str),
 }
@@ -698,6 +707,22 @@ where
     ser.serialize_field("context", context)?;
     ser.serialize_field("kind", &io_error.kind().to_string())?;
     ser.serialize_field("os_error", &io_error.raw_os_error())?;
+    ser.serialize_field("backtrace", &backtrace.to_string())?;
+    ser.end()
+}
+
+fn serialize_storage_error<S>(
+    context: &String,
+    error: &StorageError,
+    backtrace: &Backtrace,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut ser = serializer.serialize_struct("StorageError", 4)?;
+    ser.serialize_field("context", context)?;
+    ser.serialize_field("error", &error.to_string())?;
     ser.serialize_field("backtrace", &backtrace.to_string())?;
     ser.end()
 }
@@ -781,6 +806,7 @@ impl DbspDetailedError for ControllerError {
             Self::ControllerPanic => Cow::from("ControllerPanic"),
             Self::ControllerExit => Cow::from("ControllerExit"),
             Self::EnterpriseFeature(_) => Cow::from("EnterpriseFeature"),
+            Self::StorageError { .. } => Cow::from("StorageError"),
         }
     }
 }
@@ -788,34 +814,7 @@ impl DbspDetailedError for ControllerError {
 impl DetailedError for ControllerError {
     // TODO: attempts to cast `AnyError` to `DetailedError`.
     fn error_code(&self) -> Cow<'static, str> {
-        match self {
-            Self::IoError { .. } => Cow::from("ControllerIoError"),
-            Self::NotSupported { .. } => Cow::from("NotSupported"),
-            Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
-            Self::SchemaValidationError { .. } => Cow::from("SchemaParseError"),
-            Self::CheckpointParseError { .. } => Cow::from("CheckpointParseError"),
-            Self::RestoreInProgress => Cow::from("RestoreInProgress"),
-            Self::StepError { .. } => Cow::from("StepError"),
-            Self::UnexpectedStep { .. } => Cow::from("UnexpectedStep"),
-            Self::ReplayFailure { .. } => Cow::from("ReplayFailure"),
-            Self::IrParseError { .. } => Cow::from("IrParseError"),
-            Self::CliArgsError { .. } => Cow::from("ControllerCliArgsError"),
-            Self::Config { config_error } => {
-                Cow::from(format!("ConfigError.{}", config_error.error_code()))
-            }
-            Self::UnknownInputEndpoint { .. } => Cow::from("UnknownInputEndpoint"),
-            Self::UnknownOutputEndpoint { .. } => Cow::from("UnknownOutputEndpoint"),
-            Self::ParseError { .. } => Cow::from("ParseError"),
-            Self::EncodeError { .. } => Cow::from("EncodeError"),
-            Self::InputTransportError { .. } => Cow::from("InputTransportError"),
-            Self::OutputTransportError { .. } => Cow::from("OutputTransportError"),
-            Self::PrometheusError { .. } => Cow::from("PrometheusError"),
-            Self::DbspError { error } => error.error_code(),
-            Self::DbspPanic => Cow::from("DbspPanic"),
-            Self::ControllerPanic => Cow::from("ControllerPanic"),
-            Self::ControllerExit => Cow::from("ControllerExit"),
-            Self::EnterpriseFeature(_) => Cow::from("EnterpriseFeature"),
-        }
+        DbspDetailedError::error_code(self)
     }
 }
 
@@ -928,6 +927,9 @@ impl Display for ControllerError {
                     f,
                     "Cannot use enterprise-only feature ({feature}) in Feldera community edition."
                 )
+            }
+            Self::StorageError { context, error, .. } => {
+                write!(f, "I/O error {context}: {error}")
             }
         }
     }
@@ -1183,6 +1185,14 @@ impl ControllerError {
 
     pub fn controller_panic() -> Self {
         Self::ControllerPanic
+    }
+
+    pub fn storage_error(context: String, error: StorageError) -> Self {
+        Self::StorageError {
+            context,
+            error,
+            backtrace: Backtrace::capture(),
+        }
     }
 }
 

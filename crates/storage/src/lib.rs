@@ -64,6 +64,22 @@ pub trait StorageBackend {
     /// Opens a file for reading.  The file `name` is relative to the base of
     /// the storage backend.
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError>;
+
+    /// Reads `name` and returns its contents.  The file `name` is relative to
+    /// the base of the storage backend.
+    fn read(&self, name: &Path) -> Result<Arc<FBuf>, StorageError> {
+        let reader = self.open(name)?;
+        let size = reader.get_size()?.try_into().unwrap();
+        reader.read_block(BlockLocation { offset: 0, size })
+    }
+
+    fn write(&self, name: &Path, content: FBuf) -> Result<(), StorageError> {
+        let mut writer = self.create_named(name)?;
+        writer.write_block(0, content)?;
+        let (reader, _path) = writer.complete()?;
+        reader.mark_for_checkpoint();
+        Ok(())
+    }
 }
 
 impl dyn StorageBackend {

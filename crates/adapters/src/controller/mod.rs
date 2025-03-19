@@ -40,6 +40,7 @@ use crossbeam::{
 use datafusion::prelude::*;
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::CircuitStorageConfig;
+use dbsp::storage::backend::StorageBackend;
 use dbsp::{
     circuit::{CircuitConfig, Layout},
     profile::GraphProfile,
@@ -66,6 +67,7 @@ use std::fs;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
 use std::sync::LazyLock;
 use std::{
@@ -926,6 +928,9 @@ struct FtState {
     /// Input endpoint ids and names at the time we wrote the last step,
     /// so that we can log changes for the replay log.
     input_endpoints: HashMap<EndpointId, String>,
+
+    /// Storage backend for writing checkpoints.
+    storage: Rc<dyn StorageBackend>,
 }
 
 impl FtState {
@@ -935,6 +940,7 @@ impl FtState {
             step,
             step_rw,
             input_metadata,
+            storage,
         } = ft;
 
         // Seek each input endpoint to its initial offset.
@@ -992,7 +998,7 @@ impl FtState {
                     processed_records: 0,
                     input_metadata: StepInputMetadata::default(),
                 };
-                checkpoint.write(&state_path)?;
+                checkpoint.write(&*storage, &state_path)?;
 
                 (None, None, StepRw::create(&steps_path)?)
             }
@@ -1005,6 +1011,7 @@ impl FtState {
             input_checksums,
             step_rw: Some(step_rw),
             input_metadata,
+            storage,
         })
     }
 
@@ -1162,7 +1169,9 @@ impl FtState {
                     input_metadata,
                 };
                 let state_path = state_path(&self.controller.status.pipeline_config).unwrap();
-                checkpoint.write(&state_path).map(|()| checkpoint)
+                checkpoint
+                    .write(&*self.storage, &state_path)
+                    .map(|()| checkpoint)
             })?;
 
         self.step_rw = Some(self.step_rw.take().unwrap().truncate()?);
@@ -1319,6 +1328,9 @@ struct FtInit {
 
     /// The step reader/writer, if we've already opened it..
     step_rw: Option<StepRw>,
+
+    /// Storage backend for writing checkpoints.
+    storage: Rc<dyn StorageBackend>,
 }
 
 fn storage_path(config: &PipelineConfig) -> Option<&Path> {
@@ -1334,6 +1346,14 @@ fn steps_path(config: &PipelineConfig) -> Option<PathBuf> {
 }
 
 impl ControllerInit {
+    fn without_ft(config: PipelineConfig) -> Result<Self, ControllerError> {
+        Ok(Self {
+            circuit_config: Self::circuit_config(&config, None)?,
+            pipeline_config: config,
+            ft: None,
+            processed_records: 0,
+        })
+    }
     fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
         // Initialize the metrics recorder early.  If we don't install it before
         // creating the circuit, DBSP metrics will not be recorded.
@@ -1343,15 +1363,27 @@ impl ControllerInit {
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
         metrics_recorder::init(pipeline_name);
 
-        if config.global.fault_tolerance.is_none() {
-            info!("fault tolerance is disabled in configuration");
-            return Ok(Self {
-                circuit_config: Self::circuit_config(&config, None)?,
-                pipeline_config: config,
-                ft: None,
-                processed_records: 0,
-            });
+        let (storage_config, storage_options) = match (
+            config.global.fault_tolerance.is_some(),
+            config.storage_config.as_ref(),
+            config.global.storage.as_ref(),
+        ) {
+            (false, _, _) => {
+                info!("fault tolerance is disabled in configuration");
+                return Self::without_ft(config);
+            }
+            (true, Some(storage_config), Some(storage_options)) => {
+                (storage_config, storage_options)
+            }
+            (true, _, _) => {
+                error!("fault tolerance cannot be enabled without storage");
+                return Self::without_ft(config);
+            }
         };
+        let storage =
+            <dyn StorageBackend>::new(storage_config, storage_options).map_err(|error| {
+                ControllerError::storage_error(String::from("failed to initialize storage"), error)
+            })?;
 
         let Some(state_path) = state_path(&config) else {
             return Err(ControllerError::Config {
@@ -1377,7 +1409,7 @@ impl ControllerInit {
                 config,
                 processed_records,
                 input_metadata,
-            } = Checkpoint::read(&state_path)?;
+            } = Checkpoint::read(&*storage, &state_path)?;
 
             // There might be a steps file already (there must be, if
             // we're not at step 0). Open it, if so; otherwise, create a
@@ -1400,6 +1432,7 @@ impl ControllerInit {
                     step,
                     step_rw: Some(step_rw),
                     input_metadata,
+                    storage,
                 }),
                 processed_records,
             })
@@ -1425,6 +1458,7 @@ impl ControllerInit {
                     step: 0,
                     step_rw: None,
                     input_metadata: StepInputMetadata::default(),
+                    storage,
                 }),
                 processed_records: 0,
             })
