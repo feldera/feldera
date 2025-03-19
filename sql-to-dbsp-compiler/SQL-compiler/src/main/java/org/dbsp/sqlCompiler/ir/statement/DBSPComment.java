@@ -34,6 +34,11 @@ public final class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
     }
 
     @Override
+    public long getDerivedFrom() {
+        return this.id;
+    }
+
+    @Override
     public void accept(CircuitVisitor visitor) {
         visitor.push(this);
         VisitDecision decision = visitor.preorder(this);

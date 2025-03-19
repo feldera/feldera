@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
@@ -32,7 +33,7 @@ public final class DBSPU128Literal extends DBSPIntLiteral implements IsNumericLi
     }
 
     public DBSPU128Literal(CalciteObject node, @Nullable BigInteger value, boolean nullable) {
-        this(node, new DBSPTypeInteger(CalciteObject.EMPTY, 128, false, nullable), value);
+        this(node, DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.UINT128, nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

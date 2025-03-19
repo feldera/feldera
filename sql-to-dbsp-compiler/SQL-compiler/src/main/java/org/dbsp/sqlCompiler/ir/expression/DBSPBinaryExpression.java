@@ -80,13 +80,16 @@ public final class DBSPBinaryExpression extends DBSPExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append(this.left)
+        return builder
+                .append("(")
+                .append(this.left)
                 .append(" ")
                 .append(this.left.getType().mayBeNull ? "?" : "")
                 .append(this.opcode.toString())
                 .append(this.right.getType().mayBeNull ? "?" : "")
                 .append(" ")
-                .append(this.right);
+                .append(this.right)
+                .append(")");
     }
 
     @Override

@@ -222,6 +222,11 @@ public final class DBSPCircuit extends DBSPNode
     public void accept(InnerVisitor visitor) {}
 
     @Override
+    public long getDerivedFrom() {
+        return this.id;
+    }
+
+    @Override
     public void accept(CircuitVisitor visitor) {
         visitor.push(this);
         VisitDecision decision = visitor.preorder(this);

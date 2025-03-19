@@ -149,7 +149,7 @@ public final class DBSPClosureExpression extends DBSPExpression {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("(|")
                 .join(",", this.parameters)
-                .append("| ")
+                .append("|").newline()
                 .append(this.body)
                 .append(")");
     }

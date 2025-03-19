@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
@@ -122,17 +123,18 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
             return new ComputationChain(inputType, computations);
         }
 
-        DBSPExpression call(DBSPClosureExpression closure, DBSPExpression arg) {
+        DBSPExpression call(DBSPCompiler compiler, DBSPClosureExpression closure, DBSPExpression arg) {
             if (arg.getType().is(DBSPTypeRawTuple.class)) {
                 return closure.call(new DBSPRawTupleExpression(
                         arg.field(0).simplify().borrow(),
-                        arg.field(1).simplify().borrow()));
+                        arg.field(1).simplify().borrow()))
+                        .reduce(compiler);
             } else {
-                return closure.call(arg.borrow());
+                return closure.call(arg.borrow()).reduce(compiler);
             }
         }
 
-        public DBSPClosureExpression collapse() {
+        public DBSPClosureExpression collapse(DBSPCompiler compiler) {
             assert this.computations.size() > 1;
             DBSPVariablePath inputVar;
             DBSPExpression currentArg;
@@ -159,13 +161,14 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
                 switch (comp.kind) {
                     case Map, MapIndex: {
                         DBSPVariablePath nextVar = comp.closure.getResultType().var();
-                        stat = new DBSPLetStatement(nextVar.variable, this.call(comp.closure, currentArg));
+                        stat = new DBSPLetStatement(nextVar.variable,
+                                this.call(compiler, comp.closure, currentArg));
                         currentArg = nextVar;
                         break;
                     }
                     case Filter: {
                         stat = new DBSPExpressionStatement(
-                                new DBSPIfExpression(node, this.call(comp.closure, currentArg).not(),
+                                new DBSPIfExpression(node, this.call(compiler, comp.closure, currentArg).not(),
                                         new DBSPReturnExpression(node, none),
                                         null));
                         break;

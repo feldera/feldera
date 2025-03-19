@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
@@ -60,7 +61,7 @@ public final class DBSPI32Literal extends DBSPIntLiteral implements IsNumericLit
     }
 
     public DBSPI32Literal(@Nullable Integer value, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, nullable), value);
+        this(CalciteObject.EMPTY, DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

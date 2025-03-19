@@ -125,7 +125,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // CREATE TABLE `t` (`col1` INTEGER NOT NULL, `col2` DOUBLE NOT NULL, `col3` BOOLEAN NOT NULL, `col4` VARCHAR NOT NULL, `col5` INTEGER, `col6` DOUBLE)
                     let s1 = t();
                     // DBSPMapOperator s2
-                    let s2: stream<WSet<Tup1<b>>> = s1.map((|p0: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*p0).2), )));
+                    let s2: stream<WSet<Tup1<b>>> = s1.map((|p0: &Tup6<i32, d, b, s, i32?, d?>|
+                    Tup1::new(((*p0).2), )));
                     // CREATE VIEW `v` AS
                     // SELECT `t`.`col3`
                     // FROM `schema`.`t` AS `t`

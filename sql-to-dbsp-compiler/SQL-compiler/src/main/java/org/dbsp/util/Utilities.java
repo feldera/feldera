@@ -49,10 +49,12 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public class Utilities {
     private Utilities() {}
@@ -347,6 +349,12 @@ public class Utilities {
         return true;
     }
 
+    public static <T> List<T> concat(List<T> left, List<T> right) {
+        List<T> result = new ArrayList<>(left);
+        result.addAll(right);
+        return result;
+    }
+
     public static long timeStringToNanoseconds(TimeString ts) {
         // TimeString has a pretty strict format
         String v = ts.toString();
@@ -433,5 +441,11 @@ public class Utilities {
             return null;
         JsonNode prop = Utilities.getProperty(node, property);
         return prop.asLong();
+    }
+
+    public static <T> Set<T> concatSet(Set<T> left, Set<T> right) {
+        Set<T> result = new HashSet<>(left);
+        result.addAll(right);
+        return result;
     }
 }

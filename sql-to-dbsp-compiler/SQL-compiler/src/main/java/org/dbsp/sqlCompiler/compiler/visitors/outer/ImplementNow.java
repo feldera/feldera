@@ -746,7 +746,7 @@ public class ImplementNow extends Passes {
                             operator, current.simpleNode(), expression.to(TemporalFilterList.class)).outputPort();
                 } else {
                     // NowComparison expressions have been eliminated by combineExpressions
-                    DBSPExpression body = ExpressionCompiler.wrapBoolIfNeeded(expression.to(NoNow.class).noNow);
+                    DBSPExpression body = expression.to(NoNow.class).noNow.wrapBoolIfNeeded();
                     DBSPClosureExpression closure = body.closure(param);
                     DBSPFilterOperator filter = new DBSPFilterOperator(operator.getRelNode(), closure, current);
                     this.addOperator(filter);
@@ -783,8 +783,7 @@ public class ImplementNow extends Passes {
                 // Implement leftover as a join
                 DBSPSimpleOperator join = this.createJoin(result, operator);
                 RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
-                DBSPExpression filterBody = ExpressionCompiler.wrapBoolIfNeeded(
-                        leftOver.to(NonTemporalFilter.class).expression);
+                DBSPExpression filterBody = leftOver.to(NonTemporalFilter.class).expression.wrapBoolIfNeeded();
                 function = filterBody.closure(closure.parameters);
                 function = rn.apply(function).to(DBSPExpression.class);
                 DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getRelNode(), function, join.outputPort());

@@ -32,11 +32,14 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-/**
- * Some utility classes inspired by C# Linq.
- */
+/** Some utility classes inspired by C# Linq. */
 @SuppressWarnings("unused")
 public class Linq {
+    @SafeVarargs
+    public static <T> Set<T> set(T... value) {
+        return new HashSet<>(Linq.list(value));
+    }
+
     static class MapIterator<T, S> implements Iterator<S> {
         final Iterator<T> data;
         final Function<T, S> map;

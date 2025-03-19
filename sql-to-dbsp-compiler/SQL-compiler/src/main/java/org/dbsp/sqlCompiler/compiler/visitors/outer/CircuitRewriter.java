@@ -106,6 +106,9 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         if (!this.toOptimize.test(this.getCurrent().to(DBSPOperator.class))) {
             return expression;
         }
+        DBSPOperator operator = this.getCurrent().as(DBSPOperator.class);
+        if (operator != null)
+            this.transform.setOperatorContext(operator);
         IDBSPInnerNode result = this.transform.apply(expression);
         return result.to(DBSPExpression.class);
     }

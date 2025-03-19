@@ -111,24 +111,25 @@ public class UnusedFieldsTest {
         RewriteFields rw = fu.getFieldRewriter(1);
         DBSPClosureExpression rewritten = rw.rewriteClosure(closure);
         DBSPClosureExpression result = cf.apply(rewritten).to(DBSPClosureExpression.class);
-        Assert.assertEquals("(|p0: &Tup3<i32?, b?, Tup2<s?, s>>| " +
-                        "Tup3::new(((*p0).0), ((*p0).1), ((((*p0).2).0).clone()), ))",
+        Assert.assertEquals("""
+                        (|p0: &Tup3<i32?, b?, Tup2<s?, s>>|
+                        Tup3::new(((*p0).0), ((*p0).1), ((((*p0).2).0).clone()), ))""",
                 result.toString());
 
         FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
         DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
 
         projection = cf.apply(projection).to(DBSPClosureExpression.class);
-        Assert.assertEquals(
-                "(|p0: &Tup4<i32?, b, b?, Tup2<s?, s>>| " +
-                        "Tup3::new(((*p0).0), ((*p0).2), (((*p0).3).clone()), ))",
+        Assert.assertEquals("""
+                        (|p0: &Tup4<i32?, b, b?, Tup2<s?, s>>|
+                        Tup3::new(((*p0).0), ((*p0).2), (((*p0).3).clone()), ))""",
                 projection.toString());
 
         DBSPClosureExpression compose = result.applyAfter(compiler, projection, Maybe.YES);
         compose = cf.apply(compose).to(DBSPClosureExpression.class);
-        Assert.assertEquals(
-                "(|p0: &Tup4<i32?, b, b?, Tup2<s?, s>>| " +
-                        "Tup3::new(((*p0).0), ((*p0).2), ((((*p0).3).0).clone()), ))",
+        Assert.assertEquals("""
+                        (|p0: &Tup4<i32?, b, b?, Tup2<s?, s>>|
+                        Tup3::new(((*p0).0), ((*p0).2), ((((*p0).3).0).clone()), ))""",
                 compose.toString());
         Assert.assertTrue(compose.equivalent(closure));
     }
