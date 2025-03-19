@@ -83,8 +83,8 @@ where
                                         self,
                                     )
                                 }
-                                .set_unique_name(
-                                    self.get_unique_name()
+                                .set_persistent_id(
+                                    self.get_persistent_id()
                                         .map(|name| format!("{name}.gather({receiver_worker})"))
                                         .as_deref(),
                                 )

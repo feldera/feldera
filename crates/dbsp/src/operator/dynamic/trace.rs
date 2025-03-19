@@ -393,7 +393,7 @@ where
                 let circuit = self.circuit();
 
                 circuit.region("trace", || {
-                    let unique_name = self.get_unique_name();
+                    let unique_name = self.get_persistent_id();
                     let mut z1 = Z1Trace::new(
                         output_factories,
                         batch_factories,
@@ -454,7 +454,7 @@ where
         Box<TS>: Clone,
     {
         let bounds = self.trace_bounds();
-        bounds.set_unique_key_bound_name(bounds_stream.get_unique_name().as_deref());
+        bounds.set_unique_key_bound_name(bounds_stream.get_persistent_id().as_deref());
         bounds_stream.inspect(move |ts| {
             let filter = retain_key_func(ts.as_ref());
             bounds.set_key_filter(filter);
@@ -473,7 +473,7 @@ where
         Box<TS>: Clone,
     {
         let bounds = self.trace_bounds();
-        bounds.set_unique_val_bound_name(bounds_stream.get_unique_name().as_deref());
+        bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
 
         bounds_stream.inspect(move |ts| {
             let filter = retain_val_func(ts.as_ref());
@@ -567,7 +567,7 @@ where
                 let circuit = self.circuit();
                 let bounds = bounds.clone();
 
-                let unique_name = self.get_unique_name();
+                let unique_name = self.get_persistent_id();
 
                 let mut z1 = Z1Trace::new(
                     input_factories,
@@ -1177,7 +1177,9 @@ where
     }
 
     fn start_replay(&mut self) -> Result<(), Error> {
-        if self.delta_stream.is_some() {
+        // The second condition is necessary if `start_replay` is called twice, for the input
+        // and output halves of Z1.
+        if self.delta_stream.is_some() && self.replay_state.is_none() {
             let trace = self.trace.take();
             let trace = trace.expect("Z1Trace::start_replay: no trace");
 

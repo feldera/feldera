@@ -491,9 +491,9 @@ impl Catalog {
         let stream = stream.try_sharded_version();
 
         // Create handle for the stream itself.
-        let delta = stream.map(|(_k, v)| v.clone()).set_unique_name(
+        let delta = stream.map(|(_k, v)| v.clone()).set_persistent_id(
             stream
-                .get_unique_name()
+                .get_persistent_id()
                 .map(|name| format!("{name}.values"))
                 .as_deref(),
         );

@@ -78,7 +78,7 @@ use typedmap::{TypedMap, TypedMapKey};
 
 use super::dbsp_handle::Mode;
 
-const LABEL_UNIQUE_OPERATOR_NAME: &str = "unique_name";
+const LABEL_PERSISTENT_OPERATOR_ID: &str = "persistent_id";
 
 /// Value stored in the stream.
 struct StreamValue<D> {
@@ -833,17 +833,17 @@ where
     }
 
     /// Set persistent id for the operator that produces this stream.
-    pub fn set_unique_name(&self, name: Option<&str>) -> Self {
+    pub fn set_persistent_id(&self, name: Option<&str>) -> Self {
         if let Some(name) = name {
-            self.set_label(LABEL_UNIQUE_OPERATOR_NAME, name)
+            self.set_label(LABEL_PERSISTENT_OPERATOR_ID, name)
         } else {
             self.clone()
         }
     }
 
     /// Get persistend it for the operator that produces this stream.
-    pub fn get_unique_name(&self) -> Option<String> {
-        self.get_label(LABEL_UNIQUE_OPERATOR_NAME)
+    pub fn get_persistent_id(&self) -> Option<String> {
+        self.get_label(LABEL_PERSISTENT_OPERATOR_ID)
     }
 }
 
@@ -944,7 +944,7 @@ pub trait Node {
                 self.global_id().persistent_id()
             )),
             Mode::Persistent => self
-                .get_label(LABEL_UNIQUE_OPERATOR_NAME)
+                .get_label(LABEL_PERSISTENT_OPERATOR_ID)
                 .map(|operator_id| format!("{worker_index}-{operator_id}")),
         }
     }
@@ -1052,10 +1052,12 @@ pub trait Node {
     /// Get the label associated with the given key.
     fn get_label(&self, key: &str) -> Option<&str>;
 
+    /// Apply closure to a child node of `self`.
     fn map_child(&self, _path: &[NodeId], _f: &mut dyn FnMut(&dyn Node)) {
         panic!("map_child: not a circuit node")
     }
 
+    /// Apply closure to a child node of `self`.
     fn map_child_mut(&self, _path: &[NodeId], _f: &mut dyn FnMut(&mut dyn Node)) {
         panic!("map_child_mut: not a circuit node")
     }
@@ -1923,6 +1925,7 @@ pub trait Circuit: WithClock + Clone + 'static {
         O: Data,
         Op: StrictUnaryOperator<I, O>;
 
+    /// Like `add_feedback`, but also assigns persistent id to the output hald of the  Z-1 operator.
     fn add_feedback_named<I, O, Op>(
         &self,
         unique_name: Option<&str>,
@@ -1935,7 +1938,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     {
         let (output, feedback) = self.add_feedback(operator);
 
-        output.set_unique_name(unique_name);
+        output.set_persistent_id(unique_name);
 
         (output, feedback)
     }
@@ -1962,6 +1965,7 @@ pub trait Circuit: WithClock + Clone + 'static {
         O: Data,
         Op: StrictUnaryOperator<I, O>;
 
+    /// Like `add_feedback_with_export`, but also assigns persistent id to the output hald of the  Z-1 operator.
     fn add_feedback_with_export_named<I, O, Op>(
         &self,
         unique_name: Option<&str>,
@@ -1974,7 +1978,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     {
         let (export, feedback) = self.add_feedback_with_export(operator);
 
-        export.local.set_unique_name(unique_name);
+        export.local.set_persistent_id(unique_name);
 
         (export, feedback)
     }
@@ -2171,9 +2175,13 @@ where
     P: WithClock,
 {
     parent: P,
+
+    /// Root of the circuit tree.  `None` if this is the root circuit.
     root: Option<RootCircuit>,
+
     root_scope: Scope,
-    // Circuit's node id within the parent circuit.
+
+    /// Circuit's node id within the parent circuit.
     node_id: NodeId,
     global_node_id: GlobalNodeId,
     nodes: RefCell<Vec<RefCell<Box<dyn Node>>>>,
@@ -3409,6 +3417,9 @@ where
         })
     }
 
+    /// Connect feedback loop.
+    ///
+    /// Returns node id of the input hald of Z-1.
     fn connect_feedback_with_preference<I, O, Op>(
         &self,
         output_node_id: NodeId,
@@ -5613,18 +5624,20 @@ impl CircuitHandle {
     }
 
     pub fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
-        // Nodes that will run during the catchup phase of the circuit.
-        let mut catchup_nodes: BTreeSet<GlobalNodeId> = BTreeSet::new();
+        // Nodes that will run during the replay phase of the circuit.
+        let mut replay_nodes: BTreeSet<GlobalNodeId> = BTreeSet::new();
 
         // Nodes that require backfill from upstream nodes.
         let mut need_backfill: BTreeSet<GlobalNodeId> = BTreeSet::new();
 
-        // Initialize `catchup_nodes` and `need_backfill` to operators without a checkpoint.
-        // Fail if there are any other errors.
+        // Initialize `replay_nodes` and `need_backfill` to operators without a checkpoint.
+        // Fail if there any errors other than OperatorCheckpointNotFound.
         self.circuit.map_nodes_recursive_mut(
             &mut |node: &mut dyn Node| match node.restore(base) {
                 Err(DbspError::Storage(StorageError::OperatorCheckpointNotFound(_))) => {
-                    catchup_nodes.insert(node.global_id().clone());
+                    // This indicates that this integral wasn't part of the previous incarnation
+                    // of the circuit and so it needs to be rebuilt by replaying its input stream.
+                    replay_nodes.insert(node.global_id().clone());
                     need_backfill.insert(node.global_id().clone());
                     Ok(())
                 }
@@ -5636,47 +5649,55 @@ impl CircuitHandle {
         let mut need_backfill_new = need_backfill.clone();
 
         while !need_backfill_new.is_empty() {
-            need_backfill_new =
-                self.restore_step(&mut catchup_nodes, &mut need_backfill, need_backfill_new)?;
+            need_backfill_new = self.compute_replay_nodes_step(
+                &mut replay_nodes,
+                &mut need_backfill,
+                need_backfill_new,
+            )?;
         }
 
-        // Configure all nodes to run in catchup mode.
-        for gid in catchup_nodes.iter() {
+        // Configure all `replay_nodes` to run in replay mode.
+        for gid in replay_nodes.iter() {
             self.circuit
                 .map_node_mut(gid, &mut |node| node.start_replay())?;
         }
 
         // TODO: Make sure a subcircuit is added to both sets if at least one of its nodes is.
 
-        if !catchup_nodes.is_empty() {
-            self.executor.prepare(&self.circuit, Some(&catchup_nodes))?;
-            let done = catchup_nodes.iter().all(|gid| {
-                self.circuit
-                    .map_node_mut(gid, &mut |node| node.replay_complete())
-            });
+        if !replay_nodes.is_empty() {
+            // Prepare the scheduler to only run `replay_nodes`.
+            self.executor.prepare(&self.circuit, Some(&replay_nodes))?;
+            let mut done = false;
             while !done {
                 self.step()?;
+                done = replay_nodes.iter().all(|gid| {
+                    self.circuit
+                        .map_node_mut(gid, &mut |node| node.replay_complete())
+                });
             }
 
-            // End catchup mode.
-            for gid in catchup_nodes.iter() {
+            // End replay mode.
+            for gid in replay_nodes.iter() {
                 self.circuit
                     .map_node_mut(gid, &mut |node| node.end_replay())?;
             }
 
+            // Prepare the scheduler to run the full circuit.
             self.executor.prepare(&self.circuit, None)?;
         }
 
         Ok(())
     }
 
-    // Find all ancestors of nodes in `need_backfill` that are not in `catchup_nodes` yet.
-    // Add them to catchup_nodes.
+    // Recursive step of computing the set of nodes that participate in the replay phase.
+    //
+    // Find all ancestors of nodes in `need_backfill_new` that are not in `replay_nodes` yet.
+    // Add them to `replay_nodes`.
     // Additionally, add them to `need_backfill` if the node requires backfill from its upstream
     // ancestors.  Return the set of nodes newly added to `need_backfill`.
-    fn restore_step(
+    fn compute_replay_nodes_step(
         &self,
-        catchup_nodes: &mut BTreeSet<GlobalNodeId>,
+        replay_nodes: &mut BTreeSet<GlobalNodeId>,
         need_backfill: &mut BTreeSet<GlobalNodeId>,
         need_backfill_new: BTreeSet<GlobalNodeId>,
     ) -> Result<BTreeSet<GlobalNodeId>, DbspError> {
@@ -5702,12 +5723,12 @@ impl CircuitHandle {
         for (stream_id, gid) in inputs.into_iter() {
             if let Some(replay_sources) = self.circuit.get_replay_sources(stream_id) {
                 for source in replay_sources.replay_nodes.into_iter() {
-                    catchup_nodes.insert(source);
+                    replay_nodes.insert(source);
                     replay_streams.insert(stream_id, replay_sources.replay_stream.clone());
                 }
             } else {
-                if !catchup_nodes.contains(&gid) {
-                    catchup_nodes.insert(gid.clone());
+                if !replay_nodes.contains(&gid) {
+                    replay_nodes.insert(gid.clone());
                     need_backfill.insert(gid.clone());
                     need_backfill_new.insert(gid.clone());
                 }

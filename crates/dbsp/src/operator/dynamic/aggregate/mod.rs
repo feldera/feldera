@@ -532,7 +532,7 @@ where
         A: WeightTrait + ?Sized,
     {
         self.dyn_weigh(&factories.aggregate_factories.input_factories, agg_func)
-            .set_unique_name(
+            .set_persistent_id(
                 unique_name
                     .map(|name| format!("{name}[weighted]"))
                     .as_deref(),
@@ -657,7 +657,7 @@ where
         weighted.dyn_integrate_trace_retain_keys(waterline, retain_key_func);
 
         weighted
-            .set_unique_name(
+            .set_persistent_id(
                 unique_name
                     .map(|name| format!("{name}[weighted]"))
                     .as_deref(),

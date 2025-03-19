@@ -71,8 +71,8 @@ where
     }
 
     fn distinct(self, factories: &Self::Factories) -> Self {
-        Stream::dyn_distinct(&self, factories).set_unique_name(
-            self.get_unique_name()
+        Stream::dyn_distinct(&self, factories).set_persistent_id(
+            self.get_persistent_id()
                 .map(|name| format!("{name}.distinct"))
                 .as_deref(),
         )

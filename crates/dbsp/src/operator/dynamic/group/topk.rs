@@ -225,7 +225,7 @@ where
                 encode(v, out_v);
             }),
         )
-        .set_unique_name(
+        .set_persistent_id(
             unique_name
                 .map(|name| format!("{name}[ordered]"))
                 .as_deref(),
@@ -271,7 +271,7 @@ where
                 encode(v, out_v);
             }),
         )
-        .set_unique_name(
+        .set_persistent_id(
             unique_name
                 .map(|name| format!("{name}[ordered]"))
                 .as_deref(),
@@ -314,7 +314,7 @@ where
                 encode(v, out_v);
             }),
         )
-        .set_unique_name(
+        .set_persistent_id(
             unique_name
                 .map(|name| format!("{name}[ordered]"))
                 .as_deref(),
@@ -356,7 +356,7 @@ where
                 encode(v, out_v);
             }),
         )
-        .set_unique_name(
+        .set_persistent_id(
             unique_name
                 .map(|name| format!("{name}[ordered]"))
                 .as_deref(),

@@ -109,8 +109,8 @@ where
                             self.circuit()
                                 .cache_insert(UnshardId::new(output.stream_id()), self.clone());
 
-                            output.set_unique_name(
-                                self.get_unique_name()
+                            output.set_persistent_id(
+                                self.get_persistent_id()
                                     .map(|name| format!("{name}.shard"))
                                     .as_deref(),
                             )
