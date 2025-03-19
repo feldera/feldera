@@ -421,7 +421,7 @@ impl Profiler {
         self.cpu_profiler.attach(&self.circuit, "cpu_profiler");
     }
 
-    pub fn profile(&self) -> WorkerProfile {
+    pub fn profile(&self, runtime_elapsed: Duration) -> WorkerProfile {
         let mut metadata = HashMap::<GlobalNodeId, OperatorMeta>::new();
 
         // Collect node metadata.
@@ -488,6 +488,10 @@ impl Profiler {
                         Cow::Borrowed("total_runtime"),
                         MetaItem::Duration(profile.step_profile.total_time()),
                     ),
+                    (
+                        Cow::Borrowed("runtime_elapsed"),
+                        MetaItem::Duration(runtime_elapsed),
+                    ),
                 ];
 
                 for item in default_meta {
@@ -517,8 +521,8 @@ impl Profiler {
     }
 
     /// Dump profile in graphviz format.
-    pub fn dump_profile(&self) -> Graph {
-        let profile = self.profile();
+    pub fn dump_profile(&self, runtime_elapsed: Duration) -> Graph {
+        let profile = self.profile(runtime_elapsed);
 
         self.monitor.visualize_circuit_annotate(|node_id| {
             let mut output = String::with_capacity(1024);
