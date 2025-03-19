@@ -1,4 +1,7 @@
-use dbsp::circuit::checkpointer::CheckpointMetadata;
+use dbsp::{
+    circuit::checkpointer::CheckpointMetadata,
+    storage::{backend::StorageBackend, buffer_cache::FBuf},
+};
 use feldera_types::config::{InputEndpointConfig, PipelineConfig};
 use rmpv::Value as RmpValue;
 use serde::{Deserialize, Serialize};
@@ -6,7 +9,7 @@ use serde_json::Value as JsonValue;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
-    fs::{self, File, OpenOptions},
+    fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Error as IoError, ErrorKind, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::mpsc::{channel, Receiver, Sender},
@@ -37,15 +40,15 @@ pub struct Checkpoint {
 
 impl Checkpoint {
     /// Reads a checkpoint in JSON format from `path`.
-    pub(super) fn read<P>(path: P) -> Result<Self, ControllerError>
+    pub(super) fn read<P>(storage: &dyn StorageBackend, path: P) -> Result<Self, ControllerError>
     where
         P: AsRef<Path>,
     {
         let path = path.as_ref();
-        let data = fs::read(path).map_err(|io_error| {
-            ControllerError::io_error(
+        let data = storage.read(path).map_err(|error| {
+            ControllerError::storage_error(
                 format!("{}: failed to read checkpoint", path.display()),
-                io_error,
+                error,
             )
         })?;
         serde_json::from_slice::<Checkpoint>(&data).map_err(|e| {
@@ -57,13 +60,19 @@ impl Checkpoint {
 
     /// Writes this checkpoint in JSON format to `path`, atomically replacing
     /// any file that was previously at `path`.
-    pub(super) fn write<P>(&self, path: P) -> Result<(), ControllerError>
+    pub(super) fn write<P>(
+        &self,
+        storage: &dyn StorageBackend,
+        path: P,
+    ) -> Result<(), ControllerError>
     where
         P: AsRef<Path>,
     {
         let path = path.as_ref();
-        write_file_atomically(path, &serde_json::to_vec(self).unwrap()).map_err(|error| {
-            ControllerError::io_error(
+        let mut content = FBuf::with_capacity(4096);
+        serde_json::to_writer(&mut content, self).unwrap();
+        storage.write(path, content).map_err(|error| {
+            ControllerError::storage_error(
                 format!("{}: failed to write pipeline state", path.display()),
                 error,
             )
