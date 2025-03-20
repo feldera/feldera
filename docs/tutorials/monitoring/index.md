@@ -19,15 +19,15 @@ is then used to visualize these metrics.
     - job_name: 'feldera'
       scrape_interval: 1s
       static_configs:
-        - targets: ['localhost:8081']
+        - targets: ['127.0.0.1:8081']
     ```
-    - Replace `localhost:8081` with the address of your Feldera instance. Note that `8081` is the default port for
+    - Replace `127.0.0.1:8081` with the address of your Feldera instance. Note that `8081` is the default port for
       metrics.
     - Restart Prometheus.
 3. **Grafana:** You must have [Grafana installed](https://grafana.com).
 4. **Add Prometheus To Grafana:**
     - If you are using a local prometheus instance, the URL for the Prometheus data source will
-      be http://localhost:9090.
+      be http://127.0.0.1:9090.
     - Follow the steps in the [Grafana
       documentation](https://prometheus.io/docs/visualization/grafana/#creating-a-prometheus-data-source)
       to add Prometheus as a data source.
@@ -82,7 +82,7 @@ step.
 3. **Tracing a Feldera pipeline**
     - Enable/disable tracing and specify the Jaeger endpoint in the pipeline `runtime_config`:
    ```bash
-   curl -i -X PATCH http://localhost:8080/v0/pipelines/tracing-pipeline \
+   curl -i -X PATCH http://127.0.0.1:8080/v0/pipelines/tracing-pipeline \
    -H 'Content-Type: application/json' \
    -d '{
      "runtime_config": {"tracing": true, "tracing_endpoint_jaeger": "host.docker.internal:6831", <other config settings> }

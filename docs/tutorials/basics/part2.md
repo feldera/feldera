@@ -25,7 +25,7 @@ Start the pipeline you created in Part 1 of the tutorial from a clean state:
 Subscribe to changes to the `PREFERRED_VENDOR` view:
 
 ```bash
-curl -s -N -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/egress/PREFERRED_VENDOR?format=json | jq
+curl -s -N -X 'POST' http://127.0.0.1:8080/v0/pipelines/supply_chain/egress/PREFERRED_VENDOR?format=json | jq
 ```
 
 You should see periodic heartbeat messages:
@@ -52,7 +52,7 @@ In another terminal, use the following command to populate the `PART` table
 with the same data we entered manually in part 1 of the tutorial:
 
 ```bash
-curl -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/ingress/PART?format=json -d '
+curl -X 'POST' http://127.0.0.1:8080/v0/pipelines/supply_chain/ingress/PART?format=json -d '
 {"insert": {"id": 1, "name": "Flux Capacitor"}}
 {"insert": {"id": 2, "name": "Warp Core"}}
 {"insert": {"id": 3, "name": "Kyber Crystal"}}'
@@ -66,12 +66,12 @@ Records are encoded as JSON objects with one key per table column.
 Next, we populate the other two tables:
 
 ```bash
-curl -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/ingress/VENDOR?format=json -d '
+curl -X 'POST' http://127.0.0.1:8080/v0/pipelines/supply_chain/ingress/VENDOR?format=json -d '
 {"insert": {"id": 1, "name": "Gravitech Dynamics", "address": "222 Graviton Lane"}}
 {"insert": {"id": 2, "name": "HyperDrive Innovations", "address": "456 Warp Way"}}
 {"insert": {"id": 3, "name": "DarkMatter Devices", "address": "333 Singularity Street"}}'
 
-curl -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/ingress/PRICE?format=json -d '
+curl -X 'POST' http://127.0.0.1:8080/v0/pipelines/supply_chain/ingress/PRICE?format=json -d '
 {"insert": {"part": 1, "vendor": 2, "price": 10000}}
 {"insert": {"part": 2, "vendor": 1, "price": 15000}}
 {"insert": {"part": 3, "vendor": 3, "price": 9000}}'
@@ -137,7 +137,7 @@ that there is no `update` command.  Modifying a record amounts to deleting the
 old version and inserting the new one.
 
 ```bash
-curl -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/ingress/PRICE?format=json -d '
+curl -X 'POST' http://127.0.0.1:8080/v0/pipelines/supply_chain/ingress/PRICE?format=json -d '
 {"delete": {"part": 1, "vendor": 2, "price": 10000}}
 {"insert": {"part": 1, "vendor": 2, "price": 30000}}
 {"delete": {"part": 2, "vendor": 1, "price": 15000}}

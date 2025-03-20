@@ -24,7 +24,7 @@ We will subscribe to a stream of updates to the `average_price` view for pipelin
 
 ```bash
 curl -i -X 'POST' \
-  http://localhost:8080/v0/pipelines/supply-chain-pipeline/egress/average_price?query=table\&mode=watch\&format=json
+  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/egress/average_price?query=table\&mode=watch\&format=json
 ```
 
 ### Python (direct API calls)
@@ -32,7 +32,7 @@ curl -i -X 'POST' \
 ```python
 import requests
 
-api_url = "http://localhost:8080"
+api_url = "http://127.0.0.1:8080"
 headers = {"authorization": f"Bearer <API-KEY>"}
 
 with requests.post(

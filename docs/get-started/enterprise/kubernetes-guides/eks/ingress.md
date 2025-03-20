@@ -129,7 +129,7 @@ you can also reach the load balancer endpoint via kubectl port-forwarding:
 kubectl port-forward -n ingress-nginx-internal service/ingress-nginx-internal-controller-internal 8080:80
 ```
 
-While keeping it running in a terminal, visit http://localhost:8080
+While keeping it running in a terminal, visit http://127.0.0.1:8080
 in a browser to see the Feldera Web Console.
 
 ## Additional resources

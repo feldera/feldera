@@ -79,8 +79,8 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    ```
 
    ... after which you can (leaving the forwarding running in a terminal):
-   * Visit Web Console in browser: http://localhost:8080
-   * Interact with the API: [**http://localhost:8080/v0/...**](http://localhost:8080/v0/...)
+   * Visit Web Console in browser: http://127.0.0.1:8080
+   * Interact with the API: [**http://127.0.0.1:8080/v0/...**](http://127.0.0.1:8080/v0/...)
 
    _Note:_ access through kubectl port-forwarding is mostly useful for test and development.
    In other cases, setting up an ingress (e.g., [in EKS](kubernetes-guides/eks/ingress.md)) is likely preferable.

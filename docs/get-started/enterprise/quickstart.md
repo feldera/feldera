@@ -33,7 +33,7 @@ in a Kubernetes cluster.
    ```
    kubectl port-forward -n feldera svc/feldera-api-server 8080:8080
    ```
-   ... after which the Web Console and API are accessible at: http://localhost:8080
+   ... after which the Web Console and API are accessible at: http://127.0.0.1:8080
 
 ## Additional resources
 

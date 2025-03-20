@@ -48,7 +48,7 @@ create materialized view v0 with (
     "transport": {
       "name": "redis_output",
       "config": {
-        "connection_string": "redis://localhost:6379/0",
+        "connection_string": "redis://127.0.0.1:6379/0",
         "key_separator": ":"
       }
     },

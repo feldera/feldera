@@ -283,7 +283,7 @@ API endpoint, the data format is specified as part of the URL, e.g.:
 # `&update_format=insert_delete` - Specifies data change event format. Supported values are `insert_delete` and `raw`.
 # `&array=false` - Don't use array encoding.
 # replace PIPELINE_NAME with the name of the pipeline and TABLE_NAME with the name of the table
-curl -X 'POST' 'http://localhost:8080/v0/pipelines/PIPELINE_NAME/ingress/TABLE_NAME?format=json&update_format=insert_delete&array=false' -d '
+curl -X 'POST' 'http://127.0.0.1:8080/v0/pipelines/PIPELINE_NAME/ingress/TABLE_NAME?format=json&update_format=insert_delete&array=false' -d '
 {"insert": {"id": 1, "name": "Flux Capacitor"}}
 {"insert": {"id": 2, "name": "Warp Core"}}
 {"insert": {"id": 3, "name": "Kyber Crystal"}}'
@@ -297,7 +297,7 @@ to choose this encoding for output data.
 
 ```bash
 # replace PIPELINE_NAME with the name of the pipeline and VIEW_NAME with the name of the table
-curl -s -N -X 'POST' 'http://localhost:8080/v0/pipelines/PIPELINE_NAME/egress/VIEW_NAME?format=json'
+curl -s -N -X 'POST' 'http://127.0.0.1:8080/v0/pipelines/PIPELINE_NAME/egress/VIEW_NAME?format=json'
 ```
 
 See also the [HTTP input and output tutorial](/tutorials/basics/part3.md).

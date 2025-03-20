@@ -244,7 +244,7 @@ select * from derived_binary_relationships;
 
 Let's see if it works. Open the complete code provided above in one of the following environments:
 * Feldera online sandbox: [https://try.feldera.com/create/?name=dynamic-fga](https://try.feldera.com/create/?name=dynamic-fga) OR
-* Your local Feldera instance: [localhost:8080/create/?name=dynamic-fga](http://localhost:8080/create/?name=dynamic-fga)
+* Your local Feldera instance: [127.0.0.1:8080/create/?name=dynamic-fga](http://127.0.0.1:8080/create/?name=dynamic-fga)
 
 Start the pipeline and create rules for the file manager example using ad hoc queries:
 

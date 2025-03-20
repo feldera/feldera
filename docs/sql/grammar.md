@@ -118,7 +118,7 @@ CREATE TABLE empsalary (
     enroll_date date
 ) WITH (
     'source' = 'kafka',
-    'url' = 'localhost:8080'
+    'url' = '127.0.0.1:8080'
 );
 ```
 

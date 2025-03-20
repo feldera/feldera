@@ -49,7 +49,7 @@ WITH ('connectors' = '[{
 ### curl
 
 ```bash
-curl -i -X PUT http://localhost:8080/v0/pipelines/workshop \
+curl -i -X PUT http://127.0.0.1:8080/v0/pipelines/workshop \
 -H 'Content-Type: application/json' \
 -d "$(jq -Rsn \
   --rawfile code program.sql \
@@ -69,7 +69,7 @@ curl -i -X PUT http://localhost:8080/v0/pipelines/workshop \
 ```python
 import requests
 
-api_url = "http://localhost:8080"
+api_url = "http://127.0.0.1:8080"
 headers = { "authorization": f"Bearer <API-KEY>" }
 requests.put(
     f"{api_url}/v0/pipelines/workshop",
