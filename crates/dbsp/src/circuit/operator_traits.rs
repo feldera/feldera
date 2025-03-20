@@ -223,11 +223,15 @@ pub trait Operator: 'static {
         Ok(())
     }
 
+    fn clear_state(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
     fn start_replay(&mut self) -> Result<(), Error> {
         Ok(())
     }
 
-    fn replay_complete(&self) -> bool {
+    fn is_replay_complete(&self) -> bool {
         true
     }
 

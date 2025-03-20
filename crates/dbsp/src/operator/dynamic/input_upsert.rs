@@ -272,7 +272,6 @@ where
                 &delta,
                 &replay_stream,
                 &trace,
-                &delayed_trace,
                 feedback_node_id,
             );
 

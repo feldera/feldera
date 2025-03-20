@@ -323,7 +323,6 @@ pub(crate) fn register_trace_replay_sources<C, B, T>(
     stream: &Stream<C, B>,
     replay_stream: &Stream<C, B>,
     trace: &Stream<C, T>,
-    delayed_trace: &Stream<C, T>,
     feedback_node_id: NodeId,
 ) where
     C: Circuit,
@@ -333,23 +332,14 @@ pub(crate) fn register_trace_replay_sources<C, B, T>(
     if TypeId::of::<()>() == TypeId::of::<C::Time>()
         && TypeId::of::<()>() == TypeId::of::<T::Time>()
     {
-        let replay_sources = vec![
+        let backfill_nodes = vec![
             trace.origin_node_id().clone(),
-            delayed_trace.origin_node_id().clone(),
             circuit.global_node_id().child(feedback_node_id),
         ];
 
-        let replay = ReplayStreams::new(replay_sources, Box::new(replay_stream.clone()));
+        let replay = ReplayStreams::new(backfill_nodes, Box::new(replay_stream.clone()));
 
         circuit.cache_insert(ReplaySources::new(stream.stream_id()), replay);
-        // circuit.cache_insert(
-        //     ReplaySources::new(trace.stream_id()),
-        //     replay_sources.clone(),
-        // );
-        // circuit.cache_insert(
-        //     ReplaySources::new(delayed_trace.stream_id()),
-        //     replay_sources.clone(),
-        // );
     }
 }
 
@@ -431,7 +421,6 @@ where
                         self,
                         &replay_stream,
                         &trace,
-                        &delayed_trace,
                         feedback_node_id,
                     );
 
@@ -613,7 +602,6 @@ where
                         self,
                         &replay_stream,
                         &trace,
-                        &delayed_trace,
                         feedback_node_id,
                     );
 
@@ -669,14 +657,7 @@ where
             .feedback
             .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
 
-        register_trace_replay_sources(
-            circuit,
-            stream,
-            &replay_stream,
-            &trace,
-            &self.delayed_trace,
-            feedback_node_id,
-        );
+        register_trace_replay_sources(circuit, stream, &replay_stream, &trace, feedback_node_id);
 
         circuit.cache_insert(
             DelayedTraceId::new(trace.stream_id()),
@@ -1189,7 +1170,7 @@ where
         Ok(())
     }
 
-    fn replay_complete(&self) -> bool {
+    fn is_replay_complete(&self) -> bool {
         self.replay_state.is_none()
     }
 

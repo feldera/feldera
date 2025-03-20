@@ -1024,6 +1024,9 @@ pub trait Node {
     /// the given checkpoint in directory `base`.
     fn restore(&mut self, base: &Path) -> Result<(), DbspError>;
 
+    /// Reset the state of the operator to default.
+    fn clear_state(&mut self) -> Result<(), DbspError>;
+
     /// Place operator in the replay mode.
     ///
     /// For most operators the replay mode is identical to the normal mode, so they
@@ -1034,7 +1037,7 @@ pub trait Node {
     /// Check if the operator has finished replaying its stored state.
     ///
     /// Once all operators have finishe the replay, the entire circuit can exit the replay mode.
-    fn replay_complete(&self) -> bool;
+    fn is_replay_complete(&self) -> bool;
 
     /// Notify the operator that the circuit is exiting the replay mode.
     ///
@@ -1366,18 +1369,18 @@ circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
 /// Describes part of the circuit involved in replaying the contents of a stream.
 ///
 /// Consider the following subcircuit that implements a stream integrator.
-/// In order to replay the contents of s1, we need to put all operators in this
-/// subcircuit in replay mode (note that Z-1 actually consists of two operators).
+/// In order to replay the contents of s1, we need to put the output half of Z-1
+/// in replay mode, and the plus operator and the input half of Z-1 in backfill mode.
 /// The Z-1 operator will replay the contents of s1 into stream s2.
 ///
 /// ```text
 ///   │
-///   │
+///   │s1
 ///   ├────────────────────────┐
 ///   │                        │
 ///   │                        │
 ///   ▼                        │
-/// ┌───┐        ┌───┐         │
+/// ┌───┐        ┌───┐  s2     │
 /// │ + ├───────►│Z-1├────────►│
 /// └───┘        └─┬─┘         │
 ///   ▲            │           │
@@ -1390,17 +1393,16 @@ circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
 #[derive(Clone)]
 pub struct ReplayStreams {
     /// List of nodes that need to be activated during replay.
-    pub replay_nodes: Vec<GlobalNodeId>,
+    pub backfill_nodes: Vec<GlobalNodeId>,
 
-    /// The replay stream, produced by one of `replay_nodes`. In the replay mode,
-    /// this stream will contain
+    /// The replay stream. The origin node of this stream will run in replay mode.
     pub replay_stream: Box<dyn StreamMetadata>,
 }
 
 impl ReplayStreams {
-    pub fn new(replay_nodes: Vec<GlobalNodeId>, replay_stream: Box<dyn StreamMetadata>) -> Self {
+    pub fn new(backfill_nodes: Vec<GlobalNodeId>, replay_stream: Box<dyn StreamMetadata>) -> Self {
         Self {
-            replay_nodes,
+            backfill_nodes,
             replay_stream,
         }
     }
@@ -3794,6 +3796,10 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
     }
@@ -3802,8 +3808,8 @@ where
         self.operator.end_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -3914,12 +3920,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -4048,12 +4058,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -4174,12 +4188,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -4358,12 +4376,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -4542,12 +4564,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -4704,12 +4730,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -4888,12 +4918,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -5055,12 +5089,16 @@ where
         self.operator.restore(base, self.persistent_id().as_deref())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -5209,12 +5247,16 @@ where
             .restore(base, self.persistent_id().as_deref())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.borrow_mut().clear_state()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.borrow_mut().start_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.borrow().replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.borrow().is_replay_complete()
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -5346,12 +5388,16 @@ where
         Ok(())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        Ok(())
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.borrow_mut().start_replay()
     }
 
-    fn replay_complete(&self) -> bool {
-        self.operator.borrow().replay_complete()
+    fn is_replay_complete(&self) -> bool {
+        self.operator.borrow().is_replay_complete()
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -5527,11 +5573,15 @@ where
         Ok(())
     }
 
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        todo!()
+    }
+
     fn start_replay(&mut self) -> Result<(), DbspError> {
         Ok(())
     }
 
-    fn replay_complete(&self) -> bool {
+    fn is_replay_complete(&self) -> bool {
         true
     }
 
@@ -5645,6 +5695,10 @@ impl CircuitHandle {
             },
         )?;
 
+        let mut need_backfill = need_backfill
+            .into_iter()
+            .filter(|gid| gid.parent_id().as_ref() == Some(self.circuit.global_id()))
+            .collect::<BTreeSet<_>>();
         let mut need_backfill_new = need_backfill.clone();
 
         while !need_backfill_new.is_empty() {
@@ -5669,6 +5723,12 @@ impl CircuitHandle {
                     .map_node_mut(gid, &mut |node| node.start_replay())?;
             }
 
+            // Clear the state of `need_backfill` nodes.
+            for gid in need_backfill.iter() {
+                self.circuit
+                    .map_node_mut(gid, &mut |node| node.clear_state())?;
+            }
+
             // Prepare the scheduler to only run `nodes_involved_in_backfill`.
             self.executor
                 .prepare(&self.circuit, Some(&nodes_involved_in_backfill))?;
@@ -5677,7 +5737,7 @@ impl CircuitHandle {
                 self.step()?;
                 done = replay_nodes.iter().all(|gid| {
                     self.circuit
-                        .map_node_mut(gid, &mut |node| node.replay_complete())
+                        .map_node_mut(gid, &mut |node| node.is_replay_complete())
                 });
             }
 
@@ -5712,7 +5772,12 @@ impl CircuitHandle {
             let node_inputs = self.circuit.map_node(gid, &mut |node| {
                 node.input_streams()
                     .iter()
-                    .map(|stream| (stream.stream_id(), stream.origin_node_id().clone()))
+                    .map(|stream| {
+                        (
+                            stream.stream_id(),
+                            self.circuit.global_id().child(stream.local_node_id()),
+                        )
+                    })
                     .collect::<Vec<_>>()
             });
 
@@ -5727,8 +5792,12 @@ impl CircuitHandle {
 
         for (stream_id, gid) in inputs.into_iter() {
             if let Some(replay_sources) = self.circuit.get_replay_sources(stream_id) {
-                for source in replay_sources.replay_nodes.into_iter() {
-                    replay_nodes.insert(source);
+                for source in replay_sources.backfill_nodes.into_iter() {
+                    if !need_backfill.contains(&source) {
+                        need_backfill.insert(source.clone());
+                        need_backfill_new.insert(source.clone());
+                    }
+
                     replay_streams.insert(stream_id, replay_sources.replay_stream.clone());
                 }
             } else {
@@ -5742,6 +5811,7 @@ impl CircuitHandle {
         for (original_stream, replay_stream) in replay_streams.into_iter() {
             self.circuit
                 .add_replay_edges(original_stream, replay_stream.as_ref());
+            replay_nodes.insert(replay_stream.origin_node_id().clone());
         }
 
         Ok(need_backfill_new)
