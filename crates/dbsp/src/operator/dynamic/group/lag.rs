@@ -86,7 +86,7 @@ where
     #[allow(clippy::type_complexity)]
     pub fn dyn_lag<OV>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &LagFactories<B, OV>,
         offset: isize,
         project: Box<dyn Fn(Option<&B::Val>, &mut OV)>,
@@ -95,7 +95,7 @@ where
         OV: DataTrait + ?Sized,
     {
         self.dyn_group_transform(
-            unique_name,
+            persistent_id,
             &factories.input_factories,
             &factories.output_factories,
             Box::new(Lag::new(
@@ -118,14 +118,14 @@ where
 impl Stream<RootCircuit, MonoIndexedZSet> {
     pub fn dyn_lag_custom_order_mono(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &LagCustomOrdFactories<MonoIndexedZSet, DynData, DynData, DynData>,
         offset: isize,
         encode: Box<dyn Fn(&DynData, &mut DynData)>,
         project: Box<dyn Fn(Option<&DynData>, &mut DynData)>,
         decode: Box<dyn Fn(&DynData, &DynData, &mut DynData)>,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
-        self.dyn_lag_custom_order(unique_name, factories, offset, encode, project, decode)
+        self.dyn_lag_custom_order(persistent_id, factories, offset, encode, project, decode)
     }
 }
 
@@ -138,7 +138,7 @@ where
     /// See [`Stream::lag_custom_order`].
     pub fn dyn_lag_custom_order<V2, VL, OV>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &LagCustomOrdFactories<B, V2, VL, OV>,
         offset: isize,
         encode: Box<dyn Fn(&V, &mut V2)>,
@@ -160,11 +160,11 @@ where
             }),
         )
         .set_persistent_id(
-            unique_name
+            persistent_id
                 .map(|name| format!("{name}[ordered]"))
                 .as_deref(),
         )
-        .dyn_lag(unique_name, &factories.lag_factories, offset, project)
+        .dyn_lag(persistent_id, &factories.lag_factories, offset, project)
         .dyn_map_index(
             &factories.output_factories,
             Box::new(move |(k, v), kv| {

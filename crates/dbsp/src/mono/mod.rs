@@ -57,14 +57,14 @@ where
     where
         A: Aggregator<V, (), ZWeight>,
     {
-        self.aggregate_named(None, aggregator)
+        self.aggregate_persistent(None, aggregator)
     }
 
     #[allow(clippy::type_complexity)]
     #[track_caller]
-    pub fn aggregate_named<A>(
+    pub fn aggregate_persistent<A>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         aggregator: A,
     ) -> Stream<RootCircuit, OrdIndexedZSet<K, A::Output>>
     where
@@ -78,7 +78,7 @@ where
             );
 
         self.inner()
-            .dyn_aggregate_mono(unique_name, &aggregate_factories, &dyn_aggregator)
+            .dyn_aggregate_mono(persistent_id, &aggregate_factories, &dyn_aggregator)
             .typed()
     }
 
@@ -94,13 +94,13 @@ where
         F: Fn(&V) -> A + Clone + 'static,
         OF: Fn(A) -> OV + Clone + 'static,
     {
-        self.aggregate_linear_postprocess_named::<F, A, OF, OV>(None, f, of)
+        self.aggregate_linear_postprocess_persistent::<F, A, OF, OV>(None, f, of)
     }
 
     #[track_caller]
-    pub fn aggregate_linear_postprocess_named<F, A, OF, OV>(
+    pub fn aggregate_linear_postprocess_persistent<F, A, OF, OV>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         f: F,
         of: OF,
     ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
@@ -119,7 +119,7 @@ where
 
         self.inner()
             .dyn_aggregate_linear_mono(
-                unique_name,
+                persistent_id,
                 &factories,
                 Box::new(move |_k, v, r, acc| unsafe {
                     *acc.downcast_mut::<A>() = f(v.downcast::<V>()).mul_by_ref(&**r)
@@ -541,14 +541,14 @@ where
     where
         A: Aggregator<V, <NestedCircuit as WithClock>::Time, ZWeight>,
     {
-        self.aggregate_named(None, aggregator)
+        self.aggregate_persistent(None, aggregator)
     }
 
     #[allow(clippy::type_complexity)]
     #[track_caller]
-    pub fn aggregate_named<A>(
+    pub fn aggregate_persistent<A>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         aggregator: A,
     ) -> Stream<NestedCircuit, OrdIndexedZSet<K, A::Output>>
     where
@@ -568,7 +568,7 @@ where
         >::new(aggregator);
 
         self.inner()
-            .dyn_aggregate_mono(unique_name, &aggregate_factories, &dyn_aggregator)
+            .dyn_aggregate_mono(persistent_id, &aggregate_factories, &dyn_aggregator)
             .typed()
     }
 
@@ -584,13 +584,13 @@ where
         F: Fn(&V) -> A + Clone + 'static,
         OF: Fn(A) -> OV + Clone + 'static,
     {
-        self.aggregate_linear_postprocess_named(None, f, of)
+        self.aggregate_linear_postprocess_persistent(None, f, of)
     }
 
     #[track_caller]
-    pub fn aggregate_linear_postprocess_named<F, A, OF, OV>(
+    pub fn aggregate_linear_postprocess_persistent<F, A, OF, OV>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         f: F,
         of: OF,
     ) -> Stream<NestedCircuit, OrdIndexedZSet<K, OV>>
@@ -609,7 +609,7 @@ where
 
         self.inner()
             .dyn_aggregate_linear_mono(
-                unique_name,
+                persistent_id,
                 &factories,
                 Box::new(move |_k, v, r, acc| unsafe {
                     *acc.downcast_mut::<A>() = f(v.downcast::<V>()).mul_by_ref(&**r)

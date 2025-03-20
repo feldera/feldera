@@ -1932,10 +1932,10 @@ pub trait Circuit: WithClock + Clone + 'static {
         O: Data,
         Op: StrictUnaryOperator<I, O>;
 
-    /// Like `add_feedback`, but also assigns persistent id to the output hald of the  Z-1 operator.
-    fn add_feedback_named<I, O, Op>(
+    /// Like `add_feedback`, but also assigns persistent id to the output half of the the Z-1 operator.
+    fn add_feedback_persistent<I, O, Op>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         operator: Op,
     ) -> (Stream<Self, O>, FeedbackConnector<Self, I, O, Op>)
     where
@@ -1945,7 +1945,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     {
         let (output, feedback) = self.add_feedback(operator);
 
-        output.set_persistent_id(unique_name);
+        output.set_persistent_id(persistent_id);
 
         (output, feedback)
     }
@@ -1973,9 +1973,9 @@ pub trait Circuit: WithClock + Clone + 'static {
         Op: StrictUnaryOperator<I, O>;
 
     /// Like `add_feedback_with_export`, but also assigns persistent id to the output hald of the  Z-1 operator.
-    fn add_feedback_with_export_named<I, O, Op>(
+    fn add_feedback_with_export_persistent<I, O, Op>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         operator: Op,
     ) -> (ExportStream<Self, O>, FeedbackConnector<Self, I, O, Op>)
     where
@@ -1985,7 +1985,7 @@ pub trait Circuit: WithClock + Clone + 'static {
     {
         let (export, feedback) = self.add_feedback_with_export(operator);
 
-        export.local.set_persistent_id(unique_name);
+        export.local.set_persistent_id(persistent_id);
 
         (export, feedback)
     }

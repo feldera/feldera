@@ -91,7 +91,7 @@ where
         Agg: Aggregator<OV, (), ZWeight>,
         PF: Fn(&V) -> (PK, OV) + Clone + 'static,
     {
-        self.partitioned_rolling_aggregate_with_waterline_named::<PK, OV, Agg, PF>(
+        self.partitioned_rolling_aggregate_with_waterline_persistent::<PK, OV, Agg, PF>(
             None,
             waterline,
             partition_func,
@@ -100,9 +100,9 @@ where
         )
     }
 
-    pub fn partitioned_rolling_aggregate_with_waterline_named<PK, OV, Agg, PF>(
+    pub fn partitioned_rolling_aggregate_with_waterline_persistent<PK, OV, Agg, PF>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         waterline: &Stream<RootCircuit, TypedBox<TS, DynDataTyped<TS>>>,
         partition_func: PF,
         aggregator: Agg,
@@ -125,7 +125,7 @@ where
 
         self.inner()
             .dyn_partitioned_rolling_aggregate_with_waterline::<_, TS, _, DynData, DynData>(
-                unique_name,
+                persistent_id,
                 &factories,
                 &waterline.inner_data(),
                 Box::new(
@@ -169,7 +169,7 @@ where
         PK: DBData,
         PF: Fn(&V) -> (PK, OV) + Clone + 'static,
     {
-        self.partitioned_rolling_aggregate_named::<PK, OV, Agg, PF>(
+        self.partitioned_rolling_aggregate_persistent::<PK, OV, Agg, PF>(
             None,
             partition_func,
             aggregator,
@@ -177,9 +177,9 @@ where
         )
     }
 
-    pub fn partitioned_rolling_aggregate_named<PK, OV, Agg, PF>(
+    pub fn partitioned_rolling_aggregate_persistent<PK, OV, Agg, PF>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         partition_func: PF,
         aggregator: Agg,
         range: RelRange<TS>,
@@ -195,7 +195,7 @@ where
 
         self.inner()
             .dyn_partitioned_rolling_aggregate::<_, _, _, DynData, _>(
-                unique_name,
+                persistent_id,
                 &factories,
                 Box::new(
                     move |v, pk: &mut DynData /* <PK> */, ov: &mut DynData /* <OV> */| unsafe {

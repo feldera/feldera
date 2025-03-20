@@ -35,13 +35,13 @@ where
         FInit: Fn(&V, ZWeight) -> A + 'static,
         FUpdate: Fn(A, &V, ZWeight) -> A + 'static,
     {
-        self.chain_aggregate_named::<A, FInit, FUpdate>(None, finit, fupdate)
+        self.chain_aggregate_persistent::<A, FInit, FUpdate>(None, finit, fupdate)
     }
 
     #[track_caller]
-    pub fn chain_aggregate_named<A, FInit, FUpdate>(
+    pub fn chain_aggregate_persistent<A, FInit, FUpdate>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         finit: FInit,
         fupdate: FUpdate,
     ) -> Stream<RootCircuit, OrdIndexedZSet<K, A>>
@@ -55,7 +55,7 @@ where
 
         self.inner()
             .dyn_chain_aggregate_mono(
-                unique_name,
+                persistent_id,
                 &input_factories,
                 &output_factories,
                 Box::new(move |acc: &mut DynData, v: &DynData, w: ZWeight| unsafe {

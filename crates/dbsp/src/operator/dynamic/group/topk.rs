@@ -103,12 +103,12 @@ where
     #[allow(clippy::type_complexity)]
     pub fn dyn_topk_asc(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TopKFactories<B>,
         k: usize,
     ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val>> {
         self.dyn_group_transform(
-            unique_name,
+            persistent_id,
             &factories.input_factories,
             &factories.output_factories,
             Box::new(DiffGroupTransformer::new(
@@ -122,12 +122,12 @@ where
     #[allow(clippy::type_complexity)]
     pub fn dyn_topk_desc(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TopKFactories<B>,
         k: usize,
     ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val>> {
         self.dyn_group_transform(
-            unique_name,
+            persistent_id,
             &factories.input_factories,
             &factories.output_factories,
             Box::new(DiffGroupTransformer::new(
@@ -141,18 +141,18 @@ where
 impl Stream<RootCircuit, MonoIndexedZSet> {
     pub fn dyn_topk_custom_order_mono(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TopKCustomOrdFactories<DynData, DynData, DynData, DynZWeight>,
         k: usize,
         encode: Box<dyn Fn(&DynData, &mut DynData)>,
         decode: Box<dyn Fn(&DynData) -> &DynData>,
     ) -> Self {
-        self.dyn_topk_custom_order(unique_name, factories, k, encode, decode)
+        self.dyn_topk_custom_order(persistent_id, factories, k, encode, decode)
     }
 
     pub fn dyn_topk_rank_custom_order_mono(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TopKRankCustomOrdFactories<DynData, DynData, DynData>,
         k: usize,
         encode: Box<dyn Fn(&DynData, &mut DynData)>,
@@ -160,7 +160,7 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
         output_func: Box<dyn Fn(i64, &DynData, &mut DynData)>,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
         self.dyn_topk_rank_custom_order(
-            unique_name,
+            persistent_id,
             factories,
             k,
             encode,
@@ -171,7 +171,7 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
 
     pub fn dyn_topk_dense_rank_custom_order_mono(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TopKRankCustomOrdFactories<DynData, DynData, DynData>,
         k: usize,
         encode: Box<dyn Fn(&DynData, &mut DynData)>,
@@ -179,7 +179,7 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
         output_func: Box<dyn Fn(i64, &DynData, &mut DynData)>,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
         self.dyn_topk_dense_rank_custom_order(
-            unique_name,
+            persistent_id,
             factories,
             k,
             encode,
@@ -190,13 +190,13 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
 
     pub fn dyn_topk_row_number_custom_order_mono(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TopKRankCustomOrdFactories<DynData, DynData, DynData>,
         k: usize,
         encode: Box<dyn Fn(&DynData, &mut DynData)>,
         output_func: Box<dyn Fn(i64, &DynData, &mut DynData)>,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
-        self.dyn_topk_row_number_custom_order(unique_name, factories, k, encode, output_func)
+        self.dyn_topk_row_number_custom_order(persistent_id, factories, k, encode, output_func)
     }
 }
 
@@ -208,7 +208,7 @@ where
     /// See [`Stream::topk_custom_order`].
     pub fn dyn_topk_custom_order<V2>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TopKCustomOrdFactories<K, V, V2, DynZWeight>,
         k: usize,
         encode: Box<dyn Fn(&V, &mut V2)>,
@@ -226,12 +226,12 @@ where
             }),
         )
         .set_persistent_id(
-            unique_name
+            persistent_id
                 .map(|name| format!("{name}[ordered]"))
                 .as_deref(),
         )
         .dyn_group_transform(
-            unique_name,
+            persistent_id,
             &factories.inner_factories,
             &factories.inner_factories,
             Box::new(DiffGroupTransformer::new(
@@ -252,7 +252,7 @@ where
     /// See [`Stream::topk_rank_custom_order`].
     pub fn dyn_topk_rank_custom_order<V2, OV>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TopKRankCustomOrdFactories<K, V2, OV>,
         k: usize,
         encode: Box<dyn Fn(&V, &mut V2)>,
@@ -272,12 +272,12 @@ where
             }),
         )
         .set_persistent_id(
-            unique_name
+            persistent_id
                 .map(|name| format!("{name}[ordered]"))
                 .as_deref(),
         )
         .dyn_group_transform(
-            unique_name,
+            persistent_id,
             &factories.inner_factories,
             &factories.output_factories,
             Box::new(DiffGroupTransformer::new(
@@ -295,7 +295,7 @@ where
     /// See [`Stream::topk_dense_rank_custom_order`].
     pub fn dyn_topk_dense_rank_custom_order<V2, OV>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TopKRankCustomOrdFactories<K, V2, OV>,
         k: usize,
         encode: Box<dyn Fn(&V, &mut V2)>,
@@ -315,12 +315,12 @@ where
             }),
         )
         .set_persistent_id(
-            unique_name
+            persistent_id
                 .map(|name| format!("{name}[ordered]"))
                 .as_deref(),
         )
         .dyn_group_transform(
-            unique_name,
+            persistent_id,
             &factories.inner_factories,
             &factories.output_factories,
             Box::new(DiffGroupTransformer::new(
@@ -338,7 +338,7 @@ where
     /// See [`Stream::topk_row_number_custom_order`].
     pub fn dyn_topk_row_number_custom_order<V2, OV>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TopKRankCustomOrdFactories<K, V2, OV>,
         k: usize,
         encode: Box<dyn Fn(&V, &mut V2)>,
@@ -357,12 +357,12 @@ where
             }),
         )
         .set_persistent_id(
-            unique_name
+            persistent_id
                 .map(|name| format!("{name}[ordered]"))
                 .as_deref(),
         )
         .dyn_group_transform(
-            unique_name,
+            persistent_id,
             &factories.inner_factories,
             &factories.output_factories,
             Box::new(DiffGroupTransformer::new(

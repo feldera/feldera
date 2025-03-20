@@ -352,7 +352,7 @@ where
         F: Fn(&V) -> A + Clone + 'static,
         OF: Fn(A) -> OV + Clone + 'static,
     {
-        self.aggregate_linear_postprocess_retain_keys_named::<F, A, OF, OV, TS, RK>(
+        self.aggregate_linear_postprocess_retain_keys_persistent::<F, A, OF, OV, TS, RK>(
             None,
             waterline,
             retain_key_func,
@@ -362,9 +362,9 @@ where
     }
 
     #[track_caller]
-    pub fn aggregate_linear_postprocess_retain_keys_named<F, A, OF, OV, TS, RK>(
+    pub fn aggregate_linear_postprocess_retain_keys_persistent<F, A, OF, OV, TS, RK>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         waterline: &Stream<RootCircuit, TypedBox<TS, DynData>>,
         retain_key_func: RK,
         f: F,
@@ -387,7 +387,7 @@ where
 
         self.inner()
             .dyn_aggregate_linear_retain_keys_mono(
-                unique_name,
+                persistent_id,
                 &factories,
                 &waterline.inner_data(),
                 Box::new(move |ts| {

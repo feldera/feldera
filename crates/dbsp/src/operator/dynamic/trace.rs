@@ -383,7 +383,7 @@ where
                 let circuit = self.circuit();
 
                 circuit.region("trace", || {
-                    let unique_name = self.get_persistent_id();
+                    let persistent_id = self.get_persistent_id();
                     let mut z1 = Z1Trace::new(
                         output_factories,
                         batch_factories,
@@ -392,8 +392,8 @@ where
                         bounds.clone(),
                     );
                     let replay_stream = z1.set_delta_stream(self);
-                    let (delayed_trace, z1feedback) = circuit.add_feedback_named(
-                        unique_name
+                    let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
+                        persistent_id
                             .map(|name| format!("{name}.integral"))
                             .as_deref(),
                         z1,
@@ -556,7 +556,7 @@ where
                 let circuit = self.circuit();
                 let bounds = bounds.clone();
 
-                let unique_name = self.get_persistent_id();
+                let persistent_id = self.get_persistent_id();
 
                 let mut z1 = Z1Trace::new(
                     input_factories,
@@ -574,8 +574,8 @@ where
                             export,
                         },
                         z1feedback,
-                    ) = circuit.add_feedback_with_export_named(
-                        unique_name
+                    ) = circuit.add_feedback_with_export_persistent(
+                        persistent_id
                             .map(|name| format!("{name}.integral"))
                             .as_deref(),
                         z1,
@@ -697,7 +697,7 @@ where
 pub trait TraceFeedback: Circuit {
     fn add_integrate_trace_feedback<T>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &T::Factories,
         bounds: TraceBounds<T::Key, T::Val>,
     ) -> TraceFeedbackConnector<Self, T>
@@ -705,8 +705,8 @@ pub trait TraceFeedback: Circuit {
         T: Trace<Time = ()> + Clone,
     {
         // We'll give `Z1Trace` a real name inside `TraceFeedbackConnector::connect`, where we have the name of the input stream.
-        let (ExportStream { local, export }, feedback) = self.add_feedback_with_export_named(
-            unique_name
+        let (ExportStream { local, export }, feedback) = self.add_feedback_with_export_persistent(
+            persistent_id
                 .map(|name| format!("{name}.integral"))
                 .as_deref(),
             Z1Trace::new(

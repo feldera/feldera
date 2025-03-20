@@ -100,7 +100,7 @@ where
     /// collection.
     pub fn update_set<B>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &UpdateSetFactories<<C as WithClock>::Time, B>,
     ) -> Stream<C, B>
     where
@@ -135,8 +135,8 @@ where
         circuit.region("update_set", || {
             let bounds = <TraceBounds<K, DynUnit>>::unbounded();
 
-            let (delayed_trace, z1feedback) = circuit.add_feedback_named(
-                unique_name
+            let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
+                persistent_id
                     .map(|name| format!("{name}.integral"))
                     .as_deref(),
                 Z1Trace::new(
@@ -213,7 +213,7 @@ where
     /// collection.
     pub fn upsert<B>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &UpsertFactories<<C as WithClock>::Time, B>,
     ) -> Stream<C, B>
     where
@@ -248,8 +248,8 @@ where
         circuit.region("upsert", || {
             let bounds = <TraceBounds<K, V>>::unbounded();
 
-            let (delayed_trace, z1feedback) = circuit.add_feedback_named(
-                unique_name
+            let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
+                persistent_id
                     .map(|name| format!("{name}.integral"))
                     .as_deref(),
                 Z1Trace::new(

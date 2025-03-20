@@ -53,10 +53,10 @@ where
     where
         F: CmpFunc<V>,
     {
-        self.topk_custom_order_named::<F>(None, k)
+        self.topk_custom_order_persistent::<F>(None, k)
     }
 
-    pub fn topk_custom_order_named<F>(&self, unique_name: Option<&str>, k: usize) -> Self
+    pub fn topk_custom_order_persistent<F>(&self, persistent_id: Option<&str>, k: usize) -> Self
     where
         F: CmpFunc<V>,
     {
@@ -69,7 +69,7 @@ where
 
         self.inner()
             .dyn_topk_custom_order_mono(
-                unique_name,
+                persistent_id,
                 &factories,
                 k,
                 Box::new(
@@ -123,12 +123,12 @@ where
         EF: Fn(&V, &V) -> bool + 'static,
         OF: Fn(i64, &V) -> OV + 'static,
     {
-        self.topk_rank_custom_order_named::<CF, EF, OF, OV>(None, k, rank_eq_func, output_func)
+        self.topk_rank_custom_order_persistent::<CF, EF, OF, OV>(None, k, rank_eq_func, output_func)
     }
 
-    pub fn topk_rank_custom_order_named<CF, EF, OF, OV>(
+    pub fn topk_rank_custom_order_persistent<CF, EF, OF, OV>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         k: usize,
         rank_eq_func: EF,
         output_func: OF,
@@ -147,7 +147,7 @@ where
 
         self.inner()
             .dyn_topk_rank_custom_order_mono(
-                unique_name,
+                persistent_id,
                 &factories,
                 k,
                 Box::new(
@@ -187,7 +187,7 @@ where
         EF: Fn(&V, &V) -> bool + 'static,
         OF: Fn(i64, &V) -> OV + 'static,
     {
-        self.topk_dense_rank_custom_order_named::<CF, EF, OF, OV>(
+        self.topk_dense_rank_custom_order_persistent::<CF, EF, OF, OV>(
             None,
             k,
             rank_eq_func,
@@ -195,9 +195,9 @@ where
         )
     }
 
-    pub fn topk_dense_rank_custom_order_named<CF, EF, OF, OV>(
+    pub fn topk_dense_rank_custom_order_persistent<CF, EF, OF, OV>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         k: usize,
         rank_eq_func: EF,
         output_func: OF,
@@ -216,7 +216,7 @@ where
 
         self.inner()
             .dyn_topk_dense_rank_custom_order_mono(
-                unique_name,
+                persistent_id,
                 &factories,
                 k,
                 Box::new(
@@ -266,12 +266,12 @@ where
         OV: DBData,
         OF: Fn(i64, &V) -> OV + 'static,
     {
-        self.topk_row_number_custom_order_named::<CF, OF, OV>(None, k, output_func)
+        self.topk_row_number_custom_order_persistent::<CF, OF, OV>(None, k, output_func)
     }
 
-    pub fn topk_row_number_custom_order_named<CF, OF, OV>(
+    pub fn topk_row_number_custom_order_persistent<CF, OF, OV>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         k: usize,
         output_func: OF,
     ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
@@ -288,7 +288,7 @@ where
 
         self.inner()
             .dyn_topk_row_number_custom_order_mono(
-                unique_name,
+                persistent_id,
                 &factories,
                 k,
                 Box::new(

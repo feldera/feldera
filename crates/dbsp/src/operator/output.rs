@@ -30,12 +30,12 @@ where
     /// the [`OutputHandle`] API.
     #[track_caller]
     pub fn output(&self) -> OutputHandle<T> {
-        self.output_named(None)
+        self.output_persistent(None)
     }
 
     #[track_caller]
-    pub fn output_named(&self, unique_name: Option<&str>) -> OutputHandle<T> {
-        let (output, output_handle) = Output::new(unique_name);
+    pub fn output_persistent(&self, persistent_id: Option<&str>) -> OutputHandle<T> {
+        let (output, output_handle) = Output::new(persistent_id);
         self.circuit().add_sink(output, self);
         output_handle
     }
@@ -276,7 +276,7 @@ where
 /// Sink operator that stores the contents of its input stream in
 /// an `OutputHandle`.
 struct Output<T> {
-    unique_name: Option<String>,
+    persistent_id: Option<String>,
     mailbox: Mailbox<Option<T>>,
 }
 
@@ -284,12 +284,12 @@ impl<T> Output<T>
 where
     T: Clone + Send + 'static,
 {
-    fn new(unique_name: Option<&str>) -> (Self, OutputHandle<T>) {
+    fn new(persistent_id: Option<&str>) -> (Self, OutputHandle<T>) {
         let handle = OutputHandle::new();
         let mailbox = handle.mailbox(Runtime::worker_index()).clone();
 
         let output = Self {
-            unique_name: unique_name.map(str::to_string),
+            persistent_id: persistent_id.map(str::to_string),
             mailbox,
         };
 

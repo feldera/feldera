@@ -289,13 +289,13 @@ impl Catalog {
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
-        self.register_output_zset_named(None, stream, schema)
+        self.register_output_zset_persistent(None, stream, schema)
     }
 
     /// Add an output stream of Z-sets to the catalog.
-    pub fn register_output_zset_named<Z, D>(
+    pub fn register_output_zset_persistent<Z, D>(
         &mut self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         stream: Stream<RootCircuit, Z>,
         schema: &str,
     ) where
@@ -315,7 +315,7 @@ impl Catalog {
         let name = schema.name.clone();
 
         // Create handle for the stream itself.
-        let delta_handle = stream.output_named(unique_name);
+        let delta_handle = stream.output_persistent(persistent_id);
 
         let handles = OutputCollectionHandles {
             key_schema: None,
@@ -347,12 +347,12 @@ impl Catalog {
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
-        self.register_materialized_output_zset_named(None, stream, schema)
+        self.register_materialized_output_zset_persistent(None, stream, schema)
     }
 
-    pub fn register_materialized_output_zset_named<Z, D>(
+    pub fn register_materialized_output_zset_persistent<Z, D>(
         &mut self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         stream: Stream<RootCircuit, Z>,
         schema: &str,
     ) where
@@ -378,7 +378,7 @@ impl Catalog {
         let stream = stream.shard();
 
         // Create handle for the stream itself.
-        let delta_handle = stream.output_named(unique_name);
+        let delta_handle = stream.output_persistent(persistent_id);
 
         let integrate_handle = stream
             .integrate_trace()
@@ -462,12 +462,12 @@ impl Catalog {
         K: DBData + Send + Sync + From<KD> + Default,
         V: DBData + Send + Sync + From<VD> + Default,
     {
-        self.register_materialized_output_map_named(None, stream, schema)
+        self.register_materialized_output_map_persistent(None, stream, schema)
     }
 
-    pub fn register_materialized_output_map_named<K, KD, V, VD>(
+    pub fn register_materialized_output_map_persistent<K, KD, V, VD>(
         &mut self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         schema: &str,
     ) where
@@ -498,7 +498,7 @@ impl Catalog {
                 .as_deref(),
         );
 
-        let delta_handle = delta.output_named(unique_name);
+        let delta_handle = delta.output_persistent(persistent_id);
 
         let integrate_handle = delta
             .integrate_trace()

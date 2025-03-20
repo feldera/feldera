@@ -185,7 +185,7 @@ where
     /// collection.
     pub fn input_upsert<B>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &InputUpsertFactories<<C as WithClock>::Time, B>,
         patch_func: PatchFunc<V, U>,
     ) -> Stream<C, B>
@@ -229,8 +229,8 @@ where
                 bounds.clone(),
             );
 
-            let (delayed_trace, z1feedback) = circuit.add_feedback_named(
-                unique_name
+            let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
+                persistent_id
                     .map(|name| format!("{name}.integral"))
                     .as_deref(),
                 z1,

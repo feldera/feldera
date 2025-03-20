@@ -95,13 +95,13 @@ where
         PF: Fn(Option<&V>) -> VL + 'static,
         OF: Fn(&V, &VL) -> OV + 'static,
     {
-        self.lag_custom_order_named::<VL, OV, PF, CF, OF>(None, offset, project, output)
+        self.lag_custom_order_persistent::<VL, OV, PF, CF, OF>(None, offset, project, output)
     }
 
     #[allow(clippy::type_complexity)]
-    fn lag_custom_order_named<VL, OV, PF, CF, OF>(
+    fn lag_custom_order_persistent<VL, OV, PF, CF, OF>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         offset: isize,
         project: PF,
         output: OF,
@@ -122,7 +122,7 @@ where
 
         self.inner()
             .dyn_lag_custom_order_mono(
-                unique_name,
+                persistent_id,
                 &factories,
                 offset,
                 Box::new(move |v1, v2: &mut DynData| unsafe {

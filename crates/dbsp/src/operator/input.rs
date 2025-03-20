@@ -462,13 +462,13 @@ impl RootCircuit {
         U: DBData + Erase<DynData>,
         PF: Fn(&mut V, &U) + 'static,
     {
-        self.add_input_map_named(None, patch_func)
+        self.add_input_map_persistent(None, patch_func)
     }
 
     #[track_caller]
-    pub fn add_input_map_named<K, V, U, PF>(
+    pub fn add_input_map_persistent<K, V, U, PF>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         patch_func: PF,
     ) -> (
         Stream<RootCircuit, OrdIndexedZSet<K, V>>,
@@ -482,7 +482,7 @@ impl RootCircuit {
     {
         let factories = AddInputMapFactories::new::<K, V, U>();
         let (stream, handle) = self.dyn_add_input_map_mono(
-            unique_name,
+            persistent_id,
             &factories,
             Box::new(move |v: &mut DynData, u: &DynData| unsafe {
                 patch_func(v.downcast_mut::<V>(), u.downcast::<U>())

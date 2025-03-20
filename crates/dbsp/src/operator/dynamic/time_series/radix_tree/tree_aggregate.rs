@@ -105,7 +105,7 @@ where
     /// thread.
     pub fn tree_aggregate<Acc, Out>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TreeAggregateFactories<TS, Z, OrdRadixTree<TS, Acc>, Acc>,
         aggregator: &dyn DynAggregator<Z::Val, (), Z::R, Accumulator = Acc, Output = Out>,
     ) -> Stream<C, OrdRadixTree<TS, Acc>>
@@ -114,7 +114,7 @@ where
         Out: DataTrait + ?Sized,
     {
         self.tree_aggregate_generic::<Acc, Out, OrdRadixTree<TS, Acc>>(
-            unique_name,
+            persistent_id,
             factories,
             aggregator,
         )
@@ -123,7 +123,7 @@ where
     /// Like [`Self::tree_aggregate`], but can return any batch type.
     pub fn tree_aggregate_generic<Acc, Out, O>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &TreeAggregateFactories<TS, Z, O, Acc>,
         aggregator: &dyn DynAggregator<Z::Val, (), DynZWeight, Accumulator = Acc, Output = Out>,
     ) -> Stream<C, O>
@@ -155,7 +155,7 @@ where
             // ```
 
             let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(
-                unique_name,
+                persistent_id,
                 &factories.output_factories,
                 <TraceBounds<O::Key, O::Val>>::unbounded(),
             );

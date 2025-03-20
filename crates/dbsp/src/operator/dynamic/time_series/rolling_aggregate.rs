@@ -365,7 +365,7 @@ where
     /// See [`Stream::partitioned_rolling_aggregate_with_waterline`].
     pub fn dyn_partitioned_rolling_aggregate_with_waterline<PK, TS, V, Acc, Out>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &PartitionedRollingAggregateWithWaterlineFactories<PK, TS, V, Acc, Out, B>,
         waterline: &Stream<RootCircuit, Box<DynDataTyped<TS>>>,
         partition_func: Box<dyn PartitionFunc<B::Val, PK, V>>,
@@ -437,7 +437,7 @@ where
                         }),
                     )
                     .set_persistent_id(
-                        unique_name
+                        persistent_id
                             .map(|name| format!("{name}[partitioned_window]"))
                             .as_deref(),
                     );
@@ -452,13 +452,13 @@ where
                         }),
                     )
                     .set_persistent_id(
-                        unique_name
+                        persistent_id
                             .map(|name| format!("{name}[partitioned]"))
                             .as_deref(),
                     );
 
                 partitioned_self.dyn_partitioned_rolling_aggregate_inner(
-                    unique_name,
+                    persistent_id,
                     &factories.rolling_aggregate_factories,
                     &partitioned_window,
                     aggregator,
@@ -472,7 +472,7 @@ where
     /// batch type.
     pub fn dyn_partitioned_rolling_aggregate<PK, TS, V, Acc, Out>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &PartitionedRollingAggregateFactories<
             TS,
             V,
@@ -522,13 +522,13 @@ where
                     }),
                 )
                 .set_persistent_id(
-                    unique_name
+                    persistent_id
                         .map(|name| format!("{name}[partitioned]"))
                         .as_deref(),
                 );
 
             partitioned.dyn_partitioned_rolling_aggregate_inner(
-                unique_name,
+                persistent_id,
                 factories,
                 &partitioned,
                 aggregator,
@@ -541,7 +541,7 @@ where
     /// See [`Stream::partitioned_rolling_aggregate_linear`].
     pub fn dyn_partitioned_rolling_aggregate_linear<PK, TS, V, A, O>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &PartitionedRollingAggregateLinearFactories<
             TS,
             V,
@@ -574,7 +574,7 @@ where
             output_func,
         );
         self.dyn_partitioned_rolling_aggregate::<PK, TS, V, _, _>(
-            unique_name,
+            persistent_id,
             &factories.rolling_aggregate_factories,
             partition_func,
             &aggregator,
@@ -584,7 +584,7 @@ where
 
     pub fn dyn_partitioned_rolling_average<PK, TS, V, W>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &PartitionedRollingAverageFactories<
             TS,
             V,
@@ -609,7 +609,7 @@ where
     {
         let weight_factory = factories.weight_factory;
         self.dyn_partitioned_rolling_aggregate_linear(
-            unique_name,
+            persistent_id,
             &factories.aggregate_factories,
             partition_func,
             Box::new(move |v: &V, w: &B::R, avg: &mut DynAverage<W, B::R>| {
@@ -632,7 +632,7 @@ impl<B> Stream<RootCircuit, B> {
     #[doc(hidden)]
     pub fn dyn_partitioned_rolling_aggregate_inner<TS, V, Acc, Out, O>(
         &self,
-        unique_name: Option<&str>,
+        partition_id: Option<&str>,
         factories: &PartitionedRollingAggregateFactories<TS, V, Acc, Out, B, O>,
         self_window: &Self,
         aggregator: &dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>,
@@ -652,7 +652,7 @@ impl<B> Stream<RootCircuit, B> {
         let stream_window = self_window.dyn_shard(&factories.input_factories);
 
         let partitioned_tree_aggregate_name =
-            unique_name.map(|name| format!("{name}[tree_aggregate]"));
+            partition_id.map(|name| format!("{name}[tree_aggregate]"));
 
         // Build the radix tree over the bounded window.
         let tree = stream_window
@@ -670,7 +670,7 @@ impl<B> Stream<RootCircuit, B> {
         bounds.add_val_bound(bound);
 
         let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(
-            unique_name,
+            partition_id,
             &factories.output_factories,
             bounds,
         );

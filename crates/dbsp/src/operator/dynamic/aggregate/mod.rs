@@ -279,7 +279,7 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
     #[allow(clippy::type_complexity)]
     pub fn dyn_aggregate_mono(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &IncAggregateFactories<MonoIndexedZSet, MonoIndexedZSet, ()>,
         aggregator: &dyn DynAggregator<
             DynData,
@@ -289,17 +289,17 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
             Output = DynData,
         >,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
-        self.dyn_aggregate(unique_name, factories, aggregator)
+        self.dyn_aggregate(persistent_id, factories, aggregator)
     }
 
     pub fn dyn_aggregate_linear_mono(
         &self,
-        unique_name: Option<&str>,
+        persisent_id: Option<&str>,
         factories: &IncAggregateLinearFactories<MonoIndexedZSet, DynWeight, MonoIndexedZSet, ()>,
         agg_func: Box<dyn Fn(&DynData, &DynData, &DynZWeight, &mut DynWeight)>,
         out_func: Box<dyn WeightedCountOutFunc<DynWeight, DynData>>,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
-        self.dyn_aggregate_linear_generic(unique_name, factories, agg_func, out_func)
+        self.dyn_aggregate_linear_generic(persisent_id, factories, agg_func, out_func)
     }
 }
 
@@ -307,7 +307,7 @@ impl Stream<NestedCircuit, MonoIndexedZSet> {
     #[allow(clippy::type_complexity)]
     pub fn dyn_aggregate_mono(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &IncAggregateFactories<
             MonoIndexedZSet,
             MonoIndexedZSet,
@@ -321,12 +321,12 @@ impl Stream<NestedCircuit, MonoIndexedZSet> {
             Output = DynData,
         >,
     ) -> Stream<NestedCircuit, MonoIndexedZSet> {
-        self.dyn_aggregate(unique_name, factories, aggregator)
+        self.dyn_aggregate(persistent_id, factories, aggregator)
     }
 
     pub fn dyn_aggregate_linear_mono(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &IncAggregateLinearFactories<
             MonoIndexedZSet,
             DynWeight,
@@ -336,7 +336,7 @@ impl Stream<NestedCircuit, MonoIndexedZSet> {
         agg_func: Box<dyn Fn(&DynData, &DynData, &DynZWeight, &mut DynWeight)>,
         out_func: Box<dyn WeightedCountOutFunc<DynWeight, DynData>>,
     ) -> Stream<NestedCircuit, MonoIndexedZSet> {
-        self.dyn_aggregate_linear_generic(unique_name, factories, agg_func, out_func)
+        self.dyn_aggregate_linear_generic(persistent_id, factories, agg_func, out_func)
     }
 }
 
@@ -449,7 +449,7 @@ where
     /// Like [`Self::dyn_aggregate`], but can return any batch type.
     pub fn dyn_aggregate_generic<Acc, Out, O>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &IncAggregateFactories<Z, O, C::Time>,
         aggregator: &dyn DynAggregator<
             Z::Val,
@@ -493,7 +493,7 @@ where
                 &stream.dyn_trace(&factories.trace_factories, &factories.input_factories),
             )
             .mark_sharded()
-            .upsert::<O>(unique_name, &factories.upsert_factories)
+            .upsert::<O>(persistent_id, &factories.upsert_factories)
             .mark_sharded();
 
         output
@@ -502,7 +502,7 @@ where
     /// See [`Stream::aggregate_linear`].
     pub fn dyn_aggregate_linear<A>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &IncAggregateLinearFactories<Z, A, OrdIndexedZSet<Z::Key, A>, C::Time>,
         f: Box<dyn Fn(&Z::Key, &Z::Val, &Z::R, &mut A)>,
     ) -> Stream<C, OrdIndexedZSet<Z::Key, A>>
@@ -511,7 +511,7 @@ where
         A: WeightTrait + ?Sized,
     {
         self.dyn_aggregate_linear_generic(
-            unique_name,
+            persistent_id,
             factories,
             f,
             Box::new(|w, out| w.move_to(out)),
@@ -521,7 +521,7 @@ where
     /// Like [`Self::dyn_aggregate_linear`], but can return any batch type.
     pub fn dyn_aggregate_linear_generic<A, O>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &IncAggregateLinearFactories<Z, A, O, C::Time>,
         agg_func: Box<dyn Fn(&Z::Key, &Z::Val, &Z::R, &mut A)>,
         out_func: Box<dyn WeightedCountOutFunc<A, O::Val>>,
@@ -533,12 +533,12 @@ where
     {
         self.dyn_weigh(&factories.aggregate_factories.input_factories, agg_func)
             .set_persistent_id(
-                unique_name
+                persistent_id
                     .map(|name| format!("{name}[weighted]"))
                     .as_deref(),
             )
             .dyn_aggregate_generic(
-                unique_name,
+                persistent_id,
                 &factories.aggregate_factories,
                 &WeightedCount::new(
                     factories.out_factory,
@@ -614,7 +614,7 @@ where
 impl Stream<RootCircuit, MonoIndexedZSet> {
     pub fn dyn_aggregate_linear_retain_keys_mono(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &IncAggregateLinearFactories<MonoIndexedZSet, DynWeight, MonoIndexedZSet, ()>,
         waterline: &Stream<RootCircuit, Box<DynData>>,
         retain_key_func: Box<dyn Fn(&DynData) -> Filter<DynData>>,
@@ -623,7 +623,7 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
     ) -> Stream<RootCircuit, MonoIndexedZSet>
 where {
         self.dyn_aggregate_linear_retain_keys_generic(
-            unique_name,
+            persistent_id,
             factories,
             waterline,
             retain_key_func,
@@ -639,7 +639,7 @@ where
 {
     pub fn dyn_aggregate_linear_retain_keys_generic<A, O, TS>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &IncAggregateLinearFactories<Z, A, O, ()>,
         waterline: &Stream<RootCircuit, Box<TS>>,
         retain_key_func: Box<dyn Fn(&TS) -> Filter<Z::Key>>,
@@ -658,12 +658,12 @@ where
 
         weighted
             .set_persistent_id(
-                unique_name
+                persistent_id
                     .map(|name| format!("{name}[weighted]"))
                     .as_deref(),
             )
             .dyn_aggregate_generic(
-                unique_name,
+                persistent_id,
                 &factories.aggregate_factories,
                 &WeightedCount::new(
                     factories.out_factory,

@@ -202,7 +202,7 @@ where
     /// [`Stream::partitioned_rolling_aggregate`].
     pub fn partitioned_tree_aggregate<TS, V, Acc, Out>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &OrdPartitionedTreeAggregateFactories<TS, V, Z, Acc>,
         aggregator: &dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>,
     ) -> OrdPartitionedRadixTreeStream<Z::Key, TS, Acc>
@@ -214,7 +214,7 @@ where
         Out: DataTrait + ?Sized,
     {
         self.partitioned_tree_aggregate_generic::<TS, V, Acc, Out, OrdPartitionedRadixTree<Z::Key, TS, Acc>>(
-            unique_name,
+            persistent_id,
             factories,
             aggregator,
         )
@@ -227,7 +227,7 @@ where
     /// [`Stream::partitioned_rolling_aggregate`].
     pub fn partitioned_tree_aggregate_generic<TS, V, Acc, Out, O>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         factories: &PartitionedTreeAggregateFactories<TS, V, Z, O, Acc>,
         aggregator: &dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>,
     ) -> Stream<RootCircuit, O>
@@ -270,7 +270,7 @@ where
                 let bounds = <TraceBounds<O::Key, O::Val>>::unbounded();
 
                 let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(
-                    unique_name,
+                    persistent_id,
                     &factories.output_factories,
                     bounds,
                 );

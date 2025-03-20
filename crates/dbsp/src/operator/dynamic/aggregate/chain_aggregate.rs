@@ -18,14 +18,14 @@ use crate::{
 impl Stream<RootCircuit, MonoIndexedZSet> {
     pub fn dyn_chain_aggregate_mono(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         input_factories: &<MonoIndexedZSet as BatchReader>::Factories,
         output_factories: &<MonoIndexedZSet as BatchReader>::Factories,
         finit: Box<dyn Fn(&mut DynData, &DynData, ZWeight)>,
         fupdate: Box<dyn Fn(&mut DynData, &DynData, ZWeight)>,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
         self.dyn_chain_aggregate(
-            unique_name,
+            persistent_id,
             input_factories,
             output_factories,
             finit,
@@ -41,7 +41,7 @@ where
     /// See [Stream::chain_aggregate].
     pub fn dyn_chain_aggregate<OZ>(
         &self,
-        unique_name: Option<&str>,
+        persistent_id: Option<&str>,
         input_factories: &Z::Factories,
         output_factories: &OZ::Factories,
         finit: Box<dyn Fn(&mut OZ::Val, &Z::Val, ZWeight)>,
@@ -66,7 +66,7 @@ where
         let bounds = TraceBounds::unbounded();
 
         let feedback = circuit.add_integrate_trace_feedback::<Spine<OZ>>(
-            unique_name,
+            persistent_id,
             output_factories,
             bounds,
         );
