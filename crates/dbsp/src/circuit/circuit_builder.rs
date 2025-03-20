@@ -891,7 +891,7 @@ pub trait Node {
     /// * `scope` - the scope whose clock is ending.
     fn clock_end(&mut self, scope: Scope);
 
-    fn init(&mut self, _gid: &GlobalNodeId) {}
+    fn init(&mut self) {}
 
     fn metrics(&self) {}
 
@@ -1956,7 +1956,7 @@ where
     where
         N: Node + 'static,
     {
-        node.init(&self.global_node_id);
+        node.init();
         self.nodes
             .borrow_mut()
             .push(RefCell::new(Box::new(node) as Box<dyn Node>));
@@ -3400,8 +3400,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.init(gid);
+    fn init(&mut self) {
+        self.operator.init(&self.id);
     }
 
     fn metrics(&self) {
@@ -3496,8 +3496,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.init(gid);
+    fn init(&mut self) {
+        self.operator.init(&self.id);
     }
 
     fn metrics(&self) {
@@ -3606,8 +3606,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.init(gid);
+    fn init(&mut self) {
+        self.operator.init(&self.id);
     }
 
     fn metrics(&self) {
@@ -3708,8 +3708,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.init(gid);
+    fn init(&mut self) {
+        self.operator.init(&self.id);
     }
 
     fn metrics(&self) {
@@ -3868,8 +3868,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.init(gid);
+    fn init(&mut self) {
+        self.operator.init(&self.id);
     }
 
     fn metrics(&self) {
@@ -4028,8 +4028,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.init(gid);
+    fn init(&mut self) {
+        self.operator.init(&self.id);
     }
 
     fn metrics(&self) {
@@ -4162,8 +4162,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.init(gid);
+    fn init(&mut self) {
+        self.operator.init(&self.id);
     }
 
     fn metrics(&self) {
@@ -4317,8 +4317,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.init(gid);
+    fn init(&mut self) {
+        self.operator.init(&self.id);
     }
 
     fn metrics(&self) {
@@ -4457,8 +4457,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.init(gid);
+    fn init(&mut self) {
+        self.operator.init(&self.id);
     }
 
     fn metrics(&self) {
@@ -4583,8 +4583,8 @@ where
         self.operator.borrow_mut().clock_end(scope);
     }
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.borrow_mut().init(gid);
+    fn init(&mut self) {
+        self.operator.borrow_mut().init(&self.id);
     }
 
     fn metrics(&self) {
@@ -4690,8 +4690,8 @@ where
 
     fn clock_end(&mut self, _scope: Scope) {}
 
-    fn init(&mut self, gid: &GlobalNodeId) {
-        self.operator.borrow_mut().init(gid);
+    fn init(&mut self) {
+        self.operator.borrow_mut().init(&self.id);
     }
 
     fn metrics(&self) {
