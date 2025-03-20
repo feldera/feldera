@@ -15,6 +15,7 @@ use minitrace::local::LocalSpan;
 use minitrace::Span;
 use std::fs::create_dir_all;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{
     collections::HashSet,
     error::Error as StdError,
@@ -384,17 +385,19 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::DumpProfile) => {
+                    Ok(Command::DumpProfile { runtime_elapsed }) => {
                         if status_sender
-                            .send(Ok(Response::ProfileDump(profiler.dump_profile())))
+                            .send(Ok(Response::ProfileDump(
+                                profiler.dump_profile(runtime_elapsed),
+                            )))
                             .is_err()
                         {
                             return;
                         }
                     }
-                    Ok(Command::RetrieveProfile) => {
+                    Ok(Command::RetrieveProfile { runtime_elapsed }) => {
                         if status_sender
-                            .send(Ok(Response::Profile(profiler.profile())))
+                            .send(Ok(Response::Profile(profiler.profile(runtime_elapsed))))
                             .is_err()
                         {
                             return;
@@ -475,8 +478,8 @@ impl Runtime {
 enum Command {
     Step(Arc<Span>),
     EnableProfiler,
-    DumpProfile,
-    RetrieveProfile,
+    DumpProfile { runtime_elapsed: Duration },
+    RetrieveProfile { runtime_elapsed: Duration },
     Commit(PathBuf),
     Restore(PathBuf),
 }
@@ -495,6 +498,10 @@ enum Response {
 pub struct DBSPHandle {
     /// Time when the handle was created.
     start_time: Instant,
+
+    /// Time elapsed while the circuit is executing a step, multiplied by the
+    /// number of foreground and background threads.
+    runtime_elapsed: Duration,
 
     /// The underlying runtime.
     ///
@@ -530,6 +537,7 @@ impl DBSPHandle {
             command_senders,
             status_receivers,
             checkpointer,
+            runtime_elapsed: Duration::ZERO,
         })
     }
 
@@ -608,9 +616,27 @@ impl DBSPHandle {
     /// Evaluate the circuit for one clock cycle.
     pub fn step(&mut self) -> Result<(), DbspError> {
         counter!("feldera.dbsp.step").increment(1);
+        let start = Instant::now();
         let span = Arc::new(Span::root("step", SpanContext::random()));
         let _guard = span.set_local_parent();
-        self.broadcast_command(Command::Step(span), |_, _| {})
+        let result = self.broadcast_command(Command::Step(span), |_, _| {});
+        self.runtime_elapsed += start.elapsed()
+            * self
+                .runtime
+                .as_ref()
+                .unwrap()
+                .runtime()
+                .layout()
+                .local_workers()
+                .len() as u32
+            * 2;
+        result
+    }
+
+    /// Returns the time elapsed while the circuit is executing a step,
+    /// multiplied by the number of foreground and background threads.
+    pub fn runtime_elapsed(&self) -> Duration {
+        self.runtime_elapsed
     }
 
     /// Fingerprint of this circuit.
@@ -710,11 +736,16 @@ impl DBSPHandle {
     /// only memory usage details are reported.
     pub fn graph_profile(&mut self) -> Result<GraphProfile, DbspError> {
         let mut worker_graphs = vec![Default::default(); self.status_receivers.len()];
-        self.broadcast_command(Command::DumpProfile, |worker, resp| {
-            if let Response::ProfileDump(prof) = resp {
-                worker_graphs[worker] = prof;
-            }
-        })?;
+        self.broadcast_command(
+            Command::DumpProfile {
+                runtime_elapsed: self.runtime_elapsed(),
+            },
+            |worker, resp| {
+                if let Response::ProfileDump(prof) = resp {
+                    worker_graphs[worker] = prof;
+                }
+            },
+        )?;
         Ok(GraphProfile {
             elapsed_time: self.start_time.elapsed(),
             worker_graphs,
@@ -724,11 +755,16 @@ impl DBSPHandle {
     pub fn retrieve_profile(&mut self) -> Result<DbspProfile, DbspError> {
         let mut profiles = vec![Default::default(); self.status_receivers.len()];
 
-        self.broadcast_command(Command::RetrieveProfile, |worker, resp| {
-            if let Response::Profile(prof) = resp {
-                profiles[worker] = prof;
-            }
-        })?;
+        self.broadcast_command(
+            Command::RetrieveProfile {
+                runtime_elapsed: self.runtime_elapsed(),
+            },
+            |worker, resp| {
+                if let Response::Profile(prof) = resp {
+                    profiles[worker] = prof;
+                }
+            },
+        )?;
 
         Ok(DbspProfile::new(profiles))
     }
