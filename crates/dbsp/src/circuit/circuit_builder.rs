@@ -2638,22 +2638,22 @@ where
         f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
     ) -> Result<(), DbspError> {
         for node in self.inner().nodes.borrow().iter() {
-            f(node.borrow().as_ref());
+            f(node.borrow().as_ref())?;
             node.borrow().map_nodes_recursive(f)?;
         }
         Ok(())
     }
 
-    /// Apply `f` to all immediate children of `self`.
-    pub(crate) fn map_nodes(
-        &self,
-        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
-    ) -> Result<(), DbspError> {
-        for node in self.inner().nodes.borrow().iter() {
-            f(node.borrow().as_ref())?;
-        }
-        Ok(())
-    }
+    // /// Apply `f` to all immediate children of `self`.
+    // pub(crate) fn map_nodes(
+    //     &self,
+    //     f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    // ) -> Result<(), DbspError> {
+    //     for node in self.inner().nodes.borrow().iter() {
+    //         f(node.borrow().as_ref())?;
+    //     }
+    //     Ok(())
+    // }
 
     /// Recursively apply `f` to all nodes in `self` and its children mutably.
     pub(crate) fn map_nodes_recursive_mut(
