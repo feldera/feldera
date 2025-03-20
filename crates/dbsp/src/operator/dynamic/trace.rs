@@ -384,20 +384,22 @@ where
 
                 circuit.region("trace", || {
                     let persistent_id = self.get_persistent_id();
-                    let mut z1 = Z1Trace::new(
+                    let z1 = Z1Trace::new(
                         output_factories,
                         batch_factories,
                         false,
                         circuit.root_scope(),
                         bounds.clone(),
                     );
-                    let replay_stream = z1.set_delta_stream(self);
                     let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
                         persistent_id
                             .map(|name| format!("{name}.integral"))
                             .as_deref(),
                         z1,
                     );
+
+                    let replay_stream = z1feedback.operator_mut().set_delta_stream(self);
+
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<FileValSpine<B, C>, B, C>>::new(
                             output_factories,
@@ -558,16 +560,15 @@ where
 
                 let persistent_id = self.get_persistent_id();
 
-                let mut z1 = Z1Trace::new(
-                    input_factories,
-                    input_factories,
-                    true,
-                    circuit.root_scope(),
-                    bounds,
-                );
-                let replay_stream = z1.set_delta_stream(self);
-
                 circuit.region("integrate_trace", || {
+                    let z1 = Z1Trace::new(
+                        input_factories,
+                        input_factories,
+                        true,
+                        circuit.root_scope(),
+                        bounds,
+                    );
+
                     let (
                         ExportStream {
                             local: delayed_trace,
@@ -580,6 +581,8 @@ where
                             .as_deref(),
                         z1,
                     );
+
+                    let replay_stream = z1feedback.operator_mut().set_delta_stream(self);
 
                     let trace = circuit.add_binary_operator_with_preference(
                         UntimedTraceAppend::<Spine<B>>::new(),
