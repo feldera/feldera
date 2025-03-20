@@ -175,35 +175,35 @@ const sql = {
     label: 'Feldera SQL',
     link: {
         type: 'doc',
-        id: 'pipelines/sql/index'
+        id: 'sql/index'
     },
     items: [
-        'pipelines/sql/grammar',
-        'pipelines/sql/identifiers',
-        'pipelines/sql/types',
-        'pipelines/sql/casts',
-        'pipelines/sql/operators',
-        'pipelines/sql/aggregates',
-        'pipelines/sql/boolean',
-        'pipelines/sql/comparisons',
-        'pipelines/sql/integer',
-        'pipelines/sql/float',
-        'pipelines/sql/decimal',
-        'pipelines/sql/string',
-        'pipelines/sql/uuid',
-        'pipelines/sql/binary',
-        'pipelines/sql/array',
-        'pipelines/sql/map',
-        'pipelines/sql/datetime',
-        'pipelines/sql/json',
-        'pipelines/sql/materialized',
-        'pipelines/sql/recursion',
-        'pipelines/sql/ad-hoc',
-        'pipelines/sql/streaming',
-        'pipelines/sql/system',
-        'pipelines/sql/table',
-        'pipelines/sql/udf',
-        'pipelines/sql/function-index'
+        'sql/grammar',
+        'sql/identifiers',
+        'sql/types',
+        'sql/casts',
+        'sql/operators',
+        'sql/aggregates',
+        'sql/boolean',
+        'sql/comparisons',
+        'sql/integer',
+        'sql/float',
+        'sql/decimal',
+        'sql/string',
+        'sql/uuid',
+        'sql/binary',
+        'sql/array',
+        'sql/map',
+        'sql/datetime',
+        'sql/json',
+        'sql/materialized',
+        'sql/recursion',
+        'sql/ad-hoc',
+        'sql/streaming',
+        'sql/system',
+        'sql/table',
+        'sql/udf',
+        'sql/function-index'
     ]
 };
 
@@ -213,66 +213,66 @@ const connectors = {
     label: 'Connectors',
     link: {
         type: 'doc',
-        id: 'pipelines/connectors/index'
+        id: 'connectors/index'
     },
     items: [
-        'pipelines/connectors/orchestration',
+        'connectors/orchestration',
         {
             type: 'category',
             label: 'Input',
             link: {
                 type: 'doc',
-                id: 'pipelines/connectors/sources/index',
+                id: 'connectors/sources/index',
             },
             items: [
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sources/http',
+                    id: 'connectors/sources/http',
                     label: 'HTTP'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sources/http-get',
+                    id: 'connectors/sources/http-get',
                     label: 'HTTP GET (URL)'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sources/delta',
+                    id: 'connectors/sources/delta',
                     label: 'Delta Lake'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sources/iceberg',
+                    id: 'connectors/sources/iceberg',
                     label: 'Apache Iceberg'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sources/kafka',
+                    id: 'connectors/sources/kafka',
                     label: 'Kafka'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sources/pubsub',
+                    id: 'connectors/sources/pubsub',
                     label: 'Google Pub/Sub'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sources/debezium',
+                    id: 'connectors/sources/debezium',
                     label: 'Debezium'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sources/postgresql',
+                    id: 'connectors/sources/postgresql',
                     label: 'PostgreSQL'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sources/s3',
+                    id: 'connectors/sources/s3',
                     label: 'AWS S3'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sources/datagen',
+                    id: 'connectors/sources/datagen',
                     label: 'Data Generator'
                 }
             ]
@@ -282,37 +282,37 @@ const connectors = {
             label: 'Output',
             link: {
                 type: 'doc',
-                id: 'pipelines/connectors/sinks/index',
+                id: 'connectors/sinks/index',
             },
             items: [
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sinks/http',
+                    id: 'connectors/sinks/http',
                     label: 'HTTP'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sinks/delta',
+                    id: 'connectors/sinks/delta',
                     label: 'Delta Lake'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sinks/kafka',
+                    id: 'connectors/sinks/kafka',
                     label: 'Kafka'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sinks/confluent-jdbc',
+                    id: 'connectors/sinks/confluent-jdbc',
                     label: 'Confluent JDBC Connector'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sinks/redis',
+                    id: 'connectors/sinks/redis',
                     label: 'Redis'
                 },
                 {
                     type: 'doc',
-                    id: 'pipelines/connectors/sinks/snowflake',
+                    id: 'connectors/sinks/snowflake',
                     label: 'Snowflake (experimental)'
                 }
             ]
@@ -326,14 +326,14 @@ const formats = {
     label: 'Formats',
     link: {
         type: 'doc',
-        id: 'pipelines/formats/index'
+        id: 'formats/index'
     },
     items: [
-        'pipelines/formats/json',
-        'pipelines/formats/avro',
-        'pipelines/formats/parquet',
-        'pipelines/formats/csv',
-        'pipelines/formats/raw'
+        'formats/json',
+        'formats/avro',
+        'formats/parquet',
+        'formats/csv',
+        'formats/raw'
     ]
 };
 
