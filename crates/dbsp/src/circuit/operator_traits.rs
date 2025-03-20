@@ -223,20 +223,30 @@ pub trait Operator: 'static {
         Ok(())
     }
 
+    /// Clear the operator's state.
     fn clear_state(&mut self) -> Result<(), Error> {
         Ok(())
     }
 
+    /// Start replaying the operator's state to the replay stream.
+    ///
+    /// Only defined for operators that support replay.
     fn start_replay(&mut self) -> Result<(), Error> {
-        Ok(())
+        panic!("start_replay() is not implemented for this operator")
     }
 
+    /// Check if the operator has finished replaying its state.
+    ///
+    /// Only defined for operators that support replay.
     fn is_replay_complete(&self) -> bool {
-        true
+        panic!("is_replay_complete() is not implemented for this operator")
     }
 
+    /// Cleanup any state needed for replay.
+    ///
+    /// Only defined for operators that support replay.
     fn end_replay(&mut self) -> Result<(), Error> {
-        Ok(())
+        panic!("end_replay() is not implemented for this operator")
     }
 }
 

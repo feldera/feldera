@@ -209,9 +209,21 @@ impl Display for LayoutError {
 
 impl StdError for LayoutError {}
 
+/// DBSP circuit execution mode.
 #[derive(Clone, Default)]
 pub enum Mode {
+    /// Operators in the circuit have persistent id's.
+    ///
+    /// In this mode, operators are assigned persistent id's by the compiler. These id's
+    /// are preserved across circuit restarts for parts of the circuit that remain
+    /// unmodified.  This allows the circuit to partially or completely restore its state from
+    /// a checkpoint.
     Persistent,
+
+    /// Circuit operators are assigned ephemeral id's.
+    ///
+    /// In this mode, operators are not assigned persistent id's. The circuit can only
+    /// restore its state from a checkpoint if the entire circuit is unmodified.
     #[default]
     Ephemeral,
 }

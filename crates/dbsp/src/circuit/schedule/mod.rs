@@ -91,11 +91,19 @@ where
 {
     fn new() -> Self;
 
-    /// Create a scheduler for a circuit.
+    /// Initialize the scheduler for the circuit.
     ///
-    /// This method is invoked at circuit construction time to perform any
-    /// required preparatory computation, e.g., compute a complete static
-    /// schedule or build data structures needed for dynamic scheduling.
+    /// Invoked before running the circuit to validate that the circuit is schedulable,
+    /// e.g., doesn't contain circular scheduling dependencies, and to initialize any
+    /// internal scheduler state.
+    ///
+    /// This function can be invoked multiple times, e.g., once before running the circuit
+    /// in the backfill mode, and once before running the circuit in the normal mode.
+    ///
+    /// # Arguments
+    ///
+    /// * `nodes` - when specified, only the nodes in this set must be scheduled. All
+    ///   other nodes remain idle.
     fn prepare<C>(
         &mut self,
         circuit: &C,
