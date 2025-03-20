@@ -8,7 +8,7 @@ a file system or an object stores like [AWS S3](https://aws.amazon.com/s3/),
 [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
 The Delta Lake output connector does not yet support [fault
-tolerance](..#fault-tolerance).
+tolerance](/pipelines/fault-tolerance).
 
 ## Support for delete operations
 

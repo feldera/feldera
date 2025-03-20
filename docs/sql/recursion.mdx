@@ -84,7 +84,7 @@ match the type of the declared view, including the column names.
   with `UNION ALL` in the view definition), the program that computes `CLOSURE` above would never terminate and the
   `CLOSURE` table would keep growing, accumulating duplicate edges.
 
-We can verify this using our previous program and using the [Feldera Shell](/reference/cli)
+We can verify this using our previous program and using the [Feldera Shell](/interface/cli)
 
 ```sql
 INSERT INTO EDGES VALUES(0, 1);

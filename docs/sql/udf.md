@@ -130,7 +130,7 @@ base64 = "0.22.1"
 
 ### Step 4: Deploy the UDF
 
-#### Using [Feldera CLI](/reference/cli):
+#### Using [Feldera CLI](/interface/cli):
 
 ```bash
 fda create udf_fda_test --udf-rs udf.rs --udf-toml udf.toml program.sql

@@ -72,7 +72,7 @@ Alternatively, you can enter the `fda shell` command to open an interactive shel
 fda shell pipeline-name
 ```
 
-Refer to [CLI docs](/reference/cli) for more details.
+Refer to [CLI docs](/interface/cli) for more details.
 
 ### Feldera Python SDK
 

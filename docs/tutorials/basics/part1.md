@@ -102,7 +102,7 @@ Click the Play <icon icon="bx:play" /> button to run the pipeline.
 
 ## Step 2. Insert data
 
-When the pipeline is running it can process incoming changes. The changes can be submitted to the pipeline in three ways: automatically via [input connectors](/connectors/) attached to the pipeline tables, by sending HTTP ingress requests and by issuing `INSERT INTO ...` ad-hoc queries. You can use one of our tools - the [Python SDK](pathname:///python/feldera.html#feldera.pipeline.Pipeline.input_json), the [Feldera CLI tool](/reference/cli), the Web Console or the [REST API](/api/push-data-to-a-sql-table) directly to leverage any of these methods. For simplicity, let us use the Web Console to run an `INSERT INTO ...` query.
+When the pipeline is running it can process incoming changes. The changes can be submitted to the pipeline in three ways: automatically via [input connectors](/connectors/) attached to the pipeline tables, by sending HTTP ingress requests and by issuing `INSERT INTO ...` ad-hoc queries. You can use one of our tools - the [Python SDK](pathname:///python/feldera.html#feldera.pipeline.Pipeline.input_json), the [Feldera CLI tool](/interface/cli), the Web Console or the [REST API](/api/push-data-to-a-sql-table) directly to leverage any of these methods. For simplicity, let us use the Web Console to run an `INSERT INTO ...` query.
 
 Open the "Ad-hoc query" tab and paste the following statement in the input field:
 

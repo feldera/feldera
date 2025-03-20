@@ -4,7 +4,7 @@ Feldera can consume a stream of changes to a SQL table from Kafka with
 the `kafka_input` connector.
 
 The Kafka input connector supports [fault
-tolerance](..#fault-tolerance).
+tolerance](/pipelines/fault-tolerance).
 
 * One or more Kafka topics can be defined.
 * The Kafka connector uses **librdkafka** in its implementation.
@@ -129,7 +129,7 @@ underneath.
 Note that it is strongly recommended outside of test/dev
 environments to have encrypted and authenticated communication.
 In addition, in order for connectors to not have secrets in plaintext in their configuration,
-it is recommended to use [secret management](/enterprise/kubernetes-guides/secret-management).
+it is recommended to use [secret management](/get-started/enterprise/kubernetes-guides/secret-management).
 
 #### No authentication and plaintext (no encryption)
 

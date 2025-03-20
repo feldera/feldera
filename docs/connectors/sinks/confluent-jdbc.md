@@ -17,7 +17,7 @@ of the target table. The value component of the message contains the new or upda
 or `null` if the key is to be deleted from the table.
 
 Because this connector uses the [Kafka output adapter](kafka), it
-supports [fault tolerance](..#fault-tolerance) too.
+supports [fault tolerance](/pipelines/fault-tolerance) too.
 
 Setting up a Confluent JDBC Sink Connector integration involves three steps:
 

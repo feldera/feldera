@@ -21,7 +21,7 @@ The connector is compatible with REST and AWS Glue catalogs and also supports di
 table reads without a catalog, provided the location of the metadata file. Supported
 storage systems include S3, GCS, and local file systems.
 
-The Iceberg input connector does not yet support [fault tolerance](..#fault-tolerance).
+The Iceberg input connector does not yet support [fault tolerance](/pipelines/fault-tolerance).
 
 
 ## Configuration
