@@ -1005,7 +1005,12 @@ pub trait Node {
 
     /// Invoke closure on all children of `self`, terminate on the first
     /// error.
-    fn map_nodes_recursive(&self, _f: &mut dyn FnMut(&dyn Node)) {}
+    fn map_nodes_recursive(
+        &self,
+        _f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        Ok(())
+    }
 
     /// Invoke closure on all children of `self`, terminate on the first
     /// error.
@@ -2628,18 +2633,26 @@ where
     }
 
     /// Recursively apply `f` to all nodes in `self` and its children.
-    pub(crate) fn map_nodes_recursive(&self, f: &mut dyn FnMut(&dyn Node)) {
+    pub(crate) fn map_nodes_recursive(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
         for node in self.inner().nodes.borrow().iter() {
             f(node.borrow().as_ref());
-            node.borrow().map_nodes_recursive(f);
+            node.borrow().map_nodes_recursive(f)?;
         }
+        Ok(())
     }
 
     /// Apply `f` to all immediate children of `self`.
-    pub(crate) fn map_nodes(&self, f: &mut dyn FnMut(&dyn Node)) {
+    pub(crate) fn map_nodes(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
         for node in self.inner().nodes.borrow().iter() {
-            f(node.borrow().as_ref());
+            f(node.borrow().as_ref())?;
         }
+        Ok(())
     }
 
     /// Recursively apply `f` to all nodes in `self` and its children mutably.
@@ -5580,8 +5593,11 @@ where
         self.circuit.inner().fixedpoint(scope + 1)
     }
 
-    fn map_nodes_recursive(&self, f: &mut dyn FnMut(&dyn Node)) {
-        self.circuit.map_nodes_recursive(f);
+    fn map_nodes_recursive(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        self.circuit.map_nodes_recursive(f)
     }
 
     fn commit(&mut self, _base: &Path) -> Result<(), DbspError> {
@@ -5844,8 +5860,9 @@ impl CircuitHandle {
 
     pub fn fingerprint(&self) -> u64 {
         let mut fip = Fingerprinter::default();
-        self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
+        let _ = self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
             node.fingerprint(&mut fip);
+            Ok(())
         });
         fip.finish()
     }
