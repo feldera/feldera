@@ -27,7 +27,7 @@ RUST_LOG=info RUST_BACKTRACE=1 cargo run --bin pipeline-manager --features pg-em
 
 > `--dbsp-override-path .` should be the path of the Feldera repository root - so update the argument if you are running from a different directory.
 
-You should now be able to access the Web Console at http://localhost:8080/, connected to your local Pipeline Manager instance!
+You should now be able to access the Web Console at http://127.0.0.1:8080/, connected to your local Pipeline Manager instance!
 
 You can also open Web Console in dev mode to be able to see your changes to it live:
 
@@ -35,7 +35,7 @@ You can also open Web Console in dev mode to be able to see your changes to it l
 cd web-console && bun install && bun run dev
 ```
 
-The Web Console in dev mode is available at http://localhost:3000/
+The Web Console in dev mode is available at http://127.0.0.1:3000/
 
 Now you can proceed with the [demo](#manually-starting-the-demos).
 
@@ -55,8 +55,8 @@ First, setup an AWS Cognito user pool, configure an app client and enable the
 UI](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-app-integration.html#cognito-user-pools-app-integration-amplify).
 When setting up the hosted UI, setup a redirect URI as
 `<feldera-api-url>/auth/aws/` (note the trailing slash). For example, when
-running Feldera on localhost:8080, the redirect URI should be
-`http://localhost:8080/auth/aws/`. In this process, you will also set up a
+running Feldera on 127.0.0.1:8080, the redirect URI should be
+`http://127.0.0.1:8080/auth/aws/`. In this process, you will also set up a
 `Cognito domain`, which will be something like
 `https://<domain-name>.auth.us-east-1.amazoncognito.com`. This domain forms the
 base of the [login and logout

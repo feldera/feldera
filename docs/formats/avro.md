@@ -125,7 +125,7 @@ CREATE TABLE my_table (
     "transport": {
       "name": "kafka_input",
       "config": {
-        "bootstrap.servers": "localhost:19092",
+        "bootstrap.servers": "127.0.0.1:19092",
         "auto.offset.reset": "earliest",
         "topics": ["my_topic"]
       }
@@ -152,7 +152,7 @@ CREATE TABLE my_table (
     "transport": {
       "name": "kafka_input",
       "config": {
-        "bootstrap.servers": "localhost:19092,
+        "bootstrap.servers": "127.0.0.1:19092,
         "auto.offset.reset": "earliest",
         "topics": ["my_topic"]
       }
@@ -160,7 +160,7 @@ CREATE TABLE my_table (
     "format": {
       "name": "avro",
       "config": {
-        "registry_urls": ["http://localhost:18081"],
+        "registry_urls": ["http://127.0.0.1:18081"],
         "update_format": "debezium"
       }
     }
@@ -215,7 +215,7 @@ WITH (
     "transport": {
       "name": "kafka_output",
       "config": {
-        "bootstrap.servers": "localhost:19092",
+        "bootstrap.servers": "127.0.0.1:19092",
         "topic": "my_topic",
         "auto.offset.reset": "earliest"
       }
@@ -244,7 +244,7 @@ WITH (
     "transport": {
       "name": "kafka_output",
       "config": {
-        "bootstrap.servers": "localhost:19092",
+        "bootstrap.servers": "127.0.0.1:19092",
         "topic": "my_topic"
       }
     },
@@ -252,7 +252,7 @@ WITH (
       "name": "avro",
       "config": {
         "update_format": "confluent_jdbc",
-        "registry_urls": ["http://localhost:18081"],
+        "registry_urls": ["http://127.0.0.1:18081"],
         "key_fields": ["id"]
       }
     }

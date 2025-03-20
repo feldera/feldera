@@ -12,7 +12,7 @@ price for each part across all vendors.
 
 Make sure that you have Feldera up and running by following the [Getting
 Started](/get-started/docker.md) guide.  Open the Feldera Web Console on
-http://localhost:8080.
+http://127.0.0.1:8080.
 
 ## Step 1. Create a pipeline
 

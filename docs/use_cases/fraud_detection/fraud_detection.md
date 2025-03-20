@@ -301,7 +301,7 @@ eval_metrics(y_test, y_pred)
 
 Here we use the [Feldera online sandbox](https://try.feldera.com).
 You can also use a local instance of Feldera running in a Docker
-container on http://localhost:8080.
+container on http://127.0.0.1:8080.
 See [instructions](/docker) for running Feldera in Docker.
 
 :::

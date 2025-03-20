@@ -26,7 +26,7 @@ We will insert rows into table `product` for pipeline `supply-chain-pipeline`.
 
 ```bash
 curl -i -X 'POST' \
-  http://localhost:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
+  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
   -d '{"insert": {"pid": 0, "name": "hammer", "price": 5.0}}'
 ```
 
@@ -34,7 +34,7 @@ curl -i -X 'POST' \
 
 ```bash
 curl -i -H "Authorization: Bearer <API-KEY>" -X 'POST' \
-  http://localhost:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
+  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
   -d '{"insert": {"pid": 0, "name": "hammer", "price": 5.0}}'
 ```
 
@@ -42,7 +42,7 @@ curl -i -H "Authorization: Bearer <API-KEY>" -X 'POST' \
 
 ```bash
 curl -i -X 'POST' \
-  http://localhost:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
+  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
   -d '{"insert": {"pid": 0, "name": "hammer", "price": 5}}
 {"insert": {"pid": 1, "name": "nail", "price": 0.02}}'
 ```
@@ -51,7 +51,7 @@ curl -i -X 'POST' \
 
 ```bash
 curl -i -X 'POST' \
-  http://localhost:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json\&array=true \
+  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json\&array=true \
   -d '[{"insert": {"pid": 0, "name": "hammer", "price": 5}}, {"insert": {"pid": 1, "name": "nail", "price": 0.02}}]'
 ```
 
@@ -59,7 +59,7 @@ curl -i -X 'POST' \
 
 ```bash
 curl -i -X 'POST' \
-  http://localhost:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
+  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
   -d '{"delete": {"pid": 1}}'
 ```
 
@@ -74,7 +74,7 @@ and a random price between 1 and 100. Batching can improve throughput.
 import random
 import requests
 
-api_url = "http://localhost:8080"
+api_url = "http://127.0.0.1:8080"
 headers = {"authorization": f"Bearer <API-KEY>"}
 
 batch = []
@@ -103,7 +103,7 @@ import requests
 from feldera import FelderaClient
 
 api_key = "<API-KEY>"
-CLIENT = FelderaClient("http://localhost:8080", api_key)
+CLIENT = FelderaClient("http://127.0.0.1:8080", api_key)
 
 batch = []
 for product_id in range(0, 1000):

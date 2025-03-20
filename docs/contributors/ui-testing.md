@@ -51,7 +51,7 @@ install Playwright on your host system: https://playwright.dev/docs/intro
 
 Execute Playwright Codegen with:
 ```bash
-yarn playwright codegen http://localhost:8080/
+yarn playwright codegen http://127.0.0.1:8080/
 ```
 
 Keep in mind that codegen is not designed to produce production-ready code,

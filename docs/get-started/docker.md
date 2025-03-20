@@ -11,7 +11,7 @@ docker run -p 8080:8080 --tty --rm -it ghcr.io/feldera/pipeline-manager:latest
 ```
 
 Once you see the Feldera logo on your terminal, go ahead and open the Web Console
-at `http://localhost:8080` and try out one of our pre-packaged demo pipelines.
+at `http://127.0.0.1:8080` and try out one of our pre-packaged demo pipelines.
 
 ## Optional: Docker Compose Quickstart
 
@@ -32,7 +32,7 @@ docker compose -f - up pipeline-manager redpanda
 ```
 
 Similar to the previous section, once you see the Feldera logo on your
-terminal, go ahead and open the Web Console at `http://localhost:8080` and try
+terminal, go ahead and open the Web Console at `http://127.0.0.1:8080` and try
 out one of our pre-packaged demo pipelines.
 
 ## Installing Docker

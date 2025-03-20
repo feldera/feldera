@@ -152,7 +152,7 @@ CREATE TABLE my_table (
       "transport": {
           "name": "kafka_input",
           "config": {
-              "bootstrap.servers": "localhost:9092",
+              "bootstrap.servers": "127.0.0.1:9092",
               "auto.offset.reset": "earliest",
               "topics": ["my_topic"]
           }
@@ -178,7 +178,7 @@ CREATE TABLE my_table (
       "transport": {
           "name": "kafka_input",
           "config": {
-              "bootstrap.servers": "localhost:9092",
+              "bootstrap.servers": "127.0.0.1:9092",
               "auto.offset.reset": "earliest",
               "topics": ["my_topic"]
           }
@@ -209,7 +209,7 @@ CREATE TABLE my_table (
     "transport": {
       "name": "kafka_input",
       "config": {
-        "bootstrap.servers": "localhost:9092",
+        "bootstrap.servers": "127.0.0.1:9092",
         "auto.offset.reset": "earliest",
         "topics": ["my_topic"]
       }
@@ -217,7 +217,7 @@ CREATE TABLE my_table (
     "format": {
       "name": "avro",
       "config": {
-        "registry_urls": ["http://localhost:8081"],
+        "registry_urls": ["http://127.0.0.1:8081"],
         "update_format": "debezium"
       }
     }

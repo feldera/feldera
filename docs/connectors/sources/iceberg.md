@@ -259,7 +259,7 @@ create table iceberg_table(
 ### Read an Iceberg table from S3 through a REST catalog
 
 Create an Iceberg input connector to read a snapshot of a table stored in an S3 bucket
-through a REST catalog runnin on `http://localhost:8181`.
+through a REST catalog runnin on `http://127.0.0.1:8181`.
 
 ```sql
 create table iceberg_table(
@@ -278,7 +278,7 @@ with (
                 "mode": "snapshot",
                 "catalog_type": "rest",
                 "table_name": "iceberg_test.test_table",
-                "rest.uri": "http://localhost:8181",
+                "rest.uri": "http://127.0.0.1:8181",
                 "rest.warehouse": "s3://feldera-iceberg-test/",
                 "s3.access-key-id": "<AWS_ACCESS_KEY_ID>",
                 "s3.secret-access-key": "<AWS_SECRET_ACCESS_KEY>",

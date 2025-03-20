@@ -17,7 +17,7 @@ The PostgreSQL connector does not yet support fault tolerance.
 
 | Property | Type   | Default    | Description                                                                                                                                                                                                                                     |
 |----------|--------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `uri`*   | string |            | A PostgreSQL connection URL, e.g., "postgresql://postgres:1234@localhost:7373/postgres" (see the tokio-postgres [Config](https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html) struct for a detailed list of options) |
+| `uri`*   | string |            | A PostgreSQL connection URL, e.g., "postgresql://postgres:1234@127.0.0.1:7373/postgres" (see the tokio-postgres [Config](https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html) struct for a detailed list of options) |
 | `query`* | string |            | A PostgreSQL query which returns a list of rows to be ingested, e.g., "select a, b from table where a = 1 limit 100;" (check the [SELECT](https://www.postgresql.org/docs/current/sql-select.html) documentation in PostgreSQL for the syntax)  |
 
 
@@ -58,10 +58,10 @@ Please [let us know](https://github.com/feldera/feldera/issues) if you need supp
 
 ## A simple example
 
-We first connect to a PostgreSQL database running on `localhost:7373` with the username `postgres` and password `1234`.
+We first connect to a PostgreSQL database running on `127.0.0.1:7373` with the username `postgres` and password `1234`.
 
 ```bash
-psql postgresql://postgres:1234@localhost:7373/postgres
+psql postgresql://postgres:1234@127.0.0.1:7373/postgres
 ```
 
 Next we create a table `people` with columns `id`, `name`, and `age` by pasting the following SQL in `psql`:
@@ -94,7 +94,7 @@ create table people (
     "transport": {
       "name": "postgres_input",
       "config": {
-        "uri": "postgresql://postgres:1234@localhost:7373/postgres",
+        "uri": "postgresql://postgres:1234@127.0.0.1:7373/postgres",
         "query": "select id, name, age as the_age, 1 as extra from people;"
       }
     }
@@ -295,7 +295,7 @@ CREATE TABLE all_types_example (
     "transport": {
       "name": "postgres_input",
       "config": {
-        "uri": "postgresql://postgres:1234@localhost:7373/postgres",
+        "uri": "postgresql://postgres:1234@127.0.0.1:7373/postgres",
         "query": "select * from all_types_example;"
       }
     }

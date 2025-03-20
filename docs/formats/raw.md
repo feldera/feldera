@@ -93,7 +93,7 @@ Insert two records with values `hello` and `world`:
 
 ```bash
 curl -i -X 'POST' \
-  http://localhost:8080/v0/pipelines/my_pipeline/ingress/raw_table?format=raw&mode=lines \
+  http://127.0.0.1:8080/v0/pipelines/my_pipeline/ingress/raw_table?format=raw&mode=lines \
   -d 'hello
   world'
 ```
