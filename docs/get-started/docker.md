@@ -2,7 +2,7 @@
 
 These instructions explain how to run Feldera on a single machine
 in a configuration suitable for demos, development, and testing.  For production
-use, check out [Feldera Enterprise](/enterprise).
+use, check out [Feldera Enterprise](/get-started/enterprise).
 
 ## Docker Quickstart
 

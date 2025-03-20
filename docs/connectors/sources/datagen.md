@@ -7,7 +7,7 @@ For a tutorial on how to use the Datagen connector, see the
 [Random Data Generation](/tutorials/basics/part4) tutorial.
 
 The datagen input connector supports [fault
-tolerance](..#fault-tolerance).
+tolerance](/pipelines/fault-tolerance).
 
 ## Datagen input connector configuration
 

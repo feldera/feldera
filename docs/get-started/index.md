@@ -8,7 +8,7 @@ import Link from '@docusaurus/Link';
 <div className="card">
   <div className="card__body">
     <h3>
-      <Link to="/docker">Docker</Link>
+      <Link to="/get-started/docker">Docker</Link>
     </h3>
     <p>Ideal for local development, testing, and prototyping.</p>
   </div>
@@ -16,7 +16,7 @@ import Link from '@docusaurus/Link';
 <div className="card">
   <div className="card__body">
     <h3>
-      <Link to="/sandbox">Free Online Sandbox</Link>
+      <Link to="/get-started/sandbox">Free Online Sandbox</Link>
     </h3>
     <p>A free sandbox where you can quickly try Feldera without any installation work.</p>
   </div>
@@ -24,7 +24,7 @@ import Link from '@docusaurus/Link';
 <div className="card">
   <div className="card__body">
     <h3>
-      <Link to="/enterprise">Feldera Enterprise</Link>
+      <Link to="/get-started/enterprise">Feldera Enterprise</Link>
     </h3>
     <p>Our commercial offering designed for production use.</p>
   </div>

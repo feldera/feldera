@@ -14,7 +14,7 @@ Feldera supports directly pushing data to a SQL table over HTTP.
   (e.g., `format=...`, and more depending on format).
 
 The HTTP input connector supports [fault
-tolerance](..#fault-tolerance).
+tolerance](/pipelines/fault-tolerance).
 
 ## Example usage
 

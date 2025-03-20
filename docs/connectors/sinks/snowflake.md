@@ -4,7 +4,7 @@ The Feldera Snowflake connector ingests data change events produced by a Feldera
 pipeline into a Snowflake database in near-realtime.
 
 Because this connector uses the [Kafka output adapter](kafka), it
-supports [fault tolerance](..#fault-tolerance) too.
+supports [fault tolerance](/pipelines/fault-tolerance) too.
 
 :::caution Experimental feature
 

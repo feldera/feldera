@@ -9,7 +9,7 @@ about configuring input and output connectors.
 The Google Pub/Sub connector is used to consume a stream of changes to a SQL table from a Pub/Sub subscription.
 
 The Google Pub/Sub input connector does not yet support [fault
-tolerance](..#fault-tolerance).
+tolerance](/pipelines/fault-tolerance).
 
 ## Configuration options
 

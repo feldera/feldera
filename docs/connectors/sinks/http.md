@@ -14,7 +14,7 @@ Feldera supports receiving a stream of changes to a SQL table or view over HTTP.
   (e.g., `format=...`, and more depending on format).
 
 The HTTP output connector does not yet support [fault
-tolerance](..#fault-tolerance).
+tolerance](/pipelines/fault-tolerance).
 
 ## Example usage
 
