@@ -2635,6 +2635,13 @@ where
         }
     }
 
+    /// Apply `f` to all immediate children of `self`.
+    pub(crate) fn map_nodes(&self, f: &mut dyn FnMut(&dyn Node)) {
+        for node in self.inner().nodes.borrow().iter() {
+            f(node.borrow().as_ref());
+        }
+    }
+
     /// Recursively apply `f` to all nodes in `self` and its children mutably.
     pub(crate) fn map_nodes_recursive_mut(
         &mut self,
@@ -2643,6 +2650,18 @@ where
         for node in self.inner().nodes.borrow_mut().iter_mut() {
             f(node.borrow_mut().as_mut())?;
             node.borrow_mut().map_nodes_recursive_mut(f)?;
+        }
+
+        Ok(())
+    }
+
+    /// Apply `f` to all immedite children of `self`.
+    pub(crate) fn map_nodes_mut(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        for node in self.inner().nodes.borrow_mut().iter_mut() {
+            f(node.borrow_mut().as_mut())?;
         }
 
         Ok(())
@@ -5574,7 +5593,7 @@ where
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
-        todo!()
+        self.circuit.map_nodes_mut(&mut |node| node.clear_state())
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
@@ -5773,6 +5792,9 @@ impl CircuitHandle {
                 node.input_streams()
                     .iter()
                     .map(|stream| {
+                        // If the origin of the stream is a node inside the nested circuit, we will clear and replay the
+                        // entire nested circuit, as we don't currently have a way to replay state from inside a nested
+                        // circuit into a parent circuit.
                         (
                             stream.stream_id(),
                             self.circuit.global_id().child(stream.local_node_id()),
@@ -5791,6 +5813,8 @@ impl CircuitHandle {
         let mut replay_streams = BTreeMap::new();
 
         for (stream_id, gid) in inputs.into_iter() {
+            // Add all ancestors of to the `need_backfill` set, unless the stream can be replayed from
+            // a different node.
             if let Some(replay_sources) = self.circuit.get_replay_sources(stream_id) {
                 for source in replay_sources.backfill_nodes.into_iter() {
                     if !need_backfill.contains(&source) {
@@ -5808,6 +5832,7 @@ impl CircuitHandle {
             }
         }
 
+        // Connect `replay_streams` to all operators that consume the original stream.
         for (original_stream, replay_stream) in replay_streams.into_iter() {
             self.circuit
                 .add_replay_edges(original_stream, replay_stream.as_ref());

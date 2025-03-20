@@ -1157,6 +1157,17 @@ where
             .unwrap_or(Ok(()))
     }
 
+    fn clear_state(&mut self) -> Result<(), Error> {
+        self.trace = None;
+        self.replay_state = None;
+        self.dirty = vec![false; self.root_scope as usize + 1];
+        self.total_size_metric
+            .as_ref()
+            .map(|metric| metric.set(0.0));
+
+        Ok(())
+    }
+
     fn start_replay(&mut self) -> Result<(), Error> {
         // The second condition is necessary if `start_replay` is called twice, for the input
         // and output halves of Z1.

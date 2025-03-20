@@ -184,6 +184,11 @@ where
 
         Ok(())
     }
+
+    fn clear_state(&mut self) -> Result<(), Error> {
+        self.window = None;
+        Ok(())
+    }
 }
 
 /// `true` if cursor points to a key to the left of the interval.

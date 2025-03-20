@@ -336,6 +336,15 @@ where
         self.values = values;
         Ok(())
     }
+
+    fn clear_state(&mut self) -> Result<(), Error> {
+        self.empty_output = false;
+        self.values = self.zero.clone();
+        self.total_size_metric
+            .as_ref()
+            .map(|metric| metric.set(0.0));
+        Ok(())
+    }
 }
 
 impl<T> UnaryOperator<T, T> for Z1<T>
