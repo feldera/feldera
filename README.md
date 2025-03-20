@@ -22,6 +22,9 @@
   <a href="https://try.feldera.com/">
     <img alt="Sandbox" src="https://img.shields.io/badge/feldera_sandbox-blue?logo=CodeSandbox">
   </a>
+  <a href="https://crates.io/crates/dbsp">
+    <img alt="crates.io" src="https://img.shields.io/crates/v/dbsp.svg">
+  </a>
 </h1>
 
 <p align="center">
