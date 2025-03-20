@@ -886,7 +886,7 @@ impl CircuitThread {
     }
 
     fn replaying(&self) -> bool {
-        self.ft.as_ref().map_or(false, |ft| ft.replaying)
+        self.ft.as_ref().is_some_and(|ft| ft.replaying)
     }
 }
 
@@ -1251,18 +1251,23 @@ impl StepTrigger {
             .checkpoint_interval
             .map(|interval| last_checkpoint + interval);
 
-        let now = Instant::now();
-        if replaying
-            || self.controller.status.unset_step_requested()
-            || buffered_records > self.min_batch_size_records
-            || tick.map_or(false, |t| now >= t)
-            || self.buffer_timeout.map_or(false, |t| now >= t)
-        {
-            self.tick = self.clock_resolution.map(|delay| now + delay);
-            self.buffer_timeout = None;
+        fn step(trigger: &mut StepTrigger, now: Instant) -> Action {
+            trigger.tick = trigger.clock_resolution.map(|delay| now + delay);
+            trigger.buffer_timeout = None;
             Action::Step
-        } else if checkpoint.map_or(false, |t| now >= t) {
+        }
+
+        let now = Instant::now();
+        if replaying {
+            step(self, now)
+        } else if checkpoint.is_some_and(|t| now >= t) {
             Action::Checkpoint
+        } else if self.controller.status.unset_step_requested()
+            || buffered_records > self.min_batch_size_records
+            || tick.is_some_and(|t| now >= t)
+            || self.buffer_timeout.is_some_and(|t| now >= t)
+        {
+            step(self, now)
         } else {
             if buffered_records > 0 && self.buffer_timeout.is_none() {
                 self.buffer_timeout = Some(now + self.max_buffering_delay);
