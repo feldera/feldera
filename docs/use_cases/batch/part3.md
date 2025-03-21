@@ -32,14 +32,14 @@ features:
 - **Multiple Input Connectors**: A Feldera table can be configured with multiple
   input connectors, allowing it to read from different sources.
 
-- **Connector Orchestration**: By default, all input connectors start running
-  when the pipeline initializes. Connector orchestration enables users to
-  activate or deactivate connectors on demand, providing control over the timing
-  and sequence of data ingestion.
+- [**Connector Orchestration**](https://docs.feldera.com/connectors/orchestration/):
+  By default, all input connectors start running when the pipeline initializes.
+  Connector orchestration enables users to activate or deactivate connectors on
+  demand, providing control over the timing and sequence of data ingestion.
 
-- **Kafka: Starting From a Specified Offset**: Feldera supports reading a Kafka
-  topic starting from a specific offset in a specific partition. This allows users to
-  skip data previously synced from Kafka to the database.
+- [**Kafka: Starting From a Specified Offset**](https://docs.feldera.com/connectors/sources/kafka#starting-from-a-specific-offset):
+  Feldera supports reading a Kafka topic starting from a specific offset in a specific
+  partition. This allows users to skip data previously synced from Kafka to the database.
   For this example, we assume that our Kafka instance has a single partition
   **(0)** and that data has been synced to Delta Lake up to **offset 41**.
   We now want Feldera to start reading from **offset 42**.
