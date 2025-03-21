@@ -1,3 +1,4 @@
+use crate::controller::ControllerMetric;
 use crate::dyn_event;
 use crate::format::{get_input_format, get_output_format};
 use crate::{
@@ -612,7 +613,17 @@ async fn metrics(
                     }),
                 }
             }
-            MetricsFormat::Json => Ok(HttpResponse::Ok().json(&controller.status().metrics)),
+            MetricsFormat::Json => {
+                let snapshotter = controller.metrics_snapshotter();
+                let metrics: Vec<ControllerMetric> = snapshotter
+                    .snapshot()
+                    .into_vec()
+                    .into_iter()
+                    .map(|element| element.into())
+                    .collect();
+
+                Ok(HttpResponse::Ok().json(&metrics))
+            }
         },
         None => Err(missing_controller_error(&state)),
     }

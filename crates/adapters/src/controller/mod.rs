@@ -102,7 +102,7 @@ pub use feldera_types::config::{
 };
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
-pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
+pub use stats::{ControllerMetric, ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit
 /// (including both input and output connections).
@@ -391,11 +391,13 @@ impl Controller {
 
     /// Returns controller status.
     pub fn status(&self) -> &ControllerStatus {
-        // Update pipeline metrics computed on-demand.
-        self.inner
-            .status
-            .update(self.inner.metrics_snapshotter.snapshot());
+        // Update pipeline stats computed on-demand.
+        self.inner.status.update();
         &self.inner.status
+    }
+
+    pub fn metrics_snapshotter(&self) -> Arc<Snapshotter> {
+        self.inner.metrics_snapshotter.clone()
     }
 
     pub fn catalog(&self) -> &Arc<Box<dyn CircuitCatalog>> {

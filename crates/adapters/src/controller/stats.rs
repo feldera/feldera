@@ -38,10 +38,7 @@ use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use feldera_adapterlib::transport::InputReader;
 use feldera_types::config::PipelineConfig;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
-use metrics_util::{
-    debugging::{DebugValue, Snapshot},
-    CompositeKey,
-};
+use metrics_util::{debugging::DebugValue, CompositeKey};
 use ordered_float::OrderedFloat;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use psutil::process::{Process, ProcessError};
@@ -222,10 +219,6 @@ pub struct ControllerStatus {
     /// Output endpoint configs and metrics.
     #[serde(serialize_with = "serialize_outputs")]
     outputs: OutputsStatus,
-
-    /// Metrics.
-    #[serde(skip)]
-    pub metrics: Mutex<Vec<ControllerMetric>>,
 }
 
 /// Controller metrics.
@@ -408,7 +401,6 @@ impl ControllerStatus {
             global_metrics: GlobalControllerMetrics::new(processed_records),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
-            metrics: Mutex::new(Vec::new()),
         }
     }
 
@@ -791,17 +783,10 @@ impl ControllerStatus {
         Ok((process.memory_info()?.rss(), process.cpu_times()?.busy()))
     }
 
-    pub fn update(&self, metrics: Snapshot) {
+    pub fn update(&self) {
         self.global_metrics
             .pipeline_complete
             .store(self.pipeline_complete(), Ordering::Release);
-
-        let metrics = metrics
-            .into_vec()
-            .into_iter()
-            .map(|element| element.into())
-            .collect();
-        *self.metrics.lock().unwrap() = metrics;
 
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
