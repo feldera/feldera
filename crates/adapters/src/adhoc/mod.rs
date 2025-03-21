@@ -7,10 +7,16 @@ use arrow_json::writer::LineDelimited;
 use arrow_json::WriterBuilder;
 use async_stream::{stream, try_stream};
 use bytes::Bytes;
+use datafusion::common::ScalarValue;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::dataframe::DataFrame;
+use datafusion::execution::memory_pool::FairSpillPool;
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::SendableRecordBatchStream;
-use datafusion::prelude::SessionContext;
+use datafusion::execution::SessionStateBuilder;
+use datafusion::prelude::*;
+use feldera_adapterlib::errors::metadata::ControllerError;
+use feldera_types::config::PipelineConfig;
 use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs};
 use futures_util::future::{BoxFuture, FutureExt};
 use futures_util::{select, StreamExt};
@@ -19,11 +25,57 @@ use parquet::arrow::AsyncArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use std::convert::Infallible;
+use std::fs::create_dir_all;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::sync::oneshot::Receiver;
 use tokio::sync::{mpsc, oneshot};
 
 mod format;
 pub(crate) mod table;
+
+pub(crate) fn create_session_context(
+    config: &PipelineConfig,
+) -> Result<SessionContext, ControllerError> {
+    const SORT_IN_PLACE_THRESHOLD_BYTES: usize = 64 * 1024 * 1024;
+    const SORT_SPILL_RESERVATION_BYTES: usize = 64 * 1024 * 1024;
+    let session_config = SessionConfig::new()
+        .with_target_partitions(config.global.workers as usize)
+        .with_sort_in_place_threshold_bytes(SORT_IN_PLACE_THRESHOLD_BYTES)
+        .with_sort_spill_reservation_bytes(SORT_SPILL_RESERVATION_BYTES)
+        .set(
+            "datafusion.execution.planning_concurrency",
+            &ScalarValue::UInt64(Some(config.global.workers as u64)),
+        );
+    // Initialize datafusion memory limits
+    let mut runtime_env_builder = RuntimeEnvBuilder::new();
+    if let Some(memory_mb_max) = config.global.resources.memory_mb_max {
+        let memory_bytes_max = memory_mb_max * 1024 * 1024;
+        runtime_env_builder = runtime_env_builder
+            .with_memory_pool(Arc::new(FairSpillPool::new(memory_bytes_max as usize)));
+    }
+    // Initialize datafusion spill-to-disk directory
+    if let Some(storage) = &config.storage_config {
+        let path = PathBuf::from(storage.path.clone()).join("adhoc-tmp");
+        if !path.exists() {
+            create_dir_all(&path).map_err(|error| {
+                ControllerError::io_error(
+                    String::from("unable to create ad-hoc scratch space directory during startup"),
+                    error,
+                )
+            })?;
+        }
+        runtime_env_builder = runtime_env_builder.with_temp_file_path(path);
+    }
+
+    let runtime_env = runtime_env_builder.build_arc().unwrap();
+    let state = SessionStateBuilder::new()
+        .with_config(session_config)
+        .with_runtime_env(runtime_env)
+        .with_default_features()
+        .build();
+    Ok(SessionContext::from(state))
+}
 
 struct ChannelWriter {
     tx: mpsc::Sender<Bytes>,
