@@ -89,6 +89,7 @@ mod metadata;
 mod stats;
 mod validate;
 
+use crate::adhoc::create_session_context;
 use crate::adhoc::table::AdHocTable;
 use crate::catalog::{SerBatchReader, SerTrace, SyncSerBatchReader};
 use crate::format::parquet::relation_to_arrow_fields;
@@ -1781,10 +1782,11 @@ impl ControllerInner {
         metrics_snapshotter: Arc<Snapshotter>,
         prometheus_handle: PrometheusHandle,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
-        let status = Arc::new(ControllerStatus::new(config, processed_records));
+        let status = Arc::new(ControllerStatus::new(config.clone(), processed_records));
         let circuit_thread_parker = Parker::new();
         let backpressure_thread_parker = Parker::new();
         let (command_sender, command_receiver) = channel();
+        let session_ctxt = create_session_context(&config)?;
         let controller = Arc::new(Self {
             status,
             num_api_connections: AtomicU64::new(0),
@@ -1799,7 +1801,7 @@ impl ControllerInner {
             error_cb,
             metrics_snapshotter,
             prometheus_handle,
-            session_ctxt: SessionContext::new(),
+            session_ctxt,
             fault_tolerant,
             restoring: AtomicBool::new(fault_tolerant),
         });
