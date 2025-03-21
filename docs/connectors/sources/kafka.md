@@ -11,6 +11,19 @@ tolerance](..#fault-tolerance).
   [Relevant options supported by it](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)
   can be defined in the connector configuration.
 
+## Kafka Input Connector Configuration
+
+| Property                | Type             | Default | Description                                                                                                                                                                                                                                                                                                                                                       |
+|-------------------------|------------------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `bootstrap.servers`*      | string           |         | A comma separated list of Kafka brokers to connect to.                                                                                                                                                                                                                                                                                                            |
+| `topics`*                 | list             |         | A list of Kafka topics to subscribe to.                                                                                                                                                                                                                                                                                                                           |
+| `log_level`               | string           |         | The log level for the Kafka client.                                                                                                                                                                                                                                                                                                                               |
+| `group_join_timeout_secs` | seconds          | 10      | Maximum timeout (in seconds) for the endpoint to join the Kafka consumer group during initialization.                                                                                                                                                                                                                                                             |
+| `poller_threads`          | positive integer | 3       | Number of threads used to poll Kafka messages. Setting it to multiple threads can improve performance with small messages. Default is 3.                                                                                                                                                                                                                          |
+| `start_from`              | list             |         | Specifies offsets and partitions to begin reading Kafka topics from. When specified, this property must contain a list of JSON objects with the following fields:  <ul><li>`topic`: The name of the Kafka topic.</li> <li>`partition`: The partition number within the topic.</li> <li>`offset`: The specific offset from which to start consuming messages.</li> |
+
+Any other configurations from [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) are directly passed to `librdkafka`.
+
 ## Example usage
 
 We will create a Kafka connector named `book-fair-sales`.

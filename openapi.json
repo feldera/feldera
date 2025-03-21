@@ -3978,7 +3978,7 @@
             "items": {
               "$ref": "#/components/schemas/KafkaStartFromConfig"
             },
-            "description": "A list of offset and partitions specifying where to begin reading\nthe topic from."
+            "description": "A list of offsets and partitions specifying where to begin reading individual input topics.\n\nWhen specified, this property must contain a list of JSON objects with the following fields:\n- `topic`: The name of the Kafka topic.\n- `partition`: The partition number within the topic.\n- `offset`: The specific offset from which to start consuming messages."
           },
           "topics": {
             "type": "array",
