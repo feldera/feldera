@@ -15,6 +15,8 @@ The implementation described in this section is available as a
 [pre-packaged example in the Feldera online sandbox](https://try.feldera.com/create/?name=accelerating-batch-analytics)
 as well as in your local Feldera installation.
 
+![Architecture Diagram with Delta Lake](./tpch-delta-arch.png)
+
 <details>
 <summary> Full Feldera SQL code </summary>
 
