@@ -37,9 +37,9 @@ features:
   activate or deactivate connectors on demand, providing control over the timing
   and sequence of data ingestion.
 
-- **Kafka: Starting From a Specfied Offset**: Feldera supports starting a Kafka
-  read from a specific offest in a specific partition. This allows users to
-  prevent Feldera from reading data previously synced from Kafka to database.
+- **Kafka: Starting From a Specified Offset**: Feldera supports reading a Kafka
+  topic starting from a specific offset in a specific partition. This allows users to
+  skip data previously synced from Kafka to the database.
   For this example, we assume that our Kafka instance has a single partition
   **(0)** and that data has been synced to Delta Lake up to **offset 41**.
   We now want Feldera to start reading from **offset 42**.
@@ -103,18 +103,10 @@ CREATE TABLE LINEITEM (
 
 ### Connector Orchestration with Labels
 
-Connectors can be labeled according to their role in the pipeline.
-
-Here, we specify the Delta Lake input connector the label **lineitem.historical**
-as it fetches the historical data from Delta Lake. Similarly, we specify Kafka input
-connector the label **lineitem.live** as it is responsible for getting the
-live data from Kafka.
-
-Now, we can use these labels to tell one connector to start only after another connector has
-reached the end-of-file (**EOF**). We want the live data to be loaded only after
-the historical data. To do this, in the connector definition of `lineitem.live`, we specify
-that it has to **start_after** the connector with label `lineitem.historical` has completed.
-
+Connectors can be assigned arbitrary text labels for use in connector orchestration. These labels are typically chosen to reflect the connector's role in the pipeline. Here, we label the Delta Lake input connector  **lineitem.historical**
+as it fetches the historical data from Delta Lake. We want the live data to be loaded only after
+the historical data. To do this, in the Kafka connector definition, we specify
+that it has to **start_after** the connector with label `lineitem.historical` has completed:
 ```json
 // lineitem.live
     "start_after": "lineitem.historical",
@@ -129,16 +121,12 @@ connectors (see: [Input Connector Orchestration](https://docs.feldera.com/connec
 
 ![Architecture Diagram showing Kafka Messages Ingestion from a Specific Point](./input-orchestration.png)
 
-The Kafka input connector can be configured to start reading messages from a specific point.
-Messages in Kafka are stored at different **offsets** in different **partitions**. A topic can
-have multiple partitions. Use **start_from** key in the Kafka input connector's configuration
-to specify
-
-To start from a specific point in Kafka, users must specify the **topic**,
-the **partition** within the topic, and the **offset** within the partition. It is possible to
+The Kafka input connector can be configured to start reading messages from a specific offset in the Kafka topic.
+To this end, the user specifies the **start_from** property with a list of topics,
+partitions, and initial offsets within each partition. It is possible to
 start at different offsets in different partitions in different topics.
 
-To start from the topic **lineitem**, partition **0** and offset **42**, in the connector configuration, we do:
+To start reading topic **lineitem**, partition **0** from offset **42**, in the connector configuration, we do:
 
 ```json
 // lineitem.live
@@ -158,7 +146,7 @@ In cases with **multiple partitions and multiple topics**, it is necessary to
 
 ## Takeaways
 
-- Feldera simplifies working with historical and real-time data together by specifying multiple
+- Feldera simplifies working with historical and real-time data within the same pipeine by specifying multiple
   connectors for the same table to read from different data sources.
 - You can specify one connector to **start_after** another connector, ensuring that the
   historical data is read first.
