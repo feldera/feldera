@@ -39,6 +39,8 @@ use tracing::{debug, info_span};
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
 const POLL_TIMEOUT: Duration = Duration::from_millis(5);
 
+const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
+
 // Size of the circular buffer used to pass errors from ClientContext
 // to the worker thread.
 const ERROR_BUFFER_SIZE: usize = 1000;
@@ -384,15 +386,34 @@ impl KafkaInputReader {
         } else {
             let mut tpl = TopicPartitionList::new();
 
-            for seek in config.start_from.iter() {
+            for start_from in config.start_from.iter() {
+                let (low, high) = inner
+                    .kafka_consumer
+                    .fetch_watermarks(
+                        &start_from.topic,
+                        start_from.partition as i32,
+                        METADATA_TIMEOUT,
+                    )
+                    .map_err(|e| {
+                        anyhow!(
+                            "error fetching metadata for topic '{}' and partition '{}': {e}",
+                            &start_from.topic,
+                            start_from.partition
+                        )
+                    })?;
+
+                if !(low..=high).contains(&(start_from.offset as i64)) {
+                    bail!("configuration error: provided offset '{}' not currently in topic '{}' partition '{}'", start_from.offset, start_from.topic, start_from.partition);
+                }
+
                 debug!(
                     "starting to read from topic: '{}', partition: '{}', offset: '{}'",
-                    seek.topic, seek.partition, seek.offset
+                    start_from.topic, start_from.partition, start_from.offset
                 );
                 tpl.add_partition_offset(
-                    &seek.topic,
-                    seek.partition as i32,
-                    rdkafka::Offset::Offset(seek.offset as i64),
+                    &start_from.topic,
+                    start_from.partition as i32,
+                    rdkafka::Offset::Offset(start_from.offset as i64),
                 )
                 .map_err(|e| anyhow!("error assigning partition and offset: {e}"))?;
             }
@@ -411,7 +432,7 @@ impl KafkaInputReader {
             for topic in all_topics.difference(&specified_topics) {
                 let metadata = inner
                     .kafka_consumer
-                    .fetch_metadata(Some(topic), std::time::Duration::from_secs(10))?;
+                    .fetch_metadata(Some(topic), METADATA_TIMEOUT)?;
                 let topic = metadata.topics().first().ok_or(anyhow!(
                     "failed to subscribe to topic: '{topic}' doesn't exist"
                 ))?;

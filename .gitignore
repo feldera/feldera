@@ -30,6 +30,7 @@ lcov.info
 .idea
 *.iml
 .DS_Store
+sql-to-dbsp-compiler/SQL-compiler/pom.xml-E
 
 **/benches/galen_data/
 **/benches/gdelt-data/
