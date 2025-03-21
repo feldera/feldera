@@ -1,11 +1,13 @@
 # Part 3. Working with Historical and Real Time Data
 
+![Architecture Diagram showing Historical and Live Data Ingestion](./main-arch.jpeg)
+
 When a Feldera pipeline starts running, it often needs to ingest historical data
 accumulated in the source database over an extended period (months or years)
-before processing new real-time inputs. This process is known as backfill.
+before processing new real-time inputs. This process is known as **backfill**.
 
 In some cases, both historical and real-time data can be ingested from the same
-data source. For example, in Part 2 of this tutorial, we configured the
+data source. For example, in [Part 2](part2) of this tutorial, we configured the
 Delta Lake connector to read the current snapshot of the table before following
 new updates in the table's transaction log.
 
@@ -119,11 +121,13 @@ that it has to **start_after** the connector with label `lineitem.historical` ha
 ```
 
 :::note
-It is also possible to use the Feldera API and Feldera CLI tool `fda` to manually **pause** and **resume**
-these connectors.
+It is also possible to use the Feldera API and Feldera CLI tool `fda` to **pause** and **resume**
+connectors (see: [Input Connector Orchestration](https://docs.feldera.com/connectors/orchestration/)).
 :::
 
 ### Start Reading Kafka Messages from a Specific Point
+
+![Architecture Diagram showing Kafka Messages Ingestion from a Specific Point](./input-orchestration.png)
 
 The Kafka input connector can be configured to start reading messages from a specific point.
 Messages in Kafka are stored at different **offsets** in different **partitions**. A topic can
