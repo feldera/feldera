@@ -52,8 +52,12 @@ pub struct KafkaInputConfig {
     /// messagee
     pub poller_threads: Option<usize>,
 
-    /// A list of offset and partitions specifying where to begin reading
-    /// the topic from.
+    /// A list of offsets and partitions specifying where to begin reading individual input topics.
+    ///
+    /// When specified, this property must contain a list of JSON objects with the following fields:
+    /// - `topic`: The name of the Kafka topic.
+    /// - `partition`: The partition number within the topic.
+    /// - `offset`: The specific offset from which to start consuming messages.
     #[serde(default)]
     pub start_from: Vec<KafkaStartFromConfig>,
 }

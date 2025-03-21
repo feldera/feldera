@@ -384,7 +384,38 @@ impl KafkaInputReader {
                 .subscribe(&topics)
                 .map_err(|e| anyhow!("error subscribing to Kafka topic(s): {e}"))?;
         } else {
+            // If start_from is defined, we want to start from those specific
+            // points for the topics defined.
+
+            // Find topics defined in topics but not in start_from.
+            let all_topics: HashSet<&str> = topics.iter().copied().collect();
+            let specified_topics: HashSet<&str> =
+                config.start_from.iter().map(|x| x.topic.as_str()).collect();
+
+            let specified_but_not_listed: Vec<_> =
+                specified_topics.difference(&all_topics).cloned().collect();
+
+            // If a topic is defined in start_from but not in topics, return an error.
+            if !specified_but_not_listed.is_empty() {
+                let topics = specified_but_not_listed.join(", ");
+                bail!("topic(s): '{topics}' defined in 'start_from' but not in the 'topics' list");
+            }
+
             let mut tpl = TopicPartitionList::new();
+
+            // Start these topics without explicit start_from, from their default point.
+            for topic in all_topics.difference(&specified_topics) {
+                let metadata = inner
+                    .kafka_consumer
+                    .fetch_metadata(Some(topic), METADATA_TIMEOUT)?;
+                let topic = metadata.topics().first().ok_or(anyhow!(
+                    "failed to subscribe to topic: '{topic}' doesn't exist"
+                ))?;
+                // Start reading all partitions of these topics.
+                for partition in topic.partitions() {
+                    tpl.add_partition(topic.name(), partition.id());
+                }
+            }
 
             for start_from in config.start_from.iter() {
                 let (low, high) = inner
@@ -402,6 +433,7 @@ impl KafkaInputReader {
                         )
                     })?;
 
+                // Return an error if the specified start_from offset doesn't exist.
                 if !(low..=high).contains(&(start_from.offset as i64)) {
                     bail!("configuration error: provided offset '{}' not currently in topic '{}' partition '{}'", start_from.offset, start_from.topic, start_from.partition);
                 }
@@ -416,29 +448,6 @@ impl KafkaInputReader {
                     rdkafka::Offset::Offset(start_from.offset as i64),
                 )
                 .map_err(|e| anyhow!("error assigning partition and offset: {e}"))?;
-            }
-
-            let all_topics: HashSet<&str> = topics.iter().copied().collect();
-            let specified_topics: HashSet<&str> =
-                config.start_from.iter().map(|x| x.topic.as_str()).collect();
-
-            let specifed_but_not_listed: Vec<_> =
-                specified_topics.difference(&all_topics).cloned().collect();
-            if !specifed_but_not_listed.is_empty() {
-                let topics = specifed_but_not_listed.join(", ");
-                bail!("topic(s): '{topics}' defined in 'start_from' but not in the 'topics' list");
-            }
-
-            for topic in all_topics.difference(&specified_topics) {
-                let metadata = inner
-                    .kafka_consumer
-                    .fetch_metadata(Some(topic), METADATA_TIMEOUT)?;
-                let topic = metadata.topics().first().ok_or(anyhow!(
-                    "failed to subscribe to topic: '{topic}' doesn't exist"
-                ))?;
-                for partition in topic.partitions() {
-                    tpl.add_partition(topic.name(), partition.id());
-                }
             }
 
             inner
