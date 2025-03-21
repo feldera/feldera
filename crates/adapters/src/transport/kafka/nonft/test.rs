@@ -215,13 +215,16 @@ format:
 }
 
 #[test]
-fn test_kafka_input_offset_trivial_earliest() {
-    let topic1 = "test_kafka_input_offset_trivial_earliest_topic1";
+#[should_panic(
+    expected = "provided offset '3' not currently in topic 'test_kafka_input_offset_doesnt_exist_1' partition '0'"
+)]
+fn test_kafka_input_offset_doesnt_exist() {
+    let topic1 = "test_kafka_input_offset_doesnt_exist_1";
     test_offset(
         Vec::new(),
         Vec::new(),
         topic1,
-        "test_kafka_input_offset_trivial_earliest_topic2",
+        "test_kafka_input_offset_doesnt_exist_2",
         KafkaStartFromConfig {
             topic: topic1.to_owned(),
             partition: 0,
@@ -232,13 +235,16 @@ fn test_kafka_input_offset_trivial_earliest() {
 }
 
 #[test]
-fn test_kafka_input_offset_trivial_latest() {
-    let topic1 = "test_kafka_input_offset_trivial_latest_topic1";
+#[should_panic(
+    expected = "provided offset '3' not currently in topic 'test_kafka_input_offset_doesnt_exist2_1' partition '0'"
+)]
+fn test_kafka_input_offset_doesnt_exist2() {
+    let topic1 = "test_kafka_input_offset_doesnt_exist2_1";
     test_offset(
         Vec::new(),
         Vec::new(),
         topic1,
-        "test_kafka_input_offset_trivial_latest_topic2",
+        "test_kafka_input_offset_doesnt_exist2_2",
         KafkaStartFromConfig {
             topic: topic1.to_owned(),
             partition: 0,
@@ -991,7 +997,7 @@ proptest! {
             data,
             data2,
             topic1,
-            "test_kafka_input_offset_earliest_topic2",
+            "proptest_kafka_input_offset_earliest_topic2",
             KafkaStartFromConfig {
                 topic: topic1.to_owned(),
                 partition: 0,

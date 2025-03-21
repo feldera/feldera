@@ -427,7 +427,11 @@ impl KafkaFtInputReader {
         let mut client_config = ClientConfig::new();
 
         if !config.start_from.is_empty() {
-            anyhow::bail!("unimplemented: `start_from` is not yet supported for fault tolerant kafka connector");
+            anyhow::bail!(
+                r#"unimplemented: `start_from` is not yet supported for fault tolerant kafka connector
+tracking issue: https://github.com/feldera/feldera/issues/3756
+"#
+            );
         }
 
         for (key, value) in config.kafka_options.iter() {
