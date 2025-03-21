@@ -37,7 +37,7 @@ features:
 
 - **Kafka: Starting From a Specfied Offset**: Feldera supports starting a Kafka
   read from a specific offest in a specific partition. This allows users to
-  prevent Feldera from reading data previously synced from Kafka to database. 
+  prevent Feldera from reading data previously synced from Kafka to database.
   For this example, we assume that our Kafka instance has a single partition
   **(0)** and that data has been synced to Delta Lake up to **offset 41**.
   We now want Feldera to start reading from **offset 42**.
@@ -123,7 +123,7 @@ It is also possible to use the Feldera API and Feldera CLI tool `fda` to manuall
 these connectors.
 :::
 
-### Start Reading Kafka Messages from a Specific Point 
+### Start Reading Kafka Messages from a Specific Point
 
 The Kafka input connector can be configured to start reading messages from a specific point.
 Messages in Kafka are stored at different **offsets** in different **partitions**. A topic can
