@@ -140,8 +140,13 @@ public class ExpressionsCSE extends ExpressionTranslator {
     }
 
     @Override
-    public void postorder(DBSPLetExpression node) {
+    public VisitDecision preorder(DBSPLetExpression node) {
+        node.initializer.accept(this);
+        DBSPExpression initializer = this.getE(node.initializer);
+        // Effects of initializer should be visible while processing consumer
+        node.consumer.accept(this);
         DBSPExpression consumer = this.getE(node.consumer);
+
         List<Assignment> assignments = new ArrayList<>(this.assignments);
         // LetExpressions are created inside-out, so we need to reverse the assignments
         Collections.reverse(assignments);
@@ -156,7 +161,8 @@ public class ExpressionsCSE extends ExpressionTranslator {
             }
         }
         Collections.reverse(this.assignments);
-        this.map(node, new DBSPLetExpression(node.variable, node.initializer, consumer));
+        this.map(node, new DBSPLetExpression(node.variable, initializer, consumer));
+        return VisitDecision.STOP;
     }
 
     @Override

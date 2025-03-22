@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 /** Resolves the variable references by pointing each variable reference
  * to a declaration that introduced the variable. */
@@ -64,14 +65,25 @@ public class ResolveReferences extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPLetExpression expression) {
+        this.substitutionContext.newContext();
         this.substitutionContext.substitute(expression.variable.variable, expression);
         return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public void postorder(DBSPLetExpression expression) {
+        this.substitutionContext.popContext();
     }
 
     @Override
     public VisitDecision preorder(DBSPClosureExpression expression) {
         this.substitutionContext.newContext();
         return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
     }
 
     @Override
