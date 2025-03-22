@@ -43,4 +43,4 @@ incremental Feldera pipelines:
 
 By the end of the tutorial we will build the pipeline shown below:
 
-![Data Flow Architecture](./main-arch.jpeg)
+![Data Flow Architecture](./main-arch.png)
