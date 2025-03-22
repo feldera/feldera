@@ -327,6 +327,10 @@ where
             }
         })
     }
+
+    fn maybe_contains_key(&self, key: &Self::Key) -> bool {
+        self.file.maybe_contains_key(key)
+    }
 }
 
 impl<K, V, T, R> Batch for FileValBatch<K, V, T, R>
@@ -368,6 +372,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    batch: &'s FileValBatch<K, V, T, R>,
     timediff_factory: &'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>,
     weight_factory: &'static dyn Factory<R>,
     key_cursor: RawKeyCursor<'s, K, V, T, R>,
@@ -408,6 +413,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
+            batch: self.batch,
             timediff_factory: self.timediff_factory,
             weight_factory: self.weight_factory,
             key_cursor: self.key_cursor.clone(),
@@ -437,6 +443,7 @@ where
         let key_valid = unsafe { key_cursor.key(&mut key) }.is_some();
         let val_valid = unsafe { val_cursor.key(&mut val) }.is_some();
         Self {
+            batch,
             timediff_factory: batch.factories.timediff_factory,
             weight_factory: batch.factories.weight_factory,
             key_cursor,
@@ -561,6 +568,9 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
+        if !self.batch.maybe_contains_key(key) {
+            return false;
+        }
         self.seek_key(key);
         self.key_valid() && self.key().eq(key)
     }
