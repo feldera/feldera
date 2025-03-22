@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionsCSE;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -36,6 +37,20 @@ import org.junit.Test;
 
 /** Unit tests for expression equivalence */
 public class EquivalenceTests {
+    static DBSPExpression neg(DBSPExpression expression) {
+        return new DBSPUnaryExpression(
+                expression.getNode(), expression.getType(), DBSPOpcode.NEG, expression);
+    }
+
+    static DBSPExpression binary(DBSPOpcode opcode, DBSPExpression left, DBSPExpression right) {
+        return new DBSPBinaryExpression(
+                left.getNode(), left.getType(), opcode, left, right);
+    }
+
+    static DBSPExpression add(DBSPExpression left, DBSPExpression right) {
+        return binary(DBSPOpcode.ADD, left, right);
+    }
+
     @Test
     public void testCSE() {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
@@ -46,12 +61,11 @@ public class EquivalenceTests {
         DBSPExpression v0 = var.deref().field(0);
         DBSPExpression v1 = var.deref().field(1);
         DBSPExpression v2 = var.deref().field(2);
-        CalciteObject node = v0.getNode();
-        DBSPExpression v0m = new DBSPUnaryExpression(node, i, DBSPOpcode.NEG, v0);
-        DBSPExpression p0 = new DBSPBinaryExpression(node, i, DBSPOpcode.DIV, v0m, v1);
-        DBSPExpression a = new DBSPBinaryExpression(node, i, DBSPOpcode.MUL, p0, p0);
-        DBSPExpression b = new DBSPBinaryExpression(node, i, DBSPOpcode.ADD, v2, c);
-        DBSPExpression d = new DBSPBinaryExpression(node, i, DBSPOpcode.ADD, b, b);
+        DBSPExpression v0m = neg(v0);
+        DBSPExpression p0 = binary(DBSPOpcode.DIV, v0m, v1);
+        DBSPExpression a = binary(DBSPOpcode.MUL, p0, p0);
+        DBSPExpression b = add(v2, c);
+        DBSPExpression d = add(b, b);
         DBSPExpression body = new DBSPTupleExpression(a, d);
         DBSPClosureExpression closure = body.closure(var.asParameter());
 
@@ -80,6 +94,43 @@ public class EquivalenceTests {
     }
 
     @Test
+    public void testCSENested() {
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPType i = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
+        DBSPTypeTuple tuple = new DBSPTypeTuple(i, i);
+        DBSPVariablePath var = tuple.ref().var();
+
+        DBSPLetStatement stat0 = new DBSPLetStatement("t0",
+                add(var.deref().field(0), var.deref().field(1)));
+
+        DBSPVariablePath t = tuple.ref().var();
+        DBSPExpression let = new DBSPLetExpression(
+                t, new DBSPTupleExpression(
+                        stat0.getVarReference(),
+                        neg(stat0.getVarReference())).borrow(),
+                new DBSPTupleExpression(neg(t.deref().field(0)), neg(t.deref().field(0))));
+
+        DBSPLetStatement stat1 = new DBSPLetStatement("t1", let);
+        DBSPExpression block = new DBSPBlockExpression(
+                Linq.list(stat0, stat1),
+                stat1.getVarReference());
+        DBSPClosureExpression closure = block.closure(var.asParameter());
+
+        DBSPOperator fake = new DBSPConstantOperator(
+                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false, false);
+        ValueNumbering numbering = new ValueNumbering(compiler);
+        numbering.setOperatorContext(fake);
+        numbering.apply(closure);
+        ExpressionsCSE cse = new ExpressionsCSE(compiler, numbering.canonical);
+        cse.setOperatorContext(fake);
+        cse.apply(closure);
+        IDBSPInnerNode translated = cse.get(closure);
+        ResolveReferences resolver = new ResolveReferences(compiler, false);
+        // Crash on incorrect translation.
+        resolver.apply(translated);
+    }
+
+    @Test
     public void testConditionalCSE() {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
         DBSPType i = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
@@ -91,8 +142,7 @@ public class EquivalenceTests {
                 CalciteObject.EMPTY, b, DBSPOpcode.GTE, var.deref().field(0), z)
                 .wrapBoolIfNeeded();
 
-        DBSPExpression un = new DBSPUnaryExpression(
-                CalciteObject.EMPTY, i, DBSPOpcode.NEG, var.deref().field(1));
+        DBSPExpression un = neg(var.deref().field(1));
 
         DBSPExpression if0 = new DBSPIfExpression(
                 CalciteObject.EMPTY, cond, un, var.deref().field(2));
