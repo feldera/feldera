@@ -1550,8 +1550,12 @@ public class SqlToRelCompiler implements IWritesLogs {
             case VARIANT:
                 builder.append("VARIANT");
                 break;
+            case UUID:
+                builder.append("UUID");
+                break;
             default:
-                throw new UnimplementedException(type.getFullTypeString(), CalciteObject.create(type));
+                builder.append(type.getFullTypeString());
+                break;
         }
     }
 
