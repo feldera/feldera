@@ -32,7 +32,7 @@ use crate::{
         dynamic::{
             aggregate::{DynAggregatorImpl, IncAggregateFactories, IncAggregateLinearFactories},
             controlled_filter::ControlledFilterFactories,
-            distinct::DistinctFactories,
+            distinct::{DistinctFactories, HashDistinctFactories},
             join::{AntijoinFactories, JoinFactories},
             MonoIndexedZSet,
         },
@@ -200,6 +200,13 @@ where
     }
 
     #[track_caller]
+    pub fn hash_distinct(&self) -> Self {
+        let factories = HashDistinctFactories::new::<K, V>();
+
+        self.inner().dyn_hash_distinct_mono(&factories).typed()
+    }
+
+    #[track_caller]
     pub fn waterline<TS, WF, IF, LB>(
         &self,
         init: IF,
@@ -332,6 +339,13 @@ where
         let factories = DistinctFactories::new::<K, ()>();
 
         self.inner().dyn_distinct_mono(&factories).typed()
+    }
+
+    #[track_caller]
+    pub fn hash_distinct(&self) -> Self {
+        let factories = HashDistinctFactories::new::<K, ()>();
+
+        self.inner().dyn_hash_distinct_mono(&factories).typed()
     }
 
     #[track_caller]
@@ -646,6 +660,13 @@ where
     }
 
     #[track_caller]
+    pub fn hash_distinct(&self) -> Self {
+        let factories = HashDistinctFactories::new::<K, V>();
+
+        self.inner().dyn_hash_distinct_mono(&factories).typed()
+    }
+
+    #[track_caller]
     pub fn filter<F>(&self, filter_func: F) -> Self
     where
         F: Fn((&K, &V)) -> bool + 'static,
@@ -752,6 +773,13 @@ where
         let factories = DistinctFactories::new::<K, ()>();
 
         self.inner().dyn_distinct_mono(&factories).typed()
+    }
+
+    #[track_caller]
+    pub fn hash_distinct(&self) -> Self {
+        let factories = HashDistinctFactories::new::<K, ()>();
+
+        self.inner().dyn_hash_distinct_mono(&factories).typed()
     }
 
     #[track_caller]

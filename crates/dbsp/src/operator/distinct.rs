@@ -48,4 +48,18 @@ where
 
         self.inner().dyn_distinct(&factories).typed()
     }
+
+    /// A version of [`Self::distinct`] that uses a hash-based implementation.
+    ///
+    /// This method is functionally equivalent to [`Self::distinct`], but uses a slightly different
+    /// implementation, which indexes the input stream by the hash of the key before computing distinct
+    /// on it. It can potentially be more efficient for z-sets with large keys.
+    #[cfg(not(feature = "backend-mode"))]
+    #[track_caller]
+    pub fn hash_distinct(&self) -> Stream<C, Z> {
+        let factories =
+            crate::operator::dynamic::distinct::HashDistinctFactories::new::<Z::Key, Z::Val>();
+
+        self.inner().dyn_has_distinct(&factories).typed()
+    }
 }
