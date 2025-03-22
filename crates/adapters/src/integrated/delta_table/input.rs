@@ -552,6 +552,9 @@ impl DeltaTableInputEndpointInner {
         // shutdown command from the controller.
         let _ = init_status_sender.send(Ok(())).await;
 
+        // Wait for the pipeline to start before reading.
+        wait_running(&mut receiver).await;
+
         if self.config.snapshot() && self.config.timestamp_column.is_none() {
             // Read snapshot chunk-by-chunk.
             self.read_unordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
