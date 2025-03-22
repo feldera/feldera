@@ -27,7 +27,9 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDispatcher;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -71,14 +73,15 @@ import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComparatorItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -316,11 +319,15 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPItem) node);
     }
 
-    public VisitDecision preorder(DBSPStructItem node) {
+    public VisitDecision preorder(DBSPComparatorItem node) {
         return this.preorder((DBSPItem) node);
     }
 
-    public VisitDecision preorder(DBSPStructWithHelperItem node) {
+    public VisitDecision preorder(DBSPStaticItem node) {
+        return this.preorder((DBSPItem) node);
+    }
+
+    public VisitDecision preorder(DBSPStructItem node) {
         return this.preorder((DBSPItem) node);
     }
 
@@ -514,6 +521,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
 
     public VisitDecision preorder(DBSPDirectComparatorExpression node) {
         return this.preorder((DBSPComparatorExpression) node);
+    }
+
+    public VisitDecision preorder(DBSPEqualityComparatorExpression node) {
+        return this.preorder((DBSPExpression) node);
     }
 
     public VisitDecision preorder(DBSPCustomOrdExpression node) {
@@ -898,11 +909,15 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPItem) node);
     }
 
-    public void postorder(DBSPStructItem node) {
+    public void postorder(DBSPComparatorItem node) {
         this.postorder((DBSPItem) node);
     }
 
-    public void postorder(DBSPStructWithHelperItem node) {
+    public void postorder(DBSPStaticItem node) {
+        this.postorder((DBSPItem) node);
+    }
+
+    public void postorder(DBSPStructItem node) {
         this.postorder((DBSPItem) node);
     }
 
@@ -1112,6 +1127,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
 
     public void postorder(DBSPDirectComparatorExpression node) {
         this.postorder((DBSPComparatorExpression) node);
+    }
+
+    public void postorder(DBSPEqualityComparatorExpression node) {
+        this.postorder((DBSPExpression) node);
     }
 
     public void postorder(DBSPCustomOrdExpression node) {
@@ -1424,7 +1443,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return node;
     }
 
-    public CircuitRewriter getCircuitVisitor(boolean processDeclarations) {
+    public CircuitRewriter getCircuitRewriter(boolean processDeclarations) {
         return new CircuitRewriter(this.compiler(), this, processDeclarations);
+    }
+
+    public CircuitVisitor getCircuitVisitor(boolean processDeclarations) {
+        return new CircuitDispatcher(this.compiler(), this, processDeclarations);
     }
 }

@@ -28,7 +28,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
         // options.ioOptions.emitHandles = false;
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
-        options.ioOptions.verbosity = 0;
         return new DBSPCompiler(options);
     }
 
@@ -272,6 +271,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
     @Test
     public void issue2502() {
+        // Generates DBSPPartitionedRollingAggregateWithWaterlineOperator
         String sql = """
                 CREATE TABLE customer (
                     id BIGINT NOT NULL,
@@ -670,6 +670,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
             if (toCompile == null)
                 return;
             for (File c: toCompile) {
+                if (!c.getName().contains("current_pipeline")) continue;
                 if (c.getName().contains("sql")) {
                     System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());

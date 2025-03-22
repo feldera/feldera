@@ -44,7 +44,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
         String name = node.operation;
-        this.stream.append(node.getNodeName())
+        this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
                 .append(node.getIdString())
                 .append(isMultiset(node))
@@ -58,7 +58,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPConstantOperator node) {
-        this.stream.append(node.getNodeName())
+        this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
                 .append(isMultiset(node))
@@ -72,7 +72,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPViewBaseOperator node) {
-        this.stream.append(node.getNodeName())
+        this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
                 .append(isMultiset(node))
@@ -86,11 +86,31 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    static String escapeString(String input) {
+        StringBuilder escapedString = new StringBuilder();
+        for (char c : input.toCharArray()) {
+            switch (c) {
+                case '"':
+                    escapedString.append("\\\"");
+                    break;
+                case '\r':
+                    escapedString.append("\\r");
+                    break;
+                case '\\':
+                    escapedString.append("\\\\");
+                    break;
+                default:
+                    escapedString.append(c);
+            }
+        }
+
+        return escapedString.toString();
+    }
+
     String convertFunction(DBSPExpression expression) {
         String result = ToRustInnerVisitor.toRustString(this.compiler(), expression, true);
+        result = escapeString(result);
         result = result.replace("\n", "\\l");
-        // Replace non-backslash followed by quote with a backslash followed by quote.
-        result = result.replaceAll("(?<!\\\\)\"", "\\\\\"");
         return result;
     }
 
@@ -158,7 +178,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSimpleOperator node) {
-        this.stream.append(node.getNodeName())
+        this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box")
                 .append(this.getColor(node))
                 .append(" label=\"")
@@ -203,7 +223,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPOperatorWithError node) {
-        this.stream.append(node.getNodeName())
+        this.stream.append(node.getNodeName(false))
                 .append(" [ shape=record")
                 .append(" label=\"<p0>")
                 .append(shorten(node.operation))
@@ -225,7 +245,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPWaterlineOperator node) {
-        this.stream.append(node.getNodeName())
+        this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box")
                 .append(this.getColor(node))
                 .append(" label=\"")

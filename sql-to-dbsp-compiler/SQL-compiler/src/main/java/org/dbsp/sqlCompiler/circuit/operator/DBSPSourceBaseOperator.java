@@ -58,7 +58,7 @@ public abstract class DBSPSourceBaseOperator extends DBSPSimpleOperator {
     public IIndentStream toString(IIndentStream builder) {
         return this.writeComments(builder)
                 .append("let ")
-                .append(this.getOutputName())
+                .append(this.getNodeName(false))
                 .append(" = ")
                 .append(this.tableName.toString())
                 .append("();");

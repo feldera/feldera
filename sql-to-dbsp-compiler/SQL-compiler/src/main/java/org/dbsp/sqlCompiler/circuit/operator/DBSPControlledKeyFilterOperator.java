@@ -123,15 +123,9 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("let (")
-                .append(this.getOutputName(0))
-                .append(", ")
-                .append(this.getOutputName(1))
-                .append("): (")
-                .append(this.outputStreamType)
-                .append(", ")
-                .append(this.errorStreamType)
-                .append(") = ")
+        return builder.append("let ")
+                .append(this.getNodeName(false))
+                .append(" = ")
                 .append(this.left().getOutputName())
                 .append(".")
                 .append(this.operation)

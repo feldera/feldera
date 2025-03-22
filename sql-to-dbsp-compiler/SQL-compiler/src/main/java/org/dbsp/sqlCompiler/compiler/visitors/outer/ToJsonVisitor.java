@@ -11,7 +11,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -28,28 +28,24 @@ import java.util.Set;
 /** Emit a circuit description as JSON.
  * Currently only the dataflow graph is emitted.
  * The verbosity is unused, but in the future it may be used to control the detail. */
-public class ToJsonVisitor extends CircuitRewriter {
+public class ToJsonVisitor extends CircuitDispatcher {
     final IIndentStream builder;
     final int verbosity;
     final Map<RelNode, Integer> relId;
 
-    static class FindSourcePositions extends InnerRewriteVisitor {
+    static class FindSourcePositions extends InnerVisitor {
         final Set<SourcePositionRange> positions;
 
         public FindSourcePositions(DBSPCompiler compiler, Set<SourcePositionRange> positions) {
-            super(compiler, false);
+            super(compiler);
             this.positions = positions;
         }
 
         @Override
-        protected void map(IDBSPInnerNode node, IDBSPInnerNode newOp) {
-            if (node.is(DBSPExpression.class)) {
-                SourcePositionRange positionRange = node.getNode().getPositionRange();
-                if (positionRange.isValid()) {
-                    this.positions.add(positionRange);
-                }
-            }
-            super.map(node, newOp);
+        public void postorder(DBSPExpression expression) {
+            SourcePositionRange positionRange = expression.getNode().getPositionRange();
+            if (positionRange.isValid())
+                this.positions.add(positionRange);
         }
 
         @Override
@@ -71,7 +67,7 @@ public class ToJsonVisitor extends CircuitRewriter {
     }
 
     Set<SourcePositionRange> getPositions() {
-        return this.transform.to(FindSourcePositions.class).positions;
+        return this.innerVisitor.to(FindSourcePositions.class).positions;
     }
 
     void emitPort(OutputPort port) {

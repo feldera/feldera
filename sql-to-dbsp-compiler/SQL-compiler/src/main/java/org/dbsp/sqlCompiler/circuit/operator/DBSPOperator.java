@@ -27,6 +27,9 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
+import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
+import org.dbsp.util.HashString;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -42,14 +45,14 @@ import java.util.function.Predicate;
 public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     public final List<OutputPort> inputs;
     public final Annotations annotations;
-    /** id of the operator this one is derived from.  -1 for "new" operators */
+    /** id of the operator this one is derived from. */
     public long derivedFrom;
 
     protected DBSPOperator(CalciteRelNode node) {
         super(node);
         this.inputs = new ArrayList<>();
         this.annotations = new Annotations();
-        this.derivedFrom = -1;
+        this.derivedFrom = this.id;
     }
 
     public DBSPOperator copyAnnotations(DBSPOperator source) {
@@ -59,13 +62,11 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     }
 
     public String getDerivedFrom() {
-        if (this.derivedFrom >= 0)
-            return Long.toString(this.derivedFrom);
-        return Long.toString(this.id);
+        return Long.toString(this.derivedFrom);
     }
 
     public void setDerivedFrom(long id) {
-        if (id != this.id && this.derivedFrom < 0) {
+        if (id != this.id && this.derivedFrom != this.id) {
             this.derivedFrom = id;
             assert id < this.id;
         }
@@ -141,24 +142,29 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     /** True if the specified output is a multiset */
     public abstract boolean isMultiset(int outputNumber);
 
-    public String getNodeName() {
+    public String getNodeName(boolean preferHash) {
+        if (preferHash) {
+            HashString name = OperatorHash.getHash(this, false);
+            if (name != null)
+                return name.makeIdentifier("operator");
+        }
         String name = CompactName.getCompactName(this);
         if (name == null)
             name = "stream" + this.getId();
         return name;
     }
 
-    public abstract String getOutputName(int outputNumber);
-
     public abstract int outputCount();
-
-    public abstract DBSPType streamType(int outputNumber);
 
     public String getCompactName() {
         String name = CompactName.getCompactName(this);
         if (name == null)
             name = Long.toString(this.getId());
         return name;
+    }
+
+    public DBSPType outputStreamType(int outputNo, boolean outerCircuit) {
+        return new DBSPTypeStream(this.outputType(outputNo), outerCircuit);
     }
 
     public OutputPort getOutput(int outputNo) {

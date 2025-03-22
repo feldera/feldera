@@ -193,7 +193,7 @@ public class TypeCompiler implements ICompilerComponent {
             DBSPType fType = this.convertType(col.getType(), true);
             fields.add(new DBSPTypeStruct.Field(col.node, col.getName(), index++, fType));
         }
-        String saneName = this.compiler.getSaneStructName(name);
+        String saneName = this.compiler.generateStructName(name, fields);
         DBSPTypeStruct struct = new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
         if (asStruct) {
             return struct;
@@ -216,7 +216,7 @@ public class TypeCompiler implements ICompilerComponent {
         for (ViewColumnMetadata col : columns) {
             fields.add(new DBSPTypeStruct.Field(col.node, col.getName(), index++, col.getType()));
         }
-        String saneName = compiler.getSaneStructName(name);
+        String saneName = compiler.generateStructName(name, fields);
         return new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
     }
 
@@ -232,7 +232,6 @@ public class TypeCompiler implements ICompilerComponent {
         DBSPTypeStruct struct;
         if (dt.isStruct()) {
             boolean isNamedStruct = dt instanceof RelStruct;
-            String saneName = this.compiler.getSaneStructName(new ProgramIdentifier("*", false));
             if (isNamedStruct) {
                 RelStruct rs = (RelStruct) dt;
                 ProgramIdentifier simpleName = Utilities.toIdentifier(rs.typeName);
@@ -252,6 +251,7 @@ public class TypeCompiler implements ICompilerComponent {
                     fields.add(new DBSPTypeStruct.Field(
                             CalciteObject.create(dt), new ProgramIdentifier(fieldName, false), index++, type));
                 }
+                String saneName = this.compiler.generateStructName(new ProgramIdentifier("*", false), fields);
                 struct = new DBSPTypeStruct(node, new ProgramIdentifier(saneName, false), saneName, fields, nullable);
             }
             if (asStruct) {
