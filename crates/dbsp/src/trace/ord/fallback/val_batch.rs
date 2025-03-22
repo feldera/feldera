@@ -288,6 +288,13 @@ where
             Inner::File(file) => file.sample_keys(rng, sample_size, output),
         }
     }
+
+    fn maybe_contains_key(&self, key: &Self::Key) -> bool {
+        match &self.inner {
+            Inner::Vec(vec) => vec.maybe_contains_key(key),
+            Inner::File(file) => file.maybe_contains_key(key),
+        }
+    }
 }
 
 impl<K, V, T, R> Batch for FallbackValBatch<K, V, T, R>
