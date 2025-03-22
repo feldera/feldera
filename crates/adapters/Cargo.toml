@@ -123,6 +123,12 @@ redis = { version = "0.28.2", features = ["r2d2"], optional = true }
 r2d2 = { version = "0.8.10", optional = true }
 async-channel = "2.3.1"
 threadpool = "1.8.1"
+bytemuck = "1.16.3"
+num-derive = "0.4.2"
+num-traits = "0.2.15" # Used by num-derive derive macro, which cargo-machete can't see
+
+[package.metadata.cargo-machete]
+ignored = ["num-traits"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = "0.1.0"

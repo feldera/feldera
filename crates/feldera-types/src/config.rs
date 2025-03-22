@@ -83,6 +83,18 @@ impl PipelineConfig {
             1,
         )
     }
+
+    pub fn with_storage(self, storage: Option<(StorageConfig, StorageOptions)>) -> Self {
+        let (storage_config, storage_options) = storage.unzip();
+        Self {
+            global: RuntimeConfig {
+                storage: storage_options,
+                ..self.global
+            },
+            storage_config,
+            ..self
+        }
+    }
 }
 
 /// Configuration for persistent storage in a [`PipelineConfig`].
