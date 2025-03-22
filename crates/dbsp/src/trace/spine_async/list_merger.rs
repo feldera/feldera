@@ -77,6 +77,7 @@ where
     B: Batch,
 {
     cursors: Vec<C>,
+    has_mut: Vec<bool>,
     tmp_weight: Box<B::R>,
     time_diffs: Option<Box<DynWeightedPairs<DynDataTyped<B::Time>, B::R>>>,
 }
@@ -101,8 +102,11 @@ where
         assert!(cursors.len() <= 64);
 
         let time_diffs = factories.time_diffs_factory().map(|f| f.default_box());
+        let has_mut = cursors.iter().map(|c| c.has_mut()).collect();
+
         ListMerger {
             cursors,
+            has_mut,
             tmp_weight: factories.weight_factory().default_box(),
             time_diffs,
         }
@@ -131,8 +135,6 @@ where
             Some(&advance_func as &dyn Fn(&mut DynDataTyped<B::Time>))
         };
 
-        let has_mut = self.cursors[0].has_mut();
-
         // As long as there are multiple cursors...
         while remaining_cursors.is_long() && *fuel > 0 {
             // Find the indexes of the cursors with minimum keys, among the
@@ -155,8 +157,7 @@ where
                         .into_iter()
                         .map(|index| (index, self.cursors[index].val())),
                 );
-                any_values =
-                    self.copy_times(builder, time_map_func, min_vals, fuel, has_mut) || any_values;
+                any_values = self.copy_times(builder, time_map_func, min_vals, fuel) || any_values;
 
                 // Then go on to the next value in each cursor, dropping the keys
                 // for which we've exhausted the values.
@@ -172,8 +173,8 @@ where
             // values into the output.
             if let Some(index) = min_keys.first() {
                 loop {
-                    any_values = self.copy_times(builder, time_map_func, min_keys, fuel, has_mut)
-                        || any_values;
+                    any_values =
+                        self.copy_times(builder, time_map_func, min_keys, fuel) || any_values;
                     self.cursors[index].step_val();
                     if !self.cursors[index].val_valid() {
                         break;
@@ -183,10 +184,11 @@ where
 
             // If we wrote any values for these minimum keys, write the key.
             if any_values {
-                if has_mut {
-                    builder.push_key_mut(self.cursors[orig_min_keys.first().unwrap()].key_mut());
+                let index = orig_min_keys.first().unwrap();
+                if self.has_mut[index] {
+                    builder.push_key_mut(self.cursors[index].key_mut());
                 } else {
-                    builder.push_key(self.cursors[orig_min_keys.first().unwrap()].key());
+                    builder.push_key(self.cursors[index].key());
                 }
             }
 
@@ -206,16 +208,15 @@ where
             while *fuel > 0 {
                 let mut any_values = false;
                 loop {
-                    any_values =
-                        self.copy_times(builder, time_map_func, remaining_cursors, fuel, has_mut)
-                            || any_values;
+                    any_values = self.copy_times(builder, time_map_func, remaining_cursors, fuel)
+                        || any_values;
                     self.cursors[index].step_val();
                     if !self.cursors[index].val_valid() {
                         break;
                     }
                 }
                 debug_assert!(any_values, "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those");
-                if has_mut {
+                if self.has_mut[index] {
                     builder.push_key_mut(self.cursors[index].key_mut());
                 } else {
                     builder.push_key(self.cursors[index].key());
@@ -234,7 +235,6 @@ where
         map_func: Option<&dyn Fn(&mut DynDataTyped<B::Time>)>,
         indexes: IndexSet,
         fuel: &mut isize,
-        has_mut: bool,
     ) -> bool {
         // If this is a timed batch, we must consolidate the (time, weight) array; otherwise we
         // simply compute the total weight of the current value.
@@ -291,10 +291,11 @@ where
             builder.push_time_diff_mut(&mut B::Time::default(), &mut self.tmp_weight);
         }
 
-        if has_mut {
-            builder.push_val_mut(self.cursors[indexes.first().unwrap()].val_mut());
+        let index = indexes.first().unwrap();
+        if self.has_mut[index] {
+            builder.push_val_mut(self.cursors[index].val_mut());
         } else {
-            builder.push_val(self.cursors[indexes.first().unwrap()].val());
+            builder.push_val(self.cursors[index].val());
         }
         *fuel -= 1;
         true
