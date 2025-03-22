@@ -302,6 +302,10 @@ where
             }
         }
     }
+
+    fn maybe_contains_key(&self, key: &Self::Key) -> bool {
+        self.file.maybe_contains_key(key)
+    }
 }
 
 impl<K, T, R> Batch for FileKeyBatch<K, T, R>
@@ -501,6 +505,9 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
+        if !self.batch.maybe_contains_key(key) {
+            return false;
+        }
         self.seek_key(key);
         self.key_valid() && self.key().eq(key)
     }
