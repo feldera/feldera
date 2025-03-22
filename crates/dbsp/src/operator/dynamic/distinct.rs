@@ -2,6 +2,7 @@
 
 use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metrics::Gauge;
+use crate::dynamic::{ClonableTrait, Data, DynData};
 use crate::trace::TupleBuilder;
 use crate::{
     algebra::{
@@ -19,6 +20,7 @@ use crate::{
     circuit_cache_key,
     dynamic::{DynPair, DynWeightedPairs, Erase},
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
+    utils::Tup2,
     DBData, Timestamp, ZWeight,
 };
 use crate::{NestedCircuit, RootCircuit};
@@ -33,6 +35,7 @@ use std::{
     ops::Neg,
 };
 
+use super::filter_map::DynFilterMap;
 use super::{MonoIndexedZSet, MonoZSet};
 
 circuit_cache_key!(DistinctId<C, D>(StreamId => Stream<C, D>));
@@ -68,6 +71,37 @@ where
             input_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             trace_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             aux_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
+        }
+    }
+}
+
+pub struct HashDistinctFactories<Z: IndexedZSet, T: Timestamp> {
+    pub input_factories: Z::Factories,
+    pub distinct_factories: DistinctFactories<OrdIndexedZSet<DynData, DynPair<Z::Key, Z::Val>>, T>,
+}
+
+impl<Z: IndexedZSet, T: Timestamp> Clone for HashDistinctFactories<Z, T> {
+    fn clone(&self) -> Self {
+        Self {
+            input_factories: self.input_factories.clone(),
+            distinct_factories: self.distinct_factories.clone(),
+        }
+    }
+}
+
+impl<Z, T> HashDistinctFactories<Z, T>
+where
+    Z: IndexedZSet,
+    T: Timestamp,
+{
+    pub fn new<KType, VType>() -> Self
+    where
+        KType: DBData + Erase<Z::Key>,
+        VType: DBData + Erase<Z::Val>,
+    {
+        Self {
+            input_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
+            distinct_factories: DistinctFactories::new::<u64, Tup2<KType, VType>>(),
         }
     }
 }
@@ -129,6 +163,13 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
         self.dyn_distinct(factories)
     }
+
+    pub fn dyn_hash_distinct_mono(
+        &self,
+        factories: &HashDistinctFactories<MonoIndexedZSet, ()>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_hash_distinct(factories)
+    }
 }
 
 impl Stream<RootCircuit, MonoZSet> {
@@ -137,6 +178,13 @@ impl Stream<RootCircuit, MonoZSet> {
         factories: &DistinctFactories<MonoZSet, ()>,
     ) -> Stream<RootCircuit, MonoZSet> {
         self.dyn_distinct(factories)
+    }
+
+    pub fn dyn_hash_distinct_mono(
+        &self,
+        factories: &HashDistinctFactories<MonoZSet, ()>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_hash_distinct(factories)
     }
 }
 
@@ -147,6 +195,13 @@ impl Stream<NestedCircuit, MonoIndexedZSet> {
     ) -> Stream<NestedCircuit, MonoIndexedZSet> {
         self.dyn_distinct(factories)
     }
+
+    pub fn dyn_hash_distinct_mono(
+        &self,
+        factories: &HashDistinctFactories<MonoIndexedZSet, <NestedCircuit as WithClock>::Time>,
+    ) -> Stream<NestedCircuit, MonoIndexedZSet> {
+        self.dyn_hash_distinct(factories)
+    }
 }
 
 impl Stream<NestedCircuit, MonoZSet> {
@@ -155,6 +210,13 @@ impl Stream<NestedCircuit, MonoZSet> {
         factories: &DistinctFactories<MonoZSet, <NestedCircuit as WithClock>::Time>,
     ) -> Stream<NestedCircuit, MonoZSet> {
         self.dyn_distinct(factories)
+    }
+
+    pub fn dyn_hash_distinct_mono(
+        &self,
+        factories: &HashDistinctFactories<MonoZSet, <NestedCircuit as WithClock>::Time>,
+    ) -> Stream<NestedCircuit, MonoZSet> {
+        self.dyn_hash_distinct(factories)
     }
 }
 
@@ -179,6 +241,46 @@ where
             .clone()
     }
 
+    // TODO: The hash_distinct operator internally does `map_index().distinct().map_index()`.
+    // The second `map_index` can be folded into `distinct`, but I think this can wait until we have
+    // empirical proof that this operator helps performance.
+    pub fn dyn_hash_distinct(&self, factories: &HashDistinctFactories<Z, C::Time>) -> Stream<C, Z>
+    where
+        Z: IndexedZSet + Send + DynFilterMap,
+    {
+        let circuit = self.circuit();
+        circuit.region("hash_distinct", || {
+            let stream = self.dyn_shard(&factories.input_factories);
+
+            circuit
+                .cache_get_or_insert_with(DistinctIncrementalId::new(stream.stream_id()), || {
+                    let by_hash: Stream<C, OrdIndexedZSet<DynData, DynPair<Z::Key, Z::Val>>> =
+                        stream
+                            .dyn_map_index(
+                                &factories.distinct_factories.input_factories,
+                                Box::new(|item, kv| {
+                                    let (k, v) = Z::item_ref_keyval(item);
+                                    let (new_k, new_v) = kv.split_mut();
+                                    let hash = k.default_hash();
+                                    Erase::<DynData>::erase(&hash).clone_to(new_k);
+                                    new_v.from_refs(k, v);
+                                }),
+                            )
+                            .mark_sharded();
+                    let distinct =
+                        Stream::dyn_distinct_inner(&by_hash, &factories.distinct_factories);
+                    distinct
+                        .dyn_map_generic(
+                            &factories.input_factories,
+                            Box::new(|(_hash, kv), new_kv| kv.clone_to(new_kv)),
+                        )
+                        .mark_sharded()
+                        .mark_distinct()
+                })
+                .clone()
+        })
+    }
+
     /// See [`Stream::distinct`].
     pub fn dyn_distinct(&self, factories: &DistinctFactories<Z, C::Time>) -> Stream<C, Z>
     where
@@ -190,44 +292,52 @@ where
 
             circuit
                 .cache_get_or_insert_with(DistinctIncrementalId::new(stream.stream_id()), || {
-                    if circuit.root_scope() == 0 {
-                        // Use an implementation optimized to work in the root scope.
-                        circuit.add_binary_operator(
-                            DistinctIncrementalTotal::new(
-                                Location::caller(),
-                                &factories.input_factories,
-                            ),
-                            &stream,
-                            &stream
-                                .dyn_integrate_trace(&factories.input_factories)
-                                .delay_trace(),
-                        )
-                    } else {
-                        // ```
-                        //          ┌────────────────────────────────────┐
-                        //          │                                    │
-                        //          │                                    ▼
-                        //  stream  │     ┌─────┐  stream.trace()  ┌───────────────────┐
-                        // ─────────┴─────┤trace├─────────────────►│DistinctIncremental├─────►
-                        //                └─────┘                  └───────────────────┘
-                        // ```
-                        circuit.add_binary_operator(
-                            DistinctIncremental::new(
-                                Location::caller(),
-                                &factories.input_factories,
-                                &factories.aux_factories,
-                                circuit.clone(),
-                            ),
-                            &stream,
-                            // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
-                            &stream.dyn_trace(&factories.trace_factories),
-                        )
-                    }
-                    .mark_sharded()
-                    .mark_distinct()
+                    stream.dyn_distinct_inner(factories)
                 })
                 .clone()
         })
+    }
+
+    pub fn dyn_distinct_inner(&self, factories: &DistinctFactories<Z, C::Time>) -> Stream<C, Z>
+    where
+        Z: IndexedZSet + Send,
+    {
+        let circuit = self.circuit();
+
+        assert!(self.is_sharded());
+
+        if circuit.root_scope() == 0 {
+            // Use an implementation optimized to work in the root scope.
+            circuit.add_binary_operator(
+                DistinctIncrementalTotal::new(Location::caller(), &factories.input_factories),
+                self,
+                &self
+                    .dyn_integrate_trace(&factories.input_factories)
+                    .delay_trace(),
+            )
+        } else {
+            // ```
+            //          ┌────────────────────────────────────┐
+            //          │                                    │
+            //          │                                    ▼
+            //  stream  │     ┌─────┐  stream.trace()  ┌───────────────────┐
+            // ─────────┴─────┤trace├─────────────────►│DistinctIncremental├─────►
+            //                └─────┘                  └───────────────────┘
+            // ```
+            circuit.add_binary_operator(
+                DistinctIncremental::new(
+                    Location::caller(),
+                    &factories.input_factories,
+                    &factories.aux_factories,
+                    circuit.clone(),
+                ),
+                self,
+                // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
+                &self.dyn_trace(&factories.trace_factories),
+            )
+        }
+        .mark_sharded()
+        .mark_distinct()
     }
 }
 
@@ -1067,6 +1177,7 @@ mod test {
                     })));
 
                     let distinct_inc = input.distinct().gather(0);
+                    let hash_distinct_inc = input.hash_distinct().gather(0);
                     let distinct_noninc = input
                         // Non-incremental implementation of distinct_nested_incremental.
                         .integrate()
@@ -1077,6 +1188,12 @@ mod test {
                         .gather(0);
 
                     distinct_inc
+                        .apply2(&distinct_noninc, |d1: &OrdZSet<u64>, d2: &OrdZSet<u64>| {
+                            (d1.clone(), d2.clone())
+                        })
+                        .inspect(|(d1, d2)| assert_eq!(d1, d2));
+
+                    hash_distinct_inc
                         .apply2(&distinct_noninc, |d1: &OrdZSet<u64>, d2: &OrdZSet<u64>| {
                             (d1.clone(), d2.clone())
                         })
@@ -1105,6 +1222,7 @@ mod test {
     fn distinct_indexed_test() {
         let output1 = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
         let output1_clone = output1.clone();
+        let output1_clone_2 = output1.clone();
 
         let output2 = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
         let output2_clone = output2.clone();
@@ -1129,6 +1247,16 @@ mod test {
                 .inspect(move |batch| {
                     if Runtime::worker_index() == 0 {
                         *output1_clone.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            input
+                .hash_distinct()
+                .integrate()
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *output1_clone_2.lock().unwrap() = batch.clone();
                     }
                 });
 
@@ -1219,7 +1347,11 @@ mod test {
     fn distinct_test_circuit(
         circuit: &mut RootCircuit,
         inputs: Vec<TestZSet>,
-    ) -> AnyResult<(OutputHandle<TestZSet>, OutputHandle<TestZSet>)> {
+    ) -> AnyResult<(
+        OutputHandle<TestZSet>,
+        OutputHandle<TestZSet>,
+        OutputHandle<TestZSet>,
+    )> {
         let mut inputs = inputs.into_iter();
 
         let input = circuit.add_source(Generator::new(Box::new(move || {
@@ -1231,15 +1363,21 @@ mod test {
         })));
 
         let distinct_inc = input.distinct().output();
+        let hash_distinct_inc = input.hash_distinct().output();
+
         let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
 
-        Ok((distinct_inc, distinct_noninc))
+        Ok((distinct_inc, hash_distinct_inc, distinct_noninc))
     }
 
     fn distinct_indexed_test_circuit(
         circuit: &mut RootCircuit,
         inputs: Vec<TestIndexedZSet>,
-    ) -> AnyResult<(OutputHandle<TestIndexedZSet>, OutputHandle<TestIndexedZSet>)> {
+    ) -> AnyResult<(
+        OutputHandle<TestIndexedZSet>,
+        OutputHandle<TestIndexedZSet>,
+        OutputHandle<TestIndexedZSet>,
+    )> {
         let mut inputs = inputs.into_iter();
 
         let input = circuit.add_source(Generator::new(Box::new(move || {
@@ -1251,9 +1389,10 @@ mod test {
         })));
 
         let distinct_inc = input.distinct().output();
+        let hash_distinct_inc = input.hash_distinct().output();
         let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
 
-        Ok((distinct_inc, distinct_noninc))
+        Ok((distinct_inc, hash_distinct_inc, distinct_noninc))
     }
 
     fn distinct_indexed_nested_test_circuit(
@@ -1278,6 +1417,8 @@ mod test {
                 })));
 
                 let distinct_inc = input.distinct().gather(0);
+                let hash_distinct_inc = input.hash_distinct().gather(0);
+
                 let distinct_noninc = input
                     .integrate_nested()
                     .integrate()
@@ -1287,18 +1428,10 @@ mod test {
                     .gather(0);
 
                 // Compare outputs of all three implementations.
-                distinct_inc
-                    .apply2(
-                        &distinct_noninc,
-                        |d1: &TestIndexedZSet, d2: &TestIndexedZSet| (d1.clone(), d2.clone()),
-                    )
-                    .inspect(|(d1, d2)| {
-                        // if d1 != d2 {
-                        //     println!("{}: incremental: {d1}", Runtime::worker_index());
-                        //     println!("{}: non-incremental: {d2}", Runtime::worker_index());
-                        // }
-                        assert_eq!(d1, d2);
-                    });
+                distinct_inc.apply3(&distinct_noninc, &hash_distinct_inc, |d1, d2, d3| {
+                    assert_eq!(d1, d2);
+                    assert_eq!(d1, d3);
+                });
 
                 Ok((
                     move || {
@@ -1316,22 +1449,28 @@ mod test {
         #[test]
         fn proptest_distinct_test_st(inputs in test_input()) {
             let iterations = inputs.len();
-            let (circuit, (inc_output, noninc_output)) = RootCircuit::build(|circuit| distinct_test_circuit(circuit, inputs)).unwrap();
+            let (circuit, (inc_output, hash_inc_output, noninc_output)) = RootCircuit::build(|circuit| distinct_test_circuit(circuit, inputs)).unwrap();
 
             for _ in 0..iterations {
                 circuit.step().unwrap();
-                assert_eq!(inc_output.consolidate(), noninc_output.consolidate());
+                let noninc = noninc_output.consolidate();
+                assert_eq!(&inc_output.consolidate(), &noninc);
+                assert_eq!(&hash_inc_output.consolidate(), &noninc);
             }
         }
 
         #[test]
         fn proptest_distinct_test_mt(inputs in test_input(), workers in (2..=16usize)) {
             let iterations = inputs.len();
-            let (mut circuit, (inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_test_circuit(circuit, inputs)).unwrap();
+            let (mut circuit, (inc_output, hash_inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_test_circuit(circuit, inputs)).unwrap();
 
             for _ in 0..iterations {
                 circuit.step().unwrap();
-                assert_eq!(inc_output.consolidate(), noninc_output.consolidate());
+                let noninc = noninc_output.consolidate();
+
+                assert_eq!(&inc_output.consolidate(), &noninc);
+                assert_eq!(&hash_inc_output.consolidate(), &noninc);
+
             }
 
             circuit.kill().unwrap();
@@ -1340,11 +1479,13 @@ mod test {
         #[test]
         fn proptest_distinct_indexed_test_mt(inputs in test_indexed_input(), workers in (2..=4usize)) {
             let iterations = inputs.len();
-            let (mut circuit, (inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_indexed_test_circuit(circuit, inputs)).unwrap();
+            let (mut circuit, (inc_output, hash_inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_indexed_test_circuit(circuit, inputs)).unwrap();
 
             for _ in 0..iterations {
                 circuit.step().unwrap();
-                assert_eq!(inc_output.consolidate(), noninc_output.consolidate());
+                let noninc = noninc_output.consolidate();
+                assert_eq!(&inc_output.consolidate(), &noninc);
+                assert_eq!(&hash_inc_output.consolidate(), &noninc);
             }
 
             circuit.kill().unwrap();
