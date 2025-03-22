@@ -332,7 +332,10 @@ public class BaseSQLTests {
 
     public static DBSPCircuit getCircuit(DBSPCompiler compiler) {
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
-        assert circuit != null;
+        if (circuit == null) {
+            compiler.showErrors(System.err);
+            throw new RuntimeException("No circuit produced");
+        }
         return circuit;
     }
 

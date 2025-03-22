@@ -2043,4 +2043,12 @@ public class RegressionTests extends SqlIoTest {
             }
         }
     }
+
+    @Test
+    public void testUuid() {
+        this.statementsFailingInCompilation("""
+            DECLARE RECURSIVE VIEW V(u UUID);
+            CREATE VIEW V AS SELECT 1 AS u;""",
+                "does not match the declared type v(u UUID)");
+    }
 }
