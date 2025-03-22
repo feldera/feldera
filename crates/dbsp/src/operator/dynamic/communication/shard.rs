@@ -217,6 +217,11 @@ where
 
     /// Returns `true` if this stream is sharded.
     pub fn is_sharded(&self) -> bool {
+        let num_workers = Runtime::runtime().map(|r| r.num_workers()).unwrap_or(1);
+        if num_workers == 1 {
+            return true;
+        }
+
         self.circuit()
             .cache_get(&ShardId::<C, T>::new((
                 self.stream_id(),
