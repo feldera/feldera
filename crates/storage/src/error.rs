@@ -77,3 +77,20 @@ impl Serialize for StorageError {
         }
     }
 }
+
+impl StorageError {
+    /// Returns true if this error likely indicates "file (or object) not
+    /// found".
+    pub fn is_not_found(&self) -> bool {
+        match self {
+            Self::StdIo(kind) if *kind == ErrorKind::NotFound => true,
+            Self::ObjectStore(_) => {
+                // XXX This is imprecise, because we can't easily look at the
+                // details to find out whether it's "object not found". It would
+                // be good to improve it.
+                true
+            }
+            _ => false,
+        }
+    }
+}

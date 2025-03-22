@@ -3,7 +3,7 @@ use std::{
     borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
-    io::Error as IoError,
+    io::{Error as IoError, ErrorKind},
     string::ToString,
 };
 
@@ -1192,6 +1192,16 @@ impl ControllerError {
             context,
             error,
             backtrace: Backtrace::capture(),
+        }
+    }
+
+    /// Returns true if `error` likely indicates "file (or object) not
+    /// found".
+    pub fn is_not_found(&self) -> bool {
+        match self {
+            Self::IoError { io_error, .. } if io_error.kind() == ErrorKind::NotFound => true,
+            Self::StorageError { error, .. } => error.is_not_found(),
+            _ => false,
         }
     }
 }

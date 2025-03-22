@@ -34,11 +34,13 @@ use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
 use crate::PipelineState;
 use anyhow::Error as AnyError;
 use atomic::Atomic;
+use bytemuck::NoUninit;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use feldera_adapterlib::transport::InputReader;
 use feldera_types::config::PipelineConfig;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
 use metrics_util::{debugging::DebugValue, CompositeKey};
+use num_derive::FromPrimitive;
 use ordered_float::OrderedFloat;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use psutil::process::{Process, ProcessError};
@@ -57,10 +59,34 @@ use std::{
 };
 use tracing::{debug, error, info};
 
+/// Whether a pipeline supports suspend-and-resume.
+///
+/// A pipeline can be suspended if all of the following are true:
+///
+/// * Storage is enabled.
+/// * All input endpoints are fault-tolerant.
+/// * The pipeline is not replaying from the journal (which is relevant only
+///   if fault tolerance is enabled).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromPrimitive, Serialize, NoUninit)]
+#[repr(u8)]
+pub enum CanSuspend {
+    /// Pipeline does not support suspend-and-resume because its configuration
+    /// precludes it.
+    #[default]
+    No,
+
+    /// Pipeline may be suspended.
+    Yes,
+
+    /// Pipeline supports suspend-and-resume, but it can't be triggered now (for
+    /// example, because the journal is replaying).
+    NotNow,
+}
+
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
-    #[serde(serialize_with = "serialize_pipeline_state")]
+    #[serde(serialize_with = "serialize_atomic")]
     state: Atomic<PipelineState>,
 
     /// Resident set size of the pipeline process, in bytes.
@@ -101,18 +127,21 @@ pub struct GlobalControllerMetrics {
     // This field is computed on-demand by calling `ControllerStatus::update`.
     pub pipeline_complete: AtomicBool,
 
+    /// Whether this pipeline can be suspended.
+    // This field is computed on-demand by calling `ControllerStatus::update`.
+    #[serde(serialize_with = "serialize_atomic")]
+    pub can_suspend: Atomic<CanSuspend>,
+
     /// Forces the controller to perform a step regardless of the state of
     /// input buffers.
     #[serde(skip)]
     pub step_requested: AtomicBool,
 }
 
-fn serialize_pipeline_state<S>(
-    state: &Atomic<PipelineState>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
+fn serialize_atomic<S, T>(state: &Atomic<T>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
+    T: NoUninit + Serialize,
 {
     state.load(Ordering::Acquire).serialize(serializer)
 }
@@ -129,6 +158,7 @@ impl GlobalControllerMetrics {
             total_input_records: AtomicU64::new(processed_records),
             total_processed_records: AtomicU64::new(processed_records),
             pipeline_complete: AtomicBool::new(false),
+            can_suspend: Atomic::new(CanSuspend::No),
             step_requested: AtomicBool::new(false),
         }
     }
@@ -783,10 +813,14 @@ impl ControllerStatus {
         Ok((process.memory_info()?.rss(), process.cpu_times()?.busy()))
     }
 
-    pub fn update(&self) {
+    pub fn update(&self, can_suspend: CanSuspend) {
         self.global_metrics
             .pipeline_complete
             .store(self.pipeline_complete(), Ordering::Release);
+
+        self.global_metrics
+            .can_suspend
+            .store(can_suspend, Ordering::Release);
 
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
@@ -858,6 +892,10 @@ pub struct InputEndpointStatus {
     #[serde(skip)]
     pub reader: Box<dyn InputReader>,
 
+    /// Is this a fault-tolerant endpoint?
+    #[serde(skip)]
+    pub is_fault_tolerant: bool,
+
     /// Endpoint has been paused by the user.
     ///
     /// When `true`, the endpoint doesn't produce any data even when the pipeline
@@ -875,6 +913,7 @@ impl InputEndpointStatus {
         endpoint_name: &str,
         config: InputEndpointConfig,
         reader: Box<dyn InputReader>,
+        is_fault_tolerant: bool,
     ) -> Self {
         let paused_by_user =
             config.connector_config.paused || config.connector_config.start_after.is_some();
@@ -887,6 +926,7 @@ impl InputEndpointStatus {
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
             reader,
+            is_fault_tolerant,
         }
     }
 

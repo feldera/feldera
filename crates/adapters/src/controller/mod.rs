@@ -21,7 +21,7 @@ use crate::catalog::OutputCollectionHandles;
 use crate::controller::metadata::{
     InputChecksums, ReadResult, StepInputChecksums, StepInputMetadata,
 };
-use crate::controller::stats::StepResults;
+use crate::controller::stats::{CanSuspend, StepResults};
 use crate::create_integrated_output_endpoint;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -72,7 +72,6 @@ use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
 use std::sync::LazyLock;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::Error as IoError,
     mem,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -400,7 +399,7 @@ impl Controller {
     /// Returns controller status.
     pub fn status(&self) -> &ControllerStatus {
         // Update pipeline stats computed on-demand.
-        self.inner.status.update();
+        self.inner.status.update(self.can_suspend());
         &self.inner.status
     }
 
@@ -450,6 +449,9 @@ impl Controller {
         }
     }
 
+    /// Checkpoints the pipeline.
+    ///
+    /// This is a blocking wrapper around [Self::start_checkpoint].
     pub fn checkpoint(&self) -> Result<Checkpoint, ControllerError> {
         let (sender, receiver) = oneshot::channel();
         self.start_checkpoint(Box::new(move |result| sender.send(result).unwrap()));
@@ -465,6 +467,20 @@ impl Controller {
             Err(error) => cb(Err(error)),
             Ok(()) => self.inner.suspend(cb),
         }
+    }
+
+    /// Suspends the pipeline.
+    ///
+    /// This is a blocking wrapper around [Self::start_suspend].
+    pub fn suspend(&self) -> Result<(), ControllerError> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+        receiver.blocking_recv().unwrap()
+    }
+
+    /// Returns whether this pipeline supports suspend-and-resume.
+    pub fn can_suspend(&self) -> CanSuspend {
+        self.inner.can_suspend()
     }
 
     /// Initiate controller termination, but don't block waiting for it to finish.
@@ -526,6 +542,19 @@ struct CircuitThread {
     ft: Option<FtState>,
     parker: Parker,
     last_checkpoint: Instant,
+
+    /// Storage backend for writing checkpoints.
+    storage: Option<Rc<dyn StorageBackend>>,
+
+    /// The step currently running or replaying.
+    step: Step,
+
+    /// Metadata for `step - 1`; that is, the metadata that would be part of a
+    /// [Checkpoint] for `step`, to allow the input endpoints to seek to the
+    /// starting point for reading data for `step`.
+    ///
+    /// This is only `None` if `step` is 0.
+    input_metadata: Option<StepInputMetadata>,
 }
 
 impl CircuitThread {
@@ -540,24 +569,47 @@ impl CircuitThread {
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
     {
+        let ft = config.global.fault_tolerance.is_some();
         let ControllerInit {
             pipeline_config,
             circuit_config,
-            ft,
             processed_records,
+            storage,
+            step,
+            input_metadata,
         } = ControllerInit::new(config)?;
         let (circuit, catalog) = circuit_factory(circuit_config)?;
-        let (parker, backpressure_thread, command_receiver, controller) = ControllerInner::new(
-            pipeline_config,
-            catalog,
-            error_cb,
-            ft.is_some(),
-            processed_records,
-        )?;
+        let (parker, backpressure_thread, command_receiver, controller) =
+            ControllerInner::new(pipeline_config, catalog, error_cb, processed_records)?;
 
-        let ft = ft
-            .map(|ft| FtState::new(ft, controller.clone()))
-            .transpose()?;
+        // Seek each input endpoint to its initial offset.
+        //
+        // If we're not restoring from a checkpoint, `input_metadata` will be empty so
+        // this will do nothing.
+        if let Some(input_metadata) = &input_metadata {
+            for (endpoint_name, metadata) in &input_metadata.0 {
+                let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
+                controller.status.input_status()[&endpoint_id]
+                    .reader
+                    .seek(metadata.clone());
+            }
+        }
+
+        let ft = if ft {
+            let ft = if input_metadata.is_some() {
+                FtState::open(step, controller.clone())
+            } else {
+                FtState::create(storage.clone().unwrap(), controller.clone())
+            };
+            Some(ft?)
+        } else {
+            if let Some(state_path) = state_path(&controller.status.pipeline_config) {
+                // We're not fault-tolerant, so it's not a good idea to resume
+                // from the same checkpoint twice.  Delete it.
+                let _ = fs::remove_file(&state_path);
+            }
+            None
+        };
 
         Ok(Self {
             controller,
@@ -565,8 +617,11 @@ impl CircuitThread {
             circuit,
             command_receiver,
             backpressure_thread,
+            storage,
             parker,
             last_checkpoint: Instant::now(),
+            step,
+            input_metadata,
         })
     }
 
@@ -643,9 +698,16 @@ impl CircuitThread {
         else {
             return Ok(false);
         };
+        self.input_metadata = Some(StepInputMetadata(
+            step_metadata
+                .iter()
+                .map(|(name, log)| (name.clone(), log.metadata.clone()))
+                .collect(),
+        ));
         if let Some(ft) = self.ft.as_mut() {
-            ft.write_step(step_metadata)?;
+            ft.write_step(step_metadata, self.step)?;
         }
+        self.step += 1;
 
         // Wake up the backpressure thread to unpause endpoints blocked due to
         // backpressure.
@@ -668,7 +730,7 @@ impl CircuitThread {
         self.push_output(processed_records);
 
         if let Some(ft) = self.ft.as_mut() {
-            ft.next_step()?;
+            ft.next_step(self.step)?;
             self.finish_replaying();
         }
         self.controller.unpark_backpressure();
@@ -690,15 +752,58 @@ impl CircuitThread {
 
     fn checkpoint(&mut self) -> Result<Checkpoint, ControllerError> {
         fn inner(this: &mut CircuitThread) -> Result<Checkpoint, ControllerError> {
-            this.controller.fail_if_restoring()?;
-            let Some(ft) = this.ft.as_mut() else {
-                return Err(ControllerError::NotSupported {
-                    error: String::from(
-                        "cannot checkpoint circuit because fault tolerance is not enabled",
-                    ),
-                });
+            match this.controller.can_suspend() {
+                CanSuspend::No => Err(ControllerError::not_supported(
+                    "suspend requires storage and fault-tolerant input endpoints",
+                )),
+                CanSuspend::NotNow => Err(ControllerInner::warn_restoring()),
+                CanSuspend::Yes => Ok(()),
+            }?;
+
+            // Replace the input adapter configuration in the pipeline configuration
+            // by the current inputs. (HTTP input adapters might have been added or
+            // removed.)
+            let config = PipelineConfig {
+                inputs: this
+                    .controller
+                    .status
+                    .input_status()
+                    .iter()
+                    .map(|(_id, status)| {
+                        (
+                            Cow::from(status.endpoint_name.clone()),
+                            status.config.clone(),
+                        )
+                    })
+                    .collect(),
+                ..this.controller.status.pipeline_config.clone()
             };
-            ft.checkpoint(&mut this.circuit)
+
+            let checkpoint = this
+                .circuit
+                .commit()
+                .map_err(ControllerError::from)
+                .and_then(|circuit| {
+                    let checkpoint = Checkpoint {
+                        circuit: Some(circuit),
+                        step: this.step,
+                        config,
+                        processed_records: this
+                            .controller
+                            .status
+                            .global_metrics
+                            .num_total_processed_records(),
+                        input_metadata: this.input_metadata.clone().unwrap_or_default(),
+                    };
+                    let state_path = state_path(&this.controller.status.pipeline_config).unwrap();
+                    checkpoint
+                        .write(&**this.storage.as_ref().unwrap(), &state_path)
+                        .map(|()| checkpoint)
+                })?;
+            if let Some(ft) = &mut this.ft {
+                ft.checkpointed()?;
+            }
+            Ok(checkpoint)
         }
 
         let result = inner(self);
@@ -893,11 +998,7 @@ impl CircuitThread {
                     delta_batch.as_ref().unwrap().clone()
                 };
 
-                endpoint.queue.push((
-                    self.ft.as_ref().map_or(0, |ft| ft.step),
-                    batch,
-                    processed_records,
-                ));
+                endpoint.queue.push((self.step, batch, processed_records));
 
                 // Wake up the output thread.  We're not trying to be smart here and
                 // wake up the thread conditionally if it was previously idle, as I
@@ -926,9 +1027,6 @@ struct FtState {
     /// The controller.
     controller: Arc<ControllerInner>,
 
-    /// The step currently running or replaying.
-    step: Step,
-
     /// The step reader/writer.
     ///
     /// This is always non-`None` unless a fatal error occurs.
@@ -941,100 +1039,82 @@ struct FtState {
     /// If we are not replaying, this is `None`.
     input_checksums: Option<StepInputChecksums>,
 
-    /// Metadata for `step - 1`; that is, the metadata that would be part of a
-    /// [Checkpoint] for `step`, to allow the input endpoints to seek to the
-    /// starting point for reading data for `step`.
-    ///
-    /// This is only `None` if `step` is 0.
-    input_metadata: Option<StepInputMetadata>,
-
     /// Input endpoint ids and names at the time we wrote the last step,
     /// so that we can log changes for the replay log.
     input_endpoints: HashMap<EndpointId, String>,
-
-    /// Storage backend for writing checkpoints.
-    storage: Rc<dyn StorageBackend>,
 }
 
 impl FtState {
-    /// Returns a new [FtState] for `ft` and `controller`.
-    fn new(ft: FtInit, controller: Arc<ControllerInner>) -> Result<Self, ControllerError> {
-        let FtInit {
-            step,
-            step_rw,
-            input_metadata,
-            storage,
-        } = ft;
+    /// Initializes fault tolerance state from storage.
+    fn open(step: Step, controller: Arc<ControllerInner>) -> Result<Self, ControllerError> {
+        let steps_path = steps_path(&controller.status.pipeline_config).unwrap();
 
-        // Seek each input endpoint to its initial offset.
-        for (endpoint_name, metadata) in &input_metadata.0 {
-            let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
-            controller.status.input_status()[&endpoint_id]
-                .reader
-                .seek(metadata.clone());
-        }
-
-        let (input_metadata, input_checksums, step_rw) = match step_rw {
-            Some(step_rw) => {
-                // We are opening an existing checkpoint. Look for the current
-                // step in the journal.
-                match step_rw.into_reader().unwrap().seek(step)? {
-                    ReadResult::Step { reader, metadata } => {
-                        // We found the current step in the journal, as
-                        // `metadata`. Start replaying the step.
-                        let input_checksums = Self::replay_step(step, &metadata, &controller)?;
-                        (
-                            Some(StepInputMetadata::from(metadata)),
-                            Some(input_checksums),
-                            StepRw::Reader(reader),
-                        )
-                    }
-                    ReadResult::Writer(writer) => {
-                        // The current step is not in the journal, meaning that
-                        // there aren't any steps beyond the checkpoint.
-                        //
-                        // We can be somewhat confident that the journal file
-                        // was not just lost or deleted because we insist on at
-                        // least being able to open it to resume (a zero-length
-                        // file is fine).
-                        (Some(input_metadata), None, StepRw::Writer(writer))
-                    }
-                }
+        info!(
+            "{}: opening to start from step {}",
+            steps_path.display(),
+            step
+        );
+        let step_rw = StepRw::open(&steps_path)?;
+        let (input_checksums, step_rw) = match step_rw.into_reader().unwrap().seek(step)? {
+            ReadResult::Step { reader, metadata } => {
+                // We found the current step in the journal, as
+                // `metadata`. Start replaying the step.
+                let input_checksums = Self::replay_step(step, &metadata, &controller)?;
+                (Some(input_checksums), StepRw::Reader(reader))
             }
-            None => {
-                // Initialize a new fault-tolerant pipeline.
-                let config = controller.status.pipeline_config.clone();
-                let path = storage_path(&config).unwrap();
-                let state_path = state_path(&config).unwrap();
-                let steps_path = steps_path(&config).unwrap();
-
-                fs::create_dir_all(path).map_err(|error| {
-                    ControllerError::io_error(String::from("controller startup"), error)
-                })?;
-                let _ = fs::remove_file(&state_path);
-                let _ = fs::remove_dir(&steps_path);
-
-                let checkpoint = Checkpoint {
-                    circuit: None,
-                    step: 0,
-                    config,
-                    processed_records: 0,
-                    input_metadata: StepInputMetadata::default(),
-                };
-                checkpoint.write(&*storage, &state_path)?;
-
-                (None, None, StepRw::create(&steps_path)?)
+            ReadResult::Writer(writer) => {
+                // The current step is not in the journal, meaning that
+                // there aren't any steps beyond the checkpoint.
+                //
+                // We can be somewhat confident that the journal file
+                // was not just lost or deleted because we insist on at
+                // least being able to open it to resume (a zero-length
+                // file is fine).
+                (None, StepRw::Writer(writer))
             }
         };
+        Ok(Self {
+            input_endpoints: Self::initial_input_endpoints(&controller),
+            controller,
+            input_checksums,
+            step_rw: Some(step_rw),
+        })
+    }
+
+    /// Creates new fault tolerance state on storage.
+    fn create(
+        storage: Rc<dyn StorageBackend>,
+        controller: Arc<ControllerInner>,
+    ) -> Result<Self, ControllerError> {
+        let config = controller.status.pipeline_config.clone();
+        let path = storage_path(&config).unwrap();
+        let state_path = state_path(&config).unwrap();
+        let steps_path = steps_path(&config).unwrap();
+
+        fs::create_dir_all(path).map_err(|error| {
+            ControllerError::io_error(String::from("controller startup"), error)
+        })?;
+        let _ = fs::remove_file(&state_path);
+        let _ = fs::remove_dir(&steps_path);
+
+        info!("{}: creating", steps_path.display());
+        let step_rw = StepRw::create(&steps_path)?;
+
+        info!("{}: creating", state_path.display());
+        let checkpoint = Checkpoint {
+            circuit: None,
+            step: 0,
+            config,
+            processed_records: 0,
+            input_metadata: StepInputMetadata::default(),
+        };
+        checkpoint.write(&*storage, &state_path)?;
 
         Ok(Self {
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
-            step,
-            input_checksums,
+            input_checksums: None,
             step_rw: Some(step_rw),
-            input_metadata,
-            storage,
         })
     }
 
@@ -1078,7 +1158,11 @@ impl FtState {
     }
 
     /// Writes `step_metadata` to the step writer.
-    fn write_step(&mut self, input_logs: HashMap<String, InputLog>) -> Result<(), ControllerError> {
+    fn write_step(
+        &mut self,
+        input_logs: HashMap<String, InputLog>,
+        step: Step,
+    ) -> Result<(), ControllerError> {
         if let Some(step_writer) = self.step_rw.as_mut().and_then(|rw| rw.as_writer()) {
             let mut remove_inputs = HashSet::new();
             let mut add_inputs = HashMap::new();
@@ -1102,22 +1186,20 @@ impl FtState {
             drop(inputs);
 
             let step_metadata = StepMetadata {
-                step: self.step,
+                step,
                 remove_inputs,
                 add_inputs,
                 input_logs,
             };
             step_writer.write(&step_metadata)?;
-            self.input_metadata = Some(step_metadata.into());
         } else if let Some(logged) = &self.input_checksums {
             let replayed = StepInputChecksums::from(&input_logs);
             if &replayed != logged {
-                let error = format!("Logged and replayed step {} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}", self.step);
+                let error = format!("Logged and replayed step {step} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}");
                 error!("{error}");
                 return Err(ControllerError::ReplayFailure { error });
             }
         }
-        self.step += 1;
         Ok(())
     }
 
@@ -1131,7 +1213,7 @@ impl FtState {
     }
 
     /// If we just replayed a step, try to replay the next one too.
-    fn next_step(&mut self) -> Result<(), ControllerError> {
+    fn next_step(&mut self, step: Step) -> Result<(), ControllerError> {
         if self.is_replaying() {
             // Read a step.
             let step_rw = self.step_rw.take().unwrap();
@@ -1147,59 +1229,17 @@ impl FtState {
                 Some(metadata) => {
                     // There's a step to replay.
                     self.input_checksums =
-                        Some(Self::replay_step(self.step, &metadata, &self.controller)?);
+                        Some(Self::replay_step(step, &metadata, &self.controller)?);
                 }
             };
         }
         Ok(())
     }
 
-    /// Writes out a checkpoint for `circuit`.
-    fn checkpoint(&mut self, circuit: &mut DBSPHandle) -> Result<Checkpoint, ControllerError> {
-        // Replace the input adapter configuration in the pipeline configuration
-        // by the current inputs. (HTTP input adapters might have been added or
-        // removed.)
-        let config = PipelineConfig {
-            inputs: self
-                .controller
-                .status
-                .input_status()
-                .iter()
-                .map(|(_id, status)| {
-                    (
-                        Cow::from(status.endpoint_name.clone()),
-                        status.config.clone(),
-                    )
-                })
-                .collect(),
-            ..self.controller.status.pipeline_config.clone()
-        };
-
-        let input_metadata = self.input_metadata.as_ref().cloned().unwrap_or_default();
-        let checkpoint = circuit
-            .commit()
-            .map_err(ControllerError::from)
-            .and_then(|circuit| {
-                let checkpoint = Checkpoint {
-                    circuit: Some(circuit),
-                    step: self.step,
-                    config,
-                    processed_records: self
-                        .controller
-                        .status
-                        .global_metrics
-                        .num_total_processed_records(),
-                    input_metadata,
-                };
-                let state_path = state_path(&self.controller.status.pipeline_config).unwrap();
-                checkpoint
-                    .write(&*self.storage, &state_path)
-                    .map(|()| checkpoint)
-            })?;
-
+    /// Truncates the journal (because we just checkpointed).
+    fn checkpointed(&mut self) -> Result<(), ControllerError> {
         self.step_rw = Some(self.step_rw.take().unwrap().truncate()?);
-
-        Ok(checkpoint)
+        Ok(())
     }
 
     fn is_replaying(&self) -> bool {
@@ -1335,25 +1375,21 @@ struct ControllerInit {
     /// configuration.
     pipeline_config: PipelineConfig,
 
-    /// Fault-tolerance initialization, if FT will be enabled.
-    ft: Option<FtInit>,
+    /// Controller's storage backend.
+    ///
+    /// (Each thread needs its own backend.)
+    storage: Option<Rc<dyn StorageBackend>>,
 
     /// Initial counter for `total_processed_records`.
     processed_records: u64,
-}
 
-struct FtInit {
     /// The first step that the circuit will execute.
     step: Step,
 
     /// Metadata for seeking to input endpoint initial positions.
-    input_metadata: StepInputMetadata,
-
-    /// The step reader/writer, if we've already opened it..
-    step_rw: Option<StepRw>,
-
-    /// Storage backend for writing checkpoints.
-    storage: Rc<dyn StorageBackend>,
+    ///
+    /// This is `Some` iff we read a checkpoint.
+    input_metadata: Option<StepInputMetadata>,
 }
 
 fn storage_path(config: &PipelineConfig) -> Option<&Path> {
@@ -1369,12 +1405,17 @@ fn steps_path(config: &PipelineConfig) -> Option<PathBuf> {
 }
 
 impl ControllerInit {
-    fn without_ft(config: PipelineConfig) -> Result<Self, ControllerError> {
+    fn without_resume(
+        config: PipelineConfig,
+        storage: Option<Rc<dyn StorageBackend>>,
+    ) -> Result<Self, ControllerError> {
         Ok(Self {
             circuit_config: Self::circuit_config(&config, None)?,
             pipeline_config: config,
-            ft: None,
+            storage,
             processed_records: 0,
+            step: 0,
+            input_metadata: None,
         })
     }
     fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
@@ -1386,21 +1427,18 @@ impl ControllerInit {
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
         metrics_recorder::init(pipeline_name);
 
-        let (storage_config, storage_options) = match (
-            config.global.fault_tolerance.is_some(),
+        let (Some(storage_config), Some(storage_options), Some(state_path)) = (
             config.storage_config.as_ref(),
             config.global.storage.as_ref(),
-        ) {
-            (false, _, _) => {
-                info!("fault tolerance is disabled in configuration");
-                return Self::without_ft(config);
-            }
-            (true, Some(storage_config), Some(storage_options)) => {
-                (storage_config, storage_options)
-            }
-            (true, _, _) => {
-                error!("fault tolerance cannot be enabled without storage");
-                return Self::without_ft(config);
+            state_path(&config),
+        ) else {
+            if config.global.fault_tolerance.is_none() {
+                info!("storage not configured, so suspend-and-resume and fault tolerance will not be available");
+                return Self::without_resume(config, None);
+            } else {
+                return Err(ControllerError::Config {
+                    config_error: ConfigError::FtRequiresStorage,
+                });
             }
         };
         let storage =
@@ -1408,84 +1446,40 @@ impl ControllerInit {
                 ControllerError::storage_error(String::from("failed to initialize storage"), error)
             })?;
 
-        let Some(state_path) = state_path(&config) else {
-            return Err(ControllerError::Config {
-                config_error: ConfigError::FtRequiresStorage,
-            });
-        };
-        let steps_path = steps_path(&config).unwrap();
-
-        fn startup_io_error(error: IoError) -> ControllerError {
-            ControllerError::io_error(String::from("controller startup"), error)
-        }
-
-        // If a checkpoint exists, use it.
-        if fs::exists(&state_path).map_err(startup_io_error)? {
-            // Open the existing checkpoint.
-            info!(
-                "{}: resuming fault tolerant pipeline from a saved checkpoint",
-                state_path.display()
-            );
-            let Checkpoint {
-                circuit,
-                step,
-                config,
-                processed_records,
-                input_metadata,
-            } = Checkpoint::read(&*storage, &state_path)?;
-
-            // There might be a steps file already (there must be, if
-            // we're not at step 0). Open it, if so; otherwise, create a
-            // new one.
-            let step_rw = if fs::exists(&steps_path).map_err(startup_io_error)? || step > 0 {
+        // Try to read a checkpoint.
+        let checkpoint = match Checkpoint::read(&*storage, &state_path) {
+            Err(error) if error.is_not_found() => {
                 info!(
-                    "{}: opening to start from step {}",
-                    steps_path.display(),
-                    step
+                    "{}: no checkpoint found for resume ({error})",
+                    state_path.display()
                 );
-                StepRw::open(&steps_path)?
-            } else {
-                info!("{}: creating", steps_path.display());
-                StepRw::create(&steps_path)?
-            };
-            Ok(Self {
-                circuit_config: Self::circuit_config(&config, circuit.map(|circuit| circuit.uuid))?,
-                pipeline_config: config,
-                ft: Some(FtInit {
-                    step,
-                    step_rw: Some(step_rw),
-                    input_metadata,
-                    storage,
-                }),
-                processed_records,
-            })
-        } else {
-            // We're starting a new fault-tolerant pipeline.
-            //
-            // Defer creating the checkpoint and steps files on disk because we
-            // might fail to initialize[*] and if that happens we want to be
-            // able to try again with a new configuration, rather than
-            // triggering the "open the existing checkpoint" flow above and
-            // mysteriously failing again for the same reason as before.
-            //
-            // [*] For example, if the configured input adapters aren't
-            // fault-tolerant.
-            info!(
-                "{}: creating new fault tolerant pipeline",
-                state_path.display()
-            );
-            Ok(Self {
-                circuit_config: Self::circuit_config(&config, None)?,
-                pipeline_config: config,
-                ft: Some(FtInit {
-                    step: 0,
-                    step_rw: None,
-                    input_metadata: StepInputMetadata::default(),
-                    storage,
-                }),
-                processed_records: 0,
-            })
-        }
+                return Self::without_resume(config, Some(storage));
+            }
+            Err(error) => return Err(error),
+            Ok(checkpoint) => checkpoint,
+        };
+
+        info!("{}: resuming from checkpoint", state_path.display());
+        let Checkpoint {
+            circuit,
+            step,
+            config,
+            processed_records,
+            input_metadata,
+        } = checkpoint;
+
+        // Override saved storage configuration with the one that we've already
+        // initialized.
+        let config = config.with_storage(Some((storage_config.clone(), storage_options.clone())));
+
+        Ok(Self {
+            circuit_config: Self::circuit_config(&config, circuit.map(|circuit| circuit.uuid))?,
+            pipeline_config: config,
+            step,
+            input_metadata: Some(input_metadata),
+            processed_records,
+            storage: Some(storage),
+        })
     }
 
     fn circuit_config(
@@ -1854,7 +1848,6 @@ impl ControllerInner {
         config: PipelineConfig,
         catalog: Box<dyn CircuitCatalog>,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
-        fault_tolerant: bool,
         processed_records: u64,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(config.clone(), processed_records));
@@ -1875,8 +1868,8 @@ impl ControllerInner {
             backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
             error_cb,
             session_ctxt,
-            fault_tolerant,
-            restoring: AtomicBool::new(fault_tolerant),
+            fault_tolerant: config.global.fault_tolerance.is_some(),
+            restoring: AtomicBool::new(config.global.fault_tolerance.is_some()),
         });
         controller.initialize_adhoc_queries();
 
@@ -2062,7 +2055,7 @@ impl ControllerInner {
             &endpoint_config.connector_config,
             self.clone(),
         ));
-        let reader = match endpoint {
+        let (reader, is_fault_tolerant) = match endpoint {
             Some(endpoint) => {
                 // Create parser.
                 let format_config = if endpoint_config.connector_config.transport.name()
@@ -2100,23 +2093,26 @@ impl ControllerInner {
                 let parser =
                     format.new_parser(endpoint_name, input_handle, &format_config.config)?;
 
-                endpoint
+                let reader = endpoint
                     .open(probe, parser, input_handle.schema.clone())
-                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?
+                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
+                (reader, endpoint.is_fault_tolerant())
             }
             None => {
                 let endpoint =
                     create_integrated_input_endpoint(endpoint_name, &endpoint_config, probe)?;
 
-                endpoint
+                let is_fault_tolerant = endpoint.is_fault_tolerant();
+                let reader = endpoint
                     .open(input_handle)
-                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?
+                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
+                (reader, is_fault_tolerant)
             }
         };
 
         self.status.inputs.write().unwrap().insert(
             endpoint_id,
-            InputEndpointStatus::new(endpoint_name, endpoint_config, reader),
+            InputEndpointStatus::new(endpoint_name, endpoint_config, reader, is_fault_tolerant),
         );
 
         self.unpark_backpressure();
@@ -2630,16 +2626,39 @@ impl ControllerInner {
         self.status.output_buffers_full()
     }
 
+    fn warn_restoring() -> ControllerError {
+        static RATE_LIMIT: LazyLock<DefaultDirectRateLimiter> =
+            LazyLock::new(|| RateLimiter::direct(Quota::per_minute(nonzero!(10u32))));
+        if RATE_LIMIT.check().is_ok() {
+            warn!("Failing request because restore from checkpoint is in progress");
+        }
+        ControllerError::RestoreInProgress
+    }
+
     fn fail_if_restoring(&self) -> Result<(), ControllerError> {
         if self.restoring.load(Ordering::Acquire) {
-            static RATE_LIMIT: LazyLock<DefaultDirectRateLimiter> =
-                LazyLock::new(|| RateLimiter::direct(Quota::per_minute(nonzero!(10u32))));
-            if RATE_LIMIT.check().is_ok() {
-                warn!("Failing request because restore from checkpoint is in progress");
-            }
-            Err(ControllerError::RestoreInProgress)
+            Err(Self::warn_restoring())
         } else {
             Ok(())
+        }
+    }
+
+    /// Returns whether this pipeline supports suspend-and-resume.
+    pub fn can_suspend(&self) -> CanSuspend {
+        if self
+            .status
+            .input_status()
+            .values()
+            .all(|endpoint_stats| endpoint_stats.is_fault_tolerant)
+            && self.status.pipeline_config.global.storage.is_some()
+        {
+            if self.restoring.load(Ordering::Acquire) {
+                CanSuspend::NotNow
+            } else {
+                CanSuspend::Yes
+            }
+        } else {
+            CanSuspend::No
         }
     }
 }
@@ -3124,7 +3143,7 @@ outputs:
     /// The test proceeds in multiple rounds. For each element of `rounds`, the
     /// test writes `n_records` records to the input file, and starts the
     /// pipeline and waits for it to process the data.  If `do_checkpoint` is
-    /// true, it creates a new checkpoint. Then it stops the checkpoint, checks
+    /// true, it creates a new checkpoint. Then it stops the pipeline, checks
     /// that the output is as expected, and goes on to the next round.
     fn test_ft(rounds: &[FtTestRound]) {
         init_test_logger();
@@ -3279,10 +3298,10 @@ outputs:
             println!("stop controller");
             controller.stop().unwrap();
 
-            // Read output and compare. Our output adapter, which is not FT,
-            // truncates the output file to length 0 each time. Therefore, the
-            // output file should contain all the records in
-            // `checkpointed_records..total_records`.
+            // Read output and compare. Our output adapter, which is not
+            // fault-tolerant, truncates the output file to length 0 each
+            // time. Therefore, the output file should contain all the records
+            // in `checkpointed_records..total_records`.
             let mut actual = CsvReaderBuilder::new()
                 .has_headers(false)
                 .from_path(&output_path)
@@ -3527,5 +3546,182 @@ inputs:
             FtTestRound::without_checkpoint(2500),
             FtTestRound::with_checkpoint(2500),
         ]);
+    }
+
+    /// Runs a basic test of suspend and resume, without fault tolerance.
+    ///
+    /// For each element of `rounds`, the test writes the specified number of
+    /// records to the input file, and starts the pipeline and waits for it to
+    /// process the data.  Then it suspends the pipeline, checks that the output
+    /// is as expected, and goes on to the next round.
+    fn test_suspend(rounds: &[usize]) {
+        init_test_logger();
+        let tempdir = TempDir::new().unwrap();
+
+        // This allows the temporary directory to be deleted when we finish.  If
+        // you want to keep it for inspection instead, comment out the following
+        // line and then remove the comment markers on the two lines after that.
+        let tempdir_path = tempdir.path();
+        //let tempdir_path = tempdir.into_path();
+        //println!("{}", tempdir_path.display());
+
+        let storage_dir = tempdir_path.join("storage");
+        create_dir(&storage_dir).unwrap();
+        let input_path = tempdir_path.join("input.csv");
+        let input_file = File::create(&input_path).unwrap();
+        let output_path = tempdir_path.join("output.csv");
+
+        let config_str = format!(
+            r#"
+name: test
+workers: 4
+storage_config:
+    path: {storage_dir:?}
+storage: true
+clock_resolution_usecs: null
+inputs:
+    test_input1:
+        stream: test_input1
+        transport:
+            name: file_input
+            config:
+                path: {input_path:?}
+                follow: true
+        format:
+            name: csv
+outputs:
+    test_output1:
+        stream: test_output1
+        transport:
+            name: file_output
+            config:
+                path: {output_path:?}
+        format:
+            name: csv
+            config:
+        "#
+        );
+
+        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(&input_file);
+
+        // Number of records written to the input.
+        let mut total_records = 0usize;
+
+        // Number of input records included in the latest checkpoint (always <=
+        // total_records).
+        let mut checkpointed_records = 0usize;
+
+        for (round, n_records) in rounds.iter().copied().enumerate() {
+            println!("--- round {round}: add {n_records} records and suspend --- ");
+
+            // Write records to the input file.
+            println!(
+                "Writing records {total_records}..{}",
+                total_records + n_records
+            );
+            if n_records > 0 {
+                for id in total_records..total_records + n_records {
+                    writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+                }
+                writer.flush().unwrap();
+                total_records += n_records;
+            }
+
+            // Start pipeline.
+            println!("start pipeline");
+            let controller = Controller::with_config(
+                |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[])),
+                &config,
+                Box::new(|e| panic!("error: {e}")),
+            )
+            .unwrap();
+            controller.start();
+
+            // Wait for the records that are not in the checkpoint to be
+            // processed or replayed.
+            let expect_n = total_records - checkpointed_records;
+            println!(
+                "wait for {} records {checkpointed_records}..{total_records}",
+                expect_n
+            );
+            let mut last_n = 0;
+            wait(
+                || {
+                    let n = controller
+                        .status()
+                        .output_status()
+                        .get(&0)
+                        .unwrap()
+                        .transmitted_records() as usize;
+                    if n > last_n {
+                        println!("received {n} records");
+                        last_n = n;
+                    }
+                    n >= expect_n
+                },
+                10_000,
+            )
+            .unwrap();
+
+            // No more records should arrive, but give the controller some time
+            // to send some more in case there's a bug.
+            sleep(Duration::from_millis(100));
+
+            // Then verify that the number is as expected.
+            assert_eq!(
+                controller
+                    .status()
+                    .output_status()
+                    .get(&0)
+                    .unwrap()
+                    .transmitted_records(),
+                expect_n as u64
+            );
+
+            // Suspend.
+            println!("suspend");
+            controller.suspend().unwrap();
+
+            // Stop controller.
+            println!("stop controller");
+            controller.stop().unwrap();
+
+            // Read output and compare. Our output adapter, which is not
+            // fault-tolerant, truncates the output file to length 0 each
+            // time. Therefore, the output file should contain all the records
+            // in `checkpointed_records..total_records`.
+            let mut actual = CsvReaderBuilder::new()
+                .has_headers(false)
+                .from_path(&output_path)
+                .unwrap()
+                .deserialize::<(TestStruct, i32)>()
+                .map(|res| {
+                    let (val, weight) = res.unwrap();
+                    assert_eq!(weight, 1);
+                    val
+                })
+                .collect::<Vec<_>>();
+            actual.sort();
+
+            assert_eq!(actual.len(), expect_n);
+            for (record, expect_record) in actual
+                .into_iter()
+                .zip((checkpointed_records..).map(|id| TestStruct::for_id(id as u32)))
+            {
+                assert_eq!(record, expect_record);
+            }
+
+            checkpointed_records = total_records;
+            println!();
+        }
+    }
+
+    #[test]
+    fn suspend() {
+        test_suspend(&[2500, 2500, 2500, 2500, 2500]);
     }
 }
