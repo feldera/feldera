@@ -41,10 +41,6 @@ public class ToDot {
             if (outputFormat != null)
                 Utilities.runProcess(".", "dot", "-T", outputFormat,
                         "-o", fileName, tmp.getAbsolutePath());
-            Logger.INSTANCE.belowLevel("ToDotVisitor", 0)
-                    .append("Wrote circuit to ")
-                    .append(fileName)
-                    .newline();
         } catch (Exception ex) {
             if (tmp != null) {
                 try {

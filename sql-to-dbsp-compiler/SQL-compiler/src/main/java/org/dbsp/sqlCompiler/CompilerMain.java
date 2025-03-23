@@ -73,9 +73,11 @@ public class CompilerMain {
     }
 
     void usage(JCommander commander) {
+        /*
         // JCommander mistakenly prints this as default value
         // if it manages to parse it partially.
         this.options.ioOptions.loggingLevel.clear();
+         */
         commander.usage();
     }
 
@@ -100,6 +102,7 @@ public class CompilerMain {
             return 1;
         }
 
+        /*
         for (Map.Entry<String, String> entry: options.ioOptions.loggingLevel.entrySet()) {
             try {
                 int level = Integer.parseInt(entry.getValue());
@@ -109,6 +112,7 @@ public class CompilerMain {
                 return 1;
             }
         }
+         */
 
         return 0;
     }

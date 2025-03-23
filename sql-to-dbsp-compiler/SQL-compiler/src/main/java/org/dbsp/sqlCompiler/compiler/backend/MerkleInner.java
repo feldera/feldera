@@ -20,7 +20,7 @@ public class MerkleInner extends ToJsonInnerVisitor {
 
     public static HashString hash(String data) {
         String result = DigestUtils.sha256Hex(data);
-        Logger.INSTANCE.belowLevel("MerkleInner", 1)
+        Logger.INSTANCE.belowLevel(MerkleInner.class, 1)
                 .append("Hashing '")
                 .append(data)
                 .append("' to ")

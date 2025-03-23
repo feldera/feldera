@@ -247,6 +247,7 @@ public abstract class DBSPExpression
     }
 
     /** Attempt to simplify the current expression */
+    @CheckReturnValue
     public DBSPExpression reduce(DBSPCompiler compiler) {
         BetaReduction beta = new BetaReduction(compiler);
         DBSPExpression reduced = beta.apply(this).to(DBSPExpression.class);

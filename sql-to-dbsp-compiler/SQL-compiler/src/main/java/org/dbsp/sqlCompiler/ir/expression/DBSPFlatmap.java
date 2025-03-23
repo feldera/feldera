@@ -151,7 +151,7 @@ public final class DBSPFlatmap extends DBSPExpression {
 
     @Override
     public String toString() {
-        DBSPExpression converted = LowerCircuitVisitor.rewriteFlatmap(this);
+        DBSPExpression converted = LowerCircuitVisitor.rewriteFlatmap(this, null);
         return converted.toString();
     }
 

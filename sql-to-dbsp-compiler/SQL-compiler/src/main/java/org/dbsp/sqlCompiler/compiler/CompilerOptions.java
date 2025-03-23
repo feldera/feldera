@@ -167,9 +167,11 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
     /** Options related to input and output. */
     @SuppressWarnings("CanBeFinal")
     public static class IO implements IDiff<IO>, IValidate {
+        /*
         @DynamicParameter(names = "-T",
                 description = "Specify logging level for a class (can be repeated)")
         public Map<String, String> loggingLevel = new HashMap<>();
+         */
         @Parameter(names="-o", description = "Output file; stdout if null")
         public String outputFile = "";
         @Parameter(names = "-jpg", description = "Emit a jpg image of the circuit instead of Rust")

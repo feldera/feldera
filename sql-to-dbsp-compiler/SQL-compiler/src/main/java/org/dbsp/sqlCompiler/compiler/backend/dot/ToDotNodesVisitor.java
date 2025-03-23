@@ -132,7 +132,8 @@ public class ToDotNodesVisitor extends CircuitVisitor {
             return "";
         if (node.is(DBSPFlatMapOperator.class)) {
             if (expression.is(DBSPFlatmap.class)) {
-                expression = LowerCircuitVisitor.rewriteFlatmap(expression.to(DBSPFlatmap.class));
+                expression = LowerCircuitVisitor.rewriteFlatmap(
+                        expression.to(DBSPFlatmap.class), this.compiler);
             }
         }
         if (node.is(DBSPJoinFilterMapOperator.class)) {

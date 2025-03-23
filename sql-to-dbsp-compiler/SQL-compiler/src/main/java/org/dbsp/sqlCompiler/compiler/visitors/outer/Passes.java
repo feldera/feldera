@@ -66,11 +66,12 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
     public DBSPCircuit apply(DBSPCircuit circuit) {
         int details = this.getDebugLevel();
         if (this.getDebugLevel() >= 3) {
-            String name = String.format("%02d-", dumped++) + "before.png";
+            String name = String.format("%02d-", dumped++) + "before" +
+                    this.toString().replace(" ", "_") + ".png";
             ToDot.dump(this.compiler, name, details, "png", circuit);
         }
         long begin = System.currentTimeMillis();
-        Logger.INSTANCE.belowLevel("Passes", 2)
+        Logger.INSTANCE.belowLevel(this, 2)
                 .append(this.toString())
                 .append(" starting ")
                 .append(this.passes.size())
@@ -82,7 +83,7 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
             circuit = pass.apply(circuit);
             long endId = DBSPNode.outerId;
             long end = System.currentTimeMillis();
-            Logger.INSTANCE.belowLevel("Passes", 1)
+            Logger.INSTANCE.belowLevel(this, 1)
                     .append(pass.toString())
                     .append(" took ")
                     .append(end - start)
@@ -96,7 +97,7 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
             }
         }
         long finish = System.currentTimeMillis();
-        Logger.INSTANCE.belowLevel("Passes", 1)
+        Logger.INSTANCE.belowLevel(this, 1)
                 .decrease()
                 .append(this.toString())
                 .append(" took ")

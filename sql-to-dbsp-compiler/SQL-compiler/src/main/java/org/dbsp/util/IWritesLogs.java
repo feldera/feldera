@@ -34,6 +34,6 @@ public interface IWritesLogs {
 
     /** Get the debugging level of the current module. */
     default int getDebugLevel() {
-        return Logger.INSTANCE.getLoggingLevel(this.getClassName());
+        return Logger.INSTANCE.getLoggingLevel(this.getClass());
     }
 }
