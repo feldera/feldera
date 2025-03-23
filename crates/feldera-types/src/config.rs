@@ -25,8 +25,10 @@ use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 use std::fmt::Display;
 use std::path::Path;
-use std::{borrow::Cow, collections::BTreeMap};
+use std::{borrow::Cow, cmp::max, collections::BTreeMap};
 use utoipa::ToSchema;
+
+const DEFAULT_MAX_PARALLEL_CONNECTOR_INIT: u64 = 10;
 
 /// Default value of `ConnectorConfig::max_queued_records`.
 pub const fn default_max_queued_records() -> u64 {
@@ -70,6 +72,17 @@ pub struct PipelineConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+}
+
+impl PipelineConfig {
+    pub fn max_parallel_connector_init(&self) -> u64 {
+        max(
+            self.global
+                .max_parallel_connector_init
+                .unwrap_or(DEFAULT_MAX_PARALLEL_CONNECTOR_INIT),
+            1,
+        )
+    }
 }
 
 /// Configuration for persistent storage in a [`PipelineConfig`].
@@ -354,6 +367,18 @@ pub struct RuntimeConfig {
     /// Timeout in seconds for the `Provisioning` phase of the pipeline.
     /// Setting this value will override the default of the runner.
     pub provisioning_timeout_secs: Option<u64>,
+
+    /// The maximum number of connectors initialized in parallel during pipeline
+    /// startup.
+    ///
+    /// At startup, the pipeline must initialize all of its input and output connectors.
+    /// Depending on the number and types of connectors, this can take a long time.
+    /// To accelerate the process, multiple connectors are initialized concurrently.
+    /// This option controls the maximum number of connectors that can be intitialized
+    /// in parallel.
+    ///
+    /// The default is 10.
+    pub max_parallel_connector_init: Option<u64>,
 }
 
 /// Accepts "true" and "false" and converts them to the new format.
@@ -477,6 +502,7 @@ impl Default for RuntimeConfig {
             },
             pin_cpus: Vec::new(),
             provisioning_timeout_secs: None,
+            max_parallel_connector_init: None,
         }
     }
 }

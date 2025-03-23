@@ -21,6 +21,7 @@ use crate::catalog::OutputCollectionHandles;
 use crate::create_integrated_output_endpoint;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
+use crate::util::run_on_thread_pool;
 use crate::{
     catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint,
     ParseError, PipelineState, TransportInputEndpoint,
@@ -1808,12 +1809,43 @@ impl ControllerInner {
             restoring: AtomicBool::new(fault_tolerant),
         });
         controller.initialize_adhoc_queries();
-        for (input_name, input_config) in controller.status.pipeline_config.inputs.iter() {
-            controller.connect_input(input_name, input_config)?;
-        }
-        for (output_name, output_config) in controller.status.pipeline_config.outputs.iter() {
-            controller.connect_output(output_name, output_config)?;
-        }
+
+        // Initialize input and output endpoints using a thread pool to initialize multiple connectors in parallel.
+        let source_tasks =
+            controller
+                .status
+                .pipeline_config
+                .inputs
+                .iter()
+                .map(|(input_name, input_config)| {
+                    let controller = controller.clone();
+                    let input_name = input_name.clone();
+                    let input_config = input_config.clone();
+                    Box::new(move || controller.connect_input(&input_name, &input_config))
+                        as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
+                });
+
+        let sink_tasks =
+            controller
+                .status
+                .pipeline_config
+                .outputs
+                .iter()
+                .map(|(output_name, output_config)| {
+                    let controller = controller.clone();
+                    let output_name = output_name.clone();
+                    let output_config = output_config.clone();
+                    Box::new(move || controller.connect_output(&output_name, &output_config))
+                        as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
+                });
+
+        let pool_size = config.max_parallel_connector_init();
+        run_on_thread_pool(
+            "connector-init",
+            pool_size as usize,
+            source_tasks.chain(sink_tasks),
+        )?;
+
         let backpressure_thread =
             BackpressureThread::new(controller.clone(), backpressure_thread_parker);
         Ok((
@@ -1916,9 +1948,14 @@ impl ControllerInner {
     ) -> Result<EndpointId, ControllerError> {
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
-        let mut inputs = self.status.inputs.write().unwrap();
-
-        if inputs.values().any(|ep| ep.endpoint_name == endpoint_name) {
+        if self
+            .status
+            .inputs
+            .read()
+            .unwrap()
+            .values()
+            .any(|ep| ep.endpoint_name == endpoint_name)
+        {
             Err(ControllerError::duplicate_input_endpoint(endpoint_name))?;
         }
 
@@ -1991,12 +2028,10 @@ impl ControllerInner {
             }
         };
 
-        inputs.insert(
+        self.status.inputs.write().unwrap().insert(
             endpoint_id,
             InputEndpointStatus::new(endpoint_name, endpoint_config, reader),
         );
-
-        drop(inputs);
 
         self.unpark_backpressure();
         Ok(endpoint_id)
@@ -2849,6 +2884,7 @@ inputs:
 +----+------+---+-----+"#;
 
         assert_eq!(&result, expected);
+        controller.stop().unwrap();
     }
 
     // TODO: Parameterize this with config string, so we can test different
@@ -3163,6 +3199,89 @@ outputs:
             }
             println!();
         }
+    }
+
+    fn _test_concurrent_init(max_parallel_connector_init: u64) {
+        init_test_logger();
+
+        // Two JSON files with a few records each.
+        let (_temp_input_files, connectors): (Vec<_>, Vec<_>) = (0..100)
+            .map(|i| {
+                let file = NamedTempFile::new().unwrap();
+                file.as_file()
+                    .write_all(&format!(r#"[{{"id": {i}, "b": true, "s": "foo"}}]"#).into_bytes())
+                    .unwrap();
+                let path = file.path().to_str().unwrap();
+                let config = format!(
+                    r#"
+    test_input1.endpoint{i}:
+        stream: test_input1
+        transport:
+            name: file_input
+            config:
+                path: {path:?}
+        format:
+            name: json
+            config:
+                array: true
+                update_format: raw"#
+                );
+                (file, config)
+            })
+            .unzip();
+
+        let connectors = connectors.join("\n");
+
+        // Controller configuration with two input connectors;
+        // the second starts after the first one finishes.
+        let config_str = format!(
+            r#"
+name: test
+workers: 4
+max_parallel_connector_init: {max_parallel_connector_init}
+inputs:
+{connectors}
+    "#
+        );
+
+        println!("config: {config_str}");
+
+        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+        let controller = Controller::with_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &TestStruct::schema(),
+                ))
+            },
+            &config,
+            Box::new(|e| panic!("error: {e}")),
+        )
+        .unwrap();
+
+        controller.start();
+
+        wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+        let result = controller
+            .execute_query_text_sync("select count(*) from test_output1")
+            .unwrap();
+
+        let expected = r#"+----------+
+| count(*) |
++----------+
+| 100      |
++----------+"#;
+
+        assert_eq!(&result, expected);
+        controller.stop().unwrap();
+    }
+
+    #[test]
+    fn test_concurrent_init() {
+        _test_concurrent_init(1);
+        _test_concurrent_init(10);
+        _test_concurrent_init(100);
     }
 
     #[test]

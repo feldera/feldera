@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::{
     fs::File,
     io::{Error as IoError, Write},
@@ -236,6 +238,62 @@ impl<I, O> Drop for JobQueue<I, O> {
             worker.abort();
         }
     }
+}
+
+/// Execute a set of tasks on a thread pool with `num_threads`.
+///
+/// Will execute up to `num_threads` tasks in parallel.
+///
+/// # Error handling
+///
+/// If one of the tasks returns an error, this error is returned to the caller.
+/// At this point any tasks that are not yet running will be canceled; however
+/// tasks that are a already running will be allowed to finish; however tasks that
+/// are already running will continue running, since we don't have a way to cancel them.
+/// The function doesn't wait for these tasks to finish; thery will continue running
+/// in the background after the function returns.
+///
+// TODO:
+// * add a flag to wait for all tasks to finish on error.
+// * if we go async, it may be possible to cancel tasks.
+pub(crate) fn run_on_thread_pool<I, T, E>(name: &str, num_threads: usize, tasks: I) -> Result<(), E>
+where
+    I: IntoIterator<Item = Box<dyn FnOnce() -> Result<T, E> + Send>>,
+    T: Send + 'static,
+    E: Send + 'static,
+{
+    let thread_pool = threadpool::Builder::new()
+        .num_threads(num_threads)
+        .thread_name(name.to_string())
+        .build();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let mut num_tasks = 0;
+
+    for task in tasks {
+        num_tasks += 1;
+        let cancel = cancel.clone();
+        let tx = tx.clone();
+        thread_pool.execute(move || {
+            if cancel.load(Ordering::Acquire) {
+                return;
+            }
+
+            let result = task();
+            if result.is_err() {
+                cancel.store(true, Ordering::Release);
+            }
+            let _ = tx.send(result);
+        })
+    }
+
+    for _ in 0..num_tasks {
+        rx.recv().unwrap()?;
+    }
+
+    thread_pool.join();
+
+    Ok(())
 }
 
 #[cfg(test)]
