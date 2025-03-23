@@ -98,6 +98,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             clock_resolution_usecs: Some(100_000),
             pin_cpus: Vec::new(),
             provisioning_timeout_secs: Some(1200),
+            max_parallel_connector_init: Some(10),
         })
         .unwrap(),
         program_code: "CREATE TABLE table2 ( col2 VARCHAR );".to_string(),
