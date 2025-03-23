@@ -30,7 +30,7 @@ import java.util.Map;
  * The logger extends IndentStream, and thus provides the capability
  * to output nicely indented hierarchical visualizations. */
 public class Logger {
-    private final Map<String, Integer> loggingLevel = new HashMap<>();
+    private final Map<Class<?>, Integer> loggingLevel = new HashMap<>();
     private final IndentStream debugStream;
     private final IIndentStream noStream;
 
@@ -46,7 +46,7 @@ public class Logger {
      * @param clazz   Class which does the logging.
      * @param level   Level of message that is being logged.
      * @return        A stream where the message can be appended. */
-    public IIndentStream belowLevel(String clazz, int level) {
+    public IIndentStream belowLevel(Class<?> clazz, int level) {
         int debugLevel = this.getLoggingLevel(clazz);
         if (debugLevel >= level)
             return this.debugStream;
@@ -59,30 +59,26 @@ public class Logger {
      * @param level   Level of message that is being logged.
      * @return        A stream where the message can be appended. */
     public IIndentStream belowLevel(IWritesLogs module, int level) {
-        return this.belowLevel(module.getClassName(), level);
+        return this.belowLevel(module.getClass(), level);
     }
 
     /** Debug level is controlled per module and can be changed dynamically.
-     * @param clazz   Class name.
+     * @param clazz   Class.
      * @param level   Debugging level.
      * @return Previous logging level for this module. */
-    public int setLoggingLevel(String clazz, int level) {
+    public int setLoggingLevel(Class<?> clazz, int level) {
         int previous = this.loggingLevel.getOrDefault(clazz, 0);
         this.loggingLevel.put(clazz, level);
         return previous;
     }
 
-    /** The current debug level for the specified class. */
-    public int getLoggingLevel(String clazz) {
-        return this.loggingLevel.getOrDefault(clazz, 0);
-    }
-
     public <T> int getLoggingLevel(Class<T> clazz) {
-        return this.loggingLevel.getOrDefault(clazz.getSimpleName(), 0);
-    }
-
-    public <T> int setLoggingLevel(Class<T> clazz, int level) {
-        return this.setLoggingLevel(clazz.getSimpleName(), level);
+        for (var e: this.loggingLevel.entrySet()) {
+            Class<?> c = e.getKey();
+            if (c.isAssignableFrom(clazz))
+                return e.getValue();
+        }
+        return 0;
     }
 
     /**

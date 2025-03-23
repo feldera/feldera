@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -54,7 +55,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     /** Rewrite a flatmap operation into a Rust method call.
      * @param flatmap  Flatmap operation to rewrite. */
-    public static DBSPExpression rewriteFlatmap(DBSPFlatmap flatmap) {
+    public static DBSPExpression rewriteFlatmap(
+            DBSPFlatmap flatmap, @Nullable DBSPCompiler compiler) {
         //   move |x: &Tuple2<Array<i32>, Option<i32>>, | -> _ {
         //     let x0: Array<i32> = (*x.0).clone();
         //     let x1: x.1.clone();
@@ -152,6 +154,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         // or
         // let array = (*x).0.clone();
         DBSPExpression extractArray = flatmap.collectionExpression.call(rowVar).applyClone();
+        if (compiler != null)
+            extractArray = extractArray.reduce(compiler);
         DBSPLetStatement statement = new DBSPLetStatement("array", extractArray);
         statements.add(statement);
         DBSPType arrayType = extractArray.getType();
@@ -192,7 +196,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPSimpleOperator result;
         if (node.getFunction().is(DBSPFlatmap.class)) {
             List<OutputPort> sources = Linq.map(node.inputs, this::mapped);
-            DBSPExpression function = rewriteFlatmap(node.getFunction().to(DBSPFlatmap.class));
+            DBSPExpression function = rewriteFlatmap(node.getFunction().to(DBSPFlatmap.class), this.compiler);
             result = node.withFunction(function, node.outputType).withInputs(sources, this.force);
             this.map(node, result);
         } else {

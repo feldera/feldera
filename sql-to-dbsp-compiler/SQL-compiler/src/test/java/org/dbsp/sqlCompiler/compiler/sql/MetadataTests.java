@@ -701,10 +701,6 @@ public class MetadataTests extends BaseSQLTests {
                     -O
                       Optimization level (0, 1, or 2)
                       Default: 2
-                    -T
-                      Specify logging level for a class (can be repeated)
-                      Syntax: -Tkey=value
-                      Default: {}
                     -d
                       SQL syntax dialect used
                       Default: ORACLE

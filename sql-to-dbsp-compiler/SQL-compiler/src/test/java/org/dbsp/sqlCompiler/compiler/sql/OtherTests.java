@@ -157,22 +157,22 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     public void loggerTest() {
         StringBuilder builder = new StringBuilder();
         Appendable save = Logger.INSTANCE.setDebugStream(builder);
-        Logger.INSTANCE.setLoggingLevel(this.getClassName(), 1);
+        Logger.INSTANCE.setLoggingLevel(this.getClass(), 1);
         Assert.assertEquals("OtherTests", this.getClassName());
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Logging one statement")
                 .newline();
-        Logger.INSTANCE.setLoggingLevel(this.getClassName(), 0);
+        Logger.INSTANCE.setLoggingLevel(this.getClass(), 0);
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("This one is not logged")
                 .newline();
         Logger.INSTANCE.setDebugStream(save);
         Assert.assertEquals("Logging one statement\n", builder.toString());
-        Logger.INSTANCE.setLoggingLevel(this.getClassName(), 0);
+        Logger.INSTANCE.setLoggingLevel(this.getClass(), 0);
     }
 
     // Test the -T command-line parameter
-    @Test
+    @Test @Ignore("-T parameter disabled")
     public void loggingParameter() throws IOException, InterruptedException, SQLException {
         StringBuilder builder = new StringBuilder();
         Appendable save = Logger.INSTANCE.setDebugStream(builder);

@@ -131,7 +131,7 @@ public class CircuitOptimizer extends Passes {
         // Lowering may surface additional casts that need to be expanded
         this.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         // Beta reduction after implementing aggregates.
-        this.add(new BetaReduction(compiler).getCircuitVisitor(false));
+        this.add(new BetaReduction(compiler).getCircuitRewriter(false));
         this.add(new CSE(compiler));
         this.add(new ExpandJoins(compiler));
         this.add(new RemoveViewOperators(compiler, true));
@@ -139,7 +139,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new StaticDeclarations(compiler, new LazyStatics(compiler, !compiler.options.ioOptions.multiCrates())));
         // this.add(new TestSerialize(compiler));
         // The canonical form is needed if we want the Merkle hashes to be "stable".
-        //this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
+        this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
         this.add(new MerkleOuter(compiler, true));
         this.add(new MerkleOuter(compiler, false));
         this.add(new CompactNames(compiler));

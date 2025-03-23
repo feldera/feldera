@@ -33,7 +33,7 @@ public class InnerCSE implements IRTransform {
         if (!this.numbering.foundAssignment) {
             return this.cse.apply(node);
         } else {
-            Logger.INSTANCE.belowLevel("ExpressionsCSE", 1)
+            Logger.INSTANCE.belowLevel(ExpressionsCSE.class, 1)
                     .append("Skipping ")
                     .appendSupplier(node::toString);
             return node;
