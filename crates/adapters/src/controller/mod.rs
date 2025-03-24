@@ -63,6 +63,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
@@ -1818,8 +1819,12 @@ impl ControllerInner {
                     let controller = controller.clone();
                     let input_name = input_name.clone();
                     let input_config = input_config.clone();
-                    Box::new(move || controller.connect_input(&input_name, &input_config))
-                        as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
+                    Box::new(move || {
+                        catch_unwind(AssertUnwindSafe(|| {
+                            controller.connect_input(&input_name, &input_config)
+                        }))
+                        .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
+                    }) as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
                 });
 
         let sink_tasks =
@@ -1832,8 +1837,12 @@ impl ControllerInner {
                     let controller = controller.clone();
                     let output_name = output_name.clone();
                     let output_config = output_config.clone();
-                    Box::new(move || controller.connect_output(&output_name, &output_config))
-                        as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
+                    Box::new(move || {
+                        catch_unwind(AssertUnwindSafe(|| {
+                            controller.connect_output(&output_name, &output_config)
+                        }))
+                        .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
+                    }) as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
                 });
 
         let pool_size = config.max_parallel_connector_init();
@@ -3250,8 +3259,7 @@ outputs:
 
         let connectors = connectors.join("\n");
 
-        // Controller configuration with two input connectors;
-        // the second starts after the first one finishes.
+        // Controller configuration with 100 input connectors.
         let config_str = format!(
             r#"
 name: test
@@ -3300,6 +3308,76 @@ inputs:
         _test_concurrent_init(1);
         _test_concurrent_init(10);
         _test_concurrent_init(100);
+    }
+
+    #[test]
+    fn test_connector_init_error() {
+        init_test_logger();
+
+        // Two JSON files with a few records each.
+        let (_temp_input_files, connectors): (Vec<_>, Vec<_>) = (0..20)
+            .map(|i| {
+                let file = NamedTempFile::new().unwrap();
+                file.as_file()
+                    .write_all(&format!(r#"[{{"id": {i}, "b": true, "s": "foo"}}]"#).into_bytes())
+                    .unwrap();
+                let path = file.path().to_str().unwrap();
+                let config = format!(
+                    r#"
+    test_input1.endpoint{i}:
+        stream: test_input1
+        transport:
+            name: file_input
+            config:
+                path: {path:?}
+        format:
+            name: json
+            config:
+                array: true
+                update_format: raw"#
+                );
+                (file, config)
+            })
+            .unzip();
+
+        let connectors = connectors.join("\n");
+
+        // Controller configuration with two input connectors;
+        // the second starts after the first one finishes.
+        let config_str = format!(
+            r#"
+name: test
+workers: 4
+inputs:
+{connectors}
+    test_input1.error_endpoint:
+        stream: test_input1
+        transport:
+            name: file_input
+            config:
+                path: path_does_not_exist
+        format:
+            name: json
+            config:
+                array: true
+                update_format: raw"#
+        );
+
+        println!("config: {config_str}");
+
+        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+        let result = Controller::with_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &TestStruct::schema(),
+                ))
+            },
+            &config,
+            Box::new(|e| panic!("error: {e}")),
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]

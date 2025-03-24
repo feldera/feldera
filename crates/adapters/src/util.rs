@@ -256,6 +256,11 @@ impl<I, O> Drop for JobQueue<I, O> {
 // TODO:
 // * add a flag to wait for all tasks to finish on error.
 // * if we go async, it may be possible to cancel tasks.
+//
+// # Panics
+//
+// This function doesn't implement any form of panic handling. If a task can panic,
+// you can wrap it in `catch_unwind` and convert a panic into an error.
 pub(crate) fn run_on_thread_pool<I, T, E>(name: &str, num_threads: usize, tasks: I) -> Result<(), E>
 where
     I: IntoIterator<Item = Box<dyn FnOnce() -> Result<T, E> + Send>>,
