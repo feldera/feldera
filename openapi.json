@@ -388,7 +388,8 @@
                       },
                       "clock_resolution_usecs": 100000,
                       "pin_cpus": [],
-                      "provisioning_timeout_secs": null
+                      "provisioning_timeout_secs": null,
+                      "max_parallel_connector_init": null
                     },
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
                     "udf_rust": "",
@@ -445,7 +446,8 @@
                       },
                       "clock_resolution_usecs": 100000,
                       "pin_cpus": [],
-                      "provisioning_timeout_secs": 1200
+                      "provisioning_timeout_secs": 1200,
+                      "max_parallel_connector_init": 10
                     },
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
                     "udf_rust": "",
@@ -524,7 +526,8 @@
                   },
                   "clock_resolution_usecs": 100000,
                   "pin_cpus": [],
-                  "provisioning_timeout_secs": null
+                  "provisioning_timeout_secs": null,
+                  "max_parallel_connector_init": null
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -572,7 +575,8 @@
                     },
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null
+                    "provisioning_timeout_secs": null,
+                    "max_parallel_connector_init": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -715,7 +719,8 @@
                     },
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null
+                    "provisioning_timeout_secs": null,
+                    "max_parallel_connector_init": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -821,7 +826,8 @@
                   },
                   "clock_resolution_usecs": 100000,
                   "pin_cpus": [],
-                  "provisioning_timeout_secs": null
+                  "provisioning_timeout_secs": null,
+                  "max_parallel_connector_init": null
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -869,7 +875,8 @@
                     },
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null
+                    "provisioning_timeout_secs": null,
+                    "max_parallel_connector_init": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -929,7 +936,8 @@
                     },
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null
+                    "provisioning_timeout_secs": null,
+                    "max_parallel_connector_init": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1156,7 +1164,8 @@
                     },
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null
+                    "provisioning_timeout_secs": null,
+                    "max_parallel_connector_init": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -4415,6 +4424,14 @@
                 "default": 0,
                 "minimum": 0
               },
+              "max_parallel_connector_init": {
+                "type": "integer",
+                "format": "int64",
+                "description": "The maximum number of connectors initialized in parallel during pipeline\nstartup.\n\nAt startup, the pipeline must initialize all of its input and output connectors.\nDepending on the number and types of connectors, this can take a long time.\nTo accelerate the process, multiple connectors are initialized concurrently.\nThis option controls the maximum number of connectors that can be intitialized\nin parallel.\n\nThe default is 10.",
+                "default": null,
+                "nullable": true,
+                "minimum": 0
+              },
               "min_batch_size_records": {
                 "type": "integer",
                 "format": "int64",
@@ -5302,6 +5319,14 @@
             "format": "int64",
             "description": "Maximal delay in microseconds to wait for `min_batch_size_records` to\nget buffered by the controller, defaults to 0.",
             "default": 0,
+            "minimum": 0
+          },
+          "max_parallel_connector_init": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The maximum number of connectors initialized in parallel during pipeline\nstartup.\n\nAt startup, the pipeline must initialize all of its input and output connectors.\nDepending on the number and types of connectors, this can take a long time.\nTo accelerate the process, multiple connectors are initialized concurrently.\nThis option controls the maximum number of connectors that can be intitialized\nin parallel.\n\nThe default is 10.",
+            "default": null,
+            "nullable": true,
             "minimum": 0
           },
           "min_batch_size_records": {
