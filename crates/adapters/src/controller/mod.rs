@@ -1945,6 +1945,14 @@ impl ControllerInner {
     ) -> Result<EndpointId, ControllerError> {
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
+        // NOTE: We release the lock after the check below and then re-acquire it in the end of the function
+        // to actually insert the new inpoint in the map. This means that this function is racey (a concurrent
+        // invocation can insert an endpoint with the same name). I think it's ok the way we use it: when
+        // initializing the pipeline, we have an endpoint map with names that are guaranteed to be unique;
+        // hence it's safe to call `add_input_endpoint` concurrently. In the future we may need to maintain
+        // a separate set of reserved connector names to avoid the race. The alternative solution that keeps
+        // the lock across the entire body of the function isn't good, because it will force serial connector
+        // initialization.
         if self
             .status
             .inputs
@@ -2103,9 +2111,21 @@ impl ControllerInner {
         endpoint_config: &OutputEndpointConfig,
         endpoint: Option<Box<dyn OutputEndpoint>>,
     ) -> Result<EndpointId, ControllerError> {
-        let mut outputs = self.outputs.write().unwrap();
-
-        if outputs.lookup_by_name(endpoint_name).is_some() {
+        // NOTE: We release the lock after the check below and then re-acquire it in the end of the function
+        // to actually insert the new inpoint in the map. This means that this function is racey (a concurrent
+        // invocation can insert an endpoint with the same name). I think it's ok the way we use it: when
+        // initializing the pipeline, we have an endpoint map with names that are guaranteed to be unique;
+        // hence it's safe to call `add_output_endpoint` concurrently. In the future we may need to maintain
+        // a separate set of reserved endpoint names to avoid the race. The alternative solution that keeps
+        // the lock across the entire body of the function isn't good, because it will force serial connector
+        // initialization.
+        if self
+            .outputs
+            .read()
+            .unwrap()
+            .lookup_by_name(endpoint_name)
+            .is_some()
+        {
             Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
         }
 
@@ -2226,7 +2246,10 @@ impl ControllerInner {
         let disconnect_flag = endpoint_descr.disconnect_flag.clone();
         let controller = self.clone();
 
-        outputs.insert(endpoint_id, handles.clone(), endpoint_descr);
+        self.outputs
+            .write()
+            .unwrap()
+            .insert(endpoint_id, handles.clone(), endpoint_descr);
 
         let endpoint_name_string = endpoint_name.to_string();
         let output_buffer_config = endpoint_config
@@ -2247,8 +2270,6 @@ impl ControllerInner {
                 controller,
             )
         });
-
-        drop(outputs);
 
         // Initialize endpoint stats.
         self.status
