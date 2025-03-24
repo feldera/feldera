@@ -54,12 +54,8 @@ use metadata::Checkpoint;
 use metadata::InputLog;
 use metadata::StepMetadata;
 use metadata::StepRw;
-use metrics::set_global_recorder;
-use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
-use metrics_util::{
-    debugging::{DebuggingRecorder, Snapshotter},
-    layers::FanoutBuilder,
-};
+use metrics_exporter_prometheus::PrometheusHandle;
+use metrics_util::debugging::Snapshotter;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
@@ -76,7 +72,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::Error as IoError,
     mem,
-    sync::OnceLock,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
@@ -404,7 +399,7 @@ impl Controller {
     }
 
     pub fn metrics_snapshotter(&self) -> Arc<Snapshotter> {
-        self.inner.metrics_snapshotter.clone()
+        metrics_recorder::snapshotter()
     }
 
     pub fn catalog(&self) -> &Arc<Box<dyn CircuitCatalog>> {
@@ -491,7 +486,7 @@ impl Controller {
     }
 
     pub(crate) fn metrics(&self) -> PrometheusHandle {
-        self.inner.prometheus_handle.clone()
+        metrics_recorder::prometheus_handle()
     }
 
     /// Execute a SQL query over materialized tables and views;
@@ -533,8 +528,6 @@ impl CircuitThread {
             circuit_config,
             ft,
             processed_records,
-            snapshotter,
-            prometheus_handle,
         } = ControllerInit::new(config)?;
         let (circuit, catalog) = circuit_factory(circuit_config)?;
         let (parker, backpressure_thread, command_receiver, controller) = ControllerInner::new(
@@ -543,8 +536,6 @@ impl CircuitThread {
             error_cb,
             ft.is_some(),
             processed_records,
-            snapshotter,
-            prometheus_handle,
         )?;
 
         let ft = ft
@@ -1317,12 +1308,6 @@ struct ControllerInit {
 
     /// Initial counter for `total_processed_records`.
     processed_records: u64,
-
-    /// Metrics snapshotter.
-    snapshotter: Arc<Snapshotter>,
-
-    /// Handle for prometheus formatted metrics output.
-    prometheus_handle: PrometheusHandle,
 }
 
 struct FtInit {
@@ -1350,13 +1335,13 @@ fn steps_path(config: &PipelineConfig) -> Option<PathBuf> {
 
 impl ControllerInit {
     fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
-        // WARNING: If the metrics recorder is not installed before creating
-        // the circuit, DBSP metrics will not be recorded.
+        // Initialize the metrics recorder early.  If we don't install it before
+        // creating the circuit, DBSP metrics will not be recorded.
         let pipeline_name = config
             .name
             .as_ref()
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
-        let (snapshotter, prometheus_handle) = Self::install_metrics_recorder(pipeline_name);
+        metrics_recorder::init(pipeline_name);
 
         if config.global.fault_tolerance.is_none() {
             info!("fault tolerance is disabled in configuration");
@@ -1365,8 +1350,6 @@ impl ControllerInit {
                 pipeline_config: config,
                 ft: None,
                 processed_records: 0,
-                snapshotter,
-                prometheus_handle,
             });
         };
 
@@ -1419,8 +1402,6 @@ impl ControllerInit {
                     input_metadata,
                 }),
                 processed_records,
-                snapshotter,
-                prometheus_handle,
             })
         } else {
             // We're starting a new fault-tolerant pipeline.
@@ -1446,33 +1427,8 @@ impl ControllerInit {
                     input_metadata: StepInputMetadata::default(),
                 }),
                 processed_records: 0,
-                snapshotter,
-                prometheus_handle,
             })
         }
-    }
-
-    /// Sets the global metrics recorder and returns a `Snapshotter` and
-    /// a `PrometheusHandle` to get metrics in a prometheus compatible format.
-    fn install_metrics_recorder(pipeline_name: String) -> (Arc<Snapshotter>, PrometheusHandle) {
-        static METRIC_HANDLES: OnceLock<(Arc<Snapshotter>, PrometheusHandle)> = OnceLock::new();
-        METRIC_HANDLES
-            .get_or_init(|| {
-                let debugging_recorder = DebuggingRecorder::new();
-                let snapshotter = debugging_recorder.snapshotter();
-                let prometheus_recorder = PrometheusBuilder::new()
-                    .add_global_label("pipeline", pipeline_name)
-                    .build_recorder();
-                let prometheus_handle = prometheus_recorder.handle();
-                let builder = FanoutBuilder::default()
-                    .add_recorder(debugging_recorder)
-                    .add_recorder(prometheus_recorder);
-
-                set_global_recorder(builder.build()).expect("failed to install metrics exporter");
-
-                (Arc::new(snapshotter), prometheus_handle)
-            })
-            .clone()
     }
 
     fn circuit_config(
@@ -1500,6 +1456,51 @@ impl ControllerInit {
                 None
             },
         })
+    }
+}
+
+mod metrics_recorder {
+    use std::sync::{Arc, OnceLock};
+
+    use metrics::set_global_recorder;
+    use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+    use metrics_util::{
+        debugging::{DebuggingRecorder, Snapshotter},
+        layers::FanoutBuilder,
+    };
+
+    static METRIC_HANDLES: OnceLock<(Arc<Snapshotter>, PrometheusHandle)> = OnceLock::new();
+
+    /// Initializes the global metrics recorder.
+    ///
+    /// This has to happen early, before the circuit is initialized; otherwise,
+    /// DBSP metrics won't be recorded.
+    pub fn init(pipeline_name: String) {
+        METRIC_HANDLES.get_or_init(|| {
+            let debugging_recorder = DebuggingRecorder::new();
+            let snapshotter = debugging_recorder.snapshotter();
+            let prometheus_recorder = PrometheusBuilder::new()
+                .add_global_label("pipeline", pipeline_name)
+                .build_recorder();
+            let prometheus_handle = prometheus_recorder.handle();
+            let builder = FanoutBuilder::default()
+                .add_recorder(debugging_recorder)
+                .add_recorder(prometheus_recorder);
+
+            set_global_recorder(builder.build()).expect("failed to install metrics exporter");
+
+            (Arc::new(snapshotter), prometheus_handle)
+        });
+    }
+
+    /// Returns the global metrics snapshotter. [init] must already have been called.
+    pub fn snapshotter() -> Arc<Snapshotter> {
+        METRIC_HANDLES.get().unwrap().0.clone()
+    }
+
+    /// Returns the global Prometheus handle. [init] must already have been called.
+    pub fn prometheus_handle() -> PrometheusHandle {
+        METRIC_HANDLES.get().unwrap().1.clone()
     }
 }
 
@@ -1782,8 +1783,6 @@ pub struct ControllerInner {
     circuit_thread_unparker: Unparker,
     backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
-    metrics_snapshotter: Arc<Snapshotter>,
-    prometheus_handle: PrometheusHandle,
     session_ctxt: SessionContext,
 
     /// Is fault tolerance enabled?
@@ -1800,8 +1799,6 @@ impl ControllerInner {
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
         fault_tolerant: bool,
         processed_records: u64,
-        metrics_snapshotter: Arc<Snapshotter>,
-        prometheus_handle: PrometheusHandle,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(config.clone(), processed_records));
         let circuit_thread_parker = Parker::new();
@@ -1820,8 +1817,6 @@ impl ControllerInner {
             circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
             backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
             error_cb,
-            metrics_snapshotter,
-            prometheus_handle,
             session_ctxt,
             fault_tolerant,
             restoring: AtomicBool::new(fault_tolerant),
