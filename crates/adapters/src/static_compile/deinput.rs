@@ -2,6 +2,7 @@
 use crate::catalog::AvroStream;
 #[cfg(feature = "with-avro")]
 use crate::format::avro::from_avro_value;
+use crate::format::csv::deserializer::ByteRecordDeserializer;
 use crate::format::raw::{raw_serde_config, RawDeserializer};
 use crate::{catalog::ArrowStream, format::InputBuffer};
 use crate::{
@@ -22,9 +23,44 @@ use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
+use serde_json::de::SliceRead;
 use std::hash::Hasher;
 use std::iter::zip;
 use std::{collections::VecDeque, marker::PhantomData, mem::swap, ops::Neg};
+
+// The following functions are needed to force the erased deserializer implementation
+// for the Arrow, CSV, JSON, and raw formats to get monomorphized in the adapters crate
+// rather than in every crate that uses it.
+
+#[inline(never)]
+pub fn arrow_deserializer<'a>(
+    data: &'a RecordBatch,
+) -> Result<Box<dyn ErasedDeserializer<'a> + 'a>, serde_arrow::Error> {
+    let deserializer = ArrowDeserializer::from_record_batch(data)?;
+
+    Ok(Box::new(<dyn ErasedDeserializer<'a>>::erase(deserializer))
+        as Box<dyn ErasedDeserializer<'a>>)
+}
+
+#[inline(never)]
+pub fn csv_deserializer<'a>(
+    deserializer: &'a mut ByteRecordDeserializer<'a>,
+) -> Box<dyn ErasedDeserializer<'a> + 'a> {
+    Box::new(<dyn ErasedDeserializer<'a>>::erase(deserializer))
+}
+
+#[inline(never)]
+pub fn json_deserializer<'a>(
+    deserializer: &'a mut serde_json::Deserializer<SliceRead<'a>>,
+) -> Box<dyn ErasedDeserializer<'a> + 'a> {
+    Box::new(<dyn ErasedDeserializer<'a>>::erase(deserializer))
+}
+
+#[inline(never)]
+pub fn raw_deserializer<'a>(data: &'a [u8]) -> Box<dyn ErasedDeserializer<'a> + 'a> {
+    let deserializer = RawDeserializer::new(data);
+    Box::new(<dyn ErasedDeserializer<'a>>::erase(deserializer))
+}
 
 /// A deserializer that parses byte arrays into a strongly typed representation.
 pub trait DeserializerFromBytes<C> {
@@ -70,8 +106,7 @@ impl DeserializerFromBytes<(SqlSerdeConfig, CsvParserConfig)> for CsvDeserialize
         self.reader.read_byte_record(&mut self.record)?;
 
         let mut deserializer = byte_record_deserializer(&self.record, None);
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(&mut deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = csv_deserializer(&mut deserializer);
 
         T::deserialize_with_context(deserializer, &self.config).map_err(|e| anyhow!(e.to_string()))
     }
@@ -91,14 +126,12 @@ impl DeserializerFromBytes<SqlSerdeConfig> for JsonDeserializerFromBytes {
         T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
     {
         let mut deserializer = serde_json::Deserializer::from_slice(data);
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(&mut deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = json_deserializer(&mut deserializer);
 
         T::deserialize_with_context(deserializer, &self.config).map_err(|e| anyhow!(e.to_string()))
     }
 }
 
-// Deserializer for JSON-encoded data.
 pub struct RawDeserializerFromBytes {
     config: SqlSerdeConfig,
 }
@@ -111,9 +144,7 @@ impl DeserializerFromBytes<SqlSerdeConfig> for RawDeserializerFromBytes {
     where
         T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
     {
-        let deserializer = RawDeserializer::new(data);
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = raw_deserializer(data);
 
         T::deserialize_with_context(deserializer, &self.config).map_err(|e| anyhow!(e.to_string()))
     }
@@ -556,9 +587,7 @@ where
     C: Clone + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let deserializer = ArrowDeserializer::from_record_batch(data)?;
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = arrow_deserializer(data)?;
 
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer
@@ -569,9 +598,7 @@ where
     }
 
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let deserializer = ArrowDeserializer::from_record_batch(data)?;
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = arrow_deserializer(data)?;
 
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer
@@ -588,9 +615,7 @@ where
             bail!("insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}", data.num_rows(), polarities.len());
         }
 
-        let deserializer = ArrowDeserializer::from_record_batch(data)?;
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = arrow_deserializer(data)?;
 
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
 
@@ -955,9 +980,7 @@ where
     C: Clone + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let deserializer = ArrowDeserializer::from_record_batch(data)?;
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = arrow_deserializer(data)?;
 
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer
@@ -968,9 +991,7 @@ where
     }
 
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let deserializer = ArrowDeserializer::from_record_batch(data)?;
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = arrow_deserializer(data)?;
 
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer
@@ -991,9 +1012,7 @@ where
             bail!("insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}", data.num_rows(), polarities.len());
         }
 
-        let deserializer = ArrowDeserializer::from_record_batch(data)?;
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = arrow_deserializer(data)?;
 
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer.updates.extend(
@@ -1486,9 +1505,7 @@ where
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let deserializer = ArrowDeserializer::from_record_batch(data)?;
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = arrow_deserializer(data)?;
 
         let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer.updates.extend(records.into_iter().map(|r| {
@@ -1500,9 +1517,7 @@ where
     }
 
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let deserializer = ArrowDeserializer::from_record_batch(data)?;
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = arrow_deserializer(data)?;
 
         let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer.updates.extend(records.into_iter().map(|r| {
@@ -1528,9 +1543,7 @@ where
             bail!("insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}", data.num_rows(), polarities.len());
         }
 
-        let deserializer = ArrowDeserializer::from_record_batch(data)?;
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+        let deserializer = arrow_deserializer(data)?;
 
         let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
         self.buffer
