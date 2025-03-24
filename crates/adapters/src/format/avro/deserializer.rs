@@ -518,6 +518,16 @@ impl<'de> de::Deserializer<'de> for StrDeserializer<'de> {
     }
 }
 
+// This one-liner function is needed to force the erased deserializer implementation
+// for the Avro deserializer to get monomorphized in the adapters crate rather than
+// every crate that uses it.
+#[inline(never)]
+pub fn avro_deserializer<'a, 'de>(
+    deserializer: &'a Deserializer<'de>,
+) -> Box<dyn ErasedDeserializer<'de> + 'a> {
+    Box::new(<dyn ErasedDeserializer>::erase(deserializer))
+}
+
 /// Interpret a `Value` as an instance of type `D`.
 ///
 /// This conversion can fail if the structure of the `Value` does not match the
@@ -526,9 +536,9 @@ pub fn from_avro_value<'de, D: DeserializeWithContext<'de, SqlSerdeConfig>>(
     value: &'de Value,
     schema: &'de Schema,
 ) -> Result<D, erased_serde::Error> {
-    let deserializer = Deserializer::new(value, schema);
-    let deserializer =
-        &mut <dyn ErasedDeserializer>::erase(&deserializer) as &mut dyn ErasedDeserializer;
+    let deserializer: Deserializer<'de> = Deserializer::new(value, schema);
+
+    let deserializer = avro_deserializer(&deserializer);
 
     D::deserialize_with_context(deserializer, avro_de_config())
 }
