@@ -1066,11 +1066,13 @@ async fn cleanup_rust_compilation(
 ) -> Result<(), RustCompilationCleanupError> {
     trace!("Performing Rust cleanup...");
 
+    let rust_compilation_path = config.working_dir().join("rust-compilation");
+    if !rust_compilation_path.exists() {
+        return Ok(());
+    }
+
     // Location of the cleanup state file
-    let cleanup_state_file_path = config
-        .working_dir()
-        .join("rust-compilation")
-        .join("cleanup_state.json");
+    let cleanup_state_file_path = rust_compilation_path.join("cleanup_state.json");
 
     // Attempt to read cleanup state from file.
     // If it fails, an error is written to log and the cleanup state is wiped.
@@ -1141,10 +1143,7 @@ async fn cleanup_rust_compilation(
         Arc::new(move |name: &str| decide_cleanup(name, '-', None, &deletion_clone));
 
     // (2) Clean up binaries
-    let binaries_dir = config
-        .working_dir()
-        .join("rust-compilation")
-        .join("binaries");
+    let binaries_dir = rust_compilation_path.join("binaries");
     if binaries_dir.is_dir() {
         found.append(
             &mut cleanup_specific_files(
@@ -1158,10 +1157,7 @@ async fn cleanup_rust_compilation(
     }
 
     // (3) Clean up project directories
-    let projects_dir = config
-        .working_dir()
-        .join("rust-compilation")
-        .join("projects");
+    let projects_dir = rust_compilation_path.join("projects");
     if projects_dir.is_dir() {
         found.append(
             &mut cleanup_specific_directories(
@@ -1181,9 +1177,7 @@ async fn cleanup_rust_compilation(
         CompilationProfile::Optimized,
     ] {
         let target_profile_folder = profile.to_target_folder();
-        let target_subdir = config
-            .working_dir()
-            .join("rust-compilation")
+        let target_subdir = rust_compilation_path
             .join("target")
             .join(target_profile_folder);
         if target_subdir.is_dir() {
@@ -1239,10 +1233,7 @@ async fn cleanup_rust_compilation(
 
     // (5) Clean up pipeline binaries
     //     These are not subject to the retention period.
-    let pipeline_binaries_dir = config
-        .working_dir()
-        .join("rust-compilation")
-        .join("pipeline-binaries");
+    let pipeline_binaries_dir = rust_compilation_path.join("pipeline-binaries");
     let valid_pipeline_binary_filenames: Vec<String> = existing_pipeline_programs.iter().map(
         |(pipeline_id, program_version, source_checksum, integrity_checksum)| {
             format!("pipeline_{pipeline_id}_v{program_version}_sc_{source_checksum}_ic_{integrity_checksum}")
