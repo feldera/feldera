@@ -16,7 +16,10 @@ class cmpxtst_udt_of_map_tbl(TstTable):
             {
                 "id": 0,
                 "c1": None,
-                "c2": {"m1_var": {None: "hi", "b": "bye"}, "m2_var": {None: None}},
+                "c2": {
+                    "m1_var": {"q": "hi", "r": None},
+                    "m2_var": {"s": None, "t": "ciao"},
+                },
             },
             {
                 "id": 1,
@@ -34,8 +37,8 @@ class cmpxtst_udt_of_map_field_access(TstView):
                 "id": 0,
                 "m1_int": None,
                 "m2_int": None,
-                "m1_var": {"b": "bye", "null": "hi"},
-                "m2_var": {"null": None},
+                "m1_var": {"q": "hi", "r": None},
+                "m2_var": {"s": None, "t": "ciao"},
             },
             {
                 "id": 1,
@@ -57,7 +60,7 @@ class cmpxtst_udt_of_map_field_access(TstView):
 class cmpxtst_udt_of_map_element_access(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"id": 0, "b": "bye"}]
+        self.data = [{"id": 0, "b": None}]
         self.sql = """CREATE MATERIALIZED VIEW udt_of_map_element_access AS SELECT
                       id,
                       c2[1]['b'] AS b
