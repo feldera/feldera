@@ -329,8 +329,7 @@ pub async fn stream_adhoc_result(
                     schema,
                     Some(WriterProperties::builder().set_compression(Compression::SNAPPY).build()),
                 )?;
-                while let Some(batch) = stream.next().await {
-                    let batch = batch.map_err(DataFusionError::from)?;
+                while let Some(batch) = stream.next().await.transpose()? {
                     writer.write(&batch).await?;
                 }
                 writer.flush().await?;
