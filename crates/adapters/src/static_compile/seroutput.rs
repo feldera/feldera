@@ -17,15 +17,57 @@ use dbsp::dynamic::DowncastTrait;
 use dbsp::trace::merge_batches;
 use dbsp::typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch};
 use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle, Trace};
-use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
+use erased_serde::{Serialize as ErasedSerialize, Serializer as ErasedSerializer};
+use feldera_types::serde_with_context::serialize::{
+    SerializeFieldsWithContextWrapper, SerializeWithContextWrapper,
+};
 use feldera_types::{
     format::csv::CsvParserConfig,
-    serde_with_context::{SerializationContext, SerializeWithContext, SqlSerdeConfig},
+    serde_with_context::{SerializeWithContext, SqlSerdeConfig},
 };
 use serde::Serialize;
 use serde_arrow::ArrayBuilder;
 use std::{any::Any, collections::HashSet, fmt::Debug};
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
+
+pub trait ErasedSerializeWithContext {
+    fn erased_serialize_with_context(
+        &self,
+        serializer: &mut dyn ErasedSerializer,
+        context: &SqlSerdeConfig,
+    ) -> erased_serde::Result<()>;
+
+    fn erased_serialize_fields_with_context(
+        &self,
+        serializer: &mut dyn ErasedSerializer,
+        context: &SqlSerdeConfig,
+        fields: &HashSet<String>,
+    ) -> erased_serde::Result<()>;
+}
+
+impl<T> ErasedSerializeWithContext for T
+where
+    T: SerializeWithContext<SqlSerdeConfig>,
+{
+    fn erased_serialize_with_context(
+        &self,
+        serializer: &mut dyn ErasedSerializer,
+        context: &SqlSerdeConfig,
+    ) -> erased_serde::Result<()> {
+        let _ = self.serialize_with_context(serializer, context)?;
+        Ok(())
+    }
+
+    fn erased_serialize_fields_with_context(
+        &self,
+        serializer: &mut dyn ErasedSerializer,
+        context: &SqlSerdeConfig,
+        fields: &HashSet<String>,
+    ) -> erased_serde::Result<()> {
+        let _ = self.serialize_fields_with_context(serializer, context, fields)?;
+        Ok(())
+    }
+}
 
 /// Implementation of the [`std::io::Write`] trait that allows swapping out
 /// the underlying writer at runtime.
@@ -94,217 +136,141 @@ where
 }
 
 /// A serializer that encodes values to a byte array.
-trait BytesSerializer<C>: Send {
-    fn serialize<T: SerializeWithContext<C>>(
-        &mut self,
-        val: &T,
-        buf: &mut Vec<u8>,
-    ) -> AnyResult<()>;
+trait BytesSerializer: Send {
+    fn serialize(&mut self, val: &dyn ErasedSerialize, buf: &mut Vec<u8>) -> AnyResult<()>;
 
-    fn serialize_fields<T: SerializeWithContext<C>>(
+    fn serialize_arrow(
         &mut self,
-        _val: &T,
-        _fields: &HashSet<String>,
-        _buf: &mut Vec<u8>,
+        _val: &dyn ErasedSerialize,
+        _buf: &mut ArrayBuilder,
     ) -> AnyResult<()> {
-        unimplemented!()
-    }
-
-    fn serialize_arrow<T>(&mut self, _val: &T, _buf: &mut ArrayBuilder) -> AnyResult<()>
-    where
-        T: SerializeWithContext<C>,
-    {
         unimplemented!()
     }
 
     /// Serialize `val` to Arrow format, adding metadata columns from `metadata`.
     /// `metadata` must be a struct or a map.
-    fn serialize_arrow_with_metadata<T>(
+    fn serialize_arrow_with_metadata(
         &mut self,
-        _val: &T,
-        _metadata: &dyn erased_serde::Serialize,
+        _val: &dyn ErasedSerialize,
+        _metadata: &dyn ErasedSerialize,
         _buf: &mut ArrayBuilder,
-    ) -> AnyResult<()>
-    where
-        T: SerializeWithContext<C>,
-    {
+    ) -> AnyResult<()> {
         unimplemented!()
     }
 
     #[cfg(feature = "with-avro")]
-    fn serialize_avro<T>(
+    fn serialize_avro(
         &mut self,
-        _val: &T,
+        _val: &dyn ErasedSerialize,
         _schema: &AvroSchema,
         _refs: &NamesRef<'_>,
         _strict: bool,
-    ) -> Result<AvroValue, AvroSerializerError>
-    where
-        T: SerializeWithContext<C>,
-    {
+    ) -> Result<AvroValue, AvroSerializerError> {
         unimplemented!()
     }
 }
 
-struct CsvSerializer<C> {
+struct CsvSerializer {
     writer: CsvWriter<SwappableWrite<Vec<u8>>>,
-    context: C,
 }
 
-impl<C> CsvSerializer<C>
-where
-    C: Send,
-{
-    fn create(context: C, config: CsvParserConfig) -> Self {
+impl CsvSerializer {
+    fn create(config: CsvParserConfig) -> Self {
         Self {
             writer: CsvWriterBuilder::new()
                 .has_headers(false)
                 .flexible(true)
                 .delimiter(config.delimiter().0)
                 .from_writer(SwappableWrite::new()),
-            context,
         }
     }
 }
 
-impl<C> BytesSerializer<C> for CsvSerializer<C>
-where
-    C: Send,
-{
-    fn serialize<T>(&mut self, val: &T, buf: &mut Vec<u8>) -> AnyResult<()>
-    where
-        T: SerializeWithContext<C>,
-    {
+impl BytesSerializer for CsvSerializer {
+    fn serialize(&mut self, val: &dyn ErasedSerialize, buf: &mut Vec<u8>) -> AnyResult<()> {
         let owned_buf = std::mem::take(buf);
         self.writer.get_ref().swap(Some(owned_buf));
-        let val_with_context = SerializationContext::new(&self.context, val);
-        let res = self.writer.serialize(val_with_context);
+        let res = self.writer.serialize(val);
         let _ = self.writer.flush();
         *buf = self.writer.get_ref().swap(None).unwrap();
         Ok(res?)
     }
 }
 
-struct JsonSerializer<C> {
-    context: C,
-}
+struct JsonSerializer;
 
-impl<C> JsonSerializer<C>
-where
-    C: Send,
-{
-    fn create(context: C) -> Self {
-        Self { context }
+impl JsonSerializer {
+    fn create() -> Self {
+        Self
     }
 }
 
-impl<C> BytesSerializer<C> for JsonSerializer<C>
-where
-    C: Send,
-{
-    fn serialize<T>(&mut self, val: &T, buf: &mut Vec<u8>) -> AnyResult<()>
-    where
-        T: SerializeWithContext<C>,
-    {
-        val.serialize_with_context(&mut serde_json::Serializer::new(buf), &self.context)?;
-        Ok(())
-    }
-
-    fn serialize_fields<T: SerializeWithContext<C>>(
-        &mut self,
-        val: &T,
-        fields: &HashSet<String>,
-        buf: &mut Vec<u8>,
-    ) -> AnyResult<()> {
-        val.serialize_fields_with_context(
-            &mut serde_json::Serializer::new(buf),
-            &self.context,
-            fields,
-        )?;
+impl BytesSerializer for JsonSerializer {
+    fn serialize(&mut self, val: &dyn ErasedSerialize, buf: &mut Vec<u8>) -> AnyResult<()> {
+        val.serialize(&mut serde_json::Serializer::new(buf))?;
         Ok(())
     }
 }
 
 #[cfg(feature = "with-avro")]
-pub struct AvroSerializer {
-    config: SqlSerdeConfig,
-}
+pub struct AvroSerializer;
 
 #[cfg(feature = "with-avro")]
 impl AvroSerializer {
     fn create() -> Self {
-        Self {
-            config: avro_ser_config(),
-        }
+        Self
     }
 }
 
 #[cfg(feature = "with-avro")]
-impl BytesSerializer<SqlSerdeConfig> for AvroSerializer {
-    fn serialize<T>(&mut self, _val: &T, _buf: &mut Vec<u8>) -> AnyResult<()>
-    where
-        T: SerializeWithContext<SqlSerdeConfig>,
-    {
+impl BytesSerializer for AvroSerializer {
+    fn serialize(&mut self, _val: &dyn ErasedSerialize, _buf: &mut Vec<u8>) -> AnyResult<()> {
         unimplemented!()
     }
 
-    fn serialize_avro<T>(
+    fn serialize_avro(
         &mut self,
-        val: &T,
+        val: &dyn ErasedSerialize,
         schema: &AvroSchema,
         refs: &NamesRef<'_>,
         strict: bool,
-    ) -> Result<AvroValue, AvroSerializerError>
-    where
-        T: SerializeWithContext<SqlSerdeConfig>,
-    {
-        val.serialize_with_context(
-            AvroSchemaSerializer::new(schema, refs, strict),
-            &self.config,
-        )
+    ) -> Result<AvroValue, AvroSerializerError> {
+        val.serialize(AvroSchemaSerializer::new(schema, refs, strict))
     }
 }
 
-struct ParquetSerializer {
-    context: SqlSerdeConfig,
-}
+struct ParquetSerializer;
 
 impl ParquetSerializer {
-    fn create(context: SqlSerdeConfig) -> Self {
-        Self { context }
+    fn create() -> Self {
+        Self
     }
 }
 
-impl BytesSerializer<SqlSerdeConfig> for ParquetSerializer {
-    fn serialize<T>(&mut self, _val: &T, _buf: &mut Vec<u8>) -> AnyResult<()>
-    where
-        T: SerializeWithContext<SqlSerdeConfig>,
-    {
+impl BytesSerializer for ParquetSerializer {
+    fn serialize(&mut self, _val: &dyn ErasedSerialize, _buf: &mut Vec<u8>) -> AnyResult<()> {
         unimplemented!()
     }
 
-    fn serialize_arrow<T>(&mut self, val: &T, builder: &mut ArrayBuilder) -> AnyResult<()>
-    where
-        T: SerializeWithContext<SqlSerdeConfig>,
-    {
+    fn serialize_arrow(
+        &mut self,
+        val: &dyn ErasedSerialize,
+        builder: &mut ArrayBuilder,
+    ) -> AnyResult<()> {
         //let fields = Vec::<Field>::from_type::<T>(TracingOptions::default())?;
-        builder.push(SerializeWithContextWrapper::new(val, &self.context))?;
+        builder.push(val)?;
         Ok(())
     }
 
-    fn serialize_arrow_with_metadata<T>(
+    fn serialize_arrow_with_metadata(
         &mut self,
-        val: &T,
-        metadata: &dyn erased_serde::Serialize,
+        val: &dyn ErasedSerialize,
+        metadata: &dyn ErasedSerialize,
         builder: &mut ArrayBuilder,
-    ) -> AnyResult<()>
-    where
-        T: SerializeWithContext<SqlSerdeConfig>,
-    {
+    ) -> AnyResult<()> {
         {
-            let wrapper = SerializeWithContextWrapper::new(val, &self.context);
             let with_extras = ExtraColumns {
-                value: &wrapper,
+                value: &val,
                 extra_columns: metadata,
             };
 
@@ -452,44 +418,33 @@ where
     ) -> Result<Box<dyn SerCursor + Send + 'a>, ControllerError> {
         Ok(match record_format {
             RecordFormat::Csv(config) => {
-                Box::new(<SerCursorImpl<'a, CsvSerializer<_>, B, KD, VD, _>>::new(
+                Box::new(<SerCursorImpl<'a, CsvSerializer, B, KD, VD>>::new(
                     &self.batch,
-                    CsvSerializer::create(SqlSerdeConfig::default(), config),
+                    SqlSerdeConfig::default(),
+                    CsvSerializer::create(config),
                 ))
             }
             RecordFormat::Json(json_flavor) => {
-                let config = SqlSerdeConfig::from(json_flavor);
-                Box::new(<SerCursorImpl<
-                    'a,
-                    JsonSerializer<_>,
-                    B,
-                    KD,
-                    VD,
-                    SqlSerdeConfig,
-                >>::new(
-                    &self.batch, JsonSerializer::create(config)
+                let serde_config = SqlSerdeConfig::from(json_flavor);
+                Box::new(<SerCursorImpl<'a, JsonSerializer, B, KD, VD>>::new(
+                    &self.batch,
+                    serde_config,
+                    JsonSerializer::create(),
                 ))
             }
-            RecordFormat::Parquet(serde_config) => Box::new(<SerCursorImpl<
-                'a,
-                ParquetSerializer,
-                B,
-                KD,
-                VD,
-                SqlSerdeConfig,
-            >>::new(
-                &self.batch,
-                ParquetSerializer::create(serde_config),
-            )),
-            #[cfg(feature = "with-avro")]
-            RecordFormat::Avro => {
-                Box::new(
-                    <SerCursorImpl<'a, AvroSerializer, B, KD, VD, SqlSerdeConfig>>::new(
-                        &self.batch,
-                        AvroSerializer::create(),
-                    ),
-                )
+            RecordFormat::Parquet(serde_config) => {
+                Box::new(<SerCursorImpl<'a, ParquetSerializer, B, KD, VD>>::new(
+                    &self.batch,
+                    serde_config,
+                    ParquetSerializer::create(),
+                ))
             }
+            #[cfg(feature = "with-avro")]
+            RecordFormat::Avro => Box::new(<SerCursorImpl<'a, AvroSerializer, B, KD, VD>>::new(
+                &self.batch,
+                avro_ser_config(),
+                AvroSerializer::create(),
+            )),
             RecordFormat::Raw => todo!(),
         })
     }
@@ -577,30 +532,32 @@ where
 }
 
 /// [`SerCursor`] implementation that wraps a [`Cursor`].
-struct SerCursorImpl<'a, Ser, B, KD, VD, C>
+struct SerCursorImpl<'a, Ser, B, KD, VD>
 where
     B: BatchReader,
 {
     cursor: <B::Inner as DynBatchReader>::Cursor<'a>,
+    serde_config: SqlSerdeConfig,
     serializer: Ser,
-    phantom: PhantomData<fn(KD, VD, C)>,
+    phantom: PhantomData<fn(KD, VD)>,
     key: Option<KD>,
     val: Option<VD>,
 }
 
-impl<'a, Ser, B, KD, VD, C> SerCursorImpl<'a, Ser, B, KD, VD, C>
+impl<'a, Ser, B, KD, VD> SerCursorImpl<'a, Ser, B, KD, VD>
 where
-    Ser: BytesSerializer<C>,
+    Ser: BytesSerializer,
     B: BatchReader<Time = ()>,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<C> + Send + Debug,
-    VD: From<B::Val> + SerializeWithContext<C> + Send + Debug,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
 {
-    pub fn new(batch: &'a B, serializer: Ser) -> Self {
+    pub fn new(batch: &'a B, serde_config: SqlSerdeConfig, serializer: Ser) -> Self {
         let cursor = batch.inner().cursor();
 
         let mut result = Self {
             cursor,
+            serde_config,
             serializer,
             key: None,
             val: None,
@@ -654,13 +611,13 @@ where
     }
 }
 
-impl<'a, Ser, B, KD, VD, C> SerCursor for SerCursorImpl<'a, Ser, B, KD, VD, C>
+impl<'a, Ser, B, KD, VD> SerCursor for SerCursorImpl<'a, Ser, B, KD, VD>
 where
-    Ser: BytesSerializer<C>,
+    Ser: BytesSerializer,
     B: BatchReader<Time = ()>,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<C> + Send + Debug,
-    VD: From<B::Val> + SerializeWithContext<C> + Send + Debug,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
     <B::Inner as DynBatchReader>::Cursor<'a>: Send,
 {
     fn key_valid(&self) -> bool {
@@ -672,7 +629,10 @@ where
     }
 
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
-        self.serializer.serialize(self.key.as_ref().unwrap(), dst)
+        self.serializer.serialize(
+            &SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
+            dst,
+        )
     }
 
     fn serialize_key_fields(
@@ -680,48 +640,70 @@ where
         fields: &HashSet<String>,
         dst: &mut Vec<u8>,
     ) -> AnyResult<()> {
-        self.serializer
-            .serialize_fields(self.key.as_ref().unwrap(), fields, dst)
+        self.serializer.serialize(
+            &SerializeFieldsWithContextWrapper::new(
+                self.key.as_ref().unwrap(),
+                &self.serde_config,
+                fields,
+            ),
+            dst,
+        )
     }
 
     fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
-        self.serializer
-            .serialize_arrow(self.key.as_ref().unwrap(), dst)
+        self.serializer.serialize_arrow(
+            &SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
+            dst,
+        )
     }
 
     fn serialize_key_to_arrow_with_metadata(
         &mut self,
-        metadata: &dyn erased_serde::Serialize,
+        metadata: &dyn ErasedSerialize,
         dst: &mut ArrayBuilder,
     ) -> AnyResult<()> {
-        self.serializer
-            .serialize_arrow_with_metadata(self.key.as_ref().unwrap(), metadata, dst)
+        self.serializer.serialize_arrow_with_metadata(
+            &SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
+            metadata,
+            dst,
+        )
     }
 
     #[cfg(feature = "with-avro")]
     fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
-        Ok(self
-            .serializer
-            .serialize_avro(self.key.as_ref().unwrap(), schema, refs, false)?)
+        Ok(self.serializer.serialize_avro(
+            &SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
+            schema,
+            refs,
+            false,
+        )?)
     }
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         let w = self.weight();
-        self.serializer
-            .serialize(&(self.key.as_ref().unwrap(), w), dst)
+        self.serializer.serialize(
+            &SerializeWithContextWrapper::new(&(self.key.as_ref().unwrap(), w), &self.serde_config),
+            dst,
+        )
     }
 
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
-        self.serializer.serialize(self.val.as_ref().unwrap(), dst)
+        self.serializer.serialize(
+            &SerializeWithContextWrapper::new(&self.val.as_ref().unwrap(), &self.serde_config),
+            dst,
+        )
     }
 
     #[cfg(feature = "with-avro")]
     fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
         // println!("val_to_avro {:?}", &self.val);
 
-        Ok(self
-            .serializer
-            .serialize_avro(self.val.as_ref().unwrap(), schema, refs, true)?)
+        Ok(self.serializer.serialize_avro(
+            &SerializeWithContextWrapper::new(self.val.as_ref().unwrap(), &self.serde_config),
+            schema,
+            refs,
+            true,
+        )?)
     }
 
     fn weight(&mut self) -> i64 {
