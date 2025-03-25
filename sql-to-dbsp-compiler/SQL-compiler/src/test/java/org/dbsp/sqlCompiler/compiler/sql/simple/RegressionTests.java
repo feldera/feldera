@@ -2077,4 +2077,15 @@ public class RegressionTests extends SqlIoTest {
                 ARRAY_AGG(c1) FILTER(WHERE c1 < c2) AS f_c1, ARRAY_AGG(c2) FILTER(WHERE c1 < c2) AS f_c2
                 FROM binary_tbl;""");
     }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6910")
+    public void issue3770() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE row_of_map_tbl(
+                c1 ROW(m1_int MAP<VARCHAR, INT> NOT NULL, m2_int MAP<VARCHAR, INT> NULL));
+                
+                CREATE MATERIALIZED VIEW row_of_map_idx_outbound AS SELECT
+                c1[3] AS c13_val
+                FROM row_of_map_tbl;""", "TBD");
+    }
 }

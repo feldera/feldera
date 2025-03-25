@@ -10,11 +10,16 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -32,6 +37,8 @@ public class MultiCrates {
     final List<CrateGenerator> operators;
     final Map<Integer, CrateGenerator> tupleCrates;
     final Map<Integer, CrateGenerator> semiCrates;
+    @Nullable
+    Map<String, DBSPDeclaration> declarationMap = null;
 
     final RustWriter.StructuresUsed used;
     final String pipelineName;
@@ -89,9 +96,58 @@ public class MultiCrates {
         return new CrateGenerator(this.rootDirectory, name, single);
     }
 
+    static class UsesComparator extends InnerVisitor {
+        public boolean found = false;
+
+        public UsesComparator(DBSPCompiler compiler) {
+            super(compiler);
+        }
+
+        public VisitDecision preorder(DBSPTypeComparator type) {
+            this.found = true;
+            return VisitDecision.STOP;
+        }
+    }
+
+    static class UsesGlobals extends InnerVisitor {
+        public boolean found = false;
+        final Map<String, DBSPDeclaration> declarations;
+
+        public UsesGlobals(DBSPCompiler compiler, Map<String, DBSPDeclaration> declarations) {
+            super(compiler);
+            this.declarations = declarations;
+        }
+
+        public VisitDecision preorder(DBSPPathExpression expression) {
+            String string = expression.path.asString();
+            if (this.declarations.containsKey(string)) {
+                DBSPDeclaration decl = this.declarations.get(string);
+                if (decl.item.getType().sameType(expression.getType()))
+                    this.found = true;
+            }
+            return VisitDecision.STOP;
+        }
+    }
+
+    boolean usesGlobals(DBSPOperator operator) {
+        assert this.declarationMap != null;
+        UsesGlobals finder = new UsesGlobals(this.compiler, this.declarationMap);
+        CircuitVisitor visitor = finder.getCircuitVisitor(false);
+        operator.accept(visitor);
+        if (finder.found)
+            return true;
+
+        UsesComparator uc = new UsesComparator(this.compiler);
+        for (var input: operator.inputs) {
+            uc.apply(input.outputType());
+        }
+        return uc.found;
+    }
+
     void addDependencies(CrateGenerator op, DBSPOperator operator) {
         this.main.addDependency(op);
-        op.addDependency(this.globals);
+        if (this.usesGlobals(operator))
+            op.addDependency(this.globals);
         RustWriter.StructuresUsed locallyUsed = new RustWriter.StructuresUsed();
         RustWriter.FindResources finder = new RustWriter.FindResources(compiler, locallyUsed);
         CircuitVisitor circuitFinder = finder.getCircuitVisitor(false);
@@ -125,9 +181,8 @@ public class MultiCrates {
                 this.main.add(node);
                 // Add all declarations to the globals crate
                 for (DBSPDeclaration decl: circuit.declarations)
-                    globals.add(decl.item);
-                circuit.declarationMap.clear();
-                circuit.declarations.clear();
+                    this.globals.add(decl.item);
+                this.declarationMap = circuit.declarationMap;
                 for (DBSPOperator operator: circuit.allOperators) {
                     CrateGenerator op;
                     if (operator.is(DBSPNestedOperator.class)) {

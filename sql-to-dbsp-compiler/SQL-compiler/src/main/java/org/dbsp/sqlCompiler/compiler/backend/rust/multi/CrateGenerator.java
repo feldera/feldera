@@ -10,8 +10,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 /** Generates a Rust crate in a specified directory.
  * Calls a ICodeGenerator to generate the Rust code. */
@@ -23,16 +23,32 @@ public final class CrateGenerator {
     public static final String CARGO = "Cargo.toml";
     /** Rust file name */
     public static final String LIB = "lib.rs";
+
     /** Crates that we depend on */
-    private final List<CrateGenerator> dependencies;
+    private final Set<CrateGenerator> dependencies;
     /** Generates the actual Rust code */
     final ICodeGenerator codeGenerator;
 
     public CrateGenerator(File baseDirectory, String crateName, ICodeGenerator codeGenerator) {
         this.crateName = crateName;
         this.baseDirectory = baseDirectory;
-        this.dependencies = new ArrayList<>();
+        this.dependencies = new HashSet<>();
         this.codeGenerator = codeGenerator;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+
+        CrateGenerator that = (CrateGenerator) o;
+        return baseDirectory.equals(that.baseDirectory) && crateName.equals(that.crateName);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = baseDirectory.hashCode();
+        result = 31 * result + crateName.hashCode();
+        return result;
     }
 
     public void addDependency(CrateGenerator generator) {

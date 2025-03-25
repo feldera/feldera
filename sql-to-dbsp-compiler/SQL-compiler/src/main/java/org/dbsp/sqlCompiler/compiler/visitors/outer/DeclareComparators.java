@@ -23,11 +23,11 @@ import java.util.Map;
  * {@link DBSPCustomOrdExpression} and replaces then with declarations
  * and references to these declarations.  Collects all new declarations in
  * the newDeclarations list. */
-public class FindComparators extends InnerRewriteVisitor {
+public class DeclareComparators extends InnerRewriteVisitor {
     final Map<DBSPExpression, DBSPPathExpression> done = new HashMap<>();
     public final List<DBSPComparatorItem> newDeclarations = new ArrayList<>();
 
-    public FindComparators(DBSPCompiler compiler) {
+    public DeclareComparators(DBSPCompiler compiler) {
         super(compiler, false);
     }
 

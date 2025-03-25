@@ -6,11 +6,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 
@@ -19,15 +15,20 @@ import java.util.List;
 /** Maps to the Rust type WithCustomOrd, which is used to wrap
  * values together with a comparator. */
 public class DBSPTypeWithCustomOrd extends DBSPTypeUser {
-    public DBSPTypeWithCustomOrd(CalciteObject node, DBSPType dataType) {
+    public DBSPTypeWithCustomOrd(CalciteObject node, DBSPType dataType, DBSPType comparatorType) {
         super(node, DBSPTypeCode.USER, "WithCustomOrd", false,
-                dataType, DBSPTypeAny.getDefault());
+                dataType, comparatorType);
         assert dataType.is(DBSPTypeTupleBase.class);
     }
 
     /** The type of the data that is wrapped.  Always a tuple type */
     public DBSPTypeTupleBase getDataType() {
         return this.typeArgs[0].to(DBSPTypeTupleBase.class);
+    }
+
+    /** The type of the data that is wrapped.  Always a tuple type */
+    public DBSPTypeComparator getComparatorType() {
+        return this.typeArgs[1].to(DBSPTypeComparator.class);
     }
 
     @Override
@@ -63,6 +64,6 @@ public class DBSPTypeWithCustomOrd extends DBSPTypeUser {
         List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
         assert typeArgs.size() == 2;
         boolean mayBeNull = fromJsonMayBeNull(node);
-        return new DBSPTypeWithCustomOrd(CalciteObject.EMPTY, typeArgs.get(0));
+        return new DBSPTypeWithCustomOrd(CalciteObject.EMPTY, typeArgs.get(0), typeArgs.get(1));
     }
 }

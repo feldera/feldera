@@ -32,21 +32,15 @@ import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
-import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.ir.DBSPFunction;
-import org.dbsp.sqlCompiler.ir.DBSPParameter;
-import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
-import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -61,8 +55,6 @@ import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.List;
-import java.util.Map;
 
 /** Main entry point of the SQL compiler. */
 public class CompilerMain {
@@ -134,16 +126,6 @@ public class CompilerMain {
         } else {
             return Files.newInputStream(Paths.get(inputFile));
         }
-    }
-
-    // For a function prototype like f(s: i32) -> i32;
-    // generate a body like
-    // udf::f(s)
-    DBSPFunction generateStubBody(DBSPFunction function) {
-        String name = "udf::" + function.name;
-        List<DBSPExpression> arguments = Linq.map(function.parameters, DBSPParameter::asVariable);
-        DBSPExpression expression = new DBSPApplyExpression(name, function.returnType, arguments.toArray(new DBSPExpression[0]));
-        return new DBSPFunction(function.name, function.parameters, function.returnType, expression, function.annotations);
     }
 
     /** Run compiler, return exit code. */
@@ -258,41 +240,23 @@ public class CompilerMain {
         }
 
         try {
-            List<DBSPFunction> extern = Linq.where(compiler.functions, f -> f.body == null);
+            // Generate stubs.rs file
             String outputFile = this.options.ioOptions.outputFile;
             if (!outputFile.isEmpty()) {
                 Path stubs;
                 String outputPath = new File(outputFile).getAbsolutePath();
                 if (options.ioOptions.multiCrates()) {
                     // Generate globals/src/stubs.rs
+                    assert multiWriter != null;
                     String globals = multiWriter.getGlobalsName();
                     stubs = Paths.get(outputPath).resolve(globals).resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
                 } else {
                     // Generate stubs.rs in the same directory
                     stubs = Paths.get(outputPath).getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
                 }
-                PrintStream protosStream = new PrintStream(Files.newOutputStream(stubs));
-
-                if (compiler.options.ioOptions.verbosity > 0)
-                    System.out.println("Writing UDF stubs to file " + stubs);
-                protosStream.append("""
-// Compiler-generated file.
-// This file contains stubs for user-defined functions declared in the SQL program.
-// Each stub defines a function prototype that must be implemented in `udf.rs`.
-// Copy these stubs to `udf.rs`, replacing their bodies with the actual UDF implementation.
-// See detailed documentation in https://docs.feldera.com/sql/udf.
-
-#![allow(non_snake_case)]
-
-use feldera_sqllib::*;
-use crate::*;
-""");
-                for (DBSPFunction function : extern) {
-                    function = this.generateStubBody(function);
-                    String str = ToRustInnerVisitor.toRustString(compiler, function, false);
-                    protosStream.println(str);
-                }
-                protosStream.close();
+                StubsWriter writer = new StubsWriter(stubs);
+                writer.add(circuit);
+                writer.write(compiler);
             }
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,

@@ -292,7 +292,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         //     }
         // }
         String structName = comparator.getComparatorStructName();
-        this.builder.append("struct ")
+        this.builder.append("pub struct ")
                 .append(structName)
                 .append(";")
                 .newline();
@@ -1811,13 +1811,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPFunction function) {
+        if (function.body == null)
+            return VisitDecision.STOP;
         this.push(function);
         this.builder.intercalateS("\n", function.annotations)
                 .append("pub fn ")
                 .append(function.name)
                 .append("(");
         boolean first = true;
-        for (DBSPParameter param: function.parameters) {
+        for (DBSPParameter param : function.parameters) {
             if (!first)
                 this.builder.append(", ");
             first = false;
@@ -1828,19 +1830,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
             builder.append("-> ");
             function.returnType.accept(this);
         }
-        if (function.body != null) {
-            builder.append(" ");
-            if (function.body.is(DBSPBlockExpression.class)) {
-                function.body.accept(this);
-            } else {
-                this.builder.append("{").increase();
-                function.body.accept(this);
-                this.builder.decrease()
-                        .newline()
-                        .append("}");
-            }
+        builder.append(" ");
+        if (function.body.is(DBSPBlockExpression.class)) {
+            function.body.accept(this);
         } else {
-            this.builder.append(";");
+            this.builder.append("{").increase();
+            function.body.accept(this);
+            this.builder.decrease()
+                    .newline()
+                    .append("}");
         }
         this.pop(function);
         return VisitDecision.STOP;

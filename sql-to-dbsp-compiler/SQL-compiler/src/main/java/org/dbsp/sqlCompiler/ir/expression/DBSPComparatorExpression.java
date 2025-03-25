@@ -28,12 +28,12 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
 
 /** A base class representing a comparator used for sorting. */
 public abstract class DBSPComparatorExpression extends DBSPExpression {
-    protected DBSPComparatorExpression(CalciteObject node) {
-        super(node, DBSPTypeAny.getDefault());
+    protected DBSPComparatorExpression(CalciteObject node, DBSPTypeComparator type) {
+        super(node, type);
     }
 
     @Override
@@ -45,6 +45,10 @@ public abstract class DBSPComparatorExpression extends DBSPExpression {
         visitor.postorder(this);
     }
 
+    public DBSPTypeComparator getComparatorType() {
+        return this.type.to(DBSPTypeComparator.class);
+    }
+
     /** Type of value that is being compared. */
     public abstract DBSPType comparedValueType();
 
@@ -53,6 +57,6 @@ public abstract class DBSPComparatorExpression extends DBSPExpression {
     }
 
     public String getComparatorStructName() {
-        return MerkleInner.hash(this.toString()).makeIdentifier("CMP");
+        return this.type.to(DBSPTypeComparator.class).name;
     }
 }

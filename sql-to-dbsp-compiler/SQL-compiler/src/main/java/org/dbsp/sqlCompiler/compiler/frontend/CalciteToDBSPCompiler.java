@@ -212,6 +212,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
@@ -2017,6 +2018,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPSimpleOperator rightIndex, leftIndex;
         DBSPTypeTuple keyType;
+        DBSPTypeComparator leftComparatorType, rightComparatorType;
         {
             // Index both inputs
             DBSPVariablePath l = leftElementType.ref().var();
@@ -2036,6 +2038,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPComparatorExpression leftComparator =
                     new DBSPNoComparatorExpression(node, leftElementType)
                             .field(leftTsIndex, true);
+            leftComparatorType = leftComparator.getComparatorType();
             DBSPExpression wrapper = new DBSPCustomOrdExpression(node, tuple, leftComparator);
             DBSPClosureExpression toLeftKey =
                     new DBSPRawTupleExpression(leftKey, wrapper)
@@ -2049,6 +2052,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPComparatorExpression rightComparator =
                     new DBSPNoComparatorExpression(node, rightElementType)
                             .field(rightTsIndex, true);
+            rightComparatorType = rightComparator.getComparatorType();
             wrapper = new DBSPCustomOrdExpression(node,
                     DBSPTupleExpression.flatten(r.deref()), rightComparator);
             DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(rightKey, wrapper)
@@ -2066,8 +2070,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.addOperator(leftIndex);
         }
 
-        DBSPType wrappedLeftType = new DBSPTypeWithCustomOrd(node, leftElementType);
-        DBSPType wrappedRightType = new DBSPTypeWithCustomOrd(node, rightElementType);
+        DBSPType wrappedLeftType = new DBSPTypeWithCustomOrd(node, leftElementType, leftComparatorType);
+        DBSPType wrappedRightType = new DBSPTypeWithCustomOrd(node, rightElementType, rightComparatorType);
 
         DBSPVariablePath leftVar = wrappedLeftType.ref().var();
         DBSPVariablePath rightVar = wrappedRightType.ref().var();
@@ -3691,12 +3695,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
     DBSPNode compileCreateFunction(CreateFunctionStatement stat) {
         DBSPFunction function = stat.function.getImplementation(
                 this.compiler.getTypeCompiler(), this.compiler);
-        if (function != null) {
-            this.getCircuit().addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(function)));
-            return function;
-        } else {
-            return stat.function.getDeclaration(this.compiler.getTypeCompiler());
-        }
+        if (function == null)
+            function = stat.function.getDeclaration(this.compiler.getTypeCompiler());
+        this.getCircuit().addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(function)));
+        return function;
     }
 
     @Nullable

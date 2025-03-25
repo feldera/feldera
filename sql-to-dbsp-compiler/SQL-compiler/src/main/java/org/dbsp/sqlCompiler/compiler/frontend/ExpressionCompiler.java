@@ -59,6 +59,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
@@ -89,6 +90,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
@@ -1714,9 +1716,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         // Currently, we need to unwrap.
         boolean unwrap = !ef.generated;
         if (unwrap)
-            return new DBSPApplyExpression(function.name(), new DBSPTypeResult(type), arguments).resultUnwrap();
-        else
-            return new DBSPApplyExpression(function.name(), type, arguments);
+            type = new DBSPTypeResult(type);
+        DBSPTypeFunction functionType = new DBSPTypeFunction(type, operandTypes.toArray(new DBSPType[0]));
+        DBSPPathExpression func = new DBSPPathExpression(functionType, new DBSPPath(function.name()));
+        DBSPExpression result = new DBSPApplyExpression(func, type, arguments);
+        if (unwrap)
+            result = result.resultUnwrap();
+        return result;
     }
 
     public DBSPExpression compile(RexNode expression) {

@@ -137,6 +137,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveViewOperators(compiler, true));
         this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), false, InnerCSE::process));
         this.add(new StaticDeclarations(compiler, new LazyStatics(compiler, !compiler.options.ioOptions.multiCrates())));
+        this.add(new ComparatorDeclarations(compiler, new DeclareComparators(compiler)));
         // this.add(new TestSerialize(compiler));
         // The canonical form is needed if we want the Merkle hashes to be "stable".
         this.add(new CanonicalForm(compiler).getCircuitRewriter(false));

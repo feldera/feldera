@@ -185,37 +185,6 @@ public final class DBSPClosureExpression extends DBSPExpression {
         }
     }
 
-    public DBSPClosureExpression applyAfterMapIndex(
-            DBSPCompiler compiler, DBSPClosureExpression before, Maybe maybe) {
-        if (this.parameters.length != 1)
-            throw new InternalCompilerError("Expected closure with 1 parameter", this);
-
-        if (maybe == MAYBE) {
-            Expensive expensive = new Expensive(compiler);
-            expensive.apply(before);
-            if (expensive.isExpensive())
-                maybe = NO;
-            else
-                maybe = YES;
-        }
-
-        if (maybe == YES) {
-            DBSPExpression apply = this.call(
-                    new DBSPRawTupleExpression(
-                            before.body.field(0).borrow(),
-                            before.body.field(1).borrow()));
-            return apply.closure(before.parameters).reduce(compiler).to(DBSPClosureExpression.class);
-        } else {
-            DBSPVariablePath var = before.getResultType().var();
-            DBSPLetExpression newBody = new DBSPLetExpression(this.parameters[0].asVariable(),
-                    new DBSPRawTupleExpression(
-                            var.field(0).deref(),
-                            var.field(1).deref()),
-                    new DBSPLetExpression(var, before.body, this.body));
-            return newBody.closure(before.parameters);
-        }
-    }
-
     @SuppressWarnings("unused")
     public static DBSPClosureExpression fromJson(JsonNode node, JsonDecoder decoder) {
         // Need to read the type even if we don't use it, to populate the cache

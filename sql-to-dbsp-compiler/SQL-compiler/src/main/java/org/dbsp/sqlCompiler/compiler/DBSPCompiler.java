@@ -66,8 +66,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ToJsonVisitor;
-import org.dbsp.sqlCompiler.ir.DBSPFunction;
-import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
@@ -88,7 +86,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * This class compiles SQL statements into DBSP circuits.
@@ -162,8 +159,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     final Map<ProgramIdentifier, CreateViewStatement> views = new HashMap<>();
     final Map<ProgramIdentifier, CreateIndexStatement> indexes = new HashMap<>();
-    /** All UDFs from the SQL program.  The ones in Rust have no bodies */
-    public final List<DBSPFunction> functions = new ArrayList<>();
     public SourcePositionRange errorContext;
 
     public DBSPCompiler(CompilerOptions options) {
@@ -559,8 +554,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         SqlOperatorTable newFunctions = SqlOperatorTables.of(Linq.list(function));
                         this.sqlToRelCompiler.addOperatorTable(newFunctions);
                     }
-                    DBSPNode func = this.relToDBSPCompiler.compile(stat);
-                    this.functions.add(Objects.requireNonNull(func).to(DBSPFunction.class));
+                    this.relToDBSPCompiler.compile(stat);
                 }
                 if (node.statement() instanceof SqlLateness lateness) {
                     ProgramIdentifier view = Utilities.toIdentifier(lateness.getView());
