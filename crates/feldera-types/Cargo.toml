@@ -25,6 +25,7 @@ proptest-derive = { version = "0.5.0", optional = true }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
 actix-web = "4.3"
 enum-map = "2.7.3"
+erased-serde = "0.3.31"
 
 [dev-dependencies]
 rust_decimal_macros = "1.32"

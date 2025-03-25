@@ -80,6 +80,7 @@ core_affinity = "0.8.1"
 indexmap = "2.7.1"
 feldera-storage = { path = "../storage", version = "0.42.0" }
 inventory = "0.3"
+erased-serde = "0.3.31"
 
 [dependencies.time]
 version = "0.3.20"

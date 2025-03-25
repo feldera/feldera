@@ -840,7 +840,7 @@ impl IcebergTestStruct {
     }
 }
 
-serialize_table_record!(IcebergTestStruct[13]{
+serialize_table_record!(IcebergTestStruct[12]{
     b["b"]: bool,
     i["i"]: i32,
     l["l"]: i64,
@@ -856,7 +856,7 @@ serialize_table_record!(IcebergTestStruct[13]{
     varbin["varbin"]: ByteArray
 });
 
-deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", 13] {
+deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", 12] {
     (b, "b", false, bool, None),
     (i, "i", false, i32, None),
     (l, "l", false, i64, None),
