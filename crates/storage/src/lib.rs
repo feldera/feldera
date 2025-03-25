@@ -42,7 +42,8 @@ inventory::collect!(&'static dyn StorageBackendFactory);
 /// A storage backend.
 pub trait StorageBackend: Send + Sync {
     /// Create a new file with the given `name`, which is relative to the
-    /// backend's base directory.
+    /// backend's base directory, auomatically creating any parent directories
+    /// within `name` that don't already exist.
     fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError>;
 
     /// Creates a new persistent file used for writing data. The backend selects
@@ -72,6 +73,8 @@ pub trait StorageBackend: Send + Sync {
         reader.read_block(BlockLocation { offset: 0, size })
     }
 
+    /// Writes `content` to `name`, automatically creating any parent
+    /// directories within `name` that don't already exist.
     fn write(&self, name: &Path, content: FBuf) -> Result<(), StorageError> {
         let mut writer = self.create_named(name)?;
         writer.write_block(0, content)?;
