@@ -375,7 +375,7 @@ class arithtst_ats_minus_ts(TstView):
                       FROM timestamp_tbl"""
 
 
-class arithtst_ts_minus_ts_str(TstView):
+class arithtst_ats_minus_ts_str(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [
