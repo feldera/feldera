@@ -80,6 +80,35 @@ where
     }
 }
 
+pub struct SerializeFieldsWithContextWrapper<'a, C, T> {
+    val: &'a T,
+    context: &'a C,
+    fields: &'a HashSet<String>,
+}
+
+impl<'a, C, T> SerializeFieldsWithContextWrapper<'a, C, T> {
+    pub fn new(val: &'a T, context: &'a C, fields: &'a HashSet<String>) -> Self {
+        Self {
+            val,
+            context,
+            fields,
+        }
+    }
+}
+
+impl<C, T> Serialize for SerializeFieldsWithContextWrapper<'_, C, T>
+where
+    T: SerializeWithContext<C>,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.val
+            .serialize_fields_with_context(serializer, self.context, self.fields)
+    }
+}
+
 /// Implement [`SerializeWithContext`] for types that implement
 /// [`Serialize`] and don't support configurable serialization.
 ///
