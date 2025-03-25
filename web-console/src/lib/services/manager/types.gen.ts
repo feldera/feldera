@@ -422,6 +422,14 @@ export type DeltaTableReaderConfig = {
    * is used.
    */
   datetime?: string | null
+  /**
+   * Optional row filter.
+   *
+   * When specified, only rows that satisfy the filter condition are read from the delta table.
+   * The condition must be a valid SQL Boolean expression that can be used in
+   * the `where` clause of the `select * from my_table where ...` query.
+   */
+  filter?: string | null
   mode: DeltaTableIngestMode
   /**
    * The number of parallel parsing tasks the connector uses to process data read from the
@@ -430,7 +438,7 @@ export type DeltaTableReaderConfig = {
    */
   num_parsers?: number
   /**
-   * Optional row filter.
+   * Optional snapshot filter.
    *
    * This option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.
    *
@@ -438,8 +446,15 @@ export type DeltaTableReaderConfig = {
    * snapshot.  The condition must be a valid SQL Boolean expression that can be used in
    * the `where` clause of the `select * from snapshot where ...` query.
    *
-   * This option can be used to specify the range of event times to include in the snapshot,
+   * Unlike the `filter` option, which applies to all records retrieved from the table, this
+   * filter only applies to rows in the initial snapshot of the table.
+   * For instance, it can be used to specify the range of event times to include in the snapshot,
    * e.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.
+   *
+   * This option can be used together with the `filter` option. During the initial snapshot,
+   * only rows that satisfy both `filter` and `snapshot_filter` are retrieved from the Delta table.
+   * When subsequently following changes in the the transaction log (`mode = snapshot_and_follow`),
+   * all rows that meet the `filter` condition are ingested, regardless of `snapshot_filter`.
    */
   snapshot_filter?: string | null
   /**
@@ -1039,6 +1054,15 @@ export type KafkaInputConfig = {
    */
   poller_threads?: number | null
   /**
+   * A list of offsets and partitions specifying where to begin reading individual input topics.
+   *
+   * When specified, this property must contain a list of JSON objects with the following fields:
+   * - `topic`: The name of the Kafka topic.
+   * - `partition`: The partition number within the topic.
+   * - `offset`: The specific offset from which to start consuming messages.
+   */
+  start_from?: Array<KafkaStartFromConfig>
+  /**
    * List of topics to subscribe to.
    */
   topics: Array<string>
@@ -1052,7 +1076,7 @@ export type KafkaInputConfig = {
    * * "enable.auto.commit", if present, must be set to "false",
    * * "enable.auto.offset.store", if present, must be set to "false"
    */
-  '[key: string]': (string | number | unknown) | undefined
+  '[key: string]': (string | number | unknown | KafkaStartFromConfig) | undefined
 }
 
 /**
@@ -1128,6 +1152,24 @@ export type KafkaOutputFtConfig = {
   }
 }
 
+/**
+ * Configuration for starting from a specific offset in a Kafka topic partition.
+ */
+export type KafkaStartFromConfig = {
+  /**
+   * The offset in the specified partition to start reading from.
+   */
+  offset: number
+  /**
+   * The parition within the topic.
+   */
+  partition: number
+  /**
+   * The Kafka topic.
+   */
+  topic: string
+}
+
 export type LicenseInformation = {
   /**
    * Optional description of the advantages of extending the license / upgrading from a trial
@@ -1162,8 +1204,7 @@ export type LicenseInformation = {
 
 /**
  * Circuit metrics output format.
- * - `prometheus`: format expected by Prometheus, as documented at:
- * <https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md>
+ * - `prometheus`: [format](https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md) expected by Prometheus
  * - `json`: JSON format
  */
 export type MetricsFormat = 'prometheus' | 'json'

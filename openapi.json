@@ -4090,6 +4090,33 @@
           }
         }
       },
+      "KafkaStartFromConfig": {
+        "type": "object",
+        "description": "Configuration for starting from a specific offset in a Kafka topic partition.",
+        "required": [
+          "topic",
+          "partition",
+          "offset"
+        ],
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The offset in the specified partition to start reading from.",
+            "minimum": 0
+          },
+          "partition": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The parition within the topic.",
+            "minimum": 0
+          },
+          "topic": {
+            "type": "string",
+            "description": "The Kafka topic."
+          }
+        }
+      },
       "LicenseInformation": {
         "type": "object",
         "required": [
