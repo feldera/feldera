@@ -39,12 +39,16 @@
 // This could benefit from using procedural macros to auto-derive
 // [`DeserializeWithContext`].
 
+use erased_serde::Deserializer as ErasedDeserializer;
 use rust_decimal::Decimal;
+use serde::de::Error as SerdeError;
 use serde::{
     de::{DeserializeSeed, MapAccess, SeqAccess, Visitor},
     Deserialize, Deserializer, Serialize,
 };
 use std::{collections::BTreeMap, fmt, marker::PhantomData, sync::Arc};
+
+use crate::serde_with_context::SqlSerdeConfig;
 
 /// Similar to [`Deserialize`], but takes an extra `context` argument and
 /// threads it through all nested structures.
@@ -70,9 +74,10 @@ macro_rules! deserialize_without_context {
         where
             $typ<$($arg),*>: serde::Deserialize<'de>,
         {
+            #[inline(never)]
             fn deserialize_with_context<D>(deserializer: D, _context: &'de C) -> Result<Self, D::Error>
             where
-                D: serde::Deserializer<'de>,
+                D: serde::Deserializer<'de>
             {
                 serde::Deserialize::deserialize(deserializer)
             }
@@ -81,9 +86,10 @@ macro_rules! deserialize_without_context {
 }
 
 impl<'de, C> DeserializeWithContext<'de, C> for &'de str {
+    #[inline(never)]
     fn deserialize_with_context<D>(deserializer: D, _context: &'de C) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         serde::Deserialize::deserialize(deserializer)
     }
@@ -130,6 +136,7 @@ where
 {
     type Value = T;
 
+    #[inline(never)]
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
         D: Deserializer<'de>,
@@ -142,6 +149,7 @@ impl<'de, C, T> DeserializeWithContext<'de, C> for Vec<T>
 where
     T: DeserializeWithContext<'de, C>,
 {
+    #[inline(never)]
     fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -195,6 +203,7 @@ where
     K: DeserializeWithContext<'de, C> + Ord,
     V: DeserializeWithContext<'de, C>,
 {
+    #[inline(never)]
     fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -249,6 +258,7 @@ impl<'de, C, T> DeserializeWithContext<'de, C> for Arc<T>
 where
     T: DeserializeWithContext<'de, C>,
 {
+    #[inline(never)]
     fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -268,9 +278,10 @@ macro_rules! deserialize_tuple {
         where
             $($arg: DeserializeWithContext<'de, C>),*
         {
+            #[inline(never)]
             fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
             where
-                D: serde::de::Deserializer<'de>,
+                D: serde::Deserializer<'de>
             {
                 struct TupleVisitor<'de, C, $($arg),*> {
                     context: &'de C,
@@ -313,8 +324,6 @@ macro_rules! deserialize_tuple {
                 deserializer.deserialize_tuple($num_fields, TupleVisitor::new(context))
             }
         }
-
-
     }
 }
 
@@ -335,6 +344,7 @@ impl<'de, C, T> DeserializeWithContext<'de, C> for Option<T>
 where
     T: DeserializeWithContext<'de, C>,
 {
+    #[inline(never)]
     fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -418,6 +428,7 @@ macro_rules! deserialize_struct {
             $($arg: $crate::serde_with_context::DeserializeWithContext<'de, C>),*
             $($($arg : $bound,)?),*
         {
+            #[inline(never)]
             fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
             where
                 D: serde::Deserializer<'de>,
@@ -496,6 +507,97 @@ macro_rules! deserialize_struct {
     }
 }
 
+/// An object-safe version of `DeserializeWithContext`. Used to deserialize individual struct fields
+/// via dynamic dispatch.
+pub trait ErasedDeserializeWithContext {
+    fn erased_deserialize_with_context<'de>(
+        &mut self,
+        deserializer: &mut dyn ErasedDeserializer<'de>,
+        context: &'de SqlSerdeConfig,
+    ) -> Result<(), erased_serde::Error>;
+
+    fn check_missing(&mut self, column_name: &'static str) -> Result<(), erased_serde::Error>;
+}
+
+impl<T> ErasedDeserializeWithContext for Option<T>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + 'static,
+{
+    #[inline(never)]
+    fn erased_deserialize_with_context<'de>(
+        &mut self,
+        deserializer: &mut dyn ErasedDeserializer<'de>,
+        context: &'de SqlSerdeConfig,
+    ) -> Result<(), erased_serde::Error> {
+        *self = Some(DeserializeWithContext::deserialize_with_context(
+            deserializer,
+            context,
+        )?);
+        Ok(())
+    }
+
+    fn check_missing(&mut self, column_name: &'static str) -> Result<(), erased_serde::Error> {
+        if self.is_none() {
+            return Err(missing_field_error(column_name));
+        }
+
+        Ok(())
+    }
+}
+
+#[doc(hidden)]
+pub struct ErasedDeserializationContext<'de, 'a> {
+    context: &'de SqlSerdeConfig,
+    val: &'a mut dyn ErasedDeserializeWithContext,
+}
+
+impl<'de, 'a> ErasedDeserializationContext<'de, 'a> {
+    pub fn new(
+        val: &'a mut dyn ErasedDeserializeWithContext,
+        context: &'de SqlSerdeConfig,
+    ) -> Self {
+        Self { val, context }
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for ErasedDeserializationContext<'de, '_> {
+    type Value = ();
+
+    #[inline(never)]
+    fn deserialize<D>(self, deserializer: D) -> Result<(), D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut deserializer = <dyn ErasedDeserializer>::erase(deserializer);
+        self.val
+            .erased_deserialize_with_context(&mut deserializer, self.context)
+            .map_err(D::Error::custom)?;
+
+        Ok(())
+    }
+}
+
+#[inline(never)]
+pub fn missing_field_error(column_name: &'static str) -> erased_serde::Error {
+    erased_serde::Error::missing_field(column_name)
+}
+
+#[inline(never)]
+pub fn field_parse_error<E: serde::de::Error>(column_name: &str, error: E) -> E {
+    E::custom(
+        serde_json::to_string(&FieldParseError {
+            field: column_name.to_string(),
+            description: error.to_string(),
+        })
+        .unwrap(),
+    )
+}
+
+#[inline(never)]
+pub fn invalid_length_error<E: serde::de::Error>(actual: usize, expected: usize) -> E {
+    E::invalid_length(actual, &format!("{} columns", expected).as_str())
+}
+
 /// Generate a [`DeserializeWithContext`] impl for a SQL table row type.
 ///
 /// A call to this macro is normally generated by the SQL compiler.
@@ -511,79 +613,135 @@ macro_rules! deserialize_table_record {
         #[allow(unused_mut)]
         #[allow(dead_code)]
         impl<'de> $crate::serde_with_context::DeserializeWithContext<'de, $crate::serde_with_context::SqlSerdeConfig> for $table {
+            #[inline(never)]
             fn deserialize_with_context<D>(deserializer: D, context: &'de $crate::serde_with_context::SqlSerdeConfig) -> Result<Self, D::Error>
             where
-                D: serde::Deserializer<'de>,
+                D: serde::Deserializer<'de>
             {
+                use $crate::serde_with_context::{SqlSerdeConfig, ErasedDeserializeWithContext, ErasedDeserializationContext, field_parse_error, invalid_length_error};
+                use serde::de::{MapAccess, SeqAccess, Error as _};
+                use std::{cell::LazyCell, collections::HashMap};
+
                 struct RecordVisitor<'de> {
-                    context: &'de $crate::serde_with_context::SqlSerdeConfig,
+                    context: &'de SqlSerdeConfig,
+                    $($field_name: Option<$type>,)*
+                }
+
+                thread_local! {
+                    static FIELD_MAP: LazyCell<HashMap<String, usize>> = LazyCell::new(|| {
+                        let mut map = HashMap::new();
+                        let mut _idx = 0usize;
+
+                        $(
+                            map.insert($column_name.to_string().to_lowercase(), _idx);
+                            _idx += 1;
+                        )*
+
+                        map
+                    });
                 }
 
                 impl<'de> RecordVisitor<'de> {
-                    fn new(context: &'de $crate::serde_with_context::SqlSerdeConfig) -> Self {
+                    fn new(context: &'de SqlSerdeConfig) -> Self {
                         Self {
-                            context
+                            context,
+                            $($field_name: None,)*
                         }
                     }
+
+                    $(
+                        #[inline(never)]
+                        fn $field_name<E: serde::de::Error>(&mut self) -> Result<(), E> {
+                            $(self.$field_name = self.$field_name.take().map($postprocess);)*
+                            if self.$field_name.is_none() {
+                                self.$field_name = $init;
+                            }
+                            self.$field_name.check_missing($column_name).map_err(|e| serde::de::Error::custom(e))
+                        }
+                    )*
                 }
 
                 impl<'de> serde::de::Visitor<'de> for RecordVisitor<'de> {
                     type Value = $table;
 
-                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
                         write!(formatter, concat!("a record of type ", stringify!($table)))
                     }
 
-                    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-                    where A: serde::de::MapAccess<'de> {
-                        $(let mut $field_name: Option<$type> = None;
-                        )*
+                    #[inline(never)]
+                    fn visit_map<A>(mut self, mut map: A) -> Result<$table, A::Error>
+                    where
+                        A: MapAccess<'de>
+                    {
+                        let mut deserializers: [(&mut dyn ErasedDeserializeWithContext, bool, &'static str); $num_cols] = [
+                            $((&mut self.$field_name as &mut dyn ErasedDeserializeWithContext, $case_sensitive, $column_name)
+                            ),*
+                        ];
 
                         while let Some(column_name) = map.next_key::<std::borrow::Cow<'de, str>>()? {
                             let lowercase_column_name = column_name.to_lowercase();
-                            $(
-                                if $column_name == (if $case_sensitive { column_name.as_ref() } else { &lowercase_column_name } ) {
-                                    // We don't have a way to return `FieldParseError` to the
-                                    // user, since the error type is determined by the
-                                    // deserializer type `D`, so we instead encode it as a JSON
-                                    // object, which the client will have to parse.
-                                    $field_name = Some(map.next_value_seed(<$crate::serde_with_context::DeserializationContext<$crate::serde_with_context::SqlSerdeConfig, $type>>::new(self.context))
-                                                  $(.map($postprocess))*
-                                                  .map_err(|e| serde::de::Error::custom(serde_json::to_string(&$crate::serde_with_context::FieldParseError{field: $column_name.to_string(), description: e.to_string()}).unwrap()))?);
-                                } else
-                            )*
-                            {let _ = map.next_value::<serde::de::IgnoredAny>()?;}
+                            if let Some(idx) = FIELD_MAP.with(|field_map| field_map.get(&lowercase_column_name).cloned()) {
+                                let (deserializer, case_sensitive, expected_column_name) = &mut deserializers[idx];
+                                if *case_sensitive {
+                                    if column_name.as_ref() != *expected_column_name {
+                                        return Err(A::Error::custom(format!("incorrect case-sensitive field name: expected: {expected_column_name}, found: {column_name}")));
+                                    }
+                                }
+                                let res = map.next_value_seed(ErasedDeserializationContext::new(*deserializer, &self.context));
+
+                                if let Err(e) = res {
+                                    return Err(field_parse_error(column_name.as_ref(), e));
+                                }
+                            } else {
+                                let _ = map.next_value::<serde::de::IgnoredAny>()?;
+                            }
                         }
+
+                        $(
+                            self.$field_name()?;
+                        )*
+
                         Ok($table {
-                            $($field_name: $field_name.or_else(|| $init).ok_or_else(|| serde::de::Error::missing_field($column_name))?,
-                            )*
-                        })
+                                $($field_name: self.$field_name.unwrap(),
+                                )*
+                            })
                     }
 
-                    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-                    where A: serde::de::SeqAccess<'de> {
+                    fn visit_seq<A>(mut self, mut seq: A) -> Result<$table, A::Error>
+                    where
+                        A: SeqAccess<'de>
+                    {
+                        let mut deserializers: [(&'static str, &mut dyn ErasedDeserializeWithContext); $num_cols] = [
+                            $(($column_name, &mut self.$field_name as &mut dyn ErasedDeserializeWithContext)
+                            ),*
+                        ];
+
                         let mut _cols: usize = 0;
-                        let result = $table {
-                            $($field_name: {
-                                _cols += 1;
-                                seq.next_element_seed(<$crate::serde_with_context::DeserializationContext<$crate::serde_with_context::SqlSerdeConfig, $type>>::new(self.context))
-                                    .map_err(|e| {
-                                        serde::de::Error::custom(serde_json::to_string(&$crate::serde_with_context::FieldParseError{field: $column_name.to_string(), description: e.to_string()}).unwrap())
-                                    })?
-                                    .ok_or_else(|| {
-                                        serde::de::Error::invalid_length(_cols-1, &format!("{} columns", $num_cols).as_str())
-                                    })?
-                            },
-                            )*
-                        };
+
+                        for (_cols, (column_name, deserializer)) in deserializers.iter_mut().enumerate()
+                        {
+                            let res = seq.next_element_seed(ErasedDeserializationContext::new(*deserializer, &self.context));
+                            match res {
+                                Err(e) => return Err(field_parse_error(column_name, e)),
+                                Ok(None) => return Err(invalid_length_error(_cols, $num_cols)),
+                                Ok(Some(_)) => (),
+                            };
+                        }
 
                         while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
 
-                        Ok(result)
+                        Ok($table {
+                            $($field_name: self.$field_name.unwrap(),
+                            )*
+                        })
+
                     }
                 }
 
-                let visitor = RecordVisitor::new(context);
+                let mut visitor = RecordVisitor::new(context);
 
                 // XXX: At least with `serde_json::Deserializer`, `deserialize_struct` tells the
                 // deserializer to work with either map or sequence representation
@@ -593,7 +751,8 @@ macro_rules! deserialize_table_record {
                 // deserializers.  In the future we may want to make the choice between map
                 // and sequence representations configurable, so we won't need this trick.
                 //deserializer.deserialize_map(visitor)
-                deserializer.deserialize_struct($sql_table, [$($column_name,)*].as_slice(), visitor)
+                deserializer
+                        .deserialize_struct($sql_table, [$($column_name,)*].as_slice(), visitor)
             }
         }
     }
@@ -787,14 +946,14 @@ mod test {
                 r#"{"field1": true, "field2": "foo"}"#
             )
             .map_err(|e| e.to_string()),
-            Err(r#"missing field `fIeLd1` at line 1 column 33"#.to_string())
+            Err(r#"incorrect case-sensitive field name: expected: fIeLd1, found: field1 at line 1 column 9"#.to_string())
         );
         assert_eq!(
             deserialize_with_default_context::<CaseSensitive>(
                 r#"{"fIeLd1": true, "FIELD2": "foo"}"#
             )
             .map_err(|e| e.to_string()),
-            Err(r#"missing field `field2` at line 1 column 33"#.to_string())
+            Err(r#"incorrect case-sensitive field name: expected: field2, found: FIELD2 at line 1 column 25"#.to_string())
         );
     }
 
@@ -809,7 +968,7 @@ mod test {
             Err(r#"invalid length 1, expected 3 columns at line 1 column 6"#.to_string())
         );
         assert_eq!(deserialize_with_default_context::<CaseSensitive>(r#"{"fIeLd1": null, "field2": "foo"}"#).map_err(|e| e.to_string()), Err(r#"{"field":"fIeLd1","description":"invalid type: null, expected a boolean at line 1 column 15"} at line 1 column 15"#.to_string()));
-        assert_eq!(deserialize_with_default_context::<CaseSensitive>(r#"{"fIeLd1": false, "field2": "foo", "FIELD3": true}"#).map_err(|e| e.to_string()), Err(r#"{"field":"field3","description":"invalid type: boolean `true`, expected u8 at line 1 column 49"} at line 1 column 50"#.to_string()));
+        assert_eq!(deserialize_with_default_context::<CaseSensitive>(r#"{"fIeLd1": false, "field2": "foo", "FIELD3": true}"#).map_err(|e| e.to_string()), Err(r#"{"field":"FIELD3","description":"invalid type: boolean `true`, expected u8 at line 1 column 49"} at line 1 column 50"#.to_string()));
         assert_eq!(deserialize_with_default_context::<CaseSensitive>(r#"{"fIeLd1": 10, "field2": "foo"}"#).map_err(|e| e.to_string()), Err(r#"{"field":"fIeLd1","description":"invalid type: integer `10`, expected a boolean at line 1 column 13"} at line 1 column 13"#.to_string()));
     }
 
@@ -844,7 +1003,7 @@ mod test {
             deserialize_with_default_context::<UnicodeStruct>(
                 r#"{"αΒβΓγδε": true, "Українська": 10, "unicode⌛👏": 100}"#
             ).map_err(|e| e.to_string()),
-            Err(r#"{"field":"українська","description":"invalid type: integer `10`, expected a string at line 1 column 51"} at line 1 column 51"#.to_string())
+            Err(r#"{"field":"Українська","description":"invalid type: integer `10`, expected a string at line 1 column 51"} at line 1 column 51"#.to_string())
         );
         assert_eq!(
             deserialize_with_default_context::<UnicodeStruct>(
