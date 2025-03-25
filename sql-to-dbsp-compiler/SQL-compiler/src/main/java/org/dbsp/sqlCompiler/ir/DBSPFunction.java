@@ -30,7 +30,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
@@ -43,7 +44,8 @@ import java.util.List;
 
 /** A (Rust) function.  If the body is null, this is just a function declaration. */
 @NonCoreIR
-public final class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration, IDBSPInnerNode {
+public final class DBSPFunction extends DBSPNode
+        implements IHasType, IDBSPDeclaration, IDBSPInnerNode {
     public final String name;
     public final List<DBSPParameter> parameters;
     public final DBSPType returnType;
@@ -101,7 +103,7 @@ public final class DBSPFunction extends DBSPNode implements IHasType, IDBSPDecla
     }
 
     public DBSPExpression getReference() {
-        return new DBSPVariablePath(this.name, this.type);
+        return new DBSPPathExpression(this.type, new DBSPPath(this.name));
     }
 
     public DBSPExpression call(DBSPExpression... arguments) {

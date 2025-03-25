@@ -103,6 +103,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeBTreeMap;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
@@ -179,6 +180,16 @@ public abstract class InnerRewriteVisitor
                 .appendSupplier(newOp::toString)
                 .newline();
         this.lastResult = newOp;
+    }
+
+    protected void map(DBSPType type, DBSPType newType) {
+        // Specialized implementation of 'map' for types
+        if (type == newType ||
+                type.sameFields(newType) ||
+                type.sameType(newType)) {
+            newType = type;
+        }
+        this.map(type.to(IDBSPInnerNode.class), newType.to(IDBSPInnerNode.class));
     }
 
     @Override
@@ -423,6 +434,12 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPTypeComparator type) {
+        this.map(type, type);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPTypeMap type) {
         this.push(type);
         DBSPType keyType = this.transform(type.getKeyType());
@@ -448,8 +465,9 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPTypeWithCustomOrd type) {
         this.push(type);
         DBSPType keyType = this.transform(type.getDataType());
+        DBSPType comparatorType = this.transform(type.getComparatorType());
         this.pop(type);
-        DBSPType result = new DBSPTypeWithCustomOrd(type.getNode(), keyType);
+        DBSPType result = new DBSPTypeWithCustomOrd(type.getNode(), keyType, comparatorType);
         this.map(type, result);
         return VisitDecision.STOP;
     }

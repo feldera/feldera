@@ -13,6 +13,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.SQLException;
 
@@ -99,13 +100,46 @@ public class MultiCrateTests extends BaseSQLTests {
     }
 
     @Test
+    public void testAsof() throws IOException, SQLException, InterruptedException {
+        String sql = """
+                create table TRANSACTION (
+                    id bigint NOT NULL,
+                    unix_time BIGINT LATENESS 100
+                );
+
+                create table FEEDBACK (
+                    id bigint,
+                    status int,
+                    unix_time bigint NOT NULL LATENESS 100
+                );
+
+                CREATE VIEW TRANSACT AS
+                    SELECT transaction.*, feedback.status
+                    FROM
+                    feedback LEFT ASOF JOIN transaction
+                    MATCH_CONDITION(transaction.unix_time <= feedback.unix_time)
+                    ON transaction.id = feedback.id;
+                """;
+        File file = createInputScript(sql);
+        this.compileMultiCrate(file.getAbsolutePath());
+    }
+
+    @Test
     public void testMultiUdf() throws IOException, InterruptedException, SQLException {
         File file = createInputScript("""
                 CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL;
                 CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5);""");
 
         // "x" is the name for the pipeline used by compileMultiCrate
-        File udf = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals", "src", "udf.rs").toFile();
+        Path dir = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals", "src");
+        File dirFile = dir.toFile();
+        if (!dirFile.exists()) {
+            boolean success = dirFile.mkdirs();
+            if (!success) {
+                throw new RuntimeException("Could not create directory " + dir);
+            }
+        }
+        File udf = new File(dir.toFile(), "udf.rs");
         udf.deleteOnExit();
         PrintWriter udfFile = new PrintWriter(udf, StandardCharsets.UTF_8);
         udfFile.println("""

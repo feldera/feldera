@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -43,7 +44,7 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
     public final int fieldNo;
 
     public DBSPFieldComparatorExpression(CalciteObject node, DBSPComparatorExpression source, int fieldNo, boolean ascending) {
-        super(node);
+        super(node, DBSPTypeComparator.generateType(source.getComparatorType(), fieldNo, ascending));
         this.source = source;
         this.fieldNo = fieldNo;
         this.ascending = ascending;

@@ -43,6 +43,7 @@ public enum DBSPTypeCode {
     STRUCT("STRUCT", "", ""),
     TUPLE("STRUCT", "", "Tup"),
     // User-defined types
+    COMPARATOR(null, "", ""),
     RESULT(null, "", "Result"),
     OPTION(null, "", "Option"),
     TYPEDBOX(null, "", "TypedBox"),

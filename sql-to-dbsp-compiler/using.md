@@ -48,7 +48,7 @@ Usage: sql-to-dbsp [options] Input file to compile
     --dataflow
       Emit the Dataflow graph of the program in the specified JSON file
     --crates
-      Followed by a program name. Generates code using multiple crates;s
+      Followed by a program name. Generates code using multiple crates;
       `outputFile` is interpreted as a directory.
       Default: <empty string>
     --handles

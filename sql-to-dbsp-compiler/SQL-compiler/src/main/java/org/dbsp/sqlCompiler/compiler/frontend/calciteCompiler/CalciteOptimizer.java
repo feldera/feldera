@@ -162,14 +162,6 @@ public class CalciteOptimizer implements IWritesLogs {
                 PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE
         ));
 
-        /*
-        this.addStep(new SimpleOptimizerStep("Convert to correlates", 1,
-                CoreRules.FILTER_SUB_QUERY_TO_CORRELATE,
-                CoreRules.JOIN_SUB_QUERY_TO_CORRELATE,
-                CoreRules.PROJECT_SUB_QUERY_TO_CORRELATE
-        ));
-         */
-
         this.addStep(new CalciteOptimizerStep() {
             @Override
             public String getName() {

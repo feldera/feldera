@@ -76,7 +76,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.FindComparators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.DeclareComparators;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -189,7 +189,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.writeComments(str);
         }
 
-        FindComparators comparators = new FindComparators(this.compiler);
+        DeclareComparators comparators = new DeclareComparators(this.compiler);
         operator.accept(comparators);
         for (var decl: comparators.newDeclarations) {
             if (!this.perCircuitDeclarations.contains(decl.getName())) {

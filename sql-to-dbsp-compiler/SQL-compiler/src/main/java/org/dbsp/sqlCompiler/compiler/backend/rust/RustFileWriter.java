@@ -119,7 +119,8 @@ public class RustFileWriter extends RustWriter {
         if (this.test)
             this.builder().append("""
             #[cfg(test)]
-            use readers::*;""");
+            use readers::*;""").newline();
+
         for (String dep: this.dependencies)
             this.builder().append("use ").append(dep).append("::*;");
         Set<String> declarationsDone = new HashSet<>();

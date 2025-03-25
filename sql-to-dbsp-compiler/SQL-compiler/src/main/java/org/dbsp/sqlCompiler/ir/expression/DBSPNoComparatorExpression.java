@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
 import org.dbsp.util.IIndentStream;
 
 /** A comparator that does not compare any fields. */
@@ -38,7 +39,7 @@ public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     public final DBSPType tupleType;
 
     public DBSPNoComparatorExpression(CalciteObject node, DBSPType tupleType) {
-        super(node);
+        super(node, DBSPTypeComparator.generateType(tupleType));
         this.tupleType = tupleType;
     }
 
