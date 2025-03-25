@@ -573,6 +573,15 @@ When neither of the two options is specified, the latest committed version of th
 is used.`,
       nullable: true
     },
+    filter: {
+      type: 'string',
+      description: `Optional row filter.
+
+When specified, only rows that satisfy the filter condition are read from the delta table.
+The condition must be a valid SQL Boolean expression that can be used in
+the \`where\` clause of the \`select * from my_table where ...\` query.`,
+      nullable: true
+    },
     mode: {
       $ref: '#/components/schemas/DeltaTableIngestMode'
     },
@@ -586,7 +595,7 @@ Recommended range: 1–10. The default is 4.`,
     },
     snapshot_filter: {
       type: 'string',
-      description: `Optional row filter.
+      description: `Optional snapshot filter.
 
 This option is only valid when \`mode\` is set to \`snapshot\` or \`snapshot_and_follow\`.
 
@@ -594,8 +603,15 @@ When specified, only rows that satisfy the filter condition are included in the
 snapshot.  The condition must be a valid SQL Boolean expression that can be used in
 the \`where\` clause of the \`select * from snapshot where ...\` query.
 
-This option can be used to specify the range of event times to include in the snapshot,
-e.g.: \`ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'\`.`,
+Unlike the \`filter\` option, which applies to all records retrieved from the table, this
+filter only applies to rows in the initial snapshot of the table.
+For instance, it can be used to specify the range of event times to include in the snapshot,
+e.g.: \`ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'\`.
+
+This option can be used together with the \`filter\` option. During the initial snapshot,
+only rows that satisfy both \`filter\` and \`snapshot_filter\` are retrieved from the Delta table.
+When subsequently following changes in the the transaction log (\`mode = snapshot_and_follow\`),
+all rows that meet the \`filter\` condition are ingested, regardless of \`snapshot_filter\`.`,
       nullable: true
     },
     timestamp_column: {
@@ -1359,6 +1375,18 @@ messagee`,
       nullable: true,
       minimum: 0
     },
+    start_from: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/KafkaStartFromConfig'
+      },
+      description: `A list of offsets and partitions specifying where to begin reading individual input topics.
+
+When specified, this property must contain a list of JSON objects with the following fields:
+- \`topic\`: The name of the Kafka topic.
+- \`partition\`: The partition number within the topic.
+- \`offset\`: The specific offset from which to start consuming messages.`
+    },
     topics: {
       type: 'array',
       items: {
@@ -1473,6 +1501,30 @@ These options override \`kafka_options\` for producers, and may be empty.`,
   }
 } as const
 
+export const $KafkaStartFromConfig = {
+  type: 'object',
+  description: 'Configuration for starting from a specific offset in a Kafka topic partition.',
+  required: ['topic', 'partition', 'offset'],
+  properties: {
+    offset: {
+      type: 'integer',
+      format: 'int64',
+      description: 'The offset in the specified partition to start reading from.',
+      minimum: 0
+    },
+    partition: {
+      type: 'integer',
+      format: 'int32',
+      description: 'The parition within the topic.',
+      minimum: 0
+    },
+    topic: {
+      type: 'string',
+      description: 'The Kafka topic.'
+    }
+  }
+} as const
+
 export const $LicenseInformation = {
   type: 'object',
   required: [
@@ -1528,8 +1580,7 @@ export const $LicenseInformation = {
 export const $MetricsFormat = {
   type: 'string',
   description: `Circuit metrics output format.
-- \`prometheus\`: format expected by Prometheus, as documented at:
-<https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md>
+- \`prometheus\`: [format](https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md) expected by Prometheus
 - \`json\`: JSON format`,
   enum: ['prometheus', 'json']
 } as const
