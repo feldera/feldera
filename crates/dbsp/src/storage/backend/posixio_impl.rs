@@ -11,6 +11,8 @@ use crate::storage::{buffer_cache::FBuf, init};
 use feldera_storage::{append_to_path, StorageBackend, StorageBackendFactory};
 use feldera_types::config::{StorageBackendConfig, StorageCacheConfig, StorageConfig};
 use metrics::{counter, histogram};
+use std::fs::create_dir_all;
+use std::io::ErrorKind;
 use std::{
     fs::{self, remove_file, File, OpenOptions},
     io::Error as IoError,
@@ -284,13 +286,25 @@ impl PosixBackend {
 
 impl StorageBackend for PosixBackend {
     fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
+        fn try_create_named(this: &PosixBackend, path: &PathBuf) -> Result<File, IoError> {
+            OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .read(true)
+                .cache_flags(&this.cache)
+                .open(&path)
+        }
+
         let path = append_to_path(self.base.join(name), MUTABLE_EXTENSION);
-        let file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .read(true)
-            .cache_flags(&self.cache)
-            .open(&path)?;
+        let file = match try_create_named(self, &path) {
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                if let Some(parent) = path.parent() {
+                    create_dir_all(parent)?;
+                }
+                try_create_named(self, &path)
+            }
+            other => other,
+        }?;
         counter!(FILES_CREATED).increment(1);
         Ok(Box::new(PosixWriter::new(file, path)))
     }
