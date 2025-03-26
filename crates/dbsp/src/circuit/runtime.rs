@@ -12,7 +12,7 @@ use crate::{
 };
 use core_affinity::{get_core_ids, CoreId};
 use enum_map::{enum_map, Enum, EnumMap};
-use feldera_types::config::StorageCompression;
+use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -38,7 +38,7 @@ use std::{
 use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
 
-use super::dbsp_handle::{CircuitStorageConfig, Layout};
+use super::dbsp_handle::Layout;
 use super::CircuitConfig;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -223,9 +223,26 @@ impl WorkerPanicInfo {
     }
 }
 
+#[derive(derive_more::Debug)]
+struct RuntimeStorage {
+    /// Runner configuration.
+    pub config: StorageConfig,
+
+    /// User options.
+    pub options: StorageOptions,
+
+    /// Backend.
+    #[debug(skip)]
+    pub backend: Arc<dyn StorageBackend>,
+
+    // This is just here for the `Drop` behavior.
+    #[allow(dead_code)]
+    locked_directory: LockedDirectory,
+}
+
 struct RuntimeInner {
     layout: Layout,
-    storage: Option<CircuitStorageConfig>,
+    storage: Option<RuntimeStorage>,
     store: LocalStore,
     kill_signal: AtomicBool,
     background_threads: Mutex<Vec<JoinHandle<()>>>,
@@ -300,21 +317,35 @@ impl RuntimeInner {
     fn new(config: CircuitConfig) -> Result<Self, DbspError> {
         let nworkers = config.layout.local_workers().len();
 
-        if config.storage.as_ref().is_some_and(|storage| {
-            storage.init_checkpoint.is_some_and(|init_checkpoint| {
-                !storage
+        let storage = if let Some(storage) = config.storage {
+            let locked_directory =
+                LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
+            let backend = <dyn StorageBackend>::new(&storage.config, &storage.options)?;
+
+            if let Some(init_checkpoint) = &storage.init_checkpoint {
+                if !storage
                     .config
                     .path()
                     .join(init_checkpoint.to_string())
                     .is_dir()
-            })
-        }) {
-            return Err(DbspError::Storage(StorageError::CheckpointNotFound(
-                config.storage.as_ref().unwrap().init_checkpoint.unwrap(),
-            )));
-        }
+                {
+                    return Err(DbspError::Storage(StorageError::CheckpointNotFound(
+                        init_checkpoint.clone(),
+                    )));
+                }
+            }
 
-        let cache_size_bytes = if let Some(storage) = &config.storage {
+            Some(RuntimeStorage {
+                config: storage.config,
+                options: storage.options,
+                backend,
+                locked_directory,
+            })
+        } else {
+            None
+        };
+
+        let cache_size_bytes = if let Some(storage) = &storage {
             storage
                 .options
                 .cache_mib
@@ -328,7 +359,7 @@ impl RuntimeInner {
 
         Ok(Self {
             layout: config.layout,
-            storage: config.storage,
+            storage,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
             background_threads: Mutex::new(Vec::new()),
@@ -445,13 +476,6 @@ impl Runtime {
 
         let workers = config.layout.local_workers();
 
-        let locked_directory = config
-            .storage
-            .as_ref()
-            .map(|storage| {
-                LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))
-            })
-            .transpose()?;
         describe_metrics();
 
         let runtime = Self(Arc::new(RuntimeInner::new(config)?));
@@ -474,16 +498,6 @@ impl Runtime {
                         ThreadType::set_current(ThreadType::Foreground);
                         runtime.inner().pin_cpu();
                         RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
-                        // This ensures we panic immediately if the storage backend is misconfigured.
-                        // otherwise this might only happen after the first storage operation which
-                        // can happen much later depending on the pipeline.
-                        if let Err(e) = Runtime::storage_backend() {
-                            if let StorageError::StorageDisabled = e {
-                                debug!("Storage is disabled");
-                            } else {
-                                panic!("failed to initialize storage backend: {e}");
-                            }
-                        }
 
                         // Build the worker's circuit
                         build_circuit();
@@ -494,7 +508,7 @@ impl Runtime {
             })
             .collect::<Vec<_>>();
 
-        Ok(RuntimeHandle::new(runtime, workers, locked_directory))
+        Ok(RuntimeHandle::new(runtime, workers))
     }
 
     /// Returns a reference to the multithreaded runtime that
@@ -511,32 +525,32 @@ impl Runtime {
         RUNTIME.with(|rt| rt.borrow().clone())
     }
 
-    /// Returns this thread's storage backend, if storage is configured.
-    ///
-    /// Storage backends are thread-local.
+    /// Returns this runtime's storage backend, if storage is configured.
     ///
     /// # Panic
     ///
     /// Panics if this thread is not in a [Runtime].
     pub fn storage_backend() -> Result<Arc<dyn StorageBackend>, StorageError> {
-        fn new_backend() -> Result<Arc<dyn StorageBackend>, StorageError> {
-            Runtime::runtime()
-                .unwrap()
-                .inner()
-                .storage
-                .as_ref()
-                .map_or(Err(StorageError::StorageDisabled), |storage| {
-                    <dyn StorageBackend>::new(&storage.config, &storage.options)
-                })
-        }
-
-        thread_local! {
-            pub static BACKEND: Result<Arc<dyn StorageBackend>, StorageError> = new_backend();
-        }
-        BACKEND.with(|rc| rc.clone())
+        Runtime::runtime()
+            .unwrap()
+            .inner()
+            .storage
+            .as_ref()
+            .map_or(Err(StorageError::StorageDisabled), |storage| {
+                Ok(storage.backend.clone())
+            })
     }
 
-    /// Returns this thread's buffer cache, if storage is configured.
+    /// Returns this thread's buffer cache.  Every thread has a buffer cache,
+    /// but:
+    ///
+    /// - If the thread's [Runtime] does not have storage configured, the cache
+    ///   size is trivially small.
+    ///
+    /// - If the thread is not in a [Runtime], then the cache is shared among
+    ///   all such threads. (Such a thread might be in a circuit that uses
+    ///   storage, but there's no way to know because only [Runtime] makes that
+    ///   available at a thread level.)
     pub fn buffer_cache() -> Arc<BufferCache> {
         // Fast path, look up from TLS
         thread_local! {
@@ -756,23 +770,11 @@ impl Runtime {
 pub struct RuntimeHandle {
     runtime: Runtime,
     workers: Vec<JoinHandle<()>>,
-
-    // This is just here for the `Drop` behavior.
-    #[allow(dead_code)]
-    locked_directory: Option<LockedDirectory>,
 }
 
 impl RuntimeHandle {
-    fn new(
-        runtime: Runtime,
-        workers: Vec<JoinHandle<()>>,
-        locked_directory: Option<LockedDirectory>,
-    ) -> Self {
-        Self {
-            runtime,
-            workers,
-            locked_directory,
-        }
+    fn new(runtime: Runtime, workers: Vec<JoinHandle<()>>) -> Self {
+        Self { runtime, workers }
     }
 
     /// Unpark worker thread.
@@ -891,14 +893,16 @@ mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
             pin_cpus: Vec::new(),
-            storage: Some(CircuitStorageConfig {
-                config: StorageConfig {
-                    path: path.to_string_lossy().into_owned(),
-                    cache: StorageCacheConfig::default(),
-                },
-                options: StorageOptions::default(),
-                init_checkpoint: None,
-            }),
+            storage: Some(
+                CircuitStorageConfig::for_config(
+                    StorageConfig {
+                        path: path.to_string_lossy().into_owned(),
+                        cache: StorageCacheConfig::default(),
+                    },
+                    StorageOptions::default(),
+                )
+                .unwrap(),
+            ),
         };
 
         let hruntime = Runtime::run(cconf, move || {
