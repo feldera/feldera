@@ -544,7 +544,10 @@ pub fn cast_to_decimal_fN(value: Option<F32>, precision: u32, scale: u32) -> Sql
 #[inline]
 pub fn cast_to_decimal_s(value: SqlString, precision: u32, scale: u32) -> SqlResult<Decimal> {
     match value.str().trim().parse::<Decimal>() {
-        Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "While converting '{}' to decimal: {}",
+            value, e
+        ))),
         Ok(result) => cast_to_decimal_decimal(result, precision, scale),
     }
 }
@@ -738,7 +741,10 @@ pub fn cast_to_decimalN_s(
     scale: u32,
 ) -> SqlResult<Option<Decimal>> {
     match value.str().trim().parse::<Decimal>() {
-        Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "While converting '{}' to decimal: {}",
+            value, e
+        ))),
         Ok(value) => r2o(cast_to_decimal_decimal(value, precision, scale)),
     }
 }
