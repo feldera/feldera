@@ -830,8 +830,29 @@ async fn call_compiler(
     let stderr_file = create_new_file(&stderr_file_path).await?;
 
     // Formulate command
+    let path_environment_variable = std::env::var("PATH").map_err(|e| {
+        RustCompilationError::SystemError(format!(
+            "The PATH environment variable is not set, which is needed to locate `cargo`: {e}"
+        ))
+    })?;
     let mut command = Command::new("cargo");
     command
+        // By default, the command inherits all environment variables
+        // from the originating process. This is fine when the compiler
+        // server is run directly using its executable, but in the case
+        // of being run from source using `cargo run`, this will result
+        // in all kinds of cargo-related environment variables being set
+        // such as `CARGO_PKG_VERSION`. This can cause unnecessary
+        // recompilation for some dependency crates if they use
+        // for example `cargo::rerun-if-env-changed=CARGO_PKG_VERSION`
+        // in their build.rs, even if the actual `CARGO_PKG_VERSION`
+        // they read does not change (as it is overwritten by cargo).
+        //
+        // The only inherited environment variable that is needed is `PATH`,
+        // which is set below. All other inherited environment variables
+        // are cleared.
+        .env_clear()
+        .env("PATH", path_environment_variable)
         // Set compiler stack size to 20MB (10x the default) to prevent
         // SIGSEGV when the compiler runs out of stack on large programs.
         .env("RUST_MIN_STACK", "20971520")
