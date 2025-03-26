@@ -102,6 +102,7 @@ impl Checkpointer {
         // Collect all directories and files still referenced by a checkpoint
         let mut in_use_paths: HashSet<PathBuf> = HashSet::new();
         in_use_paths.insert(self.storage_path.join(Checkpointer::CHECKPOINT_FILE_NAME));
+        in_use_paths.insert(self.storage_path.join("steps.bin"));
         for cpm in self.checkpoint_list.iter() {
             in_use_paths.insert(self.storage_path.join(cpm.uuid.to_string()));
             let batches = self
