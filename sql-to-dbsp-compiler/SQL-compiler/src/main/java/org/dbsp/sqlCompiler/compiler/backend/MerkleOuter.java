@@ -52,7 +52,7 @@ public class MerkleOuter extends ToJsonOuterVisitor {
                 .append(hash.toString())
                 .newline();
         Utilities.putNew(this.operatorHash, operator.id, hash);
-        operator.annotations.add(new OperatorHash(hash, !this.includeInputs));
+        operator.annotations.add(new OperatorHash(hash, this.includeInputs));
     }
 
     @Override
