@@ -4,13 +4,16 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ICodeGenerator;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /** Generates a Rust crate in a specified directory.
@@ -96,7 +99,9 @@ public final class CrateGenerator {
                 """;
         if (crateName.contains("main"))
             stream.println(extraDep);
-        for (CrateGenerator dep: this.dependencies) {
+        List<CrateGenerator> deps = Linq.list(this.dependencies);
+        deps.sort(Comparator.comparing(a -> a.crateName));
+        for (CrateGenerator dep: deps) {
             stream.println(dep.crateName + " = { path = " + Utilities.doubleQuote("../" + dep.crateName) + " }");
         }
     }
