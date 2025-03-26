@@ -2078,6 +2078,18 @@ public class RegressionTests extends SqlIoTest {
                 FROM binary_tbl;""");
     }
 
+    @Test
+    public void issue3777() {
+        this.statementsFailingInCompilation(
+                "CREATE VIEW baz AS select DATEADD(DAY, -360, DATE '2020-01-01')",
+                """
+                Not yet implemented: Function 'DATEADD' not yet implemented
+                This is tracked by issue https://github.com/feldera/feldera/issues/1265\s
+                Perhaps you can use DATE_ADD or addition between a date and an interval?:
+                    1|CREATE VIEW baz AS select DATEADD(DAY, -360, DATE '2020-01-01')
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^""");
+    }
+
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6910")
     public void issue3770() {
         this.statementsFailingInCompilation("""

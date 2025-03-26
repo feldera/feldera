@@ -43,21 +43,40 @@ public class UnimplementedException
     public static final String KIND = "Not yet implemented";
     public static final String SUGGEST = "You can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues";
 
-    static String makeMessage(String message) {
+    static String concat(String... strings) {
+        StringBuilder builder = new StringBuilder();
+        boolean first = true;
+        for (String str: strings) {
+            if (str.isEmpty()) continue;
+            if (!first)
+                builder.append(System.lineSeparator());
+            first = false;
+            builder.append(str);
+        }
+        return builder.toString();
+    }
+
+    static String makeMessage(String message, String alternative) {
         if (!message.contains("feldera/issues"))
-            return message + "\n" + SUGGEST;
-        else return message;
+            return concat(message, SUGGEST, alternative);
+        else return concat(message, alternative);
     }
 
     protected UnimplementedException(String message, @Nullable IDBSPNode node, CalciteObject object) {
-        super(makeMessage(message), object);
+        super(makeMessage(message, ""), object);
         this.dbspNode = node;
+    }
+
+    public UnimplementedException(String message, int issue, String suggestion, CalciteObject object) {
+        this(makeMessage(message + System.lineSeparator() +
+                "This is tracked by issue https://github.com/feldera/feldera/issues/" +
+                issue + " ", suggestion), object);
     }
 
     public UnimplementedException(String message, int issue, CalciteObject object) {
         this(makeMessage(message + System.lineSeparator() +
                 "This is tracked by issue https://github.com/feldera/feldera/issues/" +
-                issue + " "), object);
+                issue + " ", ""), object);
     }
 
     public UnimplementedException() {
@@ -81,7 +100,7 @@ public class UnimplementedException
     public UnimplementedException(IDBSPNode node, Throwable cause) {
         super(makeMessage(cause.getMessage()
                         + System.lineSeparator()
-                        + node)
+                        + node, "")
                 , node.getNode(), cause);
         this.dbspNode = node;
     }
@@ -89,7 +108,7 @@ public class UnimplementedException
     public UnimplementedException(CalciteObject node, Throwable cause) {
         super(makeMessage(cause.getMessage()
                         + System.lineSeparator()
-                        + node)
+                        + node, "")
                 , node, cause);
         this.dbspNode = null;
     }

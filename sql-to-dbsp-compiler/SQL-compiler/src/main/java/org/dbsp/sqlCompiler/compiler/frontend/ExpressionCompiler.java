@@ -1651,9 +1651,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     first = new DBSPIfExpression(node, first.is_null(), ops.get(i).cast(type, false), first);
                 }
                 return first;
+            case TIMESTAMP_ADD:
+                throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
+                        + " not yet implemented", 1265,
+                        "Perhaps you can use DATE_ADD or addition between a date and an interval?", node);
             case DOT:
             default:
-                throw new UnimplementedException("Function " + Utilities.singleQuote(operationName)
+                throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
                         + " not yet implemented", 1265, node);
         }
     }
