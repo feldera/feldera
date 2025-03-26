@@ -35,7 +35,7 @@ The compiler supports the following SQL data types:
 - A suffix of `NULL` or `NOT NULL` can be appended to a type name to
   indicate the nullability. A type with no suffix is not nullable by
   default.  These suffixes do not work for types of elements of ARRAYs
-  or MAPs.  ARRQY elements and MAP values are always nullable, while
+  or MAPs.  ARRAY elements and MAP values are always nullable, while
   MAP keys are never nullable.
 
 - The `FLOAT` type is not supported. Please use `REAL` or
