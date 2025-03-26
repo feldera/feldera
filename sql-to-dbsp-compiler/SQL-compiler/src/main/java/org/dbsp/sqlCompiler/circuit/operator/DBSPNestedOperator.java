@@ -89,6 +89,17 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         return new OutputPort(this, this.internalOutputs.size() - 1);
     }
 
+    /** The output of the operator that corresponds to this declaration */
+    @Nullable
+    public OutputPort outputForDeclaration(DBSPViewDeclarationOperator operator) {
+        DBSPSimpleOperator source = operator.getCorrespondingView(this);
+        if (source != null)
+            return source.outputPort();
+        // May happen after views have been deleted
+        int index = this.outputViews.indexOf(operator.originalViewName());
+        return this.internalOutputs.get(index);
+    }
+
     @Nullable
     @Override
     public DBSPViewOperator getView(ProgramIdentifier name) {
