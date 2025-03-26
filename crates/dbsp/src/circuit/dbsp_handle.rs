@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
+use feldera_storage::StorageBackend;
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
 use metrics::counter;
@@ -228,7 +229,7 @@ pub struct CircuitConfig {
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.
-#[derive(Clone, Debug)]
+#[derive(Clone, derive_more::Debug)]
 pub struct CircuitStorageConfig {
     /// Runner configuration.
     pub config: StorageConfig,
@@ -236,9 +237,39 @@ pub struct CircuitStorageConfig {
     /// User options.
     pub options: StorageOptions,
 
+    /// Storage backend.
+    ///
+    /// Presumably opened according to `config` and `options`.
+    #[debug(skip)]
+    pub backend: Arc<dyn StorageBackend>,
+
     /// The initial checkpoint to start the circuit from, or `None` to start
     /// fresh from a new circuit.
     pub init_checkpoint: Option<Uuid>,
+}
+
+impl CircuitStorageConfig {
+    /// Opens a backend with `config` and `options` and returns a
+    /// [CircuitStorageConfig] with that backend.
+    pub fn for_config(
+        config: StorageConfig,
+        options: StorageOptions,
+    ) -> Result<Self, StorageError> {
+        let backend = <dyn StorageBackend>::new(&config, &options)?;
+        Ok(Self {
+            config,
+            options,
+            backend,
+            init_checkpoint: None,
+        })
+    }
+
+    pub fn with_init_checkpoint(self, init_checkpoint: Option<Uuid>) -> Self {
+        Self {
+            init_checkpoint,
+            ..self
+        }
+    }
 }
 
 impl Default for CircuitConfig {
@@ -1058,17 +1089,19 @@ pub(crate) mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
             pin_cpus: Vec::new(),
-            storage: Some(CircuitStorageConfig {
-                config: StorageConfig {
-                    path: temp.path().to_string_lossy().into_owned(),
-                    cache: StorageCacheConfig::default(),
-                },
-                options: StorageOptions {
-                    min_storage_bytes: Some(0),
-                    ..StorageOptions::default()
-                },
-                init_checkpoint: None,
-            }),
+            storage: Some(
+                CircuitStorageConfig::for_config(
+                    StorageConfig {
+                        path: temp.path().to_string_lossy().into_owned(),
+                        cache: StorageCacheConfig::default(),
+                    },
+                    StorageOptions {
+                        min_storage_bytes: Some(0),
+                        ..StorageOptions::default()
+                    },
+                )
+                .unwrap(),
+            ),
         };
         (temp, cconf)
     }

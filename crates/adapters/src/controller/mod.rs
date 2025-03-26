@@ -83,7 +83,6 @@ use std::{
 use tokio::sync::oneshot;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug, error, info, trace, warn};
-use uuid::Uuid;
 use validate::validate_config;
 
 mod error;
@@ -574,10 +573,13 @@ impl CircuitThread {
             pipeline_config,
             circuit_config,
             processed_records,
-            storage,
             step,
             input_metadata,
         } = ControllerInit::new(config)?;
+        let storage = circuit_config
+            .storage
+            .as_ref()
+            .map(|storage| storage.backend.clone());
         let (circuit, catalog) = circuit_factory(circuit_config)?;
         let (parker, backpressure_thread, command_receiver, controller) =
             ControllerInner::new(pipeline_config, catalog, error_cb, processed_records)?;
@@ -1375,11 +1377,6 @@ struct ControllerInit {
     /// configuration.
     pipeline_config: PipelineConfig,
 
-    /// Controller's storage backend.
-    ///
-    /// (Each thread needs its own backend.)
-    storage: Option<Arc<dyn StorageBackend>>,
-
     /// Initial counter for `total_processed_records`.
     processed_records: u64,
 
@@ -1407,12 +1404,11 @@ fn steps_path(config: &PipelineConfig) -> Option<PathBuf> {
 impl ControllerInit {
     fn without_resume(
         config: PipelineConfig,
-        storage: Option<Arc<dyn StorageBackend>>,
+        storage: Option<CircuitStorageConfig>,
     ) -> Result<Self, ControllerError> {
         Ok(Self {
-            circuit_config: Self::circuit_config(&config, None)?,
+            circuit_config: Self::circuit_config(&config, storage)?,
             pipeline_config: config,
-            storage,
             processed_records: 0,
             step: 0,
             input_metadata: None,
@@ -1427,11 +1423,9 @@ impl ControllerInit {
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
         metrics_recorder::init(pipeline_name);
 
-        let (Some(storage_config), Some(storage_options), Some(state_path)) = (
-            config.storage_config.as_ref(),
-            config.global.storage.as_ref(),
-            state_path(&config),
-        ) else {
+        let (Some((storage_config, storage_options)), Some(state_path)) =
+            (config.storage(), state_path(&config))
+        else {
             if config.global.fault_tolerance.is_none() {
                 info!("storage not configured, so suspend-and-resume and fault tolerance will not be available");
                 return Self::without_resume(config, None);
@@ -1442,24 +1436,24 @@ impl ControllerInit {
             }
         };
         let storage =
-            <dyn StorageBackend>::new(storage_config, storage_options).map_err(|error| {
-                ControllerError::storage_error(String::from("failed to initialize storage"), error)
-            })?;
+            CircuitStorageConfig::for_config(storage_config.clone(), storage_options.clone())
+                .map_err(|error| {
+                    ControllerError::storage_error(
+                        String::from("failed to initialize storage"),
+                        error,
+                    )
+                })?;
 
         // Try to read a checkpoint.
-        let checkpoint = match Checkpoint::read(&*storage, &state_path) {
+        let checkpoint = match Checkpoint::read(&*storage.backend, &state_path) {
             Err(error) if error.kind() == ErrorKind::NotFound => {
-                info!(
-                    "{}: no checkpoint found for resume ({error})",
-                    state_path.display()
-                );
+                info!("no checkpoint found for resume ({error})",);
                 return Self::without_resume(config, Some(storage));
             }
             Err(error) => return Err(error),
             Ok(checkpoint) => checkpoint,
         };
 
-        info!("{}: resuming from checkpoint", state_path.display());
         let Checkpoint {
             circuit,
             step,
@@ -1467,45 +1461,31 @@ impl ControllerInit {
             processed_records,
             input_metadata,
         } = checkpoint;
+        info!("resuming from checkpoint made at step {step}");
+
+        let storage = storage.with_init_checkpoint(circuit.map(|circuit| circuit.uuid));
 
         // Override saved storage configuration with the one that we've already
         // initialized.
         let config = config.with_storage(Some((storage_config.clone(), storage_options.clone())));
 
         Ok(Self {
-            circuit_config: Self::circuit_config(&config, circuit.map(|circuit| circuit.uuid))?,
+            circuit_config: Self::circuit_config(&config, Some(storage))?,
             pipeline_config: config,
             step,
             input_metadata: Some(input_metadata),
             processed_records,
-            storage: Some(storage),
         })
     }
 
     fn circuit_config(
         pipeline_config: &PipelineConfig,
-        init_checkpoint: Option<Uuid>,
+        storage: Option<CircuitStorageConfig>,
     ) -> Result<CircuitConfig, ControllerError> {
         Ok(CircuitConfig {
             layout: Layout::new_solo(pipeline_config.global.workers as usize),
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
-            // Put the circuit's checkpoints in a `circuit` subdirectory of the
-            // storage directory.
-            storage: if let Some(options) = &pipeline_config.global.storage {
-                if let Some(config) = &pipeline_config.storage_config {
-                    Some(CircuitStorageConfig {
-                        config: config.clone(),
-                        options: options.clone(),
-                        init_checkpoint,
-                    })
-                } else {
-                    return Err(ControllerError::not_supported(
-                        "Pipeline requires storage but runner does not have storage configured",
-                    ));
-                }
-            } else {
-                None
-            },
+            storage,
         })
     }
 }
