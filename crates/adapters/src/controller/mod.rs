@@ -68,7 +68,6 @@ use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
 use std::sync::LazyLock;
 use std::{
@@ -545,7 +544,7 @@ struct CircuitThread {
     last_checkpoint: Instant,
 
     /// Storage backend for writing checkpoints.
-    storage: Option<Rc<dyn StorageBackend>>,
+    storage: Option<Arc<dyn StorageBackend>>,
 
     /// The step currently running or replaying.
     step: Step,
@@ -1084,7 +1083,7 @@ impl FtState {
 
     /// Creates new fault tolerance state on storage.
     fn create(
-        storage: Rc<dyn StorageBackend>,
+        storage: Arc<dyn StorageBackend>,
         controller: Arc<ControllerInner>,
     ) -> Result<Self, ControllerError> {
         let config = controller.status.pipeline_config.clone();
@@ -1379,7 +1378,7 @@ struct ControllerInit {
     /// Controller's storage backend.
     ///
     /// (Each thread needs its own backend.)
-    storage: Option<Rc<dyn StorageBackend>>,
+    storage: Option<Arc<dyn StorageBackend>>,
 
     /// Initial counter for `total_processed_records`.
     processed_records: u64,
@@ -1408,7 +1407,7 @@ fn steps_path(config: &PipelineConfig) -> Option<PathBuf> {
 impl ControllerInit {
     fn without_resume(
         config: PipelineConfig,
-        storage: Option<Rc<dyn StorageBackend>>,
+        storage: Option<Arc<dyn StorageBackend>>,
     ) -> Result<Self, ControllerError> {
         Ok(Self {
             circuit_config: Self::circuit_config(&config, None)?,

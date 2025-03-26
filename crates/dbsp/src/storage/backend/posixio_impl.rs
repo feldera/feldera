@@ -310,8 +310,8 @@ impl StorageBackendFactory for PosixBackendFactory {
         &self,
         storage_config: &StorageConfig,
         _backend_config: &StorageBackendConfig,
-    ) -> Result<Rc<dyn StorageBackend>, StorageError> {
-        Ok(Rc::new(PosixBackend::new(
+    ) -> Result<Arc<dyn StorageBackend>, StorageError> {
+        Ok(Arc::new(PosixBackend::new(
             storage_config.path(),
             storage_config.cache,
         )))
@@ -326,14 +326,14 @@ inventory::submit! {
 mod tests {
     use feldera_storage::StorageBackend;
     use feldera_types::config::StorageCacheConfig;
-    use std::{path::Path, rc::Rc};
+    use std::{path::Path, sync::Arc};
 
     use crate::storage::backend::tests::{random_sizes, test_backend};
 
     use super::PosixBackend;
 
-    fn create_posix_backend(path: &Path) -> Rc<dyn StorageBackend> {
-        Rc::new(PosixBackend::new(path, StorageCacheConfig::default()))
+    fn create_posix_backend(path: &Path) -> Arc<dyn StorageBackend> {
+        Arc::new(PosixBackend::new(path, StorageCacheConfig::default()))
     }
 
     /// Write 10 MiB total in 1 KiB chunks.  `VectoredWrite` flushes its buffer when it
