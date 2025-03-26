@@ -113,14 +113,16 @@ public class AvroSchemaTest {
                    "columntype" : {
                      "nullable" : true,
                      "type" : "DOUBLE"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "bar",
                    "case_sensitive" : false,
                    "columntype" : {
                      "nullable" : true,
                      "type" : "DOUBLE"
-                   }
+                   },
+                   "unused" : false
                  } ]
                }""",
                """
@@ -134,14 +136,16 @@ public class AvroSchemaTest {
                      "nullable" : false,
                      "precision" : -1,
                      "type" : "VARCHAR"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "Age",
                    "case_sensitive" : false,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "INTEGER"
-                   }
+                   },
+                   "unused" : false
                  } ]
                }""",
                """
@@ -155,7 +159,8 @@ public class AvroSchemaTest {
                      "nullable" : false,
                      "precision" : -1,
                      "type" : "VARCHAR"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "last_name",
                    "case_sensitive" : false,
@@ -163,21 +168,24 @@ public class AvroSchemaTest {
                      "nullable" : false,
                      "precision" : -1,
                      "type" : "VARCHAR"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "age",
                    "case_sensitive" : false,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "INTEGER"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "automated_email",
                    "case_sensitive" : false,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "BOOLEAN"
-                   }
+                   },
+                   "unused" : false
                  } ]
                }""",
                """
@@ -191,42 +199,48 @@ public class AvroSchemaTest {
                      "nullable" : false,
                      "precision" : -1,
                      "type" : "VARCHAR"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "myBoolean",
                    "case_sensitive" : false,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "BOOLEAN"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "myInt",
                    "case_sensitive" : false,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "INTEGER"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "myLong",
                    "case_sensitive" : false,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "BIGINT"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "myFloat",
                    "case_sensitive" : false,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "REAL"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "myDouble",
                    "case_sensitive" : false,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "DOUBLE"
-                   }
+                   },
+                   "unused" : false
                  }, {
                    "name" : "myBytes",
                    "case_sensitive" : false,
@@ -234,7 +248,8 @@ public class AvroSchemaTest {
                      "nullable" : false,
                      "precision" : 1,
                      "type" : "BINARY"
-                   }
+                   },
+                   "unused" : false
                  } ]
                }"""
         };
