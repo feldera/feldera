@@ -295,7 +295,7 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
                 DataType::LargeList(Arc::new(ArrowField::new_list_field(
                     columntype_to_datatype(array_component, delta_lake),
                     // FIXME: Databricks refuses to understand the `nullable: false` constraint.
-                    delta_lake || c.nullable,
+                    delta_lake || array_component.nullable,
                 )))
             }
             SqlType::Struct => DataType::Struct(struct_to_arrow_fields(
