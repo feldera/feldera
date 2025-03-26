@@ -1195,13 +1195,36 @@ impl ControllerError {
         }
     }
 
-    /// Returns true if `error` likely indicates "file (or object) not
-    /// found".
-    pub fn is_not_found(&self) -> bool {
+    pub fn kind(&self) -> ErrorKind {
         match self {
-            Self::IoError { io_error, .. } if io_error.kind() == ErrorKind::NotFound => true,
-            Self::StorageError { error, .. } => error.is_not_found(),
-            _ => false,
+            Self::IoError { io_error, .. } => io_error.kind(),
+            Self::StorageError { error, .. } => error.kind(),
+            Self::StepError(error) => error.kind(),
+            Self::RestoreInProgress => ErrorKind::ResourceBusy,
+            Self::NotSupported { .. } => ErrorKind::Unsupported,
+            Self::DbspError {
+                error: DbspError::IO(error),
+            } => error.kind(),
+            Self::DbspError { .. }
+            | Self::SchemaParseError { .. }
+            | Self::SchemaValidationError { .. }
+            | Self::CheckpointParseError { .. }
+            | Self::UnexpectedStep { .. }
+            | Self::ReplayFailure { .. }
+            | Self::IrParseError { .. }
+            | Self::CliArgsError { .. }
+            | Self::Config { .. }
+            | Self::UnknownInputEndpoint { .. }
+            | Self::UnknownOutputEndpoint { .. }
+            | Self::ParseError { .. }
+            | Self::EncodeError { .. }
+            | Self::InputTransportError { .. }
+            | Self::OutputTransportError { .. }
+            | Self::PrometheusError { .. }
+            | Self::DbspPanic
+            | Self::ControllerPanic
+            | Self::ControllerExit
+            | Self::EnterpriseFeature(_) => ErrorKind::Other,
         }
     }
 }

@@ -41,8 +41,8 @@ pub enum StorageError {
     InvalidURL(String),
 
     /// Error accessing object store.
-    #[error("Error accessing object store: {0}")]
-    ObjectStore(String),
+    #[error("Error accessing object store: {message}")]
+    ObjectStore { kind: ErrorKind, message: String },
 
     /// The requested storage backend is not available.
     #[error("The requested storage backend ({0:?}) is not available in the open-source version of feldera"
@@ -58,7 +58,28 @@ impl From<std::io::Error> for StorageError {
 
 impl From<ObjectStoreError> for StorageError {
     fn from(value: ObjectStoreError) -> Self {
-        Self::ObjectStore(value.to_string())
+        let kind = match value {
+            ObjectStoreError::NotFound { .. } => ErrorKind::NotFound,
+            ObjectStoreError::NotSupported { .. } => ErrorKind::Unsupported,
+            ObjectStoreError::AlreadyExists { .. } => ErrorKind::AlreadyExists,
+            ObjectStoreError::NotImplemented => ErrorKind::Unsupported,
+            ObjectStoreError::PermissionDenied { .. }
+            | ObjectStoreError::Unauthenticated { .. } => ErrorKind::PermissionDenied,
+            ObjectStoreError::InvalidPath { .. } => {
+                // Should be `ErrorKind::InvalidFilename` (once stabilized).
+                ErrorKind::Other
+            }
+            ObjectStoreError::Generic { .. }
+            | ObjectStoreError::JoinError { .. }
+            | ObjectStoreError::Precondition { .. }
+            | ObjectStoreError::NotModified { .. }
+            | ObjectStoreError::UnknownConfigurationKey { .. }
+            | _ => ErrorKind::Other,
+        };
+        Self::ObjectStore {
+            kind,
+            message: value.to_string(),
+        }
     }
 }
 
@@ -79,18 +100,17 @@ impl Serialize for StorageError {
 }
 
 impl StorageError {
-    /// Returns true if this error likely indicates "file (or object) not
-    /// found".
-    pub fn is_not_found(&self) -> bool {
+    pub fn kind(&self) -> ErrorKind {
         match self {
-            Self::StdIo(kind) if *kind == ErrorKind::NotFound => true,
-            Self::ObjectStore(_) => {
-                // XXX This is imprecise, because we can't easily look at the
-                // details to find out whether it's "object not found". It would
-                // be good to improve it.
-                true
-            }
-            _ => false,
+            StorageError::StdIo(kind) => *kind,
+            StorageError::StorageLocked(..) => ErrorKind::ResourceBusy,
+            StorageError::CheckpointNotFound(_) => ErrorKind::NotFound,
+            StorageError::StorageDisabled => ErrorKind::Other,
+            StorageError::BloomFilter => ErrorKind::Other,
+            StorageError::InvalidPath(_) => ErrorKind::Other,
+            StorageError::InvalidURL(_) => ErrorKind::Other,
+            StorageError::ObjectStore { kind, .. } => *kind,
+            StorageError::BackendNotSupported(_) => ErrorKind::Other,
         }
     }
 }

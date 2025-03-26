@@ -64,6 +64,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
+use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::path::PathBuf;
@@ -1448,7 +1449,7 @@ impl ControllerInit {
 
         // Try to read a checkpoint.
         let checkpoint = match Checkpoint::read(&*storage, &state_path) {
-            Err(error) if error.is_not_found() => {
+            Err(error) if error.kind() == ErrorKind::NotFound => {
                 info!(
                     "{}: no checkpoint found for resume ({error})",
                     state_path.display()
