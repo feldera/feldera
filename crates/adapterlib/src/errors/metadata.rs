@@ -1,6 +1,7 @@
 use crate::transport::Step;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::backtrace::Backtrace;
+use std::io::ErrorKind;
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     io::Error as IoError,
@@ -41,6 +42,20 @@ pub enum StepError {
     UnexpectedRead,
     UnexpectedWrite,
     UnexpectedWait,
+}
+
+impl StepError {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::IoError { io_error, .. } => io_error.kind(),
+            Self::EncodeError { .. }
+            | Self::DecodeError { .. }
+            | Self::MissingStep { .. }
+            | Self::UnexpectedRead
+            | Self::UnexpectedWrite
+            | Self::UnexpectedWait => ErrorKind::Other,
+        }
+    }
 }
 
 fn serialize_io_error<S>(
