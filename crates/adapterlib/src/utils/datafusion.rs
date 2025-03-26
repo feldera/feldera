@@ -1,4 +1,4 @@
-use crate::errors::metadata::ControllerError;
+use crate::errors::journal::ControllerError;
 use anyhow::{anyhow, Error as AnyError};
 use arrow::util::pretty::pretty_format_batches;
 use datafusion::common::arrow::array::{AsArray, RecordBatch};

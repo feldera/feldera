@@ -18,10 +18,7 @@
 //! buffered via `InputConsumer::buffered`.
 
 use crate::catalog::OutputCollectionHandles;
-use crate::controller::metadata::{
-    InputChecksums, ReadResult, StepInputChecksums, StepInputMetadata,
-};
-use crate::controller::stats::{CanSuspend, StepResults};
+use crate::controller::checkpoint::CheckpointOffsets;
 use crate::create_integrated_output_endpoint;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -33,6 +30,7 @@ use crate::{
 use anyhow::Error as AnyError;
 use arrow::datatypes::Schema;
 use atomic::Atomic;
+use checkpoint::Checkpoint;
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
@@ -51,15 +49,13 @@ use feldera_types::format::json::JsonLines;
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
-use metadata::Checkpoint;
-use metadata::InputLog;
-use metadata::StepMetadata;
-use metadata::StepRw;
+use journal::{InputChecksums, InputLog, ReadResult, StepInputChecksums, StepMetadata, StepRw};
 use metrics_exporter_prometheus::PrometheusHandle;
 use metrics_util::debugging::Snapshotter;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
+use stats::{CanSuspend, StepResults};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -85,8 +81,9 @@ use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug, error, info, trace, warn};
 use validate::validate_config;
 
+mod checkpoint;
 mod error;
-mod metadata;
+mod journal;
 mod stats;
 mod validate;
 
@@ -553,7 +550,7 @@ struct CircuitThread {
     /// starting point for reading data for `step`.
     ///
     /// This is only `None` if `step` is 0.
-    input_metadata: Option<StepInputMetadata>,
+    input_metadata: Option<CheckpointOffsets>,
 }
 
 impl CircuitThread {
@@ -700,7 +697,7 @@ impl CircuitThread {
         else {
             return Ok(false);
         };
-        self.input_metadata = Some(StepInputMetadata(
+        self.input_metadata = Some(CheckpointOffsets(
             step_metadata
                 .iter()
                 .map(|(name, log)| (name.clone(), log.metadata.clone()))
@@ -1108,7 +1105,7 @@ impl FtState {
             step: 0,
             config,
             processed_records: 0,
-            input_metadata: StepInputMetadata::default(),
+            input_metadata: CheckpointOffsets::default(),
         };
         checkpoint.write(&*storage, &state_path)?;
 
@@ -1386,7 +1383,7 @@ struct ControllerInit {
     /// Metadata for seeking to input endpoint initial positions.
     ///
     /// This is `Some` iff we read a checkpoint.
-    input_metadata: Option<StepInputMetadata>,
+    input_metadata: Option<CheckpointOffsets>,
 }
 
 fn storage_path(config: &PipelineConfig) -> Option<&Path> {

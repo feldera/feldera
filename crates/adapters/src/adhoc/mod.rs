@@ -16,7 +16,7 @@ use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::SendableRecordBatchStream;
 use datafusion::execution::SessionStateBuilder;
 use datafusion::prelude::*;
-use feldera_adapterlib::errors::metadata::ControllerError;
+use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_types::config::PipelineConfig;
 use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs};
 use futures_util::future::{BoxFuture, FutureExt};
