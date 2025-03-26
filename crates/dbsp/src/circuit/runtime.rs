@@ -29,7 +29,6 @@ use std::{
     fmt,
     fmt::{Debug, Display, Error as FmtError, Formatter},
     panic::{self, Location, PanicHookInfo},
-    rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
@@ -519,8 +518,8 @@ impl Runtime {
     /// # Panic
     ///
     /// Panics if this thread is not in a [Runtime].
-    pub fn storage_backend() -> Result<Rc<dyn StorageBackend>, StorageError> {
-        fn new_backend() -> Result<Rc<dyn StorageBackend>, StorageError> {
+    pub fn storage_backend() -> Result<Arc<dyn StorageBackend>, StorageError> {
+        fn new_backend() -> Result<Arc<dyn StorageBackend>, StorageError> {
             Runtime::runtime()
                 .unwrap()
                 .inner()
@@ -532,7 +531,7 @@ impl Runtime {
         }
 
         thread_local! {
-            pub static BACKEND: Result<Rc<dyn StorageBackend>, StorageError> = new_backend();
+            pub static BACKEND: Result<Arc<dyn StorageBackend>, StorageError> = new_backend();
         }
         BACKEND.with(|rc| rc.clone())
     }

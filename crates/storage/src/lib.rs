@@ -1,7 +1,6 @@
 //! Common Types and Trait Definition for Storage in Feldera.
 
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::Arc;
 
 use feldera_types::config::{StorageBackendConfig, StorageConfig, StorageOptions};
@@ -35,13 +34,13 @@ pub trait StorageBackendFactory: Sync {
         &self,
         storage_config: &StorageConfig,
         backend_config: &StorageBackendConfig,
-    ) -> Result<Rc<dyn StorageBackend>, StorageError>;
+    ) -> Result<Arc<dyn StorageBackend>, StorageError>;
 }
 
 inventory::collect!(&'static dyn StorageBackendFactory);
 
 /// A storage backend.
-pub trait StorageBackend {
+pub trait StorageBackend: Send + Sync {
     /// Create a new file with the given `name`, which is relative to the
     /// backend's base directory.
     fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError>;
@@ -84,7 +83,10 @@ pub trait StorageBackend {
 
 impl dyn StorageBackend {
     /// Creates and returns a new backend configured according to `config` and `options`.
-    pub fn new(config: &StorageConfig, options: &StorageOptions) -> Result<Rc<Self>, StorageError> {
+    pub fn new(
+        config: &StorageConfig,
+        options: &StorageOptions,
+    ) -> Result<Arc<Self>, StorageError> {
         Self::warn_about_tmpfs(config.path());
         for variable_provider in inventory::iter::<&dyn StorageBackendFactory> {
             if variable_provider.backend() == options.backend.to_string() {
@@ -120,7 +122,7 @@ impl dyn StorageBackend {
 /// The file can't be read until it is completed with
 /// [FileWriter::complete]. Until then, the file is temporary and will be
 /// deleted if it is dropped.
-pub trait FileWriter: HasFileId {
+pub trait FileWriter: Send + Sync + HasFileId {
     /// Writes `data` at the given byte `offset`.  `offset` must be a multiple
     /// of 512 and `data.len()` must be a multiple of 512.  Returns the data
     /// that was written encapsulated in an `Arc`.
