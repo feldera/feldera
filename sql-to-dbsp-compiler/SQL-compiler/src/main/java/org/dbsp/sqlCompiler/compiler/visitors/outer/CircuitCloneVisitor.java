@@ -135,7 +135,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                 .newline();
         ICircuit parent = this.getUnderConstruction();
         parent.addOperator(operator);
-        if (!this.current.isEmpty()) {
+        if (!this.context.isEmpty()) {
             // Current can be empty when operators are inserted in startVisit, for example.
             // Such operators are not derived from the "current" operator.
             IDBSPOuterNode node = this.getCurrent();

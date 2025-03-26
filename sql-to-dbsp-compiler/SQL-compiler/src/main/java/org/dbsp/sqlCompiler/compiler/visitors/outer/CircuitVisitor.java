@@ -59,12 +59,12 @@ public abstract class CircuitVisitor
     protected DBSPCircuit circuit = null;
     public final DBSPCompiler compiler;
     /** Circuit or operator currently being visited. */
-    protected final List<IDBSPOuterNode> current;
+    protected final List<IDBSPOuterNode> context;
 
     public CircuitVisitor(DBSPCompiler compiler) {
         this.id = crtId++;
         this.compiler = compiler;
-        this.current = new ArrayList<>();
+        this.context = new ArrayList<>();
     }
 
     @Override
@@ -77,8 +77,8 @@ public abstract class CircuitVisitor
     }
 
     public ICircuit getParent() {
-        assert this.current.size() > 1;
-        return this.current.get(this.current.size() - 2).to(ICircuit.class);
+        assert this.context.size() > 1;
+        return this.context.get(this.context.size() - 2).to(ICircuit.class);
     }
 
     /** Property of a node that is being visited */
@@ -108,7 +108,7 @@ public abstract class CircuitVisitor
     }
 
     public IDBSPOuterNode getCurrent() {
-        return Utilities.last(this.current);
+        return Utilities.last(this.context);
     }
 
     /** Returns by default the input circuit unmodified. */
@@ -121,11 +121,11 @@ public abstract class CircuitVisitor
     }
 
     public void push(IDBSPOuterNode node) {
-        this.current.add(node);
+        this.context.add(node);
     }
 
     public void pop(IDBSPOuterNode node) {
-        Utilities.removeLast(this.current, node);
+        Utilities.removeLast(this.context, node);
     }
 
     /************************* PREORDER *****************************/
