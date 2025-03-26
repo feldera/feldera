@@ -15,7 +15,7 @@ use dbsp::{storage::backend::StorageError, Error as DbspError};
 use feldera_types::error::{DetailedError, ErrorResponse};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 
-use super::metadata::StepError;
+use super::journal::StepError;
 use crate::{format::ParseError, transport::Step, DbspDetailedError};
 
 /// Controller configuration error.
@@ -576,7 +576,7 @@ pub enum ControllerError {
     /// from a checkpoint.
     RestoreInProgress,
 
-    /// Error in steps metadata.
+    /// Error in journal metadata.
     StepError(StepError),
 
     /// Unexpected step number.
