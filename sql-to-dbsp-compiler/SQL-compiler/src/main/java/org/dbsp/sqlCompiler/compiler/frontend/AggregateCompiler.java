@@ -344,14 +344,14 @@ public class AggregateCompiler implements ICompilerComponent {
             this.processArrayAgg(function);
             return;
         }
-        DBSPTupleExpression tuple = Objects.requireNonNull(this.aggArgument).to(DBSPTupleExpression.class);
-        assert tuple.fields != null && tuple.fields.length == 2: "Expected 2 arguments for " + kind;
         DBSPOpcode compareOpcode = switch (kind) {
             case ARG_MAX -> DBSPOpcode.AGG_GTE;
             case ARG_MIN -> DBSPOpcode.AGG_LTE;
             default -> throw new UnimplementedException("Aggregate function not yet implemented", node);
         };
 
+        DBSPTupleExpression tuple = Objects.requireNonNull(this.aggArgument).to(DBSPTupleExpression.class);
+        assert tuple.fields != null && tuple.fields.length == 2: "Expected 2 arguments for " + kind;
         DBSPType currentType = tuple.fields[1].getType().withMayBeNull(true);
         DBSPType zeroType = new DBSPTypeTuple(this.resultType, currentType);
         DBSPExpression zero = new DBSPTupleExpression(

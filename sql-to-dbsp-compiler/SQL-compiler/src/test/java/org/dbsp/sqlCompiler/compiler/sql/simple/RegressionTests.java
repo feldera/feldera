@@ -2088,4 +2088,19 @@ public class RegressionTests extends SqlIoTest {
                 c1[3] AS c13_val
                 FROM row_of_map_tbl;""", "TBD");
     }
+
+    @Test
+    public void issue3778() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE foo (
+                    bar NUMERIC,
+                    baz STRING
+                );
+                
+                CREATE VIEW biz AS (
+                    SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY bar) AS bar_median
+                    FROM foo
+                    GROUP BY baz
+                );""", "Aggregate function not yet implemented");
+    }
 }
