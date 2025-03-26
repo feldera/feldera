@@ -19,6 +19,7 @@
 
 use crate::catalog::OutputCollectionHandles;
 use crate::controller::checkpoint::CheckpointOffsets;
+use crate::controller::journal::Journal;
 use crate::create_integrated_output_endpoint;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -49,7 +50,7 @@ use feldera_types::format::json::JsonLines;
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
-use journal::{InputChecksums, InputLog, ReadResult, StepInputChecksums, StepMetadata, StepRw};
+use journal::{InputChecksums, InputLog, StepInputChecksums, StepMetadata};
 use metrics_exporter_prometheus::PrometheusHandle;
 use metrics_util::debugging::Snapshotter;
 use nonzero_ext::nonzero;
@@ -1026,10 +1027,8 @@ struct FtState {
     /// The controller.
     controller: Arc<ControllerInner>,
 
-    /// The step reader/writer.
-    ///
-    /// This is always non-`None` unless a fatal error occurs.
-    step_rw: Option<StepRw>,
+    /// The journal.
+    journal: Journal,
 
     /// If we are currently replaying a previous step, the input data checksums
     /// for the step, so that we can check that our replay used the same input
@@ -1053,15 +1052,13 @@ impl FtState {
             steps_path.display(),
             step
         );
-        let step_rw = StepRw::open(&steps_path)?;
-        let (input_checksums, step_rw) = match step_rw.into_reader().unwrap().seek(step)? {
-            ReadResult::Step { reader, metadata } => {
-                // We found the current step in the journal, as
-                // `metadata`. Start replaying the step.
-                let input_checksums = Self::replay_step(step, &metadata, &controller)?;
-                (Some(input_checksums), StepRw::Reader(reader))
+        let journal = Journal::open(&steps_path);
+        let input_checksums = match journal.read(step)? {
+            Some(record) => {
+                // Start replaying the step.
+                Some(Self::replay_step(step, &record, &controller)?)
             }
-            ReadResult::Writer(writer) => {
+            None => {
                 // The current step is not in the journal, meaning that
                 // there aren't any steps beyond the checkpoint.
                 //
@@ -1069,14 +1066,14 @@ impl FtState {
                 // was not just lost or deleted because we insist on at
                 // least being able to open it to resume (a zero-length
                 // file is fine).
-                (None, StepRw::Writer(writer))
+                None
             }
         };
         Ok(Self {
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
             input_checksums,
-            step_rw: Some(step_rw),
+            journal,
         })
     }
 
@@ -1097,7 +1094,7 @@ impl FtState {
         let _ = fs::remove_dir(&steps_path);
 
         info!("{}: creating", steps_path.display());
-        let step_rw = StepRw::create(&steps_path)?;
+        let journal = Journal::create(&steps_path)?;
 
         info!("{}: creating", state_path.display());
         let checkpoint = Checkpoint {
@@ -1113,7 +1110,7 @@ impl FtState {
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
             input_checksums: None,
-            step_rw: Some(step_rw),
+            journal,
         })
     }
 
@@ -1162,52 +1159,53 @@ impl FtState {
         input_logs: HashMap<String, InputLog>,
         step: Step,
     ) -> Result<(), ControllerError> {
-        if let Some(step_writer) = self.step_rw.as_mut().and_then(|rw| rw.as_writer()) {
-            let mut remove_inputs = HashSet::new();
-            let mut add_inputs = HashMap::new();
-            let inputs = self.controller.status.inputs.read().unwrap();
-            for (endpoint_id, endpoint_name) in self.input_endpoints.iter() {
-                if !inputs.contains_key(endpoint_id) {
-                    remove_inputs.insert(endpoint_name.clone());
+        match &self.input_checksums {
+            None => {
+                let mut remove_inputs = HashSet::new();
+                let mut add_inputs = HashMap::new();
+                let inputs = self.controller.status.inputs.read().unwrap();
+                for (endpoint_id, endpoint_name) in self.input_endpoints.iter() {
+                    if !inputs.contains_key(endpoint_id) {
+                        remove_inputs.insert(endpoint_name.clone());
+                    }
                 }
-            }
-            for (endpoint_id, status) in inputs.iter() {
-                if !self.input_endpoints.contains_key(endpoint_id) {
-                    add_inputs.insert(status.endpoint_name.clone(), status.config.clone());
+                for (endpoint_id, status) in inputs.iter() {
+                    if !self.input_endpoints.contains_key(endpoint_id) {
+                        add_inputs.insert(status.endpoint_name.clone(), status.config.clone());
+                    }
                 }
-            }
-            if !remove_inputs.is_empty() || !add_inputs.is_empty() {
-                self.input_endpoints = inputs
-                    .iter()
-                    .map(|(id, status)| (*id, status.endpoint_name.clone()))
-                    .collect();
-            }
-            drop(inputs);
+                if !remove_inputs.is_empty() || !add_inputs.is_empty() {
+                    self.input_endpoints = inputs
+                        .iter()
+                        .map(|(id, status)| (*id, status.endpoint_name.clone()))
+                        .collect();
+                }
+                drop(inputs);
 
-            let step_metadata = StepMetadata {
-                step,
-                remove_inputs,
-                add_inputs,
-                input_logs,
-            };
-            step_writer.write(&step_metadata)?;
-        } else if let Some(logged) = &self.input_checksums {
-            let replayed = StepInputChecksums::from(&input_logs);
-            if &replayed != logged {
-                let error = format!("Logged and replayed step {step} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}");
-                error!("{error}");
-                return Err(ControllerError::ReplayFailure { error });
+                let step_metadata = StepMetadata {
+                    step,
+                    remove_inputs,
+                    add_inputs,
+                    input_logs,
+                };
+                self.journal.write(&step_metadata)?;
             }
-        }
+            Some(logged) => {
+                let replayed = StepInputChecksums::from(&input_logs);
+                if &replayed != logged {
+                    let error = format!("Logged and replayed step {step} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}");
+                    error!("{error}");
+                    return Err(ControllerError::ReplayFailure { error });
+                }
+            }
+        };
         Ok(())
     }
 
     /// Waits for the step writer to commit the step (written by
     /// [Self::write_step]) to stable storage.
     fn sync_step(&mut self) -> Result<(), ControllerError> {
-        if let Some(step_writer) = self.step_rw.as_mut().and_then(|rw| rw.as_writer()) {
-            step_writer.wait()?;
-        }
+        //self.journal.wait()?;
         Ok(())
     }
 
@@ -1215,20 +1213,17 @@ impl FtState {
     fn next_step(&mut self, step: Step) -> Result<(), ControllerError> {
         if self.is_replaying() {
             // Read a step.
-            let step_rw = self.step_rw.take().unwrap();
-            let (metadata, step_rw) = step_rw.read()?;
-            self.step_rw = Some(step_rw);
-            match metadata {
+            match self.journal.read(step)? {
                 None => {
                     // No more steps to replay.
                     info!("replay complete, starting pipeline");
                     self.input_checksums = None;
                     self.input_endpoints = Self::initial_input_endpoints(&self.controller);
                 }
-                Some(metadata) => {
+                Some(record) => {
                     // There's a step to replay.
                     self.input_checksums =
-                        Some(Self::replay_step(step, &metadata, &self.controller)?);
+                        Some(Self::replay_step(step, &record, &self.controller)?);
                 }
             };
         }
@@ -1237,7 +1232,7 @@ impl FtState {
 
     /// Truncates the journal (because we just checkpointed).
     fn checkpointed(&mut self) -> Result<(), ControllerError> {
-        self.step_rw = Some(self.step_rw.take().unwrap().truncate()?);
+        self.journal.truncate()?;
         Ok(())
     }
 

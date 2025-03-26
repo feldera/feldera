@@ -31,29 +31,22 @@ pub enum StepError {
         path: PathBuf,
         #[serde(serialize_with = "serialize_as_string")]
         error: rmp_serde::decode::Error,
-        offset: u64,
     },
 
-    MissingStep {
+    WrongStep {
         path: PathBuf,
-        step: Step,
+        expected: Step,
+        found: Step,
     },
-
-    UnexpectedRead,
-    UnexpectedWrite,
-    UnexpectedWait,
 }
 
 impl StepError {
     pub fn kind(&self) -> ErrorKind {
         match self {
             Self::IoError { io_error, .. } => io_error.kind(),
-            Self::EncodeError { .. }
-            | Self::DecodeError { .. }
-            | Self::MissingStep { .. }
-            | Self::UnexpectedRead
-            | Self::UnexpectedWrite
-            | Self::UnexpectedWait => ErrorKind::Other,
+            Self::EncodeError { .. } | Self::DecodeError { .. } | Self::WrongStep { .. } => {
+                ErrorKind::Other
+            }
         }
     }
 }
@@ -89,26 +82,21 @@ impl Display for StepError {
             StepError::EncodeError { path, error } => {
                 write!(f, "{}: error writing step ({error})", path.display())
             }
-            StepError::DecodeError {
-                path,
-                error,
-                offset,
-            } => write!(
-                f,
-                "error parsing step starting at offset {offset} in {} ({error})",
-                path.display()
-            ),
-            StepError::MissingStep { path, step } => write!(
-                f,
-                "{} should contain step {step} but it is not present",
-                path.display()
-            ),
+            StepError::DecodeError { path, error } => {
+                write!(f, "{}: error parsing step ({error})", path.display())
+            }
             StepError::IoError { path, io_error, .. } => {
                 write!(f, "I/O error on {}: {io_error}", path.display())
             }
-            StepError::UnexpectedRead => write!(f, "Unexpected read while in write mode"),
-            StepError::UnexpectedWrite => write!(f, "Unexpected write while in read mode"),
-            StepError::UnexpectedWait => write!(f, "Unexpected wait while in read mode"),
+            StepError::WrongStep {
+                path,
+                expected,
+                found,
+            } => write!(
+                f,
+                "{}: file should contain  step {expected}, but read step {found}",
+                path.display()
+            ),
         }
     }
 }
