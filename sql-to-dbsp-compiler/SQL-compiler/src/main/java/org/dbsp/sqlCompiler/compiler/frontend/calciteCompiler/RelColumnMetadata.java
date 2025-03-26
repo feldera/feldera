@@ -28,6 +28,8 @@ public class RelColumnMetadata {
     @Nullable
     public final SourcePositionRange defaultValuePosition;
     public final boolean nameIsQuoted;
+    // Set during compilation
+    public boolean unused;
 
     public RelColumnMetadata(
             CalciteObject node, RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
@@ -41,6 +43,11 @@ public class RelColumnMetadata {
         this.watermark = watermark;
         this.defaultValue = defaultValue;
         this.defaultValuePosition = defaultValuePosition;
+        this.unused = false;
+    }
+
+    public void setUnused() {
+        this.unused = true;
     }
 
     @Override
@@ -52,6 +59,7 @@ public class RelColumnMetadata {
                 ", watermark=" + this.watermark +
                 ", defaultValue=" + this.defaultValue +
                 ", nameIsQuoted=" + this.nameIsQuoted +
+                ", unused=" + this.unused +
                 '}';
     }
 

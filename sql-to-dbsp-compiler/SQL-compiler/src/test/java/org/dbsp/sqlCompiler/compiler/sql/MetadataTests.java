@@ -355,6 +355,7 @@ public class MetadataTests extends BaseSQLTests {
         compiler.getFinalCircuit(false);
         ObjectNode node = compiler.getIOMetadataAsJson();
         String json = node.toPrettyString();
+        System.out.println(json);
         Assert.assertTrue(json.contains("""
                 {
                   "inputs" : [ {
@@ -384,7 +385,8 @@ public class MetadataTests extends BaseSQLTests {
                           }
                         } ],
                         "nullable" : true
-                      }
+                      },
+                      "unused" : false
                     } ],
                     "materialized" : false,
                     "foreign_keys" : [ ]
@@ -888,7 +890,8 @@ public class MetadataTests extends BaseSQLTests {
                       "columntype" : {
                         "nullable" : false,
                         "type" : "INTEGER"
-                      }
+                      },
+                      "unused" : false
                     }, {
                       "name" : "col2",
                       "case_sensitive" : false,
@@ -896,7 +899,8 @@ public class MetadataTests extends BaseSQLTests {
                         "nullable" : false,
                         "type" : "DOUBLE"
                       },
-                      "default" : "1.0E0"
+                      "default" : "1.0E0",
+                      "unused" : true
                     }, {
                       "name" : "col3",
                       "case_sensitive" : false,
@@ -904,7 +908,8 @@ public class MetadataTests extends BaseSQLTests {
                         "nullable" : false,
                         "precision" : 3,
                         "type" : "VARCHAR"
-                      }
+                      },
+                      "unused" : true
                     }, {
                       "name" : "col4",
                       "case_sensitive" : false,
@@ -916,7 +921,8 @@ public class MetadataTests extends BaseSQLTests {
                         },
                         "nullable" : true,
                         "type" : "ARRAY"
-                      }
+                      },
+                      "unused" : true
                     }, {
                       "name" : "col5",
                       "case_sensitive" : false,
@@ -931,7 +937,8 @@ public class MetadataTests extends BaseSQLTests {
                           "nullable" : true,
                           "type" : "INTEGER"
                         }
-                      }
+                      },
+                      "unused" : true
                     }, {
                       "name" : "col6",
                       "case_sensitive" : false,
@@ -940,7 +947,8 @@ public class MetadataTests extends BaseSQLTests {
                         "precision" : 0,
                         "type" : "TIMESTAMP"
                       },
-                      "lateness" : "INTERVAL '5 10:10' DAY TO MINUTE"
+                      "lateness" : "INTERVAL '5 10:10' DAY TO MINUTE",
+                      "unused" : true
                     } ],
                     "primary_key" : [ "col3" ],
                     "materialized" : false,
@@ -961,7 +969,8 @@ public class MetadataTests extends BaseSQLTests {
                         "nullable" : false,
                         "precision" : -1,
                         "type" : "VARCHAR"
-                      }
+                      },
+                      "unused" : false
                     }, {
                       "name" : "message",
                       "case_sensitive" : false,
@@ -969,7 +978,8 @@ public class MetadataTests extends BaseSQLTests {
                         "nullable" : false,
                         "precision" : -1,
                         "type" : "VARCHAR"
-                      }
+                      },
+                      "unused" : false
                     }, {
                       "name" : "metadata",
                       "case_sensitive" : false,
@@ -977,7 +987,8 @@ public class MetadataTests extends BaseSQLTests {
                         "nullable" : false,
                         "precision" : -1,
                         "type" : "VARCHAR"
-                      }
+                      },
+                      "unused" : false
                     } ],
                     "materialized" : false
                   }, {
@@ -989,7 +1000,8 @@ public class MetadataTests extends BaseSQLTests {
                       "columntype" : {
                         "nullable" : false,
                         "type" : "INTEGER"
-                      }
+                      },
+                      "unused" : false
                     } ],
                     "materialized" : false
                   }, {
@@ -1001,7 +1013,8 @@ public class MetadataTests extends BaseSQLTests {
                       "columntype" : {
                         "nullable" : false,
                         "type" : "INTEGER"
-                      }
+                      },
+                      "unused" : false
                     } ],
                     "materialized" : false
                   } ]

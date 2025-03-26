@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
@@ -95,6 +96,8 @@ public class UnusedFields extends Passes {
                                         meta.getPositionRange(), "Unused column",
                                         "Column " + meta.name.singleQuote() + " of table " +
                                                 src.tableName.singleQuote() + " is unused");
+                                IHasSchema schema = this.compiler.metadata.getTableDescription(src.tableName);
+                                schema.getColumns().get(i).setUnused();
                             }
                         }
                     }
