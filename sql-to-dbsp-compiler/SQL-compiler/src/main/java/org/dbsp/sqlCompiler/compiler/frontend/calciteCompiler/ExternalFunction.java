@@ -173,11 +173,11 @@ public class ExternalFunction extends SqlFunction {
     public DBSPFunction getDeclaration(TypeCompiler typeCompiler) {
         List<DBSPParameter> parameters = new ArrayList<>();
         for (RelDataTypeField param: this.parameterList) {
-            DBSPType type = typeCompiler.convertType(param.getType(), true);
+            DBSPType type = typeCompiler.convertType(param.getType(), false);
             DBSPParameter p = new DBSPParameter(param.getName(), type);
             parameters.add(p);
         }
-        DBSPType returnType = typeCompiler.convertType(this.returnType, true);
+        DBSPType returnType = typeCompiler.convertType(this.returnType, false);
         // Must wrap the return type in a Result
         returnType = new DBSPTypeResult(returnType);
         return new DBSPFunction(this.getName(), parameters, returnType, null, Linq.list());
@@ -188,7 +188,7 @@ public class ExternalFunction extends SqlFunction {
         if (this.body != null) {
             List<DBSPParameter> parameters = new ArrayList<>();
             for (RelDataTypeField param: this.parameterList) {
-                DBSPType type = typeCompiler.convertType(param.getType(), true);
+                DBSPType type = typeCompiler.convertType(param.getType(), false);
                 DBSPParameter p = new DBSPParameter(param.getName(), type);
                 parameters.add(p);
             }

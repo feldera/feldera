@@ -281,6 +281,8 @@ crate, which is part of the Feldera SQL runtime.
 | `MAP<K, V>`              | `feldera_sqllib::Map<K, V>`             |
 | `UUID`                   | `feldera_sqllib::Uuid`                  |
 | `VARIANT`                | `feldera_sqllib::Variant`               |
+| `ROW`                    | `Tup`N                                  |
+| User-defined struct type | `Tup`N                                  |
 
 Multiple SQL types may be represented by the same Rust type.  For
 example, `CHAR`, `CHAR(n)`, `VARCHAR(n)`, and `VARCHAR` are all
@@ -296,6 +298,41 @@ Currently `feldera_sqlllib::Map` is defined as `type Map =
 Arc<BTreeMap>`, and `feldera_sqlllib::Array` is defined as `type Array
 = Arc<Vec>`.  Currently `feldera_sqlllib::SqlString` is a thin wrapper
 type around the `ArcStr` type from the `arcstr` crate.
+
+A `ROW` type with N fields represented by a Rust `Tup`N datatype.  A
+user-defined structure type is also represented by a tuple `Tup`N
+type.  These tuple types can be imported from the current crate.
+
+Here are some examples using `ROW` and user-defined types:
+
+```sql
+CREATE TYPE X AS (x int);
+CREATE FUNCTION f(arg X) RETURNS X;
+CREATE FUNCTION g(x int NOT NULL) RETURNS ROW(a INT, b INT) NOT NULL;
+CREATE VIEW V AS SELECT f(X(1)), g(2).a;
+```
+
+And here is a possible implementation of the used-defined functions
+`f` and `g` in Rust:
+
+```rust
+use crate::{Tup1, Tup2};
+use feldera_sqllib::*;
+pub fn f(x: Option<Tup1<Option<i32>>>) ->
+   Result<Option<Tup1<Option<i32>>>, Box<dyn std::error::Error>> {
+   match x {
+      None => Ok(None),
+      Some(x) => match x.0 {
+         None => Ok(Some(Tup1::new(None))),
+         Some(x) => Ok(Some(Tup1::new(Some(x + 1)))),
+      }
+   }
+}
+
+pub fn g(x: i32) -> Result<Tup2<i32, i32>, Box<dyn std::error::Error>> {
+   Ok(Tup2::new(x-1, x+1))
+}
+```
 
 ### Return types
 
@@ -331,7 +368,7 @@ including only wrapper functions that call the API of this crate in
 
 ## Limitations
 
-* Currently only limited implicit casts are considered for the
+* Currently only limited implicit casts are inserted by the compiler for the
   function arguments and function result in the SQL program.  For
   example, a call such as `CONTAINS_NUMBER('2010-10-20', '5')` will
   fail at SQL compilation time because the first argument has type

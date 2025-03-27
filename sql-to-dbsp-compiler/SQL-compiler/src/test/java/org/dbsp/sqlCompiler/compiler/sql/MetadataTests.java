@@ -54,6 +54,39 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue3743() throws IOException, InterruptedException, SQLException {
+        File file = createInputScript("""
+                CREATE TYPE X AS (x int);
+                CREATE FUNCTION f(arg X) RETURNS X;
+                CREATE FUNCTION g(x int NOT NULL) RETURNS ROW(a INT, b INT) NOT NULL;
+                CREATE VIEW V AS SELECT f(X(1)), g(2).a;""");
+
+        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
+        script.println("""
+                use crate::{Tup1, Tup2};
+                use feldera_sqllib::*;
+                pub fn f(x: Option<Tup1<Option<i32>>>) -> Result<Option<Tup1<Option<i32>>>, Box<dyn std::error::Error>> {
+                   match x {
+                      None => Ok(None),
+                      Some(x) => match x.0 {
+                         None => Ok(Some(Tup1::new(None))),
+                         Some(x) => Ok(Some(Tup1::new(Some(x + 1)))),
+                      }
+                   }
+                }
+                
+                pub fn g(x: i32) -> Result<Tup2<i32, i32>, Box<dyn std::error::Error>> {
+                   Ok(Tup2::new(x-1, x+1))
+                }""");
+        script.close();
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        if (messages.errorCount() > 0)
+            throw new RuntimeException(messages.toString());
+        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+    }
+
+    @Test
     public void issue3637() throws IOException, SQLException {
         String sql = """
                 CREATE TABLE t (id VARCHAR);
