@@ -749,8 +749,8 @@ macro_rules! deserialize_table_record {
                 // deserializers.  In the future we may want to make the choice between map
                 // and sequence representations configurable, so we won't need this trick.
                 //deserializer.deserialize_map(visitor)
-                Ok(deserializer
-                        .deserialize_struct($sql_table, [$($column_name,)*].as_slice(), visitor)?)
+                deserializer
+                        .deserialize_struct($sql_table, [$($column_name,)*].as_slice(), visitor)
             }
         }
     }

@@ -3725,7 +3725,6 @@ dependencies = [
  "dyn-clone",
  "enum-map",
  "env_logger 0.11.6",
- "erased-serde",
  "fastbloom",
  "fdlimit",
  "feldera-ijson",
