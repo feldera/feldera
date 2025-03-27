@@ -108,14 +108,16 @@ public class MerkleOuter extends ToJsonOuterVisitor {
         // Identical operators at different depths are NOT equivalent
         perOp.label("depth");
         perOp.stream.append(this.current.size());
-        if (this.includeInputs) {
-            perOp.label("inputs");
-            perOp.stream.beginArray();
-            for (OutputPort port : operator.inputs) {
+        perOp.label("inputs");
+        perOp.stream.beginArray();
+        for (OutputPort port : operator.inputs) {
+            if (this.includeInputs) {
                 port.asJson(perOp);
+            } else {
+                port.outputType().accept(perOp.innerVisitor);
             }
-            perOp.stream.endArray();
         }
+        perOp.stream.endArray();
         perOp.stream.endObject();
 
         String string = perOp.getJsonString();

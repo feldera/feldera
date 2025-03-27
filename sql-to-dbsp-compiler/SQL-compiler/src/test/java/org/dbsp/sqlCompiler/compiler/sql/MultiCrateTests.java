@@ -10,6 +10,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
@@ -97,6 +98,23 @@ public class MultiCrateTests extends BaseSQLTests {
                     LEFT JOIN t1 AS t21 ON t20.val=t21.val;""";
         File file = createInputScript(sql);
         this.compileMultiCrate(file.getAbsolutePath());
+    }
+
+    @Test
+    public void testPackagedDemos() throws SQLException, IOException, InterruptedException {
+        final String projectsDirectory = "../../demo/packaged/sql";
+        final File dir = new File(projectsDirectory);
+        FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
+        String[] sqlFiles = dir.list(filter);
+        assert sqlFiles != null;
+        for (String sqlFile: sqlFiles) {
+            // System.out.println(sqlFile);
+            String basename = Utilities.getBaseName(sqlFile);
+            String udf = basename + ".udf.rs";
+            File udfFile = new File(dir.getPath() + "/" + udf);
+            if (!udfFile.exists())
+                this.compileMultiCrate(dir.getPath() + "/" + sqlFile);
+        }
     }
 
     @Test

@@ -44,4 +44,9 @@ public class CompactName extends Annotation {
         stream.append(this.name);
         stream.endObject();
     }
+
+    @Override
+    public String toString() {
+        return "CompactName: " + this.name;
+    }
 }
