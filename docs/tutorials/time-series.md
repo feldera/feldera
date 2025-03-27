@@ -12,7 +12,7 @@ analytics.
 
 Most examples in this guide are available as a pre-packaged demo "Time Series Analysis with Feldera"
 that ships with the
-[Feldera Docker container](https://docs.feldera.com/docker) and the
+[Feldera Docker container](https://docs.feldera.com/get-started/docker) and the
 [online sandbox](https://try.feldera.com).
 
 :::
