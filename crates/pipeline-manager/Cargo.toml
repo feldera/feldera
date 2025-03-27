@@ -52,6 +52,9 @@ openssl = "0.10.66"
 url = {version = "2.4.0"}
 urlencoding = "2.1.3"
 regex = "1.10.2"
+tar = "0.4.44"
+flate2 = "1.1.0"
+base64 = "0.22.1"
 
 # Command-line interaction
 clap = { version = "4.0.32", features = ["derive", "env"] }

@@ -1,5 +1,5 @@
 use crate::compiler::sql_compiler::{attempt_end_to_end_sql_compilation, cleanup_sql_compilation};
-use crate::compiler::util::{list_content, read_file_content};
+use crate::compiler::util::{encode_dir_as_string, read_file_content, DirectoryContent};
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
@@ -81,6 +81,27 @@ impl CompilerTest {
         platform_version: &str,
         program_code: &str,
     ) -> PipelineId {
+        self.create_pipeline_with_udf(
+            tenant_id,
+            name,
+            platform_version,
+            program_code,
+            "not-used",
+            "not-used",
+        )
+        .await
+    }
+
+    /// Creates a pipeline in the database under the provided name with UDF specified.
+    pub(crate) async fn create_pipeline_with_udf(
+        &self,
+        tenant_id: TenantId,
+        name: &str,
+        platform_version: &str,
+        program_code: &str,
+        udf_rust: &str,
+        udf_toml: &str,
+    ) -> PipelineId {
         let pipeline_id = PipelineId(Uuid::now_v7());
         self.db
             .lock()
@@ -94,8 +115,8 @@ impl CompilerTest {
                     description: "not-used".to_string(),
                     runtime_config: json!({}),
                     program_code: program_code.to_string(),
-                    udf_rust: "not-used".to_string(),
-                    udf_toml: "not-used".to_string(),
+                    udf_rust: udf_rust.to_string(),
+                    udf_toml: udf_toml.to_string(),
                     program_config: json!({}),
                 },
             )
@@ -154,7 +175,13 @@ impl CompilerTest {
 
     /// Checks that the SQL compiler working directory is empty.
     pub(crate) async fn sql_compiler_check_is_empty(&self) {
-        assert_eq!(list_content(&self.sql_workdir).await.unwrap(), vec![]);
+        assert_eq!(
+            DirectoryContent::new(&self.sql_workdir)
+                .await
+                .unwrap()
+                .content,
+            vec![]
+        );
     }
 
     /// Used to check whether the SQL compilation outcome was successful by retrieving
@@ -167,15 +194,7 @@ impl CompilerTest {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_code: &str,
-    ) -> (
-        ExtendedPipelineDescr,
-        String,
-        String,
-        String,
-        String,
-        String,
-        String,
-    ) {
+    ) -> ExtendedPipelineDescr {
         // Retrieve pipeline descriptor
         let pipeline_descr = self.get_pipeline(tenant_id, pipeline_id).await;
 
@@ -183,30 +202,30 @@ impl CompilerTest {
         assert_eq!(pipeline_descr.program_status, ProgramStatus::SqlCompiled);
 
         // Pipeline directory should be the only one present in the SQL working directory
-        let list = list_content(&self.sql_workdir).await.unwrap();
+        let list = DirectoryContent::new(&self.sql_workdir)
+            .await
+            .unwrap()
+            .content;
         let pipeline_dir_name = format!("pipeline-{pipeline_id}");
         let pipeline_dir = self.sql_workdir.join(&pipeline_dir_name);
-        assert_eq!(list, vec![(pipeline_dir.clone(), Some(pipeline_dir_name))]);
+        assert_eq!(list, vec![(pipeline_dir.clone(), pipeline_dir_name, false)]);
 
         // Get content of pipeline SQL compilation directory
         let content_pipeline_dir: Vec<String> = list_content_as_sorted_names(&pipeline_dir).await;
         assert_eq!(
             content_pipeline_dir,
             vec![
-                "main.rs",
                 "program.sql",
+                "rust",
                 "schema.json",
                 "stderr.log",
                 "stdout.log",
-                "stubs.rs"
             ]
         );
-        let content_main_rs = read_file_content(&pipeline_dir.join("main.rs"))
-            .await
-            .unwrap();
         let content_program_sql = read_file_content(&pipeline_dir.join("program.sql"))
             .await
             .unwrap();
+        let content_rust = encode_dir_as_string(&pipeline_dir.join("rust")).unwrap();
         let content_schema_json = read_file_content(&pipeline_dir.join("schema.json"))
             .await
             .unwrap();
@@ -216,14 +235,11 @@ impl CompilerTest {
         let content_stdout_log = read_file_content(&pipeline_dir.join("stdout.log"))
             .await
             .unwrap();
-        let content_stubs_rs = read_file_content(&pipeline_dir.join("stubs.rs"))
-            .await
-            .unwrap();
 
         // Basic sanity check for file content
-        assert_ne!(content_main_rs, "");
+        assert_ne!(content_rust, "");
         assert_eq!(
-            content_main_rs,
+            content_rust,
             serde_json::from_value::<ProgramInfo>(pipeline_descr.program_info.clone().unwrap())
                 .unwrap()
                 .main_rust
@@ -232,31 +248,21 @@ impl CompilerTest {
         assert_ne!(content_schema_json, "");
         assert_eq!(content_stderr_log, "");
         assert_eq!(content_stdout_log, "");
-        assert_ne!(content_stubs_rs, "");
 
-        (
-            pipeline_descr,
-            content_main_rs,
-            content_program_sql,
-            content_schema_json,
-            content_stderr_log,
-            content_stdout_log,
-            content_stubs_rs,
-        )
+        // Return the pipeline descriptor
+        pipeline_descr
     }
 }
 
 /// Lists the content of a directory as the names therein (sorted).
 /// Panics if the directory content cannot be retrieved or an entry does not possess a name.
 pub(crate) async fn list_content_as_sorted_names(dir: &Path) -> Vec<String> {
-    let mut content: Vec<String> = list_content(dir)
+    let mut content: Vec<String> = DirectoryContent::new(dir)
         .await
-        .expect("Unable to retrieve directory content")
+        .unwrap()
+        .content
         .iter()
-        .map(|(path, name)| {
-            name.clone()
-                .unwrap_or_else(|| panic!("Path {path:?} does not have a name"))
-        })
+        .map(|(_, filename, _)| filename.clone())
         .collect();
     content.sort();
     content

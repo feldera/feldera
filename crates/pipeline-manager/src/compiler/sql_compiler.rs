@@ -1,7 +1,8 @@
 use crate::common_error::CommonError;
 use crate::compiler::util::{
-    cleanup_specific_directories, create_new_file, create_new_file_with_content, read_file_content,
-    recreate_dir, CleanupDecision,
+    cleanup_specific_directories, crate_name_pipeline_base, crate_name_pipeline_globals,
+    create_new_file, create_new_file_with_content, encode_dir_as_string, read_file_content,
+    recreate_dir, CleanupDecision, UtilError,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -66,11 +67,11 @@ pub async fn sql_compiler_task(
         {
             if let Err(e) = cleanup_sql_compilation(&config, db.clone()).await {
                 match e {
-                    SqlCompilationCleanupError::DBError(e) => {
+                    SqlCompilationCleanupError::Database(e) => {
                         error!("SQL compilation cleanup failed: database error occurred: {e}");
                     }
-                    SqlCompilationCleanupError::CommonError(e) => {
-                        error!("SQL compilation cleanup failed: filesystem error occurred: {e}");
+                    SqlCompilationCleanupError::Utility(e) => {
+                        error!("SQL compilation cleanup failed: filesystem operation error occurred: {e}");
                     }
                 }
                 unexpected_error = true;
@@ -285,6 +286,13 @@ impl From<CommonError> for SqlCompilationError {
     }
 }
 
+/// Utility errors are system errors during SQL compilation.
+impl From<UtilError> for SqlCompilationError {
+    fn from(value: UtilError) -> Self {
+        SqlCompilationError::SystemError(value.to_string())
+    }
+}
+
 /// Performs the SQL compilation:
 /// - Prepares a working directory for input and output
 /// - Call the SQL-to-DBSP compiler executable via a process
@@ -349,8 +357,15 @@ pub(crate) async fn perform_sql_compilation(
 
     // Outputs
     let output_json_schema_file_path = working_dir.join("schema.json");
-    let output_rust_main_file_path = working_dir.join("main.rs");
-    let output_rust_udf_stubs_file_path = working_dir.join("stubs.rs");
+    let output_rust_directory_path = working_dir.join("rust");
+    recreate_dir(&output_rust_directory_path)
+        .await
+        .map_err(|e| SqlCompilationError::SystemError(e.to_string()))?;
+    let output_rust_udf_stubs_file_path = working_dir
+        .join("rust")
+        .join(crate_name_pipeline_globals(pipeline_id))
+        .join("src")
+        .join("stubs.rs");
 
     // SQL compiler executable
     let sql_compiler_executable_file_path = Path::new(&config.sql_compiler_home)
@@ -367,13 +382,15 @@ pub(crate) async fn perform_sql_compilation(
         .arg("-js")
         .arg(output_json_schema_file_path.as_os_str())
         .arg("-o")
-        .arg(output_rust_main_file_path.as_os_str())
+        .arg(output_rust_directory_path.as_os_str())
         .arg("-i")
         .arg("-je")
         .arg("--alltables")
         .arg("--ignoreOrder")
         .arg("--unquotedCasing")
         .arg("lower")
+        .arg("--crates") // Generate multiple crates instead of a single main.rs
+        .arg(crate_name_pipeline_base(pipeline_id))
         .stdin(Stdio::null())
         .stdout(Stdio::from(output_stdout_file.into_std().await))
         .stderr(Stdio::from(output_stderr_file.into_std().await))
@@ -485,8 +502,8 @@ pub(crate) async fn perform_sql_compilation(
             )
         })?;
 
-        // Read main.rs
-        let main_rust = read_file_content(&output_rust_main_file_path).await?;
+        // The base64-encoded gzipped tar archive of the Rust output directory
+        let main_rust = encode_dir_as_string(&output_rust_directory_path)?;
 
         // Read stubs.rs
         let stubs = read_file_content(&output_rust_udf_stubs_file_path).await?;
@@ -521,20 +538,20 @@ pub(crate) async fn perform_sql_compilation(
 #[derive(Debug)]
 pub(crate) enum SqlCompilationCleanupError {
     /// Database error occurred (e.g., lost connectivity).
-    DBError(DBError),
-    /// Filesystem problem occurred (e.g., I/O error)
-    CommonError(CommonError),
+    Database(DBError),
+    /// Utility problem occurred (e.g., I/O error)
+    Utility(UtilError),
 }
 
 impl From<DBError> for SqlCompilationCleanupError {
     fn from(value: DBError) -> Self {
-        SqlCompilationCleanupError::DBError(value)
+        SqlCompilationCleanupError::Database(value)
     }
 }
 
-impl From<CommonError> for SqlCompilationCleanupError {
-    fn from(value: CommonError) -> Self {
-        SqlCompilationCleanupError::CommonError(value)
+impl From<UtilError> for SqlCompilationCleanupError {
+    fn from(value: UtilError) -> Self {
+        SqlCompilationCleanupError::Utility(value)
     }
 }
 
@@ -677,7 +694,7 @@ mod test {
             .create_pipeline(tenant_id, "p1", "v0", program_code)
             .await;
         test.sql_compiler_tick().await;
-        let (pipeline_descr, _, _, _, _, _, _) = test
+        let pipeline_descr = test
             .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
             .await;
 
@@ -843,7 +860,7 @@ mod test {
             .create_pipeline(tenant_id, "p1", "v0", program_code)
             .await;
         test.sql_compiler_tick().await;
-        let (pipeline_descr, _, _, _, _, _, _) = test
+        let pipeline_descr = test
             .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
             .await;
 
@@ -906,7 +923,7 @@ mod test {
         test.sql_compiler_tick().await;
 
         // Check result
-        let (pipeline_descr, _, _, _, _, _, _) = test
+        let pipeline_descr = test
             .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
             .await;
         let input_connectors = validate_program_info(&pipeline_descr.program_info.unwrap())
