@@ -14,60 +14,86 @@ publish = false
 development = ["pg-client-config"]
 
 [dependencies]
+# Feldera
 feldera-types = { path = "../feldera-types" }
+
+# Cryptography provider
+# Make sure this is the same rustls version used by other crates in the dependency tree.
+# See the `ensure_default_crypto_provider` function at the root of this crate.
+rustls = "0.23.12"
+
+# Logging
+log = "0.4.20"
+env_logger = "0.10.0"
+colored = "2.0.0"
+
+# Error handling and asserts
+anyhow = { version = "1.0.57", features = ["backtrace"] }
+thiserror = "1.0"
+static_assertions = "1.1.0"
+
+# Asynchronous runtime
+tokio = { version = "1.25.0", features = ["rt-multi-thread", "fs", "macros", "process", "io-util", "io-std", "signal"] }
+tokio-stream = { version = "0.1.15" }
+async-stream = { version = "0.3.5" }
+async-trait = "0.1"
+futures-util = "0.3.30"
+
+# Encoding, decoding and formatting
+rand = "0.8.5"
+uuid = { version = "1.11.0", features = ["v7", "std", "serde"] }
+chrono = { version = "0.4.38", default-features = false, features = ["clock", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0.127", features = ["preserve_order"] }
+serde_yaml = "0.9.34"
+hex = "0.4.3"
+indoc = "2.0.5"
+openssl = "0.10.66"
+url = {version = "2.4.0"}
+urlencoding = "2.1.3"
+regex = "1.10.2"
+
+# Command-line interaction
+clap = { version = "4.0.32", features = ["derive", "env"] }
+termbg = "0.5.1"
+
+# Database
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"]}
+deadpool-postgres = "0.10.5"
+# Waiting for https://github.com/faokunega/pg-embed/pull/26
+pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", optional = true, default-features = false, features = ["rt_tokio"] }
+refinery = {version = "0.8.10", features = ["tokio-postgres"]}
+
+# HTTP server and client
 actix-web = "4.9.0"
 actix-http = "3.9.0"
 actix-web-static-files = "4.0.1"
 actix-files = "0.6.2"
-awc = {version = "3.5.1", features = ["openssl"] } # Needed for auth workflows
-static-files = "0.2.3"
 actix-cors = "0.6.4"
-anyhow = { version = "1.0.57", features = ["backtrace"] }
-tokio = { version = "1.25.0", features = ["rt-multi-thread", "fs", "macros", "process", "io-util", "io-std", "signal"] }
-tokio-stream = { version = "0.1.15" }
-async-stream = { version = "0.3.5" }
-log = "0.4.20"
-env_logger = "0.10.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0.127", features = ["preserve_order"] }
-serde_yaml = "0.9.34"
-clap = { version = "4.0.32", features = ["derive", "env"] }
+actix-web-httpauth = "0.8.0"
+jsonwebtoken = "8"
+static-files = "0.2.3"
 utoipa = { version = "4.2", features = ["actix_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "7.1", features = ["actix-web"] }
-chrono = { version = "0.4.38", default-features = false, features = ["clock", "serde"] }
-tempfile = { version = "3" }
-futures-util = "0.3.30"
-tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"]}
-async-trait = "0.1"
-colored = "2.0.0"
-deadpool-postgres = "0.10.5"
-jsonwebtoken = "8"
-actix-web-httpauth = "0.8.0"
-cached = { version="0.43.0", features = ["async"]}
-# Waiting for https://github.com/faokunega/pg-embed/pull/26
-pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", optional = true, default-features = false, features = ["rt_tokio"] }
-rand = "0.8.5"
-openssl = "0.10.66"
-static_assertions = "1.1.0"
-uuid = { version = "1.11.0", features = ["v7", "std", "serde"] }
-refinery = {version = "0.8.10", features = ["tokio-postgres"]}
+awc = {version = "3.5.1", features = ["openssl"] }  # For: auth workflows
 reqwest = {version = "0.11.18", features = ["json"]}
-url = {version = "2.4.0"}
-dirs = "5.0"
-thiserror = "1.0"
+cached = { version="0.43.0", features = ["async"]}
+crossbeam = "0.8.4"
 metrics = "0.23"
 metrics-exporter-prometheus = "0.15.3"
-# Make sure this is the same rustls version used by other crated in the dependency tree.
-# See the `ensure_default_crypto_provider` function at the root of this crate.
-rustls = "0.23.12"
-regex = "1.10.2"
-fdlimit = "0.3.0"
-termbg = "0.5.1"
-hex = "0.4.3"
-indoc = "2.0.5"
-urlencoding = "2.1.3"
-crossbeam = "0.8.4"
-nix = { version = "0.29.0", features = ["signal"] }
+
+# System interaction
+dirs = "5.0"  # For: discovering home directory
+fdlimit = "0.3.0"  # For: raising file descriptor limit
+nix = { version = "0.29.0", features = ["signal"] }  # For: terminating process group
+
+# Not used
+# These dependencies are not used by this crate, but by the generated pipeline crates.
+# They are provided such that they are included in the workspace `Cargo.lock`.
+# Keep in-sync with `src/compiler/rust_compiler.rs`.
+compare = { version = "0.1.0" }
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 
 [features]
 default = ["pg-embed"]
@@ -90,6 +116,7 @@ aws-config = "0.55.3"
 wiremock = "0.6"
 feldera-types = { path = "../feldera-types", features = ["testing"] }
 itertools = "0.13.0"
+tempfile = { version = "3" }
 
 # Used in integration tests
 [dev-dependencies.tokio]
@@ -97,4 +124,4 @@ version = "*"
 features = ["sync"]
 
 [package.metadata.cargo-machete]
-ignored = ["static-files"]
+ignored = ["static-files", "compare", "tikv-jemallocator"]
