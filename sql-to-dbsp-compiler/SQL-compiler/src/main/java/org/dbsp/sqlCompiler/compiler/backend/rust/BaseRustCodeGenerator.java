@@ -19,11 +19,29 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     /** Stream where code is generated; set by {@link BaseRustCodeGenerator#setOutputBuilder} */
     @Nullable
     protected IIndentStream outputBuilder = null;
+    boolean generateUdfInclude = true;
+    boolean generateMalloc = true;
+    boolean generateTuples = true;
 
     protected BaseRustCodeGenerator() {
         this.id = crdId++;
         this.toWrite = new ArrayList<>();
         this.dependencies = new ArrayList<>();
+    }
+
+    public BaseRustCodeGenerator withGenerateTuples(boolean generate) {
+        this.generateTuples = generate;
+        return this;
+    }
+
+    public BaseRustCodeGenerator withUdf(boolean udf) {
+        this.generateUdfInclude = udf;
+        return this;
+    }
+
+    public BaseRustCodeGenerator withMalloc(boolean malloc) {
+        this.generateMalloc = malloc;
+        return this;
     }
 
     protected String dbspCircuit(boolean topLevel) {

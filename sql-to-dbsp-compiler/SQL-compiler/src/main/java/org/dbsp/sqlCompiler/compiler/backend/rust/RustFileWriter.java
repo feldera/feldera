@@ -12,12 +12,10 @@ import java.util.Set;
 /** This class helps generate Rust code.
  * It is given a set of circuit and functions and generates a compilable Rust file. */
 public class RustFileWriter extends RustWriter {
-    boolean slt = false;
-    boolean generateUdfInclude = true;
-    boolean generateMalloc = true;
-    boolean findUsed = true;
-    boolean test = false;
     StructuresUsed used = new StructuresUsed();
+    boolean findUsed = true;
+    boolean slt = false;
+    boolean test = false;
 
     public RustFileWriter() {}
 
@@ -44,16 +42,6 @@ public class RustFileWriter extends RustWriter {
         this.test = test;
         return this;
     }
-    
-    public RustFileWriter withUdf(boolean udf) {
-        this.generateUdfInclude = udf;
-        return this;
-    }
-
-    public RustFileWriter withMalloc(boolean malloc) {
-        this.generateMalloc = malloc;
-        return this;
-    }
 
     void generateStructures() {
         super.generateStructures(this.used);
@@ -61,7 +49,7 @@ public class RustFileWriter extends RustWriter {
             this.builder().append("#[cfg(test)]").newline()
                     .append("sltsqlvalue::to_sql_row_impl! {").increase();
             for (int i : this.used.tupleSizesUsed) {
-                if (i <= StructuresUsed.PREDEFINED)
+                if (used.isPredefined(i))
                     // These are already pre-declared
                     continue;
                 this.builder().append(this.tup(i)).append(",").newline();
@@ -98,9 +86,10 @@ public class RustFileWriter extends RustWriter {
         this.add(pt.tester());
     }
 
-    public void setUsed(StructuresUsed used) {
+    public RustFileWriter setUsed(StructuresUsed used) {
         this.used = used;
         this.findUsed = false;
+        return this;
     }
 
     public void write(DBSPCompiler compiler) {

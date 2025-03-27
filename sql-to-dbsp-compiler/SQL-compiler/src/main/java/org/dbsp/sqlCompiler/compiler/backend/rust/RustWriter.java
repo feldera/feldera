@@ -24,12 +24,16 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
     /** Various visitors gather here information about the program prior to generating code. */
     public static class StructuresUsed {
         /** Tuples up to this size are predefined */
-        public static final int PREDEFINED = 10;
+        private static final int PREDEFINED = 10;
 
         /** The set of all tuple sizes used in the program. */
         public final Set<Integer> tupleSizesUsed = new HashSet<>();
         /** The set of all semigroup sizes used. */
         public final Set<Integer> semigroupSizesUsed = new HashSet<>();
+
+        public boolean isPredefined(int tupleSize) {
+            return tupleSize <= PREDEFINED;
+        }
 
         int getMaxTupleSize() {
             int max = 0;
@@ -172,7 +176,7 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
                     .append("}").newline();
         }
 
-        if (!used.tupleSizesUsed.isEmpty()) {
+        if (!used.tupleSizesUsed.isEmpty() && this.generateTuples) {
             this.builder().append("declare_tuples! {").increase();
             for (int i : used.tupleSizesUsed) {
                 if (i <= 10)
@@ -220,7 +224,7 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
     }
 
     /** Analyze the nodes to generate code for and find structures used */
-    protected StructuresUsed analyze(DBSPCompiler compiler) {
+    public StructuresUsed analyze(DBSPCompiler compiler) {
         StructuresUsed used = new StructuresUsed();
         FindResources findResources = new FindResources(compiler, used);
         CircuitVisitor findCircuitResources = findResources.getCircuitVisitor(true);
