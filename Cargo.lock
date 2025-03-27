@@ -4670,6 +4670,7 @@ dependencies = [
 name = "fda"
 version = "0.42.0"
 dependencies = [
+ "arrow",
  "chrono",
  "clap 4.5.31",
  "clap_complete",

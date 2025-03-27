@@ -12,6 +12,8 @@ pub enum AdHocResultFormat {
     Json,
     /// Download results in a parquet file.
     Parquet,
+    /// Stream data in the arrow IPC format.
+    ArrowIpc,
 }
 
 impl Display for AdHocResultFormat {
@@ -20,6 +22,7 @@ impl Display for AdHocResultFormat {
             AdHocResultFormat::Text => write!(f, "text"),
             AdHocResultFormat::Json => write!(f, "json"),
             AdHocResultFormat::Parquet => write!(f, "parquet"),
+            AdHocResultFormat::ArrowIpc => write!(f, "arrow_ipc"),
         }
     }
 }

@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::engine::{ArgValueCompleter, CompletionCandidate};
+use std::fmt::Display;
 use std::path::PathBuf;
 
 use crate::cd::types::{CompilationProfile, ProgramConfig};
@@ -103,6 +104,26 @@ pub enum OutputFormat {
     ///
     /// This usually corresponds to the exact response returned from the server.
     Json,
+    /// Request the output in Arrow IPC format.
+    ///
+    /// This format can only be specified for SQL queries.
+    ArrowIpc,
+    /// Return the output in Parquet format.
+    ///
+    /// This format can only be specified for SQL queries.
+    Parquet,
+}
+
+impl Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let output = match self {
+            OutputFormat::Text => "text",
+            OutputFormat::Json => "json",
+            OutputFormat::ArrowIpc => "arrow_ipc",
+            OutputFormat::Parquet => "parquet",
+        };
+        write!(f, "{}", output)
+    }
 }
 
 #[derive(Subcommand)]

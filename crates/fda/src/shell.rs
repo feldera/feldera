@@ -150,6 +150,8 @@ pub async fn shell(format: OutputFormat, name: String, client: Client) {
                             let format = match format {
                                 OutputFormat::Text => "text",
                                 OutputFormat::Json => "json",
+                                OutputFormat::ArrowIpc => "arrow",
+                                OutputFormat::Parquet => "parquet",
                             };
                             match client
                                 .pipeline_adhoc_sql()
