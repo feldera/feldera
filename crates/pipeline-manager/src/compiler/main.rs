@@ -7,7 +7,7 @@ use crate::compiler::rust_compiler::{
 use crate::compiler::sql_compiler::{
     perform_sql_compilation, sql_compiler_task, SqlCompilationError,
 };
-use crate::compiler::util::{recreate_dir, validate_is_sha256_checksum};
+use crate::compiler::util::validate_is_sha256_checksum;
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
@@ -22,7 +22,7 @@ use futures_util::join;
 use log::{error, info};
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::{spawn, sync::Mutex};
+use tokio::{fs, spawn, sync::Mutex};
 use uuid::Uuid;
 
 /// Decodes the URL encoded parameter value as a string.
@@ -109,8 +109,15 @@ async fn create_working_directory_if_not_exists(
     config: &CompilerConfig,
 ) -> Result<(), ManagerError> {
     if !config.working_dir().exists() {
+        fs::create_dir_all(config.working_dir())
+            .await
+            .map_err(|e| {
+                CommonError::io_error(
+                    format!("creating directory '{}'", config.working_dir().display()),
+                    e,
+                )
+            })?;
         info!("Compiler server has created a new working directory");
-        recreate_dir(&config.working_dir()).await?;
     }
     Ok(())
 }
@@ -173,7 +180,7 @@ pub async fn compiler_precompile(
     })?;
 
     // Rust
-    let (_, source_checksum, integrity_checksum, rust_duration, _, _) = perform_rust_compilation(
+    let (_, source_checksum, integrity_checksum, rust_duration, _) = perform_rust_compilation(
         &common_config,
         &config,
         None,
