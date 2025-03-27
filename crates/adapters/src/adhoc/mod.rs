@@ -2,6 +2,7 @@ use crate::PipelineError;
 use actix_web::http::header;
 use actix_web::HttpResponse;
 use arrow::array::RecordBatch;
+use arrow::ipc::writer::StreamWriter;
 use arrow::util::pretty::pretty_format_batches;
 use arrow_json::writer::LineDelimited;
 use arrow_json::WriterBuilder;
@@ -101,6 +102,20 @@ impl AsyncFileWriter for ChannelWriter {
 
     fn complete(&mut self) -> BoxFuture<'_, parquet::errors::Result<()>> {
         async move { Ok(()) }.boxed()
+    }
+}
+
+impl std::io::Write for ChannelWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        // Clone the buffer and send it
+        let bytes = Bytes::copy_from_slice(buf);
+        let len = bytes.len();
+        futures::executor::block_on(self.tx.send(bytes)).unwrap();
+        Ok(len)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -254,6 +269,49 @@ pub async fn stream_adhoc_result(
                     }
                 }
             })),
+        AdHocResultFormat::ArrowIpc => {
+            let (tx, mut rx) = mpsc::channel(1024);
+
+            let mut stream_job = Box::pin(async move {
+                let mut channel_writer = ChannelWriter::new(tx);
+                let schema = df.schema().inner().clone();
+                let mut stream = execute_stream(df).await.expect("unable to receive stream")?;
+                let mut writer = StreamWriter::try_new(&mut channel_writer, &schema).unwrap();
+
+                while let Some(batch) = stream.next().await {
+                    let batch = batch.map_err(DataFusionError::from)?;
+                    writer.write(&batch).map_err(DataFusionError::from)?;
+                }
+                writer.flush().map_err(DataFusionError::from)?;
+                writer.finish().map_err(DataFusionError::from)?;
+                <datafusion::common::Result<_>>::Ok(())
+            }.fuse());
+
+            Ok(HttpResponse::Ok()
+                .content_type(mime::APPLICATION_OCTET_STREAM)
+                .streaming(stream! {
+                    loop {
+                        select! {
+                            stream_res = stream_job.as_mut() => {
+                                match stream_res {
+                                    Ok(()) => {}
+                                    Err(err) => {
+                                        yield Err(err);
+                                    }
+                                }
+                            },
+                            maybe_bytes = rx.recv().fuse() => {
+                                if let Some(bytes) = maybe_bytes {
+                                    yield Ok(bytes);
+                                } else {
+                                    // Channel closed, we're done
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }))
+        },
         AdHocResultFormat::Parquet => {
             let file_name = format!(
                 "results_{}.parquet",

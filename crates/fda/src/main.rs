@@ -3,7 +3,10 @@
 use std::convert::Infallible;
 use std::fs::File;
 use std::io::{ErrorKind, Read, Write};
+use std::path::PathBuf;
 
+use arrow::ipc::reader::StreamReader;
+use arrow::util::pretty::pretty_format_batches;
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use feldera_types::config::{FtConfig, RuntimeConfig, StorageOptions};
@@ -36,6 +39,28 @@ use crate::cd::types::*;
 use crate::cd::*;
 use crate::cli::*;
 use crate::shell::shell;
+
+/// Creates a unique filename by appending a number to the base name if it already exists.
+fn unique_file(base: &str, extension: &str) -> Result<(PathBuf, File), std::io::Error> {
+    let mut path = PathBuf::from(format!("{}.{}", base, extension));
+    let mut count = 1;
+    loop {
+        let file = File::create_new(&path);
+        match file {
+            Ok(file) => {
+                return Ok((path, file));
+            }
+            Err(e) => {
+                if e.kind() == ErrorKind::AlreadyExists {
+                    path = PathBuf::from(format!("{}_{}.{}", base, count, extension));
+                    count += 1;
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+}
 
 /// Adds the API key to the headers if it was supplied
 fn make_auth_headers(auth: &Option<String>) -> Result<HeaderMap, InvalidHeaderValue> {
@@ -273,6 +298,10 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                             .expect("Failed to serialize API key response")
                     );
                 }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
             }
         }
         ApiKeyActions::Delete { name } => {
@@ -321,6 +350,10 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                             .expect("Failed to serialize API key list")
                     );
                 }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
             }
         }
     }
@@ -359,6 +392,10 @@ async fn pipelines(format: OutputFormat, client: Client) {
                 serde_json::to_string_pretty(&response.into_inner())
                     .expect("Failed to serialize pipeline list")
             );
+        }
+        _ => {
+            eprintln!("Unsupported output format: {}", format);
+            std::process::exit(1);
         }
     }
 }
@@ -573,6 +610,10 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                             serde_json::to_string_pretty(&response.into_inner())
                                 .expect("Failed to serialize pipeline response")
                         );
+                    }
+                    _ => {
+                        eprintln!("Unsupported output format: {}", format);
+                        std::process::exit(1);
                     }
                 }
             } else {
@@ -842,6 +883,10 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                             .expect("Failed to serialize pipeline stats")
                     );
                 }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
             }
         }
         PipelineAction::Logs { name, watch } => {
@@ -939,6 +984,10 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                             .expect("Failed to serialize pipeline stats")
                     );
                 }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
             }
         }
         PipelineAction::Config { name } => {
@@ -965,6 +1014,10 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         serde_json::to_string_pretty(&response.runtime_config)
                             .expect("Failed to serialize pipeline stats")
                     );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
                 }
             }
         }
@@ -1024,6 +1077,10 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         serde_json::to_string_pretty(&response.runtime_config)
                             .expect("Failed to serialize pipeline stats")
                     );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
                 }
             }
         }
@@ -1125,15 +1182,17 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             shell(format, name, client2).await
         }
         PipelineAction::Query { name, sql, stdin } => {
-            let format = match format {
+            let format_str = match format {
                 OutputFormat::Text => "text",
                 OutputFormat::Json => "json",
+                OutputFormat::ArrowIpc => "arrow_ipc",
+                OutputFormat::Parquet => "parquet",
             };
 
             let response = client
                 .pipeline_adhoc_sql()
                 .pipeline_name(name)
-                .format(format)
+                .format(format_str)
                 .sql(sql.unwrap_or_else(|| {
                     if stdin {
                         let mut program_code = String::new();
@@ -1159,20 +1218,56 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 ))
                 .unwrap();
 
-            let mut byte_stream = response.into_inner();
-            while let Some(chunk) = byte_stream.next().await {
-                let mut buffer = Vec::new();
-                match chunk {
-                    Ok(chunk) => buffer.extend_from_slice(&chunk),
-                    Err(e) => {
-                        eprintln!("ERROR: Unable to read server response: {}", e);
-                        std::process::exit(1);
+            match format {
+                OutputFormat::Text | OutputFormat::Json => {
+                    let mut byte_stream = response.into_inner();
+                    while let Some(chunk) = byte_stream.next().await {
+                        let mut buffer = Vec::new();
+                        match chunk {
+                            Ok(chunk) => buffer.extend_from_slice(&chunk),
+                            Err(e) => {
+                                eprintln!("ERROR: Unable to read server response: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                        let text = String::from_utf8_lossy(&buffer);
+                        print!("{}", text);
                     }
+                    println!()
                 }
-                let text = String::from_utf8_lossy(&buffer);
-                print!("{}", text);
+                OutputFormat::ArrowIpc => {
+                    let mut ipc_bytes: Vec<u8> = Vec::new();
+                    let mut byte_stream = response.into_inner();
+                    while let Some(chunk) = byte_stream.next().await {
+                        match chunk {
+                            Ok(chunk) => ipc_bytes.write_all(chunk.as_ref()).unwrap(),
+                            Err(e) => {
+                                eprintln!("ERROR: Unable to read server response: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                    let reader = StreamReader::try_new(ipc_bytes.as_slice(), None).unwrap();
+                    let results = reader.collect::<Result<Vec<_>, _>>();
+                    println!("{}", pretty_format_batches(&results.unwrap()).unwrap());
+                }
+                OutputFormat::Parquet => {
+                    let (path, mut result_file) =
+                        unique_file("result", "parquet").expect("Failed to create parquet file");
+                    let mut byte_stream = response.into_inner();
+                    while let Some(chunk) = byte_stream.next().await {
+                        match chunk {
+                            Ok(chunk) => result_file.write_all(chunk.as_ref()).unwrap(),
+                            Err(e) => {
+                                eprintln!("ERROR: Unable to read server response: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                    result_file.flush().unwrap();
+                    println!("Query result saved to '{}'", path.display());
+                }
             }
-            println!()
         }
     }
 }
@@ -1302,6 +1397,10 @@ async fn connector(
                             .expect("Failed to serialize pipeline stats")
                     );
                 }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
             }
         }
     };
@@ -1345,6 +1444,10 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                             .expect("Failed to serialize pipeline stats")
                     );
                 }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
             }
         }
         ProgramAction::Config { name } => {
@@ -1371,6 +1474,10 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                         serde_json::to_string_pretty(&response.program_config)
                             .expect("Failed to serialize pipeline stats")
                     );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
                 }
             }
         }
@@ -1413,6 +1520,10 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                             .expect("Failed to serialize pipeline stats")
                     );
                 }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
             }
         }
         ProgramAction::Status { name } => {
@@ -1443,6 +1554,10 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                         serde_json::to_string_pretty(&response.into_inner())
                             .expect("Failed to serialize pipeline stats")
                     );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
                 }
             }
         }
@@ -1490,6 +1605,10 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                             serde_json::to_string_pretty(&response.into_inner())
                                 .expect("Failed to serialize pipeline stats")
                         );
+                    }
+                    _ => {
+                        eprintln!("Unsupported output format: {}", format);
+                        std::process::exit(1);
                     }
                 }
             } else {

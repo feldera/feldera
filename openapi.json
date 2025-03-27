@@ -2963,7 +2963,8 @@
         "enum": [
           "text",
           "json",
-          "parquet"
+          "parquet",
+          "arrow_ipc"
         ]
       },
       "AdhocQueryArgs": {
