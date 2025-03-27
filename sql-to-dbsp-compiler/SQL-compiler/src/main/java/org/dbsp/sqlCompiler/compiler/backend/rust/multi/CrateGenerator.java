@@ -95,7 +95,7 @@ public final class CrateGenerator {
         stream.println(cargo);
         String extraDep = """
                 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-                tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
+                tikv-jemallocator = { workspace = true }
                 """;
         if (crateName.contains("main"))
             stream.println(extraDep);

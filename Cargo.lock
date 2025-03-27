@@ -2722,6 +2722,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "compare"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "120133d4db2ec47efe2e26502ee984747630c67f51974fca0b6c1340cf2368d3"
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7754,6 +7760,7 @@ dependencies = [
  "chrono",
  "clap 4.5.31",
  "colored",
+ "compare",
  "crossbeam",
  "deadpool-postgres",
  "dirs 5.0.1",
@@ -7789,6 +7796,7 @@ dependencies = [
  "tempfile",
  "termbg",
  "thiserror 1.0.69",
+ "tikv-jemallocator",
  "tokio",
  "tokio-postgres",
  "tokio-stream",
@@ -10560,6 +10568,16 @@ checksum = "9402443cb8fd499b6f327e40565234ff34dbda27460c5b47db0db77443dd85d1"
 dependencies = [
  "cc",
  "libc",
+]
+
+[[package]]
+name = "tikv-jemallocator"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "965fe0c26be5c56c94e38ba547249074803efd52adfb66de62107d95aab3eaca"
+dependencies = [
+ "libc",
+ "tikv-jemalloc-sys",
 ]
 
 [[package]]

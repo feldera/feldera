@@ -80,7 +80,8 @@ public final class MultiCratesWriter extends RustWriter {
                 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
                 rust_decimal_macros = { version = "1.36" }
                 serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }
-                rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }""";
+                rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
+                tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }""";
 
         final String relativePath = "../..";
         deps = deps.replace("$ROOT", relativePath);
