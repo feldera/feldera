@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -63,11 +64,10 @@ public class MultiCrates {
 
         // One crate for each tuple size used
         for (int i : used.tupleSizesUsed) {
-            if (i < RustWriter.StructuresUsed.PREDEFINED) continue;
+            if (used.isPredefined(i)) continue;
             RustWriter.StructuresUsed t = new RustWriter.StructuresUsed();
             t.tupleSizesUsed.add(i);
-            RustFileWriter tWriter = new RustFileWriter().withUdf(false).withMalloc(false);
-            tWriter.setUsed(t);
+            BaseRustCodeGenerator tWriter = new RustFileWriter().setUsed(t).withUdf(false).withMalloc(false);
             CrateGenerator tuple = new CrateGenerator(this.rootDirectory, FILE_PREFIX + "tuple" + i, tWriter);
             Utilities.putNew(this.tupleCrates, i, tuple);
         }
@@ -76,14 +76,14 @@ public class MultiCrates {
         for (int i : used.semigroupSizesUsed) {
             RustWriter.StructuresUsed t = new RustWriter.StructuresUsed();
             t.semigroupSizesUsed.add(i);
-            RustFileWriter tWriter = new RustFileWriter().withUdf(false).withMalloc(false);
-            tWriter.setUsed(t);
+            BaseRustCodeGenerator tWriter = new RustFileWriter().setUsed(t).withUdf(false).withMalloc(false);
             CrateGenerator semi = new CrateGenerator(this.rootDirectory, FILE_PREFIX + "semi" + i, tWriter);
             Utilities.putNew(this.semiCrates, i, semi);
         }
 
         CircuitWriter mainWriter = new CircuitWriter();
-        RustFileWriter globalsWriter = new RustFileWriter().withUdf(true).withMalloc(false);
+        BaseRustCodeGenerator globalsWriter = new RustFileWriter()
+                .withUdf(true).withMalloc(false).withGenerateTuples(false);
         // Main crate contains the circuit
         this.main = new CrateGenerator(this.rootDirectory, this.getMainName(), mainWriter);
         // Crate with global variables
@@ -144,6 +144,10 @@ public class MultiCrates {
         return uc.found;
     }
 
+    CrateGenerator tupleCrate(int tupleSize) {
+        return Utilities.getExists(this.tupleCrates, tupleSize);
+    }
+
     void addDependencies(CrateGenerator op, DBSPOperator operator) {
         this.main.addDependency(op);
         if (this.usesGlobals(operator))
@@ -162,8 +166,8 @@ public class MultiCrates {
             out.outputType().accept(finder);
         }
         for (int i : locallyUsed.tupleSizesUsed) {
-            if (i <= RustWriter.StructuresUsed.PREDEFINED) continue;
-            CrateGenerator gen = Utilities.getExists(this.tupleCrates, i);
+            if (locallyUsed.isPredefined(i)) continue;
+            CrateGenerator gen = this.tupleCrate(i);
             op.addDependency(gen);
         }
         for (int i : locallyUsed.semigroupSizesUsed) {
@@ -209,10 +213,19 @@ public class MultiCrates {
                 }
             }
         }
+
+        // Check to see whether the globals crate needs any tuples
+        // and add them as dependencies.
+        RustWriter.StructuresUsed used = this.globals.codeGenerator.to(RustFileWriter.class).analyze(this.compiler);
+        for (var tupleSize: used.tupleSizesUsed) {
+            if (used.isPredefined(tupleSize)) continue;
+            CrateGenerator gen = this.tupleCrate(tupleSize);
+            this.globals.addDependency(gen);
+        }
     }
 
     void write() throws IOException {
-        this.globals.write(compiler);
+        this.globals.write(this.compiler);
         File file = new File(new File(new File(globals.baseDirectory, globals.crateName), "src"),
                 DBSPCompiler.UDF_FILE_NAME);
         if (!file.exists())

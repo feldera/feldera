@@ -158,7 +158,6 @@ public class MultiCrateTests extends BaseSQLTests {
             }
         }
         File udf = new File(dir.toFile(), "udf.rs");
-        udf.deleteOnExit();
         PrintWriter udfFile = new PrintWriter(udf, StandardCharsets.UTF_8);
         udfFile.println("""
                 use feldera_sqllib::*;
@@ -170,5 +169,49 @@ public class MultiCrateTests extends BaseSQLTests {
                 }""");
         udfFile.close();
         this.compileMultiCrate(file.getAbsolutePath());
+        udf.delete();
+    }
+
+    @Test
+    public void testMultiUdfUdt() throws IOException, InterruptedException, SQLException {
+        File file = createInputScript("""
+                CREATE TYPE X AS (a0 int, a1 int, a2 int, a3 int, a4 int, a5 int,
+                                  a6 int, a7 int, a8 int, a9 int, a10 int, a11 int);
+                CREATE FUNCTION f(arg X) RETURNS ROW(x int NULL) NULL;
+                CREATE FUNCTION g(x int NOT NULL) RETURNS ROW(a INT, b INT) NOT NULL;
+                CREATE VIEW V AS SELECT f(X(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)), g(2).a;""");
+
+        // "x" is the name for the pipeline used by compileMultiCrate
+        Path dir = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals", "src");
+        File dirFile = dir.toFile();
+        if (!dirFile.exists()) {
+            boolean success = dirFile.mkdirs();
+            if (!success) {
+                throw new RuntimeException("Could not create directory " + dir);
+            }
+        }
+        File udf = new File(dir.toFile(), "udf.rs");
+        PrintWriter udfFile = new PrintWriter(udf, StandardCharsets.UTF_8);
+        udfFile.println("""
+                use crate::{Tup1, Tup2, Tup12};
+                use feldera_sqllib::*;
+                pub fn f(x: Option<Tup12<Option<i32>, Option<i32>, Option<i32>, Option<i32>, Option<i32>, Option<i32>,
+                                         Option<i32>, Option<i32>, Option<i32>, Option<i32>, Option<i32>, Option<i32>>>) ->
+                   Result<Option<Tup1<Option<i32>>>, Box<dyn std::error::Error>> {
+                   match x {
+                      None => Ok(None),
+                      Some(x) => match x.0 {
+                         None => Ok(Some(Tup1::new(None))),
+                         Some(x) => Ok(Some(Tup1::new(Some(x + 1)))),
+                      }
+                   }
+                }
+                
+                pub fn g(x: i32) -> Result<Tup2<i32, i32>, Box<dyn std::error::Error>> {
+                   Ok(Tup2::new(x-1, x+1))
+                }""");
+        udfFile.close();
+        this.compileMultiCrate(file.getAbsolutePath());
+        udf.delete();
     }
 }
