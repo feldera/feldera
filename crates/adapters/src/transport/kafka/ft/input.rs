@@ -1,4 +1,5 @@
 use crate::transport::kafka::ft::count_partitions_in_topic;
+use crate::transport::kafka::serialize_kafka_initialization;
 use crate::transport::secret_resolver::resolve_secret;
 use crate::transport::InputCommandReceiver;
 use crate::{
@@ -504,6 +505,7 @@ impl TransportInputEndpoint for KafkaFtInputEndpoint {
         parser: Box<dyn Parser>,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
+        let _guard = serialize_kafka_initialization();
         Ok(Box::new(KafkaFtInputReader::new(
             &self.config,
             consumer,
