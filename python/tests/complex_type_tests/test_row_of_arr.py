@@ -11,11 +11,11 @@ class cmpxtst_row_of_arr_tbl(TstTable):
                       c1 ROW(i1 INT ARRAY NOT NULL, v1 VARCHAR ARRAY NULL) NOT NULL,
                       c2 ROW(i2 INT ARRAY NULL, v2 VARCHAR ARRAY NOT NULL))"""
         self.data = [
-            {"id": 0, "c1": {"i1": [20, 22, 23], "v1": [None]}, "c2": None},
+            {"id": 0, "c1": {"i1": [20, 22, None], "v1": [None]}, "c2": None},
             {
                 "id": 1,
                 "c1": {
-                    "i1": [12, 13, 77, 10, 2],
+                    "i1": [12, 13, None, 10, 2],
                     "v1": ["hi", "how are you?", None],
                 },
                 "c2": {"i2": [1, 2, None], "v2": ["bye", "see you later!"]},
@@ -24,9 +24,9 @@ class cmpxtst_row_of_arr_tbl(TstTable):
                 "id": 2,
                 "c1": {
                     "i1": [5],
-                    "v1": ["are", "you", "good?"],
+                    "v1": None,
                 },
-                "c2": {"i2": [None], "v2": ["adios"]},
+                "c2": {"i2": None, "v2": ["adios", None]},
             },
         ]
 
@@ -39,9 +39,6 @@ class cmpxtst_row_of_arr_unnest(TstView):
             {"id": 1, "v1_val": "hi", "idx": 1},
             {"id": 1, "v1_val": "how are you?", "idx": 2},
             {"id": 1, "v1_val": None, "idx": 3},
-            {"id": 2, "v1_val": "are", "idx": 1},
-            {"id": 2, "v1_val": "you", "idx": 2},
-            {"id": 2, "v1_val": "good?", "idx": 3},
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_arr_unnest AS SELECT
                       id, v1_val, idx
@@ -53,10 +50,10 @@ class cmpxtst_row_of_arr_field_access(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "i1": [20, 22, 23], "v1": [None], "i2": None, "v2": None},
+            {"id": 0, "i1": [20, 22, None], "v1": [None], "i2": None, "v2": None},
             {
                 "id": 1,
-                "i1": [12, 13, 77, 10, 2],
+                "i1": [12, 13, None, 10, 2],
                 "v1": ["hi", "how are you?", None],
                 "i2": [1, 2, None],
                 "v2": ["bye", "see you later!"],
@@ -64,9 +61,9 @@ class cmpxtst_row_of_arr_field_access(TstView):
             {
                 "id": 2,
                 "i1": [5],
-                "v1": ["are", "you", "good?"],
-                "i2": [None],
-                "v2": ["adios"],
+                "v1": None,
+                "i2": None,
+                "v2": ["adios", None],
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_arr_field_access AS SELECT
@@ -110,9 +107,12 @@ class cmpxtst_row_of_arr_idx_outbound(TstView):
 class cmpxtst_row_of_arr_elmnt_nexist(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"id": 2, "c22_val": [None]}]
+        self.data = [
+            {"id": 0, "c1_val1": None},
+            {"id": 1, "c1_val1": None},
+            {"id": 2, "c1_val1": None},
+        ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_arr_elmnt_nexist AS SELECT
                       id,
-                      row_of_arr_tbl.c2.i2 AS c22_val
-                      FROM row_of_arr_tbl
-                      WHERE id = 2"""
+                      row_of_arr_tbl.c1.v1[3] AS c1_val1
+                      FROM row_of_arr_tbl"""
