@@ -4863,6 +4863,7 @@ dependencies = [
  "anyhow",
  "csv",
  "enum-map",
+ "erased-serde",
  "feldera_rust_decimal",
  "libc",
  "log",
