@@ -1358,10 +1358,18 @@ async fn cleanup_rust_compilation(
     }
 
     // Remove any artifact in the cleanup state which is no longer found
+    let mut artifacts_removed: u64 = 0;
     for artifact_name in cleanup_state.clone().keys() {
         if !found.contains(artifact_name) {
+            artifacts_removed += 1;
             cleanup_state.remove(artifact_name);
         }
+    }
+    if artifacts_removed > 0 {
+        info!(
+            "Rust compilation cleanup: removed {artifacts_removed} artifacts; {} artifacts remain",
+            found.len()
+        );
     }
 
     // Attempt to write cleanup state to file.
