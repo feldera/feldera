@@ -1,4 +1,4 @@
-use crate::transport::kafka::PemToLocation;
+use crate::transport::kafka::{serialize_kafka_initialization, PemToLocation};
 use crate::transport::secret_resolver::resolve_secret;
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, NonFtInputReaderCommand};
 use crate::Parser;
@@ -622,6 +622,7 @@ impl TransportInputEndpoint for KafkaInputEndpoint {
         parser: Box<dyn Parser>,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
+        let _guard = serialize_kafka_initialization();
         Ok(Box::new(KafkaInputReader::new(
             &self.config,
             consumer,
