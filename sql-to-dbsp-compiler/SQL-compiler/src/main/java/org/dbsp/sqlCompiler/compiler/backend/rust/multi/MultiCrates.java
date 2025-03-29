@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -236,7 +237,25 @@ public class MultiCrates {
             gen.write(this.compiler);
         for (CrateGenerator gen: this.tupleCrates.values())
             gen.write(this.compiler);
-        for (CrateGenerator op: this.operators)
+        Map<CrateGenerator, CrateGenerator> written = new HashMap<>();
+        for (CrateGenerator op: this.operators) {
+            if (written.containsKey(op)) {
+                DBSPOperator operator = op.codeGenerator.to(SingleOperatorWriter.class).operator;
+                String current = op.dump(this.compiler);
+                CrateGenerator prev = written.get(op);
+                DBSPOperator prevOp = prev.codeGenerator.to(SingleOperatorWriter.class).operator;
+                /*
+                System.out.println("Repeated crate " + op.crateName + " " +
+                        CompactName.getCompactName(operator) + " " + CompactName.getCompactName(prevOp));
+                 */
+
+                String previous = prev.dump(this.compiler);
+                if (!current.equals(previous)) {
+                    throw new InternalCompilerError("Hash collision for different crates\n" + current + "\n" + previous);
+                }
+            }
+            written.put(op, op);
             op.write(this.compiler);
+        }
     }
 }

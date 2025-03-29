@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ICodeGenerator;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -139,5 +140,12 @@ public final class CrateGenerator {
         this.codeGenerator.setOutputBuilder(new IndentStream(rustStream));
         this.codeGenerator.write(compiler);
         rustStream.close();
+    }
+
+    public String dump(DBSPCompiler compiler) throws IOException {
+        IndentStreamBuilder builder = new IndentStreamBuilder();
+        this.codeGenerator.setOutputBuilder(builder);
+        this.codeGenerator.write(compiler);
+        return builder.toString();
     }
 }

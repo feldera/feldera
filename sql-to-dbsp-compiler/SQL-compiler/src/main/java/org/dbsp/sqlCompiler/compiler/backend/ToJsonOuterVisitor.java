@@ -176,7 +176,8 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSimpleOperator operator) {
-        if (this.preorder(operator.to(DBSPOperator.class)).stop())
+        VisitDecision decision = this.preorder(operator.to(DBSPOperator.class));
+        if (decision.stop())
             return VisitDecision.STOP;
         this.property("isMultiset");
         this.stream.append(operator.isMultiset);
@@ -263,7 +264,8 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPConstantOperator operator) {
-        if (this.preorder(operator.to(DBSPSimpleOperator.class)).stop())
+        VisitDecision decision = this.preorder(operator.to(DBSPSimpleOperator.class));
+        if (decision.stop())
             return VisitDecision.STOP;
         this.property("incremental");
         this.stream.append(operator.incremental);

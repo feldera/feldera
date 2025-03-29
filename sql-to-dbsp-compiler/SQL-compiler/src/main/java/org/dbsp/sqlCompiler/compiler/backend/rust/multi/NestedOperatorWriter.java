@@ -31,7 +31,8 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
 
     private void processChild(DBSPOperator node) {
         DBSPOperator op = node.to(DBSPOperator.class);
-        String name = op.getNodeName(true);
+        String name = op.getNodeName(false);
+        String hash = op.getNodeName(true);
         if (!node.is(DBSPViewBaseOperator.class)) {
             this.builder().append("let ");
             if (node.is(DBSPSimpleOperator.class)) {
@@ -39,7 +40,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
             } else {
                 this.builder().append("(");
                 for (int i = 0; i < node.outputCount(); i++) {
-                    String portName = node.getOutput(i).getName(true);
+                    String portName = node.getOutput(i).getName(false);
                     this.builder().append(portName).append(",");
                 }
                 this.builder().append(")");
@@ -47,7 +48,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
             this.builder().append(" = ");
         }
         this.builder().append("create_")
-                .append(name)
+                .append(hash)
                 .append("(&circuit, ");
         for (var input: op.inputs) {
             name = "";
@@ -61,7 +62,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
                 index++;
             }
             if (name.isEmpty())
-                name = "&" + input.getName(true);
+                name = "&" + input.getName(false);
             this.builder()
                     .append(name)
                     .append(",");
@@ -81,13 +82,14 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         ToRustVisitor visitor = new ToRustVisitor(
                 compiler, this.builder(), this.circuit.metadata, new HashSet<>())
                 .withPreferHash(true);
-        final String name = this.operator.getNodeName(true);
+        final String name = this.operator.getNodeName(false);
+        final String hash = this.operator.getNodeName(true);
         this.builder().newline();
         for (String dep : this.dependencies)
             this.builder().append("use ").append(dep).append("::*;").newline();
 
         this.builder().append("pub fn create_")
-                .append(name)
+                .append(hash)
                 .append("(circuit: &")
                 .append(this.dbspCircuit(true))
                 .append(", catalog: &mut Catalog,")
@@ -119,7 +121,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
             if (port == null)
                 this.builder().append("_, ");
             else
-                this.builder().append(port.getName(true)).append(", ");
+                this.builder().append(port.getName(false)).append(", ");
         }
         this.builder().append(") = ")
                 .append("circuit.recursive(|circuit, (");
@@ -127,7 +129,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
             ProgramIdentifier view = operator.outputViews.get(i);
             DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
             if (decl != null) {
-                this.builder().append(decl.getNodeName(true)).append(", ");
+                this.builder().append(decl.getNodeName(false)).append(", ");
             } else {
                 // view is not really recursive
                 this.builder().append("_").append(", ");
@@ -153,7 +155,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         for (int i = 0; i < this.operator.outputCount(); i++) {
             OutputPort port = this.operator.internalOutputs.get(i);
             if (port != null)
-                this.builder().append(port.getName(true));
+                this.builder().append(port.getName(false));
             else
                 this.builder().append("()");
             this.builder().append(", ");
@@ -165,7 +167,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         for (int i = 0; i < this.operator.outputCount(); i++) {
             OutputPort port = this.operator.internalOutputs.get(i);
             if (port != null)
-                this.builder().append(port.getName(true));
+                this.builder().append(port.getName(false));
             else
                 this.builder().append("()");
             this.builder().append(", ");

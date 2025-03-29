@@ -141,9 +141,9 @@ public class CircuitOptimizer extends Passes {
         // this.add(new TestSerialize(compiler));
         // The canonical form is needed if we want the Merkle hashes to be "stable".
         this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
+        this.add(new CompactNames(compiler));
         this.add(new MerkleOuter(compiler, true));
         this.add(new MerkleOuter(compiler, false));
-        this.add(new CompactNames(compiler));
     }
 
     public DBSPCircuit optimize(DBSPCircuit input) {
