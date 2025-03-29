@@ -15,7 +15,8 @@ import java.io.IOException;
 public final class CircuitWriter extends BaseRustCodeGenerator {
     private void processChild(DBSPOperator node) {
         DBSPOperator op = node.to(DBSPOperator.class);
-        String name = op.getNodeName(true);
+        String name = op.getNodeName(false);
+        String hash = op.getNodeName(true);
         if (!node.is(DBSPViewBaseOperator.class)) {
             this.builder().append("let ");
             if (node.is(DBSPSimpleOperator.class)) {
@@ -23,7 +24,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
             } else {
                 this.builder().append("(");
                 for (int i = 0; i < node.outputCount(); i++) {
-                    String portName = node.getOutput(i).getName(true);
+                    String portName = node.getOutput(i).getName(false);
                     this.builder().append(portName)
                             .append(",");
                 }
@@ -32,10 +33,10 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
             this.builder().append(" = ");
         }
         this.builder().append("create_")
-                .append(name)
+                .append(hash)
                 .append("(&circuit, &mut catalog, ");
         for (var input: op.inputs) {
-            name = input.getName(true);
+            name = input.getName(false);
             this.builder().append("&")
                     .append(name)
                     .append(",");

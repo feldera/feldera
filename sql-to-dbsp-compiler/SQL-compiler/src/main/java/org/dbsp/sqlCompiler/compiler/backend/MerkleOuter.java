@@ -8,6 +8,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.HashString;
 import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.JsonStream;
@@ -25,31 +27,20 @@ import java.util.Map;
  * involved in input/output, it also includes metadata (e.g., column names).
  *
  * <p>This visitor is declared read-only, but it actually modifies the annotations on operators. */
-public class MerkleOuter extends ToJsonOuterVisitor {
+public class MerkleOuter extends CircuitVisitor {
     public final Map<Long, HashString> operatorHash;
     public final boolean includeInputs;
 
-    MerkleOuter(DBSPCompiler compiler, ToJsonInnerVisitor inner, boolean includeInputs, 
-                Map<Long, HashString> operatorHash) {
-        super(compiler, 0, inner);
-        this.operatorHash = operatorHash;
-        this.includeInputs = includeInputs;
-    }
-
     public MerkleOuter(DBSPCompiler compiler, boolean includeInputs) {
-        this(compiler, new MerkleInner(compiler, new JsonStream(new IndentStreamBuilder().setIndentAmount(1))), 
-                includeInputs, new HashMap<>());
+        super(compiler);
+        this.includeInputs = includeInputs;
+        this.operatorHash = new HashMap<>();
     }
 
-    MerkleOuter(MerkleOuter other) {
-        this(other.compiler, new MerkleInner(
-                other.compiler, new JsonStream(new IndentStreamBuilder().setIndentAmount(1))),
-                other.includeInputs, other.operatorHash);
-    }
-
-    void setHash(DBSPOperator operator, String string) {
+    void setHashedString(DBSPOperator operator, String string) {
         HashString hash = MerkleInner.hash(string);
         Logger.INSTANCE.belowLevel(this, 1)
+                .append(this.includeInputs ? "Global " : "")
                 .append("Merkle hash of ")
                 .append(operator.id);
         Logger.INSTANCE.belowLevel(this, 2)
@@ -63,18 +54,36 @@ public class MerkleOuter extends ToJsonOuterVisitor {
         operator.annotations.add(new OperatorHash(hash, this.includeInputs));
     }
 
+    List<ModifiedJsonOuter> generator = new ArrayList<>();
+
+    @Override
+    public VisitDecision preorder(DBSPOperator operator) {
+        ModifiedJsonOuter outer = new ModifiedJsonOuter(this.compiler);
+        this.generator.add(outer);
+        for (IDBSPOuterNode parent: this.context)
+            if (parent != operator)
+                outer.push(parent);
+        operator.accept(outer);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public void postorder(DBSPOperator operator) {
+        var outer = Utilities.removeLast(this.generator);
+        String json = outer.getJsonString();
+        this.setHashedString(operator, json);
+    }
+
     @Override
     public VisitDecision preorder(DBSPNestedOperator nested) {
-        this.stream.beginObject();
         this.push(nested);
-        // Traverse TWICE
-        for (int i = 0; i < 2; i++) {
+        int repeats = 1 + (this.includeInputs ? 1 : 0);
+        for (int i = 0; i < repeats; i++) {
             this.startArrayProperty("allOperators");
             int index = 0;
             for (DBSPOperator op : nested.getAllOperators()) {
                 this.propertyIndex(index++);
                 // Pretend we haven't done it yet
-                this.serialized.remove(op.id);
                 this.operatorHash.remove(op.id);
                 op.accept(this);
             }
@@ -84,79 +93,76 @@ public class MerkleOuter extends ToJsonOuterVisitor {
         this.pop(nested);
         StringBuilder builder = new StringBuilder();
         // The hash is obtained from the hash of all operators inside
-        for (var operator: nested.getAllOperators()) {
-            HashString hash = Utilities.getExists(this.operatorHash, operator.getId());
+        for (var operator : nested.getAllOperators()) {
+            HashString hash = Utilities.getExists(
+                    MerkleOuter.this.operatorHash, operator.getId());
             builder.append(hash);
             builder.append(",");
         }
 
         String string = builder.toString();
-        this.setHash(nested, string);
-        this.stream.endObject();
+        MerkleOuter.this.setHashedString(nested, string);
         return VisitDecision.STOP;
     }
 
-    @Override
-    public VisitDecision preorder(DBSPOperator operator) {
-        this.stream.beginObject();
-        if (this.operatorHash.containsKey(operator.getId())) {
-            this.stream.label("node");
-            HashString hash = Utilities.getExists(this.operatorHash, operator.getId());
-            this.stream.append(hash.toString());
-            this.stream.endObject();
-            return VisitDecision.STOP;
+    class ModifiedJsonOuter extends ToJsonOuterVisitor {
+        ModifiedJsonOuter(DBSPCompiler compiler) {
+            super(compiler, 0, new MerkleInner(
+                    compiler,
+                    new JsonStream(new IndentStreamBuilder().setIndentAmount(1))));
         }
 
-        // Use a new visitor, to generate a JSON object only for this operator;
-        // then, hash that JSON object.
-        MerkleOuter perOp = new MerkleOuter(this);
-        for (var ctxt: this.context)
-            perOp.push(ctxt);
+        @Override
+        public VisitDecision preorder(DBSPOperator operator) {
+            this.stream.beginObject();
+            if (MerkleOuter.this.operatorHash.containsKey(operator.getId())) {
+                this.stream.label("node");
+                HashString hash = Utilities.getExists(
+                        MerkleOuter.this.operatorHash, operator.getId());
+                this.stream.append(hash.toString());
+                this.stream.endObject();
+                return VisitDecision.STOP;
+            }
 
-        perOp.stream.beginObject();
-        operator.accept(perOp.innerVisitor);
-        perOp.stream.appendClass(operator);
-        if (operator.is(DBSPSourceTableOperator.class)) {
-            perOp.label("metadata");
-            operator.to(DBSPSourceTableOperator.class).metadata.asJson(perOp.innerVisitor);
-        }
-        // Identical operators at different depths are NOT equivalent
-        perOp.label("depth");
-        perOp.stream.append(this.context.size());
-        perOp.label("inputs");
-        perOp.stream.beginArray();
+            operator.accept(this.innerVisitor);
+            this.stream.appendClass(operator);
+            if (operator.is(DBSPSourceTableOperator.class)) {
+                this.label("metadata");
+                operator.to(DBSPSourceTableOperator.class).metadata.asJson(this.innerVisitor);
+            }
+            // Identical operators at different depths are NOT equivalent
+            this.label("depth");
+            this.stream.append(this.context.size());
+            this.label("inputs");
+            this.stream.beginArray();
 
-        List<OutputPort> inputs = operator.inputs;
-        if (operator.is(DBSPViewDeclarationOperator.class)) {
-            DBSPViewDeclarationOperator decl = operator.to(DBSPViewDeclarationOperator.class);
-            DBSPNestedOperator parent = this.getParent().to(DBSPNestedOperator.class);
-            inputs = new ArrayList<>();
-            inputs.add(parent.outputForDeclaration(decl));
-        }
-        for (OutputPort port : inputs) {
-            if (port != null) {
-                // Can be null for some outputs of a nested operator
-                if (this.includeInputs) {
-                    perOp.stream.beginObject()
-                            .label("outputNumber").append(port.outputNumber)
-                            .label("operator");
-                    HashString hashString = this.operatorHash.get(port.operator.id);
-                    String str = "";
-                    if (hashString != null)
-                        str = hashString.toString();
-                    perOp.stream.append(str);
-                    perOp.stream.endObject();
-                } else {
-                    port.outputType().accept(perOp.innerVisitor);
+            List<OutputPort> inputs = operator.inputs;
+            if (operator.is(DBSPViewDeclarationOperator.class)) {
+                DBSPViewDeclarationOperator decl = operator.to(DBSPViewDeclarationOperator.class);
+                DBSPNestedOperator parent = this.getParent().to(DBSPNestedOperator.class);
+                inputs = new ArrayList<>();
+                inputs.add(parent.outputForDeclaration(decl));
+            }
+            for (OutputPort port : inputs) {
+                if (port != null) {
+                    // Can be null for some outputs of a nested operator
+                    if (MerkleOuter.this.includeInputs) {
+                        this.stream.beginObject()
+                                .label("outputNumber").append(port.outputNumber)
+                                .label("operator");
+                        HashString hashString = MerkleOuter.this.operatorHash.get(port.operator.id);
+                        String str = "";
+                        if (hashString != null)
+                            str = hashString.toString();
+                        this.stream.append(str);
+                        this.stream.endObject();
+                    } else {
+                        port.outputType().accept(this.innerVisitor);
+                    }
                 }
             }
+            this.stream.endArray();
+            return VisitDecision.CONTINUE;
         }
-        perOp.stream.endArray();
-        perOp.stream.endObject();
-
-        String string = perOp.getJsonString();
-        this.setHash(operator, string);
-        this.stream.endObject();
-        return VisitDecision.STOP;
     }
 }
