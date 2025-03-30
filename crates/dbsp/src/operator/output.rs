@@ -11,8 +11,8 @@ use std::{
     borrow::Cow,
     fmt::Debug,
     hash::{Hash, Hasher},
-    intrinsics::transmute,
     marker::PhantomData,
+    mem::transmute,
     sync::Arc,
 };
 use typedmap::TypedMapKey;
