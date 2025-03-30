@@ -277,7 +277,7 @@ impl KafkaFtInputReaderInner {
                         let mut hasher = KafkaFtHasher::new(&partition_counts);
                         let mut ranges = partition_counts
                             .iter()
-                            .map(|n_partitions| iter::repeat(None).take(*n_partitions).collect())
+                            .map(|n_partitions| std::iter::repeat_n(None, *n_partitions).collect())
                             .collect::<Vec<Vec<Option<Range<i64>>>>>();
                         while total < consumer.max_batch_size() {
                             let mut empty = true;

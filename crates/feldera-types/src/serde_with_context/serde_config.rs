@@ -201,7 +201,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
             JsonFlavor::Datagen => SqlSerdeConfig::default()
                 .with_variant_format(VariantFormat::Json)
                 .with_timestamp_format(TimestampFormat::Rfc3339),
-            JsonFlavor::KafkaConnectJsonConverter { .. } => Self {
+            JsonFlavor::KafkaConnectJsonConverter => Self {
                 time_format: TimeFormat::Millis,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::MillisSinceEpoch,

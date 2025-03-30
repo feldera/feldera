@@ -512,7 +512,7 @@ where
             debug_assert!(width(l, r) == block_l + block_r);
         }
 
-        if start_l == end_l {
+        if std::ptr::eq(start_l, end_l) {
             // Trace `block_l` elements from the left side.
             start_l = offsets_l.as_mut_ptr().cast();
             end_l = start_l;
@@ -541,7 +541,7 @@ where
             }
         }
 
-        if start_r == end_r {
+        if std::ptr::eq(start_r, end_r) {
             // Trace `block_r` elements from the right side.
             start_r = offsets_r.as_mut_ptr().cast();
             end_r = start_r;
@@ -651,7 +651,7 @@ where
             }
         }
 
-        if start_l == end_l {
+        if std::ptr::eq(start_l, end_l) {
             // All out-of-order elements in the left block were moved. Move to the next
             // block.
 
@@ -666,7 +666,7 @@ where
             l = unsafe { l.add(block_l) };
         }
 
-        if start_r == end_r {
+        if std::ptr::eq(start_r, end_r) {
             // All out-of-order elements in the right block were moved. Move to the previous
             // block.
 

@@ -279,7 +279,7 @@ pub async fn stream_adhoc_result(
                 let mut writer = StreamWriter::try_new(&mut channel_writer, &schema).unwrap();
 
                 while let Some(batch) = stream.next().await {
-                    let batch = batch.map_err(DataFusionError::from)?;
+                    let batch = batch?;
                     writer.write(&batch).map_err(DataFusionError::from)?;
                 }
                 writer.flush().map_err(DataFusionError::from)?;

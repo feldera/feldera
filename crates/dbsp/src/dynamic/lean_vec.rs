@@ -692,7 +692,7 @@ impl RawVec {
 
             // For medium vectors, grow by 1.5x
         } else {
-            (capacity * 3 + 1) / 2
+            (capacity * 3).div_ceil(2)
         }
     }
 

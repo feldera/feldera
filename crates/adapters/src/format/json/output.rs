@@ -113,7 +113,7 @@ fn validate(
         JsonUpdateFormat::InsertDelete
             | JsonUpdateFormat::Snowflake
             | JsonUpdateFormat::Redis
-            | JsonUpdateFormat::Debezium { .. }
+            | JsonUpdateFormat::Debezium
     ) {
         return Err(ControllerError::output_format_not_supported(
             endpoint_name,
@@ -186,7 +186,7 @@ impl JsonEncoder {
         if config.json_flavor.is_none() {
             config.json_flavor = Some(match config.update_format {
                 JsonUpdateFormat::Snowflake => JsonFlavor::Snowflake,
-                JsonUpdateFormat::Debezium { .. } => JsonFlavor::KafkaConnectJsonConverter,
+                JsonUpdateFormat::Debezium => JsonFlavor::KafkaConnectJsonConverter,
                 _ => JsonFlavor::Default,
             });
         }
