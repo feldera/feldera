@@ -139,14 +139,14 @@ fn main() {
             // We now have a url in this form: `http://data.gdeltproject.org/gdeltv2/20150218230000.gkg.csv.zip`
             let url = line
                 .ends_with(GKG_SUFFIX)
-                .then(|| line.split(' ').last().unwrap());
+                .then(|| line.split(' ').next_back().unwrap());
 
             fn filter_date(url: Option<&str>, cmp: impl Fn(u64) -> bool) -> Option<&str> {
                 url.filter(|url| {
                     url.strip_prefix(GDELT_URL)
                         .and_then(|url| url.strip_suffix(GKG_SUFFIX))
                         .and_then(|date| date.parse::<u64>().ok())
-                        .map_or(false, cmp)
+                        .is_some_and(cmp)
                 })
             }
 

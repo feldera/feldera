@@ -276,8 +276,7 @@ pub fn array_repeat__<T>(element: T, count: i32) -> Array<T>
 where
     T: Clone,
 {
-    std::iter::repeat(element)
-        .take(usize::try_from(count).unwrap_or(0))
+    std::iter::repeat_n(element, usize::try_from(count).unwrap_or(0))
         .collect::<Vec<T>>()
         .into()
 }

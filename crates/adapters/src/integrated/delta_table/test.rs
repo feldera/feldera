@@ -683,7 +683,7 @@ async fn test_follow(
     for chunk in data[split_at..].chunks(std::cmp::max(data[split_at..].len() / 10, 1)) {
         total_count += chunk.len();
         input_table = write_data_to_table(input_table, &arrow_schema, chunk).await;
-        wait_for_count_records(&mut output_table, (total_count + 1) / 2, &datafusion).await;
+        wait_for_count_records(&mut output_table, total_count.div_ceil(2), &datafusion).await;
     }
 
     // TODO: this does not currently work because our output delta connector doesn't support
@@ -826,7 +826,7 @@ async fn test_cdc(
         wait_for_count_records_materialized(
             &read_pipeline,
             &SqlIdentifier::from("test_output1"),
-            (total_count + 1) / 2,
+            total_count.div_ceil(2),
         )
         .await;
     }
@@ -841,7 +841,7 @@ async fn test_cdc(
         wait_for_count_records_materialized(
             &read_pipeline,
             &SqlIdentifier::from("test_output1"),
-            (total_count + 1) / 2 - (deleted_count + 1) / 2,
+            total_count.div_ceil(2) - deleted_count.div_ceil(2),
         )
         .await;
     }
