@@ -60,11 +60,9 @@ use stats::{CanSuspend, StepResults};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::fs;
 use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
-use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
 use std::sync::LazyLock;
 use std::{
@@ -596,17 +594,25 @@ impl CircuitThread {
         }
 
         let ft = if ft {
+            let backend = storage.clone().unwrap();
             let ft = if input_metadata.is_some() {
-                FtState::open(step, controller.clone())
+                FtState::open(backend, step, controller.clone())
             } else {
-                FtState::create(storage.clone().unwrap(), controller.clone())
+                FtState::create(backend, controller.clone())
             };
             Some(ft?)
         } else {
-            if let Some(state_path) = state_path(&controller.status.pipeline_config) {
+            if let Some(backend) = &storage {
                 // We're not fault-tolerant, so it's not a good idea to resume
                 // from the same checkpoint twice.  Delete it.
-                let _ = fs::remove_file(&state_path);
+                backend
+                    .delete_if_exists(Path::new(STATE_FILE))
+                    .map_err(|error| {
+                        ControllerError::storage_error(
+                            "delete non-FT checkpoint following resume",
+                            error,
+                        )
+                    })?;
             }
             None
         };
@@ -795,9 +801,8 @@ impl CircuitThread {
                             .num_total_processed_records(),
                         input_metadata: this.input_metadata.clone().unwrap_or_default(),
                     };
-                    let state_path = state_path(&this.controller.status.pipeline_config).unwrap();
                     checkpoint
-                        .write(&**this.storage.as_ref().unwrap(), &state_path)
+                        .write(&**this.storage.as_ref().unwrap(), STATE_FILE)
                         .map(|()| checkpoint)
                 })?;
             if let Some(ft) = &mut this.ft {
@@ -1044,15 +1049,13 @@ struct FtState {
 
 impl FtState {
     /// Initializes fault tolerance state from storage.
-    fn open(step: Step, controller: Arc<ControllerInner>) -> Result<Self, ControllerError> {
-        let steps_path = steps_path(&controller.status.pipeline_config).unwrap();
-
-        info!(
-            "{}: opening to start from step {}",
-            steps_path.display(),
-            step
-        );
-        let journal = Journal::open(&steps_path);
+    fn open(
+        backend: Arc<dyn StorageBackend>,
+        step: Step,
+        controller: Arc<ControllerInner>,
+    ) -> Result<Self, ControllerError> {
+        info!("{STEPS_FILE}: opening to start from step {step}");
+        let journal = Journal::open(backend, STEPS_FILE);
         let input_checksums = match journal.read(step)? {
             Some(record) => {
                 // Start replaying the step.
@@ -1079,24 +1082,20 @@ impl FtState {
 
     /// Creates new fault tolerance state on storage.
     fn create(
-        storage: Arc<dyn StorageBackend>,
+        backend: Arc<dyn StorageBackend>,
         controller: Arc<ControllerInner>,
     ) -> Result<Self, ControllerError> {
         let config = controller.status.pipeline_config.clone();
-        let path = storage_path(&config).unwrap();
-        let state_path = state_path(&config).unwrap();
-        let steps_path = steps_path(&config).unwrap();
+        for file in [STATE_FILE, STEPS_FILE] {
+            backend.delete_if_exists(Path::new(file)).map_err(|error| {
+                ControllerError::storage_error("initializing fault tolerant pipeline", error)
+            })?;
+        }
 
-        fs::create_dir_all(path).map_err(|error| {
-            ControllerError::io_error(String::from("controller startup"), error)
-        })?;
-        let _ = fs::remove_file(&state_path);
-        let _ = fs::remove_dir(&steps_path);
+        info!("{STEPS_FILE}: creating");
+        let journal = Journal::create(backend.clone(), STEPS_FILE)?;
 
-        info!("{}: creating", steps_path.display());
-        let journal = Journal::create(&steps_path)?;
-
-        info!("{}: creating", state_path.display());
+        info!("{STATE_FILE}: creating");
         let checkpoint = Checkpoint {
             circuit: None,
             step: 0,
@@ -1104,7 +1103,7 @@ impl FtState {
             processed_records: 0,
             input_metadata: CheckpointOffsets::default(),
         };
-        checkpoint.write(&*storage, &state_path)?;
+        checkpoint.write(&*backend, STATE_FILE)?;
 
         Ok(Self {
             input_endpoints: Self::initial_input_endpoints(&controller),
@@ -1381,17 +1380,9 @@ struct ControllerInit {
     input_metadata: Option<CheckpointOffsets>,
 }
 
-fn storage_path(config: &PipelineConfig) -> Option<&Path> {
-    config.storage_config.as_ref().map(|storage| storage.path())
-}
+pub const STATE_FILE: &str = "state.json";
 
-fn state_path(config: &PipelineConfig) -> Option<PathBuf> {
-    storage_path(config).map(|path| path.join("state.json"))
-}
-
-fn steps_path(config: &PipelineConfig) -> Option<PathBuf> {
-    storage_path(config).map(|path| path.join("steps.bin"))
-}
+pub const STEPS_FILE: &str = "steps.bin";
 
 impl ControllerInit {
     fn without_resume(
@@ -1415,9 +1406,7 @@ impl ControllerInit {
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
         metrics_recorder::init(pipeline_name);
 
-        let (Some((storage_config, storage_options)), Some(state_path)) =
-            (config.storage(), state_path(&config))
-        else {
+        let Some((storage_config, storage_options)) = config.storage() else {
             if config.global.fault_tolerance.is_none() {
                 info!("storage not configured, so suspend-and-resume and fault tolerance will not be available");
                 return Self::without_resume(config, None);
@@ -1430,14 +1419,11 @@ impl ControllerInit {
         let storage =
             CircuitStorageConfig::for_config(storage_config.clone(), storage_options.clone())
                 .map_err(|error| {
-                    ControllerError::storage_error(
-                        String::from("failed to initialize storage"),
-                        error,
-                    )
+                    ControllerError::storage_error("failed to initialize storage", error)
                 })?;
 
         // Try to read a checkpoint.
-        let checkpoint = match Checkpoint::read(&*storage.backend, &state_path) {
+        let checkpoint = match Checkpoint::read(&*storage.backend, STATE_FILE) {
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 info!("no checkpoint found for resume ({error})",);
                 return Self::without_resume(config, Some(storage));

@@ -2,6 +2,7 @@
 
 use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metrics::Gauge;
+use crate::Runtime;
 use crate::{
     algebra::HasZero,
     circuit::checkpointer::Checkpoint,
@@ -15,12 +16,12 @@ use crate::{
         Scope, Stream,
     },
     circuit_cache_key,
-    storage::{file::to_bytes, write_commit_metadata},
+    storage::file::to_bytes,
     Error, NumEntries,
 };
 use size_of::{Context, SizeOf};
 use std::path::Path;
-use std::{borrow::Cow, fs, mem::replace, path::PathBuf};
+use std::{borrow::Cow, mem::replace, path::PathBuf};
 
 circuit_cache_key!(DelayedId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(NestedDelayedId<C, D>(StreamId => Stream<C, D>));
@@ -307,17 +308,15 @@ where
     fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         let committed: CommittedZ1 = (self as &Self).try_into()?;
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedZ1 should work.");
-        write_commit_metadata(
-            Self::checkpoint_file(base, persistent_id),
-            as_bytes.as_slice(),
-        )?;
-
+        Runtime::storage_backend()
+            .unwrap()
+            .write(&Self::checkpoint_file(base, persistent_id), as_bytes)?;
         Ok(())
     }
 
     fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         let z1_path = Self::checkpoint_file(base, persistent_id);
-        let content = fs::read(z1_path)?;
+        let content = Runtime::storage_backend().unwrap().read(&z1_path)?;
         let committed = unsafe { rkyv::archived_root::<CommittedZ1>(&content) };
 
         let mut values = self.zero.clone();

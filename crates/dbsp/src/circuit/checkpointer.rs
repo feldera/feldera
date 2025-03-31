@@ -5,12 +5,15 @@ use crate::dynamic::{self, data::DataTyped, DataTrait, WeightTrait};
 use crate::trace::ord::{vec::VecIndexedWSet, FallbackIndexedWSet};
 use crate::{Error, TypedBox};
 
-use std::collections::{HashSet, VecDeque};
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::io::ErrorKind;
+use std::{
+    collections::{HashSet, VecDeque},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use crate::trace::Serializer;
+use feldera_storage::{StorageBackend, StorageFileType};
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use uuid::Uuid;
@@ -46,9 +49,10 @@ impl CheckpointMetadata {
 ///
 /// It handles list of available checkpoints, and the files associated
 /// with each checkpoint.
-#[derive(Debug)]
+#[derive(derive_more::Debug)]
 pub(crate) struct Checkpointer {
-    storage_path: PathBuf,
+    #[debug(skip)]
+    backend: Arc<dyn StorageBackend>,
     checkpoint_list: VecDeque<CheckpointMetadata>,
     fingerprint: u64,
 }
@@ -67,11 +71,11 @@ impl Checkpointer {
     /// Create a new checkpointer for directory `storage_path`, verify that any
     /// existing checkpoints in that directory have the given `fingerprint`, and
     /// delete any unreferenced files in the directory.
-    pub fn new(storage_path: PathBuf, fingerprint: u64) -> Result<Self, Error> {
-        let checkpoint_list = Self::try_read_checkpoints_from_file(&storage_path)?;
+    pub fn new(backend: Arc<dyn StorageBackend>, fingerprint: u64) -> Result<Self, Error> {
+        let checkpoint_list = Self::try_read_checkpoints(&*backend)?;
 
         let this = Checkpointer {
-            storage_path,
+            backend,
             checkpoint_list,
             fingerprint,
         };
@@ -101,59 +105,46 @@ impl Checkpointer {
 
         // Collect all directories and files still referenced by a checkpoint
         let mut in_use_paths: HashSet<PathBuf> = HashSet::new();
-        in_use_paths.insert(self.storage_path.join(Checkpointer::CHECKPOINT_FILE_NAME));
-        in_use_paths.insert(self.storage_path.join("steps.bin"));
+        in_use_paths.insert(Checkpointer::CHECKPOINT_FILE_NAME.into());
+        in_use_paths.insert("steps.bin".into());
         for cpm in self.checkpoint_list.iter() {
-            in_use_paths.insert(self.storage_path.join(cpm.uuid.to_string()));
+            in_use_paths.insert(cpm.uuid.to_string().into());
             let batches = self
                 .gather_batches_for_checkpoint(cpm)
                 .expect("Batches for a checkpoint should be discoverable");
             for batch in batches {
-                in_use_paths.insert(self.storage_path.join(batch));
+                in_use_paths.insert(batch.into());
             }
+        }
+
+        /// True if `path` is a name that we might have created ourselves.
+        fn is_feldera_filename(path: &Path) -> bool {
+            let extension = &path
+                .extension()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or_default();
+            Checkpointer::DBSP_FILE_EXTENSION.contains(extension)
         }
 
         // Collect everything found in the storage directory
-        let mut all_paths: HashSet<PathBuf> = HashSet::new();
-        let files = fs::read_dir(&self.storage_path)?;
-        for file in files {
-            let file = file?;
-            let path = file.path();
-            all_paths.insert(path);
-        }
-
-        // Remove everything that is not referenced by a checkpoint
-        let to_remove = all_paths.difference(&in_use_paths);
-        for path in to_remove {
-            if Checkpointer::DBSP_FILE_EXTENSION.contains(
-                &path
-                    .extension()
-                    .unwrap_or_default()
-                    .to_str()
-                    .unwrap_or_default(),
-            ) || path.is_dir()
-            {
-                if path.is_dir() {
-                    tracing::debug!("Removing unused directory '{}'", path.display());
-                    fs::remove_dir_all(path)?;
-                } else {
-                    match fs::remove_file(path) {
-                        Ok(_) => {
-                            tracing::debug!("Removed unused file '{}'", path.display());
-                        }
-                        Err(e) => {
-                            tracing::warn!("Unable to remove old-checkpoint file {}: {} (the pipeline will try to delete the file again on a restart)", path.display(), e);
-                        }
+        self.backend.list(Path::new(""), &mut |path, file_type| {
+            if !in_use_paths.contains(path) && (is_feldera_filename(path) || file_type == StorageFileType::Directory){
+                match self.backend.delete_recursive(path) {
+                    Ok(_) => {
+                        tracing::debug!("Removed unused {file_type:?} '{}'", path.display());
                     }
-                }
+                    Err(e) => {
+                        tracing::warn!("Unable to remove old-checkpoint file {}: {} (the pipeline will try to delete the file again on a restart)", path.display(), e);
+                    }
             }
-        }
+            }})?;
 
         Ok(())
     }
 
     pub(super) fn checkpoint_dir(&self, uuid: Uuid) -> PathBuf {
-        self.storage_path.join(uuid.to_string())
+        uuid.to_string().into()
     }
 
     pub(super) fn commit(
@@ -176,68 +167,62 @@ impl Checkpointer {
         Ok(self.checkpoint_list.clone().into())
     }
 
-    fn try_read_checkpoints_from_file<P: AsRef<Path>>(
-        storage_path: P,
+    fn try_read_checkpoints(
+        backend: &dyn StorageBackend,
     ) -> Result<VecDeque<CheckpointMetadata>, Error> {
-        let checkpoint_file_path = storage_path
-            .as_ref()
-            .to_path_buf()
-            .join(Self::CHECKPOINT_FILE_NAME);
-        if !checkpoint_file_path.exists() {
-            return Ok(VecDeque::new());
+        match backend.read(Path::new(Self::CHECKPOINT_FILE_NAME)) {
+            Ok(content) => {
+                let archived =
+                    unsafe { rkyv::archived_root::<VecDeque<CheckpointMetadata>>(&content) };
+                let checkpoint_list: VecDeque<CheckpointMetadata> =
+                    archived.deserialize(&mut rkyv::Infallible).unwrap();
+                Ok(checkpoint_list)
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(VecDeque::new()),
+            Err(error) => Err(error)?,
         }
-        let content = fs::read(checkpoint_file_path)?;
-        let archived = unsafe { rkyv::archived_root::<VecDeque<CheckpointMetadata>>(&content) };
-        let checkpoint_list: VecDeque<CheckpointMetadata> =
-            archived.deserialize(&mut rkyv::Infallible).unwrap();
-        Ok(checkpoint_list)
     }
 
     pub(super) fn gather_batches_for_checkpoint(
         &self,
         cpm: &CheckpointMetadata,
     ) -> Result<HashSet<String>, Error> {
-        assert_ne!(cpm.uuid, Uuid::nil());
-        let checkpoint_dir = self.storage_path.join(cpm.uuid.to_string());
-        assert!(
-            checkpoint_dir.exists(),
-            "Checkpoint directory does not exist"
-        );
+        assert!(!cpm.uuid.is_nil());
+
+        let mut spines = Vec::new();
+        self.backend
+            .list(Path::new(&cpm.uuid.to_string()), &mut |path, _file_type| {
+                if path
+                    .file_name()
+                    .unwrap_or_default()
+                    .as_encoded_bytes()
+                    .starts_with(b"pspine-batches")
+                {
+                    spines.push(path.to_path_buf());
+                }
+            })?;
 
         let mut batch_files_in_commit: HashSet<String> = HashSet::new();
-        let files = fs::read_dir(&checkpoint_dir)?;
-        for file in files {
-            let file = file?;
-            let path = file.path();
-            let file_name = path.file_name().unwrap().to_string_lossy();
-
-            if file_name.starts_with("pspine-batches") {
-                let content = fs::read(file.path())?;
-                let archived = rkyv::check_archived_root::<Vec<String>>(&content).unwrap();
-                for batch in archived.iter() {
-                    let batch_path = self.storage_path.join(batch.to_string());
-                    if batch_path.exists() {
+        for spine in spines {
+            let content = self.backend.read(&spine)?;
+            let archived = rkyv::check_archived_root::<Vec<String>>(&content).unwrap();
+            for batch in archived.iter() {
+                match self.backend.exists(&Path::new(&batch.to_string())) {
+                    Ok(true) => {
                         batch_files_in_commit.insert(batch.to_string());
                     }
+                    _ => (),
                 }
             }
         }
-
         Ok(batch_files_in_commit)
     }
 
     fn update_checkpoint_file(&self) -> Result<(), Error> {
-        let checkpoint_file =
-            self.storage_path
-                .join(format!("{}{}", Self::CHECKPOINT_FILE_NAME, ".mut"));
-
-        // write checkpoint list to a file:
-        let as_bytes = crate::storage::file::to_bytes(&self.checkpoint_list)
+        let content = crate::storage::file::to_bytes(&self.checkpoint_list)
             .expect("failed to serialize checkpoint-list data");
-        let mut f = File::create(&checkpoint_file)?;
-        f.write_all(as_bytes.as_slice())?;
-        f.sync_all()?;
-        fs::rename(&checkpoint_file, checkpoint_file.with_extension(""))?;
+        self.backend
+            .write(&Path::new(Self::CHECKPOINT_FILE_NAME), content)?;
 
         Ok(())
     }
@@ -245,13 +230,7 @@ impl Checkpointer {
     /// Removes all the files in `files` from the storage base directory.
     fn remove_batch_files<P: AsRef<Path>>(&self, files: &Vec<P>) -> Result<(), Error> {
         for file in files {
-            assert!(file.as_ref().is_file());
-            assert!(
-                file.as_ref().starts_with(&self.storage_path),
-                "File {} is not in the storage directory",
-                file.as_ref().display()
-            );
-            match fs::remove_file(file) {
+            match self.backend.delete(file.as_ref()) {
                 Ok(_) => {
                     tracing::debug!("Removed file {}", file.as_ref().display());
                 }
@@ -267,15 +246,8 @@ impl Checkpointer {
     /// `cpm` by removing the folder associated with the checkpoint.
     fn remove_checkpoint_dir(&self, cpm: &CheckpointMetadata) -> Result<(), Error> {
         assert_ne!(cpm.uuid, Uuid::nil());
-        let checkpoint_dir = self.storage_path.join(cpm.uuid.to_string());
-        if !checkpoint_dir.exists() {
-            tracing::warn!(
-                "Tried to remove a checkpoint directory '{}' that doesn't exist.",
-                checkpoint_dir.display()
-            );
-            return Ok(());
-        }
-        fs::remove_dir_all(checkpoint_dir)?;
+        self.backend
+            .delete_recursive(&Path::new(&cpm.uuid.to_string()))?;
         Ok(())
     }
 

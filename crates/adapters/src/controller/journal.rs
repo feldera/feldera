@@ -1,50 +1,56 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::{self, remove_file},
-    io::{Error as IoError, ErrorKind},
+    io::ErrorKind,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
+use dbsp::storage::{
+    backend::{StorageBackend, StorageError},
+    buffer_cache::FBuf,
+};
 use feldera_adapterlib::{errors::journal::StepError, transport::Step};
 use feldera_types::config::InputEndpointConfig;
 use rmpv::Value as RmpValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::util::write_file_atomically;
-
 pub struct Journal {
+    /// Underlying storage.
+    backend: Arc<dyn StorageBackend>,
+
     /// Directory name.
     path: PathBuf,
 }
 
 impl Journal {
-    /// Opens a new journal under `path`.
-    pub fn open<P>(path: P) -> Self
+    /// Opens an existing journal under `path`.
+    pub fn open<P>(backend: Arc<dyn StorageBackend>, path: P) -> Self
     where
         P: AsRef<Path>,
     {
         Self {
+            backend,
             path: PathBuf::from(path.as_ref()),
         }
     }
 
-    /// Creates a new journal under `path`.
-    pub fn create<P>(path: P) -> Result<Self, StepError>
+    /// Creates a new journal under `path`, deleting any journal previously there.
+    pub fn create<P>(backend: Arc<dyn StorageBackend>, path: P) -> Result<Self, StepError>
     where
         P: AsRef<Path>,
     {
-        let path = path.as_ref();
-        fs::create_dir_all(path).map_err(|error| StepError::io_error(path, error))?;
-        Ok(Self::open(path))
+        let this = Self::open(backend, path);
+        this.truncate()?;
+        Ok(this)
     }
 
     pub fn read(&self, step: Step) -> Result<Option<StepMetadata>, StepError> {
         let path = self.path.join(format!("{step}.bin"));
-        let data = match fs::read(&path) {
+        let data = match self.backend.read(&path) {
             Ok(data) => data,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(StepError::io_error(&path, error)),
+            Err(error) => return Err(StepError::storage_error(&path, error)),
         };
         let record = rmp_serde::decode::from_slice::<StepMetadata>(&data)
             .map_err(|error| StepError::DecodeError { path, error })?;
@@ -60,31 +66,25 @@ impl Journal {
 
     pub fn write(&self, record: &StepMetadata) -> Result<(), StepError> {
         let path = self.path.join(format!("{}.bin", record.step));
-        let data = rmp_serde::encode::to_vec(record).map_err(|error| StepError::EncodeError {
+        let mut data = FBuf::new();
+        rmp_serde::encode::write(&mut data, record).map_err(|error| StepError::EncodeError {
             path: self.path.to_path_buf(),
             error,
         })?;
-        write_file_atomically(&path, &data)
-            .map_err(|error| StepError::io_error(&self.path, error))?;
+        self.backend
+            .write(&path, data)
+            .map_err(|error| StepError::storage_error(&self.path, error))?;
         Ok(())
     }
 
     pub fn truncate(&self) -> Result<(), StepError> {
-        let dir = match self.path.read_dir() {
-            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(self.io_error(error)),
-            Ok(dir) => dir,
-        };
-        for entry in dir {
-            entry
-                .and_then(|entry| remove_file(entry.path()))
-                .map_err(|error| self.io_error(error))?;
-        }
-        Ok(())
+        self.backend
+            .delete_recursive(&self.path)
+            .map_err(|error| self.storage_error(error))
     }
 
-    fn io_error(&self, error: IoError) -> StepError {
-        StepError::io_error(&self.path, error)
+    fn storage_error(&self, error: StorageError) -> StepError {
+        StepError::storage_error(&self.path, error)
     }
 }
 
@@ -199,8 +199,13 @@ impl From<&StepMetadata> for StepInputChecksums {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::{
+        collections::{HashMap, HashSet},
+        path::Path,
+        sync::Arc,
+    };
 
+    use dbsp::{circuit::StorageCacheConfig, storage::backend::posixio_impl::PosixBackend};
     use tempfile::TempDir;
 
     use crate::{controller::journal::Journal, test::init_test_logger};
@@ -213,7 +218,8 @@ mod tests {
         init_test_logger();
 
         let tempdir = TempDir::new().unwrap();
-        let path = tempdir.path().join("journal");
+        let backend = Arc::new(PosixBackend::new(tempdir, StorageCacheConfig::default()));
+        let path = Path::new("journal");
 
         let records = (0..10)
             .map(|step| StepMetadata {
@@ -224,7 +230,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let journal = Journal::create(&path).unwrap();
+        let journal = Journal::create(backend, path).unwrap();
         for record in records.iter() {
             journal.write(record).unwrap();
         }

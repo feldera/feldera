@@ -10,6 +10,7 @@ use crate::circuit::metrics::{
     WRITES_SUCCESS,
 };
 use crate::storage::buffer_cache::FBuf;
+use feldera_storage::StorageFileType;
 use metrics::counter;
 use std::{
     collections::HashMap,
@@ -116,5 +117,40 @@ impl StorageBackend for MemoryBackend {
             Some(file) => Ok(file.clone()),
             None => Err(StorageError::StdIo(ErrorKind::NotFound)),
         }
+    }
+
+    fn list(
+        &self,
+        parent: &Path,
+        cb: &mut dyn FnMut(&Path, StorageFileType),
+    ) -> Result<(), StorageError> {
+        let paths = self
+            .files
+            .read()
+            .unwrap()
+            .keys()
+            .filter(|name| name.parent().is_some_and(|dir| dir == parent))
+            .cloned()
+            .collect::<Vec<_>>();
+        for path in paths {
+            cb(&path, StorageFileType::File);
+        }
+        Ok(())
+    }
+
+    fn delete(&self, name: &Path) -> Result<(), StorageError> {
+        let mut files = self.files.write().unwrap();
+        match files.remove(name) {
+            Some(_) => Ok(()),
+            None => Err(StorageError::StdIo(ErrorKind::NotFound)),
+        }
+    }
+
+    fn delete_recursive(&self, parent: &Path) -> Result<(), StorageError> {
+        self.files
+            .write()
+            .unwrap()
+            .retain(|name, _content| name.starts_with(parent));
+        Ok(())
     }
 }

@@ -1187,9 +1187,9 @@ impl ControllerError {
         Self::ControllerPanic
     }
 
-    pub fn storage_error(context: String, error: StorageError) -> Self {
+    pub fn storage_error(context: impl Into<String>, error: StorageError) -> Self {
         Self::StorageError {
-            context,
+            context: context.into(),
             error,
             backtrace: Backtrace::capture(),
         }

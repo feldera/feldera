@@ -1,18 +1,12 @@
 use std::borrow::Cow;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::{
-    fs::File,
-    io::{Error as IoError, Write},
-};
 
 #[cfg(feature = "with-deltalake")]
 use std::{error::Error, future::Future, pin::Pin};
 
 #[cfg(feature = "with-deltalake")]
 use futures::channel::oneshot;
-use tempfile::NamedTempFile;
 #[cfg(feature = "with-deltalake")]
 use tokio::{spawn, task::JoinHandle};
 
@@ -33,26 +27,6 @@ pub(crate) fn truncate_ellipse<'a>(s: &'a str, len: usize, ellipse: &str) -> Cow
 
     let result = s.chars().take(len).chain(ellipse.chars()).collect();
     Cow::Owned(result)
-}
-
-pub(crate) fn write_file_atomically<P>(path: P, data: &[u8]) -> Result<(), IoError>
-where
-    P: AsRef<Path>,
-{
-    // Find the file's directory and open it.
-    let dir = path.as_ref().parent().unwrap_or(Path::new("."));
-    let dir_handle = File::open(dir)?;
-
-    // Write and rename and sync the file.
-    let mut temp = NamedTempFile::new_in(dir)?;
-    temp.write_all(data)?;
-    temp.as_file().sync_data()?;
-    temp.persist(path)?;
-
-    // Then sync the directory to make sure that the rename is committed.
-    dir_handle.sync_data()?;
-
-    Ok(())
 }
 
 /// For logging with a non-constant level.  From
