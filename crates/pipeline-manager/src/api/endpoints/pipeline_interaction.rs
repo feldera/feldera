@@ -5,6 +5,8 @@ use crate::api::main::ServerState;
 use crate::api::util::parse_url_parameter;
 #[cfg(not(feature = "feldera-enterprise"))]
 use crate::common_error::CommonError;
+#[cfg(feature = "feldera-enterprise")]
+use crate::db::storage::Storage;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_http::StatusCode;

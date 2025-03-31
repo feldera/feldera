@@ -749,7 +749,7 @@ async fn prepare_workspace(
         config.dbsp_override_path, // Path: dbsp_adapters
         if cfg!(feature = "feldera-enterprise") {
              // Enterprise features for: dbsp_adapters
-             "features = [\"feldera-enterprise\"] ".to_string()
+             ", features = [\"feldera-enterprise\"] ".to_string()
         } else {
             "".to_string()
         },
