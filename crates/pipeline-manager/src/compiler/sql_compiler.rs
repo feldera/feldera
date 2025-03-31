@@ -390,7 +390,10 @@ pub(crate) async fn perform_sql_compilation(
         .arg("--unquotedCasing")
         .arg("lower")
         .arg("--crates") // Generate multiple crates instead of a single main.rs
-        .arg(crate_name_pipeline_base(pipeline_id))
+        .arg(crate_name_pipeline_base(pipeline_id));
+    #[cfg(feature = "feldera-enterprise")]
+    command.arg("--enterprise");
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::from(output_stdout_file.into_std().await))
         .stderr(Stdio::from(output_stderr_file.into_std().await))
