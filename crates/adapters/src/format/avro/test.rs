@@ -16,7 +16,7 @@ use apache_avro::{from_avro_datum, schema::ResolvedSchema, to_avro_datum, Schema
 use dbsp::{utils::Tup2, OrdIndexedZSet};
 use dbsp::{DBData, OrdZSet};
 use feldera_types::{
-    format::avro::AvroEncoderConfig,
+    format::avro::{AvroEncoderConfig, AvroEncoderKeyMode},
     program_schema::Relation,
     serde_with_context::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig},
 };
@@ -665,6 +665,7 @@ where
 fn test_raw_avro_output_indexed<K, T>(
     config: AvroEncoderConfig,
     key_sql_schema: &Relation,
+    val_sql_schema: &Relation,
     key_func: impl Fn(&T) -> K,
     batches: Vec<Vec<(T, T)>>,
 ) where
@@ -675,19 +676,24 @@ fn test_raw_avro_output_indexed<K, T>(
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
         + SerializeWithContext<SqlSerdeConfig>,
 {
-    let schema = AvroSchema::parse_str(config.schema.as_ref().unwrap()).unwrap();
-
     let consumer = MockOutputConsumer::new();
     let consumer_data = consumer.data.clone();
     let mut encoder = AvroEncoder::create(
         "avro_test_endpoint",
         &Some(key_sql_schema.clone()),
-        &Relation::empty(),
+        val_sql_schema,
         Box::new(consumer),
-        config,
+        config.clone(),
         None,
     )
     .unwrap();
+
+    let key_schema = encoder.key_avro_schema.clone();
+    if config.key_mode != Some(AvroEncoderKeyMode::None) {
+        assert!(key_schema.is_some());
+    }
+
+    let val_schema = encoder.value_avro_schema.clone();
 
     let zsets = batches
         .iter()
@@ -750,9 +756,17 @@ fn test_raw_avro_output_indexed<K, T>(
     let data = consumer_data.lock().unwrap();
     let actual_output = data
         .iter()
-        .map(|(_k, v, headers)| {
-            let val = from_avro_datum(&schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
-            let value = from_avro_value::<T>(&val, &schema).unwrap();
+        .map(|(k, v, headers)| {
+            let val = from_avro_datum(&val_schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
+            let value = from_avro_value::<T>(&val, &val_schema).unwrap();
+
+            if let Some(key_schema) = &key_schema {
+                let key =
+                    from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
+                let key = from_avro_value::<K>(&key, &key_schema).unwrap();
+                assert_eq!(key, key_func(&value));
+            }
+
             (
                 value,
                 std::str::from_utf8(headers[0].1.as_ref().unwrap().as_slice()).unwrap(),
@@ -972,6 +986,7 @@ proptest! {
         let schema_str = TestStruct::avro_schema().to_string();
         let config: AvroEncoderConfig = AvroEncoderConfig {
             schema: Some(schema_str.clone()),
+            key_mode: Some(AvroEncoderKeyMode::None),
             ..Default::default()
         };
 
@@ -984,7 +999,26 @@ proptest! {
             }).collect::<Vec<_>>()
         }).collect::<Vec<_>>();
 
-        test_raw_avro_output_indexed::<KeyStruct, TestStruct>(config, &KeyStruct::relation_schema(), |test_struct| KeyStruct{id: test_struct.id}, data)
+        test_raw_avro_output_indexed::<KeyStruct, TestStruct>(config, &KeyStruct::relation_schema(), &TestStruct::relation_schema(), |test_struct| KeyStruct{id: test_struct.id}, data)
+    }
+
+    #[test]
+    fn proptest_raw_avro_output_indexed_with_key(data in generate_test_batches(10, 10, 20))
+    {
+        let config: AvroEncoderConfig = AvroEncoderConfig {
+            ..Default::default()
+        };
+
+        let data = data.into_iter().map(|batch| {
+            batch.into_iter().map(|v| {
+                let v1 = v.clone();
+                let mut v2 = v.clone();
+                v2.b = !v2.b;
+                (v1, v2)
+            }).collect::<Vec<_>>()
+        }).collect::<Vec<_>>();
+
+        test_raw_avro_output_indexed::<KeyStruct, TestStruct>(config, &KeyStruct::relation_schema(), &TestStruct::relation_schema(), |test_struct| KeyStruct{id: test_struct.id}, data)
     }
 
     #[test]
@@ -1002,7 +1036,6 @@ proptest! {
 
         test_confluent_avro_output::<TestStruct, TestStruct, _>(config, data, |v| v.clone(), schema_str);
     }
-
 
     #[test]
     fn proptest_confluent_avro_output_indexed(data in generate_test_batches(10, 10, 20))
@@ -1024,7 +1057,4 @@ proptest! {
 
         test_confluent_avro_output_indexed::<KeyStruct, TestStruct>(config,  &KeyStruct::relation_schema(), &TestStruct::relation_schema(), |test_struct| KeyStruct{id: test_struct.id}, data);
     }
-
-
-
 }

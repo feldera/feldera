@@ -8,7 +8,9 @@ use anyhow::{anyhow, bail, Result as AnyResult};
 use apache_avro::{to_avro_datum, types::Value as AvroValue, Schema as AvroSchema};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
-use feldera_types::format::avro::{AvroEncoderConfig, AvroUpdateFormat, SubjectNameStrategy};
+use feldera_types::format::avro::{
+    AvroEncoderConfig, AvroEncoderKeyMode, AvroUpdateFormat, SubjectNameStrategy,
+};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use schema_registry_converter::blocking::schema_registry::post_schema;
 use schema_registry_converter::blocking::schema_registry::SrSettings;
@@ -125,6 +127,23 @@ pub(crate) struct AvroEncoder {
     update_format: AvroUpdateFormat,
 }
 
+/// `true` - this config will create messages with key and value components.
+/// `false` - this config will create messages with the value component only.
+pub fn use_key(config: &AvroEncoderConfig, key_schema: &Option<Relation>) -> bool {
+    match config.update_format {
+        AvroUpdateFormat::Raw => match config.key_mode {
+            Some(AvroEncoderKeyMode::KeyFields) => true,
+            Some(AvroEncoderKeyMode::None) => false,
+            // The default is to generate a key when there is a primary key specified.  This is the least surprising for
+            // users who expect messages to be consistently hashed to partitions based on the primary key; otherwise
+            // updates for the same key are delivered out-of-order.
+            None => key_schema.is_some(),
+        },
+        AvroUpdateFormat::Debezium => true,
+        AvroUpdateFormat::ConfluentJdbc => true,
+    }
+}
+
 impl AvroEncoder {
     pub(crate) fn create(
         endpoint_name: &str,
@@ -143,6 +162,27 @@ impl AvroEncoder {
                     endpoint_name,
                     "'debezium' data change event format is not yet supported by the Avro encoder",
                 ));
+            }
+        }
+
+        if let Some(key_mode) = &config.key_mode {
+            if config.update_format != AvroUpdateFormat::Raw {
+                return Err(ControllerError::invalid_encoder_configuration(
+                    endpoint_name,
+                    "the 'key_mode' property is only supported with the 'raw' update format",
+                ));
+            }
+
+            match key_mode {
+                AvroEncoderKeyMode::KeyFields => {
+                    if key_schema.is_none() {
+                        return Err(ControllerError::invalid_encoder_configuration(
+                            endpoint_name,
+                            "the 'key_fields' key mode is only supported when the connector is configured with the 'index' property",
+                        ));
+                    }
+                }
+                AvroEncoderKeyMode::None => {}
             }
         }
 
@@ -183,7 +223,7 @@ impl AvroEncoder {
             schema_json(&value_avro_schema)
         );
 
-        let key_avro_schema = if config.update_format.has_key() {
+        let key_avro_schema = if use_key(&config, key_schema) {
             if let Some(key_schema) = &key_schema {
                 let key_avro_schema = AvroSchemaBuilder::new()
                     .with_namespace(config.namespace.as_deref())
@@ -219,8 +259,8 @@ impl AvroEncoder {
         let mut key_schema_id = 0;
 
         if let Some(sr_settings) = &sr_settings {
-            let subject_name_strategy = if let Some(strategy) = config.subject_name_strategy {
-                strategy
+            let subject_name_strategy = if let Some(strategy) = &config.subject_name_strategy {
+                strategy.to_owned()
             } else {
                 match config.update_format {
                     AvroUpdateFormat::ConfluentJdbc => SubjectNameStrategy::TopicName,
@@ -261,7 +301,7 @@ impl AvroEncoder {
                 SubjectNameStrategy::RecordName => value_avro_schema.name().unwrap().fullname(None),
                 SubjectNameStrategy::TopicName => {
                     if let Some(topic) = &topic {
-                        if config.update_format.has_key() {
+                        if key_avro_schema.is_some() {
                             format!("{topic}-value")
                         } else {
                             topic.to_string()
@@ -272,7 +312,7 @@ impl AvroEncoder {
                 }
                 SubjectNameStrategy::TopicRecordName => {
                     if let Some(topic) = &topic {
-                        if config.update_format.has_key() {
+                        if key_avro_schema.is_some() {
                             format!(
                                 "{topic}-{}-value",
                                 value_avro_schema.name().unwrap().fullname(None)
@@ -546,15 +586,20 @@ impl AvroEncoder {
         while cursor.key_valid() {
             let operation_type = self.operation_type(cursor.as_mut())?;
 
+            let key_buffer = if self.key_avro_schema.is_some() {
+                Some(self.key_buffer.as_slice())
+            } else {
+                None
+            };
+
             match (operation_type, self.update_format.clone()) {
                 (None, _) => (),
                 (Some(OperationType::Delete), AvroUpdateFormat::ConfluentJdbc) => {
-                    self.output_consumer
-                        .push_key(Some(&self.key_buffer), None, &[], 1);
+                    self.output_consumer.push_key(key_buffer, None, &[], 1);
                 }
                 (Some(OperationType::Delete), AvroUpdateFormat::Raw) => {
                     self.output_consumer.push_key(
-                        None,
+                        key_buffer,
                         Some(&self.value_buffer),
                         &[("op", Some(b"delete"))],
                         1,
@@ -564,16 +609,12 @@ impl AvroEncoder {
                     Some(OperationType::Insert) | Some(OperationType::Upsert),
                     AvroUpdateFormat::ConfluentJdbc,
                 ) => {
-                    self.output_consumer.push_key(
-                        Some(&self.key_buffer),
-                        Some(&self.value_buffer),
-                        &[],
-                        1,
-                    );
+                    self.output_consumer
+                        .push_key(key_buffer, Some(&self.value_buffer), &[], 1);
                 }
                 (Some(OperationType::Insert), AvroUpdateFormat::Raw) => {
                     self.output_consumer.push_key(
-                        None,
+                        key_buffer,
                         Some(&self.value_buffer),
                         &[("op", Some(b"insert"))],
                         1,
@@ -581,7 +622,7 @@ impl AvroEncoder {
                 }
                 (Some(OperationType::Upsert), AvroUpdateFormat::Raw) => {
                     self.output_consumer.push_key(
-                        None,
+                        key_buffer,
                         Some(&self.value_buffer),
                         &[("op", Some(b"update"))],
                         1,
