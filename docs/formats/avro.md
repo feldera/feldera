@@ -26,10 +26,10 @@ We support several Avro-based formats:
 * **Raw** - every message contains a single Avro-encoded record that represents a row in a SQL
   table or view.
   * **Raw input**: An input connector configured with the raw Avro format treats all
-    incoming messages as inserts.
+   incoming messages as inserts.
   * **Raw output**: An output connector configured with the raw Avro format includes an operation type
    (`"op"`) as a header in each output Kafka message: `"op": "insert"` represents an insertion, `"op": "update"`
-   represents an upsert, and `"op": "delete"` representa a deletion. The message key can optionally store
+   represents an update, and `"op": "delete"` representa a deletion. The message key can optionally store
    the primary key (see the `key_mode` property).
 
 * **Debezium** (input only) - used to synchronize a Feldera table with an external database using
@@ -39,7 +39,6 @@ We support several Avro-based formats:
 * **Confluent JDBC** (output only) - used to send incremental changes computed by Feldera
   to an external database using the [Confluent JDBC connector](https://docs.confluent.io/kafka-connectors/jdbc/current/sink-connector/).
   See [Confluent JDBC sink documentation](/connectors/sinks/confluent-jdbc) for details.
-
 
 ## Avro input
 
@@ -174,26 +173,37 @@ CREATE TABLE my_table (
 
 The Avro encoder generates an Avro schema, which the consumer can use to decode messages produced
 by the encoder. For message formats that include key and value components with different schemas,
-e.g., the Confluent JDBC connector format, or the raw format with `key_mode=key_fields`, the encoder
+e.g., the Confluent JDBC connector format, or the raw format with `"key_mode": "key_fields"`, the encoder
 generates both key and value schemas. If the connector configuration specifies a schema registry,
 the encoder publishes both key and value schemas in the registry (see [Configuration](#configuration) below).
 
 The encoder supports an alternative workflow where users provide the schema as a JSON string
 as part of connector configuration and the encoder produces messages using this schema instead of
 generating it automatically. If the connector configuration specifies a schema registry, the encoder
-publishes both the user-provided schema to the registry.
+publishes the user-provided schema to the registry.
+
+### Views with unique keys
+
+The Avro encoder supports views with unique keys:
+
+- It uses the key columns to construct the Kafka message key.
+- It can combine insert and delete updates for the same key into a single atomic update.
+
+Use the `CREATE INDEX` statement to define a unique key for the view, and the `index` property
+of the connector to associate the index with the connector.
+
+See the [documentation](/connectors/unique_keys#views-with-unique-keys) for details.
 
 ### Configuration
 
 The following properties can be used to configure the Avro encoder. All of these properties are optional.
 However, exactly one of `registry_urls` and `schema` properties must be specified.
 
-
 | Property                       | Type                        |Default | Description                                              |
 |--------------------------------|-----------------------------|--------|----------------------------------------------------------|
-| `update_format`                | `"raw"` or `"confluent_jdbc"`|`"raw"` | Format used to encode data change events in this stream |
+| `update_format`                | `"raw"` or `"confluent_jdbc"`|`"raw"` | Format used to encode data change events in this stream. |
 | `schema`                       | string | | Avro schema used to encode output records. When specified, the encoder will use this schema; otherwise it will automatically generate an Avro schema based on the SQL view definition. Specified as a string containing schema definition in JSON format. This schema must match precisely the SQL view definition, modulo nullability of columns.|
-| `key_mode`                     | `"none"` or `"key_fields"` | `key_fields` when the `index` property of the connector is configured and `none` otherwise. | <p>Determines how the message key is generated when the Avro encoder is configured in the `raw` mode.</p><p>Set to `none` to generate messages without a key.</p><p>Set to `key_fields` to use the unique key columns of the view as the message key. This setting is supported when the output connector is configured with the `index` property. It utilizes the values of the index columns specified in the associated `CREATE INDEX` statement as the Avro message key. A separate Avro schema will be created and registered in the schema registry for the key component of the message.</p> |
+| `key_mode`                     | `"none"` or `"key_fields"` | `key_fields` when the `index` property of the connector is configured and `none` otherwise. | <p>Determines how the message key is generated when the Avro encoder is configured in the `raw` mode.</p><p>Set to `none` to generate messages without a key.</p><p>Set to `"key_fields"` to use the unique key columns of the view as the message key. This setting is supported when the output connector is configured with the `index` property. It utilizes the values of the index columns specified in the associated `CREATE INDEX` statement as the Avro message key. A separate Avro schema will be created and registered in the schema registry for the key component of the message.</p> |
 | `namespace`                    | string | | Avro namespace for the generated Avro schemas.|
 | `subject_name_strategy`        | `"topic_name"`, `"record_name"`, or `"topic_record_name"` | `topic_name` for `confluent_jdbc` update format or `record_name` for `raw` update format | <p>Subject name strategy used to publish Avro schemas used by the connector in the schema registry.</p><p>`topic_name`: the subject name is derived from the Kafka topic name. For update formats with both key and value components, use subject names `{topic_name}-key` and `{topic_name}-value` for key and value schemas respectively. For update formats without a key (e.g., `raw`, with `key_mode=none`), publish value schema under the subject name `{topic_name}`. Only applicable when using Kafka as a transport.</p><p>`record_name`: the name of the SQL relation name that the schema is derived from is used as the subject name: the SQL view name for the message value schema or the SQL index name for the message key schema.</p><p>`topic_record_name`: combines both the topic name and the record name to form the subject. For update formats with both key and value components, use subject names `{topic_name}-{record_name}-key` and `{topic_name}-{record_name}-value` for key and value schemas respectively. For update formats without a key, publish value schema under the subject name `{topic_name}-{record_name}`. Only applicable when using Kafka as a transport.</p>|
 | `skip_schema_id`               | Boolean | `false` | Set to `true` if serialized messages should only contain raw data without the header carrying schema ID. `False` by default. See https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format|
@@ -210,8 +220,13 @@ Configure the Avro encoder to send raw Avro records using a static user-provided
 specify a schema registry URL, so the encoder will not try to publish the schema.
 
 ```sql
-CREATE VIEW my_view
-WITH (
+create table my_table (
+   id bigint,
+   name string
+);
+
+create view my_view
+with (
   'connectors' = '[{
     "transport": {
       "name": "kafka_output",
@@ -230,21 +245,25 @@ WITH (
     }
   }]'
 )
-AS
-    SELECT * from my_table;
+as select * from my_table;
 ```
 
 Configure the Avro encoder to send raw Avro records. The connector is associated with a SQL index
-`test_index` using the `index` property. This index specifies that the `id` field serves
+`my_index` using the `index` property. This index specifies that the `id` field serves
 as the unique key for the view.  The connector will use this key to combine delete and insert
 operations with the same unique key into atomic updates. The encoder will generate two separate
 schemas for the key and value components of the message and publish them in the schema registry.
 
 ```sql
-CREATE VIEW my_view
-WITH (
+create table my_table (
+   id bigint,
+   name string
+);
+
+create view my_view
+with (
   'connectors' = '[{
-    "index": "test_index",
+    "index": "my_index",
     "transport": {
       "name": "kafka_output",
       "config": {
@@ -262,24 +281,28 @@ WITH (
     }
   }]'
 )
-AS
-    SELECT * from my_table;
+as select * from my_table;
 
-create index test_index on my_view(id);
+create index my_index on my_view(id);
 ```
 
 Configure the Avro encoder to output changes in the format expected by the
 [Confluent JDBC Kakfa Connect connector](https://docs.confluent.io/kafka-connectors/jdbc/current/sink-connector/).
-The connector is associated with a SQL index `test_index` using the `index` property. This index specifies that
+The connector is associated with a SQL index `my_index` using the `index` property. This index specifies that
 the `id` field serves as the unique key for the view.  The connector will use this key to combine delete and insert
 operations with the same unique key into atomic updates.  The encoder will generate two separate schemas for the
 key and value components of the message and publish them in the schema registry.
 
 ```sql
+create table my_table (
+   id bigint,
+   name string
+);
+
 create view my_view
-WITH (
+with (
   'connectors' = '[{
-    "index": "test_index",
+    "index": "my_index",
     "transport": {
       "name": "kafka_output",
       "config": {
@@ -296,7 +319,7 @@ WITH (
     }
   }]'
 )
-as select * from test_table;
+as select * from my_table;
 
-create index test_index on my_view(id);
+create index my_index on my_view(id);
 ```
