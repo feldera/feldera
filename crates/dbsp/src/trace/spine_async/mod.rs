@@ -19,11 +19,10 @@ use crate::{
         cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Builder,
         Cursor, Filter, Trace,
     },
-    Error, NumEntries,
+    Error, NumEntries, Runtime,
 };
 
 use crate::storage::file::to_bytes;
-use crate::storage::write_commit_metadata;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
 use list_merger::ArcMerger;
@@ -43,7 +42,6 @@ use std::{
 };
 use std::{
     fmt::{self, Debug, Display, Formatter},
-    fs,
     ops::DerefMut,
     sync::Condvar,
 };
@@ -1181,26 +1179,24 @@ where
 
         let committed: CommittedSpine = (ids, self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
-        write_commit_metadata(
-            Self::checkpoint_file(base, persistent_id),
-            as_bytes.as_slice(),
-        )?;
+        Runtime::storage_backend()
+            .unwrap()
+            .write(&Self::checkpoint_file(base, persistent_id), as_bytes)?;
 
         // Write the batches as a separate file, this allows to parse it
         // in `Checkpointer` without the need to know the exact Spine type.
         let batches = committed.batches;
         let as_bytes = to_bytes(&batches).expect("Serializing batches to Vec<String> should work.");
-        write_commit_metadata(
-            self.batchlist_file(base, persistent_id),
-            as_bytes.as_slice(),
-        )?;
+        Runtime::storage_backend()
+            .unwrap()
+            .write(&self.batchlist_file(base, persistent_id), as_bytes)?;
 
         Ok(())
     }
 
     fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
         let pspine_path = Self::checkpoint_file(base, persistent_id);
-        let content = fs::read(pspine_path)?;
+        let content = Runtime::storage_backend().unwrap().read(&pspine_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedSpine>(&content) };
 
         let committed: CommittedSpine = archived

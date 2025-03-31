@@ -14,7 +14,6 @@ use metrics::counter;
 use minitrace::collector::SpanContext;
 use minitrace::local::LocalSpan;
 use minitrace::Span;
-use std::fs::create_dir_all;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{
@@ -494,11 +493,19 @@ impl Runtime {
             Ok(result) => result,
         };
 
-        let mut dbsp = DBSPHandle::new(runtime, command_senders, status_receivers, fingerprint)?;
-        if let Some(storage) = &config.storage {
-            if let Some(init_checkpoint) = storage.init_checkpoint {
-                dbsp.send_restore(storage.config.path().join(init_checkpoint.to_string()))?;
-            }
+        let (backend, init_checkpoint) = config
+            .storage
+            .map(|storage| (storage.backend.clone(), storage.init_checkpoint))
+            .unzip();
+        let mut dbsp = DBSPHandle::new(
+            backend,
+            runtime,
+            command_senders,
+            status_receivers,
+            fingerprint,
+        )?;
+        if let Some(init_checkpoint) = init_checkpoint.flatten() {
+            dbsp.send_restore(PathBuf::from(init_checkpoint.to_string()))?;
         }
 
         Ok((dbsp, ret))
@@ -552,15 +559,14 @@ pub struct DBSPHandle {
 
 impl DBSPHandle {
     fn new(
+        backend: Option<Arc<dyn StorageBackend>>,
         runtime: RuntimeHandle,
         command_senders: Vec<Sender<Command>>,
         status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
         fingerprint: u64,
     ) -> Result<Self, DbspError> {
-        let checkpointer = runtime
-            .runtime()
-            .storage_path()
-            .map(|path| Checkpointer::new(path.into(), fingerprint))
+        let checkpointer = backend
+            .map(|backend| Checkpointer::new(backend, fingerprint))
             .transpose()?;
         Ok(Self {
             start_time: Instant::now(),
@@ -713,7 +719,6 @@ impl DBSPHandle {
         identifier: Option<String>,
     ) -> Result<CheckpointMetadata, DbspError> {
         let checkpoint_dir = self.checkpointer()?.checkpoint_dir(uuid);
-        create_dir_all(&checkpoint_dir)?;
         self.send_commit(checkpoint_dir)?;
         self.checkpointer().unwrap().commit(uuid, identifier)
     }
@@ -1329,6 +1334,8 @@ pub(crate) mod tests {
 
         let incomplete_checkpoint_dir = temp.path().join(Uuid::now_v7().to_string());
         fs::create_dir(&incomplete_checkpoint_dir).expect("can't create checkpoint dir");
+        let _ = File::create(&incomplete_checkpoint_dir.join("filename.feldera"))
+            .expect("can't create file");
 
         let complete_batch_unused = temp.path().join("complete_batch.feldera");
         let _ = File::create(&complete_batch_unused).expect("can't create file");

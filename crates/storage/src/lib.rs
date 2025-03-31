@@ -1,5 +1,6 @@
 //! Common Types and Trait Definition for Storage in Feldera.
 
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -64,6 +65,34 @@ pub trait StorageBackend: Send + Sync {
     /// Opens a file for reading.  The file `name` is relative to the base of
     /// the storage backend.
     fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError>;
+
+    /// Calls `cb` with the name of each of the files under `parent`. This is a
+    /// non-recursive list: it does not include files under sub-directories of
+    /// `parent`.
+    fn list(
+        &self,
+        parent: &Path,
+        cb: &mut dyn FnMut(&Path, StorageFileType),
+    ) -> Result<(), StorageError>;
+
+    fn delete(&self, name: &Path) -> Result<(), StorageError>;
+
+    fn delete_recursive(&self, name: &Path) -> Result<(), StorageError>;
+
+    fn delete_if_exists(&self, name: &Path) -> Result<(), StorageError> {
+        match self.delete(name) {
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    }
+
+    fn exists(&self, name: &Path) -> Result<bool, StorageError> {
+        match self.open(name) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
 
     /// Reads `name` and returns its contents.  The file `name` is relative to
     /// the base of the storage backend.
@@ -155,4 +184,23 @@ pub trait FileReader: Send + Sync + HasFileId {
 
     /// Returns the file's size in bytes.
     fn get_size(&self) -> Result<u64, StorageError>;
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum StorageFileType {
+    /// A regular file.
+    File,
+
+    /// A directory.
+    ///
+    /// Only some kinds of storage backends support directories. The ones that
+    /// don't still allow files to be named hierarchically, but they don't
+    /// support creating or deleting directories independently from the files in
+    /// them. That is, with such a backend, a directory is effectively created
+    /// by creating a file in it, and is effectively deleted when the last file
+    /// in it is deleted.
+    Directory,
+
+    /// Something else.
+    Other,
 }

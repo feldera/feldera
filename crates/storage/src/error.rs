@@ -32,8 +32,11 @@ pub enum StorageError {
     #[error("Failed to serialize/deserialize bloom filter.")]
     BloomFilter,
 
-    /// Path is not UTF-8.
-    #[error("Path is not UTF-8: {}", .0.display())]
+    /// Path is not valid in storage.
+    ///
+    /// Storage paths may not be absolute, may not start with a drive letter (on
+    /// Windows), and may not contain `.` or `..` components.
+    #[error("Path is not valid in storage: {}", .0.display())]
     InvalidPath(PathBuf),
 
     /// Unable to parse URL.

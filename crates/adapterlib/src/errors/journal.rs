@@ -1,10 +1,10 @@
 use crate::transport::Step;
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use dbsp::storage::backend::StorageError;
+use serde::{Serialize, Serializer};
 use std::backtrace::Backtrace;
 use std::io::ErrorKind;
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
-    io::Error as IoError,
     path::{Path, PathBuf},
 };
 
@@ -13,11 +13,11 @@ pub use crate::errors::controller::ControllerError;
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum StepError {
-    /// I/O error.
-    #[serde(serialize_with = "serialize_io_error")]
-    IoError {
+    /// Storage error.
+    StorageError {
         path: PathBuf,
-        io_error: IoError,
+        error: StorageError,
+        #[serde(serialize_with = "serialize_as_string")]
         backtrace: Backtrace,
     },
 
@@ -43,29 +43,12 @@ pub enum StepError {
 impl StepError {
     pub fn kind(&self) -> ErrorKind {
         match self {
-            Self::IoError { io_error, .. } => io_error.kind(),
+            Self::StorageError { error, .. } => error.kind(),
             Self::EncodeError { .. } | Self::DecodeError { .. } | Self::WrongStep { .. } => {
                 ErrorKind::Other
             }
         }
     }
-}
-
-fn serialize_io_error<S>(
-    path: &PathBuf,
-    io_error: &IoError,
-    backtrace: &Backtrace,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let mut ser = serializer.serialize_struct("IoError", 4)?;
-    ser.serialize_field("path", path)?;
-    ser.serialize_field("kind", &io_error.kind().to_string())?;
-    ser.serialize_field("os_error", &io_error.raw_os_error())?;
-    ser.serialize_field("backtrace", &backtrace.to_string())?;
-    ser.end()
 }
 
 fn serialize_as_string<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
@@ -85,9 +68,7 @@ impl Display for StepError {
             StepError::DecodeError { path, error } => {
                 write!(f, "{}: error parsing step ({error})", path.display())
             }
-            StepError::IoError { path, io_error, .. } => {
-                write!(f, "I/O error on {}: {io_error}", path.display())
-            }
+            StepError::StorageError { path, error, .. } => write!(f, "{}: {error}", path.display()),
             StepError::WrongStep {
                 path,
                 expected,
@@ -102,10 +83,10 @@ impl Display for StepError {
 }
 
 impl StepError {
-    pub fn io_error(path: &Path, io_error: IoError) -> StepError {
-        StepError::IoError {
+    pub fn storage_error(path: &Path, error: StorageError) -> StepError {
+        StepError::StorageError {
             path: path.to_path_buf(),
-            io_error,
+            error,
             backtrace: Backtrace::capture(),
         }
     }
