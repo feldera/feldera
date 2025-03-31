@@ -7,9 +7,19 @@ use utoipa::ToSchema;
 pub enum AvroUpdateFormat {
     /// Raw encoding.
     ///
-    /// Every event in the stream represents a single record to be stored
-    /// in the table that the stream is connected to.  This format can represent
-    /// inserts and upsert, but not detetes.
+    /// Each message in the stream represents a single-record update: an insert, upsert, or delete.
+    ///
+    /// ### Input Connectors
+    /// Raw Avro encoding can be used for insert and upsert operations, but not deletes.
+    /// - The message value contains the record to be inserted or updated.
+    /// - The message key and headers are ignored.
+    ///
+    /// ### Output Connectors
+    /// The raw format supports inserts, upserts, and deletes.
+    /// - The message value contains the record to be inserted or deleted.
+    /// - The operation type is specified in the `op` message header field, which can be
+    ///   `insert`, `update`, or `delete`.
+    /// - The message key can optionally store the primary key (see the `key_mode` property).
     #[serde(rename = "raw")]
     Raw,
 
@@ -34,27 +44,6 @@ impl Display for AvroUpdateFormat {
             Self::Raw => f.write_str("raw"),
             Self::Debezium => f.write_str("debezium"),
             Self::ConfluentJdbc => f.write_str("confluent_jdbc"),
-        }
-    }
-}
-
-impl AvroUpdateFormat {
-    /// `true` - this format has both key and value components.
-    /// `false` - format includes value only.
-    pub fn has_key(&self) -> bool {
-        match self {
-            Self::Raw => false,
-            Self::Debezium => true,
-            Self::ConfluentJdbc => true,
-        }
-    }
-
-    /// Does the format support deletions?
-    pub fn supports_deletes(&self) -> bool {
-        match self {
-            Self::Raw => false,
-            Self::Debezium => true,
-            Self::ConfluentJdbc => true,
         }
     }
 }
@@ -154,9 +143,13 @@ pub enum SubjectNameStrategy {
     /// Only applicable when using Kafka as a transport.
     #[serde(rename = "topic_name")]
     TopicName,
-    /// The subject name is derived from the fully qualified name of the record.
+
+    /// The name of the SQL relation that the schema is derived from is used as the subject name:
+    /// * the SQL view name for the message value schema.
+    /// * the SQL index name for the message key schema.
     #[serde(rename = "record_name")]
     RecordName,
+
     /// Combines both the topic name and the record name to form the subject.
     ///
     /// For update formats with both key and value components, use subject names
@@ -165,7 +158,7 @@ pub enum SubjectNameStrategy {
     /// For update formats without a key (e.g., `raw`), publish value schema
     /// under the subject name `{topic_name}-{record_name}`.
     ///
-    /// Here, `{record_name}` is the name of the SQL view tha this connector
+    /// `{record_name}` is the name of the SQL view or index that this connector
     /// is attached to.
     ///
     /// Only applicable when using Kafka as a transport.
@@ -173,15 +166,41 @@ pub enum SubjectNameStrategy {
     TopicRecordName,
 }
 
+/// Determines how the message key is generated when the Avro encoder is configured
+/// in the `raw` mode.
+#[derive(Clone, Serialize, Deserialize, Debug, ToSchema, PartialEq, Eq)]
+pub enum AvroEncoderKeyMode {
+    /// Produce messages without a key.
+    #[serde(rename = "none")]
+    None,
+
+    /// Uses the unique key columns of the view as the message key.
+    ///
+    /// This setting is supported when the output connector is configured with the `index` property.
+    /// It utilizes the values of the index columns specified in the associated `CREATE INDEX` statement
+    /// as the Avro message key.
+    ///
+    /// A separate Avro schema will be created and registered in the schema registry
+    /// for the key component of the message.
+    #[serde(rename = "key_fields")]
+    KeyFields,
+}
+
 /// Avro output format configuration.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AvroEncoderConfig {
     /// Format used to encode data change events in this stream.
     ///
-    /// The default value is 'raw'.
+    /// The default value is `raw`.
     #[serde(default)]
     pub update_format: AvroUpdateFormat,
+
+    /// Determines how the message key is generated when the Avro encoder is configured
+    /// in the `raw` mode.
+    ///
+    /// The default is `key_fields` when the `index` property of the connector is configured and `none` otherwise.
+    pub key_mode: Option<AvroEncoderKeyMode>,
 
     /// Avro schema used to encode output records.
     ///
