@@ -47,6 +47,9 @@ Usage: sql-to-dbsp [options] Input file to compile
       Default: false
     --dataflow
       Emit the Dataflow graph of the program in the specified JSON file
+    --enterprise
+      Generate code supporting enterprise features
+      Default: false
     --crates
       Followed by a program name. Generates code using multiple crates;
       `outputFile` is interpreted as a directory.
