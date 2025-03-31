@@ -16,7 +16,7 @@
         <maven.compiler.source>19</maven.compiler.source>
         <maven.compiler.target>19</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <calcite.version>1.39.0</calcite.version>
+        <calcite.version>1.40.0</calcite.version>
         <jackson.version>2.17.1</jackson.version>
         <janino.version>3.1.12</janino.version>
     </properties>

@@ -41,6 +41,11 @@ single quotes, not double quotes, after UESCAPE.
 To include the escape character in the identifier literally, write it
 twice.
 
+Currently table, view, and column names are looked-up in a
+case-insensitive manner even if they are quoted, so a program cannot
+contain simultaneously two such objects whose names only differ in
+case-sensitivity.  Function names however can be case-sensitive.
+
 ## Comments
 
 A comment is a sequence of characters beginning with double dashes and

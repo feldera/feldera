@@ -129,6 +129,16 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2595() {
+        var ccs = this.getCCS("""
+                CREATE VIEW V AS SELECT CAST(PARSE_JSON('[1, null]') AS INT ARRAY)""");
+        ccs.step("", """
+                  array | weight
+                 ----------------
+                  {1, NULL} | 1""");
+    }
+
+    @Test
     public void issue3259() {
         this.statementsFailingInCompilation("create table t0(c0 decimal(0, 0));",
                 "DECIMAL precision 0 must be between 1 and 28");
@@ -2090,7 +2100,7 @@ public class RegressionTests extends SqlIoTest {
                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^""");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6910")
+    @Test
     public void issue3770() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE row_of_map_tbl(
@@ -2098,7 +2108,7 @@ public class RegressionTests extends SqlIoTest {
                 
                 CREATE MATERIALIZED VIEW row_of_map_idx_outbound AS SELECT
                 c1[3] AS c13_val
-                FROM row_of_map_tbl;""", "TBD");
+                FROM row_of_map_tbl;""", "ROW type does not have a field with index 3; legal range is 1 to 2");
     }
 
     @Test
