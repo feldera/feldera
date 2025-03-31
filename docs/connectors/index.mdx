@@ -65,7 +65,7 @@ A connector specification consists of three parts:
   [URL](/connectors/sources/http-get), [Delta Lake](/connectors/sources/delta), etc.
 * [Data format specification](/formats) (`format`), which defines the data format for the connector.
   Example data formats include [CSV](/formats/csv), [JSON](/formats/json), [Parquet](/formats/parquet), or
-  Avro).
+  Avro.
 
 :::note
 
@@ -117,6 +117,11 @@ The following attributes are common to all connectors:
 * `max_batch_size` - For an input connector, the approximate maximum
   number of records that the pipeline will process in a single
   pipeline step.  By default, this is 10,000.
+
+* `index` – *(Output connectors only)* The name of an index that defines
+  the unique key for the view. This allows the connector to combine related
+  insert and delete events into a single atomic update.
+  See [Uniqueness Constraints](/connectors/unique_keys).
 
 ### Configuring the output buffer
 
@@ -180,8 +185,9 @@ for an example of configuring the output buffer.
 For more information, see:
 
 * [Tutorial on using input and output connectors](/tutorials/basics/part3)
-* [Tutorial on using HTTP-based Input and Output](/tutorials/basics/part2)
+* [Tutorial on using HTTP-based input and output](/tutorials/basics/part2)
+* [Tables and views with uniqueness constraints](/connectors/unique_keys)
 * [Input connector orchestration](/connectors/orchestration)
 * [Supported source transports](/connectors/sources)
 * [Supported sinks transports](/connectors/sinks)
-* [End to End Example with Kafka using Feldera Python SDK](pathname:///python/examples.html#end-to-end-example-with-kafka-sink)
+* [End to end example with Kafka using Feldera Python SDK](pathname:///python/examples.html#end-to-end-example-with-kafka-sink)

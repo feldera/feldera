@@ -217,6 +217,7 @@ const connectors = {
         id: 'connectors/index'
     },
     items: [
+        'connectors/unique_keys',
         'connectors/orchestration',
         {
             type: 'category',
