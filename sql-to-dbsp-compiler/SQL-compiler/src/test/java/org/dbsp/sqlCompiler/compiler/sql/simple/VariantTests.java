@@ -283,15 +283,14 @@ public class VariantTests extends BaseSQLTests {
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('["a", 1]') AS STRING ARRAY)""",
                 new DBSPArrayExpression(
-                        new DBSPTypeArray(DBSPTypeString.varchar(false), true),
+                        new DBSPTypeArray(DBSPTypeString.varchar(true), true),
                         true));
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('["a", 1]') AS VARIANT ARRAY)""",
                 new DBSPArrayExpression(true,
-                        new DBSPVariantExpression(new DBSPStringLiteral("a", true)),
+                        new DBSPVariantExpression(new DBSPStringLiteral("a", true), true),
                         new DBSPVariantExpression(new DBSPDecimalLiteral(CalciteObject.EMPTY,
-                                DBSPTypeDecimal.getDefault(), new BigDecimal(1)))));
-
+                                DBSPTypeDecimal.getDefault(), new BigDecimal(1)), true)));
         this.testQuery("""
                 SELECT CAST(ARRAY[NULL, 1] AS VARIANT)""",
                 new DBSPVariantExpression(
@@ -307,32 +306,32 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPMapExpression(
                         new DBSPTypeMap(
                                 DBSPTypeVariant.INSTANCE,
-                                DBSPTypeVariant.INSTANCE,
+                                DBSPTypeVariant.INSTANCE_NULLABLE,
                                 true),
                                 Linq.list(
                                         new DBSPVariantExpression(new DBSPStringLiteral("a")),
-                                        new DBSPVariantExpression(new DBSPDecimalLiteral(1)))));
+                                        new DBSPVariantExpression(new DBSPDecimalLiteral(1), true))));
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<STRING, VARIANT>)""",
                 new DBSPMapExpression(
                         new DBSPTypeMap(
                                 DBSPTypeString.varchar(false),
-                                DBSPTypeVariant.INSTANCE,
+                                DBSPTypeVariant.INSTANCE_NULLABLE,
                                 true),
                         Linq.list(
                                 new DBSPStringLiteral("a"),
-                                new DBSPVariantExpression(new DBSPDecimalLiteral(1))
+                                new DBSPVariantExpression(new DBSPDecimalLiteral(1), true)
                         )));
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<STRING, INT>)""",
                 new DBSPMapExpression(
                         new DBSPTypeMap(
                                 DBSPTypeString.varchar(false),
-                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
+                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
                                 true),
                         Linq.list(
                                 new DBSPStringLiteral("a"),
-                                new DBSPI32Literal(1)
+                                new DBSPI32Literal(1, true)
                         )));
         // Wrong type, result is NULL
         this.testQuery("""
@@ -340,7 +339,7 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPMapExpression(
                         new DBSPTypeMap(
                                 DBSPTypeString.varchar(false),
-                                DBSPTypeTimestamp.INSTANCE,
+                                DBSPTypeTimestamp.NULLABLE_INSTANCE,
                                 true), null, null));
 
         this.testQuery("""

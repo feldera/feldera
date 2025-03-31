@@ -13,7 +13,7 @@ if true; then
     # This is the standard behavior
     CALCITE_REPO="https://github.com/apache/calcite.git"
     CALCITE_BRANCH="main"
-    CALCITE_NEXT_COMMIT="c456f7888b6aff3c3de6eda4fc16405b0b98be30"
+    CALCITE_NEXT_COMMIT="e617e85b9b8237378ef788eab02d6f851904f046"
 else
     # Switch to this script when testing a branch in mihaibudiu's fork that
     # hasn't been merged yet
@@ -21,8 +21,8 @@ else
     CALCITE_BRANCH="stable-variant"
     CALCITE_NEXT_COMMIT="6317e1cbf1914390a6c1062c8563187b65468729"
 fi
-CALCITE_NEXT="1.39.0"
-CALCITE_CURRENT="1.38.0"
+CALCITE_NEXT="1.40.0"
+CALCITE_CURRENT="1.39.0"
 
 usage() {
     echo "This script builds the sql-to-dbsp compiler"

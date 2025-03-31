@@ -60,6 +60,9 @@ import org.apache.calcite.runtime.MapEntry;
 import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
+import org.apache.calcite.schema.Table;
+import org.apache.calcite.schema.lookup.LikePattern;
+import org.apache.calcite.schema.lookup.Lookup;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlBasicTypeNameSpec;
@@ -317,15 +320,17 @@ public class SqlToRelCompiler implements IWritesLogs {
     }
 
     void copySchema(SchemaPlus source) {
-        for (String name: source.getTableNames())
-            this.rootSchema.add(name, Objects.requireNonNull(source.getTable(name)));
+        Lookup<Table> tables = source.tables();
+        for (String name: tables.getNames(LikePattern.any()))
+            this.rootSchema.add(name, Objects.requireNonNull(tables.get(name)));
         for (String name: source.getTypeNames())
             this.rootSchema.add(name, Objects.requireNonNull(source.getType(name)));
         for (String name: source.getFunctionNames())
             for (Function function: source.getFunctions(name))
                 this.rootSchema.add(name, function);
-        for (String name: source.getSubSchemaNames())
-            this.rootSchema.add(name, Objects.requireNonNull(source.getSubSchema(name)));
+        Lookup<? extends SchemaPlus> subSchemas = source.subSchemas();
+        for (String name: source.subSchemas().getNames(LikePattern.any()))
+            this.rootSchema.add(name, Objects.requireNonNull(subSchemas.get(name)));
     }
 
     public CustomFunctions getCustomFunctions() {
@@ -554,7 +559,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         validatorConfig = validatorConfig.withConformance(new Conformance(validatorConfig.conformance()));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
                 CalciteSchema.from(this.rootSchema), Collections.singletonList(calciteCatalog.schemaName),
-                this.typeFactory, connectionConfig);
+                this.typeFactory, this.connectionConfig);
         this.validator = SqlValidatorUtil.newValidator(
                 newOperatorTable,
                 catalogReader,
@@ -969,7 +974,8 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
         } catch (CalciteContextException e) {
             SqlParserPos pos = value.getParserPosition();
-            CalciteContextException ex = new CalciteContextException(e.getMessage(), e.getCause());
+            String message = e.getMessage();
+            CalciteContextException ex = new CalciteContextException(message != null ? message : "", e.getCause());
             ex.setPosition(pos.getLineNum(), pos.getColumnNum(), pos.getEndLineNum(), pos.getEndColumnNum());
             throw ex;
         } catch (SqlParseException e) {
@@ -1014,7 +1020,8 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
         } catch (CalciteContextException e) {
             SqlParserPos pos = value.getParserPosition();
-            CalciteContextException ex = new CalciteContextException(e.getMessage(), e.getCause());
+            String message = e.getMessage();
+            CalciteContextException ex = new CalciteContextException(message != null ? message : "", e.getCause());
             ex.setPosition(pos.getLineNum(), pos.getColumnNum(), pos.getEndLineNum(), pos.getEndColumnNum());
             throw ex;
         } catch (SqlParseException e) {
