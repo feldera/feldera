@@ -1439,7 +1439,7 @@ impl ControllerInit {
         let Checkpoint {
             circuit,
             step,
-            config,
+            config: checkpoint_config,
             processed_records,
             input_metadata,
         } = checkpoint;
@@ -1447,9 +1447,57 @@ impl ControllerInit {
 
         let storage = storage.with_init_checkpoint(circuit.map(|circuit| circuit.uuid));
 
-        // Override saved storage configuration with the one that we've already
-        // initialized.
-        let config = config.with_storage(Some((storage_config.clone(), storage_options.clone())));
+        // Merge `config` (the configuration provided by the pipeline manager)
+        // with `checkpoint_config` (the configuration read from the
+        // checkpoint).
+        //
+        // We want to take each setting from `config` if we can, or from
+        // `checkpoint_config` if we're not prepared to handle changes.
+        //
+        // This is intentionally written without using `..default` syntax, so
+        // that we get a compiler error for new fields.  That's because it's
+        // hard to guess whether any new settings are ones that we can adopt
+        // without change elsewhere.
+        let config = PipelineConfig {
+            global: RuntimeConfig {
+                // Can't change number of workers yet.
+                workers: checkpoint_config.global.workers,
+
+                // Whether fault tolerance is enabled is determined by the
+                // checkpoint we read, but the pipeline manager can override the
+                // details of the configuration.
+                fault_tolerance: {
+                    match (
+                        config.global.fault_tolerance,
+                        checkpoint_config.global.fault_tolerance,
+                    ) {
+                        (Some(provided), Some(_read)) => Some(provided),
+                        (_, read) => read,
+                    }
+                },
+
+                // Take all the other settings from the pipeline manager.
+                storage: config.global.storage,
+                cpu_profiler: config.global.cpu_profiler,
+                tracing: config.global.tracing,
+                tracing_endpoint_jaeger: config.global.tracing_endpoint_jaeger,
+                min_batch_size_records: config.global.min_batch_size_records,
+                max_buffering_delay_usecs: config.global.max_buffering_delay_usecs,
+                resources: config.global.resources,
+                clock_resolution_usecs: config.global.clock_resolution_usecs,
+                pin_cpus: config.global.pin_cpus,
+                provisioning_timeout_secs: config.global.provisioning_timeout_secs,
+                max_parallel_connector_init: config.global.max_parallel_connector_init,
+            },
+
+            // Adapter configuration has to come from the checkpoint.
+            inputs: checkpoint_config.inputs,
+            outputs: checkpoint_config.outputs,
+
+            // Other settings from the pipeline manager.
+            name: config.name,
+            storage_config: config.storage_config,
+        };
 
         Ok(Self {
             circuit_config: Self::circuit_config(&config, Some(storage))?,
