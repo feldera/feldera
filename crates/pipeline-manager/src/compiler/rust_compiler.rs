@@ -864,30 +864,32 @@ async fn call_compiler(
     let stderr_file_path = pipeline_main_crate_dir.join("stderr.log");
     let stderr_file = create_new_file(&stderr_file_path).await?;
 
+    // By default, the command inherits all environment variables
+    // from the originating process. This is fine when the compiler
+    // server is run directly using its executable, but in the case
+    // of being run from source using `cargo run`, this will result
+    // in all kinds of cargo-related environment variables being set
+    // such as `CARGO_PKG_VERSION`. This can cause unnecessary
+    // recompilation for some dependency crates if they use
+    // for example `cargo::rerun-if-env-changed=CARGO_PKG_VERSION`
+    // in their build.rs, even if the actual `CARGO_PKG_VERSION`
+    // they read does not change (as it is overwritten by cargo).
+    //
+    // Only a select number of environment variables are inherited
+    // explicitly. All other inherited environment variables are cleared.
+    let env_path = std::env::var_os("PATH").ok_or(RustCompilationError::SystemError(
+        "The PATH environment variable is not set, which is needed to locate `cargo`".to_string(),
+    ))?;
+    let optional_env_rustflags = std::env::var_os("RUSTFLAGS");
+
     // Formulate command
-    let path_environment_variable = std::env::var("PATH").map_err(|e| {
-        RustCompilationError::SystemError(format!(
-            "The PATH environment variable is not set, which is needed to locate `cargo`: {e}"
-        ))
-    })?;
     let mut command = Command::new("cargo");
+    command.env_clear();
+    command.env("PATH", env_path);
+    if let Some(env_rustflags) = optional_env_rustflags {
+        command.env("RUSTFLAGS", env_rustflags);
+    }
     command
-        // By default, the command inherits all environment variables
-        // from the originating process. This is fine when the compiler
-        // server is run directly using its executable, but in the case
-        // of being run from source using `cargo run`, this will result
-        // in all kinds of cargo-related environment variables being set
-        // such as `CARGO_PKG_VERSION`. This can cause unnecessary
-        // recompilation for some dependency crates if they use
-        // for example `cargo::rerun-if-env-changed=CARGO_PKG_VERSION`
-        // in their build.rs, even if the actual `CARGO_PKG_VERSION`
-        // they read does not change (as it is overwritten by cargo).
-        //
-        // The only inherited environment variable that is needed is `PATH`,
-        // which is set below. All other inherited environment variables
-        // are cleared.
-        .env_clear()
-        .env("PATH", path_environment_variable)
         // Set compiler stack size to 20MB (10x the default) to prevent
         // SIGSEGV when the compiler runs out of stack on large programs.
         .env("RUST_MIN_STACK", "20971520")
@@ -1227,7 +1229,7 @@ async fn cleanup_rust_compilation(
     // Remove any artifact which is in use again
     for artifact_name in &artifacts_in_use {
         if cleanup_state.remove(artifact_name).is_some() {
-            debug!("Rust compilation cleanup: artifact '{artifact_name}' is in use again")
+            trace!("Rust compilation cleanup: artifact '{artifact_name}' is in use again")
         }
     }
 
@@ -1239,7 +1241,7 @@ async fn cleanup_rust_compilation(
             .is_ok_and(|duration| duration >= CLEANUP_RETENTION)
         {
             deletion.insert(artifact_name.clone());
-            debug!("Rust compilation cleanup: retention for artifact '{}' has expired -- marked for deletion", artifact_name);
+            trace!("Rust compilation cleanup: retention for artifact '{}' has expired -- marked for deletion", artifact_name);
         }
     }
     let deletion: Vec<String> = deletion.into_iter().collect();
@@ -1348,7 +1350,7 @@ async fn cleanup_rust_compilation(
     for artifact_name in found.iter() {
         if !artifacts_in_use.contains(artifact_name) && !cleanup_state.contains_key(artifact_name) {
             let expiration_datetime: DateTime<Utc> = (current_timestamp + CLEANUP_RETENTION).into();
-            debug!(
+            trace!(
                 "Rust compilation cleanup: artifact '{}' will be deleted some time after retention expires (currently: {})",
                 artifact_name,
                 expiration_datetime.format("%Y-%m-%d %H:%M:%S")
