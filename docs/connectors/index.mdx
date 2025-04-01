@@ -118,7 +118,8 @@ The following attributes are common to all connectors:
   number of records that the pipeline will process in a single
   pipeline step.  By default, this is 10,000.
 
-* `index` – *(Output connectors only)* The name of an index that defines
+* `index` – *(Output connectors only)* The name of an index created by a SQL
+  CREATE INDEX statement that defines
   the unique key for the view. This allows the connector to combine related
   insert and delete events into a single atomic update.
   See [Uniqueness Constraints](/connectors/unique_keys).

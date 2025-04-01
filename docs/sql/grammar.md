@@ -25,6 +25,7 @@ statement
   |   createViewStatement
   |   createFunctionStatement
   |   createTypeStatement
+  |   createIndexStatement
   |   latenessStatement
 
 columnDecl
@@ -320,6 +321,38 @@ the column names are *not* used to reorder columns.
 
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.
+
+## Creating indexes
+
+Feldera supports the `CREATE INDEX` SQL statement with the following
+syntax:
+
+```
+createIndexStatement
+   : CREATE INDEX identifier ON identifier(columnOrList);
+```
+
+For the purpose of incremental view maintenance Feldera automatically
+creates all required indexes by analyzing the query defining the view.
+The SQL `CREATE INDEX` statement is used for a different purpose in
+Feldera than in standard databases; the statement is used to specify
+*unique keys* for output views.  Consider the following SQL program
+fragment:
+
+```sql
+CREATE VIEW V AS SELECT id, ... FROM ...;
+
+CREATE INDEX v_index ON V(id);
+```
+
+The `CREATE INDEX` statement creates an index named `v_index` over the
+view `V`, treating column `id` as a primary key.  The index does *not*
+enforce uniqueness of the unique columns at runtime.  This information
+can be used by some output connectors, which can refer to `v_index` to
+[provide more efficient updates](../connectors/unique_keys.md).
+Indexes only have effect for views that are not `LOCAL`.
+
+A view can have multiple indexes.
 
 ### Aggregate queries
 

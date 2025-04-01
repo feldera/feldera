@@ -40,8 +40,9 @@ The specific behavior of this transformation depends on the data format and tran
 
 :::info
 
-Need unique key support for other transports and data formats? Let us know by
-[filing an issue](https://github.com/feldera/feldera/issues) on GitHub.
+Do you need unique key support for other transports and data formats?
+Let us know by [filing an
+issue](https://github.com/feldera/feldera/issues) on GitHub.
 
 :::
 
