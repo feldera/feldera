@@ -3,6 +3,8 @@ use serde::de::{Error, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use std::fmt::Formatter;
+use std::num::NonZeroUsize;
+use std::thread::available_parallelism;
 use std::{collections::BTreeMap, env};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -57,6 +59,15 @@ pub struct KafkaInputConfig {
     /// - `offset`: The specific offset from which to start consuming messages.
     #[serde(default)]
     pub start_from: Vec<KafkaStartFromConfig>,
+}
+
+impl KafkaInputConfig {
+    // Returns the number of threads to use based on configuration, defaults,
+    // and system resources.
+    pub fn poller_threads(&self) -> usize {
+        let max_threads = available_parallelism().map_or(16, NonZeroUsize::get);
+        self.poller_threads.unwrap_or(3).clamp(1, max_threads)
+    }
 }
 
 /// Configuration for starting from a specific offset in a Kafka topic partition.

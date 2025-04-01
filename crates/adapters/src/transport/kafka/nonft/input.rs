@@ -22,9 +22,8 @@ use rdkafka::{
     error::{KafkaError, KafkaResult},
     ClientConfig, ClientContext, Message,
 };
-use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicBool;
-use std::thread::{self, available_parallelism, JoinHandle, Thread};
+use std::thread::{self, JoinHandle, Thread};
 use std::{
     collections::HashSet,
     sync::{atomic::Ordering, Arc, Mutex, Weak},
@@ -134,14 +133,7 @@ impl KafkaInputReaderInner {
         mut command_receiver: UnboundedReceiver<NonFtInputReaderCommand>,
         queue: InputQueue,
     ) -> AnyResult<()> {
-        // Figure out the number of threads based on configuration, defaults,
-        // and system resources.
-        let max_threads = available_parallelism().map_or(16, NonZeroUsize::get);
-        let n_threads = self
-            .config
-            .poller_threads
-            .unwrap_or(3)
-            .clamp(1, max_threads);
+        let n_threads = self.config.poller_threads();
 
         let mut partition_eofs = HashSet::new();
         let (feedback_sender, mut feedback_receiver) = unbounded_channel();
