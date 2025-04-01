@@ -16,9 +16,7 @@ def _validate_no_none_keys_in_map(data):
     def validate_no_none_keys(d: Dict[Any, Any]) -> None:
         for k, v in d.items():
             if isinstance(v, dict) and any(k is None for k in v.keys()):
-                raise ValueError(
-                    "Data of type MAP contains None keys, which is not allowed."
-                )
+                raise ValueError("keys of SQL MAP objects cannot be NULL")
 
     if isinstance(data, list):
         for datum in data:
