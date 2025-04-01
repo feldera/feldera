@@ -919,7 +919,7 @@ outputs:
                     .unwrap()
                     .transmitted_records() as usize;
                 if n > last_n {
-                    println!("received {n} records");
+                    println!("received {n} records of {expect_n}");
                     last_n = n;
                 }
                 n >= expect_n
