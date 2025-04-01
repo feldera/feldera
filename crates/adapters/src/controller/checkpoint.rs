@@ -1,11 +1,14 @@
 use dbsp::{
     circuit::checkpointer::CheckpointMetadata,
-    storage::{backend::StorageBackend, buffer_cache::FBuf},
+    storage::{
+        backend::{StorageBackend, StoragePath},
+        buffer_cache::FBuf,
+    },
 };
 use feldera_types::config::PipelineConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 
 use crate::{controller::journal::StepMetadata, transport::Step, ControllerError};
 
@@ -64,16 +67,12 @@ pub struct Checkpoint {
 
 impl Checkpoint {
     /// Reads a checkpoint in JSON format from `path`.
-    pub(super) fn read<P>(storage: &dyn StorageBackend, path: P) -> Result<Self, ControllerError>
-    where
-        P: AsRef<Path>,
-    {
-        let path = path.as_ref();
+    pub(super) fn read(
+        storage: &dyn StorageBackend,
+        path: &StoragePath,
+    ) -> Result<Self, ControllerError> {
         let data = storage.read(path).map_err(|error| {
-            ControllerError::storage_error(
-                format!("{}: failed to read checkpoint", path.display()),
-                error,
-            )
+            ControllerError::storage_error(format!("{path}: failed to read checkpoint"), error)
         })?;
         serde_json::from_slice::<Checkpoint>(&data).map_err(|e| {
             ControllerError::CheckpointParseError {
@@ -84,22 +83,15 @@ impl Checkpoint {
 
     /// Writes this checkpoint in JSON format to `path`, atomically replacing
     /// any file that was previously at `path`.
-    pub(super) fn write<P>(
+    pub(super) fn write(
         &self,
         storage: &dyn StorageBackend,
-        path: P,
-    ) -> Result<(), ControllerError>
-    where
-        P: AsRef<Path>,
-    {
-        let path = path.as_ref();
+        path: &StoragePath,
+    ) -> Result<(), ControllerError> {
         let mut content = FBuf::with_capacity(4096);
         serde_json::to_writer(&mut content, self).unwrap();
         storage.write(path, content).map_err(|error| {
-            ControllerError::storage_error(
-                format!("{}: failed to write pipeline state", path.display()),
-                error,
-            )
+            ControllerError::storage_error(format!("{path}: failed to write pipeline state"), error)
         })
     }
 }

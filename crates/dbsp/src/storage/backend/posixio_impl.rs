@@ -8,12 +8,14 @@ use crate::circuit::metrics::{
     FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
 };
 use crate::storage::{buffer_cache::FBuf, init};
-use feldera_storage::{append_to_path, StorageBackend, StorageBackendFactory, StorageFileType};
+use feldera_storage::{
+    append_to_path, StorageBackend, StorageBackendFactory, StorageFileType, StoragePath,
+    StoragePathPart,
+};
 use feldera_types::config::{StorageBackendConfig, StorageCacheConfig, StorageConfig};
 use metrics::{counter, histogram};
 use std::fs::create_dir_all;
 use std::io::ErrorKind;
-use std::path::Component;
 use std::{
     fs::{self, File, OpenOptions},
     io::Error as IoError,
@@ -27,22 +29,6 @@ use std::{
     time::Instant,
 };
 use tracing::warn;
-
-// Removes all of the empty directories above `path` (if any).
-fn remove_ancestors(base: &Path, path: &Path) {
-    for ancestor in path.ancestors() {
-        if path.as_os_str().len() <= base.as_os_str().len() || fs::remove_dir(ancestor).is_err() {
-            break;
-        }
-    }
-}
-
-// Removes `path` and all of the empty directories above it (if any).
-fn remove_file_and_ancestors(base: &Path, path: &Path) -> Result<(), IoError> {
-    fs::remove_file(path)?;
-    remove_ancestors(base, path);
-    Ok(())
-}
 
 pub(super) struct PosixReader {
     file: Arc<File>,
@@ -63,11 +49,7 @@ impl PosixReader {
             size: AtomicI64::new(-1),
         }
     }
-    fn open(
-        base: Arc<PathBuf>,
-        path: PathBuf,
-        cache: StorageCacheConfig,
-    ) -> Result<Arc<dyn FileReader>, StorageError> {
+    fn open(path: PathBuf, cache: StorageCacheConfig) -> Result<Arc<dyn FileReader>, StorageError> {
         let file = OpenOptions::new()
             .read(true)
             .cache_flags(&cache)
@@ -76,7 +58,7 @@ impl PosixReader {
         Ok(Arc::new(Self::new(
             Arc::new(file),
             FileId::new(),
-            DeleteOnDrop::new(base, path, true),
+            DeleteOnDrop::new(path, true),
         )))
     }
 }
@@ -114,7 +96,6 @@ impl FileReader for PosixReader {
 }
 
 struct DeleteOnDrop {
-    base: Arc<PathBuf>,
     path: PathBuf,
     keep: AtomicBool,
 }
@@ -122,7 +103,7 @@ struct DeleteOnDrop {
 impl Drop for DeleteOnDrop {
     fn drop(&mut self) {
         if !self.keep.load(Ordering::Relaxed) {
-            if let Err(e) = remove_file_and_ancestors(&*self.base, &self.path) {
+            if let Err(e) = fs::remove_file(&self.path) {
                 warn!("Unable to delete file {:?}: {:?}", self.path, e);
             } else {
                 counter!(FILES_DELETED).increment(1);
@@ -132,9 +113,8 @@ impl Drop for DeleteOnDrop {
 }
 
 impl DeleteOnDrop {
-    fn new(base: Arc<PathBuf>, path: PathBuf, keep: bool) -> Self {
+    fn new(path: PathBuf, keep: bool) -> Self {
         Self {
-            base,
             path,
             keep: AtomicBool::new(keep),
         }
@@ -153,6 +133,7 @@ struct PosixWriter {
     file_id: FileId,
     file: File,
     drop: DeleteOnDrop,
+    name: StoragePath,
 
     buffers: Vec<Arc<FBuf>>,
     offset: u64,
@@ -178,43 +159,36 @@ impl FileWriter for PosixWriter {
         Ok(block)
     }
 
-    fn complete(mut self: Box<Self>) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
+    fn complete(mut self: Box<Self>) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError> {
         self.flush()?;
         self.file.sync_all()?;
 
         // Remove the .mut extension from the file.
-        let finalized_path = self.path().with_extension("");
-        fs::rename(self.path(), &finalized_path)?;
+        let finalized_path = self.drop.path.with_extension("");
+        fs::rename(&self.drop.path, &finalized_path)?;
 
-        let return_path = finalized_path
-            .strip_prefix(&*self.drop.base)
-            .unwrap()
-            .to_path_buf();
         Ok((
             Arc::new(PosixReader::new(
                 Arc::new(self.file),
                 self.file_id,
                 self.drop.with_path(finalized_path),
             )),
-            return_path,
+            self.name,
         ))
     }
 }
 
 impl PosixWriter {
-    fn new(file: File, path: PathBuf, base: Arc<PathBuf>) -> Self {
+    fn new(file: File, name: StoragePath, path: PathBuf) -> Self {
         Self {
             file_id: FileId::new(),
             file,
-            drop: DeleteOnDrop::new(base, path, false),
+            name,
+            drop: DeleteOnDrop::new(path, false),
             buffers: Vec::new(),
             offset: 0,
             len: 0,
         }
-    }
-
-    fn path(&self) -> &PathBuf {
-        &self.drop.path
     }
 
     #[cfg(target_family = "unix")]
@@ -307,34 +281,20 @@ impl PosixBackend {
     }
 
     /// Returns the filesystem path to `name` in this storage.
-    ///
-    /// We reject any `name` that is absolute, starts with a drive letter (on
-    /// Windows), and or contains `.` or `..` components. Any such name is a
-    /// risk to the file system because joining it with our base could end up
-    /// above the storage directory (if `name` is "/", for example, it would end
-    /// up as the root directory) and because we have a `delete_recursive`
-    /// method. Plus, other kinds of storage just treat names as strings, so
-    /// `foo/../bar` isn't going to work reasonably on those.
-    fn fs_path(&self, name: &Path) -> Result<PathBuf, StorageError> {
-        for component in name.components() {
-            match component {
-                Component::Normal(_) => (),
-                _ => return Err(StorageError::InvalidPath(name.to_path_buf())),
-            }
-        }
-        Ok(self.base.join(name))
+    fn fs_path(&self, name: &StoragePath) -> Result<PathBuf, StorageError> {
+        Ok(self.base.join(name.as_ref()))
     }
 }
 
 impl StorageBackend for PosixBackend {
-    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
-        fn try_create_named(this: &PosixBackend, path: &PathBuf) -> Result<File, IoError> {
+    fn create_named(&self, name: &StoragePath) -> Result<Box<dyn FileWriter>, StorageError> {
+        fn try_create_named(this: &PosixBackend, path: &Path) -> Result<File, IoError> {
             OpenOptions::new()
                 .create_new(true)
                 .write(true)
                 .read(true)
                 .cache_flags(&this.cache)
-                .open(&path)
+                .open(path)
         }
 
         let path = append_to_path(self.fs_path(name)?, MUTABLE_EXTENSION);
@@ -348,17 +308,17 @@ impl StorageBackend for PosixBackend {
             other => other,
         }?;
         counter!(FILES_CREATED).increment(1);
-        Ok(Box::new(PosixWriter::new(file, path, self.base.clone())))
+        Ok(Box::new(PosixWriter::new(file, name.clone(), path)))
     }
 
-    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
-        PosixReader::open(self.base.clone(), self.fs_path(name)?, self.cache)
+    fn open(&self, name: &StoragePath) -> Result<Arc<dyn FileReader>, StorageError> {
+        PosixReader::open(self.fs_path(name)?, self.cache)
     }
 
     fn list(
         &self,
-        parent: &Path,
-        cb: &mut dyn FnMut(&Path, StorageFileType),
+        parent: &StoragePath,
+        cb: &mut dyn FnMut(&StoragePath, StorageFileType),
     ) -> Result<(), StorageError> {
         let mut result = Ok(());
         for entry in self.fs_path(parent)?.read_dir()? {
@@ -378,19 +338,22 @@ impl StorageBackend for PosixBackend {
                     } else {
                         StorageFileType::Other
                     };
-                    cb(&parent.join(name), file_type)
+                    cb(
+                        &parent.child(StoragePathPart::from(name.as_encoded_bytes())),
+                        file_type,
+                    )
                 }
             }
         }
         result
     }
 
-    fn delete(&self, name: &Path) -> Result<(), StorageError> {
-        remove_file_and_ancestors(&*self.base, &self.fs_path(name)?)?;
+    fn delete(&self, name: &StoragePath) -> Result<(), StorageError> {
+        fs::remove_file(self.fs_path(name)?)?;
         Ok(())
     }
 
-    fn delete_recursive(&self, name: &Path) -> Result<(), StorageError> {
+    fn delete_recursive(&self, name: &StoragePath) -> Result<(), StorageError> {
         let path = self.fs_path(name)?;
         match fs::remove_dir_all(&path) {
             Err(error) if error.kind() == ErrorKind::NotFound => (),
@@ -398,7 +361,6 @@ impl StorageBackend for PosixBackend {
             Err(error) => return Err(error)?,
             Ok(()) => (),
         }
-        remove_ancestors(&*self.base, &path);
         Ok(())
     }
 }

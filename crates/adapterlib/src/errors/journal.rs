@@ -1,12 +1,9 @@
 use crate::transport::Step;
-use dbsp::storage::backend::StorageError;
+use dbsp::storage::backend::{StorageError, StoragePath};
 use serde::{Serialize, Serializer};
 use std::backtrace::Backtrace;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::io::ErrorKind;
-use std::{
-    fmt::{Display, Formatter, Result as FmtResult},
-    path::{Path, PathBuf},
-};
 
 pub use crate::errors::controller::ControllerError;
 
@@ -15,26 +12,26 @@ pub use crate::errors::controller::ControllerError;
 pub enum StepError {
     /// Storage error.
     StorageError {
-        path: PathBuf,
+        path: String,
         error: StorageError,
         #[serde(serialize_with = "serialize_as_string")]
         backtrace: Backtrace,
     },
 
     EncodeError {
-        path: PathBuf,
+        path: String,
         #[serde(serialize_with = "serialize_as_string")]
         error: rmp_serde::encode::Error,
     },
 
     DecodeError {
-        path: PathBuf,
+        path: String,
         #[serde(serialize_with = "serialize_as_string")]
         error: rmp_serde::decode::Error,
     },
 
     WrongStep {
-        path: PathBuf,
+        path: String,
         expected: Step,
         found: Step,
     },
@@ -63,29 +60,28 @@ impl Display for StepError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             StepError::EncodeError { path, error } => {
-                write!(f, "{}: error writing step ({error})", path.display())
+                write!(f, "{path}: error writing step ({error})")
             }
             StepError::DecodeError { path, error } => {
-                write!(f, "{}: error parsing step ({error})", path.display())
+                write!(f, "{path}: error parsing step ({error})")
             }
-            StepError::StorageError { path, error, .. } => write!(f, "{}: {error}", path.display()),
+            StepError::StorageError { path, error, .. } => write!(f, "{path}: {error}"),
             StepError::WrongStep {
                 path,
                 expected,
                 found,
             } => write!(
                 f,
-                "{}: file should contain  step {expected}, but read step {found}",
-                path.display()
+                "{path}: file should contain  step {expected}, but read step {found}"
             ),
         }
     }
 }
 
 impl StepError {
-    pub fn storage_error(path: &Path, error: StorageError) -> StepError {
+    pub fn storage_error(path: &StoragePath, error: StorageError) -> StepError {
         StepError::StorageError {
-            path: path.to_path_buf(),
+            path: path.as_ref().into(),
             error,
             backtrace: Backtrace::capture(),
         }

@@ -39,7 +39,7 @@ use crossbeam::{
 use datafusion::prelude::*;
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::CircuitStorageConfig;
-use dbsp::storage::backend::StorageBackend;
+use dbsp::storage::backend::{StorageBackend, StoragePath};
 use dbsp::{
     circuit::{CircuitConfig, Layout},
     profile::GraphProfile,
@@ -62,7 +62,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::Path;
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
 use std::sync::LazyLock;
 use std::{
@@ -606,7 +605,7 @@ impl CircuitThread {
                 // We're not fault-tolerant, so it's not a good idea to resume
                 // from the same checkpoint twice.  Delete it.
                 backend
-                    .delete_if_exists(Path::new(STATE_FILE))
+                    .delete_if_exists(&StoragePath::from(STATE_FILE))
                     .map_err(|error| {
                         ControllerError::storage_error(
                             "delete non-FT checkpoint following resume",
@@ -802,7 +801,10 @@ impl CircuitThread {
                         input_metadata: this.input_metadata.clone().unwrap_or_default(),
                     };
                     checkpoint
-                        .write(&**this.storage.as_ref().unwrap(), STATE_FILE)
+                        .write(
+                            &**this.storage.as_ref().unwrap(),
+                            &StoragePath::from(STATE_FILE),
+                        )
                         .map(|()| checkpoint)
                 })?;
             if let Some(ft) = &mut this.ft {
@@ -1055,7 +1057,7 @@ impl FtState {
         controller: Arc<ControllerInner>,
     ) -> Result<Self, ControllerError> {
         info!("{STEPS_FILE}: opening to start from step {step}");
-        let journal = Journal::open(backend, STEPS_FILE);
+        let journal = Journal::open(backend, &StoragePath::from(STEPS_FILE));
         let input_checksums = match journal.read(step)? {
             Some(record) => {
                 // Start replaying the step.
@@ -1087,13 +1089,15 @@ impl FtState {
     ) -> Result<Self, ControllerError> {
         let config = controller.status.pipeline_config.clone();
         for file in [STATE_FILE, STEPS_FILE] {
-            backend.delete_if_exists(Path::new(file)).map_err(|error| {
-                ControllerError::storage_error("initializing fault tolerant pipeline", error)
-            })?;
+            backend
+                .delete_if_exists(&StoragePath::from(file))
+                .map_err(|error| {
+                    ControllerError::storage_error("initializing fault tolerant pipeline", error)
+                })?;
         }
 
         info!("{STEPS_FILE}: creating");
-        let journal = Journal::create(backend.clone(), STEPS_FILE)?;
+        let journal = Journal::create(backend.clone(), &StoragePath::from(STEPS_FILE))?;
 
         info!("{STATE_FILE}: creating");
         let checkpoint = Checkpoint {
@@ -1103,7 +1107,7 @@ impl FtState {
             processed_records: 0,
             input_metadata: CheckpointOffsets::default(),
         };
-        checkpoint.write(&*backend, STATE_FILE)?;
+        checkpoint.write(&*backend, &StoragePath::from(STATE_FILE))?;
 
         Ok(Self {
             input_endpoints: Self::initial_input_endpoints(&controller),
@@ -1423,7 +1427,7 @@ impl ControllerInit {
                 })?;
 
         // Try to read a checkpoint.
-        let checkpoint = match Checkpoint::read(&*storage.backend, STATE_FILE) {
+        let checkpoint = match Checkpoint::read(&*storage.backend, &StoragePath::from(STATE_FILE)) {
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 info!("no checkpoint found for resume ({error})",);
                 return Self::without_resume(config, Some(storage));

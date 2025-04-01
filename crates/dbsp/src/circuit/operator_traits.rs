@@ -3,12 +3,14 @@
 //! Operators are the building blocks of DBSP circuits.  An operator
 //! consumes one or more input streams and produces an output stream.
 
+use feldera_storage::StoragePath;
+
 use crate::circuit::{
     metadata::{OperatorLocation, OperatorMeta},
     OwnershipPreference, Scope,
 };
 use crate::Error;
-use std::{borrow::Cow, future::Future, path::Path};
+use std::{borrow::Cow, future::Future};
 
 use super::GlobalNodeId;
 
@@ -210,7 +212,7 @@ pub trait Operator: 'static {
     ///
     /// For most operators this method is a no-op.
     #[allow(unused_variables)]
-    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
         Ok(())
     }
 
@@ -219,7 +221,7 @@ pub trait Operator: 'static {
     ///
     /// For most operators this method is a no-op.
     #[allow(unused_variables)]
-    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
         Ok(())
     }
 }

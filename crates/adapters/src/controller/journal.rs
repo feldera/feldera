@@ -1,12 +1,11 @@
 use std::{
     collections::{HashMap, HashSet},
     io::ErrorKind,
-    path::{Path, PathBuf},
     sync::Arc,
 };
 
 use dbsp::storage::{
-    backend::{StorageBackend, StorageError},
+    backend::{StorageBackend, StorageError, StoragePath},
     buffer_cache::FBuf,
 };
 use feldera_adapterlib::{errors::journal::StepError, transport::Step};
@@ -20,43 +19,41 @@ pub struct Journal {
     backend: Arc<dyn StorageBackend>,
 
     /// Directory name.
-    path: PathBuf,
+    path: StoragePath,
 }
 
 impl Journal {
     /// Opens an existing journal under `path`.
-    pub fn open<P>(backend: Arc<dyn StorageBackend>, path: P) -> Self
-    where
-        P: AsRef<Path>,
-    {
+    pub fn open(backend: Arc<dyn StorageBackend>, path: &StoragePath) -> Self {
         Self {
             backend,
-            path: PathBuf::from(path.as_ref()),
+            path: path.clone(),
         }
     }
 
     /// Creates a new journal under `path`, deleting any journal previously there.
-    pub fn create<P>(backend: Arc<dyn StorageBackend>, path: P) -> Result<Self, StepError>
-    where
-        P: AsRef<Path>,
-    {
+    pub fn create(backend: Arc<dyn StorageBackend>, path: &StoragePath) -> Result<Self, StepError> {
         let this = Self::open(backend, path);
         this.truncate()?;
         Ok(this)
     }
 
     pub fn read(&self, step: Step) -> Result<Option<StepMetadata>, StepError> {
-        let path = self.path.join(format!("{step}.bin"));
+        let path = self.path.child(format!("{step}.bin"));
         let data = match self.backend.read(&path) {
             Ok(data) => data,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(StepError::storage_error(&path, error)),
         };
-        let record = rmp_serde::decode::from_slice::<StepMetadata>(&data)
-            .map_err(|error| StepError::DecodeError { path, error })?;
+        let record = rmp_serde::decode::from_slice::<StepMetadata>(&data).map_err(|error| {
+            StepError::DecodeError {
+                path: path.as_ref().into(),
+                error,
+            }
+        })?;
         if record.step != step {
             return Err(StepError::WrongStep {
-                path: self.path.clone(),
+                path: path.as_ref().into(),
                 expected: step,
                 found: record.step,
             });
@@ -65,10 +62,10 @@ impl Journal {
     }
 
     pub fn write(&self, record: &StepMetadata) -> Result<(), StepError> {
-        let path = self.path.join(format!("{}.bin", record.step));
+        let path = self.path.child(format!("{}.bin", record.step));
         let mut data = FBuf::new();
         rmp_serde::encode::write(&mut data, record).map_err(|error| StepError::EncodeError {
-            path: self.path.to_path_buf(),
+            path: self.path.as_ref().into(),
             error,
         })?;
         self.backend
@@ -201,11 +198,14 @@ impl From<&StepMetadata> for StepInputChecksums {
 mod tests {
     use std::{
         collections::{HashMap, HashSet},
-        path::Path,
         sync::Arc,
     };
 
-    use dbsp::{circuit::StorageCacheConfig, storage::backend::posixio_impl::PosixBackend};
+    use dbsp::{
+        circuit::StorageCacheConfig,
+        storage::backend::{posixio_impl::PosixBackend, StoragePath},
+    };
+
     use tempfile::TempDir;
 
     use crate::{controller::journal::Journal, test::init_test_logger};
@@ -219,7 +219,7 @@ mod tests {
 
         let tempdir = TempDir::new().unwrap();
         let backend = Arc::new(PosixBackend::new(tempdir, StorageCacheConfig::default()));
-        let path = Path::new("journal");
+        let path = StoragePath::from("journal");
 
         let records = (0..10)
             .map(|step| StepMetadata {
@@ -230,7 +230,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let journal = Journal::create(backend, path).unwrap();
+        let journal = Journal::create(backend, &path).unwrap();
         for record in records.iter() {
             journal.write(record).unwrap();
         }

@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
-use feldera_storage::StorageBackend;
+use feldera_storage::{StorageBackend, StoragePath};
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
 use metrics::counter;
@@ -505,7 +505,7 @@ impl Runtime {
             fingerprint,
         )?;
         if let Some(init_checkpoint) = init_checkpoint.flatten() {
-            dbsp.send_restore(PathBuf::from(init_checkpoint.to_string()))?;
+            dbsp.send_restore(init_checkpoint.to_string().into())?;
         }
 
         Ok((dbsp, ret))
@@ -518,8 +518,8 @@ enum Command {
     EnableProfiler,
     DumpProfile { runtime_elapsed: Duration },
     RetrieveProfile { runtime_elapsed: Duration },
-    Commit(PathBuf),
-    Restore(PathBuf),
+    Commit(StoragePath),
+    Restore(StoragePath),
 }
 
 #[derive(Debug)]
@@ -696,13 +696,13 @@ impl DBSPHandle {
     }
 
     /// Used by the checkpointer to initiate a commit on the circuit.
-    pub(super) fn send_commit(&mut self, base: PathBuf) -> Result<(), DbspError> {
+    pub(super) fn send_commit(&mut self, base: StoragePath) -> Result<(), DbspError> {
         self.broadcast_command(Command::Commit(base), |_, _| {})?;
         Ok(())
     }
 
     /// Used to reset operator state to the point of the given Commit.
-    fn send_restore(&mut self, base: PathBuf) -> Result<(), DbspError> {
+    fn send_restore(&mut self, base: StoragePath) -> Result<(), DbspError> {
         self.broadcast_command(Command::Restore(base), |_, _| {})?;
         Ok(())
     }
@@ -1334,7 +1334,7 @@ pub(crate) mod tests {
 
         let incomplete_checkpoint_dir = temp.path().join(Uuid::now_v7().to_string());
         fs::create_dir(&incomplete_checkpoint_dir).expect("can't create checkpoint dir");
-        let _ = File::create(&incomplete_checkpoint_dir.join("filename.feldera"))
+        let _ = File::create(incomplete_checkpoint_dir.join("filename.feldera"))
             .expect("can't create file");
 
         let complete_batch_unused = temp.path().join("complete_batch.feldera");

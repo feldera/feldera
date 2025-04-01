@@ -25,6 +25,7 @@ use crate::{
 use crate::storage::file::to_bytes;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
+use feldera_storage::StoragePath;
 use list_merger::ArcMerger;
 use metrics::counter;
 use ouroboros::self_referencing;
@@ -34,12 +35,9 @@ use rkyv::{
     Fallible, Serialize,
 };
 use size_of::{Context, SizeOf};
+use std::collections::VecDeque;
 use std::sync::{Arc, MutexGuard};
 use std::time::{Duration, Instant};
-use std::{
-    collections::VecDeque,
-    path::{Path, PathBuf},
-};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::DerefMut,
@@ -892,13 +890,13 @@ where
     /// - `cid`: The checkpoint id.
     /// - `persistent_id`: The persistent id that identifies the spine within
     ///   the circuit for a given checkpoint.
-    fn checkpoint_file(base: &Path, persistent_id: &str) -> PathBuf {
-        base.join(format!("pspine-{}.dat", persistent_id))
+    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
+        base.child(format!("pspine-{}.dat", persistent_id))
     }
 
     /// Return the absolute path of the file for this Spine's batchlist.
-    fn batchlist_file(&self, base: &Path, persistent_id: &str) -> PathBuf {
-        base.join(format!("pspine-batches-{}.dat", persistent_id))
+    fn batchlist_file(&self, base: &StoragePath, persistent_id: &str) -> StoragePath {
+        base.child(format!("pspine-batches-{}.dat", persistent_id))
     }
 }
 
@@ -1137,7 +1135,7 @@ where
         &self.value_filter
     }
 
-    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
         fn persist_batches<B>(batches: Vec<Arc<B>>) -> Vec<Arc<B>>
         where
             B: Batch,
@@ -1172,7 +1170,7 @@ where
                 batch
                     .checkpoint_path()
                     .expect("The batch should have been persisted")
-                    .to_string_lossy()
+                    .as_ref()
                     .to_string()
             })
             .collect::<Vec<_>>();
@@ -1194,7 +1192,7 @@ where
         Ok(())
     }
 
-    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
         let pspine_path = Self::checkpoint_file(base, persistent_id);
         let content = Runtime::storage_backend().unwrap().read(&pspine_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedSpine>(&content) };
@@ -1206,7 +1204,7 @@ where
         self.key_filter = None;
         self.value_filter = None;
         for batch in committed.batches {
-            let batch = B::from_path(&self.factories.clone(), Path::new(batch.as_str()))
+            let batch = B::from_path(&self.factories.clone(), &batch.clone().into())
                 .unwrap_or_else(|error| {
                     panic!("Failed to read batch {batch} for checkpoint ({error}).")
                 });

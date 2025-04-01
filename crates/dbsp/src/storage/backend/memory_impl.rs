@@ -10,18 +10,17 @@ use crate::circuit::metrics::{
     WRITES_SUCCESS,
 };
 use crate::storage::buffer_cache::FBuf;
-use feldera_storage::StorageFileType;
+use feldera_storage::{StorageFileType, StoragePath};
 use metrics::counter;
 use std::{
     collections::HashMap,
     io::{Error as IoError, ErrorKind},
-    path::{Path, PathBuf},
     sync::{Arc, LazyLock, RwLock},
 };
 
 struct MemoryFile {
     file_id: FileId,
-    path: PathBuf,
+    path: StoragePath,
     blocks: HashMap<u64, Arc<FBuf>>,
     size: u64,
 }
@@ -35,7 +34,7 @@ impl HasFileId for MemoryFile {
 /// State of the backend needed to satisfy the storage APIs.
 pub struct MemoryBackend {
     /// Meta-data of all files we created so far.
-    files: RwLock<HashMap<PathBuf, Arc<MemoryFile>>>,
+    files: RwLock<HashMap<StoragePath, Arc<MemoryFile>>>,
 }
 
 impl MemoryBackend {
@@ -69,7 +68,7 @@ impl FileWriter for MemoryFile {
         Ok(data)
     }
 
-    fn complete(self: Box<Self>) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
+    fn complete(self: Box<Self>) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError> {
         let path = self.path.clone();
         let file = Arc::from(*self);
         MemoryBackend::get().insert(file.clone());
@@ -99,11 +98,11 @@ impl FileReader for MemoryFile {
 }
 
 impl StorageBackend for MemoryBackend {
-    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError> {
+    fn create_named(&self, name: &StoragePath) -> Result<Box<dyn FileWriter>, StorageError> {
         let file_id = FileId::new();
         let fm = MemoryFile {
             file_id,
-            path: name.to_path_buf(),
+            path: name.clone(),
             blocks: HashMap::new(),
             size: 0,
         };
@@ -111,7 +110,7 @@ impl StorageBackend for MemoryBackend {
         Ok(Box::new(fm))
     }
 
-    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError> {
+    fn open(&self, name: &StoragePath) -> Result<Arc<dyn FileReader>, StorageError> {
         let files = self.files.read().unwrap();
         match files.get(name) {
             Some(file) => Ok(file.clone()),
@@ -121,15 +120,15 @@ impl StorageBackend for MemoryBackend {
 
     fn list(
         &self,
-        parent: &Path,
-        cb: &mut dyn FnMut(&Path, StorageFileType),
+        parent: &StoragePath,
+        cb: &mut dyn FnMut(&StoragePath, StorageFileType),
     ) -> Result<(), StorageError> {
         let paths = self
             .files
             .read()
             .unwrap()
             .keys()
-            .filter(|name| name.parent().is_some_and(|dir| dir == parent))
+            .filter(|name| name.prefix_matches(parent))
             .cloned()
             .collect::<Vec<_>>();
         for path in paths {
@@ -138,7 +137,7 @@ impl StorageBackend for MemoryBackend {
         Ok(())
     }
 
-    fn delete(&self, name: &Path) -> Result<(), StorageError> {
+    fn delete(&self, name: &StoragePath) -> Result<(), StorageError> {
         let mut files = self.files.write().unwrap();
         match files.remove(name) {
             Some(_) => Ok(()),
@@ -146,11 +145,11 @@ impl StorageBackend for MemoryBackend {
         }
     }
 
-    fn delete_recursive(&self, parent: &Path) -> Result<(), StorageError> {
+    fn delete_recursive(&self, parent: &StoragePath) -> Result<(), StorageError> {
         self.files
             .write()
             .unwrap()
-            .retain(|name, _content| name.starts_with(parent));
+            .retain(|name, _content| !name.prefix_matches(parent));
         Ok(())
     }
 }
