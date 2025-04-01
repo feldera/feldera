@@ -912,9 +912,20 @@ Code snippet:
         pipeline.start()
         pipeline.input_json("t0", data)
         pipeline.wait_for_completion(True)
-        got = out.to_dict()
+        pipeline.shutdown()
 
+        got = out.to_dict()
         assert expected == got
+
+        pipeline.start()
+        out = pipeline.listen("v0")
+        pipeline.input_json("t0", {"c1": {"a": 1, "b": 2}})
+        pipeline.wait_for_completion(True)
+        pipeline.shutdown()
+
+        got = out.to_dict()
+        assert expected == got
+
         pipeline.delete()
 
     def test_failed_pipeline_shutdown(self):
@@ -1088,6 +1099,47 @@ Code snippet:
         pipeline.shutdown()
 
         assert got == data
+
+    def test_issue3754(self):
+        name = "test_issue3754"
+        sql = """
+CREATE TABLE map_tbl(m_var MAP<VARCHAR, VARCHAR>);
+CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
+        """
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name, sql=sql).create_or_replace()
+        pipeline.start()
+
+        with self.assertRaises(ValueError):
+            data = [{"insert": {"m_var": {None: 1}}}]
+            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
+
+        with self.assertRaises(ValueError):
+            data = [{"delete": {"m_var": {None: 1}}}]
+            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
+
+        with self.assertRaises(ValueError):
+            data = {"insert": {"m_var": {None: 1}}}
+            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
+
+        with self.assertRaises(ValueError):
+            data = {"delete": {"m_var": {None: 1}}}
+            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
+
+        with self.assertRaises(ValueError):
+            data = [{"m_var": {None: 1}}]
+            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "raw", data)
+
+        with self.assertRaises(ValueError):
+            data = {"m_var": {None: 1}}
+            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "raw", data)
+
+        with self.assertRaises(ValueError):
+            data = {"m_var": {None: 1}}
+            pipeline.input_json("map_tbl", data)
+
+        pipeline.shutdown()
+        pipeline.delete()
 
 
 if __name__ == "__main__":
