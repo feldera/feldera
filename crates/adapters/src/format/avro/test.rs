@@ -762,8 +762,8 @@ fn test_raw_avro_output_indexed<K, T>(
 
             if let Some(key_schema) = &key_schema {
                 let key =
-                    from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-                let key = from_avro_value::<K>(&key, &key_schema).unwrap();
+                    from_avro_datum(key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
+                let key = from_avro_value::<K>(&key, key_schema).unwrap();
                 assert_eq!(key, key_func(&value));
             }
 
