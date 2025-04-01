@@ -22,6 +22,7 @@ import java.util.Set;
 public final class CrateGenerator {
     public final File baseDirectory;
     public final String crateName;
+    public final boolean enterprise;
 
     /** Cargo file name */
     public static final String CARGO = "Cargo.toml";
@@ -33,11 +34,12 @@ public final class CrateGenerator {
     /** Generates the actual Rust code */
     final ICodeGenerator codeGenerator;
 
-    public CrateGenerator(File baseDirectory, String crateName, ICodeGenerator codeGenerator) {
+    public CrateGenerator(File baseDirectory, String crateName, ICodeGenerator codeGenerator, boolean enterprise) {
         this.crateName = crateName;
         this.baseDirectory = baseDirectory;
         this.dependencies = new HashSet<>();
         this.codeGenerator = codeGenerator;
+        this.enterprise = enterprise;
     }
 
     @Override
@@ -94,11 +96,13 @@ public final class CrateGenerator {
                 serde_json = { workspace = true }
                 rkyv = { workspace = true }""";
         stream.println(cargo);
+        if (this.enterprise)
+            stream.println("dbsp-enterprise = { workspace = true }");
         String extraDep = """
                 [target.'cfg(not(target_env = "msvc"))'.dependencies]
                 tikv-jemallocator = { workspace = true }
                 """;
-        if (crateName.contains("main"))
+        if (this.crateName.contains("main"))
             stream.println(extraDep);
         List<CrateGenerator> deps = Linq.list(this.dependencies);
         deps.sort(Comparator.comparing(a -> a.crateName));

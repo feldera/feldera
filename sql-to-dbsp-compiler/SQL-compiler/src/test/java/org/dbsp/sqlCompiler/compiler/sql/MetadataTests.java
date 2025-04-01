@@ -697,6 +697,9 @@ public class MetadataTests extends BaseSQLTests {
                       Default: <empty string>
                     --dataflow
                       Emit the Dataflow graph of the program in the specified JSON file
+                    --enterprise
+                      Generate code supporting enterprise features
+                      Default: false
                     --handles
                       Use handles (true) or Catalog (false) in the emitted Rust code
                       Default: false

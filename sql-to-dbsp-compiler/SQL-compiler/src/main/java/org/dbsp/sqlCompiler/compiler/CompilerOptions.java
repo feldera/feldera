@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
-import com.beust.jcommander.DynamicParameter;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParametersDelegate;
 import org.apache.calcite.avatica.util.Casing;
@@ -37,8 +36,6 @@ import org.dbsp.util.SqlLexicalRulesConverter;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.HashMap;
-import java.util.Map;
 
 /** Command-line options for the SQL compiler */
 @SuppressWarnings("CanBeFinal")
@@ -172,6 +169,8 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                 description = "Specify logging level for a class (can be repeated)")
         public Map<String, String> loggingLevel = new HashMap<>();
          */
+        @Parameter(names = "--enterprise", description = "Generate code supporting enterprise features")
+        public boolean enterprise = false;
         @Parameter(names="-o", description = "Output file; stdout if null")
         public String outputFile = "";
         @Parameter(names = "-jpg", description = "Emit a jpg image of the circuit instead of Rust")

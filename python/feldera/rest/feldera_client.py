@@ -1,5 +1,5 @@
 import pathlib
-from typing import Optional
+from typing import Any, Dict, Optional
 import logging
 import time
 import json
@@ -10,6 +10,21 @@ from feldera.rest.config import Config
 from feldera.rest.errors import FelderaTimeoutError
 from feldera.rest.pipeline import Pipeline
 from feldera.rest._httprequests import HttpRequests
+
+
+def _validate_no_none_keys_in_map(data):
+    def validate_no_none_keys(d: Dict[Any, Any]) -> None:
+        for k, v in d.items():
+            if isinstance(v, dict) and any(k is None for k in v.keys()):
+                raise ValueError("keys of SQL MAP objects cannot be NULL")
+
+    if isinstance(data, list):
+        for datum in data:
+            validate_no_none_keys(datum)
+    elif isinstance(data, dict):
+        validate_no_none_keys(data)
+    else:
+        return
 
 
 def _prepare_boolean_input(value: bool) -> str:
@@ -343,7 +358,7 @@ Reason: The pipeline is in a FAILED state due to the following error:
         pipeline_name: str,
         table_name: str,
         format: str,
-        data: list[list | str | dict],
+        data: list[list | str | dict] | dict,
         array: bool = False,
         force: bool = False,
         update_format: str = "raw",
@@ -392,6 +407,18 @@ Reason: The pipeline is in a FAILED state due to the following error:
             raise ValueError(
                 "json_flavor must be one of 'default', 'debezium_mysql', 'snowflake', 'kafka_connect_json_converter', 'pandas'"
             )
+
+        if update_format == "insert_delete":
+            if array:
+                for datum in data:
+                    _validate_no_none_keys_in_map(datum.get("insert", {}))
+                    _validate_no_none_keys_in_map(datum.get("delete", {}))
+            else:
+                data: dict = data
+                _validate_no_none_keys_in_map(data.get("insert", {}))
+                _validate_no_none_keys_in_map(data.get("delete", {}))
+        else:
+            _validate_no_none_keys_in_map(data)
 
         # python sends `True` which isn't accepted by the backend
         array = _prepare_boolean_input(array)
