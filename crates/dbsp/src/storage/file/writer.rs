@@ -24,13 +24,13 @@ use crc32c::crc32c;
 #[cfg(debug_assertions)]
 use dyn_clone::clone_box;
 use fastbloom::BloomFilter;
+use feldera_storage::StoragePath;
 use snap::raw::{max_compress_len, Encoder};
 use std::{cell::RefCell, sync::Arc};
 use std::{
     marker::PhantomData,
     mem::{replace, take},
     ops::Range,
-    path::PathBuf,
 };
 
 use crate::{
@@ -970,7 +970,7 @@ impl BlockWriter {
         }
     }
 
-    fn complete(mut self) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError> {
+    fn complete(mut self) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError> {
         self.file_handle.take().unwrap().complete()
     }
 
@@ -1092,7 +1092,10 @@ impl Writer {
         let finished_columns = Vec::with_capacity(n_columns);
         let worker = format!("w{}-", Runtime::worker_index());
         let writer = Self {
-            writer: BlockWriter::new(buffer_cache, storage_backend.create_with_prefix(&worker)?),
+            writer: BlockWriter::new(
+                buffer_cache,
+                storage_backend.create_with_prefix(&worker.into())?,
+            ),
             bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
                 .seed(&BLOOM_FILTER_SEED)
                 .expected_items(estimated_keys),
@@ -1141,7 +1144,9 @@ impl Writer {
         Ok(())
     }
 
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf, BloomFilter), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, StoragePath, BloomFilter), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
         // Write the Bloom filter.
@@ -1164,9 +1169,9 @@ impl Writer {
         self.writer
             .insert_cache_entry(location, Arc::new(file_trailer));
 
-        let (reader, pbuf) = self.writer.complete()?;
+        let (reader, path) = self.writer.complete()?;
 
-        Ok((reader, pbuf, self.bloom_filter))
+        Ok((reader, path, self.bloom_filter))
     }
 
     pub fn n_columns(&self) -> usize {
@@ -1281,7 +1286,9 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf, BloomFilter), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, StoragePath, BloomFilter), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.close()
     }
@@ -1457,7 +1464,9 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, PathBuf, BloomFilter), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, StoragePath, BloomFilter), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
         self.inner.close()

@@ -330,7 +330,7 @@ impl RuntimeInner {
                     .is_dir()
                 {
                     return Err(DbspError::Storage(StorageError::CheckpointNotFound(
-                        init_checkpoint.clone(),
+                        *init_checkpoint,
                     )));
                 }
             }

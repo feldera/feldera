@@ -15,13 +15,10 @@ use crate::{
     trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, SpineSnapshot},
     Error, RootCircuit, Runtime,
 };
+use feldera_storage::StoragePath;
 use minitrace::trace;
 use rkyv::Deserialize;
-use std::{
-    borrow::Cow,
-    marker::PhantomData,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, marker::PhantomData};
 
 impl Stream<RootCircuit, MonoIndexedZSet> {
     pub fn dyn_window_mono(
@@ -114,8 +111,8 @@ where
     }
 
     /// Return the absolute path of the file for a checkpointed Window.
-    fn checkpoint_file(base: &Path, persistent_id: &str) -> PathBuf {
-        base.join(format!("window-{}.dat", persistent_id))
+    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
+        base.child(format!("window-{}.dat", persistent_id))
     }
 }
 
@@ -138,7 +135,7 @@ where
         panic!("'Window' operator used in fixedpoint iteration")
     }
 
-    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
         let window_path = Self::checkpoint_file(base, persistent_id);
         let committed: CommittedWindow = (self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
@@ -148,7 +145,7 @@ where
         Ok(())
     }
 
-    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
         let window_path = Self::checkpoint_file(base, persistent_id);
         let content = Runtime::storage_backend().unwrap().read(&window_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedWindow>(&content) };

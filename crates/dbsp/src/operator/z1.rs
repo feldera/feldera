@@ -19,9 +19,9 @@ use crate::{
     storage::file::to_bytes,
     Error, NumEntries,
 };
+use feldera_storage::StoragePath;
 use size_of::{Context, SizeOf};
-use std::path::Path;
-use std::{borrow::Cow, mem::replace, path::PathBuf};
+use std::{borrow::Cow, mem::replace};
 
 circuit_cache_key!(DelayedId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(NestedDelayedId<C, D>(StreamId => Stream<C, D>));
@@ -250,8 +250,8 @@ where
     /// - `cid`: The checkpoint id.
     /// - `persistent_id`: The persistent id that identifies the spine within
     ///   the circuit for a given checkpoint.
-    fn checkpoint_file<P: AsRef<str>>(base: &Path, persistent_id: P) -> PathBuf {
-        base.join(format!("z1-{}.dat", persistent_id.as_ref()))
+    fn checkpoint_file<P: AsRef<str>>(base: &StoragePath, persistent_id: P) -> StoragePath {
+        base.child(format!("z1-{}.dat", persistent_id.as_ref()))
     }
 }
 
@@ -305,7 +305,7 @@ where
         }
     }
 
-    fn commit(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
         let committed: CommittedZ1 = (self as &Self).try_into()?;
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedZ1 should work.");
         Runtime::storage_backend()
@@ -314,7 +314,7 @@ where
         Ok(())
     }
 
-    fn restore(&mut self, base: &Path, persistent_id: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
         let z1_path = Self::checkpoint_file(base, persistent_id);
         let content = Runtime::storage_backend().unwrap().read(&z1_path)?;
         let committed = unsafe { rkyv::archived_root::<CommittedZ1>(&content) };

@@ -19,14 +19,12 @@ use crate::{
     },
     DBData, DBWeight, NumEntries,
 };
+use feldera_storage::StoragePath;
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-use std::{
-    fmt::{self, Debug},
-    path::Path,
-};
-use std::{ops::Neg, path::PathBuf};
+use std::fmt::{self, Debug};
+use std::ops::Neg;
 
 use super::utils::{copy_to_builder, pick_merge_destination};
 
@@ -403,14 +401,14 @@ where
         }
     }
 
-    fn checkpoint_path(&self) -> Option<PathBuf> {
+    fn checkpoint_path(&self) -> Option<StoragePath> {
         match &self.inner {
             Inner::Vec(vec) => vec.checkpoint_path(),
             Inner::File(file) => file.checkpoint_path(),
         }
     }
 
-    fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
+    fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
         Ok(Self {
             factories: factories.clone(),
             inner: Inner::File(FileWSet::<K, R>::from_path(&factories.file, path)?),

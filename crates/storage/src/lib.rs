@@ -13,6 +13,8 @@ use crate::error::StorageError;
 use crate::fbuf::FBuf;
 use crate::file::HasFileId;
 
+pub use object_store::path::{Path as StoragePath, PathPart as StoragePathPart};
+
 pub mod block;
 pub mod error;
 pub mod fbuf;
@@ -42,51 +44,51 @@ inventory::collect!(&'static dyn StorageBackendFactory);
 
 /// A storage backend.
 pub trait StorageBackend: Send + Sync {
-    /// Create a new file with the given `name`, which is relative to the
-    /// backend's base directory, auomatically creating any parent directories
-    /// within `name` that don't already exist.
-    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError>;
+    /// Create a new file with the given `name`, automatically creating any
+    /// parent directories within `name` that don't already exist.
+    fn create_named(&self, name: &StoragePath) -> Result<Box<dyn FileWriter>, StorageError>;
 
     /// Creates a new persistent file used for writing data. The backend selects
     /// a name.
     fn create(&self) -> Result<Box<dyn FileWriter>, StorageError> {
-        self.create_with_prefix("")
+        self.create_with_prefix(&StoragePath::default())
     }
 
     /// Creates a new persistent file used for writing data, giving the file's
     /// name the specified `prefix`. See also [`create`](Self::create).
-    fn create_with_prefix(&self, prefix: &str) -> Result<Box<dyn FileWriter>, StorageError> {
+    fn create_with_prefix(
+        &self,
+        prefix: &StoragePath,
+    ) -> Result<Box<dyn FileWriter>, StorageError> {
         let uuid = Uuid::now_v7();
         let name = format!("{}{}{}", prefix, uuid, CREATE_FILE_EXTENSION);
-        let name_path = Path::new(&name);
-        self.create_named(name_path)
+        self.create_named(&name.into())
     }
 
-    /// Opens a file for reading.  The file `name` is relative to the base of
-    /// the storage backend.
-    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError>;
+    /// Opens `name` for reading.
+    fn open(&self, name: &StoragePath) -> Result<Arc<dyn FileReader>, StorageError>;
 
     /// Calls `cb` with the name of each of the files under `parent`. This is a
     /// non-recursive list: it does not include files under sub-directories of
     /// `parent`.
     fn list(
         &self,
-        parent: &Path,
-        cb: &mut dyn FnMut(&Path, StorageFileType),
+        parent: &StoragePath,
+        cb: &mut dyn FnMut(&StoragePath, StorageFileType),
     ) -> Result<(), StorageError>;
 
-    fn delete(&self, name: &Path) -> Result<(), StorageError>;
+    fn delete(&self, name: &StoragePath) -> Result<(), StorageError>;
 
-    fn delete_recursive(&self, name: &Path) -> Result<(), StorageError>;
+    fn delete_recursive(&self, name: &StoragePath) -> Result<(), StorageError>;
 
-    fn delete_if_exists(&self, name: &Path) -> Result<(), StorageError> {
+    fn delete_if_exists(&self, name: &StoragePath) -> Result<(), StorageError> {
         match self.delete(name) {
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
             other => other,
         }
     }
 
-    fn exists(&self, name: &Path) -> Result<bool, StorageError> {
+    fn exists(&self, name: &StoragePath) -> Result<bool, StorageError> {
         match self.open(name) {
             Ok(_) => Ok(true),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
@@ -96,7 +98,7 @@ pub trait StorageBackend: Send + Sync {
 
     /// Reads `name` and returns its contents.  The file `name` is relative to
     /// the base of the storage backend.
-    fn read(&self, name: &Path) -> Result<Arc<FBuf>, StorageError> {
+    fn read(&self, name: &StoragePath) -> Result<Arc<FBuf>, StorageError> {
         let reader = self.open(name)?;
         let size = reader.get_size()?.try_into().unwrap();
         reader.read_block(BlockLocation { offset: 0, size })
@@ -104,7 +106,7 @@ pub trait StorageBackend: Send + Sync {
 
     /// Writes `content` to `name`, automatically creating any parent
     /// directories within `name` that don't already exist.
-    fn write(&self, name: &Path, content: FBuf) -> Result<(), StorageError> {
+    fn write(&self, name: &StoragePath, content: FBuf) -> Result<(), StorageError> {
         let mut writer = self.create_named(name)?;
         writer.write_block(0, content)?;
         let (reader, _path) = writer.complete()?;
@@ -164,7 +166,7 @@ pub trait FileWriter: Send + Sync + HasFileId {
     /// file's path. The file is treated as temporary and will be deleted if the
     /// reader is dropped without first calling
     /// [FileReader::mark_for_checkpoint].
-    fn complete(self: Box<Self>) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError>;
+    fn complete(self: Box<Self>) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError>;
 }
 
 /// A readable file.

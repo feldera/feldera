@@ -13,11 +13,11 @@ use crate::{
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
 };
+use feldera_storage::StoragePath;
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::{self, Debug, Display};
-use std::path::PathBuf;
 
 use crate::trace::ord::merge_batcher::MergeBatcher;
 
@@ -328,7 +328,7 @@ where
 {
     type Batcher = MergeBatcher<Self>;
     type Builder = VecKeyBuilder<K, T, R, O>;
-    fn checkpoint_path(&self) -> Option<PathBuf> {
+    fn checkpoint_path(&self) -> Option<StoragePath> {
         unimplemented!()
     }
 

@@ -8,12 +8,11 @@ use crate::{Error, TypedBox};
 use std::io::ErrorKind;
 use std::{
     collections::{HashSet, VecDeque},
-    path::{Path, PathBuf},
     sync::Arc,
 };
 
 use crate::trace::Serializer;
-use feldera_storage::{StorageBackend, StorageFileType};
+use feldera_storage::{StorageBackend, StorageFileType, StoragePath};
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use uuid::Uuid;
@@ -104,7 +103,7 @@ impl Checkpointer {
         }
 
         // Collect all directories and files still referenced by a checkpoint
-        let mut in_use_paths: HashSet<PathBuf> = HashSet::new();
+        let mut in_use_paths: HashSet<StoragePath> = HashSet::new();
         in_use_paths.insert(Checkpointer::CHECKPOINT_FILE_NAME.into());
         in_use_paths.insert("steps.bin".into());
         for cpm in self.checkpoint_list.iter() {
@@ -113,29 +112,25 @@ impl Checkpointer {
                 .gather_batches_for_checkpoint(cpm)
                 .expect("Batches for a checkpoint should be discoverable");
             for batch in batches {
-                in_use_paths.insert(batch.into());
+                in_use_paths.insert(batch);
             }
         }
 
         /// True if `path` is a name that we might have created ourselves.
-        fn is_feldera_filename(path: &Path) -> bool {
-            let extension = &path
-                .extension()
-                .unwrap_or_default()
-                .to_str()
-                .unwrap_or_default();
-            Checkpointer::DBSP_FILE_EXTENSION.contains(extension)
+        fn is_feldera_filename(path: &StoragePath) -> bool {
+            path.extension()
+                .is_some_and(|extension| Checkpointer::DBSP_FILE_EXTENSION.contains(&extension))
         }
 
         // Collect everything found in the storage directory
-        self.backend.list(Path::new(""), &mut |path, file_type| {
+        self.backend.list(&StoragePath::default(), &mut |path, file_type| {
             if !in_use_paths.contains(path) && (is_feldera_filename(path) || file_type == StorageFileType::Directory){
                 match self.backend.delete_recursive(path) {
                     Ok(_) => {
-                        tracing::debug!("Removed unused {file_type:?} '{}'", path.display());
+                        tracing::debug!("Removed unused {file_type:?} '{path}'");
                     }
                     Err(e) => {
-                        tracing::warn!("Unable to remove old-checkpoint file {}: {} (the pipeline will try to delete the file again on a restart)", path.display(), e);
+                        tracing::warn!("Unable to remove old-checkpoint file {path}: {e} (the pipeline will try to delete the file again on a restart)");
                     }
             }
             }})?;
@@ -143,7 +138,7 @@ impl Checkpointer {
         Ok(())
     }
 
-    pub(super) fn checkpoint_dir(&self, uuid: Uuid) -> PathBuf {
+    pub(super) fn checkpoint_dir(&self, uuid: Uuid) -> StoragePath {
         uuid.to_string().into()
     }
 
@@ -170,7 +165,7 @@ impl Checkpointer {
     fn try_read_checkpoints(
         backend: &dyn StorageBackend,
     ) -> Result<VecDeque<CheckpointMetadata>, Error> {
-        match backend.read(Path::new(Self::CHECKPOINT_FILE_NAME)) {
+        match backend.read(&StoragePath::from(Self::CHECKPOINT_FILE_NAME)) {
             Ok(content) => {
                 let archived =
                     unsafe { rkyv::archived_root::<VecDeque<CheckpointMetadata>>(&content) };
@@ -186,32 +181,27 @@ impl Checkpointer {
     pub(super) fn gather_batches_for_checkpoint(
         &self,
         cpm: &CheckpointMetadata,
-    ) -> Result<HashSet<String>, Error> {
+    ) -> Result<HashSet<StoragePath>, Error> {
         assert!(!cpm.uuid.is_nil());
 
         let mut spines = Vec::new();
         self.backend
-            .list(Path::new(&cpm.uuid.to_string()), &mut |path, _file_type| {
+            .list(&cpm.uuid.to_string().into(), &mut |path, _file_type| {
                 if path
-                    .file_name()
-                    .unwrap_or_default()
-                    .as_encoded_bytes()
-                    .starts_with(b"pspine-batches")
+                    .filename()
+                    .is_some_and(|filename| filename.starts_with("pspine-batches"))
                 {
-                    spines.push(path.to_path_buf());
+                    spines.push(path.clone());
                 }
             })?;
 
-        let mut batch_files_in_commit: HashSet<String> = HashSet::new();
+        let mut batch_files_in_commit: HashSet<StoragePath> = HashSet::new();
         for spine in spines {
             let content = self.backend.read(&spine)?;
             let archived = rkyv::check_archived_root::<Vec<String>>(&content).unwrap();
             for batch in archived.iter() {
-                match self.backend.exists(&Path::new(&batch.to_string())) {
-                    Ok(true) => {
-                        batch_files_in_commit.insert(batch.to_string());
-                    }
-                    _ => (),
+                if let Ok(true) = self.backend.exists(&batch.to_string().into()) {
+                    batch_files_in_commit.insert(batch.to_string().into());
                 }
             }
         }
@@ -222,24 +212,21 @@ impl Checkpointer {
         let content = crate::storage::file::to_bytes(&self.checkpoint_list)
             .expect("failed to serialize checkpoint-list data");
         self.backend
-            .write(&Path::new(Self::CHECKPOINT_FILE_NAME), content)?;
+            .write(&Self::CHECKPOINT_FILE_NAME.into(), content)?;
 
         Ok(())
     }
 
-    /// Removes all the files in `files` from the storage base directory.
-    fn remove_batch_files<P: AsRef<Path>>(&self, files: &Vec<P>) -> Result<(), Error> {
-        for file in files {
-            match self.backend.delete(file.as_ref()) {
-                Ok(_) => {
-                    tracing::debug!("Removed file {}", file.as_ref().display());
-                }
-                Err(e) => {
-                    tracing::warn!("Unable to remove old-checkpoint file {}: {} (the pipeline will try to delete the file again on a restart)", file.as_ref().display(), e);
-                }
+    /// Removes `file` and logs any error.
+    fn remove_batch_file(&self, file: &StoragePath) {
+        match self.backend.delete(file) {
+            Ok(_) => {
+                tracing::debug!("Removed file {file}");
+            }
+            Err(e) => {
+                tracing::warn!("Unable to remove old-checkpoint file {file}: {e} (the pipeline will try to delete the file again on a restart)");
             }
         }
-        Ok(())
     }
 
     /// Removes all meta-data files associated with the checkpoint given by
@@ -247,7 +234,7 @@ impl Checkpointer {
     fn remove_checkpoint_dir(&self, cpm: &CheckpointMetadata) -> Result<(), Error> {
         assert_ne!(cpm.uuid, Uuid::nil());
         self.backend
-            .delete_recursive(&Path::new(&cpm.uuid.to_string()))?;
+            .delete_recursive(&cpm.uuid.to_string().into())?;
         Ok(())
     }
 
@@ -274,12 +261,9 @@ impl Checkpointer {
 
             let potentially_remove = self.gather_batches_for_checkpoint(&cp_to_remove)?;
             let need_to_keep = self.gather_batches_for_checkpoint(next_in_line)?;
-            let to_remove = potentially_remove
-                .difference(&need_to_keep)
-                .map(PathBuf::from)
-                .collect::<Vec<_>>();
-
-            self.remove_batch_files(&to_remove)?;
+            for file in potentially_remove.difference(&need_to_keep) {
+                self.remove_batch_file(file);
+            }
             self.remove_checkpoint_dir(&cp_to_remove)?;
 
             Ok(Some(cp_to_remove))

@@ -17,9 +17,9 @@ use crate::{
     Error, Timestamp,
 };
 use dyn_clone::clone_box;
+use feldera_storage::StoragePath;
 use minitrace::trace;
 use size_of::SizeOf;
-use std::path::Path;
 use std::{
     borrow::Cow,
     cell::{Ref, RefCell},
@@ -988,14 +988,14 @@ where
         !self.dirty[scope as usize]
     }
 
-    fn commit(&mut self, base: &Path, pid: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath, pid: &str) -> Result<(), Error> {
         self.trace
             .as_mut()
             .map(|trace| trace.commit(base, pid))
             .unwrap_or(Ok(()))
     }
 
-    fn restore(&mut self, base: &Path, pid: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &StoragePath, pid: &str) -> Result<(), Error> {
         self.trace
             .as_mut()
             .map(|trace| trace.restore(base, pid))
