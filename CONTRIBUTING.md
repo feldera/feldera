@@ -22,6 +22,7 @@ Our dependencies are:
         - this will need a C and C++ compiler installed (e.g., gcc, gcc++)
     - cmake
     - libssl-dev
+    - libsasl2-dev
 - SQL Compiler
     - a Java Virtual Machine (at least Java 19)
     - maven

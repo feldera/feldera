@@ -30,8 +30,7 @@ regex = { version = "1.6.0" }
 time = { version = "0.3.14", features = ["formatting"] }
 paste = { version = "1.0.9" }
 rand = { version = "0.8", features = ["small_rng"] }
-# cmake-build is required on Windows.
-rdkafka = { version = "0.37.0", features = ["cmake-build", "ssl-vendored", "gssapi-vendored"], optional = true }
+rdkafka = { version = "0.37.0", features = ["ssl-vendored", "gssapi-vendored"], optional = true }
 clap = { version = "3.2.8", features = ["derive", "env"] }
 cached = { version = "0.38.0" }
 serde = { version = "1.0", features = ["derive"] }

@@ -52,8 +52,7 @@ serde_json = { version = "1.0.127", features = ["raw_value"] }
 serde_urlencoded = "0.7.1"
 form_urlencoded = "1.2.0"
 csv = "1.2.2"
-# cmake-build is required on Windows.
-rdkafka = { version = "0.37.0", features = ["cmake-build", "ssl-vendored", "gssapi-vendored", "zstd", "libz"], optional = true }
+rdkafka = { version = "0.37.0", features = ["ssl-vendored", "gssapi-vendored", "zstd", "libz"], optional = true }
 aws-sdk-s3 = { version = "1.17.0", features = ["behavior-version-latest"] }
 aws-types = "1.1.7"
 actix = "0.13.1"

@@ -9,6 +9,11 @@ jobs:
   main:
     runs-on: ubuntu-latest
     steps:
+      # Required by librdkafka.
+      - name: Install libsasl2-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsasl2-dev
       - uses: actions/checkout@v3
       - uses: oven-sh/setup-bun@v2
       - uses: actions-rust-lang/setup-rust-toolchain@v1
