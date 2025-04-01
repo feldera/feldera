@@ -112,6 +112,7 @@ To run Feldera from sources, first install required dependencies:
 - [Rust tool chain](https://www.rust-lang.org/tools/install)
 - cmake
 - libssl-dev
+- libsasl2-dev
 - Java Development Kit (JDK), version 19 or newer
 - maven
 - [Bun](https://bun.sh/docs/installation)
