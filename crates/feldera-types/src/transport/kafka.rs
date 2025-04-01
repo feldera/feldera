@@ -3,12 +3,9 @@ use serde::de::{Error, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use std::fmt::Formatter;
-use std::{
-    collections::BTreeMap,
-    env,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::BTreeMap, env};
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 /// Configuration for reading data from Kafka topics with `InputTransport`.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
@@ -151,13 +148,7 @@ impl KafkaInputConfig {
         self.set_option_if_missing("enable.auto.commit", "false");
         self.set_option_if_missing("enable.auto.offset.store", "false");
 
-        let group_id = format!(
-            "{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        );
+        let group_id = format!("{}", Uuid::now_v7());
         self.set_option_if_missing("group.id", &group_id);
         self.set_option_if_missing("enable.partition.eof", "false");
 
