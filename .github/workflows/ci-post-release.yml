@@ -20,7 +20,7 @@ jobs:
   adjust-versions:
     runs-on: [self-hosted, skylake40]
     container:
-      image: ghcr.io/feldera/feldera-dev:39c1b55d0972ccd26375cf2f7cbc8554f4609da8
+      image: ghcr.io/feldera/feldera-dev:f4797ad926773a38483275405728a9eb3b9005b5
       options: --user=ubuntu
       volumes:
         - /sccache:/sccache

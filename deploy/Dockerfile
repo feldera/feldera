@@ -15,8 +15,9 @@ ENV OPENSSL_STATIC=1
 RUN apt update --fix-missing && apt install \
   # pkg-config is required for cargo to find libssl
   libssl-dev pkg-config \
-  # rdkafka dependency needs cmake and a CXX compiler
-  cmake build-essential \
+  cmake \
+  # rdkafka dependency needs libsasl2-dev and the CXX compiler
+  libsasl2-dev build-essential \
   # To install rust
   curl  \
   # For running the SQL compiler
