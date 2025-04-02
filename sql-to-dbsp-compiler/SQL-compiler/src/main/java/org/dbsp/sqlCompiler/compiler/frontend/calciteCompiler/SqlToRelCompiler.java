@@ -106,6 +106,7 @@ import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
+import org.apache.calcite.sql.util.ListSqlOperatorTable;
 import org.apache.calcite.sql.util.SqlBasicVisitor;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.util.SqlShuttle;
@@ -213,6 +214,8 @@ public class SqlToRelCompiler implements IWritesLogs {
     private final Set<ProgramIdentifier> usedViewDeclarations;
     /** Views which have been defined */
     private final Set<ProgramIdentifier> definedViews;
+    // Changing this may break all sorts of things.  Calcite is very brittle to this kind of stuff.
+    public static final Casing UNQUOTED_CASING = Casing.TO_LOWER;
 
     public SqlToRelCompiler(CompilerOptions options, IErrorReporter errorReporter) {
         this.options = options;
@@ -221,38 +224,18 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.definedViews = new HashSet<>();
         this.extraValidator = new ExtraValidation(errorReporter);
 
-        Casing unquotedCasing = Casing.TO_UPPER;
-        switch (options.languageOptions.unquotedCasing) {
-            case "upper":
-                //noinspection ReassignedVariable,DataFlowIssue
-                unquotedCasing = Casing.TO_UPPER;
-                break;
-            case "lower":
-                unquotedCasing = Casing.TO_LOWER;
-                break;
-            case "unchanged":
-                unquotedCasing = Casing.UNCHANGED;
-                break;
-            default:
-                errorReporter.reportError(SourcePositionRange.INVALID,
-                        "Illegal option",
-                        "Illegal value for option --unquotedCasing: " +
-                                Utilities.singleQuote(options.languageOptions.unquotedCasing));
-                // Continue execution.
-        }
-
         // This influences function name lookup.
         // We want that to be case-insensitive.
         // Notice that this does NOT affect the parser, only the validator.
         java.util.Properties connConfigProp = new java.util.Properties();
-        connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), String.valueOf(false));
+        connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), String.valueOf(true));
         this.udt = new HashMap<>();
         this.connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
         this.parserConfig = SqlParser.config()
                 .withLex(options.languageOptions.lexicalRules)
                 // Our own parser factory
                 .withParserFactory(DbspParserImpl.FACTORY)
-                .withUnquotedCasing(unquotedCasing)
+                .withUnquotedCasing(UNQUOTED_CASING)
                 .withQuotedCasing(Casing.UNCHANGED)
                 .withConformance(SqlConformanceEnum.LENIENT);
         this.calciteCatalog = new Catalog("schema");
@@ -522,10 +505,26 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
+    /** An operator table which does name matching always in a case-insensitive way.
+     * As a consequence, all function name lookups are case-insensitive in SQL. */
+    static class CaseInsensitiveOperatorTable extends ListSqlOperatorTable {
+        @SuppressWarnings("deprecation")
+        CaseInsensitiveOperatorTable(List<? extends SqlOperator> operators) {
+            //noinspection unchecked
+            super((List<SqlOperator>) operators);
+        }
+
+        @Override
+        protected void lookUpOperators(String name, boolean caseSensitive, Consumer<SqlOperator> consumer) {
+            // always case-insensitive
+            super.lookUpOperators(name, false, consumer);
+        }
+    }
+
     SqlOperatorTable createOperatorTable() {
         return SqlOperatorTables.chain(
                 CalciteFunctions.INSTANCE.getFunctions(),
-                SqlOperatorTables.of(this.customFunctions.getInitialFunctions())
+                new CaseInsensitiveOperatorTable(this.customFunctions.getInitialFunctions())
         );
     }
 
@@ -558,8 +557,10 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .withIdentifierExpansion(true);
         validatorConfig = validatorConfig.withConformance(new Conformance(validatorConfig.conformance()));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
-                CalciteSchema.from(this.rootSchema), Collections.singletonList(calciteCatalog.schemaName),
-                this.typeFactory, this.connectionConfig);
+                CalciteSchema.from(this.rootSchema),
+                Collections.singletonList(calciteCatalog.schemaName),
+                this.typeFactory,
+                this.connectionConfig);
         this.validator = SqlValidatorUtil.newValidator(
                 newOperatorTable,
                 catalogReader,

@@ -518,9 +518,9 @@ SELECT
     MAX(amount)
 FROM TABLE(
   TUMBLE(
-    DATA => TABLE purchase,
-    TIMECOL => DESCRIPTOR(ts),
-    SIZE => INTERVAL 1 DAY))
+    "DATA" => TABLE purchase,
+    "TIMECOL" => DESCRIPTOR(ts),
+    "SIZE" => INTERVAL 1 DAY))
 GROUP BY
     window_start;
 ```

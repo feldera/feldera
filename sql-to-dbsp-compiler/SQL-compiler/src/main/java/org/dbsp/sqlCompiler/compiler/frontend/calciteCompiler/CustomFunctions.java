@@ -96,7 +96,8 @@ public class CustomFunctions {
                 @org.checkerframework.checker.nullness.qual.Nullable SqlOperandTypeChecker operandTypeChecker,
                 SqlFunctionCategory category,
                 String documentationFile) {
-            super(name, kind, returnTypeInference, null, operandTypeChecker, category);
+            // The lowerCase here should match the parserConfig.unquotedCasing
+            super(name.toLowerCase(), kind, returnTypeInference, null, operandTypeChecker, category);
             this.documentationFile = documentationFile;
         }
 
@@ -106,9 +107,7 @@ public class CustomFunctions {
                 @org.checkerframework.checker.nullness.qual.Nullable SqlOperandTypeChecker operandTypeChecker,
                 SqlFunctionCategory category,
                 String documentationFile) {
-            super(name, SqlKind.OTHER_FUNCTION, returnTypeInference,
-                    null, operandTypeChecker, category);
-            this.documentationFile = documentationFile;
+            this(name, SqlKind.OTHER_FUNCTION, returnTypeInference, operandTypeChecker, category, documentationFile);
         }
 
         @Override

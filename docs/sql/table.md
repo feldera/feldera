@@ -54,12 +54,12 @@ SELECT * FROM TABLE(
     INTERVAL '1' MINUTE));
 
 -- or with the named params
--- note: the DATA param must be the first
+-- note: the DATA param must be the first, and the parameter names must be quoted
 SELECT * FROM TABLE(
   TUMBLE(
-    DATA => TABLE orders,
-    TIMECOL => DESCRIPTOR(rowtime),
-    SIZE => INTERVAL '1' MINUTE));
+    "DATA" => TABLE orders,
+    "TIMECOL" => DESCRIPTOR(rowtime),
+    "SIZE" => INTERVAL '1' MINUTE));
 ```
 
 The result is a table that has all the columns of the `order` table,
@@ -99,13 +99,13 @@ SELECT * FROM TABLE(
     INTERVAL '5' MINUTE));
 
 -- or with the named params
--- note: the DATA param must be the first
+-- note: the DATA param must be the first, and parameter names must be quoted
 SELECT * FROM TABLE(
   HOP(
-    DATA => TABLE orders,
-    TIMECOL => DESCRIPTOR(rowtime),
-    SLIDE => INTERVAL '2' MINUTE,
-    SIZE => INTERVAL '5' MINUTE));
+    "DATA" => TABLE orders,
+    "TIMECOL" => DESCRIPTOR(rowtime),
+    "SLIDE" => INTERVAL '2' MINUTE,
+    "SIZE" => INTERVAL '5' MINUTE));
 ```
 
 applies hopping with 5-minute interval size on rows from table

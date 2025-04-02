@@ -95,8 +95,7 @@ user-defined type.  Each name of a field of the user-defined type is
 used as an index into the map.  If a field is missing in the map and
 the corresponding field of the struct gets the `NULL` value.  Fields
 in the map that do not correspond to the struct field names are
-ignored.  The user-defined structure field names are case-sensitive,
-according to the compiler flag `--unquotedCasing`.
+ignored.
 
 :::note
 
@@ -367,7 +366,7 @@ VARCHAR
 SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT)."a"
 1
 
--- Unquoted field may not match, depending on the 'unquotedCasing' compiler flag
+-- Unquoted uppercase field name does match
 SELECT CAST(Map['A',1,'b',2,'c',3] AS VARIANT).A
 NULL
 

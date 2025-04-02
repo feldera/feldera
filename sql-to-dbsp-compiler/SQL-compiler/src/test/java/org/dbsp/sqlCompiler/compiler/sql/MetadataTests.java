@@ -388,7 +388,6 @@ public class MetadataTests extends BaseSQLTests {
         compiler.getFinalCircuit(false);
         ObjectNode node = compiler.getIOMetadataAsJson();
         String json = node.toPrettyString();
-        System.out.println(json);
         Assert.assertTrue(json.contains("""
                 {
                   "inputs" : [ {
@@ -506,34 +505,18 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertFalse(tuple.tupFields[0].mayBeNull);
     }
 
-    // Test the --unquotedCasing command-line parameter
     @Test
     public void casing() throws IOException, InterruptedException, SQLException {
-        // This used to work, but https://issues.apache.org/jira/browse/CALCITE-6933
         String sql = """
-                -- CREATE TABLE "T" (COL1 INT NOT NULL);
+                CREATE TABLE "T" (COL1 INT NOT NULL);
                 CREATE TABLE "t" (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
-                // lowercase 'rlike' only works if we lookup function names case-insensitively
                 CREATE VIEW V AS SELECT COL1, rlike(COL2, 'asf') FROM "t";""";
         File file = createInputScript(sql);
-        CompilerMessages messages = CompilerMain.execute("--unquotedCasing", "lower",
+        CompilerMessages messages = CompilerMain.execute(
                 "-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
         Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
-    }
-
-    // Test illegal values for the --unquotedCasing command-line parameter
-    @Test
-    public void illegalCasing() throws IOException, SQLException {
-        String sql = """
-                CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
-                CREATE VIEW V AS SELECT COL1 FROM T;""";
-        File file = createInputScript(sql);
-        CompilerMessages messages = CompilerMain.execute("--unquotedCasing", "to_lower",
-                "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
-        Assert.assertTrue(messages.errorCount() > 0);
-        Assert.assertTrue(messages.toString().contains("Illegal value for option --unquotedCasing"));
     }
 
     // Test that schema for a table can be retrieved from a JDBC data source
@@ -613,7 +596,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL;
                 CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5);
                 CREATE FUNCTION "EMPTY"() RETURNS VARCHAR;
-                CREATE VIEW V1 AS SELECT "empty"();""");
+                CREATE VIEW V1 AS SELECT "EMPTY"();""");
 
         File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
@@ -733,10 +716,6 @@ public class MetadataTests extends BaseSQLTests {
                     --trimInputs
                       Do not ingest unused fields of input tables
                       Default: false
-                    --unquotedCasing
-                      How unquoted identifiers are treated.  Choices are: 'upper', 'lower',\s
-                      'unchanged'\s
-                      Default: lower
                     -O
                       Optimization level (0, 1, or 2)
                       Default: 2

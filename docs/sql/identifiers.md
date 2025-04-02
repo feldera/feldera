@@ -1,20 +1,21 @@
 # Identifiers
 
-Identifiers are the names of tables, columns and other metadata
-elements used in a SQL query.
+The names of tables, columns, functions, user-defined types, field
+names, and other metadata elements used in a SQL query are represented
+by identifiers.
 
 Unquoted identifiers, such as `emp`, must start with a letter and can
-only contain letters, digits, and underscores. They are implicitly
-converted to upper case.
+only contain letters, digits, and underscores. They are automatically
+converted to all-lower case.  So `emp`, `EMP`, and `eMp` are all
+converted to the same lowercase identifier `emp`, and they all
+represent the same identifier.
 
 Quoted identifiers, such as `"Employee Name"`, start and end with
 double quotes. They may contain virtually any character, including
 spaces and other punctuation. If you wish to include a double quote in
 an identifier, use another double quote to escape it, like this: `"An
-employee called ""Fred""."`.
-
-Quoting an identifier also makes it case-sensitive, whereas unquoted
-names are always folded to upper case.
+employee called ""Fred""."`.  The identifiers `"emp"` and `"EMP"` are
+thus different.  Quoted identifiers are left unchanged.
 
 A variant of quoted identifiers allows including escaped Unicode
 characters identified by their code points. This variant starts with
@@ -41,10 +42,23 @@ single quotes, not double quotes, after UESCAPE.
 To include the escape character in the identifier literally, write it
 twice.
 
-Currently table, view, and column names are looked-up in a
-case-insensitive manner even if they are quoted, so a program cannot
-contain simultaneously two such objects whose names only differ in
-case-sensitivity.  Function names however can be case-sensitive.
+## Name lookup
+
+Unquoted identifiers are all converted automatically to lowercase
+during parsing.  Quoted identifiers are left unchanged.
+
+After these conversions, table, view, user-defined type names,
+user-defined field names, `ROW` type field names, user-defined
+function names, and column names are looked-up in a case-sensitive
+manner.  However, for the pre-defined functions, name lookup is
+case-insensitive.  This means that users *cannot* define new functions
+or types whose names match existing function names, if they only
+differ in case.
+
+Table functions have named parameters; the built-in table functions
+`TUMBLE` and `HOP` have been defined with uppercase parameter names,
+so these names have to be quoted when they are used (see [table
+functions](table.md)).
 
 ## Comments
 

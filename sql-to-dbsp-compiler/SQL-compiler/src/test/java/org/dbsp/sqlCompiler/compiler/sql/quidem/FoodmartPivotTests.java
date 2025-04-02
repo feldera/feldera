@@ -196,7 +196,7 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +---------+--------------+----------+--------------+
                 (1 row)
 
-                SELECT "10_SUM_EMPNO"
+                SELECT 10_sum_empno
                 FROM (SELECT sal, empno, deptno FROM emp)
                 PIVOT (SUM(sal), COUNT(*), SUM(empno) AS sum_empno FOR deptno IN (10, 20));
                 +--------------+

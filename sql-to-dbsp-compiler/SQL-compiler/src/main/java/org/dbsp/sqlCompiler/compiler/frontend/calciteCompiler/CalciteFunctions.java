@@ -331,11 +331,9 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 operators.add(func.function);
         }
         return SqlOperatorTables.chain(
-                SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(
-                        // Always load all standard functions
-                        SqlLibrary.STANDARD,
-                        // There is no easy way to skip spatial functions
-                        SqlLibrary.SPATIAL),
-                SqlOperatorTables.of(operators));
+                SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(SqlLibrary.STANDARD),
+                new SqlToRelCompiler.CaseInsensitiveOperatorTable(
+                        SqlOperatorTables.spatialInstance().getOperatorList()),
+                new SqlToRelCompiler.CaseInsensitiveOperatorTable(operators));
     }
 }

@@ -86,10 +86,6 @@ Usage: sql-to-dbsp [options] Input file to compile
     --trimInputs
       Do not ingest unused fields of input tables
       Default: false
-    --unquotedCasing
-      How unquoted identifiers are treated.  Choices are: 'upper', 'lower',
-      'unchanged'
-      Default: lower
     -O
       Optimization level (0, 1, or 2)
       Default: 2

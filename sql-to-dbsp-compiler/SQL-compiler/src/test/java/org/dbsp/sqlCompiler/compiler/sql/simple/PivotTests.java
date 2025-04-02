@@ -53,7 +53,7 @@ public class PivotTests extends SqlIoTest {
     @Test
     public void testGGPivot() {
         this.q("""
-                SELECT CourseName, "PG", "IV"
+                SELECT CourseName, PG, IV
                 FROM GG
                 PIVOT (
                    SUM(Price) FOR CourseCategory IN (
