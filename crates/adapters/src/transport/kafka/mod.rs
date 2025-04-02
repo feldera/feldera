@@ -13,7 +13,8 @@ use sha2::Digest;
 use std::cmp::min;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
+#[cfg(test)]
+use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 use tracing::warn;
@@ -284,14 +285,4 @@ where
 
 fn is_retriable_send_error(error: RDKafkaErrorCode) -> bool {
     error == RDKafkaErrorCode::QueueFull
-}
-
-/// Returns a mutex guard for serializing initialization of Kafka connectors.
-///
-/// [Issue 3794](https://github.com/feldera/feldera/issues/3794) reported that
-/// parallel initialization can cause timeouts.
-fn serialize_kafka_initialization() -> MutexGuard<'static, ()> {
-    static SERIALIZE: Mutex<()> = Mutex::new(());
-
-    SERIALIZE.lock().unwrap()
 }
