@@ -71,9 +71,6 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--no-restrict-io",
                 description = "Do not restrict the types of columns allowed in tables and views")
         public boolean unrestrictedIOTypes = false;
-        @Parameter(names = "--unquotedCasing",
-                description = "How unquoted identifiers are treated.  Choices are: 'upper', 'lower', 'unchanged'")
-        public String unquotedCasing = "lower";
 
         public boolean same(Language language) {
             // Only compare fields that matter.
@@ -95,7 +92,6 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ", unrestrictedIOTypes=" + this.unrestrictedIOTypes +
                     ", lexicalRules=" + this.lexicalRules +
                     ", lenient=" + this.lenient +
-                    ", unquotedCasing=" + this.unquotedCasing +
                     '}';
         }
 
@@ -147,11 +143,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
     public String canonicalName(String name, boolean nameIsQuoted) {
         if (nameIsQuoted)
             return name;
-        Casing casing = switch (this.languageOptions.unquotedCasing) {
-            case "upper" -> Casing.TO_UPPER;
-            case "lower" -> Casing.TO_LOWER;
-            default -> Casing.UNCHANGED;
-        };
+        Casing casing = Casing.TO_LOWER;
         return SqlParserUtil.toCase(name, casing);
     }
 

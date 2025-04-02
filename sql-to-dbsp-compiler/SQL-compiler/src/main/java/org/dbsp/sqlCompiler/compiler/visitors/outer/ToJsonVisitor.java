@@ -155,7 +155,10 @@ public class ToJsonVisitor extends CircuitDispatcher {
             if (!first)
                 this.builder.append(",").newline();
             first = false;
-            this.emitPort(out);
+            if (out != null)
+                this.emitPort(out);
+            else
+                this.builder.append("null");
         }
         this.builder.decrease().newline().append("]");
         for (DBSPOperator op : nested.getAllOperators()) {

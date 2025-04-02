@@ -303,6 +303,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
         }
 
+        if (!range.isValid())
+            range = this.errorContext;
         this.messages.reportProblem(range, warning, continuation, errorType, message);
         if (!warning && this.options.languageOptions.throwOnError) {
             System.err.println(this.messages);

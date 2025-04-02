@@ -1019,7 +1019,7 @@ public class TrigonometryTests extends SqlIoTest {
                         NULL
                         (1 row)
 
-                        SELECT degrees(0);
+                        SELECT DEGREES(0);
                          degrees
                         ---------
                          0

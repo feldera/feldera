@@ -525,32 +525,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
-    public void issue2043uppercase() {
-        // Simulate a different unquotedCasing flag
-        String sql =
-                """
-                CREATE TABLE transactions (
-                    id INT NOT NULL PRIMARY KEY,
-                    ts TIMESTAMP LATENESS INTERVAL 0 SECONDS,
-                    user_id INT,
-                    AMOUNT DECIMAL
-                ) with ('materialized' = 'true');
-
-                CREATE MATERIALIZED VIEW window_computation AS SELECT
-                    user_id,
-                    COUNT(*) AS transaction_count_by_user
-                    FROM transactions
-                    WHERE ts > NOW() - INTERVAL 1 DAY and ts <= NOW()
-                    GROUP BY user_id;""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        compiler.options.languageOptions.unquotedCasing = "upper";
-        compiler.submitStatementsForCompilation(sql);
-        getCircuit(compiler);
-        Assert.assertEquals(0, compiler.messages.exitCode);
-    }
-
-    @Test
     public void issue2018() {
         String sql = """
                 CREATE TABLE customer (

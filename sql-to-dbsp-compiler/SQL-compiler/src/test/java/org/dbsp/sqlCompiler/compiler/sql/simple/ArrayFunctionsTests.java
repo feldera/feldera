@@ -915,9 +915,9 @@ public class ArrayFunctionsTests extends SqlIoTest {
     public void testArraysOverlapDiffTypes() {
         // fails for the Calcite optimized version as Calcite returns false
         this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2e0, 4e0])",
-                "Cannot apply 'ARRAYS_OVERLAP' to arguments of type");
+                "Cannot apply 'arrays_overlap' to arguments of type");
         this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2.0, 4.0])",
-                "Cannot apply 'ARRAYS_OVERLAP' to arguments of type");
+                "Cannot apply 'arrays_overlap' to arguments of type");
     }
 
     @Test

@@ -202,7 +202,6 @@ public class VariantTests extends BaseSQLTests {
         // Note that field name is quoted to match the case of the key
         this.testQuery("SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT).\"a\"",
                 new DBSPVariantExpression(new DBSPI32Literal(1), true));
-        // Unquoted field may not match, depending on the 'unquotedCasing' compiler flag
         this.testQuery("SELECT CAST(Map['A',1,'b',2,'c',3] AS VARIANT).A",
                 DBSPLiteral.none(DBSPTypeVariant.INSTANCE_NULLABLE));
         // The safest way is to index with a string

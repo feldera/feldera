@@ -27,8 +27,6 @@ public class SerdeTest extends SqlIoTest {
             WHERE z.x is NOT NULL;
             """;
         DBSPCompiler compiler = this.testCompiler();
-        // This test behaves very differently if we don't use this option.
-        compiler.options.languageOptions.unquotedCasing = "lower";
         compiler.submitStatementsForCompilation(ddl);
         CompilerCircuitStream ccs = this.getCCS(compiler);
         // This will be converted properly to a struct
@@ -74,8 +72,6 @@ public class SerdeTest extends SqlIoTest {
             AS SELECT jsonstring_as_address2(data.addr) FROM data;
             """;
         DBSPCompiler compiler = this.testCompiler();
-        // This test behaves very differently if we don't use this option.
-        compiler.options.languageOptions.unquotedCasing = "lower";
         compiler.submitStatementsForCompilation(ddl);
         CompilerCircuitStream ccs = this.getCCS(compiler);
         DBSPExpression addressIn0 = new DBSPTupleExpression(
