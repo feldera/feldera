@@ -86,6 +86,10 @@ public class MultiCrates {
             BaseRustCodeGenerator tWriter = new RustFileWriter().setUsed(t).withUdf(false).withMalloc(false);
             CrateGenerator semi = new CrateGenerator(
                     this.rootDirectory, FILE_PREFIX + "semi" + i, tWriter, enterprise);
+            if (!used.isPredefined(i)) {
+                CrateGenerator tuple = Utilities.getExists(this.tupleCrates, i);
+                semi.addDependency(tuple);
+            }
             Utilities.putNew(this.semiCrates, i, semi);
         }
 

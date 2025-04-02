@@ -93,6 +93,12 @@ public class MultiCrateTests extends BaseSQLTests {
         this.compileMultiCrate(file.getAbsolutePath());
     }
 
+    @Test @Ignore
+    public void testMultiCrateLarge2() throws IOException, SQLException, InterruptedException {
+        File file = new File("../extra/slicer-q1.sql");
+        this.compileMultiCrate(file.getAbsolutePath());
+    }
+
     @Test
     public void testJoin() throws IOException, SQLException, InterruptedException {
         String sql = """
@@ -194,6 +200,7 @@ public class MultiCrateTests extends BaseSQLTests {
                 }""");
         udfFile.close();
         this.compileMultiCrate(file.getAbsolutePath());
+        //noinspection ResultOfMethodCallIgnored
         udf.delete();
     }
 
@@ -237,6 +244,7 @@ public class MultiCrateTests extends BaseSQLTests {
                 }""");
         udfFile.close();
         this.compileMultiCrate(file.getAbsolutePath());
+        //noinspection ResultOfMethodCallIgnored
         udf.delete();
     }
 }
