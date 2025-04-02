@@ -9,6 +9,7 @@ use arrow::ipc::reader::StreamReader;
 use arrow::util::pretty::pretty_format_batches;
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
+use env_logger::Env;
 use feldera_types::config::{FtConfig, RuntimeConfig, StorageOptions};
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
@@ -1227,6 +1228,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                             Ok(chunk) => buffer.extend_from_slice(&chunk),
                             Err(e) => {
                                 eprintln!("ERROR: Unable to read server response: {}", e);
+                                debug!("Detailed response error: {:?}", e);
                                 std::process::exit(1);
                             }
                         }
@@ -1243,6 +1245,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                             Ok(chunk) => ipc_bytes.write_all(chunk.as_ref()).unwrap(),
                             Err(e) => {
                                 eprintln!("ERROR: Unable to read server response: {}", e);
+                                debug!("Detailed response error: {:?}", e);
                                 std::process::exit(1);
                             }
                         }
@@ -1653,9 +1656,8 @@ async fn main() {
     CompleteEnv::with_factory(Cli::command).complete();
 
     let mut cli = Cli::parse();
-
-    let _r = env_logger::builder()
-        .filter_level(log::LevelFilter::Warn)
+    let env = Env::default().default_filter_or("warn");
+    let _r = env_logger::Builder::from_env(env)
         .format_target(false)
         .format_timestamp(None)
         .try_init();
