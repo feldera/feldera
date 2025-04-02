@@ -64,7 +64,9 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ToJsonVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -81,6 +83,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -218,13 +221,16 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return result;
     }
 
-    // Will soon be overwritten
+    // Will be overwritten in the start() function.
     public static ProgramIdentifier NOW_TABLE_NAME = new ProgramIdentifier("", false);
     public static ProgramIdentifier ERROR_TABLE_NAME = new ProgramIdentifier("", false);
     public static ProgramIdentifier ERROR_VIEW_NAME = new ProgramIdentifier("", false);
 
     // Steps executed before the actual compilation.
     void start() {
+        InnerVisitor.profiles.clear();
+        CircuitVisitor.profiles.clear();
+
         // Compute the names based on the compiler flags.
         NOW_TABLE_NAME = this.canonicalName("now", false);
         ERROR_TABLE_NAME = this.canonicalName("ERROR_TABLE", false);
@@ -742,9 +748,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     private static long compileStartTime = 0;
+    public static final DecimalFormat COMMA_FORMATTER = new DecimalFormat("#,###.##");
 
-    public static long elapsedTimeInMs() {
-        return System.currentTimeMillis() - compileStartTime;
+    public static String elapsedTimeInMs() {
+        long ms = System.currentTimeMillis() - compileStartTime;
+        return COMMA_FORMATTER.format(ms);
     }
 
     /** Run all compilation stages.
@@ -757,6 +765,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         if (this.getDebugLevel() > 0 && !temporary && circuit != null) {
             ToDot.dump(this, "final.png", this.getDebugLevel(), "png", circuit);
         }
+        Logger.INSTANCE.belowLevel(this, 2)
+                .appendSupplier(() -> InnerVisitor.profiles.toString("Inner", 10))
+                .newline()
+                .appendSupplier(() -> CircuitVisitor.profiles.toString("Outer", 10))
+                .newline();
         if (this.options.ioOptions.verbosity > 2)
             System.out.println("Compilation took " + elapsedTimeInMs() + "ms");
         Logger.INSTANCE.belowLevel(this, 1)

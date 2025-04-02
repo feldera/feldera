@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
@@ -113,6 +114,7 @@ public class ImplementNow extends Passes {
 
         @Override
         public void startVisit(IDBSPInnerNode node) {
+            super.startVisit(node);
             if (this.perExpression) {
                 this.found = false;
             }
@@ -844,30 +846,44 @@ public class ImplementNow extends Passes {
         }
     }
 
-    static class OmitNow extends CircuitDispatcher {
-        public OmitNow(DBSPCompiler compiler, InnerVisitor innerVisitor) {
-            super(compiler, innerVisitor, false);
+    /** Apply ContainsNow to every function in a circuit, except the {@link DBSPNowOperator} */
+    static class CircuitContainsNow extends CircuitDispatcher {
+        public CircuitContainsNow(DBSPCompiler compiler) {
+            super(compiler, new ContainsNow(compiler, false), false);
         }
 
         @Override
         public VisitDecision preorder(DBSPNowOperator node) {
             return VisitDecision.STOP;
         }
+
+        public VisitDecision preorder(DBSPOperator node) {
+            if (this.found())
+                return VisitDecision.STOP;
+            return VisitDecision.CONTINUE;
+        }
+
+        public boolean found() {
+            return this.innerVisitor.to(ContainsNow.class).found;
+        }
     }
 
     public ImplementNow(DBSPCompiler compiler) {
         super("ImplementNow", compiler);
         boolean removeTable = !compiler.compiler().options.ioOptions.nowStream;
-        ContainsNow cn = new ContainsNow(compiler, false);
         RewriteNow rewriteNow = new RewriteNow(compiler);
-        this.passes.add(new OmitNow(compiler, cn));
+        CircuitContainsNow cn = new CircuitContainsNow(compiler);
+        this.passes.add(cn);
         this.passes.add(new Conditional(compiler, rewriteNow, cn::found));
         this.passes.add(new Conditional(compiler,
-                new RemoveTable(compiler, DBSPCompiler.NOW_TABLE_NAME), () -> !cn.found || removeTable));
-        ContainsNow cn0 = new ContainsNow(compiler, false);
-        this.passes.add(new OmitNow(compiler, cn0));
-        this.passes.add(new Conditional(compiler,
+                new RemoveTable(compiler, DBSPCompiler.NOW_TABLE_NAME), () -> !cn.found() || removeTable));
+        Passes check = new Passes("CheckNow", compiler);
+        CircuitContainsNow cn0 = new CircuitContainsNow(compiler);
+        check.add(cn0);
+        check.add(new Conditional(compiler,
                 new Fail(compiler, "Instances of 'now' have not been replaced"), cn0::found));
+        // Only if we found now previously we check that it's been removed
+        this.passes.add(new Conditional(compiler, check, cn::found));
     }
 }
 

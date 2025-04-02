@@ -48,6 +48,7 @@ public class DeterministicDefault extends CircuitVisitor {
 
         @Override
         public void startVisit(IDBSPInnerNode node) {
+            super.startVisit(node);
             this.found = false;
         }
 

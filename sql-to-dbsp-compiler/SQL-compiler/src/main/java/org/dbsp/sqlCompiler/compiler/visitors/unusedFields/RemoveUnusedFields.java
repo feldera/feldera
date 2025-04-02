@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -42,10 +43,12 @@ import java.util.Objects;
  */
 public class RemoveUnusedFields extends CircuitCloneVisitor {
     public final FindUnusedFields find;
+    final AnalyzedSet<DBSPExpression> functionsAnalyzed;
 
-    public RemoveUnusedFields(DBSPCompiler compiler) {
+    public RemoveUnusedFields(DBSPCompiler compiler, AnalyzedSet<DBSPExpression> functionsAnalyzed) {
         super(compiler, false);
         this.find = new FindUnusedFields(compiler);
+        this.functionsAnalyzed = functionsAnalyzed;
     }
 
     OutputPort getProjection(CalciteRelNode node, FieldUseMap fieldMap, OutputPort input) {
@@ -67,8 +70,14 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         return map.outputPort();
     }
 
+    boolean done(DBSPExpression expression) {
+        return this.functionsAnalyzed.done(expression);
+    }
+
     boolean processJoin(DBSPJoinBaseOperator join) {
         DBSPClosureExpression joinFunction = join.getClosureFunction();
+        if (this.done(joinFunction))
+            return false;
         joinFunction = this.find.findUnusedFields(joinFunction);
 
         assert joinFunction.parameters.length == 3;
@@ -84,7 +93,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         OutputPort leftMap = getProjection(join.getRelNode(), leftRemap, join.left());
         OutputPort rightMap = getProjection(join.getRelNode(), rightRemap, join.right());
 
-        // Parameter 0 is not fields in the body of the function, leave it unchanged
+        // Parameter 0 does not emit fields in the body of the function, leave it unchanged
         rw.parameterFullyUsed(joinFunction.parameters[0]);
         DBSPClosureExpression newJoinFunction = rw.rewriteClosure(joinFunction);
         DBSPSimpleOperator replacement =
@@ -138,6 +147,11 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         }
 
         DBSPClosureExpression closure = operator.getClosureFunction();
+        if (this.done(closure)) {
+            super.postorder(operator);
+            return;
+        }
+
         assert closure.parameters.length == 1;
         closure = this.find.findUnusedFields(closure);
         if (!this.find.foundUnusedFields(1)) {
@@ -199,6 +213,11 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         DBSPClosureExpression closure = operator.getClosureFunction();
         assert closure.parameters.length == 1;
+        if (this.done(closure)) {
+            super.postorder(operator);
+            return;
+        }
+
         closure = this.find.findUnusedFields(closure);
         if (!this.find.foundUnusedFields(1)) {
             super.postorder(operator);

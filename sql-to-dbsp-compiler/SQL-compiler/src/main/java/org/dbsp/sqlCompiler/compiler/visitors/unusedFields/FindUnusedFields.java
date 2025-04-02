@@ -339,7 +339,6 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     public void startVisit(IDBSPInnerNode node) {
         super.startVisit(node);
         this.parameterFieldMap.clear();
-        this.resolver.startVisit(node);
     }
 
     /** Find unused fields in the closure.  Node: this ensures that the closure is a tree,
