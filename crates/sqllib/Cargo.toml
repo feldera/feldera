@@ -11,30 +11,30 @@ categories = ["database", "api-bindings", "network-programming"]
 publish = true
 
 [dependencies]
-thiserror = "1.0"
-dbsp = { path = "../dbsp", version = "0.43.0" }
-feldera-types = { path = "../feldera-types", version = "0.43.0" }
-itertools = { version = "0.13.0" }
+thiserror = { workspace = true }
+dbsp = { workspace = true }
+feldera-types = { workspace = true }
+itertools = { workspace = true }
 # `serde-with-arbitrary-precision` is needed because we enable `arbitrary_precision` in `serde_json`.
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["maths", "rkyv", "serde-float", "serde-arbitrary-precision"] }
-geo = { version = "0.26.0" }
-size-of = { version = "0.1.5", package = "feldera-size-of", features = ["rust_decimal"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }
-num = { version = "0.4.1" }
+geo = { workspace = true }
+size-of = { workspace = true, features = ["rust_decimal"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
+num = { workspace = true }
 # Go back to a version once commit containing 849932 is released:
-chrono = { version = "0.4.38" }
-like = { version = "0.3.1" }
-paste = { version = "1.0.12" }
-regex = { version = "1.9.1" }
-rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
-hex = "0.4.3"
-num-traits = "0.2"
-flate2 = "1.0.28"
-metrics = { version = "0.23.0" }
-base64 = "0.22.1"
-uuid = { version = "1.11.0", features = ["v4", "std"] }
-arcstr = { version = "1.2.0", features = ["serde"] }
+chrono = { workspace = true }
+like = { workspace = true }
+paste = { workspace = true }
+regex = { workspace = true }
+rkyv = { workspace = true, features = ["std", "size_64"] }
+hex = { workspace = true }
+num-traits = { workspace = true }
+flate2 = { workspace = true }
+metrics = { workspace = true }
+base64 = { workspace = true }
+uuid = { workspace = true, features = ["v4", "std"] }
+arcstr = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
-serde_json = "1.0.107"
+serde_json = { workspace = true }

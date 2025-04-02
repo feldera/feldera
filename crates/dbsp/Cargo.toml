@@ -25,65 +25,61 @@ default = ["backend-mode"]
 backend-mode = []
 
 [dependencies]
-num = "0.4.0"
-anyhow = "1.0.57"
-petgraph = "0.6.0"
-typedmap = { version = "0.3.0", features = ["dashmap"] }
-crossbeam-utils = "0.8.6"
-once_cell = "1.9.0"
-hashbrown = "0.14.2"
-csv = { version = "1.2.2" }
-impl-trait-for-tuples = "0.2"
-itertools = "0.14.0"
-textwrap = "0.15.0"
-ordered-float = { version = "3.9.1", features = ["serde", "rkyv_64"] }
-xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
-crossbeam = "0.8.2"
-arc-swap = "1.5.1"
-mimalloc-rust-sys = "1.7.2"
-rand = "0.8.5"
+num = { workspace = true }
+anyhow = { workspace = true }
+petgraph = { workspace = true }
+typedmap = { workspace = true, features = ["dashmap"] }
+crossbeam-utils = { workspace = true }
+once_cell = { workspace = true }
+hashbrown = { workspace = true }
+csv = { workspace = true }
+impl-trait-for-tuples = { workspace = true }
+itertools = { workspace = true }
+textwrap = { workspace = true }
+ordered-float = { workspace = true, features = ["rkyv_64"] }
+xxhash-rust = { workspace = true, features = ["xxh3"] }
+crossbeam = { workspace = true }
+arc-swap = { workspace = true }
+mimalloc-rust-sys = { workspace = true }
+rand = { workspace = true }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
-rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64", "validation", "uuid"] }
-size-of = { version = "0.1.5", package = "feldera-size-of", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
-tarpc = { version = "0.33.0", features = ["full"] }
-futures = "0.3"
-tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }
-paste = "1"
+rkyv = { workspace = true, features = ["std", "size_64", "validation", "uuid"] }
+size-of = { workspace = true, features = ["hashbrown", "xxhash-xxh3", "arcstr", "chrono"] }
+tarpc = { workspace = true, features = ["full"] }
+futures = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
+paste = { workspace = true }
 derive_more = { version = "1.0", features = ["add", "not", "from", "debug"] }
-dyn-clone = "1.0.17"
-rand_chacha = "0.3.1"
-tempfile = "3.10.0"
-binrw = "0.13.3"
-crc32c = "0.6.4"
-num-derive = "0.4.2"
-num-format = "0.4.0"
-num-traits = "0.2.17"
-thiserror = "1.0"
-uuid = { version = "1.11.0", features = ["v7", "serde"] }
-clap = { version = "4.4.14", features = ["derive", "env", "wrap_help"] }
-fdlimit = { version = "0.3.0" }
-# metrics won't display if it doesn't match the adapters metrics version!
-metrics = { version = "0.23.0" }
-serde = { version = "1.0", features = ["derive"] }
-ptr_meta = "0.2.0"
-feldera-types = { path = "../feldera-types", version = "0.43.0" }
-libc = "0.2.153"
-static_assertions = "1.1.0"
-zip = "0.6.2"
-minitrace = "0.6"
-ouroboros = "0.18.4"
-tracing = "0.1.40"
-snap = "1.1.1"
-enum-map = "2.7.3"
-fastbloom = "0.8.0"
-core_affinity = "0.8.1"
-indexmap = "2.7.1"
-feldera-storage = { path = "../storage", version = "0.43.0" }
-inventory = "0.3"
-
-[dependencies.time]
-version = "0.3.20"
-features = ["formatting", "macros", "serde", "serde-human-readable"]
+dyn-clone = { workspace = true }
+rand_chacha = { workspace = true }
+tempfile = { workspace = true }
+binrw = { workspace = true }
+crc32c = { workspace = true }
+num-derive = { workspace = true }
+num-format = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+clap = { workspace = true, features = ["wrap_help"] }
+fdlimit = { workspace = true }
+metrics = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+ptr_meta = { workspace = true }
+feldera-types = { workspace = true }
+libc = { workspace = true }
+static_assertions = { workspace = true }
+zip = { workspace = true }
+minitrace = { workspace = true }
+ouroboros = { workspace = true }
+tracing = { workspace = true }
+snap = { workspace = true }
+enum-map = { workspace = true }
+fastbloom = { workspace = true }
+core_affinity = { workspace = true }
+indexmap = { workspace = true }
+feldera-storage = { workspace = true }
+inventory = { workspace = true }
+time = { workspace = true, features = ["formatting", "macros", "serde", "serde-human-readable"] }
 
 [target.'cfg(target_family = "unix")'.dependencies]
 nix = { version = "0.27.1", features = ["uio", "feature", "fs"] }
@@ -92,33 +88,28 @@ nix = { version = "0.27.1", features = ["uio", "feature", "fs"] }
 io-uring = "0.6.3"
 
 [dev-dependencies]
-rand = "0.8.5"
-proptest-derive = { version = "0.5.0" }
-proptest = { version = "1.5.0" }
-proptest-state-machine = { version = "0.3.0" }
-futures = { version = "0.3.30", features = ["executor"] }
-pretty_assertions = { version = "1.4" }
-csv = "1.2.2"
-tar = "0.4.38"
-zstd = "0.12.0"
-criterion = "0.5.1"
-pprof = { version = "0.13.0", features = ["flamegraph", "criterion"] }
-rand_xoshiro = "0.6.0"
-indicatif = "0.17.0-rc.11"
-#clap = { version = "3.2.8", features = ["derive", "env"] }
-reqwest = { version = "0.11.11", features = ["blocking"] }
-chrono = { version = "0.4.38", features = ["rkyv-64", "serde"] }
-env_logger = { version = "0.11.2", features = ["color"] }
-serde_json = "1.0.127"
+rand = { workspace = true }
+proptest-derive = { workspace = true }
+proptest = { workspace = true }
+proptest-state-machine = { workspace = true }
+futures = { workspace = true, features = ["executor"] }
+pretty_assertions = { workspace = true }
+csv = { workspace = true }
+tar = { workspace = true }
+zstd = { workspace = true }
+criterion = { workspace = true }
+pprof = { workspace = true, features = ["flamegraph", "criterion"] }
+rand_xoshiro = { workspace = true }
+indicatif = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
+chrono = { workspace = true, features = ["rkyv-64", "serde"] }
+env_logger = { workspace = true, features = ["color"] }
+serde_json = { workspace = true }
 ijson = { version = "0.1.4", package = "feldera-ijson" }
 
 [[bench]]
 name = "galen"
 harness = false
-
-#[[bench]]
-#name = "fraud"
-#harness = false
 
 [[bench]]
 name = "path"
@@ -127,10 +118,6 @@ harness = false
 [[bench]]
 name = "consolidation"
 harness = false
-
-#[[bench]]
-#name = "ldbc-graphalytics"
-#harness = false
 
 [[bench]]
 name = "column_layer"

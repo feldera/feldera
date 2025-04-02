@@ -114,7 +114,7 @@ pub(crate) async fn get_api_key(
     tag = "API keys"
 )]
 #[post("/api_keys")]
-async fn post_api_key(
+pub(crate) async fn post_api_key(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: web::Json<NewApiKeyRequest>,

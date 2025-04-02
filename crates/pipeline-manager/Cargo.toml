@@ -15,86 +15,86 @@ development = ["pg-client-config"]
 
 [dependencies]
 # Feldera
-feldera-types = { path = "../feldera-types" }
+feldera-types = { workspace = true }
 
 # Cryptography provider
 # Make sure this is the same rustls version used by other crates in the dependency tree.
 # See the `ensure_default_crypto_provider` function at the root of this crate.
-rustls = "0.23.12"
+rustls = { workspace = true }
 
 # Logging
-log = "0.4.20"
-env_logger = "0.10.0"
-colored = "2.0.0"
+log = { workspace = true }
+env_logger = { workspace = true, features = ["color"] }
+colored = { workspace = true }
 
 # Error handling and asserts
-anyhow = { version = "1.0.57", features = ["backtrace"] }
-thiserror = "1.0"
-static_assertions = "1.1.0"
+anyhow = { workspace = true, features = ["backtrace"] }
+thiserror = { workspace = true }
+static_assertions = { workspace = true }
 
 # Asynchronous runtime
-tokio = { version = "1.25.0", features = ["rt-multi-thread", "fs", "macros", "process", "io-util", "io-std", "signal"] }
-tokio-stream = { version = "0.1.15" }
-async-stream = { version = "0.3.5" }
-async-trait = "0.1"
-futures-util = "0.3.30"
+tokio = { workspace = true, features = ["rt-multi-thread", "fs", "macros", "process", "io-util", "io-std", "signal"] }
+tokio-stream = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+futures-util = { workspace = true }
 
 # Encoding, decoding and formatting
-rand = "0.8.5"
-uuid = { version = "1.11.0", features = ["v7", "std", "serde"] }
-chrono = { version = "0.4.38", default-features = false, features = ["clock", "serde"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0.127", features = ["preserve_order"] }
-serde_yaml = "0.9.34"
-hex = "0.4.3"
-indoc = "2.0.5"
-openssl = "0.10.66"
-url = {version = "2.4.0"}
-urlencoding = "2.1.3"
-regex = "1.10.2"
-tar = "0.4.44"
-flate2 = "1.1.0"
-base64 = "0.22.1"
+rand = { workspace = true }
+uuid = { workspace = true, features = ["v7", "std", "serde"] }
+chrono = { workspace = true, features = ["clock", "serde"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["preserve_order"] }
+serde_yaml = { workspace = true }
+hex = { workspace = true }
+indoc = { workspace = true }
+openssl = { workspace = true }
+url = { workspace = true }
+urlencoding = { workspace = true }
+regex = { workspace = true }
+tar = { workspace = true }
+flate2 = { workspace = true }
+base64 = { workspace = true }
 
 # Command-line interaction
-clap = { version = "4.0.32", features = ["derive", "env"] }
-termbg = "0.5.1"
+clap = { workspace = true }
+termbg = { workspace = true }
 
 # Database
-tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"]}
-deadpool-postgres = "0.10.5"
+tokio-postgres = { workspace = true, features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
+deadpool-postgres = { workspace = true }
 # Waiting for https://github.com/faokunega/pg-embed/pull/26
-pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", optional = true, default-features = false, features = ["rt_tokio"] }
-refinery = {version = "0.8.10", features = ["tokio-postgres"]}
+pg-embed = { workspace = true, features = ["rt_tokio"], optional = true }
+refinery = { workspace = true, features = ["tokio-postgres"] }
 
 # HTTP server and client
-actix-web = "4.9.0"
-actix-http = "3.9.0"
-actix-web-static-files = "4.0.1"
-actix-files = "0.6.2"
-actix-cors = "0.6.4"
-actix-web-httpauth = "0.8.0"
-jsonwebtoken = "8"
-static-files = "0.2.3"
-utoipa = { version = "4.2", features = ["actix_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { version = "7.1", features = ["actix-web"] }
-awc = {version = "3.5.1", features = ["openssl"] }  # For: auth workflows
-reqwest = {version = "0.11.18", features = ["json"]}
-cached = { version="0.43.0", features = ["async"]}
-crossbeam = "0.8.4"
-metrics = "0.23"
-metrics-exporter-prometheus = "0.15.3"
+actix-web = { workspace = true }
+actix-http = { workspace = true }
+actix-web-static-files = { workspace = true }
+actix-files = { workspace = true }
+actix-cors = { workspace = true }
+actix-web-httpauth = { workspace = true }
+jsonwebtoken = { workspace = true }
+static-files = { workspace = true }
+utoipa = { workspace = true, features = ["actix_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { workspace = true, features = ["actix-web"] }
+awc = { workspace = true, features = ["openssl"] }  # For: auth workflows
+reqwest = { workspace = true, features = ["json"]}
+cached = { workspace = true }
+crossbeam = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
 
 # System interaction
-dirs = "5.0"  # For: discovering home directory
-fdlimit = "0.3.0"  # For: raising file descriptor limit
-nix = { version = "0.29.0", features = ["signal"] }  # For: terminating process group
+dirs = { workspace = true }  # For: discovering home directory
+fdlimit = { workspace = true }  # For: raising file descriptor limit
+nix = { workspace = true, features = ["signal"] }  # For: terminating process group
 
 # Not used
 # These dependencies are not used by this crate, but by the generated pipeline crates.
 # They are provided such that they are included in the workspace `Cargo.lock`.
 # Keep in-sync with `src/compiler/rust_compiler.rs`.
-compare = { version = "0.1.0" }
+compare = { workspace = true }
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 
@@ -103,28 +103,24 @@ default = ["pg-embed"]
 feldera-enterprise = []
 
 [build-dependencies]
-change-detection = "1.2"
-static-files = "0.2.3"
+change-detection = { workspace = true }
+static-files = { workspace = true }
 
 [dev-dependencies]
-proptest = "1.5"
-proptest-derive = "0.5.0"
-pretty_assertions = "1.3.0"
-pg-client-config = "0.1.2"
-base64 = "0.22"
-actix-http = "3.3.1"
-serial_test = "3"
-aws-sdk-cognitoidentityprovider = "0.28.0"
-aws-config = "0.55.3"
-wiremock = "0.6"
-feldera-types = { path = "../feldera-types", features = ["testing"] }
-itertools = "0.13.0"
-tempfile = { version = "3" }
-
-# Used in integration tests
-[dev-dependencies.tokio]
-version = "*"
-features = ["sync"]
+proptest = { workspace = true }
+proptest-derive = { workspace = true }
+pretty_assertions = { workspace = true }
+pg-client-config = { workspace = true }
+base64 = { workspace = true }
+actix-http = { workspace = true }
+serial_test = { workspace = true }
+aws-sdk-cognitoidentityprovider = { workspace = true }
+aws-config = { workspace = true }
+wiremock = { workspace = true }
+feldera-types = { workspace = true, features = ["testing"] }
+itertools = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 
 [package.metadata.cargo-machete]
 ignored = ["static-files", "compare", "tikv-jemallocator"]

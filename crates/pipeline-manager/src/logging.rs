@@ -18,7 +18,7 @@ pub fn init_logging(name: ColoredString) {
             buf,
             "{} {} {} {}",
             t,
-            buf.default_styled_level(record.level()),
+            buf.default_level_style(record.level()),
             name,
             record.args()
         )

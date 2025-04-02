@@ -610,7 +610,7 @@ pub(crate) async fn post_pipeline(
     tag = "Pipeline management"
 )]
 #[put("/pipelines/{pipeline_name}")]
-async fn put_pipeline(
+pub(crate) async fn put_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,

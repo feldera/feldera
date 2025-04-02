@@ -7,4 +7,4 @@ publish = false
 [dependencies]
 dbsp = { path = "../../../crates/dbsp", default-features = false }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
-feldera-sqllib = { path = "../../../crates/sqllib" }
+feldera-sqllib = { workspace = true }
