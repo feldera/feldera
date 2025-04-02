@@ -631,10 +631,6 @@ impl DBSPHandle {
                     return Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }));
                 }
                 Ok(Err(e)) => {
-                    println!("Restore failed.");
-                    self.dump_profile("/Users/leonid/profile").unwrap();
-                    println!("Profile dumped.");
-
                     let _ = self.kill_inner();
                     return Err(e);
                 }

@@ -1365,6 +1365,10 @@ impl Edge {
     pub(super) fn is_stream(&self) -> bool {
         self.stream.is_some()
     }
+
+    pub(super) fn stream_id(&self) -> Option<StreamId> {
+        self.stream.as_ref().map(|meta| meta.stream_id())
+    }
 }
 
 circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
@@ -3674,6 +3678,12 @@ where
         for edge in edges.iter() {
             if let Some(stream) = &edge.stream {
                 if stream.stream_id() == stream_id {
+                    println!(
+                        "Adding replay edge ({}) {} -> {}",
+                        replay_stream.origin_node_id(),
+                        replay_stream.local_node_id(),
+                        edge.to
+                    );
                     new_edges.push(Edge {
                         from: replay_stream.local_node_id(),
                         to: edge.to,
@@ -5789,15 +5799,16 @@ impl CircuitHandle {
             )?;
         }
 
-        info!(
-            "CircuitHandle::restore: replaying {} operators",
-            replay_nodes.len()
-        );
-
         let nodes_involved_in_backfill = replay_nodes
             .union(&need_backfill)
             .cloned()
             .collect::<BTreeSet<_>>();
+
+        info!(
+            "CircuitHandle::restore: replaying {} operators, replay circuit size: {}",
+            replay_nodes.len(),
+            nodes_involved_in_backfill.len()
+        );
 
         // TODO: Make sure a subcircuit is added to both sets if at least one of its nodes is.
 
@@ -5814,11 +5825,12 @@ impl CircuitHandle {
                     .map_node_mut(gid, &mut |node| node.clear_state())?;
             }
 
-
-
             // Prepare the scheduler to only run `nodes_involved_in_backfill`.
             self.executor
                 .prepare(&self.circuit, Some(&nodes_involved_in_backfill))?;
+
+            info!("CircuitHandle::restore: replay circuit is ready");
+
             let mut done = false;
             while !done {
                 self.step()?;
@@ -5853,6 +5865,7 @@ impl CircuitHandle {
         need_backfill: &mut BTreeSet<GlobalNodeId>,
         need_backfill_new: BTreeSet<GlobalNodeId>,
     ) -> Result<BTreeSet<GlobalNodeId>, DbspError> {
+        println!("compute_replay_nodes_step ({need_backfill_new:?})");
         let mut inputs = BTreeSet::new();
 
         for gid in need_backfill_new.iter() {
@@ -5881,17 +5894,18 @@ impl CircuitHandle {
         let mut replay_streams = BTreeMap::new();
 
         for (stream_id, gid) in inputs.into_iter() {
-            // Add all ancestors of to the `need_backfill` set, unless the stream can be replayed from
-            // a different node.
+            // println!("replay needed for ({stream_id}, {gid})");
+
+            // Add all ancestors of `need_backfill_new` to the `need_backfill` set, except streams
+            // that can be replayed from a different node.
             if let Some(replay_sources) = self.circuit.get_replay_sources(stream_id) {
                 for source in replay_sources.backfill_nodes.into_iter() {
                     if !need_backfill.contains(&source) {
                         need_backfill.insert(source.clone());
                         need_backfill_new.insert(source.clone());
                     }
-
-                    replay_streams.insert(stream_id, replay_sources.replay_stream.clone());
                 }
+                replay_streams.insert(stream_id, replay_sources.replay_stream.clone());
             } else {
                 if !need_backfill.contains(&gid) {
                     need_backfill.insert(gid.clone());
@@ -5902,9 +5916,11 @@ impl CircuitHandle {
 
         // Connect `replay_streams` to all operators that consume the original stream.
         for (original_stream, replay_stream) in replay_streams.into_iter() {
-            self.circuit
-                .add_replay_edges(original_stream, replay_stream.as_ref());
-            replay_nodes.insert(replay_stream.origin_node_id().clone());
+            if !replay_nodes.contains(replay_stream.origin_node_id()) {
+                self.circuit
+                    .add_replay_edges(original_stream, replay_stream.as_ref());
+                replay_nodes.insert(replay_stream.origin_node_id().clone());
+            }
         }
 
         Ok(need_backfill_new)
