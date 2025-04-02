@@ -1161,7 +1161,7 @@ where
     }
 
     fn clear_state(&mut self) -> Result<(), Error> {
-        self.trace = None;
+        self.trace = Some(T::new(&self.trace_factories));
         self.replay_state = None;
         self.dirty = vec![false; self.root_scope as usize + 1];
         self.total_size_metric
@@ -1175,8 +1175,8 @@ where
         // The second condition is necessary if `start_replay` is called twice, for the input
         // and output halves of Z1.
         if self.delta_stream.is_some() && self.replay_state.is_none() {
-            let trace = self.trace.take();
-            let trace = trace.expect("Z1Trace::start_replay: no trace");
+            let trace = self.trace.take().expect("Z1Trace::start_replay: no trace");
+            self.trace = Some(T::new(&self.trace_factories));
 
             self.replay_state = Some(ReplayState::new(trace));
         }
