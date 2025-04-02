@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
@@ -285,13 +286,20 @@ public abstract class DBSPExpression
         return new DBSPUnaryExpression(this.getNode(), this.getType(), DBSPOpcode.NOT, this);
     }
 
-    /** If this expression is a DAG, it converts it to a tree, otherwise it leaves it unchanged */
+    /** Cache here expressions which we know are trees, to avoid re-analyzing them */
+    static AnalyzedSet<DBSPExpression> treeExpressions = new AnalyzedSet<>();
+
+    /** If this expression is a DAG, convert it to a tree, otherwise it leave it unchanged */
     public DBSPExpression ensureTree(DBSPCompiler compiler) {
+        if (treeExpressions.contains(this))
+            return this;
         RepeatedExpressions repeated = new RepeatedExpressions(compiler, true, false);
         repeated.apply(this);
+        DBSPExpression result = this;
         if (repeated.hasDuplicate())
-            return this.deepCopy();
-        return this;
+            result = this.deepCopy();
+        treeExpressions.done(result);
+        return result;
     }
 
     public static DBSPType getJsonType(JsonNode node, JsonDecoder decoder) {

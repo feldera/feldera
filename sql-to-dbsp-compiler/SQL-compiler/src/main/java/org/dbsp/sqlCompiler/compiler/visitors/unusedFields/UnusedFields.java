@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
@@ -22,6 +23,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Utilities;
@@ -35,24 +37,33 @@ import java.util.Map;
 /** Find and remove unused fields. */
 public class UnusedFields extends Passes {
     static class RepeatRemove extends Repeat {
-        public RepeatRemove(DBSPCompiler compiler) {
-            super(compiler, new OnePass(compiler));
+        public RepeatRemove(DBSPCompiler compiler,
+                            AnalyzedSet<DBSPExpression> unusedFunctions,
+                            AnalyzedSet<DBSPOperator> mapOperators,
+                            AnalyzedSet<DBSPExpression> filterFunctions) {
+            super(compiler, new OnePass(compiler, unusedFunctions, mapOperators, filterFunctions));
         }
 
         static class OnePass extends Passes {
-            OnePass(DBSPCompiler compiler) {
+            OnePass(DBSPCompiler compiler,
+                    AnalyzedSet<DBSPExpression> unusedFunctions,
+                    AnalyzedSet<DBSPOperator> mapOperators,
+                    AnalyzedSet<DBSPExpression> filterFunctions) {
                 super("UnusedFieldsOnePass", compiler);
                 Graph graph = new Graph(compiler);
-                this.add(new RemoveUnusedFields(compiler));
+                this.add(new RemoveUnusedFields(compiler, unusedFunctions));
                 // Very important, because OptimizeMaps works backward
                 this.add(new DeadCode(compiler, true, false));
-                this.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, true, g), 1));
+                this.add(new OptimizeWithGraph(compiler,
+                        g -> new OptimizeMaps(compiler, true, g, mapOperators),
+                        1));
                 this.add(graph);
                 FindCommonProjections fcp = new FindCommonProjections(compiler, graph.getGraphs());
                 this.add(fcp);
                 // this.add(ToDot.dumper(compiler, "x.png", 2));
                 this.add(new ReplaceCommonProjections(compiler, fcp));
-                this.add(new OptimizeWithGraph(compiler, g -> new TrimFilters(compiler, g), 1));
+                this.add(new OptimizeWithGraph(compiler,
+                        g -> new TrimFilters(compiler, g, filterFunctions), 1));
                 this.add(new CSE(compiler));
             }
         }
@@ -184,7 +195,10 @@ public class UnusedFields extends Passes {
     public UnusedFields(DBSPCompiler compiler) {
         super("UnusedFields", compiler);
         Graph graph = new Graph(compiler);
-        this.add(new RepeatRemove(compiler));
+        AnalyzedSet<DBSPExpression> functionsAnalyzed = new AnalyzedSet<>();
+        AnalyzedSet<DBSPOperator> mapOperators = new AnalyzedSet<>();
+        AnalyzedSet<DBSPExpression> filterFunctionsAnalyzed = new AnalyzedSet<>();
+        this.add(new RepeatRemove(compiler, functionsAnalyzed, mapOperators, filterFunctionsAnalyzed));
         this.add(graph);
         FindUnusedInputFields unusedInputs = new FindUnusedInputFields(compiler, graph.getGraphs());
         this.add(unusedInputs);

@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitorProfiles;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDispatcher;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -207,6 +208,8 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return Utilities.last(this.context);
     }
 
+    public static VisitorProfiles profiles = new VisitorProfiles();
+
     /** Override to initialize before visiting any node. */
     public void startVisit(IDBSPInnerNode node) {
         Logger.INSTANCE.belowLevel(this, 4)
@@ -214,10 +217,13 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
                 .appendSupplier(this::toString)
                 .append(" at ")
                 .append(node);
+        profiles.start(this);
     }
 
     /** Override to finish after visiting all nodes. */
-    public void endVisit() {}
+    public void endVisit() {
+        profiles.stop(this);
+    }
 
     /************************* PREORDER *****************************/
 

@@ -28,10 +28,12 @@ import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitorProfiles;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.util.ICastable;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Utilities;
@@ -44,7 +46,7 @@ import java.util.Objects;
 /** Depth-first traversal of an IDBSOuterNode hierarchy. */
 @SuppressWarnings({"SameReturnValue", "BooleanMethodIsAlwaysInverted"})
 public abstract class CircuitVisitor
-        implements CircuitTransform, IWritesLogs, IHasId, ICompilerComponent {
+        implements CircuitTransform, IWritesLogs, IHasId, ICompilerComponent, ICastable {
     final long id;
     static long crtId = 0;
 
@@ -94,8 +96,11 @@ public abstract class CircuitVisitor
     @SuppressWarnings("unused")
     public void propertyIndex(int index) {}
 
+    public static final VisitorProfiles profiles = new VisitorProfiles();
+
     /** Override to initialize before visiting any node. */
     public Token startVisit(IDBSPOuterNode node) {
+        profiles.start(this);
         if (node.is(DBSPCircuit.class))
             this.setCircuit(node.to(DBSPCircuit.class));
         return TOKEN_INSTANCE;
@@ -105,6 +110,7 @@ public abstract class CircuitVisitor
     public void endVisit() {
         assert this.circuit != null;
         this.circuit = null;
+        profiles.stop(this);
     }
 
     public IDBSPOuterNode getCurrent() {

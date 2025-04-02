@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -718,6 +719,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
     // Tests that are not in the repository
     @Test @Ignore
     public void extraTests() throws IOException {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         String dir = "../extra";
         File file = new File(dir);
         if (file.exists()) {
@@ -725,7 +727,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
             if (toCompile == null)
                 return;
             for (File c: toCompile) {
-                if (!c.getName().contains("current_pipeline")) continue;
                 if (c.getName().contains("sql")) {
                     System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());

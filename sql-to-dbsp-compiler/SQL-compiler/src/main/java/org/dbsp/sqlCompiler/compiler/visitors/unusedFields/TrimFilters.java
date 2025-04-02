@@ -5,12 +5,14 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
+import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.TriFunction;
 
 /** Trim unused fields from filters.
@@ -20,8 +22,12 @@ import org.dbsp.util.TriFunction;
  * The algorithm looks for projections following filters with unused fields,
  * and replaces both of them in one shot. */
 public class TrimFilters extends CircuitCloneWithGraphsVisitor {
-    public TrimFilters(DBSPCompiler compiler, CircuitGraphs graphs) {
+    final AnalyzedSet<DBSPExpression> functionsAnalyzed;
+
+    public TrimFilters(DBSPCompiler compiler, CircuitGraphs graphs,
+                       AnalyzedSet<DBSPExpression> functionsAnalyzed) {
         super(compiler, graphs, false);
+        this.functionsAnalyzed = functionsAnalyzed;
     }
 
     public boolean process(
@@ -30,7 +36,8 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
             TriFunction<CalciteRelNode, DBSPClosureExpression, OutputPort, DBSPUnaryOperator> constructor) {
         OutputPort source = this.mapped(operator.input());
         int inputFanout = this.getGraph().getFanout(operator.input().node());
-        if (!operator.getFunction().is(DBSPClosureExpression.class))
+        if (!operator.getFunction().is(DBSPClosureExpression.class) ||
+            this.functionsAnalyzed.done(operator.getFunction()))
             return false;
 
         DBSPClosureExpression mapFunction = operator.getClosureFunction();

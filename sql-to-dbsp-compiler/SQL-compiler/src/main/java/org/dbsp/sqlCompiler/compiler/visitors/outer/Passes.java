@@ -42,8 +42,8 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
     final long id;
     final String name;
 
-    public Passes(String name, DBSPCompiler reporter, CircuitTransform... passes) {
-        this(name, reporter, Linq.list(passes));
+    public Passes(String name, DBSPCompiler compiler, CircuitTransform... passes) {
+        this(name, compiler, Linq.list(passes));
     }
 
     public Passes(String name, DBSPCompiler compiler, List<CircuitTransform> passes) {

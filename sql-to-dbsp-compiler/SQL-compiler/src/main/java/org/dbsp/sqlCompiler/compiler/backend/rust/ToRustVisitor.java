@@ -74,6 +74,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeclareComparators;
@@ -884,7 +885,9 @@ public class ToRustVisitor extends CircuitVisitor {
             result = new DBSPBinaryExpression(node, eq.getType(), DBSPOpcode.AND, result, eq);
             comparator = fc.source;
         }
-        return result.closure(left, right);
+        DBSPExpression closure = result.closure(left, right);
+        CanonicalForm form = new CanonicalForm(this.compiler);
+        return form.apply(closure).to(DBSPClosureExpression.class);
     }
 
     @Override

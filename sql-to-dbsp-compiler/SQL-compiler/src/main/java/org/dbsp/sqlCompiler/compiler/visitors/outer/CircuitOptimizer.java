@@ -25,6 +25,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
@@ -94,7 +96,9 @@ public class CircuitOptimizer extends Passes {
         this.add(new DeadCode(compiler, true, false));
         this.add(new Simplify(compiler).circuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g)));
-        this.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, true, g)));
+        AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
+        this.add(new OptimizeWithGraph(compiler,
+                g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed)));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new MonotoneAnalyzer(compiler));
         this.add(new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME));
@@ -118,7 +122,8 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveIdentityOperators(compiler));
         this.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
-        this.add(new OptimizeWithGraph(compiler, g -> new OptimizeMaps(compiler, false, g)));
+        this.add(new OptimizeWithGraph(compiler,
+                g -> new OptimizeMaps(compiler, false, g, operatorsAnalyzed)));
         this.add(new SimplifyWaterline(compiler)
                 .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
         this.add(new EliminateDump(compiler).circuitRewriter(false));
