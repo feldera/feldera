@@ -45,7 +45,7 @@
       .with('Paused', () => ['shutdown', 'start'])
       .with('Resuming', () => ['shutdown', 'delete'])
       .with('ShuttingDown', () => ['shutdown'])
-      .with('Unavailable', () => ['delete'])
+      .with('Unavailable', () => ['shutdown', 'delete'])
       .with('SqlError', 'RustError', 'SystemError', () => ['delete'])
       .with({ PipelineError: P.any }, () => ['shutdown', 'delete'])
       .exhaustive()
