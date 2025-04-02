@@ -861,9 +861,9 @@ dependencies = [
 
 [[package]]
 name = "ascii_table"
-version = "4.0.6"
+version = "4.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bc070afe45e3d9e628b82d77d61c90531dc6997b341d57715b82461af415669"
+checksum = "75054ce561491263d7b80dc2f6f6c6f8cdfd0c7a7c17c5cf3b8117829fa72ae1"
 
 [[package]]
 name = "assert-json-diff"

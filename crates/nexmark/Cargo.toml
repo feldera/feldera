@@ -42,7 +42,7 @@ size-of = { version = "0.1.5", package = "feldera-size-of", features = ["hashbro
 [dev-dependencies]
 rstest = "0.15"
 hdrhist = "0.5"
-ascii_table = "4.0.2"
+ascii_table = "=4.0.2"
 num-format = "0.4.0"
 serde_with = "3.0.0"
 indicatif = "0.17.0-rc.11"
