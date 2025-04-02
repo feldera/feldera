@@ -4,17 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-feldera-types = { path = "../feldera-types" }
-feldera-adapterlib = { path = "../adapterlib" }
-dbsp = { path = "../dbsp" }
-anyhow = { version = "1.0.57", features = ["backtrace"] }
-tokio = { version = "1.25.0", features = ["sync", "rt"] }
-datafusion = { version = "45" }
-log = "0.4.20"
-iceberg = { git = "https://github.com/apache/iceberg-rust.git", rev = "90f39e8" }
-iceberg-datafusion = { git = "https://github.com/apache/iceberg-rust.git", rev = "90f39e8" }
-iceberg-catalog-glue = { git = "https://github.com/apache/iceberg-rust.git", rev = "90f39e8" }
-iceberg-catalog-rest = { git = "https://github.com/apache/iceberg-rust.git", rev = "90f39e8" }
-chrono = { version = "0.4.38" }
-serde_json = { version = "1.0.127" }
-futures-util = "0.3.30"
+feldera-types = { workspace = true }
+feldera-adapterlib = { workspace = true }
+dbsp = { workspace = true }
+anyhow = { workspace = true, features = ["backtrace"] }
+tokio = { workspace = true, features = ["sync", "rt"] }
+datafusion = { workspace = true }
+log = { workspace = true }
+iceberg = { workspace = true }
+iceberg-datafusion = { workspace = true }
+iceberg-catalog-glue = { workspace = true }
+iceberg-catalog-rest = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+futures-util = { workspace = true }

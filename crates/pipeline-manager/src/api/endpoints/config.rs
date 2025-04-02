@@ -88,7 +88,7 @@ pub(crate) struct Configuration {
     tag = "Configuration"
 )]
 #[get("/config")]
-async fn get_config(
+pub(crate) async fn get_config(
     state: WebData<ServerState>,
     _req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
@@ -134,7 +134,7 @@ async fn get_config(
     tag = "Configuration"
 )]
 #[get("/config/authentication")]
-async fn get_config_authentication(
+pub(crate) async fn get_config_authentication(
     state: WebData<ServerState>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
@@ -161,7 +161,9 @@ async fn get_config_authentication(
     tag = "Configuration",
 )]
 #[get("/config/demos")]
-async fn get_config_demos(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
+pub(crate) async fn get_config_demos(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, ManagerError> {
     Ok(HttpResponse::Ok().json(&state.demos))
 }
 

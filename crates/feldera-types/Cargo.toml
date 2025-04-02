@@ -13,21 +13,21 @@ categories = ["database", "api-bindings", "network-programming"]
 testing = ["proptest", "proptest-derive"]
 
 [dependencies]
-serde = { version = "1.0", features = ["derive", "rc"] }
-serde_yaml = "0.9.34"
-serde_json = { version = "1.0.127", features = ["raw_value"] }
-anyhow = { version = "1.0.57", features = ["backtrace"] }
-libc = "0.2.153"
-log = "0.4.20"
-utoipa = "4.1"
-proptest = { version = "1.5.0", optional = true }
-proptest-derive = { version = "0.5.0", optional = true }
+serde = { workspace = true, features = ["derive", "rc"] }
+serde_yaml = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
+anyhow = { workspace = true, features = ["backtrace"] }
+libc = { workspace = true }
+log = { workspace = true }
+utoipa = { workspace = true }
+proptest = { workspace = true, optional = true }
+proptest-derive = { workspace = true, optional = true }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
-actix-web = "4.3"
-enum-map = "2.7.3"
-erased-serde = "0.3.31"
-uuid = "1.16.0"
+actix-web = { workspace = true }
+enum-map = { workspace = true }
+erased-serde = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
-rust_decimal_macros = "1.32"
-csv = "1.2.2"
+rust_decimal_macros = { workspace = true }
+csv = { workspace = true }

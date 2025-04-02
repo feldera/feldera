@@ -82,7 +82,7 @@ use std::time::Duration;
     tag = "Pipeline interaction",
 )]
 #[post("/pipelines/{pipeline_name}/ingress/{table_name}")]
-async fn http_input(
+pub(crate) async fn http_input(
     state: WebData<ServerState>,
     client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
@@ -170,7 +170,7 @@ async fn http_input(
     tag = "Pipeline interaction"
 )]
 #[post("/pipelines/{pipeline_name}/egress/{table_name}")]
-async fn http_output(
+pub(crate) async fn http_output(
     state: WebData<ServerState>,
     client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,

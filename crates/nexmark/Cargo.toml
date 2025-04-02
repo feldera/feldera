@@ -21,33 +21,33 @@ rustdoc-args = ["--cfg", "docsrs"]
 release = false
 
 [dependencies]
-dbsp = { path = "../dbsp" }
-anyhow = "1.0.57"
-csv = "1.2.2"
-env_logger = "0.10.0"
+dbsp = { workspace = true }
+anyhow = { workspace = true }
+csv = { workspace = true }
+env_logger = { workspace = true }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["rkyv", "rkyv-64"] }
-regex = { version = "1.6.0" }
-time = { version = "0.3.14", features = ["formatting"] }
-paste = { version = "1.0.9" }
-rand = { version = "0.8", features = ["small_rng"] }
-rdkafka = { version = "0.37.0", features = ["ssl-vendored", "gssapi-vendored"], optional = true }
-clap = { version = "3.2.8", features = ["derive", "env"] }
-cached = { version = "0.38.0" }
-serde = { version = "1.0", features = ["derive"] }
-rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
-metrics = "0.23.0"
-metrics-util = "0.17.0"
-size-of = { version = "0.1.5", package = "feldera-size-of", features = ["hashbrown", "time-std", "xxhash-xxh3", "rust_decimal"] }
+regex = { workspace = true }
+time = { workspace = true, features = ["formatting"] }
+paste = { workspace = true }
+rand = { workspace = true, features = ["small_rng"] }
+rdkafka = { workspace = true, features = ["ssl-vendored", "gssapi-vendored"], optional = true }
+clap = { workspace = true }
+cached = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+rkyv = { workspace = true, features = ["std", "size_64"] }
+metrics = { workspace = true }
+metrics-util = { workspace = true }
+size-of = { workspace = true, features = ["hashbrown", "xxhash-xxh3", "rust_decimal"] }
 
 [dev-dependencies]
-rstest = "0.15"
-hdrhist = "0.5"
-ascii_table = "4.0.2"
-num-format = "0.4.0"
-serde_with = "3.0.0"
-indicatif = "0.17.0-rc.11"
-mimalloc-rust-sys = "1.7.2"
-time = { version = "0.3.14", features = ["formatting", "serde", "serde-human-readable"] }
+rstest = { workspace = true }
+hdrhist = { workspace = true }
+ascii_table = { workspace = true }
+num-format = { workspace = true }
+serde_with = { workspace = true }
+indicatif = { workspace = true }
+mimalloc-rust-sys = { workspace = true }
+time = { workspace = true, features = ["formatting", "serde", "serde-human-readable"] }
 
 [[bench]]
 name = "nexmark"

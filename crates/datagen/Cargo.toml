@@ -4,21 +4,21 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-feldera-types = { path = "../feldera-types" }
-feldera-adapterlib = { path = "../adapterlib" }
-dbsp = { path = "../dbsp" }
-anyhow = "1.0.91"
-chrono = "0.4.38"
-num-traits = "0.2.19"
-rand = { version = "0.8.5", features = ["small_rng"] }
-rand_distr = "0.4.3"
-serde_json = "1.0.132"
-tokio = "1.41.0"
-governor = { version = "0.6.3" }
-fake = { version = "2.10", features = ["http"] }
-rmpv = { version = "1.3.0", features = ["with-serde"] }
-serde = { version = "1.0", features = ["derive"] }
-async-channel = "2.3.1"
-range-set = "0.0.11"
-xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
-uuid = { version = "1.11.0", features = ["v4", "std"] }
+feldera-types = { workspace = true }
+feldera-adapterlib = { workspace = true }
+dbsp = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+num-traits = { workspace = true }
+rand = { workspace = true, features = ["small_rng"] }
+rand_distr = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+governor = { workspace = true }
+fake = { workspace = true, features = ["http"] }
+rmpv = { workspace = true, features = ["with-serde"] }
+serde = { workspace = true, features = ["derive"] }
+async-channel = { workspace = true }
+range-set = { workspace = true }
+xxhash-rust = { workspace = true, features = ["xxh3"] }
+uuid = { workspace = true, features = ["v4", "std"] }
