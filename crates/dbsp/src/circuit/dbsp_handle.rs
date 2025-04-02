@@ -3,7 +3,7 @@ use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
 use crate::{
     circuit::runtime::RuntimeHandle, profile::Profiler, Error as DbspError, RootCircuit, Runtime,
-    RuntimeError, SchedulerError,
+    RuntimeError,
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
@@ -399,7 +399,10 @@ impl Runtime {
                         let _guard = span.set_local_parent();
                         let _worker_span = LocalSpan::enter_with_local_parent("worker-step")
                             .with_property(|| ("worker", worker_index_str));
-                        let status = circuit.step().map(|_| Response::Unit);
+                        let status = circuit
+                            .step()
+                            .map(|_| Response::Unit)
+                            .map_err(DbspError::Scheduler);
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
@@ -413,6 +416,7 @@ impl Runtime {
                         }
                     }
                     Ok(Command::DumpProfile { runtime_elapsed }) => {
+                        println!("DumpProfile received");
                         if status_sender
                             .send(Ok(Response::ProfileDump(
                                 profiler.dump_profile(runtime_elapsed),
@@ -431,17 +435,14 @@ impl Runtime {
                         }
                     }
                     Ok(Command::Commit(base)) => {
-                        circuit.commit(&base).expect("commit failed");
-                        if status_sender.send(Ok(Response::CheckpointCreated)).is_err() {
+                        let response = circuit.commit(&base).map(|_| Response::CheckpointCreated);
+                        if status_sender.send(response).is_err() {
                             return;
                         }
                     }
                     Ok(Command::Restore(base)) => {
-                        circuit.restore(&base).expect("restore failed");
-                        if status_sender
-                            .send(Ok(Response::CheckpointRestored))
-                            .is_err()
-                        {
+                        let result = circuit.restore(&base).map(|_| Response::CheckpointRestored);
+                        if status_sender.send(result).is_err() {
                             return;
                         }
                     }
@@ -540,7 +541,7 @@ pub struct DBSPHandle {
     command_senders: Vec<Sender<Command>>,
 
     /// Channels used to receive command completion status from workers.
-    status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
+    status_receivers: Vec<Receiver<Result<Response, DbspError>>>,
 
     /// For creating checkpoints, if we can.
     checkpointer: Option<Checkpointer>,
@@ -550,7 +551,7 @@ impl DBSPHandle {
     fn new(
         runtime: RuntimeHandle,
         command_senders: Vec<Sender<Command>>,
-        status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
+        status_receivers: Vec<Receiver<Result<Response, DbspError>>>,
         fingerprint: u64,
     ) -> Result<Self, DbspError> {
         let checkpointer = runtime
@@ -630,8 +631,12 @@ impl DBSPHandle {
                     return Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }));
                 }
                 Ok(Err(e)) => {
+                    println!("Restore failed.");
+                    self.dump_profile("/Users/leonid/profile").unwrap();
+                    println!("Profile dumped.");
+
                     let _ = self.kill_inner();
-                    return Err(DbspError::Scheduler(e));
+                    return Err(e);
                 }
                 Ok(Ok(resp)) => handler(worker, resp),
             }

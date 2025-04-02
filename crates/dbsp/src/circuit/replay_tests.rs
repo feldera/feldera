@@ -1,4 +1,5 @@
 use feldera_types::config::StorageConfig;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::{
     utils::Tup2, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
@@ -6,6 +7,17 @@ use crate::{
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 use super::{dbsp_handle::Mode, CircuitConfig, CircuitStorageConfig};
+
+fn init_logging() {
+    let _ = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_test_writer())
+        .with(
+            EnvFilter::try_from_default_env()
+                .or_else(|_| EnvFilter::try_new("info"))
+                .unwrap(),
+        )
+        .try_init();
+}
 
 trait TestDataType {
     type InputHandles: Send + 'static;
@@ -23,13 +35,13 @@ macro_rules! impl_test_data {
             phantom: PhantomData<($($t),*)>,
         }
 
-        impl<$($t: DBData),*> $tname<$($t),*> {
-            fn new() -> Self {
-                Self {
-                    phantom: PhantomData,
-                }
-            }
-        }
+        // impl<$($t: DBData),*> $tname<$($t),*> {
+        //     fn new() -> Self {
+        //         Self {
+        //             phantom: PhantomData,
+        //         }
+        //     }
+        // }
 
         impl<$($t),*> TestDataType for $tname<$($t),*>
         where
@@ -61,12 +73,23 @@ struct TestData1<T1: DBData> {
     phantom: PhantomData<T1>,
 }
 
-impl<T1: DBData> TestData1<T1> {
-    fn new() -> Self {
-        Self {
-            phantom: PhantomData,
-        }
-    }
+// impl<T1: DBData> TestData1<T1> {
+//     fn new() -> Self {
+//         Self {
+//             phantom: PhantomData,
+//         }
+//     }
+// }
+
+impl TestDataType for () {
+    type InputHandles = ();
+    type OutputHandles = ();
+    type Chunk = ();
+    type ZSet = ();
+
+    fn push_inputs(mut _chunks: Self::Chunk, _handles: &Self::InputHandles) {}
+
+    fn read_outputs(_handles: &Self::OutputHandles) -> Self::ZSet {}
 }
 
 impl<T1> TestDataType for TestData1<T1>
@@ -100,8 +123,8 @@ type CircuitFn<I1, I2, O1, O2> = Arc<
 >;
 
 fn test_replay<I1, I2, I3, O1, O2, O3>(
-    circuit_constructor1: &CircuitFn<I1, I2, O1, O2>,
-    circuit_constructor2: &CircuitFn<I2, I3, O2, O3>,
+    circuit_constructor1: CircuitFn<I1, I2, O1, O2>,
+    circuit_constructor2: CircuitFn<I2, I3, O2, O3>,
     inputs1: Vec<(I1::Chunk, I2::Chunk)>,
     inputs2: Vec<(I2::Chunk, I3::Chunk)>,
 ) where
@@ -112,7 +135,9 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     O2: TestDataType,
     O3: TestDataType,
 {
-    let mut circuit_config = CircuitConfig::with_workers(4).with_mode(Mode::Persistent);
+    init_logging();
+
+    let mut circuit_config = CircuitConfig::with_workers(1).with_mode(Mode::Persistent);
     let path = tempfile::tempdir().unwrap().into_path();
 
     circuit_config.storage = Some(CircuitStorageConfig {
@@ -216,7 +241,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
 
         // Checkpoint.
         let checkpoint = circuit.commit().unwrap();
-        circuit.kill();
+        circuit.kill().unwrap();
         checkpoint
     };
 
@@ -244,7 +269,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             actual_output3.push(O3::read_outputs(&output_handles3));
         }
 
-        circuit.kill();
+        circuit.kill().unwrap();
     }
 
     // Compare the outputs.
@@ -255,16 +280,110 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
 fn linear_circuit1(
     circuit: &mut RootCircuit,
 ) -> (ZSetHandle<u64>, (), OutputHandle<OrdZSet<u64>>, ()) {
-    let (input_stream, input_handle) = circuit.add_input_zset();
+    let (input_stream, input_handle) = circuit.add_input_zset::<u64>();
+    let output_handle = input_stream
+        .map(|x| x % 1000)
+        .output_persistent(Some("output1"));
+
+    (input_handle, (), output_handle, ())
 }
 
 fn linear_circuit2(
     circuit: &mut RootCircuit,
 ) -> ((), ZSetHandle<u64>, (), OutputHandle<OrdZSet<u64>>) {
-    todo!()
+    let (input_stream, input_handle) = circuit.add_input_zset::<u64>();
+    let output_handle = input_stream
+        .map(|x| x >> 1)
+        .output_persistent(Some("output2"));
+
+    ((), input_handle, (), output_handle)
+}
+
+#[test]
+fn test_linear_circuit() {
+    test_replay::<TestData1<u64>, (), TestData1<u64>, TestData1<u64>, (), TestData1<u64>>(
+        Arc::new(linear_circuit1),
+        Arc::new(linear_circuit2),
+        Vec::new(),
+        Vec::new(),
+    );
 }
 
 // Linear circuit with materialized inputs.
+
+fn linear_circuit_materialized_inputs1(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<u64>,
+    ZSetHandle<u64>,
+    OutputHandle<OrdZSet<u64>>,
+    OutputHandle<OrdZSet<u64>>,
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    let (input_stream2, input_handle2) = circuit.add_input_zset::<u64>();
+    input_stream2.set_persistent_id(Some("input2"));
+
+    // These integrals will be used for replay input streams.
+    input_stream1.integrate_trace();
+    input_stream2.integrate_trace();
+
+    let output_handle1 = input_stream1
+        .map(|x| x % 1000)
+        .output_persistent(Some("output1"));
+
+    let output_handle2 = input_stream2
+        .map(|x| x + 5)
+        .output_persistent(Some("output2"));
+
+    (input_handle1, input_handle2, output_handle1, output_handle2)
+}
+
+fn linear_circuit_materialized_inputs2(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<u64>,
+    ZSetHandle<u64>,
+    OutputHandle<OrdZSet<u64>>,
+    OutputHandle<OrdZSet<u64>>,
+) {
+    let (input_stream2, input_handle2) = circuit.add_input_zset::<u64>();
+    input_stream2.set_persistent_id(Some("input2"));
+
+    let (input_stream3, input_handle3) = circuit.add_input_zset::<u64>();
+    input_stream3.set_persistent_id(Some("input3"));
+
+    input_stream2.integrate_trace();
+    input_stream3.integrate_trace();
+
+    let output_handle2 = input_stream2
+        .map(|x| x + 5)
+        .output_persistent(Some("output2"));
+
+    let output_handle3 = input_stream3
+        .map(|x| x >> 1)
+        .output_persistent(Some("output3"));
+
+    (input_handle2, input_handle3, output_handle2, output_handle3)
+}
+
+#[test]
+fn test_linear_circuit_materialized_inputs() {
+    test_replay::<
+        TestData1<u64>,
+        TestData1<u64>,
+        TestData1<u64>,
+        TestData1<u64>,
+        TestData1<u64>,
+        TestData1<u64>,
+    >(
+        Arc::new(linear_circuit_materialized_inputs1),
+        Arc::new(linear_circuit_materialized_inputs2),
+        Vec::new(),
+        Vec::new(),
+    );
+}
 
 // Aggregate
 

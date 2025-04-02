@@ -61,6 +61,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{self, Debug, Display, Write},
     future::Future,
+    io::ErrorKind,
     iter::repeat,
     marker::PhantomData,
     mem::transmute,
@@ -73,7 +74,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
-use tracing::info;
+use tracing::{debug, info};
 use typedmap::{TypedMap, TypedMapKey};
 
 use super::dbsp_handle::Mode;
@@ -820,16 +821,13 @@ where
 
     /// Call `set_label` on the node that produces this stream.
     pub fn set_label(&self, key: &str, val: &str) -> Self {
-        self.circuit
-            .map_node_mut(&self.origin_node_id, &mut |node| node.set_label(key, val));
+        self.circuit.set_node_label(&self.origin_node_id, key, val);
         self.clone()
     }
 
     /// Call `get_label` on the node that produces this stream.
     pub fn get_label(&self, key: &str) -> Option<String> {
-        self.circuit.map_node(&self.origin_node_id, &mut |node| {
-            node.get_label(key).map(str::to_string)
-        })
+        self.circuit.get_node_label(&self.origin_node_id, key)
     }
 
     /// Set persistent id for the operator that produces this stream.
@@ -1548,6 +1546,36 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// if there is another mutable or immutable reference to the node.
     fn map_node_mut<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T;
 
+    /// Tag the node with a text label.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
+    /// if there is another mutable or immutable reference to the node.
+    fn set_node_label(&self, id: &GlobalNodeId, key: &str, val: &str) {
+        self.map_node_mut(id, &mut |node| node.set_label(key, val));
+    }
+
+    fn set_persistent_node_id(&self, id: &GlobalNodeId, persistent_id: Option<&str>) {
+        if let Some(persistent_id) = persistent_id {
+            self.set_node_label(id, LABEL_PERSISTENT_OPERATOR_ID, persistent_id);
+        }
+    }
+
+    /// Get node label.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
+    /// if there is another mutable or immutable reference to the node.
+    fn get_node_label(&self, id: &GlobalNodeId, key: &str) -> Option<String> {
+        self.map_node(id, &mut |node| node.get_label(key).map(str::to_string))
+    }
+
+    fn get_persistent_node_id(&self, id: &GlobalNodeId) -> Option<String> {
+        self.get_node_label(id, LABEL_PERSISTENT_OPERATOR_ID)
+    }
+
     /// Lookup a value in the circuit cache or create and insert a new value
     /// if it does not exist.
     ///
@@ -1688,7 +1716,7 @@ pub trait Circuit: WithClock + Clone + 'static {
         RcvOp: SourceOperator<O>;
 
     /// Add a sink operator (see [`SinkOperator`]).
-    fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>)
+    fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>) -> GlobalNodeId
     where
         I: Data,
         Op: SinkOperator<I>;
@@ -1700,7 +1728,8 @@ pub trait Circuit: WithClock + Clone + 'static {
         operator: Op,
         input_stream: &Stream<Self, I>,
         input_preference: OwnershipPreference,
-    ) where
+    ) -> GlobalNodeId
+    where
         I: Data,
         Op: SinkOperator<I>;
 
@@ -3038,7 +3067,7 @@ where
         output_stream
     }
 
-    fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>)
+    fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>) -> GlobalNodeId
     where
         I: Data,
         Op: SinkOperator<I>,
@@ -3052,15 +3081,17 @@ where
         operator: Op,
         input_stream: &Stream<Self, I>,
         input_preference: OwnershipPreference,
-    ) where
+    ) -> GlobalNodeId
+    where
         I: Data,
         Op: SinkOperator<I>,
     {
         self.add_node(|id| {
+            let global_node_id = GlobalNodeId::child_of(self, id);
             // Log the operator event before the connection event, so that handlers
             // don't observe edges that connect to nodes they haven't seen yet.
             self.log_circuit_event(&CircuitEvent::operator(
-                GlobalNodeId::child_of(self, id),
+                global_node_id.clone(),
                 operator.name(),
                 operator.location(),
             ));
@@ -3068,9 +3099,9 @@ where
             self.connect_stream(input_stream, id, input_preference);
             (
                 SinkNode::new(operator, input_stream.clone(), self.clone(), id),
-                (),
+                global_node_id,
             )
-        });
+        })
     }
 
     /// Add a binary sink operator (see [`BinarySinkOperator`]).
@@ -5715,7 +5746,12 @@ impl CircuitHandle {
         // Nodes that require backfill from upstream nodes.
         let mut need_backfill: BTreeSet<GlobalNodeId> = BTreeSet::new();
 
-        // Initialize `replay_nodes` and `need_backfill` to operators without a checkpoint.
+        debug!(
+            "CircuitHandle::restore: restoring from checkpoint {}",
+            base.display()
+        );
+
+        // Initialize `need_backfill` to operators without a checkpoint.
         // Fail if there any errors other than OperatorCheckpointNotFound.
         self.circuit.map_nodes_recursive_mut(
             &mut |node: &mut dyn Node| match node.restore(base) {
@@ -5725,10 +5761,19 @@ impl CircuitHandle {
                     need_backfill.insert(node.global_id().clone());
                     Ok(())
                 }
+                Err(DbspError::IO(ioerror)) if ioerror.kind() == ErrorKind::NotFound => {
+                    need_backfill.insert(node.global_id().clone());
+                    Ok(())
+                }
                 Err(e) => Err(e),
                 Ok(()) => Ok(()),
             },
         )?;
+
+        info!(
+            "CircuitHandle::restore: found {} operators that require backfill",
+            need_backfill.len()
+        );
 
         let mut need_backfill = need_backfill
             .into_iter()
@@ -5743,6 +5788,11 @@ impl CircuitHandle {
                 need_backfill_new,
             )?;
         }
+
+        info!(
+            "CircuitHandle::restore: replaying {} operators",
+            replay_nodes.len()
+        );
 
         let nodes_involved_in_backfill = replay_nodes
             .union(&need_backfill)
@@ -5763,6 +5813,8 @@ impl CircuitHandle {
                 self.circuit
                     .map_node_mut(gid, &mut |node| node.clear_state())?;
             }
+
+
 
             // Prepare the scheduler to only run `nodes_involved_in_backfill`.
             self.executor
