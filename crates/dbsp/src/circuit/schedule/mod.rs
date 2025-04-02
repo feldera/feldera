@@ -233,7 +233,10 @@ where
 /// Some useful tools for developing schedulers.
 mod util {
 
-    use crate::circuit::{schedule::Error, Circuit, GlobalNodeId, NodeId, OwnershipPreference};
+    use crate::circuit::{
+        circuit_builder::StreamId, schedule::Error, Circuit, GlobalNodeId, NodeId,
+        OwnershipPreference,
+    };
     use petgraph::graphmap::DiGraphMap;
     use std::{collections::HashMap, ops::Deref};
 
@@ -292,19 +295,26 @@ mod util {
         // stream, but the latter doesn't, since a subcircuit node can have
         // multiple output streams.
         let num_nodes = circuit.num_nodes();
-        let mut successors: HashMap<GlobalNodeId, Vec<(NodeId, Option<OwnershipPreference>)>> =
-            HashMap::with_capacity(num_nodes);
+        let mut successors: HashMap<
+            (GlobalNodeId, StreamId),
+            Vec<(NodeId, Option<OwnershipPreference>)>,
+        > = HashMap::with_capacity(num_nodes);
 
         for edge in circuit.edges().deref().iter() {
+            let Some(stream_id) = edge.stream_id() else {
+                continue;
+            };
+            let origin = edge.origin.clone();
+
             successors
-                .entry(edge.origin.clone())
+                .entry((origin, stream_id))
                 .or_default()
                 .push((edge.to, edge.ownership_preference));
         }
 
         let mut constraints = Vec::new();
 
-        for (origin, succ) in successors.into_iter() {
+        for ((origin, _), succ) in successors.into_iter() {
             // Find all strong successors of a node.
             let strong_successors: Vec<_> = succ
                 .iter()

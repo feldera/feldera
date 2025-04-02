@@ -127,7 +127,7 @@ struct Inner {
     /// List of tasks that must be evaluated at each clock cycle.
     /// Tasks are stored in the same order as nodes in the circuit and
     /// task index is equal to the node id.
-    tasks: Vec<Task>,
+    tasks: HashMap<NodeId, Task>,
 
     // Mutable fields.
     /// Ready notifications received while the scheduler was busy or sleeping.
@@ -148,13 +148,11 @@ impl Inner {
     where
         C: Circuit,
     {
-        let id = node_id.id();
-
         // Don't use iterator, as we will borrow `tasks` again below.
-        for i in 0..self.tasks[id].successors.len() {
-            let succ_id = self.tasks[id].successors[i];
-            debug_assert!(succ_id.id() < self.tasks.len());
-            let successor = &mut self.tasks[succ_id.id()];
+        for i in 0..self.tasks[&node_id].successors.len() {
+            let succ_id = self.tasks[&node_id].successors[i];
+            debug_assert!(self.tasks.contains_key(&succ_id));
+            let successor = self.tasks.get_mut(&succ_id).unwrap();
             debug_assert_ne!(successor.unsatisfied_dependencies, 0);
             successor.unsatisfied_dependencies -= 1;
             if successor.unsatisfied_dependencies == 0 && successor.is_ready {
@@ -175,7 +173,7 @@ impl Inner {
         #[allow(unknown_lints)]
         #[allow(clippy::significant_drop_in_scrutinee)]
         for id in nodes.drain() {
-            let task = &mut self.tasks[id.id()];
+            let task = self.tasks.get_mut(&id).unwrap();
             debug_assert!(task.is_async);
 
             // Ignore duplicate notifications.
@@ -219,6 +217,8 @@ impl Inner {
         let mut g: petgraph::prelude::GraphMap<NodeId, (), petgraph::Directed> =
             circuit_graph(circuit);
 
+        // println!("g: {g:#?}");
+
         let extra_constraints = ownership_constraints(circuit)?;
 
         for (from, to) in extra_constraints.iter() {
@@ -258,7 +258,7 @@ impl Inner {
             }
         }
 
-        let mut tasks = Vec::with_capacity(num_nodes);
+        let mut tasks = HashMap::new();
         let mut num_async_nodes = 0;
 
         for &node_id in nodes.iter() {
@@ -269,15 +269,18 @@ impl Inner {
                 num_async_nodes += 1;
             }
 
-            tasks.push(Task {
+            tasks.insert(
                 node_id,
-                num_predecessors,
-                successors: successors.entry(node_id).or_default().clone(),
-                is_async,
-                unsatisfied_dependencies: num_predecessors,
-                is_ready: !is_async,
-                scheduled: false,
-            });
+                Task {
+                    node_id,
+                    num_predecessors,
+                    successors: successors.entry(node_id).or_default().clone(),
+                    is_async,
+                    unsatisfied_dependencies: num_predecessors,
+                    is_ready: !is_async,
+                    scheduled: false,
+                },
+            );
         }
 
         let scheduler = Self {
@@ -312,7 +315,7 @@ impl Inner {
     where
         C: Circuit,
     {
-        let task = &mut self.tasks[node_id.id()];
+        let task = self.tasks.get_mut(&node_id).unwrap();
         debug_assert_eq!(task.unsatisfied_dependencies, 0);
         debug_assert!(task.is_ready);
         debug_assert!(!task.scheduled);
@@ -353,17 +356,20 @@ impl Inner {
             return Ok(());
         }
 
+        let mut spawn = Vec::with_capacity(self.tasks.len());
+
         // Reset unsatisfied dependencies, initialize runnable queue.
-        for i in 0..self.tasks.len() {
-            let task = &mut self.tasks[i];
+        for task in self.tasks.values_mut() {
             task.unsatisfied_dependencies = task.num_predecessors;
             task.scheduled = false;
 
-            let node_id = task.node_id;
-
             if task.unsatisfied_dependencies == 0 && task.is_ready {
-                self.spawn_task(circuit, node_id);
+                spawn.push(task.node_id.clone());
             }
+        }
+
+        for node_id in spawn.into_iter() {
+            self.spawn_task(circuit, node_id);
         }
 
         loop {
@@ -388,8 +394,8 @@ impl Inner {
                         Ok(result) => result
                     };
 
-                    if self.tasks[node_id.id()].is_async {
-                        self.tasks[node_id.id()].is_ready = false;
+                    if self.tasks[&node_id].is_async {
+                        self.tasks.get_mut(&node_id).unwrap().is_ready = false;
                     }
 
                     if let Err(error) = task_result {
