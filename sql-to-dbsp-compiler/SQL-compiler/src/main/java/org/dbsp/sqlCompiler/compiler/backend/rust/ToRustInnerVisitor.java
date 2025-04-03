@@ -769,8 +769,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append(" */");
         } else {
             this.builder.append("// ")
-                    .append(comment.comment)
-                    .newline();
+                    .append(comment.comment);
         }
         return VisitDecision.STOP;
     }

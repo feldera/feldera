@@ -26,11 +26,16 @@
 package org.dbsp.util;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 public class IndentStream implements IIndentStream {
     private Appendable stream;
     int indent = 0;
     int amount = 4;
+    String indentAdd = "    ";
+    String indentString = "";
+    Map<Integer, String> indentStringCache = new HashMap<>();
     boolean emitIndent = false;
 
     public IndentStream(Appendable appendable) {
@@ -49,6 +54,7 @@ public class IndentStream implements IIndentStream {
     public IIndentStream setIndentAmount(int amount) {
         assert amount >= 0;
         this.amount = amount;
+        this.indentString = " ".repeat(amount);
         return this;
     }
 
@@ -64,10 +70,26 @@ public class IndentStream implements IIndentStream {
             }
             if (this.emitIndent && !Character.isSpaceChar(c)) {
                 this.emitIndent = false;
-                for (int in = 0; in < this.indent; in++)
-                    this.stream.append(' ');
+                this.appendFast(this.indentString);
             }
             this.stream.append(c);
+            return this;
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    /** Append a string that does not contain newlines */
+    @Override
+    public IIndentStream appendFast(String s) {
+        try {
+            if (s.isEmpty())
+                return this;
+            if (this.emitIndent && !Character.isSpaceChar(s.charAt(0))) {
+                this.emitIndent = false;
+                this.stream.append(this.indentString);
+            }
+            this.stream.append(s);
             return this;
         } catch (IOException ex) {
             throw new RuntimeException(ex);
@@ -77,6 +99,12 @@ public class IndentStream implements IIndentStream {
     @Override
     public IIndentStream increase() {
         this.indent += Math.max(this.amount, 0);
+        if (this.indentStringCache.containsKey(this.indent)) {
+            this.indentString = this.indentStringCache.get(this.indent);
+        } else {
+            this.indentString += this.indentAdd;
+            this.indentStringCache.put(this.indent, this.indentString);
+        }
         return this.newline();
     }
 
@@ -85,6 +113,12 @@ public class IndentStream implements IIndentStream {
         this.indent -= Math.max(this.amount, 0);
         if (this.indent < 0)
             throw new RuntimeException("Negative indent");
+        if (this.indentStringCache.containsKey(this.indent)) {
+            this.indentString = this.indentStringCache.get(this.indent);
+        } else {
+            this.indentString = this.indentString.substring(0, this.indent);
+            this.indentStringCache.put(this.indent, this.indentString);
+        }
         return this;
     }
 

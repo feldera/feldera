@@ -283,7 +283,6 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(signature.toString())
                 .append("), Error> {")
                 .increase()
-                .newline()
                 .append("let (circuit, streams) = Runtime::init_circuit(cconf, |circuit| {")
                 .increase();
         if (!this.useHandles)

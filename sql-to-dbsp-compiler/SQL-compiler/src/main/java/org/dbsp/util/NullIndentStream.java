@@ -45,6 +45,11 @@ public class NullIndentStream implements IIndentStream {
     }
 
     @Override
+    public IIndentStream appendFast(String string) {
+        return this;
+    }
+
+    @Override
     public IIndentStream append(boolean b) {
         return this;
     }
