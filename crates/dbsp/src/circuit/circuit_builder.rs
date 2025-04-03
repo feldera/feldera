@@ -1337,6 +1337,7 @@ impl Display for OwnershipPreference {
 /// operators or a dependency (i.e., a requirement that one operator
 /// must be evaluated before the other even if they are not connected
 /// by a stream).
+#[derive(Clone)]
 pub struct Edge {
     /// Source node.
     pub from: NodeId,
@@ -1487,7 +1488,9 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// Return the root of the circuit tree.
     fn root_circuit(&self) -> RootCircuit;
 
-    fn edges(&self) -> Ref<'_, [Edge]>;
+    fn edges(&self) -> Ref<'_, Edges>;
+
+    fn edges_mut(&self) -> RefMut<'_, Edges>;
 
     /// Global id of the circuit node.
     ///
@@ -2207,6 +2210,63 @@ pub trait Circuit: WithClock + Clone + 'static {
         Op: ImportOperator<I, O>;
 }
 
+pub struct Edges {
+    by_source: BTreeMap<NodeId, Vec<Rc<Edge>>>,
+    by_destination: BTreeMap<NodeId, Vec<Rc<Edge>>>,
+    by_stream: BTreeMap<Option<StreamId>, Vec<Rc<Edge>>>,
+}
+
+impl Edges {
+    fn new() -> Self {
+        Self {
+            by_source: BTreeMap::new(),
+            by_destination: BTreeMap::new(),
+            by_stream: BTreeMap::new(),
+        }
+    }
+
+    fn add_edge(&mut self, edge: Edge) {
+        let edge = Rc::new(edge);
+
+        self.by_source
+            .entry(edge.from)
+            .or_default()
+            .push(edge.clone());
+        self.by_destination
+            .entry(edge.to)
+            .or_default()
+            .push(edge.clone());
+
+        self.by_stream
+            .entry(edge.stream.as_ref().map(|s| s.stream_id()))
+            .or_default()
+            .push(edge);
+    }
+
+    fn extend<I>(&mut self, edges: I)
+    where
+        I: IntoIterator<Item = Edge>,
+    {
+        for edge in edges {
+            self.add_edge(edge)
+        }
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Edge> {
+        self.by_source
+            .values()
+            .flat_map(|edges| edges.iter().map(|edge| edge.as_ref()))
+    }
+
+    pub(crate) fn get_by_stream_id(&self, stream_id: &Option<StreamId>) -> Option<&[Rc<Edge>]> {
+        self.by_stream.get(stream_id).map(|v| v.as_slice())
+    }
+
+    fn clear(&mut self) {
+        *self = Self::new();
+    }
+}
+
 /// A circuit consists of nodes and edges.  An edge from
 /// node1 to node2 indicates that the output stream of node1
 /// is connected to an input of node2.
@@ -2225,7 +2285,7 @@ where
     node_id: NodeId,
     global_node_id: GlobalNodeId,
     nodes: RefCell<Vec<RefCell<Box<dyn Node>>>>,
-    edges: RefCell<Vec<Edge>>,
+    edges: RefCell<Edges>,
     circuit_event_handlers: CircuitEventHandlers,
     scheduler_event_handlers: SchedulerEventHandlers,
     store: RefCell<CircuitCache>,
@@ -2253,7 +2313,7 @@ where
             node_id,
             global_node_id,
             nodes: RefCell::new(Vec::new()),
-            edges: RefCell::new(Vec::new()),
+            edges: RefCell::new(Edges::new()),
             circuit_event_handlers,
             scheduler_event_handlers,
             store: RefCell::new(TypedMap::new()),
@@ -2262,7 +2322,7 @@ where
     }
 
     fn add_edge(&self, edge: Edge) {
-        self.edges.borrow_mut().push(edge);
+        self.edges.borrow_mut().add_edge(edge);
     }
 
     fn add_node<N>(&self, mut node: N)
@@ -2768,8 +2828,12 @@ where
         }
     }
 
-    fn edges(&self) -> Ref<'_, [Edge]> {
-        Ref::map(self.inner().edges.borrow(), |edges| edges.as_slice())
+    fn edges(&self) -> Ref<'_, Edges> {
+        self.inner().edges.borrow()
+    }
+
+    fn edges_mut(&self) -> RefMut<'_, Edges> {
+        self.inner().edges.borrow_mut()
     }
 
     fn num_nodes(&self) -> usize {
@@ -3673,27 +3737,27 @@ where
 
     // TODO: optimize by indexing stream edges by StreamId.
     fn add_replay_edges(&self, stream_id: StreamId, replay_stream: &dyn StreamMetadata) {
-        let mut edges = self.inner().edges.borrow_mut();
+        let mut edges = self.edges_mut();
         let mut new_edges = Vec::new();
 
-        for edge in edges.iter() {
-            if let Some(stream) = &edge.stream {
-                if stream.stream_id() == stream_id {
-                    println!(
-                        "Adding replay edge ({}) {} -> {}",
-                        replay_stream.origin_node_id(),
-                        replay_stream.local_node_id(),
-                        edge.to
-                    );
-                    new_edges.push(Edge {
-                        from: replay_stream.local_node_id(),
-                        to: edge.to,
-                        origin: replay_stream.origin_node_id().clone(),
-                        stream: Some(clone_box(replay_stream)),
-                        ownership_preference: edge.ownership_preference,
-                    });
-                }
-            }
+        let Some(edges_to_replay) = edges.get_by_stream_id(&Some(stream_id)) else {
+            return;
+        };
+
+        for edge in edges_to_replay {
+            println!(
+                "Adding replay edge ({}) {} -> {}",
+                replay_stream.origin_node_id(),
+                replay_stream.local_node_id(),
+                edge.to
+            );
+            new_edges.push(Edge {
+                from: replay_stream.local_node_id(),
+                to: edge.to,
+                origin: replay_stream.origin_node_id().clone(),
+                stream: Some(clone_box(replay_stream)),
+                ownership_preference: edge.ownership_preference,
+            });
         }
 
         edges.extend(new_edges);
