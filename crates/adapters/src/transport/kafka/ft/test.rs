@@ -65,6 +65,7 @@ outputs:
             config:
                 bootstrap.servers: localhost:11111
                 topic: ft_end_to_end_test_output_topic
+                start_from: earliest
         format:
             name: csv
 "#;
@@ -95,8 +96,9 @@ fn create_reader(
         r#"
 name: kafka_input
 config:
-    topics: [{topic}]
+    topic: {topic}
     log_level: debug
+    start_from: earliest
 "#
     );
 
@@ -151,15 +153,10 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
     let (_endpoint, receiver, reader) = create_reader(topic);
     reader.extend();
 
-    fn metadata(topic: &str, batch: &Range<u32>) -> JsonValue {
+    fn metadata(batch: &Range<u32>) -> JsonValue {
         #[allow(clippy::single_range_in_vec_init)]
         let metadata = Metadata {
-            offsets: Some((
-                String::from(topic),
-                vec![batch.start as i64..batch.end as i64],
-            ))
-            .into_iter()
-            .collect(),
+            offsets: vec![batch.start as i64..batch.end as i64],
         };
         serde_json::to_value(metadata).unwrap()
     }
@@ -185,7 +182,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
             .collect::<Vec<_>>();
         producer.send_to_topic(&input_batch, topic);
 
-        println!("waiting for to buffer the {batch_size} messages {batch:?}.");
+        println!("waiting for connector to buffer the {batch_size} messages {batch:?}.");
         receiver.expect_buffering(batch.len());
 
         // Tell the adapter to queue the batch and wait for it to do it.
@@ -193,7 +190,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
         reader.queue();
         receiver.expect(vec![ConsumerCall::Extended {
             num_records: batch.len(),
-            metadata: metadata(topic, batch),
+            metadata: metadata(batch),
         }]);
 
         // Make sure that the flushed batches were what we expected.
@@ -216,11 +213,11 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
 
             if seek > 0 {
                 println!("- seek to {seek}");
-                reader.seek(metadata(topic, &batches[seek - 1]));
+                reader.seek(metadata(&batches[seek - 1]));
             }
             for batch in &batches[seek..seek + replay] {
                 println!("- replaying {batch:?}");
-                reader.replay(metadata(topic, batch), RmpValue::Nil);
+                reader.replay(metadata(batch), RmpValue::Nil);
                 println!("expecting {} records", batch.len());
                 receiver.expect(vec![ConsumerCall::Replayed {
                     num_records: batch.len(),
@@ -242,7 +239,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
             reader.queue();
             receiver.expect(vec![ConsumerCall::Extended {
                 num_records: final_batch.len(),
-                metadata: metadata(topic, &final_batch),
+                metadata: metadata(&final_batch),
             }]);
             receiver.expect_flushed(&final_batch);
         }
@@ -835,7 +832,8 @@ inputs:
         transport:
             name: kafka_input
             config:
-                topics: [{topic}]
+                topic: {topic}
+                start_from: earliest
                 log_level: debug
         format:
             name: csv

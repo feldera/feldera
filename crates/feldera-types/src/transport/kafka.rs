@@ -10,21 +10,24 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Configuration for reading data from Kafka topics with `InputTransport`.
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, ToSchema)]
 pub struct KafkaInputConfig {
     /// Options passed directly to `rdkafka`.
     ///
     /// [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
-    /// used to configure the Kafka consumer.  Not all options are valid with
-    /// this Kafka adapter:
+    /// used to configure the Kafka consumer.
     ///
-    /// * "enable.auto.commit", if present, must be set to "false",
-    /// * "enable.auto.offset.store", if present, must be set to "false"
-    #[serde(flatten)]
+    /// This input connector does not use consumer groups, so options related to
+    /// consumer groups are rejected, including:
+    ///
+    /// * `group.id`, if present, is ignored.
+    /// * `auto.offset.reset` (use `start_from` instead).
+    /// * "enable.auto.commit", if present, must be set to "false".
+    /// * "enable.auto.offset.store", if present, must be set to "false".
     pub kafka_options: BTreeMap<String, String>,
 
-    /// List of topics to subscribe to.
-    pub topics: Vec<String>,
+    /// Topic to subscribe to.
+    pub topic: String,
 
     /// The log level of the client.
     ///
@@ -37,12 +40,6 @@ pub struct KafkaInputConfig {
     #[serde(default = "default_group_join_timeout_secs")]
     pub group_join_timeout_secs: u32,
 
-    /// Deprecated.
-    pub fault_tolerance: Option<String>,
-
-    /// Deprecated.
-    pub kafka_service: Option<String>,
-
     /// Set to 1 or more to fix the number of threads used to poll
     /// `rdkafka`. Multiple threads can increase performance with small Kafka
     /// messages; for large messages, one thread is enough. In either case, too
@@ -51,14 +48,9 @@ pub struct KafkaInputConfig {
     /// messagee
     pub poller_threads: Option<usize>,
 
-    /// A list of offsets and partitions specifying where to begin reading individual input topics.
-    ///
-    /// When specified, this property must contain a list of JSON objects with the following fields:
-    /// - `topic`: The name of the Kafka topic.
-    /// - `partition`: The partition number within the topic.
-    /// - `offset`: The specific offset from which to start consuming messages.
+    /// Where to begin reading the topic.
     #[serde(default)]
-    pub start_from: Vec<KafkaStartFromConfig>,
+    pub start_from: KafkaStartFromConfig,
 }
 
 impl KafkaInputConfig {
@@ -70,17 +62,34 @@ impl KafkaInputConfig {
     }
 }
 
-/// Configuration for starting from a specific offset in a Kafka topic partition.
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-pub struct KafkaStartFromConfig {
-    /// The Kafka topic.
-    pub topic: String,
+impl<'de> Deserialize<'de> for KafkaInputConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let compat = compat::KafkaInputConfigCompat::deserialize(deserializer)?;
+        Self::try_from(compat).map_err(D::Error::custom)
+    }
+}
 
-    /// The parition within the topic.
-    pub partition: u32,
+/// Where to begin reading a Kafka topic.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum KafkaStartFromConfig {
+    /// Start from the beginning of the topic.
+    Earliest,
 
-    /// The offset in the specified partition to start reading from.
-    pub offset: u64,
+    /// Start from the current end of the topic.
+    ///
+    /// This will only read any data that is added to the topic after the
+    /// connector initializes.
+    #[default]
+    Latest,
+
+    /// Start from particular offsets in the topic.
+    ///
+    /// The number of offsets must match the number of partitions in the topic.
+    Offsets(Vec<i64>),
 }
 
 /// Kafka logging levels.
@@ -106,7 +115,7 @@ pub enum KafkaLogLevel {
 
 /// On startup, the endpoint waits to join the consumer group.
 /// This constant defines the default wait timeout.
-const fn default_group_join_timeout_secs() -> u32 {
+pub const fn default_group_join_timeout_secs() -> u32 {
     10
 }
 
@@ -348,4 +357,124 @@ pub struct Chunk {
     /// JSON payload.
     #[schema(value_type = Option<Object>)]
     pub json_data: Option<JsonValue>,
+}
+
+mod compat {
+    use std::collections::BTreeMap;
+
+    use serde::Deserialize;
+
+    use crate::transport::kafka::{KafkaLogLevel, KafkaStartFromConfig};
+
+    #[derive(Deserialize)]
+    pub struct KafkaInputConfigCompat {
+        /// Current, long-standing configuration option.
+        log_level: Option<KafkaLogLevel>,
+
+        /// Current, long-standing configuration option.
+        #[serde(default = "super::default_group_join_timeout_secs")]
+        group_join_timeout_secs: u32,
+
+        /// Current configuration option.
+        poller_threads: Option<usize>,
+
+        /// Current configuration option.
+        #[serde(default)]
+        kafka_options: BTreeMap<String, String>,
+
+        /// Current configuration option, which changed type in an incompatible
+        /// way soon after it was introduced. No backward compatibility for the
+        /// initial form.
+        start_from: Option<KafkaStartFromConfig>,
+
+        /// Current configuration option that replaces the old `topics`
+        /// option. Currently mandatory.
+        topic: Option<String>,
+
+        /// Old form of `topic`. Currently accepted as a substitute as long as
+        /// it has exactly one element.
+        #[serde(default)]
+        topics: Vec<String>,
+
+        /// Legacy, now ignored.
+        fault_tolerance: Option<String>,
+
+        /// Legacy, now ignored.
+        kafka_service: Option<String>,
+
+        /// Legacy form of `kafka_options`. Currently accepted in place of
+        /// `kafka_options` as long as `topics` is used instead of `topic`.
+        #[serde(flatten)]
+        inline_kafka_options: BTreeMap<String, String>,
+    }
+
+    impl TryFrom<KafkaInputConfigCompat> for super::KafkaInputConfig {
+        type Error = String;
+
+        fn try_from(mut compat: KafkaInputConfigCompat) -> Result<Self, Self::Error> {
+            let (topic, kafka_options, start_from) = if !compat.topics.is_empty() {
+                // Legacy mode. Convert to modern form.
+                if compat.topic.is_some() {
+                    return Err(
+                        "Kafka input adapter may not have both (modern) `topic` and (legacy) `topics`."
+                            .into(),
+                    );
+                }
+                if compat.topics.len() != 1 {
+                    return Err(format!(
+                        "Kafka input adapter must have exactly one topic (not {}).",
+                        compat.topics.len()
+                    ));
+                }
+                if !compat.kafka_options.is_empty() {
+                    return Err("Kafka input adapter with legacy `topics` may not have modern `kafka_options`.".into());
+                }
+                let start_from = if let Some(start_from) = compat.start_from {
+                    start_from
+                } else if let Some(auto_offset_reset) =
+                    compat.inline_kafka_options.get("auto.offset.reset")
+                {
+                    match auto_offset_reset.as_str() {
+                        "smallest" | "earliest" | "beginning" => KafkaStartFromConfig::Earliest,
+                        "largest" | "latest" | "end" => KafkaStartFromConfig::Latest,
+                        _ => return Err(format!("Unrecognized value {auto_offset_reset:?} for `auto.offset.reset` in Kafka legacy input adapter configuration")),
+                    }
+                } else {
+                    KafkaStartFromConfig::default()
+                };
+                (
+                    compat.topics.pop().unwrap(),
+                    compat.inline_kafka_options,
+                    start_from,
+                )
+            } else if let Some(topic) = compat.topic {
+                // Modern mode. Forbid legacy settings.
+                if compat.fault_tolerance.is_some() {
+                    return Err("Kafka input adapter `fault_tolerance` setting is obsolete.".into());
+                }
+                if compat.kafka_service.is_some() {
+                    return Err("Kafka input adapter `kafka_service` setting is obsolete.".into());
+                }
+                if let Some((key, _value)) = compat.inline_kafka_options.first_key_value() {
+                    return Err(format!("Unknown Kafka input adapter setting `{key}` (perhaps it should be under `kafka_options`?)"));
+                }
+                (
+                    topic,
+                    compat.kafka_options,
+                    compat.start_from.unwrap_or_default(),
+                )
+            } else {
+                return Err("Kafka input adapter is missing required `topic` setting.".into());
+            };
+
+            Ok(Self {
+                topic,
+                kafka_options,
+                log_level: compat.log_level,
+                group_join_timeout_secs: compat.group_join_timeout_secs,
+                poller_threads: compat.poller_threads,
+                start_from,
+            })
+        }
+    }
 }
