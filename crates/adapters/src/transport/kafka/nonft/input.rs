@@ -13,7 +13,7 @@ use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use crossbeam::queue::ArrayQueue;
 use feldera_types::program_schema::Relation;
-use feldera_types::transport::kafka::KafkaInputConfig;
+use feldera_types::transport::kafka::{KafkaInputConfig, KafkaStartFromConfig};
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::TopicPartitionList;
 use rdkafka::{
@@ -326,7 +326,7 @@ impl KafkaInputReaderInner {
 }
 
 fn span(config: &KafkaInputConfig) -> EnteredSpan {
-    info_span!("kafka_input", ft = false, topics = config.topics.join(",")).entered()
+    info_span!("kafka_input", ft = false, topic = config.topic).entered()
 }
 
 impl KafkaInputReader {
@@ -367,86 +367,42 @@ impl KafkaInputReader {
 
         *inner.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&inner);
 
-        let topics = config.topics.iter().map(String::as_str).collect::<Vec<_>>();
-
-        if config.start_from.is_empty() {
-            // Subscribe consumer to `topics`.
-            inner
-                .kafka_consumer
-                .subscribe(&topics)
-                .map_err(|e| anyhow!("error subscribing to Kafka topic(s): {e}"))?;
-        } else {
-            // If start_from is defined, we want to start from those specific
-            // points for the topics defined.
-
-            // Find topics defined in topics but not in start_from.
-            let all_topics: HashSet<&str> = topics.iter().copied().collect();
-            let specified_topics: HashSet<&str> =
-                config.start_from.iter().map(|x| x.topic.as_str()).collect();
-
-            let specified_but_not_listed: Vec<_> =
-                specified_topics.difference(&all_topics).cloned().collect();
-
-            // If a topic is defined in start_from but not in topics, return an error.
-            if !specified_but_not_listed.is_empty() {
-                let topics = specified_but_not_listed.join(", ");
-                bail!("topic(s): '{topics}' defined in 'start_from' but not in the 'topics' list");
-            }
-
-            let mut tpl = TopicPartitionList::new();
-
-            // Start these topics without explicit start_from, from their default point.
-            for topic in all_topics.difference(&specified_topics) {
-                let metadata = inner
+        let topic = &config.topic;
+        match &config.start_from {
+            feldera_types::transport::kafka::KafkaStartFromConfig::Earliest
+            | feldera_types::transport::kafka::KafkaStartFromConfig::Latest => {
+                inner
                     .kafka_consumer
-                    .fetch_metadata(Some(topic), METADATA_TIMEOUT)?;
-                let topic = metadata.topics().first().ok_or(anyhow!(
-                    "failed to subscribe to topic: '{topic}' doesn't exist"
-                ))?;
-                // Start reading all partitions of these topics.
-                for partition in topic.partitions() {
-                    tpl.add_partition(topic.name(), partition.id());
-                }
+                    .subscribe(&[topic])
+                    .map_err(|e| anyhow!("error subscribing to Kafka topic(s): {e}"))?;
             }
+            feldera_types::transport::kafka::KafkaStartFromConfig::Offsets(offsets) => {
+                let mut tpl = TopicPartitionList::new();
 
-            for start_from in config.start_from.iter() {
-                let (low, high) = inner
-                    .kafka_consumer
-                    .fetch_watermarks(
-                        &start_from.topic,
-                        start_from.partition as i32,
-                        METADATA_TIMEOUT,
-                    )
-                    .map_err(|e| {
-                        anyhow!(
-                            "error fetching metadata for topic '{}' and partition '{}': {e}",
-                            &start_from.topic,
-                            start_from.partition
-                        )
-                    })?;
+                for (offset, partition) in offsets.iter().copied().zip(0..) {
+                    let (low, high) = inner
+                        .kafka_consumer
+                        .fetch_watermarks(topic, partition, METADATA_TIMEOUT)
+                        .map_err(|e| {
+                            anyhow!("error fetching metadata for partition '{partition}': {e}",)
+                        })?;
 
-                // Return an error if the specified start_from offset doesn't exist.
-                if !(low..=high).contains(&(start_from.offset as i64)) {
-                    bail!("configuration error: provided offset '{}' not currently in topic '{}' partition '{}'", start_from.offset, start_from.topic, start_from.partition);
+                    // Return an error if the specified offset doesn't exist.
+                    if !(low..=high).contains(&offset) {
+                        bail!("configuration error: provided offset '{offset}' not currently in partition '{partition}'");
+                    }
+
+                    debug!("starting to read from partition: '{partition}', offset: '{offset}'",);
+                    tpl.add_partition_offset(topic, partition, rdkafka::Offset::Offset(offset))
+                        .map_err(|e| anyhow!("error assigning partition and offset: {e}"))?;
                 }
 
-                debug!(
-                    "starting to read from topic: '{}', partition: '{}', offset: '{}'",
-                    start_from.topic, start_from.partition, start_from.offset
-                );
-                tpl.add_partition_offset(
-                    &start_from.topic,
-                    start_from.partition as i32,
-                    rdkafka::Offset::Offset(start_from.offset as i64),
-                )
-                .map_err(|e| anyhow!("error assigning partition and offset: {e}"))?;
+                inner
+                    .kafka_consumer
+                    .assign(&tpl)
+                    .map_err(|e| anyhow!("error assigning partition and offset: {e}"))?;
             }
-
-            inner
-                .kafka_consumer
-                .assign(&tpl)
-                .map_err(|e| anyhow!("error assigning partition and offset: {e}"))?;
-        };
+        }
 
         let start = Instant::now();
 
@@ -455,7 +411,7 @@ impl KafkaInputReader {
         // rebalance protocol to be set.
         loop {
             // We don't need to rebalance if starting from a specific offset.
-            if !config.start_from.is_empty() {
+            if matches!(&config.start_from, KafkaStartFromConfig::Offsets(_)) {
                 debug!("start offsets specified; skipping rebalancing");
                 break;
             }
@@ -470,7 +426,7 @@ impl KafkaInputReader {
                 Some(Err(e)) => {
                     // Topic-does-not-exist error will be reported here.
                     bail!(
-                        "failed to subscribe to topics '{topics:?}' (consumer group id '{}'): {e}",
+                        "failed to subscribe to  {topic:?} (consumer group id '{}'): {e}",
                         inner.config.kafka_options.get("group.id").unwrap(),
                     );
                 }
@@ -487,7 +443,7 @@ impl KafkaInputReader {
 
             // Invalid broker address and other global errors are reported here.
             if let Some((_error, reason)) = inner.pop_error() {
-                bail!("error subscribing to topics {topics:?}: {reason}");
+                bail!("error subscribing to topic {topic}: {reason}");
             }
 
             if matches!(
@@ -498,7 +454,7 @@ impl KafkaInputReader {
                     >= Duration::from_secs(inner.config.group_join_timeout_secs as u64)
                 {
                     bail!(
-                        "failed to subscribe to topics '{topics:?}' (consumer group id '{}'), giving up after {}s",
+                        "failed to subscribe to topic '{topic:?}' (consumer group id '{}'), giving up after {}s",
                         inner.config.kafka_options.get("group.id").unwrap(),
                         inner.config.group_join_timeout_secs
                     );
