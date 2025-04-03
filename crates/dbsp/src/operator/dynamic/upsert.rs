@@ -172,15 +172,8 @@ where
             );
             trace.mark_sharded();
 
-            let feedback_node_id = z1feedback
-                .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
-            register_trace_replay_sources(
-                circuit,
-                &delta,
-                &replay_stream,
-                &trace,
-                feedback_node_id,
-            );
+            z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+            register_trace_replay_sources(circuit, &delta, &replay_stream);
 
             circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
             circuit.cache_insert(TraceId::new(delta.stream_id()), trace);
@@ -282,16 +275,9 @@ where
             );
             trace.mark_sharded();
 
-            let feedback_node_id = z1feedback
-                .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+            z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
 
-            register_trace_replay_sources(
-                circuit,
-                &delta,
-                &replay_stream,
-                &trace,
-                feedback_node_id,
-            );
+            register_trace_replay_sources(circuit, &delta, &replay_stream);
 
             circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
             circuit.cache_insert(TraceId::new(delta.stream_id()), trace);

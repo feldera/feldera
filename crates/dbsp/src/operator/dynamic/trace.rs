@@ -1,7 +1,6 @@
-use crate::circuit::circuit_builder::{ReplaySources, ReplayStreams, StreamId};
+use crate::circuit::circuit_builder::{ReplaySource, StreamId};
 use crate::circuit::metadata::NUM_INPUTS;
 use crate::circuit::metrics::Gauge;
-use crate::circuit::NodeId;
 use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::require_persistent_id;
 use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
@@ -318,28 +317,19 @@ pub type FileValSpine<B, C> = Spine<
     >,
 >;
 
-pub(crate) fn register_trace_replay_sources<C, B, T>(
+pub(crate) fn register_trace_replay_sources<C, B>(
     circuit: &C,
     stream: &Stream<C, B>,
     replay_stream: &Stream<C, B>,
-    trace: &Stream<C, T>,
-    feedback_node_id: NodeId,
 ) where
     C: Circuit,
     B: BatchReader,
-    T: Trace,
 {
-    if TypeId::of::<()>() == TypeId::of::<C::Time>()
-        && TypeId::of::<()>() == TypeId::of::<T::Time>()
-    {
-        let backfill_nodes = vec![
-            trace.origin_node_id().clone(),
-            circuit.global_node_id().child(feedback_node_id),
-        ];
-
-        let replay = ReplayStreams::new(backfill_nodes, Box::new(replay_stream.clone()));
-
-        circuit.cache_insert(ReplaySources::new(stream.stream_id()), replay);
+    if TypeId::of::<()>() == TypeId::of::<C::Time>() {
+        circuit.cache_insert(
+            ReplaySource::new(stream.stream_id()),
+            Box::new(replay_stream.clone()),
+        );
     }
 }
 
@@ -413,18 +403,12 @@ where
                         trace.mark_sharded();
                     }
 
-                    let feedback_node_id = z1feedback.connect_with_preference(
+                    z1feedback.connect_with_preference(
                         &trace,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_trace_replay_sources(
-                        circuit,
-                        self,
-                        &replay_stream,
-                        &trace,
-                        feedback_node_id,
-                    );
+                    register_trace_replay_sources(circuit, self, &replay_stream);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     trace
@@ -595,18 +579,12 @@ where
                         trace.mark_sharded();
                     }
 
-                    let feedback_node_id = z1feedback.connect_with_preference(
+                    z1feedback.connect_with_preference(
                         &trace,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_trace_replay_sources(
-                        circuit,
-                        self,
-                        &replay_stream,
-                        &trace,
-                        feedback_node_id,
-                    );
+                    register_trace_replay_sources(circuit, self, &replay_stream);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     circuit.cache_insert(ExportId::new(trace.stream_id()), export);
@@ -656,11 +634,10 @@ where
             trace.mark_sharded();
         }
 
-        let feedback_node_id = self
-            .feedback
+        self.feedback
             .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
 
-        register_trace_replay_sources(circuit, stream, &replay_stream, &trace, feedback_node_id);
+        register_trace_replay_sources(circuit, stream, &replay_stream);
 
         circuit.cache_insert(
             DelayedTraceId::new(trace.stream_id()),
