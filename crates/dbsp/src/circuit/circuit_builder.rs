@@ -2962,6 +2962,7 @@ where
     // Justification: the scheduler must not call `eval()` on a node twice.
     #[allow(clippy::await_holding_refcell_ref)]
     async fn eval_node(&self, id: NodeId) -> Result<(), SchedulerError> {
+        //println!("eval {id}");
         let circuit = self.inner();
         debug_assert!(id.0 < circuit.nodes.borrow().len());
 
@@ -5781,8 +5782,9 @@ impl CircuitHandle {
         )?;
 
         info!(
-            "CircuitHandle::restore: found {} operators that require backfill",
-            need_backfill.len()
+            "CircuitHandle::restore: found {} operators that require backfill: {:?}",
+            need_backfill.len(),
+            need_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>()
         );
 
         let mut need_backfill = need_backfill
@@ -5805,10 +5807,20 @@ impl CircuitHandle {
             .collect::<BTreeSet<_>>();
 
         info!(
-            "CircuitHandle::restore: replaying {} operators, replay circuit size: {}",
+            "CircuitHandle::restore: replaying {} operators: {:?}\nbackfilling {} operators: {:?}\nreplay circuit consists of {} operators: {:?}",
             replay_nodes.len(),
-            nodes_involved_in_backfill.len()
+            replay_nodes.iter().cloned().collect::<Vec<GlobalNodeId>>(),
+            need_backfill.len(),
+            need_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>(),
+            nodes_involved_in_backfill.len(),
+            nodes_involved_in_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>()
         );
+
+        // The same node cannot be used to backfill another node and itself require backfill.
+        assert!(replay_nodes
+            .intersection(&need_backfill)
+            .collect::<Vec<_>>()
+            .is_empty());
 
         // TODO: Make sure a subcircuit is added to both sets if at least one of its nodes is.
 
@@ -5833,12 +5845,15 @@ impl CircuitHandle {
 
             let mut done = false;
             while !done {
+                info!("Replay step");
                 self.step()?;
                 done = replay_nodes.iter().all(|gid| {
                     self.circuit
                         .map_node_mut(gid, &mut |node| node.is_replay_complete())
                 });
             }
+
+            info!("Replay complete");
 
             // End replay mode.
             for gid in replay_nodes.iter() {
@@ -5848,6 +5863,7 @@ impl CircuitHandle {
 
             // Prepare the scheduler to run the full circuit.
             self.executor.prepare(&self.circuit, None)?;
+            info!("Restore complete");
         }
 
         Ok(())
@@ -5899,18 +5915,24 @@ impl CircuitHandle {
             // Add all ancestors of `need_backfill_new` to the `need_backfill` set, except streams
             // that can be replayed from a different node.
             if let Some(replay_sources) = self.circuit.get_replay_sources(stream_id) {
-                for source in replay_sources.backfill_nodes.into_iter() {
-                    if !need_backfill.contains(&source) {
-                        need_backfill.insert(source.clone());
-                        need_backfill_new.insert(source.clone());
+                // If the replay source is itself in the need_backfill set, it cannot be used for replay.
+                if !need_backfill.contains(replay_sources.replay_stream.origin_node_id()) {
+                    for source in replay_sources.backfill_nodes.into_iter() {
+                        println!("need_backfill+{}", &source);
+                        if !need_backfill.contains(&source) {
+                            need_backfill.insert(source.clone());
+                            need_backfill_new.insert(source.clone());
+                        }
                     }
+                    replay_streams.insert(stream_id, replay_sources.replay_stream.clone());
+
+                    continue;
                 }
-                replay_streams.insert(stream_id, replay_sources.replay_stream.clone());
-            } else {
-                if !need_backfill.contains(&gid) {
-                    need_backfill.insert(gid.clone());
-                    need_backfill_new.insert(gid.clone());
-                }
+            }
+
+            if !need_backfill.contains(&gid) {
+                need_backfill.insert(gid.clone());
+                need_backfill_new.insert(gid.clone());
             }
         }
 

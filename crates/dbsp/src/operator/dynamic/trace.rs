@@ -973,7 +973,8 @@ where
 }
 
 struct ReplayState<T: Trace> {
-    trace: T,
+    _trace: T,
+    // Points to `_trace`.
     cursor: Box<dyn MergeCursor<T::Key, T::Val, T::Time, T::R> + Send + 'static>,
 }
 
@@ -987,7 +988,10 @@ impl<T: Trace> ReplayState<T> {
             )
         };
 
-        Self { trace, cursor }
+        Self {
+            _trace: trace,
+            cursor,
+        }
     }
 }
 
@@ -1161,6 +1165,7 @@ where
     }
 
     fn clear_state(&mut self) -> Result<(), Error> {
+        println!("Z1Trace-{}::clear_state", &self.global_id);
         self.trace = Some(T::new(&self.trace_factories));
         self.replay_state = None;
         self.dirty = vec![false; self.root_scope as usize + 1];
@@ -1174,9 +1179,16 @@ where
     fn start_replay(&mut self) -> Result<(), Error> {
         // The second condition is necessary if `start_replay` is called twice, for the input
         // and output halves of Z1.
+        println!(
+            "Z1Trace-{}::start_replay delta_stream: {:?}",
+            &self.global_id,
+            self.delta_stream.is_some()
+        );
         if self.delta_stream.is_some() && self.replay_state.is_none() {
             let trace = self.trace.take().expect("Z1Trace::start_replay: no trace");
             self.trace = Some(T::new(&self.trace_factories));
+
+            println!("Z1Trace-{}::initializing replay_state", &self.global_id);
 
             self.replay_state = Some(ReplayState::new(trace));
         }
@@ -1189,6 +1201,8 @@ where
     }
 
     fn end_replay(&mut self) -> Result<(), Error> {
+        println!("Z1Trace-{}::end_replay", &self.global_id);
+
         self.replay_state = None;
 
         Ok(())
@@ -1202,7 +1216,10 @@ where
     T: Trace,
 {
     fn get_output(&mut self) -> T {
+        println!("Z1-{}::get_output", &self.global_id);
+
         if let Some(replay) = &mut self.replay_state {
+            println!("Z1-{}::get_output: replaying", &self.global_id);
             let mut builder =
                 <B::Builder as Builder<B>>::with_capacity(&self.batch_factories, REPLAY_STEP_SIZE);
 
@@ -1263,6 +1280,8 @@ where
 
     #[trace]
     async fn eval_strict_owned(&mut self, mut i: T) {
+        println!("Z1-{}::eval_strict_owned", &self.global_id);
+
         self.time = self.time.advance(0);
 
         let dirty = i.dirty();
