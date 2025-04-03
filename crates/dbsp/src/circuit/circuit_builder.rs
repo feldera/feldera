@@ -5949,6 +5949,19 @@ impl CircuitHandle {
         let mut inputs = BTreeSet::new();
 
         for gid in need_backfill_new.iter() {
+            let node_id = gid.local_node_id().unwrap();
+
+            // Compute ancestors of node_id, including:
+            // 1. Nodes connected to node_id by a stream.
+            // 2. Nodes that depend on node_id. Makes sure that if we schedule the output half of a strict operator,
+            //    we will also schedule the input half.
+            // 3. Nodes that node_id depends on. Makes sure that if we schedule the output of an exchange operator,
+            //    we will schedule the input part as well.
+            //
+            //
+            self.circuit.edges().dependencies_of(node_id);
+            self.circuit.edges().depend_on(node_id)
+
             let node_inputs = self.circuit.map_node(gid, &mut |node| {
                 node.input_streams()
                     .iter()
