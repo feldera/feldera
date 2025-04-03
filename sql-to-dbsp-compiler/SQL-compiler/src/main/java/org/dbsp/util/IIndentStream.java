@@ -33,15 +33,25 @@ public interface IIndentStream {
     IIndentStream appendChar(char c);
 
     default IIndentStream append(String string) {
-        for (int i = 0; i < string.length(); i++) {
-            char c = string.charAt(i);
-            this.appendChar(c);
+        if (!string.contains("\n")) {
+            return this.appendFast(string);
+        }
+        String[] parts = string.split("\n", -1);
+        boolean first = true;
+        for (String part: parts) {
+            if (!first)
+                this.newline();
+            first = false;
+            this.appendFast(part);
         }
         return this;
     }
 
+    /** Append a string that does not contain a newline */
+    IIndentStream appendFast(String string);
+
     default IIndentStream append(boolean b) {
-        return this.append(Boolean.toString(b));
+        return this.appendFast(Boolean.toString(b));
     }
 
     default <T extends ToIndentableString> IIndentStream append(T value) {
@@ -50,12 +60,12 @@ public interface IIndentStream {
     }
 
     default IIndentStream append(int value) {
-        this.append(Integer.toString(value));
+        this.appendFast(Integer.toString(value));
         return this;
     }
 
     default IIndentStream append(long value) {
-        this.append(Long.toString(value));
+        this.appendFast(Long.toString(value));
         return this;
     }
 
@@ -195,7 +205,7 @@ public interface IIndentStream {
     }
 
     default IIndentStream newline()  {
-        return this.append("\n");
+        return this.appendChar('\n');
     }
 
     /** Increase indentation and emit a newline. */
