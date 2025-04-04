@@ -87,6 +87,10 @@ pub struct CheckpointStats {
 
     /// CPU time used by the pipeline process, in millseconds.
     pub cpu_msecs: u64,
+
+    /// Time elapsed with the pipeline running or paused (but not suspended), in
+    /// milliseconds.
+    pub uptime_msecs: u64,
 }
 
 impl CheckpointStats {
@@ -95,6 +99,7 @@ impl CheckpointStats {
             processed_records: global_metrics.num_total_processed_records(),
             runtime_elapsed_msecs: global_metrics.runtime_elapsed_msecs(),
             cpu_msecs: global_metrics.cpu_msecs(),
+            uptime_msecs: global_metrics.uptime_msecs(),
         }
     }
 }

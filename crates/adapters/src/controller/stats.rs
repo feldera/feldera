@@ -55,6 +55,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
+    time::Instant,
 };
 use tracing::{debug, error, info};
 
@@ -82,7 +83,7 @@ pub enum CanSuspend {
     NotNow,
 }
 
-#[derive(Default, Serialize)]
+#[derive(Serialize)]
 pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
     #[serde(serialize_with = "serialize_atomic")]
@@ -102,6 +103,24 @@ pub struct GlobalControllerMetrics {
     /// CPU time used in the checkpoint that we restored from, if any, in
     /// milliseconds.
     pub base_cpu_msecs: u64,
+
+    /// Elapsed time while the pipeline is running or paused (but not
+    /// suspended), in milliseconds.
+    ///
+    /// This value is cumulative for the pipeline across fault tolerance or
+    /// suspend and resume.
+    ///
+    /// This is `base_uptime_msecs` plus the time elapsed since `start_time`.
+    // This field is computed on-demand by calling `ControllerStatus::update`.
+    pub uptime_msecs: AtomicU64,
+
+    /// When this process started.
+    #[serde(skip)]
+    pub start_time: Instant,
+
+    /// `uptime_msecs` in the checkpoint that we restored from, if any, in
+    /// milliseconds.
+    pub base_uptime_msecs: u64,
 
     /// Time elapsed while the pipeline is executing a step, multiplied by the
     /// number of foreground and background threads, in milliseconds.
@@ -160,6 +179,9 @@ impl GlobalControllerMetrics {
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(initial_stats.cpu_msecs),
             base_cpu_msecs: initial_stats.cpu_msecs,
+            uptime_msecs: AtomicU64::new(initial_stats.uptime_msecs),
+            start_time: Instant::now(),
+            base_uptime_msecs: initial_stats.uptime_msecs,
             runtime_elapsed_msecs: AtomicU64::new(initial_stats.runtime_elapsed_msecs),
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(initial_stats.processed_records),
@@ -197,6 +219,10 @@ impl GlobalControllerMetrics {
 
     pub fn cpu_msecs(&self) -> u64 {
         self.cpu_msecs.load(Ordering::Relaxed)
+    }
+
+    pub fn uptime_msecs(&self) -> u64 {
+        self.uptime_msecs.load(Ordering::Relaxed)
     }
 
     pub fn runtime_elapsed_msecs(&self) -> u64 {
