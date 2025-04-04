@@ -10,7 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
-use crate::{controller::journal::StepMetadata, transport::Step, ControllerError};
+use crate::{
+    controller::{journal::StepMetadata, stats::GlobalControllerMetrics},
+    transport::Step,
+    ControllerError,
+};
 
 /// Initial offsets for the input endpoints in a [Checkpoint].
 ///
@@ -58,11 +62,37 @@ pub struct Checkpoint {
     /// Pipeline configuration.
     pub config: PipelineConfig,
 
-    /// Number of records processed.
-    pub processed_records: u64,
+    /// Pipeline statistics to preserve in checkpoints.
+    pub stats: CheckpointStats,
 
     /// Initial offsets for the input endpoints.
     pub input_metadata: CheckpointOffsets,
+}
+
+/// Pipeline statistics to preserve in checkpoints.
+///
+/// So far, these statistics are ones that don't need to be journaled, only
+/// checkpointed, because replaying steps from the journal will naturally update
+/// them correctly. For example, `processed_records` does not need to be
+/// journaled because replaying each step from the journal will also process the
+/// same number of records and thus update the statistic correctly.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct CheckpointStats {
+    /// Number of records processed.
+    pub processed_records: u64,
+
+    /// Time elapsed while the pipeline is executing a step, multiplied by the
+    /// number of foreground and background threads, in milliseconds.
+    pub runtime_elapsed_msecs: u64,
+}
+
+impl CheckpointStats {
+    pub fn from_global_metrics(global_metrics: &GlobalControllerMetrics) -> Self {
+        Self {
+            processed_records: global_metrics.num_total_processed_records(),
+            runtime_elapsed_msecs: global_metrics.runtime_elapsed_msecs(),
+        }
+    }
 }
 
 impl Checkpoint {

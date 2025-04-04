@@ -31,7 +31,7 @@
 //! pending.
 
 use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
-use crate::PipelineState;
+use crate::{controller::checkpoint::CheckpointStats, PipelineState};
 use anyhow::Error as AnyError;
 use atomic::Atomic;
 use bytemuck::NoUninit;
@@ -101,6 +101,9 @@ pub struct GlobalControllerMetrics {
 
     /// Time elapsed while the pipeline is executing a step, multiplied by the
     /// number of foreground and background threads, in milliseconds.
+    ///
+    /// This value is cumulative for the pipeline across fault tolerance or
+    /// suspend and resume.
     pub runtime_elapsed_msecs: AtomicU64,
 
     /// Total number of records currently buffered by all endpoints.
@@ -147,16 +150,16 @@ where
 }
 
 impl GlobalControllerMetrics {
-    fn new(processed_records: u64) -> Self {
+    fn new(initial_stats: CheckpointStats) -> Self {
         Self {
             state: Atomic::new(PipelineState::Paused),
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             rss_bytes: Some(AtomicU64::new(0)),
             cpu_msecs: Some(AtomicU64::new(0)),
-            runtime_elapsed_msecs: AtomicU64::new(0),
+            runtime_elapsed_msecs: AtomicU64::new(initial_stats.runtime_elapsed_msecs),
             buffered_input_records: AtomicU64::new(0),
-            total_input_records: AtomicU64::new(processed_records),
-            total_processed_records: AtomicU64::new(processed_records),
+            total_input_records: AtomicU64::new(initial_stats.processed_records),
+            total_processed_records: AtomicU64::new(initial_stats.processed_records),
             pipeline_complete: AtomicBool::new(false),
             can_suspend: Atomic::new(CanSuspend::No),
             step_requested: AtomicBool::new(false),
@@ -182,6 +185,10 @@ impl GlobalControllerMetrics {
     pub(crate) fn processed_records(&self, num_records: u64) -> u64 {
         self.total_processed_records
             .fetch_add(num_records, Ordering::AcqRel)
+    }
+
+    pub fn runtime_elapsed_msecs(&self) -> u64 {
+        self.runtime_elapsed_msecs.load(Ordering::Relaxed)
     }
 
     pub fn num_buffered_input_records(&self) -> u64 {
@@ -426,10 +433,10 @@ impl Serialize for ControllerMetric {
 }
 
 impl ControllerStatus {
-    pub fn new(pipeline_config: PipelineConfig, processed_records: u64) -> Self {
+    pub fn new(pipeline_config: PipelineConfig, initial_stats: CheckpointStats) -> Self {
         Self {
             pipeline_config,
-            global_metrics: GlobalControllerMetrics::new(processed_records),
+            global_metrics: GlobalControllerMetrics::new(initial_stats),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
         }

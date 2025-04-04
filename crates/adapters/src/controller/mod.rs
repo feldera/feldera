@@ -18,7 +18,7 @@
 //! buffered via `InputConsumer::buffered`.
 
 use crate::catalog::OutputCollectionHandles;
-use crate::controller::checkpoint::CheckpointOffsets;
+use crate::controller::checkpoint::{CheckpointOffsets, CheckpointStats};
 use crate::controller::journal::Journal;
 use crate::create_integrated_output_endpoint;
 use crate::transport::Step;
@@ -567,7 +567,7 @@ impl CircuitThread {
         let ControllerInit {
             pipeline_config,
             circuit_config,
-            processed_records,
+            checkpoint_stats,
             step,
             input_metadata,
         } = ControllerInit::new(config)?;
@@ -577,7 +577,7 @@ impl CircuitThread {
             .map(|storage| storage.backend.clone());
         let (circuit, catalog) = circuit_factory(circuit_config)?;
         let (parker, backpressure_thread, command_receiver, controller) =
-            ControllerInner::new(pipeline_config, catalog, error_cb, processed_records)?;
+            ControllerInner::new(pipeline_config, catalog, error_cb, checkpoint_stats)?;
 
         // Seek each input endpoint to its initial offset.
         //
@@ -793,11 +793,9 @@ impl CircuitThread {
                         circuit: Some(circuit),
                         step: this.step,
                         config,
-                        processed_records: this
-                            .controller
-                            .status
-                            .global_metrics
-                            .num_total_processed_records(),
+                        stats: CheckpointStats::from_global_metrics(
+                            &this.controller.status.global_metrics,
+                        ),
                         input_metadata: this.input_metadata.clone().unwrap_or_default(),
                     };
                     checkpoint
@@ -1104,7 +1102,7 @@ impl FtState {
             circuit: None,
             step: 0,
             config,
-            processed_records: 0,
+            stats: CheckpointStats::default(),
             input_metadata: CheckpointOffsets::default(),
         };
         checkpoint.write(&*backend, &StoragePath::from(STATE_FILE))?;
@@ -1372,8 +1370,8 @@ struct ControllerInit {
     /// configuration.
     pipeline_config: PipelineConfig,
 
-    /// Initial counter for `total_processed_records`.
-    processed_records: u64,
+    /// Initial statistics for the pipline.
+    checkpoint_stats: CheckpointStats,
 
     /// The first step that the circuit will execute.
     step: Step,
@@ -1396,7 +1394,7 @@ impl ControllerInit {
         Ok(Self {
             circuit_config: Self::circuit_config(&config, storage)?,
             pipeline_config: config,
-            processed_records: 0,
+            checkpoint_stats: CheckpointStats::default(),
             step: 0,
             input_metadata: None,
         })
@@ -1440,7 +1438,7 @@ impl ControllerInit {
             circuit,
             step,
             config: checkpoint_config,
-            processed_records,
+            stats: checkpoint_stats,
             input_metadata,
         } = checkpoint;
         info!("resuming from checkpoint made at step {step}");
@@ -1504,7 +1502,7 @@ impl ControllerInit {
             pipeline_config: config,
             step,
             input_metadata: Some(input_metadata),
-            processed_records,
+            checkpoint_stats,
         })
     }
 
@@ -1858,9 +1856,9 @@ impl ControllerInner {
         config: PipelineConfig,
         catalog: Box<dyn CircuitCatalog>,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
-        processed_records: u64,
+        initial_stats: CheckpointStats,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
-        let status = Arc::new(ControllerStatus::new(config.clone(), processed_records));
+        let status = Arc::new(ControllerStatus::new(config.clone(), initial_stats));
         let circuit_thread_parker = Parker::new();
         let backpressure_thread_parker = Parker::new();
         let (command_sender, command_receiver) = channel();
