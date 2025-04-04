@@ -137,9 +137,9 @@ create table PRICE (
     "transport": {
         "name": "kafka_input",
         "config": {
-            "topics": ["price"],
-            "bootstrap.servers": "redpanda:9092",
-            "auto.offset.reset": "earliest"
+            "topic": "price",
+            "start_from": "earliest",
+            "bootstrap.servers": "redpanda:9092"
         }
     }
 }]');
@@ -230,9 +230,9 @@ create table PRICE (
     "transport": {
         "name": "kafka_input",
         "config": {
-            "topics": ["price"],
-            "bootstrap.servers": "redpanda:9092",
-            "auto.offset.reset": "earliest"
+            "topic": "price",
+            "start_from": "earliest",
+            "bootstrap.servers": "redpanda:9092"
         }
     }
 }]');

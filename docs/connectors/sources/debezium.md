@@ -152,9 +152,9 @@ CREATE TABLE my_table (
       "transport": {
           "name": "kafka_input",
           "config": {
-              "bootstrap.servers": "127.0.0.1:9092",
-              "auto.offset.reset": "earliest",
-              "topics": ["my_topic"]
+              "topic": "my_topic",
+              "start_from": "earliest",
+              "bootstrap.servers": "127.0.0.1:9092"
           }
       },
       "format": {
@@ -178,9 +178,9 @@ CREATE TABLE my_table (
       "transport": {
           "name": "kafka_input",
           "config": {
-              "bootstrap.servers": "127.0.0.1:9092",
-              "auto.offset.reset": "earliest",
-              "topics": ["my_topic"]
+              "topic": "my_topic",
+              "start_from": "earliest",
+              "bootstrap.servers": "127.0.0.1:9092"
           }
       },
       "format": {
@@ -209,9 +209,9 @@ CREATE TABLE my_table (
     "transport": {
       "name": "kafka_input",
       "config": {
-        "bootstrap.servers": "127.0.0.1:9092",
-        "auto.offset.reset": "earliest",
-        "topics": ["my_topic"]
+        "topic": "my_topic",
+        "start_from": "earliest",
+        "bootstrap.servers": "127.0.0.1:9092"
       }
     },
     "format": {

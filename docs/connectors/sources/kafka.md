@@ -6,23 +6,21 @@ the `kafka_input` connector.
 The Kafka input connector supports [fault
 tolerance](/pipelines/fault-tolerance).
 
-* One or more Kafka topics can be defined.
-* The Kafka connector uses **librdkafka** in its implementation.
-  [Relevant options supported by it](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)
-  can be defined in the connector configuration.
-
 ## Kafka Input Connector Configuration
 
-| Property                | Type             | Default | Description                                                                                                                                                                                                                                                                                                                                                       |
-|-------------------------|------------------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `bootstrap.servers`*      | string           |         | A comma separated list of Kafka brokers to connect to.                                                                                                                                                                                                                                                                                                            |
-| `topics`*                 | list             |         | A list of Kafka topics to subscribe to.                                                                                                                                                                                                                                                                                                                           |
-| `log_level`               | string           |         | The log level for the Kafka client.                                                                                                                                                                                                                                                                                                                               |
-| `group_join_timeout_secs` | seconds          | 10      | Maximum timeout (in seconds) for the endpoint to join the Kafka consumer group during initialization.                                                                                                                                                                                                                                                             |
-| `poller_threads`          | positive integer | 3       | Number of threads used to poll Kafka messages. Setting it to multiple threads can improve performance with small messages. Default is 3.                                                                                                                                                                                                                          |
-| `start_from`              | list             |         | Specifies offsets and partitions to begin reading Kafka topics from. When specified, this property must contain a list of JSON objects with the following fields:  <ul><li>`topic`: The name of the Kafka topic.</li> <li>`partition`: The partition number within the topic.</li> <li>`offset`: The specific offset from which to start consuming messages.</li></ul> |
+| Property                       | Type             | Default | Description |
+|--------------------------------|------------------|---------|-------------|
+| `topic` (required)             | string           |         | The Kafka topic to subscribe to. |
+| `bootstrap.servers` (required) | string           |         | A comma separated list of Kafka brokers to connect to.
+| `start_from`                   | variant          | latest  | The starting point for reading from the topic, one of `"earliest"`, `"latest"`, or `{"offsets": [1, 2, 3, ...]}`, where `[1, 2, 3, ...]` are particular offsets within each partition in the topic. |
+| `log_level`                    | string           |         | The log level for the Kafka client. |
+| `group_join_timeout_secs`      | seconds          | 10      | Maximum timeout (in seconds) for the endpoint to join the Kafka consumer group during initialization. |
+| `poller_threads`               | positive integer | 3       | Number of threads used to poll Kafka messages. Setting it to multiple threads can improve performance with small messages. Default is 3. |
 
-Any other configurations from [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) are directly passed to `librdkafka`.
+The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).  Some of the relevant options:
+
+* `group.id` is ignored.  The connector never uses consumer groups, so `enable.auto.commit`, `enable.auto.offset.store`, and other options related to consumer groups are also ignored.
+* `auto.offset.reset` is ignored.  Use `start_from` (described in the table above) instead.
 
 ## Example usage
 
@@ -52,9 +50,9 @@ CREATE TABLE INPUT (
       "transport": {
           "name": "kafka_input",
           "config": {
-              "bootstrap.servers": "example.com:9092",
-              "auto.offset.reset": "earliest",
-              "topics": ["book-fair-sales"]
+              "topic": "book-fair-sales",
+              "start_from": "earliest",
+              "bootstrap.servers": "example.com:9092"
           }
       },
       "format": {
@@ -70,12 +68,6 @@ CREATE TABLE INPUT (
 
 ### Starting from a specific offset
 
-:::caution Experimental feature
-Reading Kafka messages from a specific offset is an experimental feature.
-
-**Fault tolerant** kafka connectors **do not** yet support this.
-:::
-
 Feldera supports starting a Kafka connector from a specific offset in a specifc
 partition.
 
@@ -88,13 +80,9 @@ CREATE TABLE INPUT (
       "transport": {
           "name": "kafka_input",
           "config": {
-              "bootstrap.servers": "example.com:9092",
-              "topics": ["book-fair-sales"],
-              "start_from": [{
-                "topic": "book-fair-sales",
-                "partition": 0,
-                "offset": 42
-              }]
+              "topic": "book-fair-sales",
+              "start_from": {"offsets": [42]},
+              "bootstrap.servers": "example.com:9092"
           }
       },
       "format": {
@@ -107,18 +95,6 @@ CREATE TABLE INPUT (
   }]'
 )
 ```
-
-The `start_from` field takes a list of JSON objects that must include the
-following fields:
-- `topic`: The name of the Kafka topic.
-- `partition`: The partition number within the topic.
-- `offset`: The specific offset from which to start consuming messages.
-
-:::important
-- The topic specified in `start_from` must also be included in `topics` field.
-- If a topic has multiple partitions but only one partition is defined in
-  `start_from`, only that partition will be read.
-:::
 
 ### How to write connector config
 
@@ -138,9 +114,9 @@ it does not need to be explicitly specified.
 
 ```json
 "config": {
-    "bootstrap.servers": "example.com:9092",
-    "auto.offset.reset": "earliest",
-    "topics": ["book-fair-sales"]
+    "topic": "book-fair-sales",
+    "start_from": "earliest",
+    "bootstrap.servers": "example.com:9092"
 }
 ```
 
@@ -148,9 +124,9 @@ it does not need to be explicitly specified.
 
 ```json
 "config": {
+    "topic": "book-fair-sales",
+    "start_from": "earliest",
     "bootstrap.servers": "example.com:9092",
-    "auto.offset.reset": "earliest",
-    "topics": ["book-fair-sales"],
     "security.protocol": "SASL_PLAINTEXT",
     "sasl.mechanism": "SCRAM-SHA-256",
     "sasl.username": "<USER>",
@@ -162,9 +138,9 @@ it does not need to be explicitly specified.
 
 ```json
 "config": {
+    "topic": "book-fair-sales",
+    "start_from": "earliest",
     "bootstrap.servers": "example.com:9092",
-    "auto.offset.reset": "earliest",
-    "topics": ["book-fair-sales"],
     "security.protocol": "SSL"
 }
 ```
@@ -173,9 +149,9 @@ it does not need to be explicitly specified.
 
 ```json
 "config": {
+    "topic": "book-fair-sales",
+    "start_from": "earliest",
     "bootstrap.servers": "example.com:9092",
-    "auto.offset.reset": "earliest",
-    "topics": ["book-fair-sales"],
     "security.protocol": "SASL_SSL",
     "sasl.mechanism": "SCRAM-SHA-256",
     "sasl.username": "<USER>",
@@ -193,25 +169,20 @@ select Kafka Location: Confluent Cloud, and then go to the Configuration tab).
 
 ```json
 "config": {
+    "topic": "book-fair-sales",
+    "start_from": "earliest",
     "bootstrap.servers": "example.com:9092",
-    "auto.offset.reset": "earliest",
-    "topics": ["book-fair-sales"],
     "security.protocol": "SSL",
     "ssl.ca.pem": "-----BEGIN CERTIFICATE-----TOPSECRET0\n-----END CERTIFICATE-----\n",
     "ssl.key.pem": "-----BEGIN CERTIFICATE-----TOPSECRET1\n-----END CERTIFICATE-----\n",
-    "ssl.certificate.pem": "-----BEGIN CERTIFICATE-----TOPSECRET2\n-----END CERTIFICATE-----\n",
+    "ssl.certificate.pem": "-----BEGIN CERTIFICATE-----TOPSECRET2\n-----END CERTIFICATE-----\n"
 }
 ```
 
 PEM-encoded certificates can be passed directly in the configuration using
 `ssl.*.pem` keys.
 
-During development, we encountered an issue with `librdkafka` where the SSL
-handshake fails if the certificate PEM string contain more than one certificate.
-
-Feldera circumvents this issue as follows:
-
-###### Issue with librdkafka
+##### Multiple certificates
 
 librdkafka only accepts multiple certificates when provided via
 `ssl.certificate.location` keys (file paths) rather than directly
@@ -219,8 +190,6 @@ with `ssl.certificate.pem`.
 
 This is documented in
 [librdkafka issue #3225](https://github.com/confluentinc/librdkafka/issues/3225).
-
-##### Feldera's Approach
 
 To work around this limitation, Feldera handles PEM-encoded certificates and
 keys by:
