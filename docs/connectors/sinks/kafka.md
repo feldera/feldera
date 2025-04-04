@@ -5,9 +5,9 @@ Feldera can output a stream of changes to a SQL table or view to a Kafka topic.
 The Kafka output connector supports [fault
 tolerance](/pipelines/fault-tolerance).
 
-* The Kafka connector uses **librdkafka** in its implementation.
-  [Relevant options supported by it](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)
-  can be defined in the connector configuration.
+The Kafka connector uses **librdkafka** in its implementation and
+supports [relevant options for
+consumers](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
 
 ## Example usage
 
@@ -59,12 +59,7 @@ AS ...
 PEM-encoded certificates can be passed directly in the configuration using
 `ssl.*.pem` keys.
 
-During development, we encountered an issue with `librdkafka` where the SSL
-handshake fails if the certificate PEM string contain more than one certificate.
-
-Feldera circumvents this issue as follows:
-
-###### Issue with librdkafka
+#### Multiple certificates
 
 librdkafka only accepts multiple certificates when provided via
 `ssl.certificate.location` keys (file paths) rather than directly
@@ -72,8 +67,6 @@ with `ssl.certificate.pem`.
 
 This is documented in
 [librdkafka issue #3225](https://github.com/confluentinc/librdkafka/issues/3225).
-
-##### Feldera's Approach
 
 To work around this limitation, Feldera handles PEM-encoded certificates and
 keys by:
