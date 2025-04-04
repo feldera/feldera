@@ -34,12 +34,12 @@ pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::{FilteredMergeCursor, UnfilteredMergeCursor};
 use dyn_clone::DynClone;
+use feldera_storage::StoragePath;
 use rand::Rng;
 use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
-use std::path::Path;
 use std::sync::Arc;
-use std::{fmt::Debug, hash::Hash, path::PathBuf};
+use std::{fmt::Debug, hash::Hash};
 
 pub mod cursor;
 pub mod layers;
@@ -306,10 +306,10 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
-    fn commit(&mut self, _base: &Path, _pid: &str) -> Result<(), Error> {
+    fn commit(&mut self, _base: &StoragePath, _pid: &str) -> Result<(), Error> {
         Ok(())
     }
-    fn restore(&mut self, _base: &Path, _pid: &str) -> Result<(), Error> {
+    fn restore(&mut self, _base: &StoragePath, _pid: &str) -> Result<(), Error> {
         Ok(())
     }
 
@@ -674,11 +674,11 @@ where
     /// mechanism to find the batch again on re-start.
     ///
     /// If the batch can not be persisted, this function returns None.
-    fn checkpoint_path(&self) -> Option<PathBuf> {
+    fn checkpoint_path(&self) -> Option<StoragePath> {
         None
     }
 
-    fn from_path(_factories: &Self::Factories, _path: &Path) -> Result<Self, ReaderError> {
+    fn from_path(_factories: &Self::Factories, _path: &StoragePath) -> Result<Self, ReaderError> {
         Err(ReaderError::Unsupported)
     }
 }

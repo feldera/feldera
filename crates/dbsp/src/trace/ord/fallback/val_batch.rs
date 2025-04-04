@@ -1,5 +1,4 @@
 use std::fmt::{Display, Formatter};
-use std::path::{Path, PathBuf};
 
 use crate::storage::buffer_cache::CacheStats;
 use crate::trace::cursor::DelegatingCursor;
@@ -19,6 +18,7 @@ use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
 };
 use derive_more::Debug;
+use feldera_storage::StoragePath;
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
@@ -321,14 +321,14 @@ where
         }
     }
 
-    fn checkpoint_path(&self) -> Option<PathBuf> {
+    fn checkpoint_path(&self) -> Option<StoragePath> {
         match &self.inner {
             Inner::Vec(vec) => vec.checkpoint_path(),
             Inner::File(file) => file.checkpoint_path(),
         }
     }
 
-    fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
+    fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
         Ok(Self {
             factories: factories.clone(),
             inner: Inner::File(FileValBatch::<K, V, T, R>::from_path(

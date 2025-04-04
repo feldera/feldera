@@ -60,8 +60,8 @@ pub struct PipelineConfig {
 
     /// Configuration for persistent storage
     ///
-    /// If `global.storage` is `true`, this field must be set to some
-    /// [`StorageConfig`].  If `global.storage` is `false`, the pipeline ignores
+    /// If `global.storage` is `Some(_)`, this field must be set to some
+    /// [`StorageConfig`].  If `global.storage` is `None``, the pipeline ignores
     /// this field.
     #[serde(default)]
     pub storage_config: Option<StorageConfig>,
@@ -94,6 +94,12 @@ impl PipelineConfig {
             storage_config,
             ..self
         }
+    }
+
+    pub fn storage(&self) -> Option<(&StorageConfig, &StorageOptions)> {
+        let storage_options = self.global.storage.as_ref();
+        let storage_config = self.storage_config.as_ref();
+        storage_config.zip(storage_options)
     }
 }
 

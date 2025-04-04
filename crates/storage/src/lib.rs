@@ -1,7 +1,7 @@
 //! Common Types and Trait Definition for Storage in Feldera.
 
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::Arc;
 
 use feldera_types::config::{StorageBackendConfig, StorageConfig, StorageOptions};
@@ -12,6 +12,8 @@ use crate::block::BlockLocation;
 use crate::error::StorageError;
 use crate::fbuf::FBuf;
 use crate::file::HasFileId;
+
+pub use object_store::path::{Path as StoragePath, PathPart as StoragePathPart};
 
 pub mod block;
 pub mod error;
@@ -35,45 +37,76 @@ pub trait StorageBackendFactory: Sync {
         &self,
         storage_config: &StorageConfig,
         backend_config: &StorageBackendConfig,
-    ) -> Result<Rc<dyn StorageBackend>, StorageError>;
+    ) -> Result<Arc<dyn StorageBackend>, StorageError>;
 }
 
 inventory::collect!(&'static dyn StorageBackendFactory);
 
 /// A storage backend.
-pub trait StorageBackend {
-    /// Create a new file with the given `name`, which is relative to the
-    /// backend's base directory.
-    fn create_named(&self, name: &Path) -> Result<Box<dyn FileWriter>, StorageError>;
+pub trait StorageBackend: Send + Sync {
+    /// Create a new file with the given `name`, automatically creating any
+    /// parent directories within `name` that don't already exist.
+    fn create_named(&self, name: &StoragePath) -> Result<Box<dyn FileWriter>, StorageError>;
 
     /// Creates a new persistent file used for writing data. The backend selects
     /// a name.
     fn create(&self) -> Result<Box<dyn FileWriter>, StorageError> {
-        self.create_with_prefix("")
+        self.create_with_prefix(&StoragePath::default())
     }
 
     /// Creates a new persistent file used for writing data, giving the file's
     /// name the specified `prefix`. See also [`create`](Self::create).
-    fn create_with_prefix(&self, prefix: &str) -> Result<Box<dyn FileWriter>, StorageError> {
+    fn create_with_prefix(
+        &self,
+        prefix: &StoragePath,
+    ) -> Result<Box<dyn FileWriter>, StorageError> {
         let uuid = Uuid::now_v7();
         let name = format!("{}{}{}", prefix, uuid, CREATE_FILE_EXTENSION);
-        let name_path = Path::new(&name);
-        self.create_named(name_path)
+        self.create_named(&name.into())
     }
 
-    /// Opens a file for reading.  The file `name` is relative to the base of
-    /// the storage backend.
-    fn open(&self, name: &Path) -> Result<Arc<dyn FileReader>, StorageError>;
+    /// Opens `name` for reading.
+    fn open(&self, name: &StoragePath) -> Result<Arc<dyn FileReader>, StorageError>;
+
+    /// Calls `cb` with the name of each of the files under `parent`. This is a
+    /// non-recursive list: it does not include files under sub-directories of
+    /// `parent`.
+    fn list(
+        &self,
+        parent: &StoragePath,
+        cb: &mut dyn FnMut(&StoragePath, StorageFileType),
+    ) -> Result<(), StorageError>;
+
+    fn delete(&self, name: &StoragePath) -> Result<(), StorageError>;
+
+    fn delete_recursive(&self, name: &StoragePath) -> Result<(), StorageError>;
+
+    fn delete_if_exists(&self, name: &StoragePath) -> Result<(), StorageError> {
+        match self.delete(name) {
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    }
+
+    fn exists(&self, name: &StoragePath) -> Result<bool, StorageError> {
+        match self.open(name) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
 
     /// Reads `name` and returns its contents.  The file `name` is relative to
     /// the base of the storage backend.
-    fn read(&self, name: &Path) -> Result<Arc<FBuf>, StorageError> {
+    fn read(&self, name: &StoragePath) -> Result<Arc<FBuf>, StorageError> {
         let reader = self.open(name)?;
         let size = reader.get_size()?.try_into().unwrap();
         reader.read_block(BlockLocation { offset: 0, size })
     }
 
-    fn write(&self, name: &Path, content: FBuf) -> Result<(), StorageError> {
+    /// Writes `content` to `name`, automatically creating any parent
+    /// directories within `name` that don't already exist.
+    fn write(&self, name: &StoragePath, content: FBuf) -> Result<(), StorageError> {
         let mut writer = self.create_named(name)?;
         writer.write_block(0, content)?;
         let (reader, _path) = writer.complete()?;
@@ -84,7 +117,10 @@ pub trait StorageBackend {
 
 impl dyn StorageBackend {
     /// Creates and returns a new backend configured according to `config` and `options`.
-    pub fn new(config: &StorageConfig, options: &StorageOptions) -> Result<Rc<Self>, StorageError> {
+    pub fn new(
+        config: &StorageConfig,
+        options: &StorageOptions,
+    ) -> Result<Arc<Self>, StorageError> {
         Self::warn_about_tmpfs(config.path());
         for variable_provider in inventory::iter::<&dyn StorageBackendFactory> {
             if variable_provider.backend() == options.backend.to_string() {
@@ -120,7 +156,7 @@ impl dyn StorageBackend {
 /// The file can't be read until it is completed with
 /// [FileWriter::complete]. Until then, the file is temporary and will be
 /// deleted if it is dropped.
-pub trait FileWriter: HasFileId {
+pub trait FileWriter: Send + Sync + HasFileId {
     /// Writes `data` at the given byte `offset`.  `offset` must be a multiple
     /// of 512 and `data.len()` must be a multiple of 512.  Returns the data
     /// that was written encapsulated in an `Arc`.
@@ -130,7 +166,7 @@ pub trait FileWriter: HasFileId {
     /// file's path. The file is treated as temporary and will be deleted if the
     /// reader is dropped without first calling
     /// [FileReader::mark_for_checkpoint].
-    fn complete(self: Box<Self>) -> Result<(Arc<dyn FileReader>, PathBuf), StorageError>;
+    fn complete(self: Box<Self>) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError>;
 }
 
 /// A readable file.
@@ -150,4 +186,23 @@ pub trait FileReader: Send + Sync + HasFileId {
 
     /// Returns the file's size in bytes.
     fn get_size(&self) -> Result<u64, StorageError>;
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum StorageFileType {
+    /// A regular file.
+    File,
+
+    /// A directory.
+    ///
+    /// Only some kinds of storage backends support directories. The ones that
+    /// don't still allow files to be named hierarchically, but they don't
+    /// support creating or deleting directories independently from the files in
+    /// them. That is, with such a backend, a directory is effectively created
+    /// by creating a file in it, and is effectively deleted when the last file
+    /// in it is deleted.
+    Directory,
+
+    /// Something else.
+    Other,
 }

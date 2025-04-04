@@ -4,7 +4,7 @@
 //! TODO: Currently only functional STM, should later be expanded to cover
 //! error/corner cases.
 
-use std::{path::Path, rc::Rc};
+use std::{path::Path, sync::Arc};
 
 use rand::{thread_rng, Fill, Rng};
 
@@ -43,7 +43,7 @@ fn test_read(reader: &dyn FileReader, data: &[u8]) {
 }
 
 pub(super) fn test_backend(
-    create_backend: Box<dyn FnOnce(&Path) -> Rc<dyn StorageBackend>>,
+    create_backend: Box<dyn FnOnce(&Path) -> Arc<dyn StorageBackend>>,
     writes: &[usize],
     sequential: bool,
     mark_for_checkpoint: bool,
