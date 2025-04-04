@@ -32,6 +32,7 @@ use crate::{
 use crate::{
     circuit::{
         cache::{CircuitCache, CircuitStoreMarker},
+        dot::{DotEdgeAttributes, DotNodeAttributes},
         fingerprinter::Fingerprinter,
         metadata::OperatorMeta,
         operator_traits::{
@@ -209,6 +210,7 @@ pub trait StreamMetadata: DynClone + 'static {
     fn stream_id(&self) -> StreamId;
     fn local_node_id(&self) -> NodeId;
     fn origin_node_id(&self) -> &GlobalNodeId;
+    fn num_consumers(&self) -> usize;
     fn clear_consumer_count(&self);
     fn register_consumer(&self);
 }
@@ -693,6 +695,9 @@ where
     }
     fn clear_consumer_count(&self) {
         self.val.get_mut().consumers = 0;
+    }
+    fn num_consumers(&self) -> usize {
+        self.val.get().consumers
     }
     fn register_consumer(&self) {
         self.val.get_mut().consumers += 1;
@@ -2224,7 +2229,7 @@ impl Edges {
     pub(crate) fn depend_on(&self, node_id: NodeId) -> impl Iterator<Item = &Edge> {
         self.by_source.get(&node_id).into_iter().flat_map(|edges| {
             edges.iter().filter_map(|edge| {
-                if !edge.is_dependency() {
+                if edge.is_dependency() {
                     Some(edge.as_ref())
                 } else {
                     None
@@ -2239,7 +2244,7 @@ impl Edges {
             .into_iter()
             .flat_map(|edges| {
                 edges.iter().filter_map(|edge| {
-                    if !edge.is_dependency() {
+                    if edge.is_dependency() {
                         Some(edge.as_ref())
                     } else {
                         None
@@ -2723,17 +2728,6 @@ where
         Ok(())
     }
 
-    // /// Apply `f` to all immediate children of `self`.
-    // pub(crate) fn map_nodes(
-    //     &self,
-    //     f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
-    // ) -> Result<(), DbspError> {
-    //     for node in self.inner().nodes.borrow().iter() {
-    //         f(node.borrow().as_ref())?;
-    //     }
-    //     Ok(())
-    // }
-
     /// Recursively apply `f` to all nodes in `self` and its children mutably.
     pub(crate) fn map_nodes_recursive_mut(
         &mut self,
@@ -2744,6 +2738,17 @@ where
             node.borrow_mut().map_nodes_recursive_mut(f)?;
         }
 
+        Ok(())
+    }
+
+    /// Apply `f` to all immediate children of `self`.
+    pub(crate) fn map_nodes(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        for node in self.inner().nodes.borrow().iter() {
+            f(node.borrow().as_ref())?;
+        }
         Ok(())
     }
 
@@ -5885,6 +5890,38 @@ impl CircuitHandle {
 
             info!("CircuitHandle::restore: replay circuit is ready");
 
+            self.circuit.to_dot_file(
+                |node| {
+                    let color = if replay_sources.contains(&node.global_id()) {
+                        Some(0xff5555)
+                    } else if participate_in_backfill.contains(&node.global_id()) {
+                        Some(0x5555ff)
+                    } else {
+                        None
+                    };
+                    Some(DotNodeAttributes::new().with_color(color))
+                },
+                |edge| {
+                    let style = if edge.is_dependency() {
+                        Some("dotted".to_string())
+                    } else {
+                        None
+                    };
+                    let label = if let Some(stream) = &edge.stream {
+                        Some(format!("consumers: {}", stream.num_consumers()))
+                    } else {
+                        None
+                    };
+                    Some(
+                        DotEdgeAttributes::new(edge.stream_id())
+                            .with_style(style)
+                            .with_label(label),
+                    )
+                },
+                "replay.dot",
+            );
+            info!("CircuitHandle::restore: replay circuit is written to replay.dot");
+
             let mut done = false;
             while !done {
                 info!("Replay step");
@@ -5937,6 +5974,7 @@ impl CircuitHandle {
             // 3. Nodes that node_id depends on -- Makes sure that if we schedule the output of an exchange operator,
             //    we will schedule the input part as well.
 
+            // 1.
             let node_inputs = self.circuit.map_node(gid, &mut |node| {
                 node.input_streams()
                     .iter()
@@ -5956,9 +5994,12 @@ impl CircuitHandle {
                 inputs.insert(input);
             }
 
+            // 2.
             for edge in self.circuit.edges().dependencies_of(node_id) {
                 inputs.insert((None, self.circuit.global_id().child(edge.from)));
             }
+
+            // 3.
             for edge in self.circuit.edges().depend_on(node_id) {
                 inputs.insert((None, self.circuit.global_id().child(edge.to)));
             }
@@ -5978,12 +6019,17 @@ impl CircuitHandle {
                     // If the replay source is itself in the need_backfill set, it cannot be used for replay.
                     if !need_backfill.contains(replay_source.origin_node_id()) {
                         replay_streams.insert(stream_id, replay_source.clone());
+                        println!(
+                            "Replacing gid {gid} with replay source {}",
+                            replay_source.origin_node_id()
+                        );
                         gid = replay_source.origin_node_id().clone();
                     }
                 }
             }
 
             if !participate_in_backfill.contains(&gid) {
+                println!("Adding {gid} to participate_in_backfill via {stream_id:?}");
                 participate_in_backfill.insert(gid.clone());
                 participate_in_backfill_new.insert(gid.clone());
             }

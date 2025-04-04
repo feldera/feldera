@@ -18,7 +18,6 @@ fn init_logging() {
         )
         .try_init();
 }
-
 trait TestDataType {
     type InputHandles: Send + 'static;
     type OutputHandles: Send + 'static;
@@ -34,14 +33,6 @@ macro_rules! impl_test_data {
         struct $tname<$($t: DBData),*> {
             phantom: PhantomData<($($t),*)>,
         }
-
-        // impl<$($t: DBData),*> $tname<$($t),*> {
-        //     fn new() -> Self {
-        //         Self {
-        //             phantom: PhantomData,
-        //         }
-        //     }
-        // }
 
         impl<$($t),*> TestDataType for $tname<$($t),*>
         where
@@ -65,21 +56,12 @@ macro_rules! impl_test_data {
     };
 }
 
-//impl_test_data!(TestData1, 0: T1);
 impl_test_data!(TestData2, 0: T1, 1: T2);
 impl_test_data!(TestData3, 0: T1, 1: T2, 2: T3);
 
 struct TestData1<T1: DBData> {
     phantom: PhantomData<T1>,
 }
-
-// impl<T1: DBData> TestData1<T1> {
-//     fn new() -> Self {
-//         Self {
-//             phantom: PhantomData,
-//         }
-//     }
-// }
 
 impl TestDataType for () {
     type InputHandles = ();
@@ -245,6 +227,8 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
         checkpoint
     };
 
+    assert_eq!(reference_output1, actual_output1);
+
     {
         // Restart the second circuit from the checkpoint.
         let mut circuit_config = circuit_config.clone();
@@ -273,6 +257,12 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     }
 
     // Compare the outputs.
+    assert_eq!(reference_output2, actual_output2);
+    assert_eq!(reference_output3, actual_output3);
+}
+
+fn sequence(from: u64, to: u64) -> Vec<Vec<Tup2<u64, ZWeight>>> {
+    (from..to).map(|x| vec![Tup2(x, 1)]).collect()
 }
 
 // Linear circuit without integrals where the old and the new circuits are disjoint.
@@ -304,12 +294,24 @@ fn test_linear_circuit() {
     test_replay::<TestData1<u64>, (), TestData1<u64>, TestData1<u64>, (), TestData1<u64>>(
         Arc::new(linear_circuit1),
         Arc::new(linear_circuit2),
-        Vec::new(),
-        Vec::new(),
+        sequence(0, 2).into_iter().map(|x| (x, ())).collect(),
+        sequence(3, 5).into_iter().map(|x| ((), x)).collect(),
     );
 }
 
-// Linear circuit with materialized inputs.
+// Linear circuit with materialized inputs:
+//
+// Pipeline 1:
+//
+// ---> input1 (materialized) --> map --> output1
+// ---> input2 (materialized) --> map --> output2
+//
+// Pipeline 2:
+// ---> input2 (materialized) --> map --> output2
+// ---> input3 (materialized) --> map --> output3
+//
+// where input2 -> output2 is common between the two pipelines.
+// No replay is needed on restart because output2 doesn't need backfill.
 
 fn linear_circuit_materialized_inputs1(
     circuit: &mut RootCircuit,
@@ -380,8 +382,106 @@ fn test_linear_circuit_materialized_inputs() {
     >(
         Arc::new(linear_circuit_materialized_inputs1),
         Arc::new(linear_circuit_materialized_inputs2),
-        Vec::new(),
-        Vec::new(),
+        std::iter::zip(sequence(0, 2), sequence(0, 2)).collect(),
+        std::iter::zip(sequence(3, 5), sequence(3, 5)).collect(),
+    );
+}
+
+// Linear circuit with materialized inputs:
+//
+// Pipeline 1:
+//
+// ---> input1 (materialized) --> map --> output1
+// ---> input2 (materialized) --> map --> output2
+//
+// Pipeline 2:
+// ---> input2 (materialized) --> map --> output2_2
+// ---> input3 (materialized) --> map --> output3
+//
+// where input2 is common between the two pipelines, but output2_2 has a different persistent id
+// than output2 and therefore requires backfill.
+
+fn linear_circuit_materialized_inputs1_2(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<u64>,
+    ZSetHandle<u64>,
+    (OutputHandle<OrdZSet<u64>>, OutputHandle<OrdZSet<u64>>),
+    (),
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    let (input_stream2, input_handle2) = circuit.add_input_zset::<u64>();
+    input_stream2.set_persistent_id(Some("input2"));
+
+    // These integrals will be used for replay input streams.
+    input_stream1.integrate_trace();
+    input_stream2.integrate_trace();
+
+    let output_handle1 = input_stream1
+        .map(|x| x % 1000)
+        .output_persistent(Some("output1"));
+
+    let output_handle2 = input_stream2
+        .map(|x| x + 5)
+        .output_persistent(Some("output2"));
+
+    (
+        input_handle1,
+        input_handle2,
+        (output_handle1, output_handle2),
+        (),
+    )
+}
+
+fn linear_circuit_materialized_inputs2_2(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<u64>,
+    ZSetHandle<u64>,
+    (),
+    (OutputHandle<OrdZSet<u64>>, OutputHandle<OrdZSet<u64>>),
+) {
+    let (input_stream2, input_handle2) = circuit.add_input_zset::<u64>();
+    input_stream2.set_persistent_id(Some("input2"));
+
+    let (input_stream3, input_handle3) = circuit.add_input_zset::<u64>();
+    input_stream3.set_persistent_id(Some("input3"));
+
+    input_stream2.integrate_trace();
+    input_stream3.integrate_trace();
+
+    let output_handle2 = input_stream2
+        .map(|x| x + 5)
+        .output_persistent(Some("output2_2"));
+
+    let output_handle3 = input_stream3
+        .map(|x| x >> 1)
+        .output_persistent(Some("output3"));
+
+    (
+        input_handle2,
+        input_handle3,
+        (),
+        (output_handle2, output_handle3),
+    )
+}
+
+#[test]
+fn test_linear_circuit_materialized_inputs_with_backfill() {
+    test_replay::<
+        TestData1<u64>,
+        TestData1<u64>,
+        TestData1<u64>,
+        TestData2<u64, u64>,
+        (),
+        TestData2<u64, u64>,
+    >(
+        Arc::new(linear_circuit_materialized_inputs1_2),
+        Arc::new(linear_circuit_materialized_inputs2_2),
+        std::iter::zip(sequence(0, 2), sequence(0, 2)).collect(),
+        std::iter::zip(sequence(3, 5), sequence(3, 5)).collect(),
     );
 }
 

@@ -1210,14 +1210,14 @@ where
                     replay.cursor.map_times(&mut |_t, w| weight.add_assign(w));
 
                     if !weight.is_zero() {
-                        builder.push_val_diff_mut(replay.cursor.val_mut(), weight.as_mut());
+                        builder.push_val_diff(replay.cursor.val(), weight.as_ref());
                         values_added = true;
                         num_values += 1;
                     }
                     replay.cursor.step_val();
                 }
                 if values_added {
-                    builder.push_key_mut(replay.cursor.key_mut());
+                    builder.push_key(replay.cursor.key());
                 }
                 if !replay.cursor.val_valid() {
                     replay.cursor.step_key();
