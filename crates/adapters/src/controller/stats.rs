@@ -91,12 +91,10 @@ pub struct GlobalControllerMetrics {
 
     /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub rss_bytes: Option<AtomicU64>,
 
     /// CPU time used by the pipeline process, in milliseconds.
     // This field is computed on-demand by calling `ControllerStatus::update`.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub cpu_msecs: Option<AtomicU64>,
 
     /// Time elapsed while the pipeline is executing a step, multiplied by the
@@ -148,11 +146,18 @@ where
 
 impl GlobalControllerMetrics {
     fn new(processed_records: u64) -> Self {
+        fn unix_only_stat() -> Option<AtomicU64> {
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            return Some(AtomicU64::new(0));
+
+            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+            return None;
+        }
+
         Self {
             state: Atomic::new(PipelineState::Paused),
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            rss_bytes: Some(AtomicU64::new(0)),
-            cpu_msecs: Some(AtomicU64::new(0)),
+            rss_bytes: unix_only_stat(),
+            cpu_msecs: unix_only_stat(),
             runtime_elapsed_msecs: AtomicU64::new(0),
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(processed_records),
