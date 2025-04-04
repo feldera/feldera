@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 use tracing::warn;
 
 pub use ft::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint};
-pub use nonft::{KafkaInputEndpoint, KafkaOutputEndpoint};
+pub use nonft::KafkaOutputEndpoint;
 
 mod ft;
 mod nonft;

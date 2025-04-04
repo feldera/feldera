@@ -3950,24 +3950,22 @@
         "type": "object",
         "description": "Configuration for reading data from Kafka topics with `InputTransport`.",
         "required": [
-          "topics"
+          "kafka_options",
+          "topic"
         ],
         "properties": {
-          "fault_tolerance": {
-            "type": "string",
-            "description": "Deprecated.",
-            "nullable": true
-          },
           "group_join_timeout_secs": {
             "type": "integer",
             "format": "int32",
             "description": "Maximum timeout in seconds to wait for the endpoint to join the Kafka\nconsumer group during initialization.",
             "minimum": 0
           },
-          "kafka_service": {
-            "type": "string",
-            "description": "Deprecated.",
-            "nullable": true
+          "kafka_options": {
+            "type": "object",
+            "description": "Options passed directly to `rdkafka`.\n\n[`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)\nused to configure the Kafka consumer.\n\nThis input connector does not use consumer groups, so options related to\nconsumer groups are rejected, including:\n\n* `group.id`, if present, is ignored.\n* `auto.offset.reset` (use `start_from` instead).\n* \"enable.auto.commit\", if present, must be set to \"false\".\n* \"enable.auto.offset.store\", if present, must be set to \"false\".",
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "log_level": {
             "allOf": [
@@ -3984,23 +3982,12 @@
             "minimum": 0
           },
           "start_from": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/KafkaStartFromConfig"
-            },
-            "description": "A list of offsets and partitions specifying where to begin reading individual input topics.\n\nWhen specified, this property must contain a list of JSON objects with the following fields:\n- `topic`: The name of the Kafka topic.\n- `partition`: The partition number within the topic.\n- `offset`: The specific offset from which to start consuming messages."
+            "$ref": "#/components/schemas/KafkaStartFromConfig"
           },
-          "topics": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "List of topics to subscribe to."
+          "topic": {
+            "type": "string",
+            "description": "Topic to subscribe to."
           }
-        },
-        "additionalProperties": {
-          "type": "string",
-          "description": "Options passed directly to `rdkafka`.\n\n[`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)\nused to configure the Kafka consumer.  Not all options are valid with\nthis Kafka adapter:\n\n* \"enable.auto.commit\", if present, must be set to \"false\",\n* \"enable.auto.offset.store\", if present, must be set to \"false\""
         }
       },
       "KafkaLogLevel": {
@@ -4091,31 +4078,39 @@
         }
       },
       "KafkaStartFromConfig": {
-        "type": "object",
-        "description": "Configuration for starting from a specific offset in a Kafka topic partition.",
-        "required": [
-          "topic",
-          "partition",
-          "offset"
-        ],
-        "properties": {
-          "offset": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The offset in the specified partition to start reading from.",
-            "minimum": 0
-          },
-          "partition": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The parition within the topic.",
-            "minimum": 0
-          },
-          "topic": {
+        "oneOf": [
+          {
             "type": "string",
-            "description": "The Kafka topic."
+            "description": "Start from the beginning of the topic.",
+            "enum": [
+              "earliest"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Start from the current end of the topic.\n\nThis will only read any data that is added to the topic after the\nconnector initializes.",
+            "enum": [
+              "latest"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "offsets"
+            ],
+            "properties": {
+              "offsets": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "description": "Start from particular offsets in the topic.\n\nThe number of offsets must match the number of partitions in the topic."
+              }
+            }
           }
-        }
+        ],
+        "description": "Where to begin reading a Kafka topic."
       },
       "LicenseInformation": {
         "type": "object",
