@@ -138,8 +138,12 @@ fn test_offset(
         producer.send_string("", topic);
     }
 
-    let (endpoint, _consumer, _parser, zset) =
+    let (endpoint, consumer, _parser, zset) =
         mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty(), false).unwrap();
+
+    if expected.is_none() {
+        consumer.on_error(Some(Box::new(|_, _| ())));
+    }
 
     endpoint.extend();
 
@@ -158,7 +162,10 @@ fn test_offset(
         wait_for_output_unordered(&zset, expected, flush);
     } else {
         sleep(Duration::from_millis(1000));
-        panic!("the connector should have already panicked but it didn't");
+        let error = consumer
+            .get_error()
+            .expect("the connector should have reported an error but  it didn't");
+        panic!("{error}");
     }
     zset.reset();
 

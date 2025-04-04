@@ -9,7 +9,7 @@ use crate::{
     InputConsumer, TransportInputEndpoint,
 };
 use crate::{InputBuffer, ParseError, Parser};
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
 use feldera_adapterlib::transport::{InputEndpoint, InputReaderCommand};
@@ -44,6 +44,8 @@ use xxhash_rust::xxh3::Xxh3Default;
 
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
 const POLL_TIMEOUT: Duration = Duration::from_millis(5);
+
+const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
 
 // Size of the circular buffer used to pass errors from ClientContext
 // to the worker thread.
@@ -159,8 +161,22 @@ impl KafkaFtInputReaderInner {
                     iter::repeat_n(Offset::Beginning, n_partitions).collect()
                 }
                 KafkaStartFromConfig::Latest => iter::repeat_n(Offset::End, n_partitions).collect(),
-                KafkaStartFromConfig::Offsets(vec) => {
-                    vec.iter().copied().map(Offset::Offset).collect()
+                KafkaStartFromConfig::Offsets(offsets) => {
+                    for (offset, partition) in offsets.iter().copied().zip(0..) {
+                        let (low, high) = self
+                            .kafka_consumer
+                            .fetch_watermarks(topic, partition, METADATA_TIMEOUT)
+                            .map_err(|e| {
+                                anyhow!("error fetching metadata for partition '{partition}': {e}",)
+                            })?;
+
+                        // Return an error if the specified offset doesn't exist.
+                        if !(low..=high).contains(&offset) {
+                            bail!("configuration error: provided offset '{offset}' not currently in partition '{partition}'");
+                        }
+                    }
+
+                    offsets.iter().copied().map(Offset::Offset).collect()
                 }
             },
         };
