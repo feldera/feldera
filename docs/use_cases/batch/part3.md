@@ -82,13 +82,9 @@ CREATE TABLE LINEITEM (
     "transport": {
         "name": "kafka_input",
         "config": {
-            "bootstrap.servers": "localhost:9092",
-            "topics": ["lineitem"],
-            "start_from": [{
-              "topic": "lineitem",
-              "partition": 0,
-              "offset": 42
-            }]
+            "topic": "lineitem",
+            "start_from": {"offsets": [42]},
+            "bootstrap.servers": "localhost:9092"
         }
     },
     "format": {
@@ -122,25 +118,19 @@ connectors (see: [Input Connector Orchestration](https://docs.feldera.com/connec
 ![Architecture Diagram showing Kafka Messages Ingestion from a Specific Point](./part3-arch.png)
 
 The Kafka input connector can be configured to start reading messages from a specific offset in the Kafka topic.
-To this end, the user specifies the **start_from** property with a list of topics,
-partitions, and initial offsets within each partition. It is possible to
-start at different offsets in different partitions in different topics.
+To this end, the user specifies the **start_from** property with partition offsets.
 
 To start reading topic **lineitem**, partition **0** from offset **42**, in the connector configuration, we do:
 
 ```json
 // lineitem.live
 // config:
-            "start_from": [{
-              "topic": "lineitem",
-              "partition": 0,
-              "offset": 42
-            }]
+            "start_from": {"offsets": [42]}
 ```
 
 :::important
-In cases with **multiple partitions and multiple topics**, it is necessary to
-**specify the offset for each partition and topic**.
+In cases with **multiple partitions**, it is necessary to
+**specify the offset for each partition**.
 :::
 
 

@@ -105,7 +105,7 @@ Once `end_of_input` is true and `buffered_records` is 0, the pipeline will no lo
 fda connector my_pipeline my_table my_connector stats | jq '.metrics.end_of_input == true and .metrics.buffered_records == 0'
 ```
 
-Not all connectors reach the end of input. Some, like Kafka and Pub/Sub, continuously wait for new data. Others signal the end of input depending on their configuration. The following table summarizes the end-of-input behavior for different input connectors:
+Not all connectors reach the end of input. Some, like Pub/Sub, continuously wait for new data. Others signal the end of input depending on their configuration. The following table summarizes the end-of-input behavior for different input connectors:
 
 
 | Connector  | Signals end-of-input         | Comment |
@@ -116,7 +116,7 @@ Not all connectors reach the end of input. Some, like Kafka and Pub/Sub, continu
 | [Delta Lake](/connectors/sources/delta)   | when `mode=snapshot`        | When configured with `mode=snapshot`, the DeltaLake connector signals the end of input after ingesting the specified snapshot of the table. |
 | File                                      | when `follow=false`         | When configured with `follow=false` (the default), the file input connector signals the end of input after reading the current contents of the file; otherwise (`follow=true`), the connector continues polling for new changes. |
 | [Iceberg](/connectors/sources/iceberg)    | yes                         | Stops after reading a complete table shapshot. |
-| [Kafka](/connectors/sources/kafka)        | no                          | Waits for new messages from the Kafka topic. |
+| [Kafka](/connectors/sources/kafka)        | when `enable.partition.eof` | Otherwise, waits for new messages from the Kafka topic. |
 | [Pub/Sub](/connectors/sources/pubsub)     | no                          | Waits for new messages from the Pub/Sub subscriptio. |
 | [Postgres](/connectors/sources/postgresql)| yes                         | Stops after reading a complete table shapshot (use the [Debezium connector](/connectors/sources/debezium) for Change Data Capture). |
 | [S3](/connectors/sources/s3)              | yes                         | Stops after reading all objects that match the specified prefix. |
@@ -189,9 +189,9 @@ create table PRICE (
     "transport": {
         "name": "kafka_input",
         "config": {
-            "topics": ["price"],
-            "bootstrap.servers": "redpanda:9092",
-            "auto.offset.reset": "earliest"
+            "topic": "price",
+            "start_from": "earliest",
+            "bootstrap.servers": "redpanda:9092"
         }
     }
 }]');
