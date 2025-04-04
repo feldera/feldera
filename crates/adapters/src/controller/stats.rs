@@ -93,8 +93,15 @@ pub struct GlobalControllerMetrics {
     pub rss_bytes: AtomicU64,
 
     /// CPU time used by the pipeline across all threads, in milliseconds.
+    ///
+    /// This value is cumulative for the pipeline across fault tolerance or
+    /// suspend and resume.
     // This field is computed on-demand by calling `ControllerStatus::update`.
     pub cpu_msecs: AtomicU64,
+
+    /// CPU time used in the checkpoint that we restored from, if any, in
+    /// milliseconds.
+    pub base_cpu_msecs: u64,
 
     /// Time elapsed while the pipeline is executing a step, multiplied by the
     /// number of foreground and background threads, in milliseconds.
@@ -151,7 +158,8 @@ impl GlobalControllerMetrics {
         Self {
             state: Atomic::new(PipelineState::Paused),
             rss_bytes: AtomicU64::new(0),
-            cpu_msecs: AtomicU64::new(0),
+            cpu_msecs: AtomicU64::new(initial_stats.cpu_msecs),
+            base_cpu_msecs: initial_stats.cpu_msecs,
             runtime_elapsed_msecs: AtomicU64::new(initial_stats.runtime_elapsed_msecs),
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(initial_stats.processed_records),
@@ -835,9 +843,10 @@ impl ControllerStatus {
 
         match ProcessTime::try_now() {
             Ok(time) => {
-                self.global_metrics
-                    .cpu_msecs
-                    .store(time.as_duration().as_millis() as u64, Ordering::Relaxed);
+                self.global_metrics.cpu_msecs.store(
+                    time.as_duration().as_millis() as u64 + self.global_metrics.base_cpu_msecs,
+                    Ordering::Relaxed,
+                );
             }
             Err(e) => {
                 error!("Failed to fetch process times: {e}");

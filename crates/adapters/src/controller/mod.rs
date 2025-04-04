@@ -793,9 +793,12 @@ impl CircuitThread {
                         circuit: Some(circuit),
                         step: this.step,
                         config,
-                        stats: CheckpointStats::from_global_metrics(
-                            &this.controller.status.global_metrics,
-                        ),
+                        stats: {
+                            this.controller.status.update(this.controller.can_suspend());
+                            CheckpointStats::from_global_metrics(
+                                &this.controller.status.global_metrics,
+                            )
+                        },
                         input_metadata: this.input_metadata.clone().unwrap_or_default(),
                     };
                     checkpoint
