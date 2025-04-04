@@ -85,8 +85,7 @@ public final class DBSPApplyExpression extends DBSPApplyBaseExpression {
         if (o == null)
             return false;
         return this.function == o.function &&
-                Linq.same(this.arguments, o.arguments) &&
-                this.hasSameType(o);
+                Linq.same(this.arguments, o.arguments);
     }
 
     @Override

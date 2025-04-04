@@ -80,8 +80,7 @@ public final class DBSPConditionalAggregateExpression extends DBSPExpression {
             return false;
         return this.left == o.left &&
                 this.right == o.right &&
-                this.condition == o.condition &&
-                this.hasSameType(o);
+                this.condition == o.condition;
     }
 
     @Override

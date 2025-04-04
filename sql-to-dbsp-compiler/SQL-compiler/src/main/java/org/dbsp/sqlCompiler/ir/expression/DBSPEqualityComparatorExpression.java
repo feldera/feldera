@@ -37,8 +37,7 @@ public final class DBSPEqualityComparatorExpression extends DBSPExpression {
         DBSPEqualityComparatorExpression o = other.as(DBSPEqualityComparatorExpression.class);
         if (o == null)
             return false;
-        return this.comparator == o.comparator &&
-                this.hasSameType(o);
+        return this.comparator == o.comparator;
     }
 
     @Override

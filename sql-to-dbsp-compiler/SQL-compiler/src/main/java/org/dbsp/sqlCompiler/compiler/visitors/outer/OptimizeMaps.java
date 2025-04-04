@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.apache.calcite.util.Pair;
-import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
@@ -50,7 +49,6 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Maybe;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -74,10 +72,10 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
     boolean canMergeSource(OutputPort source, int size) {
         if (!this.onlyProjections)
             return true;
-        List<Annotation> proj = source.node().annotations.get(a -> a.is(IsProjection.class));
-        if (proj.isEmpty())
+        IsProjection proj = source.node().annotations.first(IsProjection.class);
+        if (proj == null)
             return true;
-        return proj.get(0).to(IsProjection.class).outputSize > size;
+        return proj.outputSize > size;
     }
 
     @Override
@@ -90,7 +88,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
         OutputPort source = this.mapped(operator.input());
         int size = operator.outputType().getToplevelFieldCount();
         if (source.node().is(DBSPMapOperator.class) && this.canMergeSource(source, size)) {
-            // mapindex(map) = mapindex
+            // mapIndex(map) = mapIndex
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
                     .applyAfter(this.compiler(), expression, Maybe.MAYBE);
@@ -100,7 +98,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             this.map(operator, result);
             return;
         } else if (source.node().is(DBSPMapIndexOperator.class) && this.canMergeSource(source, size)) {
-            // mapindex(mapindex) = mapindex
+            // mapIndex(mapIndex) = mapIndex
             DBSPClosureExpression sourceFunction = source.simpleNode().getClosureFunction();
             DBSPClosureExpression thisFunction = operator.getClosureFunction();
             if (thisFunction.parameters.length != 1)
@@ -301,7 +299,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             Projection projection = new Projection(this.compiler());
             projection.apply(operator.getFunction());
             if (!this.onlyProjections || projection.isProjection) {
-                // map(joinfilter) = joinfilter
+                // map(joinFilter) = joinFilter
                 DBSPJoinFilterMapOperator jfm = source.node().to(DBSPJoinFilterMapOperator.class);
                 DBSPExpression newMap = operator.getFunction();
                 if (jfm.map != null) {
@@ -318,7 +316,6 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
         } else if ((source.node().is(DBSPStreamJoinOperator.class) ||
                 source.node().is(DBSPAsofJoinOperator.class) ||
                 source.node().is(DBSPJoinOperator.class)) &&
-                // We have to look up the original operator input, not source
                 inputFanout == 1) {
             Projection projection = new Projection(this.compiler());
             projection.apply(operator.getFunction());
@@ -329,8 +326,8 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 return;
             }
         } else if (source.node().is(DBSPJoinIndexOperator.class) ||
-                   source.node().is(DBSPStreamJoinIndexOperator.class) &&
-                           inputFanout == 1) {
+                source.node().is(DBSPStreamJoinIndexOperator.class) &&
+                        inputFanout == 1) {
             Projection projection = new Projection(this.compiler());
             projection.apply(operator.getFunction());
             if (!this.onlyProjections || projection.isProjection) {

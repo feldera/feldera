@@ -761,6 +761,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         compileStartTime = System.currentTimeMillis();
         DBSPCircuit circuit = this.runAllCompilerStages();
         this.postCompilationChecks();
+        Logger.INSTANCE.belowLevel(this, 1)
+                .append("Compilation time ")
+                .appendSupplier(() -> elapsedTimeInMs() + "ms")
+                .newline();
+        if (this.options.ioOptions.verbosity > 2)
+            System.out.println("Compilation took " + elapsedTimeInMs() + "ms");
 
         if (this.getDebugLevel() > 0 && !temporary && circuit != null) {
             ToDot.dump(this, "final.png", this.getDebugLevel(), "png", circuit);
@@ -769,12 +775,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 .appendSupplier(() -> InnerVisitor.profiles.toString("Inner", 10))
                 .newline()
                 .appendSupplier(() -> CircuitVisitor.profiles.toString("Outer", 10))
-                .newline();
-        if (this.options.ioOptions.verbosity > 2)
-            System.out.println("Compilation took " + elapsedTimeInMs() + "ms");
-        Logger.INSTANCE.belowLevel(this, 1)
-                .append("Compilation time ")
-                .appendSupplier(() -> elapsedTimeInMs() + "ms")
                 .newline();
         return circuit;
     }

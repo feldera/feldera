@@ -37,8 +37,7 @@ public final class DBSPSomeExpression extends DBSPExpression {
         DBSPSomeExpression o = other.as(DBSPSomeExpression.class);
         if (o == null)
             return false;
-        return this.expression == o.expression &&
-                this.hasSameType(o);
+        return this.expression == o.expression;
     }
 
     @Override

@@ -8,7 +8,7 @@ import org.dbsp.util.Utilities;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Maps each ICircuit to its CircuitGraph */
+/** Maps each ICircuit to its {@link CircuitGraph} */
 public class CircuitGraphs implements ToIndentableString {
     public final Map<ICircuit, CircuitGraph> graphs = new HashMap<>();
 

@@ -169,8 +169,6 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
         DBSPTupleExpression o = other.as(DBSPTupleExpression.class);
         if (o == null)
             return false;
-        if (!this.hasSameType(o))
-            return false;
         if (this.fields == null)
             return o.fields == null;
         if (o.fields == null)

@@ -90,8 +90,7 @@ public final class DBSPApplyMethodExpression extends DBSPApplyBaseExpression {
             return false;
         return this.function == o.function &&
                 this.self == o.self &&
-                Linq.same(this.arguments, o.arguments) &&
-                this.hasSameType(o);
+                Linq.same(this.arguments, o.arguments);
     }
 
     @Override

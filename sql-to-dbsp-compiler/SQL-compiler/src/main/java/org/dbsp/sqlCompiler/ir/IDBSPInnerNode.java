@@ -33,4 +33,6 @@ public interface IDBSPInnerNode extends IDBSPNode {
      * and exactly the same fields (defined using object equality).
      * A shallow "equals" function. */
     boolean sameFields(IDBSPInnerNode other);
+
+    default boolean isExpression() { return false; }
 }

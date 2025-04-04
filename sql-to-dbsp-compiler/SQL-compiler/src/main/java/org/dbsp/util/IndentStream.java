@@ -31,15 +31,16 @@ import java.util.Map;
 
 public class IndentStream implements IIndentStream {
     private Appendable stream;
-    int indent = 0;
+    int spaces = 0;
     int amount = 4;
-    String indentAdd = "    ";
+    String indentAdd = "";
     String indentString = "";
     Map<Integer, String> indentStringCache = new HashMap<>();
     boolean emitIndent = false;
 
     public IndentStream(Appendable appendable) {
         this.stream = appendable;
+        this.setIndentAmount(this.amount);
     }
 
     /** Set the output stream.
@@ -54,7 +55,7 @@ public class IndentStream implements IIndentStream {
     public IIndentStream setIndentAmount(int amount) {
         assert amount >= 0;
         this.amount = amount;
-        this.indentString = " ".repeat(amount);
+        this.indentAdd = " ".repeat(amount);
         return this;
     }
 
@@ -85,7 +86,7 @@ public class IndentStream implements IIndentStream {
         try {
             if (s.isEmpty())
                 return this;
-            if (this.emitIndent && !Character.isSpaceChar(s.charAt(0))) {
+            if (this.emitIndent) {
                 this.emitIndent = false;
                 this.stream.append(this.indentString);
             }
@@ -98,26 +99,28 @@ public class IndentStream implements IIndentStream {
 
     @Override
     public IIndentStream increase() {
-        this.indent += Math.max(this.amount, 0);
-        if (this.indentStringCache.containsKey(this.indent)) {
-            this.indentString = this.indentStringCache.get(this.indent);
+        this.spaces += Math.max(this.amount, 0);
+        if (this.indentStringCache.containsKey(this.spaces)) {
+            this.indentString = this.indentStringCache.get(this.spaces);
         } else {
             this.indentString += this.indentAdd;
-            this.indentStringCache.put(this.indent, this.indentString);
+            this.indentStringCache.put(this.spaces, this.indentString);
+            assert this.spaces == this.indentString.length();
         }
         return this.newline();
     }
 
     @Override
     public IIndentStream decrease() {
-        this.indent -= Math.max(this.amount, 0);
-        if (this.indent < 0)
+        this.spaces -= Math.max(this.amount, 0);
+        if (this.spaces < 0)
             throw new RuntimeException("Negative indent");
-        if (this.indentStringCache.containsKey(this.indent)) {
-            this.indentString = this.indentStringCache.get(this.indent);
+        if (this.indentStringCache.containsKey(this.spaces)) {
+            this.indentString = this.indentStringCache.get(this.spaces);
         } else {
-            this.indentString = this.indentString.substring(0, this.indent);
-            this.indentStringCache.put(this.indent, this.indentString);
+            this.indentString = this.indentString.substring(0, this.spaces);
+            this.indentStringCache.put(this.spaces, this.indentString);
+            assert this.spaces == this.indentString.length();
         }
         return this;
     }

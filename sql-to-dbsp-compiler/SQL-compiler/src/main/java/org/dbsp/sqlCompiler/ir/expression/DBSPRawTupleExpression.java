@@ -102,8 +102,7 @@ public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
             return o.fields == null;
         if (o.fields == null)
             return false;
-        return Linq.same(this.fields, o.fields) &&
-                this.hasSameType(o);
+        return Linq.same(this.fields, o.fields);
     }
 
     @Override

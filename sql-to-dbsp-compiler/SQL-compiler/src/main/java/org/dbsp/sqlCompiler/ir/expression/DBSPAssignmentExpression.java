@@ -61,8 +61,7 @@ public final class DBSPAssignmentExpression extends DBSPExpression {
         if (o == null)
             return false;
         return this.left == o.left &&
-                this.right == o.right &&
-                this.hasSameType(o);
+                this.right == o.right;
     }
 
     @Override

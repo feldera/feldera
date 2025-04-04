@@ -77,8 +77,7 @@ public final class DBSPBlockExpression extends DBSPExpression {
         if (o == null)
             return false;
         return Linq.same(this.contents, o.contents) &&
-                this.lastExpression == o.lastExpression &&
-                this.hasSameType(o);
+                this.lastExpression == o.lastExpression;
     }
 
     @Override

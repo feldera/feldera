@@ -71,8 +71,7 @@ public final class DBSPUnaryExpression extends DBSPExpression {
         if (o == null)
             return false;
         return this.source == o.source &&
-                this.opcode == o.opcode &&
-                this.hasSameType(o);
+                this.opcode == o.opcode;
     }
 
     @Override

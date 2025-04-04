@@ -33,9 +33,10 @@ public interface IIndentStream {
     IIndentStream appendChar(char c);
 
     default IIndentStream append(String string) {
-        if (!string.contains("\n")) {
+        if (string.equals(System.lineSeparator()))
+            return this.appendChar('\n');
+        if (!string.contains("\n"))
             return this.appendFast(string);
-        }
         String[] parts = string.split("\n", -1);
         boolean first = true;
         for (String part: parts) {

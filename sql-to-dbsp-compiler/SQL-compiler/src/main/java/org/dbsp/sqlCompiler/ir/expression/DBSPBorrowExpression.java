@@ -68,8 +68,7 @@ public final class DBSPBorrowExpression extends DBSPExpression {
         if (o == null)
             return false;
         return this.expression == o.expression &&
-                this.mut == o.mut &&
-                this.hasSameType(o);
+                this.mut == o.mut;
     }
 
     @Override

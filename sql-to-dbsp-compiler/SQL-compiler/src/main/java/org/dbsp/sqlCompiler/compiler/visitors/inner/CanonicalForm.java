@@ -13,7 +13,9 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.util.Utilities;
 
 /** Visitor which rewrites a {@link DBSPClosureExpression} in a canonical form,
- * by using standard names for parameters (p0, p1, ...).  Handy for writing deterministic tests. */
+ * by using standard names for parameters (p0, p1, ...).  Handy for generating deterministic code.
+ * Unfortunately this needs different variable declarations of the same variable to
+ * be different IR nodes. */
 public class CanonicalForm extends InnerRewriteVisitor {
     final Substitution<DBSPParameter, DBSPParameter> newParam;
     final Substitution<DBSPLetStatement, DBSPVariablePath> newLetVar;

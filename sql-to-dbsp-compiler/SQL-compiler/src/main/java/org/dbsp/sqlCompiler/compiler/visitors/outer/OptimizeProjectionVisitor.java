@@ -122,10 +122,12 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPExpression function = operator.getFunction();
         DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
                 .applyAfter(reporter, joinFunction, Maybe.YES);
-        return source.withFunction(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
+        return source.withFunction(newFunction, operator.outputType)
+                .copyAnnotations(source)
+                .to(DBSPJoinBaseOperator.class);
     }
 
-    static DBSPJoinBaseOperator mapAfterJoinIndex(
+    static DBSPSimpleOperator mapAfterJoinIndex(
             DBSPCompiler reporter, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
         DBSPJoinBaseOperator sourceJoin = source.to(DBSPJoinBaseOperator.class);
         DBSPClosureExpression joinFunction = source.getClosureFunction();
@@ -140,11 +142,13 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                 .reduce(reporter).to(DBSPClosureExpression.class);
         if (source.is(DBSPJoinIndexOperator.class)) {
             return new DBSPJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
-                    newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right());
+                    newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right())
+                    .copyAnnotations(source);
         } else {
             assert source.is(DBSPStreamJoinIndexOperator.class);
             return new DBSPStreamJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
-                    newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right());
+                    newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right())
+                    .copyAnnotations(source);
         }
     }
 

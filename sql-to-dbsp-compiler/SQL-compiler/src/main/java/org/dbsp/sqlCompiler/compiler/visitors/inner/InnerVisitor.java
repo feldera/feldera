@@ -177,7 +177,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
 
     public void push(IDBSPInnerNode node) {
         this.context.add(node);
-        if (node.is(DBSPExpression.class)) {
+        if (node.isExpression()) {
             this.visitingExpression(node.to(DBSPExpression.class));
         }
     }

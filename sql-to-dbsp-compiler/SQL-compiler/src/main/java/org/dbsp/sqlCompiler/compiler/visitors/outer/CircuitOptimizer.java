@@ -76,13 +76,16 @@ public class CircuitOptimizer extends Passes {
         this.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable, true));
         if (options.languageOptions.outputsAreSets)
             this.add(new EnsureDistinctOutputs(compiler));
+        this.add(new PropagateEmptySources(compiler));
+        this.add(new MergeSums(compiler));
+        this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
+        AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
+        this.add(new OptimizeWithGraph(compiler,
+                g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed), 1));
         this.add(new UnusedFields(compiler));
         this.add(new CSE(compiler));
         this.add(new MinMaxOptimize(compiler, compiler.weightVar));
         this.add(new ExpandAggregateZero(compiler));
-        this.add(new MergeSums(compiler));
-        this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
-        this.add(new PropagateEmptySources(compiler));
         this.add(new DeadCode(compiler, true, false));
         this.add(new OptimizeDistinctVisitor(compiler));
         // This is useful even without incrementalization if we have recursion
@@ -96,7 +99,6 @@ public class CircuitOptimizer extends Passes {
         this.add(new DeadCode(compiler, true, false));
         this.add(new Simplify(compiler).circuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g)));
-        AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed)));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));

@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.IndentStream;
-import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -38,9 +37,11 @@ public class ToDot {
             eVisitor.apply(circuit);
             stream.decrease().append("}").newline();
             writer.close();
-            if (outputFormat != null)
+            if (outputFormat != null) {
+                System.out.println("Writing " + fileName + " " + circuit.id);
                 Utilities.runProcess(".", "dot", "-T", outputFormat,
                         "-o", fileName, tmp.getAbsolutePath());
+            }
         } catch (Exception ex) {
             if (tmp != null) {
                 try {

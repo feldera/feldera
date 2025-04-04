@@ -178,7 +178,7 @@
         { "node": "s10", "output": 0 }
       ],
       "calcite": {
-        "final": 3
+        "partial": 3
       },
       "positions": []
     }, "s12": {

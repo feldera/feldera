@@ -134,6 +134,11 @@ public class Projection extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPExpression expression) {
         // Any other expression makes this not be a projection.
         return this.notProjection();
@@ -324,16 +329,14 @@ public class Projection extends InnerVisitor {
                 new Simplify(this.compiler)
         );
 
-        DBSPType elementType = null;
+        DBSPType elementType = this.expression.getResultType();
         for (Map.Entry<DBSPExpression, Long> entry: before.data.entrySet()) {
             DBSPExpression row = entry.getKey();
             DBSPExpression apply = this.expression.call(row.borrow());
             DBSPExpression simplified = inner.apply(apply).to(DBSPExpression.class);
-            if (elementType == null)
-                elementType = simplified.getType();
             result.put(simplified, entry.getValue());
         }
-        return new DBSPZSetExpression(result, Objects.requireNonNull(elementType));
+        return new DBSPZSetExpression(result, elementType);
     }
 
     @Override

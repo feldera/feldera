@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -26,31 +25,29 @@ public class SimplifyWaterline extends Simplify {
     }
 
     @Override
-    public VisitDecision preorder(DBSPClosureExpression expression) {
-        this.push(expression);
-        DBSPExpression body = this.transform(expression.body);
-        this.pop(expression);
+    public void postorder(DBSPClosureExpression expression) {
+        DBSPExpression body = this.getE(expression.body);
         DBSPClosureExpression transformed = body.closure(expression.parameters);
 
         DBSPExpression result = transformed;
         if (transformed.parameters.length != 1) {
             this.map(expression, result);
-            return VisitDecision.STOP;
+            return;
         }
         DBSPType type = transformed.parameters[0].getType();
         if (!type.is(DBSPTypeRef.class)) {
             this.map(expression, result);
-            return VisitDecision.STOP;
+            return;
         }
         DBSPTypeTupleBase tuple = type.deref().as(DBSPTypeTupleBase.class);
         if (tuple == null || tuple.size() != 2) {
             this.map(expression, result);
-            return VisitDecision.STOP;
+            return;
         }
 
         if (!tuple.tupFields[0].is(DBSPTypeBool.class) || tuple.tupFields[0].mayBeNull) {
             this.map(expression, result);
-            return VisitDecision.STOP;
+            return;
         }
 
         DBSPVariablePath var = type.var();
@@ -63,6 +60,5 @@ public class SimplifyWaterline extends Simplify {
         result = new DBSPIfExpression(expression.getNode(),
                 var.deref().field(0), ifTrue, ifFalse).closure(var);
         this.map(expression, result);
-        return VisitDecision.STOP;
     }
 }

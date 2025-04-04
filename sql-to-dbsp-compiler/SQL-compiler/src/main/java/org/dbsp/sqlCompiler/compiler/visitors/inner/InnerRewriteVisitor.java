@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
@@ -1449,10 +1448,5 @@ public abstract class InnerRewriteVisitor
      * that optimizes an entire circuit. */
     public CircuitRewriter circuitRewriter(boolean processDeclarations) {
         return new CircuitRewriter(this.compiler, this, processDeclarations);
-    }
-
-    /** Create a circuit rewriter with a predicate that selects which node to optimize */
-    public CircuitRewriter circuitRewriter(Predicate<DBSPOperator> toOptimize) {
-        return new CircuitRewriter(this.compiler, this, false, toOptimize);
     }
 }

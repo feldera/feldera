@@ -72,8 +72,7 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
             return false;
         return this.source == o.source &&
                 this.ascending == o.ascending &&
-                this.fieldNo == o.fieldNo &&
-                this.hasSameType(o);
+                this.fieldNo == o.fieldNo;
     }
 
     @Override

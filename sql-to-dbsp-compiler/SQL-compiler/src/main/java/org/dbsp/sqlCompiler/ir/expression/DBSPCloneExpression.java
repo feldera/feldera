@@ -58,8 +58,7 @@ public final class DBSPCloneExpression extends DBSPExpression {
         DBSPCloneExpression o = other.as(DBSPCloneExpression.class);
         if (o == null)
             return false;
-        return this.expression == o.expression &&
-                this.hasSameType(o);
+        return this.expression == o.expression;
     }
 
     @Override
