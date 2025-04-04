@@ -54,9 +54,7 @@ use redis::output::RedisOutputEndpoint;
 
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
 #[cfg(feature = "with-kafka")]
-use crate::transport::kafka::{
-    KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaInputEndpoint, KafkaOutputEndpoint,
-};
+use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaOutputEndpoint};
 #[cfg(feature = "with-nexmark")]
 use crate::transport::nexmark::NexmarkEndpoint;
 use crate::transport::s3::S3InputEndpoint;
@@ -81,10 +79,7 @@ pub fn input_transport_config_to_endpoint(
     let endpoint: Box<dyn TransportInputEndpoint> = match config {
         TransportConfig::FileInput(config) => Box::new(FileInputEndpoint::new(config)),
         #[cfg(feature = "with-kafka")]
-        TransportConfig::KafkaInput(config) => match fault_tolerant {
-            false => Box::new(KafkaInputEndpoint::new(config, endpoint_name)?),
-            true => Box::new(KafkaFtInputEndpoint::new(config)?),
-        },
+        TransportConfig::KafkaInput(config) => Box::new(KafkaFtInputEndpoint::new(config)?),
         #[cfg(not(feature = "with-kafka"))]
         TransportConfig::KafkaInput(_) => return Ok(None),
         #[cfg(feature = "with-pubsub")]

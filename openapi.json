@@ -3950,7 +3950,6 @@
         "type": "object",
         "description": "Configuration for reading data from Kafka topics with `InputTransport`.",
         "required": [
-          "kafka_options",
           "topic"
         ],
         "properties": {
@@ -3959,13 +3958,6 @@
             "format": "int32",
             "description": "Maximum timeout in seconds to wait for the endpoint to join the Kafka\nconsumer group during initialization.",
             "minimum": 0
-          },
-          "kafka_options": {
-            "type": "object",
-            "description": "Options passed directly to `rdkafka`.\n\n[`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)\nused to configure the Kafka consumer.\n\nThis input connector does not use consumer groups, so options related to\nconsumer groups are rejected, including:\n\n* `group.id`, if present, is ignored.\n* `auto.offset.reset` (use `start_from` instead).\n* \"enable.auto.commit\", if present, must be set to \"false\".\n* \"enable.auto.offset.store\", if present, must be set to \"false\".",
-            "additionalProperties": {
-              "type": "string"
-            }
           },
           "log_level": {
             "allOf": [
@@ -3988,6 +3980,10 @@
             "type": "string",
             "description": "Topic to subscribe to."
           }
+        },
+        "additionalProperties": {
+          "type": "string",
+          "description": "Options passed directly to `rdkafka`.\n\n[`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)\nused to configure the Kafka consumer.\n\nThis input connector does not use consumer groups, so options related to\nconsumer groups are rejected, including:\n\n* `group.id`, if present, is ignored.\n* `auto.offset.reset` (use `start_from` instead).\n* \"enable.auto.commit\", if present, must be set to \"false\".\n* \"enable.auto.offset.store\", if present, must be set to \"false\"."
         }
       },
       "KafkaLogLevel": {

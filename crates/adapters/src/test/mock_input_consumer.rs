@@ -69,6 +69,10 @@ impl MockInputConsumer {
     pub fn on_error(&self, error_cb: Option<ErrorCallback>) {
         self.state().error_cb = error_cb;
     }
+
+    pub fn get_error(&self) -> Option<String> {
+        self.state().endpoint_error.as_ref().map(|e| e.to_string())
+    }
 }
 
 impl InputConsumer for MockInputConsumer {

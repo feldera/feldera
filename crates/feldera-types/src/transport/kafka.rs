@@ -24,6 +24,7 @@ pub struct KafkaInputConfig {
     /// * `auto.offset.reset` (use `start_from` instead).
     /// * "enable.auto.commit", if present, must be set to "false".
     /// * "enable.auto.offset.store", if present, must be set to "false".
+    #[serde(flatten)]
     pub kafka_options: BTreeMap<String, String>,
 
     /// Topic to subscribe to.
@@ -378,10 +379,6 @@ mod compat {
         /// Current configuration option.
         poller_threads: Option<usize>,
 
-        /// Current configuration option.
-        #[serde(default)]
-        kafka_options: BTreeMap<String, String>,
-
         /// Current configuration option, which changed type in an incompatible
         /// way soon after it was introduced. No backward compatibility for the
         /// initial form.
@@ -402,17 +399,16 @@ mod compat {
         /// Legacy, now ignored.
         kafka_service: Option<String>,
 
-        /// Legacy form of `kafka_options`. Currently accepted in place of
-        /// `kafka_options` as long as `topics` is used instead of `topic`.
+        /// Options passed directly to `rdkafka`.
         #[serde(flatten)]
-        inline_kafka_options: BTreeMap<String, String>,
+        kafka_options: BTreeMap<String, String>,
     }
 
     impl TryFrom<KafkaInputConfigCompat> for super::KafkaInputConfig {
         type Error = String;
 
         fn try_from(mut compat: KafkaInputConfigCompat) -> Result<Self, Self::Error> {
-            let (topic, kafka_options, start_from) = if !compat.topics.is_empty() {
+            let (topic, start_from) = if !compat.topics.is_empty() {
                 // Legacy mode. Convert to modern form.
                 if compat.topic.is_some() {
                     return Err(
@@ -426,13 +422,10 @@ mod compat {
                         compat.topics.len()
                     ));
                 }
-                if !compat.kafka_options.is_empty() {
-                    return Err("Kafka input adapter with legacy `topics` may not have modern `kafka_options`.".into());
-                }
                 let start_from = if let Some(start_from) = compat.start_from {
                     start_from
                 } else if let Some(auto_offset_reset) =
-                    compat.inline_kafka_options.get("auto.offset.reset")
+                    compat.kafka_options.get("auto.offset.reset")
                 {
                     match auto_offset_reset.as_str() {
                         "smallest" | "earliest" | "beginning" => KafkaStartFromConfig::Earliest,
@@ -442,11 +435,7 @@ mod compat {
                 } else {
                     KafkaStartFromConfig::default()
                 };
-                (
-                    compat.topics.pop().unwrap(),
-                    compat.inline_kafka_options,
-                    start_from,
-                )
+                (compat.topics.pop().unwrap(), start_from)
             } else if let Some(topic) = compat.topic {
                 // Modern mode. Forbid legacy settings.
                 if compat.fault_tolerance.is_some() {
@@ -455,21 +444,24 @@ mod compat {
                 if compat.kafka_service.is_some() {
                     return Err("Kafka input adapter `kafka_service` setting is obsolete.".into());
                 }
-                if let Some((key, _value)) = compat.inline_kafka_options.first_key_value() {
-                    return Err(format!("Unknown Kafka input adapter setting `{key}` (perhaps it should be under `kafka_options`?)"));
-                }
-                (
-                    topic,
-                    compat.kafka_options,
-                    compat.start_from.unwrap_or_default(),
-                )
+                (topic, compat.start_from.unwrap_or_default())
             } else {
                 return Err("Kafka input adapter is missing required `topic` setting.".into());
             };
 
+            for key in compat.kafka_options.keys() {
+                if !key.contains('.')
+                    && key != "debug"
+                    && key != "enabled_events"
+                    && key != "retries"
+                {
+                    return Err(format!("Invalid Kafka input connector configuration key {key:?}: it is not valid for the input connector, nor does it contain `.` as librdkafka configuration options generally do (nor is it one of the few special exceptions to that rule)."));
+                }
+            }
+
             Ok(Self {
                 topic,
-                kafka_options,
+                kafka_options: compat.kafka_options,
                 log_level: compat.log_level,
                 group_join_timeout_secs: compat.group_join_timeout_secs,
                 poller_threads: compat.poller_threads,
