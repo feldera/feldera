@@ -1,9 +1,14 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.*;
@@ -11,8 +16,11 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -24,6 +32,7 @@ import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 /** A visitor which translates expressions and statements, mostly in postorder */
 public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
@@ -119,6 +128,7 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
 
     @Override
     public VisitDecision preorder(DBSPType type) {
+        this.set(type, type);
         return VisitDecision.STOP;
     }
 
@@ -439,8 +449,13 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     @Override
     public void postorder(DBSPZSetExpression node) {
         Map<DBSPExpression, Long> data = new HashMap<>();
-        for (Map.Entry<DBSPExpression, Long> e : node.data.entrySet())
-            data.put(this.getE(e.getKey()), e.getValue());
+        for (Map.Entry<DBSPExpression, Long> e : node.data.entrySet()) {
+            DBSPExpression key = this.getE(e.getKey());
+            if (data.containsKey(key))
+                data.put(key, data.get(key) + e.getValue());
+            else
+                data.put(key, e.getValue());
+        }
         this.map(node, new DBSPZSetExpression(data, node.elementType));
     }
 
@@ -475,5 +490,47 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
         IDBSPInnerNode result = this.get(node);
         this.endVisit();
         return result;
+    }
+
+    @Override
+    public void postorder(DBSPFunction function) {
+        DBSPExpression body = this.getEN(function.body);
+        DBSPFunction result = new DBSPFunction(
+                function.name, function.parameters, function.returnType, body, function.annotations);
+        this.set(function, result);
+    }
+
+    @Override
+    public void postorder(DBSPAggregate aggregate) {
+        DBSPExpression rowVar = this.getE(aggregate.rowVar);
+        List<AggregateBase> implementations =
+                Linq.map(aggregate.aggregates, c -> {
+                    IDBSPInnerNode result = this.getE(c);
+                    return result.to(AggregateBase.class);
+                });
+        DBSPAggregate result = new DBSPAggregate(
+                aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations);
+        this.set(aggregate, result);
+    }
+
+    @Override
+    public void postorder(DBSPFunctionItem item) {
+        this.map(item, item);
+    }
+
+    @Override
+    public void postorder(DBSPStaticItem item) {
+        DBSPExpression expression = this.getE(item.expression);
+        DBSPItem result = new DBSPStaticItem(expression.to(DBSPStaticExpression.class));
+        this.map(item, result);
+    }
+
+    public CircuitRewriter circuitRewriter(boolean processDeclarations) {
+        return new CircuitRewriter(this.compiler, this, processDeclarations);
+    }
+
+    /** Create a circuit rewriter with a predicate that selects which node to optimize */
+    public CircuitRewriter circuitRewriter(Predicate<DBSPOperator> toOptimize) {
+        return new CircuitRewriter(this.compiler, this, false, toOptimize);
     }
 }

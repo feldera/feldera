@@ -31,26 +31,59 @@ import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Performs beta reduction on an Expression.
  * I.e., replace an application of a closure with the closure
  * body with arguments substituted.
- * This code makes some simplifying assumptions:
- * - arguments do not have side effects.
- * - arguments are immutable */
+ * If the arguments contain declarations, they are deep-copied for each
+ * substitution.  This ensures that declarations have different IR nodes.
+ * TODO: perform this in a subsequent alpha-renaming step instead of doing it
+ * while expanding the code. */
 public class BetaReduction extends InnerRewriteVisitor {
     final DeclarationValue<DBSPExpression> variableValue;
+    /** Set of expressions to deepCopy before substitution */
+    final Set<DBSPExpression> needsDeepCopy;
     final ResolveReferences resolver;
+
+    /** Find out whether an expression contains any declarations */
+    static class HasDeclarations extends InnerVisitor {
+        boolean found = false;
+
+        public HasDeclarations(DBSPCompiler compiler) {
+            super(compiler);
+        }
+
+        @Override
+        public VisitDecision preorder(IDBSPInnerNode node) {
+            if (node.is(IDBSPDeclaration.class)) {
+                this.found = true;
+                return VisitDecision.STOP;
+            }
+            return VisitDecision.CONTINUE;
+        }
+
+        @Override
+        public void startVisit(IDBSPInnerNode node) {
+            super.startVisit(node);
+            this.found = false;
+        }
+    }
 
     public BetaReduction(DBSPCompiler compiler) {
         super(compiler, false);
         this.variableValue = new DeclarationValue<>();
         this.resolver = new ResolveReferences(compiler, true);
+        this.needsDeepCopy = new HashSet<>();
     }
 
     @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
+        HasDeclarations decls = new HasDeclarations(this.compiler);
         if (expression.function.is(DBSPClosureExpression.class)) {
             DBSPClosureExpression closure = expression.function.to(DBSPClosureExpression.class);
             if (closure.parameters.length != expression.arguments.length)
@@ -61,7 +94,10 @@ public class BetaReduction extends InnerRewriteVisitor {
             for (int i = 0; i < closure.parameters.length; i++) {
                 DBSPParameter param = closure.parameters[i];
                 DBSPExpression arg = this.transform(expression.arguments[i]);
+                decls.apply(arg);
                 this.variableValue.substitute(param, arg);
+                if (decls.found)
+                    this.needsDeepCopy.add(arg);
             }
 
             DBSPExpression newBody = this.transform(closure.body);
@@ -75,6 +111,11 @@ public class BetaReduction extends InnerRewriteVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPVariablePath variable) {
         DBSPExpression replacement = null;
         IDBSPDeclaration declaration = this.resolver.reference.get(variable);
@@ -82,11 +123,14 @@ public class BetaReduction extends InnerRewriteVisitor {
             // Free variable mapped to itself
             replacement = this.variableValue.get(declaration);
         }
-        if (replacement != null)
-            this.map(variable, replacement.deepCopy());
-        else
+        if (replacement != null) {
+            if (this.needsDeepCopy.contains(replacement))
+                replacement = replacement.deepCopy();
+            this.map(variable, replacement);
+        } else {
             // Map the variable to itself - no replacement
             this.map(variable, variable);
+        }
         return VisitDecision.STOP;
     }
 

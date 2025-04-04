@@ -159,9 +159,11 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -711,7 +713,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
         boolean large = expression.data.size() > 1;
         if (large)
             this.builder.increase();
-        for (Map.Entry<DBSPExpression, Long> e: expression.data.entrySet()) {
+        // Do this for a deterministic result
+        List<Map.Entry<DBSPExpression, Long>> entries = Linq.list(expression.data.entrySet());
+        entries.sort(Comparator.comparing(a -> a.getKey().toString()));
+        for (Map.Entry<DBSPExpression, Long> e : entries) {
             e.getKey().accept(this);
             this.builder.append(" => ")
                     .append(e.getValue());

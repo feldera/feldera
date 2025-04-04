@@ -45,9 +45,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
@@ -91,9 +89,9 @@ import java.util.Locale;
 import java.util.Objects;
 
 /** Visitor which does some Rust-level expression simplifications. */
-public class Simplify extends InnerRewriteVisitor {
+public class Simplify extends ExpressionTranslator {
     public Simplify(DBSPCompiler compiler) {
-        super(compiler, false);
+        super(compiler);
     }
 
     @Override
@@ -106,51 +104,37 @@ public class Simplify extends InnerRewriteVisitor {
     }
 
     @Override
-    public void endVisit() {
-        super.endVisit();
-        Logger.INSTANCE.belowLevel(this, 1)
-                .append("Result is ")
-                .appendSupplier(() -> (this.lastResult != null ? this.lastResult.toString() : ""))
-                .newline();
+    public VisitDecision preorder(DBSPExpression expression) {
+        // Effectively memoize results
+        if (this.translationMap.containsKey(expression))
+            return VisitDecision.STOP;
+        return VisitDecision.CONTINUE;
     }
 
     @Override
-    public VisitDecision preorder(DBSPType type) {
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPIsNullExpression expression) {
-        this.push(expression);
-        DBSPExpression source = this.transform(expression.expression);
-        this.pop(expression);
+    public void postorder(DBSPIsNullExpression expression) {
+        DBSPExpression source = this.getE(expression.expression);
         DBSPExpression result = source.is_null();
         if (!source.getType().mayBeNull)
             result = new DBSPBoolLiteral(false);
         else if (source.is(DBSPCloneExpression.class))
             result = source.to(DBSPCloneExpression.class).expression.is_null();
         this.map(expression, result);
-        return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPCloneExpression expression) {
-        this.push(expression);
-        DBSPExpression source = this.transform(expression.expression);
-        this.pop(expression);
+    public void postorder(DBSPCloneExpression expression) {
+        DBSPExpression source = this.getE(expression.expression);
         DBSPExpression result = source.applyCloneIfNeeded();
         if (source.is(DBSPCloneExpression.class)) {
             result = source;
         }
         this.map(expression, result);
-        return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPCastExpression expression) {
-        this.push(expression);
-        DBSPExpression source = this.transform(expression.source);
-        this.pop(expression);
+    public void postorder(DBSPCastExpression expression) {
+        DBSPExpression source = this.getE(expression.source);
         DBSPType type = expression.getType();
         DBSPExpression result = source.cast(type, expression.safe);
         DBSPLiteral lit = source.as(DBSPLiteral.class);
@@ -352,14 +336,11 @@ public class Simplify extends InnerRewriteVisitor {
         }
         assert expression.getType().sameType(result.getType());
         this.map(expression, result);
-        return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPFieldExpression expression) {
-        this.push(expression);
-        DBSPExpression source = this.transform(expression.expression);
-        this.pop(expression);
+    public void postorder(DBSPFieldExpression expression) {
+        DBSPExpression source = this.getE(expression.expression);
         DBSPExpression result = source.field(expression.fieldNo);
         if (source.is(DBSPBaseTupleExpression.class)) {
             result = source.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
@@ -379,48 +360,32 @@ public class Simplify extends InnerRewriteVisitor {
                     expression.fieldNo);
         }
         this.map(expression, result);
-        return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPVariablePath variable) {
-        this.map(variable, variable);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPDerefExpression expression) {
-        this.push(expression);
-        DBSPExpression source = this.transform(expression.expression);
-        this.pop(expression);
+    public void postorder(DBSPDerefExpression expression) {
+        DBSPExpression source = this.getE(expression.expression);
         DBSPExpression result = source.deref();
-        if (source.is(DBSPBorrowExpression.class)) {
+        if (source.is(DBSPBorrowExpression.class))
             result = source.to(DBSPBorrowExpression.class).expression;
-        }
         this.map(expression, result);
-        return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPBorrowExpression expression) {
-        this.push(expression);
-        DBSPExpression source = this.transform(expression.expression);
-        this.pop(expression);
+    public void postorder(DBSPBorrowExpression expression) {
+        DBSPExpression source = this.getE(expression.expression);
         DBSPExpression result = source.borrow(expression.mut);
         if (source.is(DBSPDerefExpression.class)) {
             result = source.to(DBSPDerefExpression.class).expression;
         }
         this.map(expression, result);
-        return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPIfExpression expression) {
-        this.push(expression);
-        DBSPExpression condition = this.transform(expression.condition);
-        @Nullable DBSPExpression negative = this.transformN(expression.negative);
-        DBSPExpression positive = this.transform(expression.positive);
-        this.pop(expression);
+    public void postorder(DBSPIfExpression expression) {
+        DBSPExpression condition = this.getE(expression.condition);
+        @Nullable DBSPExpression negative = this.getEN(expression.negative);
+        DBSPExpression positive = this.getE(expression.positive);
         DBSPExpression result = new DBSPIfExpression(expression.getNode(), condition, positive, negative);
         if (condition.is(DBSPBoolLiteral.class)) {
             DBSPBoolLiteral cond = condition.to(DBSPBoolLiteral.class);
@@ -444,17 +409,13 @@ public class Simplify extends InnerRewriteVisitor {
             result = new DBSPIfExpression(expression.getNode(), condition, positive, negative);
         }
         this.map(expression, result);
-        return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPUnaryExpression expression) {
-        this.push(expression);
-        DBSPExpression source = this.transform(expression.source);
-        DBSPType type = this.transform(expression.getType());
-        this.pop(expression);
+    public void postorder(DBSPUnaryExpression expression) {
+        DBSPExpression source = this.getE(expression.source);
         DBSPExpression result = new DBSPUnaryExpression(
-                expression.getNode(), type, expression.opcode, source);
+                expression.getNode(), expression.type, expression.opcode, source);
         if (expression.opcode == DBSPOpcode.NEG) {
             if (source.is(DBSPLiteral.class)) {
                 DBSPLiteral lit = source.to(DBSPLiteral.class);
@@ -491,29 +452,26 @@ public class Simplify extends InnerRewriteVisitor {
             }
         }
         this.map(expression, result.cast(expression.getType(), false));
-        return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPBinaryExpression expression) {
-        this.push(expression);
-        DBSPExpression left = this.transform(expression.left);
-        DBSPExpression right = this.transform(expression.right);
-        DBSPType type = this.transform(expression.getType());
-        this.pop(expression);
+    public void postorder(DBSPBinaryExpression expression) {
+        DBSPExpression left = this.getE(expression.left);
+        DBSPExpression right = this.getE(expression.right);
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
         boolean leftMayBeNull = leftType.mayBeNull;
         boolean rightMayBeNull = rightType.mayBeNull;
         DBSPExpression result = new DBSPBinaryExpression(
-                expression.getNode(), type, expression.opcode, left, right);
+                expression.getNode(), expression.type, expression.opcode, left, right);
         DBSPOpcode opcode = expression.opcode;
 
         if (opcode == DBSPOpcode.MAP_INDEX ||
                 opcode == DBSPOpcode.SQL_INDEX ||
                 opcode == DBSPOpcode.RUST_INDEX) {
             if (expression.left.is(DBSPCloneExpression.class)) {
-                result = new DBSPBinaryExpression(expression.getNode(), type, expression.opcode,
+                result = new DBSPBinaryExpression(
+                        expression.getNode(), expression.type, expression.opcode,
                         left.to(DBSPCloneExpression.class).expression, right);
             }
         }
@@ -681,20 +639,5 @@ public class Simplify extends InnerRewriteVisitor {
             // ignore, defer to runtime
         }
         this.map(expression, result.cast(expression.getType(), false));
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPSomeExpression expression) {
-        this.push(expression);
-        DBSPExpression source = this.transform(expression.expression);
-        this.pop(expression);
-        if (source.is(DBSPLiteral.class)) {
-            DBSPExpression result = source.to(DBSPLiteral.class).getWithNullable(true);
-            this.map(expression, result);
-        } else {
-            this.map(expression, source.some());
-        }
-        return VisitDecision.STOP;
     }
 }

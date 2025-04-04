@@ -68,8 +68,7 @@ public final class DBSPForExpression extends DBSPExpression implements IDBSPDecl
             return false;
         return this.variable.equals(o.variable) &&
                 this.iterated == o.iterated &&
-                this.block == o.block &&
-                this.hasSameType(o);
+                this.block == o.block;
     }
 
     @Override

@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -82,7 +81,7 @@ public class TranslateVisitor<T> extends InnerVisitor {
         if (this.translationMap.containsKey(node)) {
             T old = this.translationMap.get(node);
             if (old != translation)
-                throw new InternalCompilerError("Changing declaration of " + node + " from " +
+                throw new InternalCompilerError("Changing value of " + node + " from " +
                         old + " to " + translation, node.getNode());
             return;
         }

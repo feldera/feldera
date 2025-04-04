@@ -24,6 +24,7 @@ import org.dbsp.util.ToIndentableString;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -278,7 +279,10 @@ public final class DBSPZSetExpression extends DBSPExpression
     public IIndentStream toString(IIndentStream builder) {
         builder.append("zset!(");
         boolean first = true;
-        for (Map.Entry<DBSPExpression, Long> e : this.data.entrySet()) {
+        // Do this for a deterministic result
+        List<Map.Entry<DBSPExpression, Long>> entries = Linq.list(this.data.entrySet());
+        entries.sort(Comparator.comparing(a -> a.getKey().toString()));
+        for (Map.Entry<DBSPExpression, Long> e : entries) {
             if (!first)
                 builder.newline();
             first = false;

@@ -125,7 +125,6 @@ public final class DBSPClosureExpression extends DBSPExpression {
         if (o == null)
             return false;
         return this.body == o.body &&
-                this.hasSameType(o) &&
                 Linq.same(this.parameters, o.parameters);
     }
 
@@ -158,26 +157,28 @@ public final class DBSPClosureExpression extends DBSPExpression {
      * closure expression.  This closure must have exactly 1
      * parameter, while the before one can have multiple ones.
      * @param before Closure to compose.
-     * @param maybe If {@link Maybe#YES}, inline the call,
+     * @param inline If {@link Maybe#YES}, inline the call,
      *              If {@link Maybe#NO},  use a temporary variable,
      *              If {@link Maybe#MAYBE} use a heuristic. */
     public DBSPClosureExpression applyAfter(
-            DBSPCompiler compiler, DBSPClosureExpression before, Maybe maybe) {
+            DBSPCompiler compiler, DBSPClosureExpression before, Maybe inline) {
         if (this.parameters.length != 1)
             throw new InternalCompilerError("Expected closure with 1 parameter", this);
 
-        if (maybe == MAYBE) {
+        if (inline == MAYBE) {
             Expensive expensive = new Expensive(compiler);
             expensive.apply(before);
             if (expensive.isExpensive())
-                maybe = NO;
+                inline = NO;
             else
-                maybe = YES;
+                inline = YES;
         }
 
-        if (maybe == YES) {
+        if (inline == YES) {
             DBSPExpression apply = this.call(before.body.borrow());
-            return apply.closure(before.parameters).reduce(compiler).to(DBSPClosureExpression.class);
+            DBSPClosureExpression closure = apply.closure(before.parameters);
+            DBSPExpression reduced = closure.reduce(compiler);
+            return reduced.to(DBSPClosureExpression.class);
         } else {
             DBSPLetExpression let = new DBSPLetExpression(this.parameters[0].asVariable(),
                     before.body.borrow(), this.body);

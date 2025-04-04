@@ -29,16 +29,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
-import org.dbsp.util.Linq;
-import org.dbsp.util.Utilities;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ZSET;
 

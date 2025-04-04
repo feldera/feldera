@@ -47,7 +47,7 @@ public class RepeatedExpressions extends InnerVisitor {
         // preorder so we can find the biggest such expression.
         if (this.duplicate != null)
             return VisitDecision.STOP;
-        if (this.onlyExpressions && !node.is(DBSPExpression.class))
+        if (this.onlyExpressions && !node.isExpression())
             return VisitDecision.CONTINUE;
         if (this.visited.contains(node.getId())) {
             this.duplicate = node;

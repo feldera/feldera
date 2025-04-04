@@ -119,8 +119,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         if (!type.is(DBSPTypeTuple.class))
             return false;
         DBSPTypeTuple other = type.to(DBSPTypeTuple.class);
-        return // Linq.sameStrings(this.fieldNames, other.fieldNames) &&
-                DBSPType.sameTypes(this.tupFields, other.tupFields);
+        return DBSPType.sameTypes(this.tupFields, other.tupFields);
     }
 
     public DBSPTypeTuple slice(int start, int endExclusive) {

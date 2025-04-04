@@ -27,7 +27,7 @@ public class InnerCSE implements IRTransform {
 
     @Override
     public IDBSPInnerNode apply(IDBSPInnerNode node) {
-        if (!node.is(DBSPExpression.class))
+        if (!node.isExpression())
             return node;
         this.numbering.apply(node);
         if (!this.numbering.foundAssignment) {

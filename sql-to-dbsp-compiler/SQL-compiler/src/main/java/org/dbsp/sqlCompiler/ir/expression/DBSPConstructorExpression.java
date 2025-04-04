@@ -73,8 +73,7 @@ public final class DBSPConstructorExpression extends DBSPExpression {
         if (o == null)
             return false;
         return this.function == o.function &&
-                Linq.same(this.arguments, o.arguments) &&
-                this.hasSameType(o);
+                Linq.same(this.arguments, o.arguments);
     }
 
     @Override

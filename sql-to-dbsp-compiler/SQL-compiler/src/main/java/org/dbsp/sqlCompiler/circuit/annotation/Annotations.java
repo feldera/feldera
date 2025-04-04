@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Linq;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
@@ -50,6 +51,15 @@ public class Annotations {
     }
 
     public List<Annotation> get(Predicate<Annotation> test) { return Linq.where(this.annotations, test); }
+
+    /** Return the single annotation of the specified type, or null if the annotation is not found. */
+    public @Nullable <T extends Annotation> T first(Class<T> clazz) {
+        for (Annotation annotation : this.annotations) {
+            if (annotation.is(clazz))
+                return annotation.to(clazz);
+        }
+        return null;
+    }
 
     /** Generate a string for displaying the annotations in a .dot graphviz file */
     public String toDotString() {

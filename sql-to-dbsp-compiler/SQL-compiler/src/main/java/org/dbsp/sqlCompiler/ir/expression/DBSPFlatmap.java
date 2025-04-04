@@ -129,6 +129,8 @@ public final class DBSPFlatmap extends DBSPExpression {
         visitor.push(this);
         visitor.property("inputElementType");
         this.inputElementType.accept(visitor);
+        visitor.property("collectionExpression");
+        this.collectionExpression.accept(visitor);
         if (this.ordinalityIndexType != null) {
             visitor.property("ordinalityIndexType");
             this.ordinalityIndexType.accept(visitor);
@@ -166,8 +168,7 @@ public final class DBSPFlatmap extends DBSPExpression {
                 Linq.same(this.leftInputIndexes, o.leftInputIndexes) &&
                 Linq.same(this.rightProjections, o.rightProjections) &&
                 this.ordinalityIndexType == o.ordinalityIndexType &&
-                this.shuffle == o.shuffle &&
-                this.hasSameType(o);
+                this.shuffle == o.shuffle;
     }
 
     /** The type of the values in the collection */

@@ -32,7 +32,9 @@ public final class NoExpression extends DBSPExpression {
 
     @Override
     public boolean sameFields(IDBSPInnerNode other) {
-        throw new InternalCompilerError("Should not be called");
+        if (!(other instanceof NoExpression noexp))
+            return false;
+        return this.type == noexp.type;
     }
 
     @Override

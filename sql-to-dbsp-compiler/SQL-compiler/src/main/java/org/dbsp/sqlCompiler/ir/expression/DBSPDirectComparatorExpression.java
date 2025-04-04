@@ -46,8 +46,7 @@ public final class DBSPDirectComparatorExpression extends DBSPComparatorExpressi
         if (o == null)
             return false;
         return this.source == o.source &&
-                this.ascending == o.ascending &&
-                this.hasSameType(o);
+                this.ascending == o.ascending;
     }
 
     @Override

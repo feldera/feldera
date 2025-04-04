@@ -95,4 +95,8 @@ public final class DBSPParameter extends DBSPNode implements
         DBSPType type = DBSPNode.fromJsonInner(node, "type", decoder, DBSPType.class);
         return new DBSPParameter(name, type);
     }
+
+    public DBSPParameter deepCopy() {
+        return new DBSPParameter(this.name, this.type);
+    }
 }

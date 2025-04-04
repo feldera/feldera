@@ -62,6 +62,8 @@ public final class DBSPAggregate extends DBSPNode
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("rowVar");
+        this.rowVar.accept(visitor);
         visitor.property("aggregates");
         int index = 0;
         for (AggregateBase impl : this.aggregates) {

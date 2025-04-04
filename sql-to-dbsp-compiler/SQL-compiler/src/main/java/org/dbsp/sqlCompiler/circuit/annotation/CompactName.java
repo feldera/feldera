@@ -6,7 +6,6 @@ import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.List;
 
 /** Stores the output stream name used for an operator.
  * Used when emitting the Rust code to make operator names more readable. */
@@ -24,12 +23,9 @@ public class CompactName extends Annotation {
 
     @Nullable
     public static String getCompactName(DBSPOperator operator) {
-        List<Annotation> name = operator.annotations.get(t -> t.is(CompactName.class));
-        if (!name.isEmpty()) {
-            // there should be only one
-            return name.get(0).to(CompactName.class).name;
-        }
-        return null;
+        CompactName name = operator.annotations.first(CompactName.class);
+        if (name == null) return null;
+        return name.name;
     }
 
     public static CompactName fromJson(JsonNode node) {

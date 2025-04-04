@@ -604,7 +604,8 @@ public class Monotonicity extends CircuitVisitor {
         DBSPExpression noExpression = new NoExpression(function.parameters[1].type);
         DBSPExpression dataPart = function.call(kx.field(1), noExpression);
         DBSPExpression transfer = new DBSPRawTupleExpression(
-                kx.field(0).deref(), dataPart).closure(kx).reduce(this.compiler());
+                kx.field(0).deref(), dataPart).closure(kx).reduce(this.compiler())
+                .ensureTree(this.compiler());
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
                 this.compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);

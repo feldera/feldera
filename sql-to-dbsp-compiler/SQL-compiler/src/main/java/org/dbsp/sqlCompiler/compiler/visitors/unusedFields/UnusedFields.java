@@ -50,17 +50,19 @@ public class UnusedFields extends Passes {
                     AnalyzedSet<DBSPOperator> mapOperators,
                     AnalyzedSet<DBSPExpression> filterFunctions) {
                 super("UnusedFieldsOnePass", compiler);
-                Graph graph = new Graph(compiler);
                 this.add(new RemoveUnusedFields(compiler, unusedFunctions));
                 // Very important, because OptimizeMaps works backward
                 this.add(new DeadCode(compiler, true, false));
-                this.add(new OptimizeWithGraph(compiler,
-                        g -> new OptimizeMaps(compiler, true, g, mapOperators),
-                        1));
+
+                Graph graph0 = new Graph(compiler);
+                this.add(graph0);
+                this.add(new OptimizeMaps(compiler, true, graph0.getGraphs(), mapOperators));
+                this.add(new DeadCode(compiler, true, false));
+
+                Graph graph = new Graph(compiler);
                 this.add(graph);
                 FindCommonProjections fcp = new FindCommonProjections(compiler, graph.getGraphs());
                 this.add(fcp);
-                // this.add(ToDot.dumper(compiler, "x.png", 2));
                 this.add(new ReplaceCommonProjections(compiler, fcp));
                 this.add(new OptimizeWithGraph(compiler,
                         g -> new TrimFilters(compiler, g, filterFunctions), 1));
@@ -187,18 +189,18 @@ public class UnusedFields extends Passes {
             RewriteFields rw = finder.getFieldRewriter(1);
             DBSPClosureExpression newMap = rw.rewriteClosure(map.getClosureFunction());
             DBSPSimpleOperator result = new DBSPMapOperator(map.getRelNode(), newMap, newSource.outputPort());
-
             this.map(map, result);
         }
     }
 
     public UnusedFields(DBSPCompiler compiler) {
         super("UnusedFields", compiler);
-        Graph graph = new Graph(compiler);
+
         AnalyzedSet<DBSPExpression> functionsAnalyzed = new AnalyzedSet<>();
         AnalyzedSet<DBSPOperator> mapOperators = new AnalyzedSet<>();
         AnalyzedSet<DBSPExpression> filterFunctionsAnalyzed = new AnalyzedSet<>();
         this.add(new RepeatRemove(compiler, functionsAnalyzed, mapOperators, filterFunctionsAnalyzed));
+        Graph graph = new Graph(compiler);
         this.add(graph);
         FindUnusedInputFields unusedInputs = new FindUnusedInputFields(compiler, graph.getGraphs());
         this.add(unusedInputs);

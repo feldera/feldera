@@ -65,8 +65,7 @@ public final class DBSPCustomOrdField extends DBSPExpression {
         if (o == null)
             return false;
         return this.expression == o.expression &&
-                this.fieldNo == o.fieldNo &&
-                this.hasSameType(o);
+                this.fieldNo == o.fieldNo;
     }
 
     @Override

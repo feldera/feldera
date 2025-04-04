@@ -74,8 +74,7 @@ public final class DBSPBinaryExpression extends DBSPExpression {
             return false;
         return this.left == o.left &&
                 this.right == o.right &&
-                this.opcode == o.opcode &&
-                this.hasSameType(o);
+                this.opcode == o.opcode;
     }
 
     @Override

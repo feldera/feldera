@@ -63,8 +63,7 @@ public final class DBSPIsNullExpression extends DBSPExpression {
         DBSPIsNullExpression o = other.as(DBSPIsNullExpression.class);
         if (o == null)
             return false;
-        return this.expression == o.expression &&
-                this.hasSameType(o);
+        return this.expression == o.expression;
     }
 
     @Override

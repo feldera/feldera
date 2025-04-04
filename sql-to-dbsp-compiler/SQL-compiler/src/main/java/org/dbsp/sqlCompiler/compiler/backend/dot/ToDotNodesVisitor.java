@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.util.IndentStream;
@@ -26,6 +27,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     protected final IndentStream stream;
     // A higher value -> more details
     protected final int details;
+    static long lastCircuit = 0;
 
     public ToDotNodesVisitor(DBSPCompiler compiler, IndentStream stream, int details) {
         super(compiler);
@@ -39,6 +41,19 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     static String annotations(DBSPOperator operator) {
         return operator.annotations.toDotString();
+    }
+
+    long currentCircuit = 0;
+
+    public Token startVisit(IDBSPOuterNode node) {
+        this.currentCircuit = node.getId();
+        return super.startVisit(node);
+    }
+
+    @Override
+    public void endVisit() {
+        super.endVisit();
+        lastCircuit = this.currentCircuit;
     }
 
     @Override
@@ -145,6 +160,14 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     }
 
     String getColor(DBSPSimpleOperator operator) {
+        /*
+        // Show in green projection operators
+        if (annotations(operator).contains("IsProjection"))
+            return " style=filled fillcolor=green";
+        // Show in green operators added since last call
+        if (operator.id > lastCircuit)
+            return " style=filled fillcolor=green";
+         */
         return switch (operator.operation) {
             case "waterline" -> " style=filled fillcolor=lightgreen";
             case "controlled_filter" -> " style=filled fillcolor=cyan";

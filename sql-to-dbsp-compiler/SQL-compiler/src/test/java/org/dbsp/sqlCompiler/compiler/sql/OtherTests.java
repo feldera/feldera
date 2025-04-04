@@ -565,21 +565,11 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 INSERT INTO T VALUES(1, 'x');
                 REMOVE FROM T VALUES(2, 'Y');
                 REMOVE FROM T VALUES(3, 'Z');""").simplify(compiler);
-        DBSPZSetExpression expected = DBSPZSetExpression.emptyWithElementType(
-                new DBSPTypeTuple(
-                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
-                        DBSPTypeString.varchar(true)));
-        expected.add(new DBSPTupleExpression(
-                new DBSPI32Literal(1, true),
-                new DBSPStringLiteral("x", true)));
-        expected.add(new DBSPTupleExpression(
-                new DBSPI32Literal(2, true),
-                new DBSPStringLiteral("Y", true)), -1);
-        expected.add(new DBSPTupleExpression(
-                new DBSPI32Literal(3, true),
-                new DBSPStringLiteral("Z", true)), -1);
-        boolean same = change.getSet(0).sameValue(expected);
-        Assert.assertTrue(same);
+        String set = change.getSet(0).toString();
+        Assert.assertEquals("""
+                zset!(Tup2::new(Some(1), "x", ) => 1,
+                Tup2::new(Some(2), "Y", ) => -1,
+                Tup2::new(Some(3), "Z", ) => -1,)""", set);
     }
 
     @Test

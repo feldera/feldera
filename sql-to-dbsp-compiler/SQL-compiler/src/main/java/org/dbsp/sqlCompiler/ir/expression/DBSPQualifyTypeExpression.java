@@ -77,8 +77,7 @@ public final class DBSPQualifyTypeExpression extends DBSPExpression {
         if (o == null)
             return false;
         return this.expression == o.expression &&
-                Linq.same(this.types, o.types) &&
-                this.hasSameType(o);
+                Linq.same(this.types, o.types);
     }
 
     @Override

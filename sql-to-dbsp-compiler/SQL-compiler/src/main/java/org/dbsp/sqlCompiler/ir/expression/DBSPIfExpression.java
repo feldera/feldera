@@ -84,8 +84,7 @@ public final class DBSPIfExpression extends DBSPExpression {
             return false;
         return this.condition == o.condition &&
                 this.positive == o.positive &&
-                this.negative == o.negative &&
-                this.hasSameType(o);
+                this.negative == o.negative;
     }
 
     @Override
