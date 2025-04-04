@@ -215,3 +215,50 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         false
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        test::{init_test_logger, test_circuit, TestStruct},
+        Controller,
+    };
+    use feldera_types::config::PipelineConfig;
+    use tracing::info;
+
+    #[test]
+    fn test_kafka_output_errors() {
+        init_test_logger();
+
+        info!("test_kafka_output_errors: Test invalid Kafka broker address");
+
+        let config_str = r#"
+name: test
+workers: 4
+inputs:
+outputs:
+    test_output:
+        stream: test_output1
+        transport:
+            name: kafka_output
+            config:
+                bootstrap.servers: localhost:11111
+                topic: end_to_end_test_output_topic
+        format:
+            name: csv
+"#;
+
+        info!("test_kafka_output_errors: Creating circuit");
+
+        info!("test_kafka_output_errors: Starting controller");
+        let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
+
+        match Controller::with_config(
+            |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
+            &config,
+            Box::new(|e| panic!("error: {e}")),
+        ) {
+            Ok(_) => panic!("expected an error"),
+            Err(e) => info!("test_kafka_output_errors: error: {e}"),
+        }
+    }
+}

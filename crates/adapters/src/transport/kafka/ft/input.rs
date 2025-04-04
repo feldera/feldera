@@ -45,6 +45,8 @@ use xxhash_rust::xxh3::Xxh3Default;
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
 const POLL_TIMEOUT: Duration = Duration::from_millis(5);
 
+const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
+
 // Size of the circular buffer used to pass errors from ClientContext
 // to the worker thread.
 const ERROR_BUFFER_SIZE: usize = 1000;
@@ -159,11 +161,25 @@ impl KafkaFtInputReaderInner {
                     iter::repeat_n(Offset::Beginning, n_partitions).collect()
                 }
                 KafkaStartFromConfig::Latest => iter::repeat_n(Offset::End, n_partitions).collect(),
-                KafkaStartFromConfig::Offsets(vec) => {
-                    if n_partitions != vec.len() {
-                        bail!("Topic {topic} has {n_partitions} partitions but configuration specifies {} offsets.", vec.len());
+                KafkaStartFromConfig::Offsets(offsets) => {
+                    if n_partitions != offsets.len() {
+                        bail!("Topic {topic} has {n_partitions} partitions but configuration specifies {} offsets.", offsets.len());
                     }
-                    vec.iter().copied().map(Offset::Offset).collect()
+                    for (offset, partition) in offsets.iter().copied().zip(0..) {
+                        let (low, high) = self
+                            .kafka_consumer
+                            .fetch_watermarks(topic, partition, METADATA_TIMEOUT)
+                            .map_err(|e| {
+                                anyhow!("error fetching metadata for partition '{partition}': {e}",)
+                            })?;
+
+                        // Return an error if the specified offset doesn't exist.
+                        if !(low..=high).contains(&offset) {
+                            bail!("configuration error: provided offset '{offset}' not currently in partition '{partition}'");
+                        }
+                    }
+
+                    offsets.iter().copied().map(Offset::Offset).collect()
                 }
             },
         };
@@ -469,7 +485,7 @@ impl KafkaFtInputReaderInner {
 }
 
 fn span(config: &KafkaInputConfig) -> EnteredSpan {
-    info_span!("kafka_input", ft = true, topic = config.topic).entered()
+    info_span!("kafka_input", topic = config.topic).entered()
 }
 
 impl KafkaFtInputReader {
