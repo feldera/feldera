@@ -249,18 +249,20 @@ fn run_query(config: &NexmarkConfig, snapshotter: &Snapshotter, query: Query) ->
     let expected_num_events = config.generator_options.max_events;
     let circuit_config = CircuitConfig {
         storage: if config.min_storage_bytes != usize::MAX {
-            Some(CircuitStorageConfig {
-                config: StorageConfig {
-                    path: tempdir_for_thread().to_string_lossy().into_owned(),
-                    cache: if config.feldera_cache {
-                        StorageCacheConfig::FelderaCache
-                    } else {
-                        StorageCacheConfig::PageCache
+            Some(
+                CircuitStorageConfig::for_config(
+                    StorageConfig {
+                        path: tempdir_for_thread().to_string_lossy().into_owned(),
+                        cache: if config.feldera_cache {
+                            StorageCacheConfig::FelderaCache
+                        } else {
+                            StorageCacheConfig::PageCache
+                        },
                     },
-                },
-                options: StorageOptions::default(),
-                init_checkpoint: None,
-            })
+                    StorageOptions::default(),
+                )
+                .unwrap(),
+            )
         } else {
             None
         },

@@ -31,19 +31,19 @@
 //! pending.
 
 use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
-use crate::PipelineState;
+use crate::{controller::checkpoint::CheckpointStats, PipelineState};
 use anyhow::Error as AnyError;
 use atomic::Atomic;
 use bytemuck::NoUninit;
+use cpu_time::ProcessTime;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use feldera_adapterlib::transport::InputReader;
 use feldera_types::config::PipelineConfig;
+use memory_stats::memory_stats;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
 use metrics_util::{debugging::DebugValue, CompositeKey};
 use num_derive::FromPrimitive;
 use ordered_float::OrderedFloat;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-use psutil::process::{Process, ProcessError};
 use rand::{seq::index::sample, thread_rng};
 use rmpv::Value as RmpValue;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
@@ -55,9 +55,10 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
-    time::Duration,
+    time::Instant,
 };
 use tracing::{debug, error, info};
+use uuid::Uuid;
 
 /// Whether a pipeline supports suspend-and-resume.
 ///
@@ -83,24 +84,56 @@ pub enum CanSuspend {
     NotNow,
 }
 
-#[derive(Default, Serialize)]
+#[derive(Serialize)]
 pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
     #[serde(serialize_with = "serialize_atomic")]
     state: Atomic<PipelineState>,
 
+    /// Uniquely identifies this run.
+    ///
+    /// This will remain the same for a given pipeline across suspend and
+    /// resume.  It will change if the pipeline is shut down and restarted.
+    pub run_uuid: Uuid,
+
     /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    pub rss_bytes: Option<AtomicU64>,
+    pub rss_bytes: AtomicU64,
 
-    /// CPU time used by the pipeline process, in milliseconds.
+    /// CPU time used by the pipeline across all threads, in milliseconds.
+    ///
+    /// This value is cumulative for the pipeline across fault tolerance or
+    /// suspend and resume.
     // This field is computed on-demand by calling `ControllerStatus::update`.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    pub cpu_msecs: Option<AtomicU64>,
+    pub cpu_msecs: AtomicU64,
+
+    /// CPU time used in the checkpoint that we restored from, if any, in
+    /// milliseconds.
+    pub base_cpu_msecs: u64,
+
+    /// Elapsed time while the pipeline is running or paused (but not
+    /// suspended), in milliseconds.
+    ///
+    /// This value is cumulative for the pipeline across fault tolerance or
+    /// suspend and resume.
+    ///
+    /// This is `base_uptime_msecs` plus the time elapsed since `start_time`.
+    // This field is computed on-demand by calling `ControllerStatus::update`.
+    pub uptime_msecs: AtomicU64,
+
+    /// When this process started.
+    #[serde(skip)]
+    pub start_time: Instant,
+
+    /// `uptime_msecs` in the checkpoint that we restored from, if any, in
+    /// milliseconds.
+    pub base_uptime_msecs: u64,
 
     /// Time elapsed while the pipeline is executing a step, multiplied by the
     /// number of foreground and background threads, in milliseconds.
+    ///
+    /// This value is cumulative for the pipeline across fault tolerance or
+    /// suspend and resume.
     pub runtime_elapsed_msecs: AtomicU64,
 
     /// Total number of records currently buffered by all endpoints.
@@ -147,16 +180,20 @@ where
 }
 
 impl GlobalControllerMetrics {
-    fn new(processed_records: u64) -> Self {
+    fn new(initial_stats: CheckpointStats) -> Self {
         Self {
             state: Atomic::new(PipelineState::Paused),
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            rss_bytes: Some(AtomicU64::new(0)),
-            cpu_msecs: Some(AtomicU64::new(0)),
-            runtime_elapsed_msecs: AtomicU64::new(0),
+            run_uuid: initial_stats.run_uuid,
+            rss_bytes: AtomicU64::new(0),
+            cpu_msecs: AtomicU64::new(initial_stats.cpu_msecs),
+            base_cpu_msecs: initial_stats.cpu_msecs,
+            uptime_msecs: AtomicU64::new(initial_stats.uptime_msecs),
+            start_time: Instant::now(),
+            base_uptime_msecs: initial_stats.uptime_msecs,
+            runtime_elapsed_msecs: AtomicU64::new(initial_stats.runtime_elapsed_msecs),
             buffered_input_records: AtomicU64::new(0),
-            total_input_records: AtomicU64::new(processed_records),
-            total_processed_records: AtomicU64::new(processed_records),
+            total_input_records: AtomicU64::new(initial_stats.processed_records),
+            total_processed_records: AtomicU64::new(initial_stats.processed_records),
             pipeline_complete: AtomicBool::new(false),
             can_suspend: Atomic::new(CanSuspend::No),
             step_requested: AtomicBool::new(false),
@@ -182,6 +219,22 @@ impl GlobalControllerMetrics {
     pub(crate) fn processed_records(&self, num_records: u64) -> u64 {
         self.total_processed_records
             .fetch_add(num_records, Ordering::AcqRel)
+    }
+
+    pub fn rss_bytes(&self) -> u64 {
+        self.rss_bytes.load(Ordering::Relaxed)
+    }
+
+    pub fn cpu_msecs(&self) -> u64 {
+        self.cpu_msecs.load(Ordering::Relaxed)
+    }
+
+    pub fn uptime_msecs(&self) -> u64 {
+        self.uptime_msecs.load(Ordering::Relaxed)
+    }
+
+    pub fn runtime_elapsed_msecs(&self) -> u64 {
+        self.runtime_elapsed_msecs.load(Ordering::Relaxed)
     }
 
     pub fn num_buffered_input_records(&self) -> u64 {
@@ -426,10 +479,10 @@ impl Serialize for ControllerMetric {
 }
 
 impl ControllerStatus {
-    pub fn new(pipeline_config: PipelineConfig, processed_records: u64) -> Self {
+    pub fn new(pipeline_config: PipelineConfig, initial_stats: CheckpointStats) -> Self {
         Self {
             pipeline_config,
-            global_metrics: GlobalControllerMetrics::new(processed_records),
+            global_metrics: GlobalControllerMetrics::new(initial_stats),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
         }
@@ -805,14 +858,6 @@ impl ControllerStatus {
         true
     }
 
-    /// Returns this process's memory size in bytes and its total CPU
-    /// consumption.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    fn process_stats() -> Result<(u64, Duration), ProcessError> {
-        let process = Process::current()?;
-        Ok((process.memory_info()?.rss(), process.cpu_times()?.busy()))
-    }
-
     pub fn update(&self, can_suspend: CanSuspend) {
         self.global_metrics
             .pipeline_complete
@@ -822,24 +867,23 @@ impl ControllerStatus {
             .can_suspend
             .store(can_suspend, Ordering::Release);
 
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        {
-            match Self::process_stats() {
-                Ok((rss, cpu)) => {
-                    self.global_metrics
-                        .rss_bytes
-                        .as_ref()
-                        .unwrap()
-                        .store(rss, Ordering::Release);
-                    self.global_metrics
-                        .cpu_msecs
-                        .as_ref()
-                        .unwrap()
-                        .store(cpu.as_millis() as u64, Ordering::Release);
-                }
-                Err(e) => {
-                    error!("Failed to fetch RSS or CPU time of the process: {e}");
-                }
+        if let Some(usage) = memory_stats() {
+            self.global_metrics
+                .rss_bytes
+                .store(usage.physical_mem as u64, Ordering::Relaxed);
+        } else {
+            error!("Failed to fetch process RSS");
+        }
+
+        match ProcessTime::try_now() {
+            Ok(time) => {
+                self.global_metrics.cpu_msecs.store(
+                    time.as_duration().as_millis() as u64 + self.global_metrics.base_cpu_msecs,
+                    Ordering::Relaxed,
+                );
+            }
+            Err(e) => {
+                error!("Failed to fetch process times: {e}");
             }
         }
     }

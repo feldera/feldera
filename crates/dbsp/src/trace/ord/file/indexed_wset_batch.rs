@@ -20,13 +20,13 @@ use crate::{
     DBData, DBWeight, NumEntries, Runtime,
 };
 use dyn_clone::clone_box;
+use feldera_storage::StoragePath;
 use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug},
     ops::Neg,
-    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -397,12 +397,12 @@ where
     type Batcher = MergeBatcher<Self>;
     type Builder = FileIndexedWSetBuilder<K, V, R>;
 
-    fn checkpoint_path(&self) -> Option<PathBuf> {
+    fn checkpoint_path(&self) -> Option<StoragePath> {
         self.file.mark_for_checkpoint();
         Some(self.file.path())
     }
 
-    fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
+    fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
         let any_factory0 = factories.factories0.any_factories();
         let any_factory1 = factories.factories1.any_factories();
         let file = Arc::new(Reader::open(

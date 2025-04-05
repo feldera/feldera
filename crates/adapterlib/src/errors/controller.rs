@@ -15,7 +15,7 @@ use dbsp::{storage::backend::StorageError, Error as DbspError};
 use feldera_types::error::{DetailedError, ErrorResponse};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 
-use super::metadata::StepError;
+use super::journal::StepError;
 use crate::{format::ParseError, transport::Step, DbspDetailedError};
 
 /// Controller configuration error.
@@ -576,7 +576,7 @@ pub enum ControllerError {
     /// from a checkpoint.
     RestoreInProgress,
 
-    /// Error in steps metadata.
+    /// Error in journal metadata.
     StepError(StepError),
 
     /// Unexpected step number.
@@ -1187,21 +1187,44 @@ impl ControllerError {
         Self::ControllerPanic
     }
 
-    pub fn storage_error(context: String, error: StorageError) -> Self {
+    pub fn storage_error(context: impl Into<String>, error: StorageError) -> Self {
         Self::StorageError {
-            context,
+            context: context.into(),
             error,
             backtrace: Backtrace::capture(),
         }
     }
 
-    /// Returns true if `error` likely indicates "file (or object) not
-    /// found".
-    pub fn is_not_found(&self) -> bool {
+    pub fn kind(&self) -> ErrorKind {
         match self {
-            Self::IoError { io_error, .. } if io_error.kind() == ErrorKind::NotFound => true,
-            Self::StorageError { error, .. } => error.is_not_found(),
-            _ => false,
+            Self::IoError { io_error, .. } => io_error.kind(),
+            Self::StorageError { error, .. } => error.kind(),
+            Self::StepError(error) => error.kind(),
+            Self::RestoreInProgress => ErrorKind::ResourceBusy,
+            Self::NotSupported { .. } => ErrorKind::Unsupported,
+            Self::DbspError {
+                error: DbspError::IO(error),
+            } => error.kind(),
+            Self::DbspError { .. }
+            | Self::SchemaParseError { .. }
+            | Self::SchemaValidationError { .. }
+            | Self::CheckpointParseError { .. }
+            | Self::UnexpectedStep { .. }
+            | Self::ReplayFailure { .. }
+            | Self::IrParseError { .. }
+            | Self::CliArgsError { .. }
+            | Self::Config { .. }
+            | Self::UnknownInputEndpoint { .. }
+            | Self::UnknownOutputEndpoint { .. }
+            | Self::ParseError { .. }
+            | Self::EncodeError { .. }
+            | Self::InputTransportError { .. }
+            | Self::OutputTransportError { .. }
+            | Self::PrometheusError { .. }
+            | Self::DbspPanic
+            | Self::ControllerPanic
+            | Self::ControllerExit
+            | Self::EnterpriseFeature(_) => ErrorKind::Other,
         }
     }
 }

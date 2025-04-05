@@ -7,13 +7,13 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
+use feldera_storage::{StorageBackend, StoragePath};
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
 use metrics::counter;
 use minitrace::collector::SpanContext;
 use minitrace::local::LocalSpan;
 use minitrace::Span;
-use std::fs::create_dir_all;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{
@@ -228,7 +228,7 @@ pub struct CircuitConfig {
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.
-#[derive(Clone, Debug)]
+#[derive(Clone, derive_more::Debug)]
 pub struct CircuitStorageConfig {
     /// Runner configuration.
     pub config: StorageConfig,
@@ -236,9 +236,39 @@ pub struct CircuitStorageConfig {
     /// User options.
     pub options: StorageOptions,
 
+    /// Storage backend.
+    ///
+    /// Presumably opened according to `config` and `options`.
+    #[debug(skip)]
+    pub backend: Arc<dyn StorageBackend>,
+
     /// The initial checkpoint to start the circuit from, or `None` to start
     /// fresh from a new circuit.
     pub init_checkpoint: Option<Uuid>,
+}
+
+impl CircuitStorageConfig {
+    /// Opens a backend with `config` and `options` and returns a
+    /// [CircuitStorageConfig] with that backend.
+    pub fn for_config(
+        config: StorageConfig,
+        options: StorageOptions,
+    ) -> Result<Self, StorageError> {
+        let backend = <dyn StorageBackend>::new(&config, &options)?;
+        Ok(Self {
+            config,
+            options,
+            backend,
+            init_checkpoint: None,
+        })
+    }
+
+    pub fn with_init_checkpoint(self, init_checkpoint: Option<Uuid>) -> Self {
+        Self {
+            init_checkpoint,
+            ..self
+        }
+    }
 }
 
 impl Default for CircuitConfig {
@@ -463,11 +493,19 @@ impl Runtime {
             Ok(result) => result,
         };
 
-        let mut dbsp = DBSPHandle::new(runtime, command_senders, status_receivers, fingerprint)?;
-        if let Some(storage) = &config.storage {
-            if let Some(init_checkpoint) = storage.init_checkpoint {
-                dbsp.send_restore(storage.config.path().join(init_checkpoint.to_string()))?;
-            }
+        let (backend, init_checkpoint) = config
+            .storage
+            .map(|storage| (storage.backend.clone(), storage.init_checkpoint))
+            .unzip();
+        let mut dbsp = DBSPHandle::new(
+            backend,
+            runtime,
+            command_senders,
+            status_receivers,
+            fingerprint,
+        )?;
+        if let Some(init_checkpoint) = init_checkpoint.flatten() {
+            dbsp.send_restore(init_checkpoint.to_string().into())?;
         }
 
         Ok((dbsp, ret))
@@ -480,8 +518,8 @@ enum Command {
     EnableProfiler,
     DumpProfile { runtime_elapsed: Duration },
     RetrieveProfile { runtime_elapsed: Duration },
-    Commit(PathBuf),
-    Restore(PathBuf),
+    Commit(StoragePath),
+    Restore(StoragePath),
 }
 
 #[derive(Debug)]
@@ -521,15 +559,14 @@ pub struct DBSPHandle {
 
 impl DBSPHandle {
     fn new(
+        backend: Option<Arc<dyn StorageBackend>>,
         runtime: RuntimeHandle,
         command_senders: Vec<Sender<Command>>,
         status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
         fingerprint: u64,
     ) -> Result<Self, DbspError> {
-        let checkpointer = runtime
-            .runtime()
-            .storage_path()
-            .map(|path| Checkpointer::new(path.into(), fingerprint))
+        let checkpointer = backend
+            .map(|backend| Checkpointer::new(backend, fingerprint))
             .transpose()?;
         Ok(Self {
             start_time: Instant::now(),
@@ -659,13 +696,13 @@ impl DBSPHandle {
     }
 
     /// Used by the checkpointer to initiate a commit on the circuit.
-    pub(super) fn send_commit(&mut self, base: PathBuf) -> Result<(), DbspError> {
+    pub(super) fn send_commit(&mut self, base: StoragePath) -> Result<(), DbspError> {
         self.broadcast_command(Command::Commit(base), |_, _| {})?;
         Ok(())
     }
 
     /// Used to reset operator state to the point of the given Commit.
-    fn send_restore(&mut self, base: PathBuf) -> Result<(), DbspError> {
+    fn send_restore(&mut self, base: StoragePath) -> Result<(), DbspError> {
         self.broadcast_command(Command::Restore(base), |_, _| {})?;
         Ok(())
     }
@@ -682,7 +719,6 @@ impl DBSPHandle {
         identifier: Option<String>,
     ) -> Result<CheckpointMetadata, DbspError> {
         let checkpoint_dir = self.checkpointer()?.checkpoint_dir(uuid);
-        create_dir_all(&checkpoint_dir)?;
         self.send_commit(checkpoint_dir)?;
         self.checkpointer().unwrap().commit(uuid, identifier)
     }
@@ -1058,17 +1094,19 @@ pub(crate) mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
             pin_cpus: Vec::new(),
-            storage: Some(CircuitStorageConfig {
-                config: StorageConfig {
-                    path: temp.path().to_string_lossy().into_owned(),
-                    cache: StorageCacheConfig::default(),
-                },
-                options: StorageOptions {
-                    min_storage_bytes: Some(0),
-                    ..StorageOptions::default()
-                },
-                init_checkpoint: None,
-            }),
+            storage: Some(
+                CircuitStorageConfig::for_config(
+                    StorageConfig {
+                        path: temp.path().to_string_lossy().into_owned(),
+                        cache: StorageCacheConfig::default(),
+                    },
+                    StorageOptions {
+                        min_storage_bytes: Some(0),
+                        ..StorageOptions::default()
+                    },
+                )
+                .unwrap(),
+            ),
         };
         (temp, cconf)
     }
@@ -1296,6 +1334,8 @@ pub(crate) mod tests {
 
         let incomplete_checkpoint_dir = temp.path().join(Uuid::now_v7().to_string());
         fs::create_dir(&incomplete_checkpoint_dir).expect("can't create checkpoint dir");
+        let _ = File::create(incomplete_checkpoint_dir.join("filename.feldera"))
+            .expect("can't create file");
 
         let complete_batch_unused = temp.path().join("complete_batch.feldera");
         let _ = File::create(&complete_batch_unused).expect("can't create file");

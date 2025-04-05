@@ -27,6 +27,7 @@ use binrw::{
 };
 use crc32c::crc32c;
 use fastbloom::BloomFilter;
+use feldera_storage::StoragePath;
 use snap::raw::{decompress_len, Decoder};
 use std::any::Any;
 use std::mem::replace;
@@ -40,7 +41,6 @@ use std::{
     marker::PhantomData,
     mem::size_of,
     ops::{Bound, Range, RangeBounds},
-    path::{Path as IoPath, PathBuf},
     sync::Arc,
 };
 use thiserror::Error as ThisError;
@@ -1077,7 +1077,7 @@ impl Column {
 
 /// Encapsulates storage and a file handle.
 struct ImmutableFileRef {
-    path: PathBuf,
+    path: StoragePath,
     cache: fn() -> Arc<BufferCache>,
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
@@ -1103,7 +1103,7 @@ impl ImmutableFileRef {
     fn new(
         cache: fn() -> Arc<BufferCache>,
         file_handle: Arc<dyn FileReader>,
-        path: PathBuf,
+        path: StoragePath,
         compression: Option<Compression>,
         stats: AtomicCacheStats,
     ) -> Self {
@@ -1231,7 +1231,7 @@ where
     /// Creates and returns a new `Reader` for `file`.
     pub(crate) fn new(
         factories: &[&AnyFactories],
-        path: PathBuf,
+        path: StoragePath,
         cache: fn() -> Arc<BufferCache>,
         file_handle: Arc<dyn FileReader>,
         bloom_filter: Option<BloomFilter>,
@@ -1319,11 +1319,11 @@ where
         factories: &[&AnyFactories],
         cache: fn() -> Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
-        path: &IoPath,
+        path: &StoragePath,
     ) -> Result<Self, Error> {
         Self::new(
             factories,
-            path.to_path_buf(),
+            path.clone(),
             cache,
             storage_backend.open(path)?,
             None,
@@ -1347,9 +1347,8 @@ where
         self.columns[column].n_rows
     }
 
-    /// Returns the path on persistent storage for the file of the underlying
-    /// reader.
-    pub fn path(&self) -> PathBuf {
+    /// Returns the storage path for the underlying object.
+    pub fn path(&self) -> StoragePath {
         self.file.path.clone()
     }
 

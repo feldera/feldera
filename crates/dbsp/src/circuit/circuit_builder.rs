@@ -51,6 +51,7 @@ use crate::{
     Error as DbspError, Error, Runtime,
 };
 use anyhow::Error as AnyError;
+use feldera_storage::StoragePath;
 use serde::Serialize;
 use std::{
     any::type_name_of_val,
@@ -63,7 +64,6 @@ use std::{
     marker::PhantomData,
     ops::Deref,
     panic::Location,
-    path::Path,
     pin::Pin,
     rc::Rc,
     thread::panicking,
@@ -905,11 +905,11 @@ pub trait Node {
 
     /// Instructs the node to commit the state of its inner operator to
     /// persistent storage within directory `base`.
-    fn commit(&mut self, base: &Path) -> Result<(), DbspError>;
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError>;
 
     /// Instructs the node to restore the state of its inner operator to
     /// the given checkpoint in directory `base`.
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError>;
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError>;
 
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
     fn fingerprint(&self, fip: &mut Fingerprinter) {
@@ -3416,12 +3416,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .commit(base, &self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
@@ -3512,12 +3512,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .commit(base, &self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
@@ -3622,12 +3622,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .commit(base, &self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
@@ -3724,12 +3724,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .commit(base, &self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
@@ -3884,12 +3884,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .commit(base, &self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
@@ -4044,12 +4044,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), Error> {
         self.operator
             .commit(base, &self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
@@ -4178,12 +4178,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), Error> {
         self.operator
             .commit(base, &self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
@@ -4333,12 +4333,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), Error> {
         self.operator
             .commit(base, &self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
@@ -4473,12 +4473,12 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), Error> {
         self.operator
             .commit(base, &self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .restore(base, &self.global_id().persistent_id())
     }
@@ -4599,13 +4599,13 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &Path) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), Error> {
         self.operator
             .borrow_mut()
             .commit(base, &self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .borrow_mut()
             .restore(base, &self.global_id().persistent_id())
@@ -4706,7 +4706,7 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn commit(&mut self, _base: &Path) -> Result<(), Error> {
+    fn commit(&mut self, _base: &StoragePath) -> Result<(), Error> {
         // The Z-1 operator consists of two logical parts.
         // The first part gets invoked at the start of a clock cycle to retrieve the
         // state stored at the previous clock tick. The second one gets invoked
@@ -4716,7 +4716,7 @@ where
         Ok(())
     }
 
-    fn restore(&mut self, _base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         // See comment in `commit`.
         Ok(())
     }
@@ -4864,11 +4864,11 @@ where
         self.circuit.map_nodes_recursive(f);
     }
 
-    fn commit(&mut self, _base: &Path) -> Result<(), Error> {
+    fn commit(&mut self, _base: &StoragePath) -> Result<(), Error> {
         Ok(())
     }
 
-    fn restore(&mut self, _base: &Path) -> Result<(), DbspError> {
+    fn restore(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         Ok(())
     }
 }
@@ -4921,7 +4921,7 @@ impl CircuitHandle {
         })
     }
 
-    pub fn commit(&mut self, base: &Path) -> Result<(), SchedulerError> {
+    pub fn commit(&mut self, base: &StoragePath) -> Result<(), SchedulerError> {
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
                 let start = Instant::now();
@@ -4939,7 +4939,7 @@ impl CircuitHandle {
         Ok(())
     }
 
-    pub fn restore(&mut self, base: &Path) -> Result<(), SchedulerError> {
+    pub fn restore(&mut self, base: &StoragePath) -> Result<(), SchedulerError> {
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
                 node.restore(base).expect("restored");

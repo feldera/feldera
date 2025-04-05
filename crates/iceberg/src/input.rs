@@ -8,7 +8,7 @@ use datafusion::{
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
     catalog::{ArrowStream, InputCollectionHandle},
-    errors::metadata::ControllerError,
+    errors::journal::ControllerError,
     format::ParseError,
     transport::{
         InputConsumer, InputEndpoint, InputQueue, InputReader, InputReaderCommand,
