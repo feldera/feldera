@@ -1105,7 +1105,7 @@ impl FtState {
             circuit: None,
             step: 0,
             config,
-            stats: CheckpointStats::default(),
+            stats: CheckpointStats::new(),
             input_metadata: CheckpointOffsets::default(),
         };
         checkpoint.write(&*backend, &StoragePath::from(STATE_FILE))?;
@@ -1397,7 +1397,7 @@ impl ControllerInit {
         Ok(Self {
             circuit_config: Self::circuit_config(&config, storage)?,
             pipeline_config: config,
-            checkpoint_stats: CheckpointStats::default(),
+            checkpoint_stats: CheckpointStats::new(),
             step: 0,
             input_metadata: None,
         })

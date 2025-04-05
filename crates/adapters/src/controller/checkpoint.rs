@@ -9,6 +9,7 @@ use feldera_types::config::PipelineConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 use crate::{
     controller::{journal::StepMetadata, stats::GlobalControllerMetrics},
@@ -76,8 +77,11 @@ pub struct Checkpoint {
 /// them correctly. For example, `processed_records` does not need to be
 /// journaled because replaying each step from the journal will also process the
 /// same number of records and thus update the statistic correctly.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CheckpointStats {
+    /// Uniquely identifies this run.
+    pub run_uuid: Uuid,
+
     /// Number of records processed.
     pub processed_records: u64,
 
@@ -94,8 +98,19 @@ pub struct CheckpointStats {
 }
 
 impl CheckpointStats {
+    pub fn new() -> Self {
+        Self {
+            run_uuid: Uuid::now_v7(),
+            processed_records: 0,
+            runtime_elapsed_msecs: 0,
+            cpu_msecs: 0,
+            uptime_msecs: 0,
+        }
+    }
+
     pub fn from_global_metrics(global_metrics: &GlobalControllerMetrics) -> Self {
         Self {
+            run_uuid: global_metrics.run_uuid,
             processed_records: global_metrics.num_total_processed_records(),
             runtime_elapsed_msecs: global_metrics.runtime_elapsed_msecs(),
             cpu_msecs: global_metrics.cpu_msecs(),

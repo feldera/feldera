@@ -58,6 +58,7 @@ use std::{
     time::Instant,
 };
 use tracing::{debug, error, info};
+use uuid::Uuid;
 
 /// Whether a pipeline supports suspend-and-resume.
 ///
@@ -88,6 +89,12 @@ pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
     #[serde(serialize_with = "serialize_atomic")]
     state: Atomic<PipelineState>,
+
+    /// Uniquely identifies this run.
+    ///
+    /// This will remain the same for a given pipeline across suspend and
+    /// resume.  It will change if the pipeline is shut down and restarted.
+    pub run_uuid: Uuid,
 
     /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
@@ -176,6 +183,7 @@ impl GlobalControllerMetrics {
     fn new(initial_stats: CheckpointStats) -> Self {
         Self {
             state: Atomic::new(PipelineState::Paused),
+            run_uuid: initial_stats.run_uuid,
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(initial_stats.cpu_msecs),
             base_cpu_msecs: initial_stats.cpu_msecs,
