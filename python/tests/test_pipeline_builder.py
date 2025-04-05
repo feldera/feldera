@@ -1141,6 +1141,38 @@ CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
         pipeline.shutdown()
         pipeline.delete()
 
+    def test_program_error0(self):
+        sql = "create taabl;"
+        name = "test_program_error0"
+
+        try:
+            _ = PipelineBuilder(TEST_CLIENT, name, sql).create_or_replace()
+        except Exception:
+            pass
+
+        pipeline = Pipeline.get(name, TEST_CLIENT)
+        err = pipeline.program_error()
+
+        assert err["sql_compilation"] != 0
+
+        pipeline.shutdown()
+        pipeline.delete()
+
+    def test_program_error1(self):
+        sql = ""
+        name = "test_program_error1"
+
+        _ = PipelineBuilder(TEST_CLIENT, name, sql).create_or_replace()
+
+        pipeline = Pipeline.get(name, TEST_CLIENT)
+        err = pipeline.program_error()
+
+        assert err["sql_compilation"]["exit_code"] == 0
+        assert err["rust_compilation"]["exit_code"] == 0
+
+        pipeline.shutdown()
+        pipeline.delete()
+
 
 if __name__ == "__main__":
     unittest.main()

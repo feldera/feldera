@@ -807,3 +807,12 @@ resume a paused pipeline."""
 
         self.refresh()
         return self._inner.program_info
+
+    def program_error(self) -> Mapping[str, Any]:
+        """
+        Return the program error of the pipeline.
+        If there are no errors, the `exit_code` field inside both `sql_compilation` and `rust_compilation` will be 0.
+        """
+
+        self.refresh()
+        return self._inner.program_error
