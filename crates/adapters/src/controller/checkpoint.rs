@@ -97,6 +97,12 @@ pub struct CheckpointStats {
     pub uptime_msecs: u64,
 }
 
+impl Default for CheckpointStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CheckpointStats {
     pub fn new() -> Self {
         Self {
