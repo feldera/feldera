@@ -6165,6 +6165,24 @@
             ],
             "properties": {
               "config": {
+                "$ref": "#/components/schemas/PostgresWriterConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "postgres_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
                 "$ref": "#/components/schemas/DatagenInputConfig"
               },
               "name": {

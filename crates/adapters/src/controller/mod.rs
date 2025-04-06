@@ -2410,6 +2410,7 @@ impl ControllerInner {
                 endpoint_id,
                 endpoint_name,
                 endpoint_config,
+                &handles.key_schema,
                 &handles.value_schema,
                 self_weak,
             )?;
