@@ -8,6 +8,7 @@ use crate::transport::IntegratedInputEndpoint;
 use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint, TransportInputEndpoint};
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
+use postgres::PostgresOutputEndpoint;
 use std::sync::Weak;
 use utoipa::openapi::PathItemType::Post;
 
@@ -53,15 +54,24 @@ pub fn create_integrated_output_endpoint(
     endpoint_id: EndpointId,
     endpoint_name: &str,
     config: &OutputEndpointConfig,
+    key_schema: &Option<Relation>,
     schema: &Relation,
     controller: Weak<ControllerInner>,
 ) -> Result<Box<dyn IntegratedOutputEndpoint>, ControllerError> {
-    let ep = match &config.connector_config.transport {
+    let ep: Box<dyn IntegratedOutputEndpoint> = match &config.connector_config.transport {
         #[cfg(feature = "with-deltalake")]
         TransportConfig::DeltaTableOutput(config) => Box::new(DeltaTableWriter::new(
             endpoint_id,
             endpoint_name,
             config,
+            schema,
+            controller,
+        )?),
+        TransportConfig::PostgresOutput(config) => Box::new(PostgresOutputEndpoint::new(
+            endpoint_id,
+            endpoint_name,
+            config,
+            key_schema,
             schema,
             controller,
         )?),

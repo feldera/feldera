@@ -581,6 +581,7 @@ pub fn generate_program_info(
                 .expect("Origin value cannot be None if connectors is non-empty");
             match connector.config.transport {
                 TransportConfig::FileOutput(_)
+                | TransportConfig::PostgresOutput(_)
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_)
                 | TransportConfig::RedisOutput(_) => {}
