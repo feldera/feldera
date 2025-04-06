@@ -13,7 +13,7 @@ use crate::transport::http::HttpInputConfig;
 use crate::transport::iceberg::IcebergReaderConfig;
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::nexmark::NexmarkInputConfig;
-use crate::transport::postgres::PostgresReaderConfig;
+use crate::transport::postgres::{PostgresReaderConfig, PostgresWriterConfig};
 use crate::transport::pubsub::PubSubInputConfig;
 use crate::transport::redis::RedisOutputConfig;
 use crate::transport::s3::S3InputConfig;
@@ -976,6 +976,7 @@ pub enum TransportConfig {
     // Prevent rust from complaining about large size difference between enum variants.
     IcebergInput(Box<IcebergReaderConfig>),
     PostgresInput(PostgresReaderConfig),
+    PostgresOutput(PostgresWriterConfig),
     Datagen(DatagenInputConfig),
     Nexmark(NexmarkInputConfig),
     /// Direct HTTP input: cannot be instantiated through API
@@ -1000,6 +1001,7 @@ impl TransportConfig {
             TransportConfig::DeltaTableOutput(_) => "delta_table_output".to_string(),
             TransportConfig::IcebergInput(_) => "iceberg_input".to_string(),
             TransportConfig::PostgresInput(_) => "postgres_input".to_string(),
+            TransportConfig::PostgresOutput(_) => "postgres_output".to_string(),
             TransportConfig::Datagen(_) => "datagen".to_string(),
             TransportConfig::Nexmark(_) => "nexmark".to_string(),
             TransportConfig::HttpInput(_) => "http_input".to_string(),
