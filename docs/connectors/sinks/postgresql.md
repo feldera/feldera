@@ -28,7 +28,7 @@ Please [let us know](https://github.com/feldera/feldera/issues) if you need TLS 
 
 ## Data Type Mapping
 
-We currently serialize Feldera SQL view records to JSON before sending them to PostgreSQL. 
+We currently serialize Feldera SQL view records to JSON before sending them to PostgreSQL.
 This means that the ingestion rules are dictated by [`jsonb_populate_recordset`](https://www.postgresql.org/docs/current/functions-json.html#FUNCTIONS-JSON-PROCESSING-TABLE).
 
 :::info
@@ -170,7 +170,7 @@ CREATE TABLE all_types_example (
   }]'
 );
 
-create materialized view v1 
+create materialized view v1
 with (
     'connectors' = '[{
         "index": "v1_idx",
