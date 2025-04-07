@@ -4,10 +4,9 @@
 Redis support is an experimental feature of Feldera.
 :::
 
-Feldera allows you to output data from an SQL view to Redis.
+Feldera allows you to output data from a SQL view to Redis.
 
 - The user configures the Redis connector with a subset of columns that serve as a unique key for the view.
-
 - The connector stores each row from the view in Redis, using the specified columns as the Redis key.
 
 :::warning
