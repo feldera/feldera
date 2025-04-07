@@ -35,6 +35,7 @@ use crate::PipelineState;
 use anyhow::Error as AnyError;
 use atomic::Atomic;
 use bytemuck::NoUninit;
+use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use feldera_adapterlib::transport::InputReader;
@@ -57,6 +58,7 @@ use std::{
     },
 };
 use tracing::{debug, error, info};
+use uuid::Uuid;
 
 /// Whether a pipeline supports suspend-and-resume.
 ///
@@ -95,6 +97,23 @@ pub struct GlobalControllerMetrics {
     /// CPU time used by the pipeline across all threads, in milliseconds.
     // This field is computed on-demand by calling `ControllerStatus::update`.
     pub cpu_msecs: AtomicU64,
+
+    /// Time since the pipeline process started, including time that the
+    /// pipeline was running or paused.
+    ///
+    /// This is the elapsed time since `start_time`.
+    // This field is computed on-demand by calling `ControllerStatus::update`.
+    pub uptime_msecs: AtomicU64,
+
+    /// Time at which the pipeline process started, in seconds since the epoch.
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub start_time: DateTime<Utc>,
+
+    /// Uniquely identifies the run that started at `start_time`.
+    ///
+    /// This is a v7 UUID, meaning that they will be ordered by their creation
+    /// time (modulo clock skew).
+    pub run_uuid: Uuid,
 
     /// Time elapsed while the pipeline is executing a step, multiplied by the
     /// number of foreground and background threads, in milliseconds.
@@ -149,6 +168,9 @@ impl GlobalControllerMetrics {
             state: Atomic::new(PipelineState::Paused),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
+            uptime_msecs: AtomicU64::new(0),
+            start_time: Utc::now(),
+            run_uuid: Uuid::now_v7(),
             runtime_elapsed_msecs: AtomicU64::new(0),
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(processed_records),
@@ -817,6 +839,12 @@ impl ControllerStatus {
         self.global_metrics
             .can_suspend
             .store(can_suspend, Ordering::Release);
+
+        let uptime = Utc::now() - self.global_metrics.start_time;
+        self.global_metrics.uptime_msecs.store(
+            uptime.num_milliseconds().try_into().unwrap_or(0),
+            Ordering::Relaxed,
+        );
 
         if let Some(usage) = memory_stats() {
             self.global_metrics
