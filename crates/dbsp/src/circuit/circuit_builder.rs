@@ -6025,15 +6025,20 @@ impl CircuitHandle {
 
             // 1.
             let node_inputs = self.circuit.map_node(gid, &mut |node| {
-                node.input_streams()
+                self.circuit
+                    .edges()
+                    .by_destination
+                    .get(&node.local_id())
                     .iter()
-                    .map(|stream| {
+                    .flat_map(|edges| edges.into_iter())
+                    .filter(|edge| edge.is_stream())
+                    .map(|edge| {
                         // If the origin of the stream is a node inside the nested circuit, we will clear and replay the
                         // entire nested circuit, as we don't currently have a way to replay state from inside a nested
                         // circuit into a parent circuit.
                         (
-                            Some(stream.stream_id()),
-                            self.circuit.global_id().child(stream.local_node_id()),
+                            Some(edge.stream_id().unwrap()),
+                            self.circuit.global_id().child(edge.from),
                         )
                     })
                     .collect::<Vec<_>>()

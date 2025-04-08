@@ -4,7 +4,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 use crate::{
     operator::{Max, Min},
     utils::Tup2,
-    DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
+    DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
 };
 use std::{fmt::Debug, iter::repeat, marker::PhantomData, sync::Arc};
 
@@ -278,6 +278,10 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
 
 fn sequence(from: u64, to: u64) -> Vec<Vec<Tup2<u64, ZWeight>>> {
     (from..to).map(|x| vec![Tup2(x, 1)]).collect()
+}
+
+fn chain(from: u64, to: u64) -> Vec<Vec<Tup2<Tup2<u64, u64>, ZWeight>>> {
+    (from..to).map(|x| vec![Tup2(Tup2(x, x + 1), 1)]).collect()
 }
 
 // Linear circuit without integrals where the old and the new circuits are disjoint.
@@ -716,4 +720,92 @@ fn test_aggregate_circuit() {
     );
 }
 
-// Recursion
+// Circuit with recursion1:
+//
+// Pipeline 1:
+//
+// ---> input1 ---> recusrive subcircuit --> output1
+//
+// Pipeline 2: Connect a new output to the recursive subcircuit. This should require
+// clearing the state of the cubcircuit, since it cannot be used to backfill
+//
+// ---> input1 ---> recusrive subcircuit --> output1
+//                                      \--> output2
+//
+fn recursive_circuit1(
+    circuit: &mut RootCircuit,
+) -> (
+    (),
+    ZSetHandle<Tup2<u64, u64>>,
+    (),
+    OutputHandle<OrdZSet<Tup2<u64, u64>>>,
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<Tup2<u64, u64>>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    input_stream1.integrate_trace();
+
+    let paths = circuit
+        .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+            let edges = input_stream1.delta0(child);
+
+            let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
+            let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+
+            Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
+        })
+        .unwrap();
+
+    let output_handle1 = paths.output_persistent(Some("output1"));
+
+    ((), input_handle1, (), output_handle1)
+}
+
+fn recursive_circuit2(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<Tup2<u64, u64>>,
+    (),
+    OutputHandle<OrdZSet<Tup2<u64, u64>>>,
+    OutputHandle<OrdZSet<Tup2<u64, u64>>>,
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<Tup2<u64, u64>>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    input_stream1.integrate_trace();
+
+    let paths = circuit
+        .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+            let edges = input_stream1.delta0(child);
+
+            let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
+            let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+
+            Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
+        })
+        .unwrap();
+
+    let output_handle1 = paths.output_persistent(Some("output1"));
+    let output_handle2 = paths.output_persistent(Some("output2"));
+
+    (input_handle1, (), output_handle1, output_handle2)
+}
+
+#[test]
+fn test_recursive_circuit1() {
+    test_replay::<
+        (),
+        TestData1<Tup2<u64, u64>>,
+        (),
+        (),
+        TestData1<Tup2<u64, u64>>,
+        TestData1<Tup2<u64, u64>>,
+    >(
+        Arc::new(recursive_circuit1),
+        Arc::new(recursive_circuit2),
+        repeat(()).take(5).collect(),
+        chain(0, 5),
+        chain(5, 10),
+        repeat(()).take(5).collect(),
+    );
+}
