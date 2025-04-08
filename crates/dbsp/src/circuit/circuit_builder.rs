@@ -952,7 +952,7 @@ pub trait Node {
     }
 
     /// List of input streams of the operator.
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata>;
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>>;
 
     /// Operator name, e.g., "Map", "Join", etc.
     fn name(&self) -> Cow<'static, str>;
@@ -3872,8 +3872,8 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
-        vec![&self.parent_stream]
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
+        vec![clone_box(&self.parent_stream)]
     }
 
     fn is_async(&self) -> bool {
@@ -4006,7 +4006,7 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
         vec![]
     }
 
@@ -4133,8 +4133,8 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
-        vec![&self.input_stream]
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
+        vec![clone_box(&self.input_stream)]
     }
 
     fn is_async(&self) -> bool {
@@ -4264,8 +4264,8 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
-        vec![&self.input_stream]
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
+        vec![clone_box(&self.input_stream)]
     }
 
     fn is_async(&self) -> bool {
@@ -4409,8 +4409,11 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
-        vec![&self.input_stream1, &self.input_stream2]
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
+        vec![
+            clone_box(&self.input_stream1),
+            clone_box(&self.input_stream2),
+        ]
     }
 
     fn is_async(&self) -> bool {
@@ -4602,8 +4605,11 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
-        vec![&self.input_stream1, &self.input_stream2]
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
+        vec![
+            clone_box(&self.input_stream1),
+            clone_box(&self.input_stream2),
+        ]
     }
 
     fn is_async(&self) -> bool {
@@ -4795,11 +4801,11 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
         vec![
-            &self.input_stream1,
-            &self.input_stream2,
-            &self.input_stream3,
+            clone_box(&self.input_stream1),
+            clone_box(&self.input_stream2),
+            clone_box(&self.input_stream3),
         ]
     }
 
@@ -4980,12 +4986,12 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
         vec![
-            &self.input_stream1,
-            &self.input_stream2,
-            &self.input_stream3,
-            &self.input_stream4,
+            clone_box(&self.input_stream1),
+            clone_box(&self.input_stream2),
+            clone_box(&self.input_stream3),
+            clone_box(&self.input_stream4),
         ]
     }
 
@@ -5156,10 +5162,10 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
         self.input_streams
             .iter()
-            .map(|stream| stream as &dyn StreamMetadata)
+            .map(|stream| clone_box(stream as &dyn StreamMetadata))
             .collect()
     }
 
@@ -5319,7 +5325,7 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
         vec![]
     }
 
@@ -5457,8 +5463,8 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
-        vec![&self.input_stream]
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
+        vec![clone_box(&self.input_stream)]
     }
 
     fn is_async(&self) -> bool {
@@ -5672,8 +5678,19 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<&dyn StreamMetadata> {
-        vec![]
+    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
+        self.circuit
+            .edges()
+            .iter()
+            .filter_map(|edge| edge.stream.as_deref())
+            .filter_map(|stream| {
+                if stream.origin_node_id().is_child_of(&self.id) {
+                    Some(clone_box(stream as &dyn StreamMetadata))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     fn is_async(&self) -> bool {
@@ -5897,37 +5914,37 @@ impl CircuitHandle {
 
             info!("CircuitHandle::restore: replay circuit is ready");
 
-            // self.circuit.to_dot_file(
-            //     |node| {
-            //         let color = if replay_sources.contains(&node.global_id()) {
-            //             Some(0xff5555)
-            //         } else if participate_in_backfill.contains(&node.global_id()) {
-            //             Some(0x5555ff)
-            //         } else {
-            //             None
-            //         };
-            //         Some(DotNodeAttributes::new().with_color(color))
-            //     },
-            //     |edge| {
-            //         let style = if edge.is_dependency() {
-            //             Some("dotted".to_string())
-            //         } else {
-            //             None
-            //         };
-            //         let label = if let Some(stream) = &edge.stream {
-            //             Some(format!("consumers: {}", stream.num_consumers()))
-            //         } else {
-            //             None
-            //         };
-            //         Some(
-            //             DotEdgeAttributes::new(edge.stream_id())
-            //                 .with_style(style)
-            //                 .with_label(label),
-            //         )
-            //     },
-            //     "replay.dot",
-            // );
-            // info!("CircuitHandle::restore: replay circuit is written to replay.dot");
+            self.circuit.to_dot_file(
+                |node| {
+                    let color = if replay_sources.contains_key(&node.global_id()) {
+                        Some(0xff5555)
+                    } else if participate_in_backfill.contains(&node.global_id()) {
+                        Some(0x5555ff)
+                    } else {
+                        None
+                    };
+                    Some(DotNodeAttributes::new().with_color(color))
+                },
+                |edge| {
+                    let style = if edge.is_dependency() {
+                        Some("dotted".to_string())
+                    } else {
+                        None
+                    };
+                    let label = if let Some(stream) = &edge.stream {
+                        Some(format!("consumers: {}", stream.num_consumers()))
+                    } else {
+                        None
+                    };
+                    Some(
+                        DotEdgeAttributes::new(edge.stream_id())
+                            .with_style(style)
+                            .with_label(label),
+                    )
+                },
+                "replay.dot",
+            );
+            info!("CircuitHandle::restore: replay circuit is written to replay.dot");
 
             let mut done = false;
             while !done {
