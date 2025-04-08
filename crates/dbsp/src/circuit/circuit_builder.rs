@@ -951,9 +951,6 @@ pub trait Node {
         }
     }
 
-    /// List of input streams of the operator.
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>>;
-
     /// Operator name, e.g., "Map", "Join", etc.
     fn name(&self) -> Cow<'static, str>;
 
@@ -3872,10 +3869,6 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        vec![clone_box(&self.parent_stream)]
-    }
-
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -4006,10 +3999,6 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        vec![]
-    }
-
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -4131,10 +4120,6 @@ where
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
-    }
-
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        vec![clone_box(&self.input_stream)]
     }
 
     fn is_async(&self) -> bool {
@@ -4262,10 +4247,6 @@ where
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
-    }
-
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        vec![clone_box(&self.input_stream)]
     }
 
     fn is_async(&self) -> bool {
@@ -4407,13 +4388,6 @@ where
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
-    }
-
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        vec![
-            clone_box(&self.input_stream1),
-            clone_box(&self.input_stream2),
-        ]
     }
 
     fn is_async(&self) -> bool {
@@ -4605,13 +4579,6 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        vec![
-            clone_box(&self.input_stream1),
-            clone_box(&self.input_stream2),
-        ]
-    }
-
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -4801,14 +4768,6 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        vec![
-            clone_box(&self.input_stream1),
-            clone_box(&self.input_stream2),
-            clone_box(&self.input_stream3),
-        ]
-    }
-
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -4986,15 +4945,6 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        vec![
-            clone_box(&self.input_stream1),
-            clone_box(&self.input_stream2),
-            clone_box(&self.input_stream3),
-            clone_box(&self.input_stream4),
-        ]
-    }
-
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -5162,13 +5112,6 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        self.input_streams
-            .iter()
-            .map(|stream| clone_box(stream as &dyn StreamMetadata))
-            .collect()
-    }
-
     fn is_async(&self) -> bool {
         self.operator.is_async()
     }
@@ -5325,10 +5268,6 @@ where
         &self.id
     }
 
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        vec![]
-    }
-
     fn name(&self) -> Cow<'static, str> {
         self.operator.borrow().name()
     }
@@ -5461,10 +5400,6 @@ where
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
-    }
-
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        vec![clone_box(&self.input_stream)]
     }
 
     fn is_async(&self) -> bool {
@@ -5676,21 +5611,6 @@ where
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
-    }
-
-    fn input_streams(&self) -> Vec<Box<dyn StreamMetadata>> {
-        self.circuit
-            .edges()
-            .iter()
-            .filter_map(|edge| edge.stream.as_deref())
-            .filter_map(|stream| {
-                if stream.origin_node_id().is_child_of(&self.id) {
-                    Some(clone_box(stream as &dyn StreamMetadata))
-                } else {
-                    None
-                }
-            })
-            .collect()
     }
 
     fn is_async(&self) -> bool {
