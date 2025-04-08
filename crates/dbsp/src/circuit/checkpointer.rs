@@ -1,6 +1,5 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
-use super::RuntimeError;
 use crate::dynamic::{self, data::DataTyped, DataTrait, WeightTrait};
 use crate::trace::ord::{vec::VecIndexedWSet, FallbackIndexedWSet};
 use crate::{Error, TypedBox};
@@ -18,6 +17,8 @@ use feldera_storage::{StorageBackend, StorageFileType, StoragePath};
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use uuid::Uuid;
+
+use super::RuntimeError;
 
 /// Holds meta-data about a checkpoint that was taken for persistent storage
 /// and recovery of a circuit's state.
@@ -69,10 +70,16 @@ impl Checkpointer {
     /// A slice of all file-extension the system can create.
     const DBSP_FILE_EXTENSION: &'static [&'static str] = &["mut", "feldera"];
 
-    /// Create a new checkpointer for directory `storage_path`, verify that any
-    /// existing checkpoints in that directory have the given `fingerprint`, and
-    /// delete any unreferenced files in the directory.
-    pub fn new(backend: Arc<dyn StorageBackend>, fingerprint: u64) -> Result<Self, Error> {
+    /// Create a new checkpointer for directory `storage_path`, delete any unreferenced
+    /// files in the directory.
+    ///
+    /// If fingerprint_must_match is true, verify that any existing checkpoints in that
+    /// directory have the given `fingerprint`.
+    pub fn new(
+        backend: Arc<dyn StorageBackend>,
+        fingerprint: u64,
+        fingerprint_must_match: bool,
+    ) -> Result<Self, Error> {
         let checkpoint_list = Self::try_read_checkpoints(&*backend)?;
 
         let this = Checkpointer {
@@ -80,10 +87,14 @@ impl Checkpointer {
             checkpoint_list,
             fingerprint,
         };
+
         this.init_storage()?;
-        for cpm in &this.checkpoint_list {
-            if cpm.fingerprint != fingerprint {
-                return Err(Error::Runtime(RuntimeError::IncompatibleStorage));
+
+        if fingerprint_must_match {
+            for cpm in &this.checkpoint_list {
+                if cpm.fingerprint != fingerprint {
+                    return Err(Error::Runtime(RuntimeError::IncompatibleStorage));
+                }
             }
         }
 

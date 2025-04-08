@@ -603,7 +603,7 @@ impl Runtime {
 
     pub fn mode() -> Mode {
         RUNTIME
-            .with(|rt| Some(rt.borrow().as_ref()?.inner().mode.clone()))
+            .with(|rt| Some(rt.borrow().as_ref()?.get_mode()))
             .unwrap_or_default()
     }
 

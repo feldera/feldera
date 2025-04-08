@@ -214,7 +214,7 @@ impl Display for LayoutError {
 impl StdError for LayoutError {}
 
 /// DBSP circuit execution mode.
-#[derive(Copy, Clone, Default, PartialEq, Eq, Debug)]
+#[derive(Clone, Default, PartialEq, Eq, Debug)]
 pub enum Mode {
     /// Operators in the circuit have persistent id's.
     ///
@@ -630,8 +630,20 @@ impl DBSPHandle {
         status_receivers: Vec<Receiver<Result<Response, DbspError>>>,
         fingerprint: u64,
     ) -> Result<Self, DbspError> {
+        // TODO: We allow the circuit to change between suspend and resume in Persistent mode;
+        // we therefore only validate the fingerprint in ephemeral mode; however it can sometimes
+        // be useful to validate it in persistent mode too, e.g., when recovering after a crash.
+        // In that case, do we need to change the checkpointer logic to only validate the
+        // fingerprint of the last checkpoint (it currently checks all checkpoints in the backend
+        // directory)?
         let checkpointer = backend
-            .map(|backend| Checkpointer::new(backend, fingerprint))
+            .map(|backend| {
+                Checkpointer::new(
+                    backend,
+                    fingerprint,
+                    runtime.runtime().get_mode() == Mode::Ephemeral,
+                )
+            })
             .transpose()?;
         Ok(Self {
             start_time: Instant::now(),
