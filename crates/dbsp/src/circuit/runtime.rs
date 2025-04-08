@@ -38,7 +38,7 @@ use std::{
 use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
 
-use super::dbsp_handle::{CircuitStorageConfig, Layout, Mode};
+use super::dbsp_handle::{Layout, Mode};
 use super::CircuitConfig;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -242,12 +242,9 @@ struct RuntimeStorage {
 
 struct RuntimeInner {
     layout: Layout,
-<<<<<<< HEAD
-    storage: Option<RuntimeStorage>,
-=======
     mode: Mode,
-    storage: Option<CircuitStorageConfig>,
->>>>>>> 66ff4be26 (set_label/get_label)
+
+    storage: Option<RuntimeStorage>,
     store: LocalStore,
     kill_signal: AtomicBool,
     background_threads: Mutex<Vec<JoinHandle<()>>>,
@@ -364,12 +361,8 @@ impl RuntimeInner {
 
         Ok(Self {
             layout: config.layout,
-<<<<<<< HEAD
-            storage,
-=======
             mode: config.mode,
-            storage: config.storage,
->>>>>>> 66ff4be26 (set_label/get_label)
+            storage,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
             background_threads: Mutex::new(Vec::new()),

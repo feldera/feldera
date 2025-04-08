@@ -25,7 +25,6 @@ use minitrace::trace;
 use size_of::SizeOf;
 use std::any::TypeId;
 use std::mem::transmute;
-use std::path::Path;
 use std::{
     borrow::Cow,
     cell::{Ref, RefCell},
@@ -1125,25 +1124,17 @@ where
         !self.dirty[scope as usize] && self.replay_state.is_none()
     }
 
-<<<<<<< HEAD
-    fn commit(&mut self, base: &StoragePath, pid: &str) -> Result<(), Error> {
-=======
-    fn commit(&mut self, base: &Path, pid: Option<&str>) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
->>>>>>> 66ff4be26 (set_label/get_label)
         self.trace
             .as_mut()
             .map(|trace| trace.commit(base, pid))
             .unwrap_or(Ok(()))
     }
 
-<<<<<<< HEAD
-    fn restore(&mut self, base: &StoragePath, pid: &str) -> Result<(), Error> {
-=======
-    fn restore(&mut self, base: &Path, pid: Option<&str>) -> Result<(), Error> {
+    fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
 
->>>>>>> 66ff4be26 (set_label/get_label)
         self.trace
             .as_mut()
             .map(|trace| trace.restore(base, pid))

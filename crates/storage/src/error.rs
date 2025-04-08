@@ -29,11 +29,6 @@ pub enum StorageError {
     #[error("Internal error: operator {0} has not been assigned a persisten id.")]
     NoPersistentId(String),
 
-    /// No checkpoint of the operator's state was found inside the pipeline's checkpoint.
-    /// This indicates that the operator wasn't part of the pipeline before the checkpoint.
-    #[error("Checkpoint for operator with persistent id {0} not found.")]
-    OperatorCheckpointNotFound(String),
-
     /// Cannot perform operation because storage is not enabled.
     #[error("Cannot perform operation because storage is not enabled.")]
     StorageDisabled,
@@ -116,6 +111,7 @@ impl StorageError {
         match self {
             StorageError::StdIo(kind) => *kind,
             StorageError::StorageLocked(..) => ErrorKind::ResourceBusy,
+            StorageError::NoPersistentId(_) => ErrorKind::Other,
             StorageError::CheckpointNotFound(_) => ErrorKind::NotFound,
             StorageError::StorageDisabled => ErrorKind::Other,
             StorageError::BloomFilter => ErrorKind::Other,

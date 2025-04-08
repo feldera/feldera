@@ -4,18 +4,17 @@ use crate::{
         operator_traits::{BinarySinkOperator, Operator, SinkOperator},
         GlobalNodeId, LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
     },
-    storage::write_commit_metadata,
+    storage::file::to_bytes,
     trace::BatchReaderFactories,
     Batch, Circuit, Error, Runtime, Stream,
 };
+use feldera_storage::StoragePath;
 use std::{
     borrow::Cow,
     fmt::Debug,
-    fs,
     hash::{Hash, Hasher},
     marker::PhantomData,
     mem::transmute,
-    path::{Path, PathBuf},
     sync::Arc,
 };
 use typedmap::TypedMapKey;
@@ -301,9 +300,9 @@ where
         (output, handle)
     }
 
-    /// Return the absolute path of the file for a checkpointed `Output` operator.
-    fn checkpoint_file(base: &Path, persistent_id: &str) -> PathBuf {
-        base.join(format!("output-{}.dat", persistent_id))
+    /// Return the absolute path of the file for a checkpointed Window.
+    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
+        base.child(format!("output-{}.dat", persistent_id))
     }
 }
 
@@ -319,18 +318,22 @@ where
         self.global_id = global_id.clone();
     }
 
-    fn commit(&mut self, base: &Path, pid: Option<&str>) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
-        write_commit_metadata(Self::checkpoint_file(base, pid), &[])?;
+        let as_bytes = to_bytes(&()).expect("Serializing () should work.");
+
+        Runtime::storage_backend()
+            .unwrap()
+            .write(&Self::checkpoint_file(base, pid), as_bytes)?;
 
         Ok(())
     }
 
-    fn restore(&mut self, base: &Path, pid: Option<&str>) -> Result<(), Error> {
+    fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
 
-        let window_path = Self::checkpoint_file(base, pid);
-        let _content = fs::read(window_path)?;
+        let path = Self::checkpoint_file(base, pid);
+        let _content = Runtime::storage_backend().unwrap().read(&path)?;
 
         Ok(())
     }

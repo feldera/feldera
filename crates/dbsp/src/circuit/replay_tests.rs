@@ -13,7 +13,7 @@ fn init_logging() {
         .with(tracing_subscriber::fmt::layer().with_test_writer())
         .with(
             EnvFilter::try_from_default_env()
-                .or_else(|_| EnvFilter::try_new("info"))
+                .or_else(|_| EnvFilter::try_new("debug"))
                 .unwrap(),
         )
         .try_init();
@@ -129,14 +129,13 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     let path = tempfile::tempdir().unwrap().into_path();
     println!("Running replay_test in {}", path.display());
 
-    circuit_config.storage = Some(CircuitStorageConfig {
-        config: StorageConfig {
-            path: path.to_string_lossy().into_owned(),
-            cache: Default::default(),
-        },
-        options: Default::default(),
-        init_checkpoint: None,
-    });
+    let config = StorageConfig {
+        path: path.to_string_lossy().into_owned(),
+        cache: Default::default(),
+    };
+    let options = Default::default();
+
+    circuit_config.storage = Some(CircuitStorageConfig::for_config(config, options).unwrap());
 
     // Create both reference circuits, feed I1 and I2 to circuit1; feed I2 and I3 to circuit2.
     let mut reference_output1 = Vec::new();

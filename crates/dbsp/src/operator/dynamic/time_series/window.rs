@@ -14,10 +14,7 @@ use crate::{
         dynamic::{trace::TraceBound, MonoIndexedZSet},
         require_persistent_id,
     },
-    storage::{
-        file::{to_bytes, with_serializer},
-        write_commit_metadata,
-    },
+    storage::file::{to_bytes, with_serializer},
     trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, SpineSnapshot},
     Error, RootCircuit, Runtime,
 };
@@ -150,9 +147,10 @@ where
 
     fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
+        let window_path = Self::checkpoint_file(base, persistent_id);
 
         let committed: CommittedWindow = (self as &Self).into();
-        let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
+        let as_bytes = to_bytes(&committed).expect("Serializing CommittedWindow should work.");
         Runtime::storage_backend()
             .unwrap()
             .write(&window_path, as_bytes)?;

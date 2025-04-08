@@ -48,7 +48,6 @@ use crate::{
     },
     circuit_cache_key,
     operator::communication::Exchange,
-    storage::backend::StorageError,
     time::{Timestamp, UnitTimestamp},
     Error as DbspError, Runtime,
 };
@@ -5825,18 +5824,13 @@ impl CircuitHandle {
         // Nodes that require backfill from upstream nodes.
         let mut need_backfill: BTreeSet<GlobalNodeId> = BTreeSet::new();
 
-        debug!(
-            "CircuitHandle::restore: restoring from checkpoint {}",
-            base.display()
-        );
+        debug!("CircuitHandle::restore: restoring from checkpoint {}", base);
 
         // Initialize `need_backfill` to operators without a checkpoint.
-        // Fail if there any errors other than OperatorCheckpointNotFound.
+        // Fail if there any errors other than NotFound.
         self.circuit.map_nodes_recursive_mut(
             &mut |node: &mut dyn Node| match node.restore(base) {
-                Err(DbspError::Storage(StorageError::OperatorCheckpointNotFound(_))) => {
-                    // This indicates that this integral wasn't part of the previous incarnation
-                    // of the circuit and so it needs to be rebuilt by replaying its input stream.
+                Err(DbspError::Storage(ioerror)) if ioerror.kind() == ErrorKind::NotFound => {
                     need_backfill.insert(node.global_id().clone());
                     Ok(())
                 }
