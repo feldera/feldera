@@ -1,6 +1,5 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
-use super::RuntimeError;
 use crate::dynamic::{self, data::DataTyped, DataTrait, WeightTrait};
 use crate::trace::ord::{vec::VecIndexedWSet, FallbackIndexedWSet};
 use crate::{Error, TypedBox};
@@ -79,11 +78,19 @@ impl Checkpointer {
             fingerprint,
         };
         this.gc_startup()?;
+
+        // TODO: re-enable fingerprint check.
+        // We now allow the circuit to change between suspend and resume, which means that
+        // we only want to check for the fingerprint if the circuit is not expected to change,
+        // e.g., when recovering from a crash (are there other situations?), and then only check
+        // against the latest checkpoint if there's more than one.
+        /*
         for cpm in &this.checkpoint_list {
             if cpm.fingerprint != fingerprint {
                 return Err(Error::Runtime(RuntimeError::IncompatibleStorage));
             }
         }
+        */
 
         Ok(this)
     }
