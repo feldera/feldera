@@ -2,7 +2,9 @@ use feldera_types::config::StorageConfig;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::{
-    utils::Tup2, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
+    operator::{Max, Min},
+    utils::Tup2,
+    DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
 };
 use std::{fmt::Debug, iter::repeat, marker::PhantomData, sync::Arc};
 
@@ -567,7 +569,7 @@ fn join_circuit2(
     input_stream2.set_persistent_id(Some("input2"));
 
     let (input_stream3, input_handle3) = circuit.add_input_zset::<u64>();
-    input_stream2.set_persistent_id(Some("input3"));
+    input_stream3.set_persistent_id(Some("input3"));
 
     // These integrals will be used for replay input streams.
     input_stream1.integrate_trace();
@@ -612,8 +614,106 @@ fn test_join_circuit() {
     );
 }
 
-// Aggregate
+// Circuit with aggregates:
+//
+// Pipeline 1:
+//
+// ---> input1 ---> aggregate1 --> output1
+//
+// Pipeline 2: adds two more aggregates, one chained after the existing aggregate, and one over the input stream:
+//
+//                      /--------> output1
+// ---> input1 ---> aggregate1 --> aggregate2 -> output2
+//        |-------> aggregate3 --> output3
+//
+fn aggregate_circuit1(
+    circuit: &mut RootCircuit,
+) -> ((), ZSetHandle<u64>, (), OutputHandle<OrdZSet<u64>>) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
+    input_stream1.set_persistent_id(Some("input1"));
 
-// Join
+    input_stream1.integrate_trace();
+
+    let input_stream1_indexed = input_stream1
+        .map_index(|x| (x % 2, *x))
+        .set_persistent_id(Some("input_stream1_indexed"));
+
+    let aggregate1 = input_stream1_indexed
+        .aggregate_persistent(Some("aggregate1"), Max)
+        .set_persistent_id(Some("aggregate1"));
+
+    let aggregate1_flat = aggregate1
+        .map(|(_k, v)| *v)
+        .set_persistent_id(Some("aggregate1_flat"));
+
+    let output_handle1 = aggregate1_flat.output_persistent(Some("output1"));
+
+    ((), input_handle1, (), output_handle1)
+}
+
+fn aggregate_circuit2(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<u64>,
+    (),
+    OutputHandle<OrdZSet<u64>>,
+    (OutputHandle<OrdZSet<u64>>, OutputHandle<OrdZSet<u64>>),
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    input_stream1.integrate_trace();
+
+    let input_stream1_indexed = input_stream1
+        .map_index(|x| (x % 2, *x))
+        .set_persistent_id(Some("input_stream1_indexed"));
+
+    let aggregate1 = input_stream1_indexed
+        .aggregate_persistent(Some("aggregate1"), Max)
+        .set_persistent_id(Some("aggregate1"));
+
+    let aggregate1_flat = aggregate1
+        .map(|(_k, v)| *v)
+        .set_persistent_id(Some("aggregate1_flat"));
+
+    let aggregate2 = aggregate1
+        .aggregate_persistent(Some("aggregate2"), Min)
+        .set_persistent_id(Some("aggregate2"));
+
+    let aggregate2_flat = aggregate2
+        .map(|(_k, v)| *v)
+        .set_persistent_id(Some("aggregate2_flat"));
+
+    let aggregate3 = input_stream1_indexed
+        .aggregate_persistent(Some("aggregate3"), Min)
+        .set_persistent_id(Some("aggregate3"));
+
+    let aggregate3_flat = aggregate3
+        .map(|(_k, v)| *v)
+        .set_persistent_id(Some("aggregate3_flat"));
+
+    let output_handle1 = aggregate1_flat.output_persistent(Some("output1"));
+    let output_handle2 = aggregate2_flat.output_persistent(Some("output2"));
+    let output_handle3 = aggregate3_flat.output_persistent(Some("output3"));
+
+    (
+        input_handle1,
+        (),
+        output_handle1,
+        (output_handle2, output_handle3),
+    )
+}
+
+#[test]
+fn test_aggregate_circuit() {
+    test_replay::<(), TestData1<u64>, (), (), TestData1<u64>, TestData2<u64, u64>>(
+        Arc::new(aggregate_circuit1),
+        Arc::new(aggregate_circuit2),
+        repeat(()).take(5).collect(),
+        sequence(0, 5),
+        sequence(5, 10),
+        repeat(()).take(5).collect(),
+    );
+}
 
 // Recursion

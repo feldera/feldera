@@ -235,7 +235,7 @@ impl Inner {
         let mut predecessors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
         circuit.edges().iter().for_each(|edge| {
             if let Some(stream) = &edge.stream {
-                println!("clearing consumer count for stream {}", stream.stream_id());
+                // println!("clearing consumer count for stream {}", stream.stream_id());
                 stream.clear_consumer_count();
             }
         });
@@ -246,11 +246,11 @@ impl Inner {
 
                 predecessors.entry(edge.to).or_default().push(edge.from);
                 if let Some(stream) = &edge.stream {
-                    println!(
-                        "Registering {} as consumer for stream {}",
-                        edge.to,
-                        stream.stream_id()
-                    );
+                    // println!(
+                    //     "Registering {} as consumer for stream {}",
+                    //     edge.to,
+                    //     stream.stream_id()
+                    // );
                     stream.register_consumer();
                 }
             }

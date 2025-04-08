@@ -6061,7 +6061,7 @@ impl CircuitHandle {
             }
 
             if !participate_in_backfill.contains(&gid) {
-                println!("Adding {gid} to participate_in_backfill via {stream_id:?}");
+                // println!("Adding {gid} to participate_in_backfill via {stream_id:?}");
                 participate_in_backfill.insert(gid.clone());
                 participate_in_backfill_new.insert(gid.clone());
             }
