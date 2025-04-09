@@ -36,7 +36,9 @@ as follows:
 
 2. Associate the index with an output connector by setting the connector’s `index` property to the name of the index. This allows the connector to merge insert and delete events for the same key into a single update event.
 
-The specific behavior of this transformation depends on the data format and transport protocol used. Currently, the `index` property is supported only for Kafka output connectors configured with the [Avro format](/formats/avro/).
+The specific behavior of this transformation depends on the data format and transport protocol used. Currently, the `index` property is supported only for:
+- Kafka output connectors configured with the [Avro format](/formats/avro/)
+- Postgres output connector [Postgres Output](/connectors/sinks/postgresql)
 
 :::info
 
@@ -47,6 +49,31 @@ issue](https://github.com/feldera/feldera/issues) on GitHub.
 :::
 
 ### Example
+
+#### Postgres
+
+See the [Postgres Output Connector documentation](/connectors/sinks/postgresql)
+for more examples.
+
+```sql
+create table t0 (id int, s varchar);
+
+create materialized view v1 with (
+    'connectors' = '[{
+        "index": "v1_idx",
+        "transport": {
+            "name": "postgres_output",
+            "config": {
+                "uri": "postgres://postgres:password@localhost:5432/postgres",
+                "table": "feldera_out"
+            }
+        }
+    }]'
+) as select * from t0;
+create index v1_idx on v1(id);
+```
+
+#### Avro Format
 
 See the [Avro format documentation](/formats/avro#examples-1) for more examples.
 
@@ -91,3 +118,5 @@ create index my_index on my_view(id);
 Unlike primary key constraints on tables, uniqueness of indexes on views is **not enforced** by the Feldera query engine. If an index is defined on columns that do not guarantee uniqueness, this may lead to incorrect behavior or data loss.
 
 :::
+
+

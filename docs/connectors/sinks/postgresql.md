@@ -1,4 +1,4 @@
-# PostgreSQL Output Connector
+# PostgreSQL output connector
 
 :::caution Experimental feature
 PostgreSQL support is an experimental feature of Feldera.
@@ -10,9 +10,12 @@ These outputs are made as a series of transactions.
 :::important
 Only SQL views with [Uniqueness Constraints](/connectors/unique_keys) can output
 data to a PostgreSQL table.
+
+It is recommended that these unique keys in Feldera be defined as PRIMARY KEYs
+in the PostgreSQL table.
 :::
 
-## PostgreSQL Output Configuration
+## PostgreSQL output configuration
 
 | Property | Type   | Default | Description                                                                                                                                                                                                                                     |
 |----------|--------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -26,13 +29,13 @@ data to a PostgreSQL table.
 Currently, we do not support connecting to PostgreSQL with TLS / SSL.
 Please [let us know](https://github.com/feldera/feldera/issues) if you need TLS / SSL support.
 
-## Data Type Mapping
+## Data type mapping
 
 We currently serialize Feldera SQL view records to JSON before sending them to PostgreSQL.
 This means that the ingestion rules are dictated by [`jsonb_populate_recordset`](https://www.postgresql.org/docs/current/functions-json.html#FUNCTIONS-JSON-PROCESSING-TABLE).
 
 :::info
-The following table lists supported PostgreSQL data types and the corresponding Feldera type where a conversion is guaranteed to work.
+The following table lists supported PostgreSQL data types.
 More complex types from PostgreSQL might work but are not yet officially supported and tested.
 Please [let us know](https://github.com/feldera/feldera/issues) if you need support for a specific type.
 :::
@@ -60,7 +63,7 @@ Please [let us know](https://github.com/feldera/feldera/issues) if you need supp
 | `T[]`           | `T ARRAY`        |                                                                |
 
 
-## Simple Example
+## Example
 
 Let's first connect to a PostgreSQL database running in `localhost:5432` with
 the username `postgres` and password `password`.
@@ -78,11 +81,12 @@ will write to.
 CREATE TABLE feldera_out (id INT PRIMARY KEY, s VARCHAR);
 ```
 
-We can output data from Feldera to this table as using the `postgres_output`
+We can output data from Feldera to this table using the `postgres_output`
 connector.
 
 ```sql
 -- Feldera SQL
+-- Create a table and fill it with 5 randomly generated records.
 create table t0 (id int, s varchar) with (
   'connectors' = '[{
     "transport": {
@@ -97,6 +101,8 @@ create table t0 (id int, s varchar) with (
   }]'
 );
 
+-- Create a view that will contain a copy of all records in table `t0` and
+-- attach a Postgres output connector to it.
 create materialized view v1 with (
     'connectors' = '[{
         "index": "v1_idx",
@@ -109,6 +115,9 @@ create materialized view v1 with (
         }
     }]'
 ) as select * from t0;
+
+-- Index `v1` using `id` column as a key. The Postgres connector requires this
+-- index to group updates by key.
 create index v1_idx on v1(id);
 ```
 
@@ -117,9 +126,9 @@ Column names in Feldera SQL view and PostgreSQL table need to match.
 :::
 
 
-## Example for Every Type
+## Example for every type
 
-We create a Feldera pipeline for every supported PostgreSQL type as follows:
+We create a Feldera pipeline including every supported PostgreSQL type:
 
 ```sql
 -- Feldera SQL
@@ -240,7 +249,7 @@ SELECT count(*) FROM all_types_example;
 (1 row)
 ```
 
-### Outputing Multi-Dimentional Arrays
+### Outputing multi-dimentional arrays
 
 When working with multi-dementional arrays, like `BYTEA ARRAY`, PostgreSQL
 expects the sub arrays to be of the same length. If not, the following error is

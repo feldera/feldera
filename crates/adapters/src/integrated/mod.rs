@@ -64,6 +64,7 @@ pub fn create_integrated_output_endpoint(
             endpoint_id,
             endpoint_name,
             config,
+            key_schema,
             schema,
             controller,
         )?),
