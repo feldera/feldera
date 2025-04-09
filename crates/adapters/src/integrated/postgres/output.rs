@@ -8,6 +8,7 @@ use std::{
     time::Instant,
 };
 
+use crate::ControllerError;
 use crate::{
     catalog::{CursorWithPolarity, RecordFormat, SerBatchReader, SerCursor},
     controller::{ControllerInner, EndpointId},
@@ -16,16 +17,19 @@ use crate::{
     util::truncate_ellipse,
 };
 use anyhow::{anyhow, bail, Result as AnyResult};
-use feldera_adapterlib::{
-    errors::metadata::ControllerError,
-    transport::{AsyncErrorCallback, Step},
-};
+use feldera_adapterlib::transport::{AsyncErrorCallback, Step};
 use feldera_types::{
     format::csv::CsvParserConfig, program_schema::Relation,
     transport::postgres::PostgresWriterConfig,
 };
 use postgres::{Client, NoTls, Statement};
 use tracing::{info_span, span::EnteredSpan};
+
+enum OperationType {
+    Insert,
+    Delete,
+    Upsert,
+}
 
 pub struct PostgresOutputEndpoint {
     endpoint_id: EndpointId,
@@ -34,10 +38,18 @@ pub struct PostgresOutputEndpoint {
     client: postgres::Client,
     transaction: Option<postgres::Transaction<'static>>,
     insert: Statement,
+    upsert: Statement,
     delete: Statement,
-    start: Instant,
+    key_schema: Relation,
+    value_schema: Relation,
     keys: HashSet<String>,
     _pin: PhantomPinned,
+}
+
+impl Drop for PostgresOutputEndpoint {
+    fn drop(&mut self) {
+        self.transaction = None;
+    }
 }
 
 impl PostgresOutputEndpoint {
@@ -46,33 +58,36 @@ impl PostgresOutputEndpoint {
         endpoint_name: &str,
         config: &PostgresWriterConfig,
         key_schema: &Option<Relation>,
-        _schema: &Relation,
+        value_schema: &Relation,
         controller: Weak<ControllerInner>,
     ) -> Result<Self, ControllerError> {
         let table = config.table.to_owned();
 
         let config = postgres::Config::from_str(&config.uri).map_err(|e| {
-            ControllerError::output_transport_error(
+            ControllerError::invalid_transport_configuration(
                 endpoint_name,
-                true,
-                anyhow!("error parsing postgres connection string: {e}"),
+                &format!("error parsing postgres connection string: {e}"),
             )
         })?;
 
         let mut client = config.connect(NoTls).map_err(|e| {
-            ControllerError::output_transport_error(
+            ControllerError::invalid_transport_configuration(
                 endpoint_name,
-                true,
-                anyhow!("failed to connect to postgres: {e}"),
+                &format!("failed to connect to postgres: {e}"),
             )
         })?;
 
-        let keys: HashSet<String> = key_schema
-            .as_ref()
-            .map(|sch| sch.fields.iter().map(|f| f.name.to_string()).collect())
+        let key_schema = key_schema
+            .to_owned()
             .ok_or(ControllerError::not_supported(
-                "postgres output connector requires index or primary key definition",
+                "Postgres output connector requires a unique key. Please specify the `index` property in the connector configuration. For more details, see: https://docs.feldera.com/connectors/unique_keys"
             ))?;
+
+        let keys: HashSet<String> = key_schema
+            .fields
+            .iter()
+            .map(|f| f.name.to_string())
+            .collect();
 
         let insert = {
             let insert = format!(
@@ -80,7 +95,13 @@ impl PostgresOutputEndpoint {
             );
             client
                 .prepare_typed(&insert, &[postgres::types::Type::VARCHAR])
-                .unwrap_or_else(|e| panic!("failed to prepare insert statement: `{insert}`: {e}"))
+                .map_err(|e| {
+                    ControllerError::output_transport_error(
+                        endpoint_name,
+                        true,
+                        anyhow!("failed to prepare insert statement: `{insert}`: {e}"),
+                    )
+                })?
         };
 
         let delete = {
@@ -98,19 +119,62 @@ impl PostgresOutputEndpoint {
             );
             client
                 .prepare_typed(&delete, &[postgres::types::Type::VARCHAR])
-                .unwrap_or_else(|e| panic!("failed to prepare delete statement: `{delete}`: {e}"))
+                .map_err(|e| {
+                    ControllerError::output_transport_error(
+                        endpoint_name,
+                        true,
+                        anyhow!("failed to prepare delete statement: `{delete}`: {e}"),
+                    )
+                })?
+        };
+
+        let upsert = {
+            let table_alias = "t";
+            let new_alias = "n";
+            let columns = value_schema
+                .fields
+                .iter()
+                .map(|f| {
+                    let f = f.name.name();
+                    format!("{f} = {new_alias}.{f}")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let (table_fields, new_fields): (Vec<_>, Vec<_>) = keys
+                .iter()
+                .map(|f| (format!("{table_alias}.{f}"), format!("{new_alias}.{f}")))
+                .unzip();
+
+            let upsert = format!(
+                "UPDATE {table} AS {table_alias} SET {columns} FROM (SELECT * FROM jsonb_populate_recordset(NULL::{table}, $1::jsonb)) AS {new_alias} WHERE ({}) = ({})",
+                table_fields.join(", "),
+                new_fields.join(", ")
+            );
+
+            client
+                .prepare_typed(&upsert, &[postgres::types::Type::VARCHAR])
+                .map_err(|e| {
+                    ControllerError::output_transport_error(
+                        endpoint_name,
+                        true,
+                        anyhow!("failed to prepare update statement: `{upsert}`: {e}"),
+                    )
+                })?
         };
 
         let out = Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             table,
-            start: Instant::now(),
             client,
             transaction: None,
             insert,
             delete,
+            upsert,
             keys,
+            key_schema,
+            value_schema: value_schema.to_owned(),
             _pin: PhantomPinned,
         };
 
@@ -129,7 +193,22 @@ impl PostgresOutputEndpoint {
         }
 
         let ins = self.insert.clone();
-        self.transaction()?.execute(&ins, &[&value])?;
+        self.transaction()?
+            .execute(&ins, &[&value])
+            .map_err(|e| anyhow!("postgres: failed to insert data: {value}: {e}"))?;
+        Ok(())
+    }
+
+    pub fn upsert(&mut self, value: &str) -> AnyResult<()> {
+        if value.len() <= 2 {
+            return Ok(());
+        }
+
+        let ups = self.upsert.clone();
+        self.transaction()?
+            .execute(&ups, &[&value])
+            .map_err(|e| anyhow!("postgres: failed to upsert data: {value}: {e}"))?;
+
         Ok(())
     }
 
@@ -139,7 +218,9 @@ impl PostgresOutputEndpoint {
         }
 
         let del = self.delete.clone();
-        self.transaction()?.execute(&del, &[&value])?;
+        self.transaction()?
+            .execute(&del, &[&value])
+            .map_err(|e| anyhow!("postgres: failed to delete data: {value}: {e}"))?;
         Ok(())
     }
 
@@ -152,6 +233,63 @@ impl PostgresOutputEndpoint {
             pg_table = self.table,
         )
         .entered()
+    }
+
+    fn non_unique_key_error(&self) -> String {
+        format!(
+            "Postgres connector configured with 'index={}' encountered multiple values with the same key. When configured with SQL index, the connector expects keys to be unique. Please fix the '{}' view definition to ensure that '{}' is a unique index.",
+            self.key_schema.name,
+            self.value_schema.name,
+            self.key_schema.name,
+        )
+    }
+
+    fn operation_type(
+        &mut self,
+        cursor: &mut dyn SerCursor,
+    ) -> anyhow::Result<Option<OperationType>> {
+        let mut found_insert = false;
+        let mut found_delete = false;
+
+        while cursor.val_valid() {
+            let w = cursor.weight();
+
+            if w == 0 {
+                cursor.step_val();
+                continue;
+            }
+
+            if w != 1 && w != -1 {
+                bail!(self.non_unique_key_error());
+            }
+
+            if w == 1 {
+                if found_insert {
+                    bail!(self.non_unique_key_error());
+                }
+
+                found_insert = true;
+            }
+
+            if w == -1 {
+                if found_delete {
+                    bail!(self.non_unique_key_error());
+                }
+
+                found_delete = true;
+            }
+
+            cursor.step_val();
+        }
+
+        cursor.rewind_vals();
+
+        Ok(match (found_insert, found_delete) {
+            (true, true) => Some(OperationType::Upsert),
+            (true, false) => Some(OperationType::Insert),
+            (false, true) => Some(OperationType::Delete),
+            (false, false) => None,
+        })
     }
 }
 
@@ -170,7 +308,6 @@ impl OutputConsumer for PostgresOutputEndpoint {
         };
 
         self.transaction = Some(transaction);
-        self.start = Instant::now();
     }
 
     fn push_buffer(&mut self, _: &[u8], _: usize) {
@@ -194,9 +331,6 @@ impl OutputConsumer for PostgresOutputEndpoint {
         transaction
             .commit()
             .expect("postgres: failed to commit transaction");
-        let elapsed = self.start.elapsed();
-
-        tracing::info!("transaction took: {elapsed:?}",);
     }
 }
 
@@ -208,45 +342,38 @@ impl Encoder for PostgresOutputEndpoint {
     fn encode(&mut self, batch: &dyn SerBatchReader) -> anyhow::Result<()> {
         let mut insert_buffer = "[".to_owned();
         let mut delete_buffer = "[".to_owned();
+        let mut upsert_buffer = "[".to_owned();
 
-        let mut cursor =
-            CursorWithPolarity::new(batch.cursor(RecordFormat::Json(Default::default()))?);
+        let mut cursor = batch.cursor(RecordFormat::Json(Default::default()))?;
 
         while cursor.key_valid() {
-            if !cursor.val_valid() {
-                cursor.step_key();
-                continue;
-            }
-            let mut w = cursor.weight();
-
-            if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
-                let mut key_str = String::new();
-                let _ = cursor.serialize_val(unsafe { key_str.as_mut_vec() });
-                bail!(
-                        "Unable to output record '{}' with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.",
-                        &key_str
-                    );
-            }
-
-            while w != 0 {
-                match w {
-                    x if x < 0 => {
-                        let buf = unsafe { delete_buffer.as_mut_vec() };
-                        if buf.last() != Some(&b'[') {
-                            buf.push(b',');
-                        }
-                        cursor.serialize_key_fields(&self.keys, buf)?;
-                        w += 1;
-                    }
-                    x if x > 0 => {
+            if let Some(op) = self.operation_type(cursor.as_mut())? {
+                match op {
+                    OperationType::Insert => {
                         let buf = unsafe { insert_buffer.as_mut_vec() };
                         if buf.last() != Some(&b'[') {
                             buf.push(b',');
                         }
                         cursor.serialize_val(buf)?;
-                        w -= 1;
                     }
-                    _ => continue,
+                    OperationType::Delete => {
+                        let buf = unsafe { delete_buffer.as_mut_vec() };
+                        if buf.last() != Some(&b'[') {
+                            buf.push(b',');
+                        }
+                        cursor.serialize_key_fields(&self.keys, buf)?;
+                    }
+                    OperationType::Upsert => {
+                        if cursor.weight() < 0 {
+                            cursor.step_val();
+                        }
+
+                        let buf = unsafe { upsert_buffer.as_mut_vec() };
+                        if buf.last() != Some(&b'[') {
+                            buf.push(b',');
+                        }
+                        cursor.serialize_val(buf)?;
+                    }
                 }
             }
 
@@ -255,9 +382,11 @@ impl Encoder for PostgresOutputEndpoint {
 
         insert_buffer.push(']');
         delete_buffer.push(']');
+        upsert_buffer.push(']');
 
-        self.insert(&insert_buffer)?;
         self.delete(&delete_buffer)?;
+        self.insert(&insert_buffer)?;
+        self.upsert(&upsert_buffer)?;
 
         Ok(())
     }
