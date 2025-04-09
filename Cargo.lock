@@ -118,6 +118,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -164,6 +165,7 @@ dependencies = [
  "bytestring",
  "cfg-if",
  "http 0.2.12",
+ "regex",
  "regex-lite",
  "serde",
  "tracing",
@@ -296,6 +298,7 @@ dependencies = [
  "mime",
  "once_cell",
  "pin-project-lite",
+ "regex",
  "regex-lite",
  "serde",
  "serde_json",
