@@ -4984,7 +4984,7 @@
           },
           "uri": {
             "type": "string",
-            "description": "Postgres URI."
+            "description": "Postgres URI.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
           }
         }
       },
