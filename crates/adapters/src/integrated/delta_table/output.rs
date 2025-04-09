@@ -80,9 +80,16 @@ impl DeltaTableWriter {
         endpoint_id: EndpointId,
         endpoint_name: &str,
         config: &DeltaTableWriterConfig,
+        key_schema: &Option<Relation>,
         schema: &Relation,
         controller: Weak<ControllerInner>,
     ) -> Result<Self, ControllerError> {
+        if key_schema.is_some() {
+            return Err(ControllerError::not_supported(
+                "delta table output doesn't support indexes yet",
+            ));
+        }
+
         register_storage_handlers();
 
         // Create arrow schema

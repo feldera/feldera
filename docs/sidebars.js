@@ -314,6 +314,11 @@ const connectors = {
                 },
                 {
                     type: 'doc',
+                    id: 'connectors/sinks/postgresql',
+                    label: 'PostgreSQL'
+                },
+                {
+                    type: 'doc',
                     id: 'connectors/sinks/snowflake',
                     label: 'Snowflake (experimental)'
                 }
