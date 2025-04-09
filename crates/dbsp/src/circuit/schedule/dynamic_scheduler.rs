@@ -198,19 +198,12 @@ impl Inner {
         }
     }
 
-    fn prepare<C>(circuit: &C, nodes: Option<&BTreeSet<GlobalNodeId>>) -> Result<Self, Error>
+    fn prepare<C>(circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<Self, Error>
     where
         C: Circuit,
     {
-        let circuit_gid = circuit.global_node_id();
         let nodes = nodes
-            .map(|nodes| {
-                nodes
-                    .iter()
-                    .filter(|gid| gid.is_child_of(&circuit_gid))
-                    .map(|gid| gid.local_node_id().unwrap())
-                    .collect::<BTreeSet<_>>()
-            })
+            .map(|nodes| nodes.iter().cloned().collect::<BTreeSet<_>>())
             .unwrap_or_else(|| BTreeSet::from_iter(circuit.node_ids()));
 
         // Check that ownership constraints don't introduce cycles.
@@ -454,11 +447,7 @@ impl Scheduler for DynamicScheduler {
         Self(None)
     }
 
-    fn prepare<C>(
-        &mut self,
-        circuit: &C,
-        nodes: Option<&BTreeSet<GlobalNodeId>>,
-    ) -> Result<(), Error>
+    fn prepare<C>(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>
     where
         C: Circuit,
     {

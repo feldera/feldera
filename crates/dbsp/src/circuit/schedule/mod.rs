@@ -1,6 +1,6 @@
 //! The scheduling framework controls the execution of a circuit at runtime.
 
-use super::{trace::SchedulerEvent, Circuit, GlobalNodeId};
+use super::{trace::SchedulerEvent, Circuit, GlobalNodeId, NodeId};
 use crate::DetailedError;
 use itertools::Itertools;
 use serde::Serialize;
@@ -104,11 +104,7 @@ where
     ///
     /// * `nodes` - when specified, only the nodes in this set must be scheduled. All
     ///   other nodes remain idle.
-    fn prepare<C>(
-        &mut self,
-        circuit: &C,
-        nodes: Option<&BTreeSet<GlobalNodeId>>,
-    ) -> Result<(), Error>
+    fn prepare<C>(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>
     where
         C: Circuit;
 
@@ -132,8 +128,7 @@ where
 /// `Scheduler`. It can run the circuit exactly once or multiple times, until
 /// some termination condition is reached.
 pub trait Executor<C>: 'static {
-    fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<GlobalNodeId>>)
-        -> Result<(), Error>;
+    fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>;
 
     fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 }
@@ -185,11 +180,7 @@ where
         })
     }
 
-    fn prepare(
-        &mut self,
-        circuit: &C,
-        nodes: Option<&BTreeSet<GlobalNodeId>>,
-    ) -> Result<(), Error> {
+    fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error> {
         self.scheduler.prepare(circuit, nodes)
     }
 }
@@ -221,11 +212,7 @@ where
         Box::pin(async { self.scheduler.step(circuit).await })
     }
 
-    fn prepare(
-        &mut self,
-        circuit: &C,
-        nodes: Option<&BTreeSet<GlobalNodeId>>,
-    ) -> Result<(), Error> {
+    fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error> {
         self.scheduler.prepare(circuit, nodes)
     }
 }

@@ -1512,6 +1512,13 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// if there is another mutable or immutable reference to the node.
     fn map_node_mut<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T;
 
+    /// Apply closure to a node with specified node id.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self`.
+    fn map_local_node_mut<T>(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T;
+
     /// Tag the node with a text label.
     ///
     /// # Panic
@@ -2877,6 +2884,13 @@ where
             path.strip_prefix(self.global_id().path()).unwrap(),
             &mut |node| result = Some(f(node)),
         );
+        result.unwrap()
+    }
+
+    fn map_local_node_mut<T>(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T {
+        let mut result: Option<T> = None;
+
+        self.map_node_mut_inner(&[id], &mut |node| result = Some(f(node)));
         result.unwrap()
     }
 
@@ -5756,7 +5770,7 @@ impl CircuitHandle {
 
     pub fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         // Nodes that will run during the replay phase of the circuit.
-        let mut replay_sources: BTreeMap<GlobalNodeId, StreamId> = BTreeMap::new();
+        let mut replay_sources: BTreeMap<NodeId, StreamId> = BTreeMap::new();
 
         // Nodes that require backfill from upstream nodes.
         let mut need_backfill: BTreeSet<GlobalNodeId> = BTreeSet::new();
@@ -5788,7 +5802,13 @@ impl CircuitHandle {
 
         let need_backfill = need_backfill
             .into_iter()
-            .filter(|gid| gid.parent_id().as_ref() == Some(self.circuit.global_id()))
+            .filter_map(|gid| {
+                if gid.parent_id().as_ref() == Some(self.circuit.global_id()) {
+                    Some(gid.local_node_id().unwrap())
+                } else {
+                    None
+                }
+            })
             .collect::<BTreeSet<_>>();
 
         let mut participate_in_backfill = need_backfill.clone();
@@ -5806,26 +5826,26 @@ impl CircuitHandle {
         info!(
             "CircuitHandle::restore: replaying {} operators: {:?}\nbackfilling {} operators: {:?}\nreplay circuit consists of {} operators: {:?}",
             replay_sources.len(),
-            replay_sources.keys().cloned().collect::<Vec<GlobalNodeId>>(),
+            replay_sources.keys().cloned().collect::<Vec<NodeId>>(),
             need_backfill.len(),
-            need_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>(),
+            need_backfill.iter().cloned().collect::<Vec<NodeId>>(),
             participate_in_backfill.len(),
-            participate_in_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>()
+            participate_in_backfill.iter().cloned().collect::<Vec<NodeId>>()
         );
 
         // TODO: Make sure a subcircuit is added to both sets if at least one of its nodes is.
 
         if !participate_in_backfill.is_empty() {
             // Configure all `replay_nodes` to run in replay mode.
-            for gid in replay_sources.keys() {
+            for node_id in replay_sources.keys() {
                 self.circuit
-                    .map_node_mut(gid, &mut |node| node.start_replay())?;
+                    .map_local_node_mut(*node_id, &mut |node| node.start_replay())?;
             }
 
             // Clear the state of `need_backfill` nodes.
-            for gid in need_backfill.iter() {
+            for node_id in need_backfill.iter() {
                 self.circuit
-                    .map_node_mut(gid, &mut |node| node.clear_state())?;
+                    .map_local_node_mut(*node_id, &mut |node| node.clear_state())?;
             }
 
             // Prepare the scheduler to only run `participate_in_backfill`.
@@ -5836,9 +5856,12 @@ impl CircuitHandle {
 
             self.circuit.to_dot_file(
                 |node| {
-                    let color = if replay_sources.contains_key(&node.global_id()) {
+                    if !node.global_id().is_child_of(self.circuit.global_id()) {
+                        return None;
+                    }
+                    let color = if replay_sources.contains_key(&node.local_id()) {
                         Some(0xff5555)
-                    } else if participate_in_backfill.contains(&node.global_id()) {
+                    } else if participate_in_backfill.contains(&node.local_id()) {
                         Some(0x5555ff)
                     } else {
                         None
@@ -5870,18 +5893,18 @@ impl CircuitHandle {
             while !done {
                 info!("Replay step");
                 self.step()?;
-                done = replay_sources.keys().all(|gid| {
+                done = replay_sources.keys().all(|node_id| {
                     self.circuit
-                        .map_node_mut(gid, &mut |node| node.is_replay_complete())
+                        .map_local_node_mut(*node_id, &mut |node| node.is_replay_complete())
                 });
             }
 
             info!("Replay complete");
 
             // End replay mode.
-            for (gid, stream_id) in replay_sources.iter() {
+            for (node_id, stream_id) in replay_sources.iter() {
                 self.circuit
-                    .map_node_mut(gid, &mut |node| node.end_replay())?;
+                    .map_local_node_mut(*node_id, &mut |node| node.end_replay())?;
                 self.circuit.edges_mut().delete_stream(*stream_id);
             }
 
@@ -5925,17 +5948,15 @@ impl CircuitHandle {
     // Return the set of nodes newly added to `need_backfill`.
     fn compute_replay_nodes_step(
         &self,
-        replay_sources: &mut BTreeMap<GlobalNodeId, StreamId>,
-        need_backfill: &BTreeSet<GlobalNodeId>,
-        participate_in_backfill_new: BTreeSet<GlobalNodeId>,
-        participate_in_backfill: &mut BTreeSet<GlobalNodeId>,
-    ) -> Result<BTreeSet<GlobalNodeId>, DbspError> {
+        replay_sources: &mut BTreeMap<NodeId, StreamId>,
+        need_backfill: &BTreeSet<NodeId>,
+        participate_in_backfill_new: BTreeSet<NodeId>,
+        participate_in_backfill: &mut BTreeSet<NodeId>,
+    ) -> Result<BTreeSet<NodeId>, DbspError> {
         println!("compute_replay_nodes_step ({participate_in_backfill_new:?})");
         let mut inputs = BTreeSet::new();
 
-        for gid in participate_in_backfill_new.iter() {
-            let node_id = gid.local_node_id().unwrap();
-
+        for node_id in participate_in_backfill_new.iter() {
             // Compute ancestors of node_id, including:
             // 1. Nodes connected to node_id by a stream.
             // 2. Nodes that depend on node_id -- makes sure that if we schedule the output half of a strict operator,
@@ -5944,38 +5965,34 @@ impl CircuitHandle {
             //    we will schedule the input part as well.
 
             // 1.
-            let node_inputs = self.circuit.map_node(gid, &mut |node| {
-                self.circuit
-                    .edges()
-                    .by_destination
-                    .get(&node.local_id())
-                    .iter()
-                    .flat_map(|edges| edges.into_iter())
-                    .filter(|edge| edge.is_stream())
-                    .map(|edge| {
-                        // If the origin of the stream is a node inside the nested circuit, we will clear and replay the
-                        // entire nested circuit, as we don't currently have a way to replay state from inside a nested
-                        // circuit into a parent circuit.
-                        (
-                            Some(edge.stream_id().unwrap()),
-                            self.circuit.global_id().child(edge.from),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            });
+            let node_inputs = self
+                .circuit
+                .edges()
+                .by_destination
+                .get(node_id)
+                .iter()
+                .flat_map(|edges| edges.into_iter())
+                .filter(|edge| edge.is_stream())
+                .map(|edge| {
+                    // If the origin of the stream is a node inside the nested circuit, we will clear and replay the
+                    // entire nested circuit, as we don't currently have a way to replay state from inside a nested
+                    // circuit into a parent circuit.
+                    (Some(edge.stream_id().unwrap()), edge.from)
+                })
+                .collect::<Vec<_>>();
 
             for input in node_inputs.into_iter() {
                 inputs.insert(input);
             }
 
             // 2.
-            for edge in self.circuit.edges().dependencies_of(node_id) {
-                inputs.insert((None, self.circuit.global_id().child(edge.from)));
+            for edge in self.circuit.edges().dependencies_of(*node_id) {
+                inputs.insert((None, edge.from));
             }
 
             // 3.
-            for edge in self.circuit.edges().depend_on(node_id) {
-                inputs.insert((None, self.circuit.global_id().child(edge.to)));
+            for edge in self.circuit.edges().depend_on(*node_id) {
+                inputs.insert((None, edge.to));
             }
         }
 
@@ -5983,7 +6000,7 @@ impl CircuitHandle {
 
         let mut replay_streams = BTreeMap::new();
 
-        for (stream_id, mut gid) in inputs.into_iter() {
+        for (stream_id, mut node_id) in inputs.into_iter() {
             // println!("replay needed for ({stream_id}, {gid})");
 
             // Add all ancestors of `participate_in_backfill_new` to the `participate_in_backfill` set, except streams
@@ -5991,33 +6008,30 @@ impl CircuitHandle {
             if let Some(stream_id) = stream_id {
                 if let Some(replay_source) = self.circuit.get_replay_source(stream_id) {
                     // If the replay source is itself in the need_backfill set, it cannot be used for replay.
-                    if !need_backfill.contains(replay_source.origin_node_id()) {
+                    if !need_backfill.contains(&replay_source.local_node_id()) {
                         replay_streams.insert(stream_id, replay_source.clone());
                         println!(
-                            "Replacing gid {gid} with replay source {}",
+                            "Replacing node_id {node_id} with replay source {}",
                             replay_source.origin_node_id()
                         );
-                        gid = replay_source.origin_node_id().clone();
+                        node_id = replay_source.local_node_id();
                     }
                 }
             }
 
-            if !participate_in_backfill.contains(&gid) {
+            if !participate_in_backfill.contains(&node_id) {
                 // println!("Adding {gid} to participate_in_backfill via {stream_id:?}");
-                participate_in_backfill.insert(gid.clone());
-                participate_in_backfill_new.insert(gid.clone());
+                participate_in_backfill.insert(node_id);
+                participate_in_backfill_new.insert(node_id);
             }
         }
 
         // Connect `replay_streams` to all operators that consume the original stream.
         for (original_stream, replay_stream) in replay_streams.into_iter() {
-            if !replay_sources.contains_key(replay_stream.origin_node_id()) {
+            if !replay_sources.contains_key(&replay_stream.local_node_id()) {
                 self.circuit
                     .add_replay_edges(original_stream, replay_stream.as_ref());
-                replay_sources.insert(
-                    replay_stream.origin_node_id().clone(),
-                    replay_stream.stream_id(),
-                );
+                replay_sources.insert(replay_stream.local_node_id(), replay_stream.stream_id());
             }
         }
 
