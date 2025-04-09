@@ -4,7 +4,10 @@
 //! TODO: Currently only functional STM, should later be expanded to cover
 //! error/corner cases.
 
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{atomic::Ordering, Arc},
+};
 
 use rand::{thread_rng, Fill, Rng};
 
@@ -45,7 +48,6 @@ fn test_read(reader: &dyn FileReader, data: &[u8]) {
 pub(super) fn test_backend(
     create_backend: Box<dyn FnOnce(&Path) -> Arc<dyn StorageBackend>>,
     writes: &[usize],
-    sequential: bool,
     mark_for_checkpoint: bool,
 ) {
     init_test_logger();
@@ -54,21 +56,18 @@ pub(super) fn test_backend(
     let mut rng = thread_rng();
     let mut writer = backend.create().unwrap();
     let mut data = Vec::new();
-    for (index, size) in writes.iter().copied().enumerate() {
-        if sequential || rng.gen_range(0..10) != 0 || index == writes.len() - 1 {
-            let mut block = FBuf::with_capacity(size);
-            block.resize(size, 0);
-            block.try_fill(&mut rng).unwrap();
-            let offset = data.len() as u64;
-            data.extend_from_slice(&block);
-            writer.write_block(offset, block).unwrap();
-        } else {
-            // Occasionally skip over a block.
-            data.resize(data.len() + size, 0);
-        }
+
+    let expected_size = writes.iter().sum::<usize>() as i64;
+    for size in writes.iter().copied() {
+        let mut block = FBuf::with_capacity(size);
+        block.resize(size, 0);
+        block.try_fill(&mut rng).unwrap();
+        data.extend_from_slice(&block);
+        writer.write_block(block).unwrap();
     }
 
     let (reader, name) = writer.complete().unwrap();
+    assert_eq!(backend.usage().load(Ordering::Relaxed), expected_size);
     test_read(reader.as_ref(), &data);
     if mark_for_checkpoint {
         reader.mark_for_checkpoint();
@@ -76,10 +75,12 @@ pub(super) fn test_backend(
     drop(reader);
 
     if mark_for_checkpoint {
+        assert_eq!(backend.usage().load(Ordering::Relaxed), expected_size);
         let reader = backend.open(&name).unwrap();
         test_read(reader.as_ref(), &data);
         drop(reader);
     } else {
+        assert_eq!(backend.usage().load(Ordering::Relaxed), 0);
         let Err(_) = backend.open(&name) else {
             unreachable!()
         };
