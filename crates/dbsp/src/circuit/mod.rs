@@ -23,13 +23,13 @@ pub mod metadata;
 pub mod cache;
 pub mod checkpointer;
 pub mod circuit_builder;
+mod dot;
 mod fingerprinter;
 pub mod metrics;
 pub mod operator_traits;
 pub mod schedule;
 pub mod tokio;
 pub mod trace;
-mod dot;
 
 #[cfg(test)]
 mod replay_tests;
@@ -39,7 +39,7 @@ pub use circuit_builder::{
     NestedCircuit, NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,
 };
 pub use dbsp_handle::{
-    CircuitConfig, CircuitStorageConfig, DBSPHandle, Host, Layout, StorageCacheConfig,
+    CircuitConfig, CircuitStorageConfig, DBSPHandle, Host, Layout, Mode, StorageCacheConfig,
     StorageConfig, StorageOptions,
 };
 pub use runtime::{Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};
