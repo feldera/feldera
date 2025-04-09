@@ -3595,7 +3595,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4539,7 +4539,7 @@ dependencies = [
 
 [[package]]
 name = "fda"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "arrow",
  "chrono",
@@ -4681,7 +4681,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-sqllib"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "arcstr",
  "base64 0.22.1",
@@ -4709,7 +4709,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-storage"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "feldera-types",
  "inventory",
@@ -4727,7 +4727,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-types"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -7577,7 +7577,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pipeline-manager"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "actix-cors",
  "actix-files",
