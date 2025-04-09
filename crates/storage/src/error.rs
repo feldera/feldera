@@ -116,4 +116,12 @@ impl StorageError {
             StorageError::BackendNotSupported(_) => ErrorKind::Other,
         }
     }
+
+    pub fn ignore_notfound<T>(result: Result<T, Self>) -> Result<(), Self> {
+        match result {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
 }

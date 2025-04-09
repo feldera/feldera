@@ -6,12 +6,14 @@ use crate::trace::ord::{vec::VecIndexedWSet, FallbackIndexedWSet};
 use crate::{Error, TypedBox};
 
 use std::io::ErrorKind;
+use std::sync::atomic::Ordering;
 use std::{
     collections::{HashSet, VecDeque},
     sync::Arc,
 };
 
 use crate::trace::Serializer;
+use feldera_storage::error::StorageError;
 use feldera_storage::{StorageBackend, StorageFileType, StoragePath};
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
@@ -78,7 +80,7 @@ impl Checkpointer {
             checkpoint_list,
             fingerprint,
         };
-        this.gc_startup()?;
+        this.init_storage()?;
         for cpm in &this.checkpoint_list {
             if cpm.fingerprint != fingerprint {
                 return Err(Error::Runtime(RuntimeError::IncompatibleStorage));
@@ -92,16 +94,40 @@ impl Checkpointer {
         self.fingerprint
     }
 
-    /// Remove unexpected/leftover files from a previous run in the storage
-    /// directory.
-    fn gc_startup(&self) -> Result<(), Error> {
-        if self.checkpoint_list.is_empty() {
-            // This is a safety measure we take to ensure that we don't
-            // accidentally remove files just in case we fail to read the checkpoint
-            // file. We don't remove anything.
-            return Ok(());
-        }
+    fn init_storage(&self) -> Result<(), Error> {
+        let usage = if !self.checkpoint_list.is_empty() {
+            self.gc_startup()?
+        } else {
+            // There's no checkpoint file, or we couldn't read it. Don't run GC,
+            // to ensure that we don't accidentally remove everything.
+            //
+            // We still know the amount of storage in use.
+            self.measure_storage_use()?
+        };
 
+        // We measured the amount of storage in use. Give it to the backend as
+        // the initial value.
+        self.backend.usage().store(usage as i64, Ordering::Relaxed);
+
+        Ok(())
+    }
+
+    fn measure_storage_use(&self) -> Result<u64, Error> {
+        let mut usage = 0;
+        StorageError::ignore_notfound(self.backend.list(
+            &StoragePath::default(),
+            &mut |_path, file_type| {
+                if let StorageFileType::File { size } = file_type {
+                    usage += size;
+                }
+            },
+        ))?;
+        Ok(usage)
+    }
+
+    /// Remove unexpected/leftover files from a previous run in the storage
+    /// directory.  Returns the amount of storage still in use.
+    fn gc_startup(&self) -> Result<u64, Error> {
         // Collect all directories and files still referenced by a checkpoint
         let mut in_use_paths: HashSet<StoragePath> = HashSet::new();
         in_use_paths.insert(Checkpointer::CHECKPOINT_FILE_NAME.into());
@@ -123,8 +149,9 @@ impl Checkpointer {
         }
 
         // Collect everything found in the storage directory
+        let mut usage = 0;
         self.backend.list(&StoragePath::default(), &mut |path, file_type| {
-            if !in_use_paths.contains(path) && (is_feldera_filename(path) || file_type == StorageFileType::Directory){
+            if !in_use_paths.contains(path) && (is_feldera_filename(path) || file_type == StorageFileType::Directory) {
                 match self.backend.delete_recursive(path) {
                     Ok(_) => {
                         tracing::debug!("Removed unused {file_type:?} '{path}'");
@@ -133,9 +160,12 @@ impl Checkpointer {
                         tracing::warn!("Unable to remove old-checkpoint file {path}: {e} (the pipeline will try to delete the file again on a restart)");
                     }
             }
-            }})?;
+            } else if let StorageFileType::File { size } = file_type {
+                    usage += size;
+            }
+        })?;
 
-        Ok(())
+        Ok(usage)
     }
 
     pub(super) fn checkpoint_dir(&self, uuid: Uuid) -> StoragePath {
