@@ -320,7 +320,7 @@ impl RuntimeInner {
         let storage = if let Some(storage) = config.storage {
             let locked_directory =
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
-            let backend = <dyn StorageBackend>::new(&storage.config, &storage.options)?;
+            let backend = storage.backend;
 
             if let Some(init_checkpoint) = &storage.init_checkpoint {
                 if !storage
