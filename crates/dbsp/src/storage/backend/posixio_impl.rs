@@ -1,8 +1,8 @@
 //! [StorageBackend] implementation using POSIX I/O.
 
 use super::{
-    tempdir_for_thread, BlockLocation, FileId, FileReader, FileWriter, HasFileId,
-    StorageCacheFlags, StorageError, IOV_MAX, MUTABLE_EXTENSION,
+    BlockLocation, FileId, FileReader, FileWriter, HasFileId, StorageCacheFlags, StorageError,
+    IOV_MAX, MUTABLE_EXTENSION,
 };
 use crate::circuit::metrics::{
     FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
@@ -21,7 +21,6 @@ use std::{
     io::Error as IoError,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
-    rc::Rc,
     sync::{
         atomic::{AtomicBool, AtomicI64, Ordering},
         Arc,
@@ -263,21 +262,6 @@ impl PosixBackend {
     /// Returns the directory in which the backend creates files.
     pub fn path(&self) -> &Path {
         self.base.as_path()
-    }
-
-    fn new_default() -> Rc<Self> {
-        Rc::new(PosixBackend::new(
-            tempdir_for_thread(),
-            StorageCacheConfig::default(),
-        ))
-    }
-
-    /// Returns a thread-local default backend.
-    pub fn default_for_thread() -> Rc<Self> {
-        thread_local! {
-            pub static DEFAULT_BACKEND: Rc<PosixBackend> = PosixBackend::new_default();
-        }
-        DEFAULT_BACKEND.with(|rc| rc.clone())
     }
 
     /// Returns the filesystem path to `name` in this storage.
