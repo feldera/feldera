@@ -4521,9 +4521,15 @@
           {
             "type": "object",
             "required": [
+              "deployment_id",
               "inputs"
             ],
             "properties": {
+              "deployment_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Pipeline deployment ID.\n\nThis allows the pipeline manager to uniquely identify the pipeline."
+              },
               "inputs": {
                 "type": "object",
                 "description": "Input endpoint configuration.",
