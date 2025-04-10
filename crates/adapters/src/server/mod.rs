@@ -715,20 +715,30 @@ async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
 }
 
 #[post("/suspend")]
-async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    let (sender, receiver) = oneshot::channel();
-    match &*state.controller.lock().unwrap() {
-        None => return Err(missing_controller_error(&state)),
-        Some(controller) => {
-            controller.start_suspend(Box::new(move |suspend| {
-                if sender.send(suspend).is_err() {
-                    error!("`/suspend` result could not be sent");
-                }
-            }));
-        }
-    };
-    receiver.await.unwrap()?;
-    do_shutdown(state).await
+async fn suspend(state: WebData<ServerState>) -> impl Responder {
+    #[cfg(feature = "feldera-enterprise")]
+    {
+        let (sender, receiver) = oneshot::channel();
+        match &*state.controller.lock().unwrap() {
+            None => return Err(missing_controller_error(&state)),
+            Some(controller) => {
+                controller.start_suspend(Box::new(move |suspend| {
+                    if sender.send(suspend).is_err() {
+                        error!("`/suspend` result could not be sent");
+                    }
+                }));
+            }
+        };
+        receiver.await.unwrap()?;
+        do_shutdown(state).await?;
+        Ok(HttpResponse::Ok())
+    }
+
+    #[cfg(not(feature = "feldera-enterprise"))]
+    {
+        let _ = state;
+        Err::<&str, _>(ControllerError::EnterpriseFeature("suspend"))
+    }
 }
 
 #[get("/shutdown")]

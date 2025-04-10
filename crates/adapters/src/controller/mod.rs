@@ -2655,6 +2655,7 @@ impl ControllerInner {
 
     /// Returns whether this pipeline supports suspend-and-resume.
     pub fn can_suspend(&self) -> CanSuspend {
+        #[cfg(feature = "feldera-enterprise")]
         if self
             .status
             .input_status()
@@ -2670,6 +2671,9 @@ impl ControllerInner {
         } else {
             CanSuspend::No
         }
+
+        #[cfg(not(feature = "feldera-enterprise"))]
+        CanSuspend::No
     }
 }
 
