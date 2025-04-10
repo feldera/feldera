@@ -26,6 +26,7 @@ public final class DBSPStructItem extends DBSPItem implements IHasType {
     public final TableMetadata metadata;
 
     public DBSPStructItem(DBSPTypeStruct type, @Nullable TableMetadata metadata) {
+        super(type.getNode());
         this.type = type;
         this.metadata = metadata;
     }

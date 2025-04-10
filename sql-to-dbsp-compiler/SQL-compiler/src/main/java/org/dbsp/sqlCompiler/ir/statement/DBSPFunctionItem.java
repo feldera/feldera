@@ -17,6 +17,7 @@ public final class DBSPFunctionItem extends DBSPItem {
     public final DBSPFunction function;
 
     public DBSPFunctionItem(DBSPFunction function) {
+        super(function.getNode());
         this.function = function;
     }
 

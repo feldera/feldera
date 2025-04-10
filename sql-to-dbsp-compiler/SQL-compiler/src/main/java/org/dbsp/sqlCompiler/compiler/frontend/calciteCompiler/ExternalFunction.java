@@ -180,7 +180,7 @@ public class ExternalFunction extends SqlFunction {
         DBSPType returnType = typeCompiler.convertType(this.returnType, false);
         // Must wrap the return type in a Result
         returnType = new DBSPTypeResult(returnType);
-        return new DBSPFunction(this.getName(), parameters, returnType, null, Linq.list());
+        return new DBSPFunction(this.node, this.getName(), parameters, returnType, null, Linq.list());
     }
 
     @Nullable
@@ -208,7 +208,7 @@ public class ExternalFunction extends SqlFunction {
                             " but returns " + Utilities.singleQuote(this.body.getType().getFullTypeString()), this.node);
                 }
             }
-            return new DBSPFunction(this.getName(), parameters, returnType, functionBody, Linq.list());
+            return new DBSPFunction(this.node, this.getName(), parameters, returnType, functionBody, Linq.list());
         }
         if (!this.generated)
             return null;
@@ -247,7 +247,7 @@ public class ExternalFunction extends SqlFunction {
             DBSPExpression body = new DBSPBlockExpression(statements, retval);
             // DBSPExpression ok = new DBSPApplyMethodExpression("Ok", new DBSPTypeResult(returnType), retval);
             // TODO: the function should return Result
-            return new DBSPFunction(this.getName(), Linq.list(param), returnType, body, Linq.list());
+            return new DBSPFunction(this.node, this.getName(), Linq.list(param), returnType, body, Linq.list());
         }
         throw new InternalCompilerError("Cannot generate implementation for " + this, this.node);
     }

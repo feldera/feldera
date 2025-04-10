@@ -101,7 +101,7 @@ public class TableValue {
                     new DBSPStrLiteral(fileName, false));
         }
         DBSPRawTupleExpression result = new DBSPRawTupleExpression(fields);
-        return new DBSPFunction(name, new ArrayList<>(),
+        return new DBSPFunction(CalciteObject.EMPTY, name, new ArrayList<>(),
                 result.getType(), result, Linq.list());
     }
 }

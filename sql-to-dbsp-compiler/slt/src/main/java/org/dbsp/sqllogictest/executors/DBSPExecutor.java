@@ -540,7 +540,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     var, new DBSPStringLiteral(description.hash)).toStatement());
         }
         DBSPExpression body = new DBSPBlockExpression(list, null);
-        DBSPFunction function = new DBSPFunction(name, new ArrayList<>(), DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
+        DBSPFunction function = new DBSPFunction(
+                CalciteObject.EMPTY, name, new ArrayList<>(), DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
         return new ProgramAndTester(circuit, function);
     }
 
