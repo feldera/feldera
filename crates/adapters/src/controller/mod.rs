@@ -1508,6 +1508,7 @@ impl ControllerInit {
 
             // Other settings from the pipeline manager.
             name: config.name,
+            deployment_id: config.deployment_id,
             storage_config: config.storage_config,
         };
 

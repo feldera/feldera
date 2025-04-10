@@ -27,6 +27,7 @@ use std::fmt::Display;
 use std::path::Path;
 use std::{borrow::Cow, cmp::max, collections::BTreeMap};
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 const DEFAULT_MAX_PARALLEL_CONNECTOR_INIT: u64 = 10;
 
@@ -57,6 +58,11 @@ pub struct PipelineConfig {
 
     /// Pipeline name.
     pub name: Option<String>,
+
+    /// Pipeline deployment ID.
+    ///
+    /// This allows the pipeline manager to uniquely identify the pipeline.
+    pub deployment_id: Uuid,
 
     /// Configuration for persistent storage
     ///

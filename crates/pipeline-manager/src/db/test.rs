@@ -409,6 +409,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
             serde_json::to_value(PipelineConfig {
                 global: serde_json::from_value(runtime_config).unwrap(),
                 name: Some(format!("pipeline-{}", val.1)),
+                deployment_id: Uuid::now_v7(),
                 storage_config: None,
                 inputs: program_info.input_connectors,
                 outputs: program_info.output_connectors,

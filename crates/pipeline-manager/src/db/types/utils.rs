@@ -132,6 +132,7 @@ mod tests {
     use feldera_types::config::{PipelineConfig, RuntimeConfig};
     use feldera_types::program_schema::ProgramSchema;
     use serde_json::json;
+    use uuid::Uuid;
 
     #[test]
     fn test_valid_names() {
@@ -255,6 +256,7 @@ mod tests {
         let deployment_config = PipelineConfig {
             global: Default::default(),
             name: None,
+            deployment_id: Uuid::now_v7(),
             storage_config: None,
             inputs: Default::default(),
             outputs: Default::default(),

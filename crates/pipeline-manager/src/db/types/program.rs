@@ -19,6 +19,7 @@ use std::str::FromStr;
 use std::string::ParseError;
 use thiserror::Error as ThisError;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 /// Enumeration of possible compilation profiles that can be passed to the Rust compiler
 /// as an argument via `cargo build --profile <>`. A compilation profile affects among
@@ -634,6 +635,7 @@ pub fn generate_pipeline_config(
     outputs: &BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
 ) -> PipelineConfig {
     PipelineConfig {
+        deployment_id: Uuid::now_v7(),
         name: Some(format!("pipeline-{pipeline_id}")),
         global: runtime_config.clone(),
         storage_config: None, // Set by the runner based on global field

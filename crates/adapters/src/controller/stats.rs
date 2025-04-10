@@ -86,6 +86,9 @@ pub enum CanSuspend {
 
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {
+    /// Deployment ID provided by the pipeline manager.
+    deployment_id: Uuid,
+
     /// State of the pipeline: running, paused, or terminating.
     #[serde(serialize_with = "serialize_atomic")]
     state: Atomic<PipelineState>,
@@ -169,8 +172,9 @@ where
 }
 
 impl GlobalControllerMetrics {
-    fn new(processed_records: u64) -> Self {
+    fn new(deployment_id: Uuid, processed_records: u64) -> Self {
         Self {
+            deployment_id,
             state: Atomic::new(PipelineState::Paused),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
@@ -462,8 +466,11 @@ impl Serialize for ControllerMetric {
 impl ControllerStatus {
     pub fn new(pipeline_config: PipelineConfig, processed_records: u64) -> Self {
         Self {
+            global_metrics: GlobalControllerMetrics::new(
+                pipeline_config.deployment_id,
+                processed_records,
+            ),
             pipeline_config,
-            global_metrics: GlobalControllerMetrics::new(processed_records),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
         }
