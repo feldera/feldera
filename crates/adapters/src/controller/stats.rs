@@ -54,7 +54,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Mutex,
+        Arc, Mutex,
     },
 };
 use tracing::{debug, error, info};
@@ -115,6 +115,12 @@ pub struct GlobalControllerMetrics {
     /// time (modulo clock skew).
     pub run_uuid: Uuid,
 
+    /// Current storage usage in bytes.
+    pub storage_bytes: Arc<AtomicU64>,
+
+    /// Storage usage integrated over time, in megabytes * milliseconds.
+    pub storage_mb_msec: Arc<AtomicU64>,
+
     /// Time elapsed while the pipeline is executing a step, multiplied by the
     /// number of foreground and background threads, in milliseconds.
     pub runtime_elapsed_msecs: AtomicU64,
@@ -171,6 +177,8 @@ impl GlobalControllerMetrics {
             uptime_msecs: AtomicU64::new(0),
             start_time: Utc::now(),
             run_uuid: Uuid::now_v7(),
+            storage_bytes: Arc::new(AtomicU64::new(0)),
+            storage_mb_msec: Arc::new(AtomicU64::new(0)),
             runtime_elapsed_msecs: AtomicU64::new(0),
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(processed_records),

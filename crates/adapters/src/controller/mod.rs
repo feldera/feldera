@@ -62,8 +62,10 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::AtomicI64;
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
 use std::sync::LazyLock;
+use std::thread;
 use std::{
     collections::{BTreeMap, BTreeSet},
     mem,
@@ -533,6 +535,7 @@ struct CircuitThread {
     circuit: DBSPHandle,
     command_receiver: Receiver<Command>,
     backpressure_thread: BackpressureThread,
+    _storage_thread: Option<StorageThread>,
     ft: Option<FtState>,
     parker: Parker,
     last_checkpoint: Instant,
@@ -616,12 +619,21 @@ impl CircuitThread {
             None
         };
 
+        let storage_thread = storage.as_ref().map(|backend| {
+            StorageThread::new(
+                &**backend,
+                controller.status.global_metrics.storage_bytes.clone(),
+                controller.status.global_metrics.storage_mb_msec.clone(),
+            )
+        });
+
         Ok(Self {
             controller,
             ft,
             circuit,
             command_receiver,
             backpressure_thread,
+            _storage_thread: storage_thread,
             storage,
             parker,
             last_checkpoint: Instant::now(),
@@ -1640,6 +1652,70 @@ impl Drop for BackpressureThread {
         self.exit.store(true, Ordering::Release);
         self.unparker.unpark();
         if let Some(join_handle) = self.join_handle.take() {
+            let _ = join_handle.join();
+        }
+    }
+}
+
+/// Storage thread.
+///
+/// For now, this just wakes up once a second to update storage statistics in
+/// [GlobalControllerMetrics].
+struct StorageThread {
+    exit: Arc<AtomicBool>,
+    join_handle: Option<JoinHandle<()>>,
+}
+
+impl StorageThread {
+    /// Starts a storage thread.
+    fn new(
+        storage_backend: &dyn StorageBackend,
+        storage_bytes: Arc<AtomicU64>,
+        storage_mb_msec: Arc<AtomicU64>,
+    ) -> Self {
+        let exit = Arc::new(AtomicBool::new(false));
+        let usage = storage_backend.usage();
+        let join_handle = thread::Builder::new()
+            .name("dbsp-storage".into())
+            .spawn({
+                let exit = exit.clone();
+                move || Self::storage_thread(usage, storage_bytes, storage_mb_msec, exit)
+            })
+            .unwrap();
+        Self {
+            exit,
+            join_handle: Some(join_handle),
+        }
+    }
+
+    /// Thread function.
+    fn storage_thread(
+        usage: Arc<AtomicI64>,
+        storage_bytes: Arc<AtomicU64>,
+        storage_mb_msec: Arc<AtomicU64>,
+        exit: Arc<AtomicBool>,
+    ) {
+        let mut last = Instant::now();
+        while !exit.load(Ordering::Acquire) {
+            let elapsed_msec = last.elapsed().as_millis() as u64;
+            let usage_bytes = usage.load(Ordering::Relaxed).max(0) as u64;
+            storage_bytes.store(usage_bytes, Ordering::Relaxed);
+            storage_mb_msec.fetch_add(
+                (usage_bytes * elapsed_msec + 512 * 1024 - 1) / 1024 / 1024,
+                Ordering::Relaxed,
+            );
+            last = Instant::now();
+
+            std::thread::park_timeout(Duration::from_secs(1));
+        }
+    }
+}
+
+impl Drop for StorageThread {
+    fn drop(&mut self) {
+        self.exit.store(true, Ordering::Release);
+        if let Some(join_handle) = self.join_handle.take() {
+            join_handle.thread().unpark();
             let _ = join_handle.join();
         }
     }
