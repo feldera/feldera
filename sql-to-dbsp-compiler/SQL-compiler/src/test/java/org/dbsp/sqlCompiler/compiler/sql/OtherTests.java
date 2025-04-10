@@ -222,7 +222,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
                 data).toStatement());
         DBSPExpression body = new DBSPBlockExpression(list, null);
-        DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
+        DBSPFunction tester = new DBSPFunction(CalciteObject.EMPTY, "test", new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream stream = new PrintStream(BaseSQLTests.TEST_FILE_PATH);
@@ -255,7 +255,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
                 data).toStatement());
         DBSPExpression body = new DBSPBlockExpression(list, null);
-        DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
+        DBSPFunction tester = new DBSPFunction(CalciteObject.EMPTY, "test", new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream outputStream = new PrintStream(BaseSQLTests.TEST_FILE_PATH, StandardCharsets.UTF_8);

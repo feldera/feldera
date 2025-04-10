@@ -54,10 +54,10 @@ public final class DBSPFunction extends DBSPNode
     public final List<String> annotations;
     public final DBSPTypeFunction type;
 
-    public DBSPFunction(String name, List<DBSPParameter> parameters,
+    public DBSPFunction(CalciteObject node, String name, List<DBSPParameter> parameters,
                         DBSPType returnType, @Nullable DBSPExpression body,
                         List<String> annotations) {
-        super(CalciteObject.EMPTY);
+        super(node);
         this.name = name;
         this.parameters = parameters;
         this.returnType = returnType;
@@ -147,6 +147,6 @@ public final class DBSPFunction extends DBSPNode
         List<String> annotations = Linq.list(
                 Linq.map(Utilities.getProperty(node, "annotations").elements(),
                 JsonNode::asText));
-        return new DBSPFunction(name, parameters, returnType, body, annotations);
+        return new DBSPFunction(CalciteObject.EMPTY, name, parameters, returnType, body, annotations);
     }
 }

@@ -85,7 +85,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
-import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
@@ -127,7 +126,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Predicate;
 
 /**
  * Base class for Inner visitors which rewrite expressions, types, and statements.
@@ -1323,17 +1321,6 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPConstItem item) {
-        this.push(item);
-        DBSPType type = this.transform(item.type);
-        @Nullable DBSPExpression expression = this.transformN(item.expression);
-        this.pop(item);
-        DBSPConstItem result = new DBSPConstItem(item.name, type, expression);
-        this.map(item, result);
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPFunctionItem item) {
         this.push(item);
         // TODO: do we need to transform?
@@ -1385,7 +1372,7 @@ public abstract class InnerRewriteVisitor
                     return Objects.requireNonNull(this.lastResult).to(DBSPParameter.class);
                 });
         this.pop(function);
-        DBSPFunction result = new DBSPFunction(
+        DBSPFunction result = new DBSPFunction(function.getNode(),
                 function.name, parameters, returnType, body, function.annotations);
         this.map(function, result);
         return VisitDecision.STOP;

@@ -2125,4 +2125,10 @@ public class RegressionTests extends SqlIoTest {
                     GROUP BY baz
                 );""", "Aggregate function not yet implemented");
     }
+
+    @Test
+    public void issue3059() {
+        this.statementsFailingInCompilation("CREATE FUNCTION F(x INT) RETURNS BIGINT AS YEAR(NOW()) + x;",
+                "Non-deterministic UDF");
+    }
 }

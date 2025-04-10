@@ -10,14 +10,14 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
-/** Check that default values for all column initializers are constant expressions.
- * This requires building a call graph. */
-public class DeterministicDefault extends CircuitVisitor {
+/** Check that no user-defined SQL function calls non-deterministic functions. */
+public class DeterministicFunctions extends CircuitVisitor {
     final Set<String> nonDeterministic;
 
     static class HasNondeterminism extends InnerVisitor {
@@ -60,7 +60,7 @@ public class DeterministicDefault extends CircuitVisitor {
 
     final HasNondeterminism hn;
 
-    public DeterministicDefault(DBSPCompiler compiler) {
+    public DeterministicFunctions(DBSPCompiler compiler) {
         super(compiler);
         this.nonDeterministic = new HashSet<>();
         this.markNondeterministic("now");
@@ -97,8 +97,14 @@ public class DeterministicDefault extends CircuitVisitor {
             if (function.function.body == null)
                 return VisitDecision.STOP;
             boolean det = this.isDeterministic(function.function.body);
-            if (!det)
-                this.markNondeterministic(function.function.getName());
+            if (!det) {
+                this.markNondeterministic(decl.getName());
+                this.compiler.reportError(
+                        Objects.requireNonNull(decl.getSourcePosition()),
+                        "Non-deterministic UDF",
+                        "Non-deterministic user-defined functions are not supported: " +
+                                Utilities.singleQuote(decl.getName()));
+            }
         }
         return VisitDecision.STOP;
     }

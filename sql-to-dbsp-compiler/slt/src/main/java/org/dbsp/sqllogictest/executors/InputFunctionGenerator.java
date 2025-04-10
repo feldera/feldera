@@ -63,7 +63,7 @@ class InputFunctionGenerator {
             }
         }
         DBSPRawTupleExpression result = new DBSPRawTupleExpression(fields);
-        return new DBSPFunction("input", new ArrayList<>(),
+        return new DBSPFunction(CalciteObject.EMPTY, "input", new ArrayList<>(),
                 result.getType(), result, Linq.list());
     }
 

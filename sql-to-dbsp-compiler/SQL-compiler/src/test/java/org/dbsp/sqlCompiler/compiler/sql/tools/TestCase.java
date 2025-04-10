@@ -202,7 +202,7 @@ public class TestCase {
         annotations.add("#[test]");
         if (this.message != null)
             annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
-        return new DBSPFunction("test" + testNumber, new ArrayList<>(),
+        return new DBSPFunction(CalciteObject.EMPTY, "test" + testNumber, new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, annotations);
     }
 }

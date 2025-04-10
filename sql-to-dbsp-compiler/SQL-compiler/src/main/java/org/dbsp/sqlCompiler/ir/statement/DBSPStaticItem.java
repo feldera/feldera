@@ -13,6 +13,7 @@ public class DBSPStaticItem extends DBSPItem {
     public final DBSPStaticExpression expression;
 
     public DBSPStaticItem(DBSPStaticExpression expression) {
+        super(expression.getNode());
         this.expression = expression;
     }
 

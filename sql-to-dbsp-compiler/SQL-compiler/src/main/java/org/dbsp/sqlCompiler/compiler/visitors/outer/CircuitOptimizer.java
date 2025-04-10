@@ -43,8 +43,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 
-/** Very high level circuit-level optimizations.
- * Does not really look at the functions inside the circuit. */
+/** All optimizations applied to circuits. */
 public class CircuitOptimizer extends Passes {
     public CircuitOptimizer(DBSPCompiler compiler) {
         super("Optimizer", compiler);
@@ -70,7 +69,7 @@ public class CircuitOptimizer extends Passes {
         // this.add(ToDot.dumper(compiler, "x.png", 2));
         // First part of optimizations may still synthesize some circuit components
         this.add(new ImplementNow(compiler));
-        this.add(new DeterministicDefault(compiler));
+        this.add(new DeterministicFunctions(compiler));
         this.add(new StopOnError(compiler));
         this.add(new RecursiveComponents(compiler));
         this.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable, true));

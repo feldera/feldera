@@ -13,6 +13,7 @@ public class DBSPComparatorItem extends DBSPItem {
     public final DBSPComparatorExpression expression;
 
     public DBSPComparatorItem(DBSPComparatorExpression expression) {
+        super(expression.getNode());
         this.expression = expression;
     }
 
