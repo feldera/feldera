@@ -22,7 +22,7 @@ import java.util.Objects;
 public final class DBSPApply2Operator extends DBSPBinaryOperator {
     public DBSPApply2Operator(CalciteRelNode node, DBSPClosureExpression function,
                               OutputPort left, OutputPort right) {
-        super(node, "apply2", function, function.getResultType(), false, left, right);
+        super(node, "apply2", function, function.getResultType(), false, left, right, false);
         assert function.parameters.length == 2: "Expected 2 parameters for function " + function;
         DBSPType param0Type = function.parameters[0].getType().deref();
         assert left.outputType().sameType(param0Type):

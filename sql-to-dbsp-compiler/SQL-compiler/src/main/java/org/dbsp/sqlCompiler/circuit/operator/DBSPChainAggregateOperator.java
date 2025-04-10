@@ -21,7 +21,7 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
 
     public DBSPChainAggregateOperator(CalciteRelNode node, DBSPClosureExpression init,
                                       DBSPClosureExpression function, DBSPType outputType, OutputPort source) {
-        super(node, "chain_aggregate", function, outputType, false, source);
+        super(node, "chain_aggregate", function, outputType, false, source, true);
         this.init = init;
         assert init.parameters.length == 2;
         assert function.parameters.length == 3;

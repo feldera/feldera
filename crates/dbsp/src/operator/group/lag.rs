@@ -99,7 +99,7 @@ where
     }
 
     #[allow(clippy::type_complexity)]
-    fn lag_custom_order_persistent<VL, OV, PF, CF, OF>(
+    pub fn lag_custom_order_persistent<VL, OV, PF, CF, OF>(
         &self,
         persistent_id: Option<&str>,
         offset: isize,

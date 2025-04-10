@@ -11,8 +11,9 @@ import javax.annotation.Nullable;
 public abstract class DBSPBinaryOperator extends DBSPSimpleOperator {
     protected DBSPBinaryOperator(CalciteRelNode node, String operation,
                                  @Nullable DBSPExpression function, DBSPType outputType,
-                                 boolean isMultiset, OutputPort left, OutputPort right) {
-        super(node, operation, function, outputType, isMultiset);
+                                 boolean isMultiset, OutputPort left, OutputPort right,
+                                 boolean containsIntegrator) {
+        super(node, operation, function, outputType, isMultiset, containsIntegrator);
         this.addInput(left);
         this.addInput(right);
     }

@@ -30,7 +30,7 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
     public DBSPNowOperator(CalciteRelNode node) {
         super(node, "now", createFunction(node),
                 createFunction(node).getType(),
-                false);
+                false, false);
     }
 
     @Override
