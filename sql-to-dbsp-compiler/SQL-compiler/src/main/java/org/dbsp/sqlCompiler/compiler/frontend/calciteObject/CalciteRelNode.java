@@ -30,6 +30,9 @@ public abstract class CalciteRelNode extends CalciteObject {
         return sql.toString();
     }
 
+    @Override
+    public String getMessage() { return ""; }
+
     public abstract IIndentStream asJson(IIndentStream stream, Map<RelNode, Integer> idRemap);
 
     public abstract CalciteRelNode remove(RelNode node);

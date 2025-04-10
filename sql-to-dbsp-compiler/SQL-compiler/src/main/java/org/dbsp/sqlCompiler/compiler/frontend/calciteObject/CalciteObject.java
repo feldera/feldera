@@ -28,6 +28,9 @@ public class CalciteObject implements ICastable, IHasSourcePositionRange {
         return "";
     }
 
+    /** Format the object in a way that can displayed in an error message */
+    public String getMessage() { return this.toString(); }
+
     public String toInternalString() {
         return this.toString();
     }

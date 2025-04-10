@@ -70,13 +70,13 @@ public class UnimplementedException
     public UnimplementedException(String message, int issue, String suggestion, CalciteObject object) {
         this(makeMessage(message + System.lineSeparator() +
                 "This is tracked by issue https://github.com/feldera/feldera/issues/" +
-                issue + " ", suggestion), object);
+                issue, suggestion), object);
     }
 
     public UnimplementedException(String message, int issue, CalciteObject object) {
         this(makeMessage(message + System.lineSeparator() +
                 "This is tracked by issue https://github.com/feldera/feldera/issues/" +
-                issue + " ", ""), object);
+                issue, ""), object);
     }
 
     public UnimplementedException() {
@@ -93,7 +93,7 @@ public class UnimplementedException
     }
 
     public UnimplementedException(String message, CalciteObject node) {
-        this(message + ":" + node,
+        this(message + (node.getMessage().isEmpty() ? "" : (":" + node.getMessage())),
                 null, node);
     }
 

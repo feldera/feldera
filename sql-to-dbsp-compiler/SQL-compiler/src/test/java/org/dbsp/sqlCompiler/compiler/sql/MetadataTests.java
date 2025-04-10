@@ -476,10 +476,13 @@ public class MetadataTests extends BaseSQLTests {
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Assert.assertNotNull(circuit);
         TestUtil.assertMessagesContain(compiler.messages, """
-                warning: Fields reordered: While compiling:
+                While compiling:
                     2|CREATE VIEW V as (SELECT * FROM T) UNION ALL (SELECT y, x FROM T);
                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-                The input collections of a 'UNION' operation have columns with the same names, but in a different order.  This may be a mistake.""");
+                warning: Fields reordered: The input collections of a 'UNION' operation have columns with the same names, but in a different order.  This may be a mistake.
+                Note that UNION never reorders fields.
+                First type: (x INTEGER, y INTEGER)
+                Mismatched type: (y INTEGER, x INTEGER)""");
     }
 
     @Test
