@@ -162,10 +162,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     final Map<ProgramIdentifier, CreateViewStatement> views = new HashMap<>();
     final Map<ProgramIdentifier, CreateIndexStatement> indexes = new HashMap<>();
-    public SourcePositionRange errorContext;
 
     public DBSPCompiler(CompilerOptions options) {
-        this.errorContext = SourcePositionRange.INVALID;
         this.options = options;
         // Setting these first allows errors to be reported
         this.messages = new CompilerMessages(this);
@@ -280,7 +278,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     @Override
     public void setErrorContext(SourcePositionRange range) {
-        this.errorContext = range;
+        this.messages.setErrorContext(range);
     }
 
     /**
@@ -295,16 +293,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                               String errorType, String message) {
         if (warning)
             this.hasWarnings = true;
-        if (this.errorContext.isValid() && !continuation) {
-            String fragment = this.sources.getFragment(this.errorContext, true);
-            if (!fragment.isEmpty()) {
-                String context = "While compiling:\n" + fragment;
-                message = context + message;
-            }
-        }
-
-        if (!range.isValid())
-            range = this.errorContext;
         this.messages.reportProblem(range, warning, continuation, errorType, message);
         if (!warning && this.options.languageOptions.throwOnError) {
             System.err.println(this.messages);

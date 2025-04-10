@@ -160,7 +160,7 @@ public class NegativeParserTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertEquals(1, messages.exitCode);
         Assert.assertEquals(1, messages.errorCount());
-        CompilerMessages.Error msg = messages.getError(0);
+        CompilerMessages.Message msg = messages.getError(0);
         Assert.assertFalse(msg.warning);
         Assert.assertEquals("Non-query expression encountered in illegal context", msg.message);
 
@@ -192,7 +192,7 @@ public class NegativeParserTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", "/dev/null");
         Assert.assertEquals(1, messages.exitCode);
         Assert.assertEquals(1, messages.errorCount());
-        CompilerMessages.Error error = messages.messages.get(0);
+        CompilerMessages.Message error = messages.messages.get(0);
         Assert.assertTrue(error.message.startsWith("Encountered \"<EOF>\""));
     }
 
@@ -209,7 +209,7 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertEquals(0, messages.exitCode);
         Assert.assertEquals(1, messages.warningCount());
         Assert.assertEquals(0, messages.errorCount());
-        CompilerMessages.Error error = messages.messages.get(0);
+        CompilerMessages.Message error = messages.messages.get(0);
         Assert.assertTrue(error.warning);
         Assert.assertTrue(error.message.contains("Table 't' is not used"));
         Assert.assertTrue(messages.toString().contains("CREATE TABLE T"));
