@@ -109,11 +109,11 @@ pub struct GlobalControllerMetrics {
     #[serde(with = "chrono::serde::ts_seconds")]
     pub start_time: DateTime<Utc>,
 
-    /// Uniquely identifies the run that started at `start_time`.
+    /// Uniquely identifies the pipeline process that started at `start_time`.
     ///
     /// This is a v7 UUID, meaning that they will be ordered by their creation
     /// time (modulo clock skew).
-    pub run_uuid: Uuid,
+    pub incarnation_uuid: Uuid,
 
     /// Current storage usage in bytes.
     pub storage_bytes: Arc<AtomicU64>,
@@ -176,7 +176,7 @@ impl GlobalControllerMetrics {
             cpu_msecs: AtomicU64::new(0),
             uptime_msecs: AtomicU64::new(0),
             start_time: Utc::now(),
-            run_uuid: Uuid::now_v7(),
+            incarnation_uuid: Uuid::now_v7(),
             storage_bytes: Arc::new(AtomicU64::new(0)),
             storage_mb_secs: Arc::new(AtomicU64::new(0)),
             runtime_elapsed_msecs: AtomicU64::new(0),
