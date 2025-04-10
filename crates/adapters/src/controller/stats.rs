@@ -118,8 +118,8 @@ pub struct GlobalControllerMetrics {
     /// Current storage usage in bytes.
     pub storage_bytes: Arc<AtomicU64>,
 
-    /// Storage usage integrated over time, in megabytes * milliseconds.
-    pub storage_mb_msec: Arc<AtomicU64>,
+    /// Storage usage integrated over time, in megabytes * seconds.
+    pub storage_mb_secs: Arc<AtomicU64>,
 
     /// Time elapsed while the pipeline is executing a step, multiplied by the
     /// number of foreground and background threads, in milliseconds.
@@ -178,7 +178,7 @@ impl GlobalControllerMetrics {
             start_time: Utc::now(),
             run_uuid: Uuid::now_v7(),
             storage_bytes: Arc::new(AtomicU64::new(0)),
-            storage_mb_msec: Arc::new(AtomicU64::new(0)),
+            storage_mb_secs: Arc::new(AtomicU64::new(0)),
             runtime_elapsed_msecs: AtomicU64::new(0),
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(processed_records),

@@ -623,7 +623,7 @@ impl CircuitThread {
             StorageThread::new(
                 &**backend,
                 controller.status.global_metrics.storage_bytes.clone(),
-                controller.status.global_metrics.storage_mb_msec.clone(),
+                controller.status.global_metrics.storage_mb_secs.clone(),
             )
         });
 
@@ -1671,7 +1671,7 @@ impl StorageThread {
     fn new(
         storage_backend: &dyn StorageBackend,
         storage_bytes: Arc<AtomicU64>,
-        storage_mb_msec: Arc<AtomicU64>,
+        storage_mb_secs: Arc<AtomicU64>,
     ) -> Self {
         let exit = Arc::new(AtomicBool::new(false));
         let usage = storage_backend.usage();
@@ -1679,7 +1679,7 @@ impl StorageThread {
             .name("dbsp-storage".into())
             .spawn({
                 let exit = exit.clone();
-                move || Self::storage_thread(usage, storage_bytes, storage_mb_msec, exit)
+                move || Self::storage_thread(usage, storage_bytes, storage_mb_secs, exit)
             })
             .unwrap();
         Self {
@@ -1692,19 +1692,28 @@ impl StorageThread {
     fn storage_thread(
         usage: Arc<AtomicI64>,
         storage_bytes: Arc<AtomicU64>,
-        storage_mb_msec: Arc<AtomicU64>,
+        storage_mb_secs: Arc<AtomicU64>,
         exit: Arc<AtomicBool>,
     ) {
         let mut last = Instant::now();
+        let mut storage_byte_msecs = 0;
         while !exit.load(Ordering::Acquire) {
-            let elapsed_msec = last.elapsed().as_millis() as u64;
-            let usage_bytes = usage.load(Ordering::Relaxed).max(0) as u64;
-            storage_bytes.store(usage_bytes, Ordering::Relaxed);
-            storage_mb_msec.fetch_add(
-                (usage_bytes * elapsed_msec + 512 * 1024 - 1) / 1024 / 1024,
+            // Measure.
+            let elapsed_msecs = last.elapsed().as_millis();
+            let usage_bytes = usage.load(Ordering::Relaxed).max(0) as u128;
+            last = Instant::now();
+
+            // Update internal statistic.
+            storage_byte_msecs += usage_bytes * elapsed_msecs;
+
+            // Update published statistics.
+            storage_bytes.store(usage_bytes as u64, Ordering::Relaxed);
+            storage_mb_secs.store(
+                (storage_byte_msecs / (1024 * 1024 * 1000))
+                    .try_into()
+                    .unwrap(),
                 Ordering::Relaxed,
             );
-            last = Instant::now();
 
             std::thread::park_timeout(Duration::from_secs(1));
         }
