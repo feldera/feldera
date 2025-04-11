@@ -63,19 +63,71 @@ class varnttst_variant_to_int(TstView):
                       FROM int_to_variant"""
 
 
-# # BOOLEAN
+class varnttst_variant_to_otherint(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "id": 0,
+                "tint_to_sint": 20,
+                "tint_to_int": 20,
+                "tint_to_bint": 20,
+                "sint_to_tint": 24,
+                "sint_to_int": 24,
+                "sint_to_bint": 24,
+                "int_to_tint": 21,
+                "int_to_sint": 21,
+                "int_to_bint": 21,
+                "bint_to_tint": 23,
+                "bint_to_sint": 23,
+                "bint_to_int": 23,
+            },
+            {
+                "id": 1,
+                "tint_to_sint": None,
+                "tint_to_int": None,
+                "tint_to_bint": None,
+                "sint_to_tint": None,
+                "sint_to_int": None,
+                "sint_to_bint": None,
+                "int_to_tint": None,
+                "int_to_sint": None,
+                "int_to_bint": None,
+                "bint_to_tint": None,
+                "bint_to_sint": None,
+                "bint_to_int": None,
+            },
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW variant_to_otherint AS SELECT
+                      id,
+                      CAST(tiny_int_varnt AS SMALLINT) AS tint_to_sint,
+                      CAST(tiny_int_varnt AS INT) AS tint_to_int,
+                      CAST(tiny_int_varnt AS BIGINT) AS tint_to_bint,
+                      CAST(small_int_varnt AS TINYINT) AS sint_to_tint,
+                      CAST(small_int_varnt AS INT) AS sint_to_int,
+                      CAST(small_int_varnt AS BIGINT) AS sint_to_bint,
+                      CAST(int_varnt AS TINYINT) AS int_to_tint,
+                      CAST(int_varnt AS SMALLINT) AS int_to_sint,
+                      CAST(int_varnt AS BIGINT) AS int_to_bint,
+                      CAST(bigint_varnt AS TINYINT) AS bint_to_tint,
+                      CAST(bigint_varnt AS SMALLINT) AS bint_to_sint,
+                      CAST(bigint_varnt AS INT) AS bint_to_int
+                      FROM int_to_variant"""
+
+
+# BOOLEAN
 class varnttst_bool_tbl(TstTable):
     """Define the table used by the bool tests"""
 
     def __init__(self):
         self.sql = """CREATE TABLE varnt_bool_tbl(
                       id INT,
-                      bool1 BOOL,
-                      bool2 BOOL
+                      bool1 BOOL
                       )"""
         self.data = [
-            {"id": 0, "bool1": True, "bool2": False},
-            {"id": 1, "bool1": None, "bool2": None},
+            {"id": 0, "bool1": True},
+            {"id": 1, "bool1": False},
+            {"id": 2, "bool1": None},
         ]
 
 
@@ -83,13 +135,13 @@ class varnttst_bool_to_variant(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "bool1_varnt": "true", "bool2_varnt": "false"},
-            {"id": 1, "bool1_varnt": "null", "bool2_varnt": "null"},
+            {"id": 0, "bool1_varnt": "true"},
+            {"id": 1, "bool1_varnt": "false"},
+            {"id": 2, "bool1_varnt": "null"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW bool_to_variant AS SELECT
                       id,
-                      CAST(bool1 AS VARIANT) AS bool1_varnt,
-                      CAST(bool2 AS VARIANT) AS bool2_varnt
+                      CAST(bool1 AS VARIANT) AS bool1_varnt
                       FROM varnt_bool_tbl"""
 
 
@@ -97,13 +149,13 @@ class varnttst_variant_to_bool(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "bool1": True, "bool2": False},
-            {"id": 1, "bool1": None, "bool2": None},
+            {"id": 0, "bool1": True},
+            {"id": 1, "bool1": False},
+            {"id": 2, "bool1": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW variant_to_bool AS SELECT
                       id,
-                      CAST(bool1_varnt AS BOOL) AS bool1,
-                      CAST(bool2_varnt AS BOOL) AS bool2
+                      CAST(bool1_varnt AS BOOL) AS bool1
                       FROM bool_to_variant"""
 
 
@@ -142,6 +194,16 @@ class varnttst_variant_to_decimal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW variant_to_decimal AS SELECT
                       id,
                       CAST(decimall_varnt AS DECIMAL(6,2)) AS decimall
+                      FROM decimal_to_variant"""
+
+
+class varnttst_variant_to_otherdecimal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"id": 0, "dec2": Decimal("1111.5")}, {"id": 1, "dec2": None}]
+        self.sql = """CREATE MATERIALIZED VIEW variant_to_otherdecimal AS SELECT
+                      id,
+                      CAST(decimall_varnt AS DECIMAL(6, 1)) AS dec2
                       FROM decimal_to_variant"""
 
 
@@ -202,6 +264,25 @@ class varnttst_variant_to_float(TstView):
                       FROM float_to_variant"""
 
 
+# Returns Decimal because: https://github.com/feldera/feldera/issues/3396
+class varnttst_variant_to_otherfloat(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "id": 0,
+                "real_to_dbl": Decimal("57681.1796875"),
+                "dbl_to_real": Decimal("-38.271122"),
+            },
+            {"id": 1, "real_to_dbl": None, "dbl_to_real": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW variant_to_otherfloat AS SELECT
+                      id,
+                      CAST(real1_varnt AS DOUBLE) AS real_to_dbl,
+                      CAST(double1_varnt AS REAL) AS dbl_to_real
+                      FROM float_to_variant"""
+
+
 # STRING(CHAR, CHAR(n), VARCHAR, VARCHAR(n)
 class varnttst_string_tbl(TstTable):
     """Define the table used by the string tests"""
@@ -232,19 +313,20 @@ class varnttst_string_tbl(TstTable):
         ]
 
 
-# left to add CHAR: https://github.com/feldera/feldera/issues/3817
 class varnttst_string_to_variant(TstView):
     def __init__(self):
         # checked manually
         self.data = [
             {
                 "id": 0,
+                "char_varnt": '"hi friend!"',
                 "charn_varnt": '"hello"',
                 "vchar_varnt": '"bye, mate!"',
                 "vcharn_varnt": '"ciao!"',
             },
             {
                 "id": 1,
+                "char_varnt": "null",
                 "charn_varnt": "null",
                 "vchar_varnt": "null",
                 "vcharn_varnt": "null",
@@ -252,6 +334,7 @@ class varnttst_string_to_variant(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW string_to_variant AS SELECT
                       id,
+                      CAST(charr AS VARIANT) AS char_varnt,
                       CAST(charn AS VARIANT) AS charn_varnt,
                       CAST(vchar AS VARIANT) AS vchar_varnt,
                       CAST(vcharn AS VARIANT) AS vcharn_varnt
@@ -262,14 +345,49 @@ class varnttst_variant_to_string(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "charn": "hello", "vchar": "bye, mate!", "vcharn": "ciao!"},
-            {"id": 1, "charn": None, "vchar": None, "vcharn": None},
+            {
+                "id": 0,
+                "charr": "h",
+                "charn": "hello",
+                "vchar": "bye, mate!",
+                "vcharn": "ciao!",
+            },
+            {"id": 1, "charr": None, "charn": None, "vchar": None, "vcharn": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW variant_to_string AS SELECT
                       id,
+                      CAST(char_varnt AS CHAR) AS charr,
                       CAST(charn_varnt AS CHAR(5)) AS charn,
                       CAST(vchar_varnt AS VARCHAR) AS vchar,
                       CAST(vcharn_varnt AS VARCHAR(5)) AS vcharn
+                      FROM string_to_variant"""
+
+
+class varnttst_variant_to_otherstring(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "id": 0,
+                "charr": "hi",
+                "vchar": "bye",
+                "ch_to_vch": "hi",
+                "vch_to_ch": "bye",
+            },
+            {
+                "id": 1,
+                "charr": None,
+                "vchar": None,
+                "ch_to_vch": None,
+                "vch_to_ch": None,
+            },
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW variant_to_otherstring AS SELECT
+                      id,
+                      CAST(char_varnt AS CHAR(2)) AS charr,
+                      CAST(vchar_varnt AS VARCHAR(3)) AS vchar,
+                      CAST(char_varnt AS VARCHAR(2)) AS ch_to_vch,
+                      CAST(vchar_varnt AS CHAR(3)) AS vch_to_ch
                       FROM string_to_variant"""
 
 
@@ -322,6 +440,20 @@ class varnttst_variant_to_binary(TstView):
                       id,
                       CAST(binary_varnt AS BINARY(4)) AS binary,
                       CAST(vbinary_varnt AS VARBINARY) AS vbinary
+                      FROM binary_to_variant"""
+
+
+class varnttst_variant_to_otherbinary(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"id": 0, "bin_to_vbin": "0c1620", "vbin_to_bin": "17382115"},
+            {"id": 1, "bin_to_vbin": None, "vbin_to_bin": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW variant_to_otherbinary AS SELECT
+                      id,
+                      CAST(binary_varnt AS VARBINARY) AS bin_to_vbin,
+                      CAST(vbinary_varnt AS BINARY(4)) AS vbin_to_bin
                       FROM binary_to_variant"""
 
 
