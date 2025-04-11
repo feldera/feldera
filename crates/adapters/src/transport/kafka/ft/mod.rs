@@ -106,6 +106,12 @@ fn kafka_config(
     let default_redpanda_server = default_redpanda_server();
     set_option_if_missing(&mut settings, "bootstrap.servers", &default_redpanda_server);
 
+    // We link with openssl statically, which means that the default OPENSSLDIR location
+    // baked into openssl is not correct (see https://github.com/fede1024/rust-rdkafka/issues/594).
+    // We set the ssl.ca.location to "probe" so that librdkafka can find the CA certificates in a
+    // standard location (e.g., /etc/ssl/).
+    set_option_if_missing(&mut settings, "ssl.ca.location", "probe");
+
     let mut config = ClientConfig::new();
     for (key, value) in settings {
         config.set(String::from(key), resolve_secret(value)?);
