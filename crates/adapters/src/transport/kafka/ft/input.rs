@@ -647,6 +647,9 @@ struct PartitionReceiver {
     /// the largest offset (key) in `messages` plus 1.
     next_offset: AtomicI64,
 
+    /// Initial value of `next_offset`.  Only used in log messages.
+    initial_next_offset: i64,
+
     /// Parsed messages and errors.
     messages: Mutex<BTreeSet<Msg>>,
 
@@ -665,6 +668,7 @@ impl PartitionReceiver {
             queue,
             max_offset: AtomicI64::new(0),
             next_offset: AtomicI64::new(next_offset),
+            initial_next_offset: next_offset,
             messages: Mutex::new(BTreeSet::new()),
             eof: AtomicBool::new(false),
             fatal_error: AtomicBool::new(false),
@@ -718,7 +722,8 @@ impl PartitionReceiver {
             }
             Ok(message) => {
                 let offset = message.offset();
-                if offset >= self.next_offset() {
+                let next_offset = self.next_offset();
+                if offset >= next_offset {
                     self.next_offset.store(offset + 1, Ordering::Relaxed);
 
                     let payload = message.payload().unwrap_or(&[]);
@@ -732,8 +737,8 @@ impl PartitionReceiver {
                     consumer.buffered(len, payload.len());
                 } else {
                     tracing::error!(
-                        "Received message in partition {} at out-of-order offset {offset}",
-                        self.partition
+                        "Received message in partition {} at out-of-order offset {offset} (expected offset {next_offset} or greater; initial offset for this partition was {})",
+                        self.partition, self.initial_next_offset
                     );
                 }
             }
