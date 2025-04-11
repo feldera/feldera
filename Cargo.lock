@@ -3718,7 +3718,6 @@ dependencies = [
  "google-cloud-pubsub",
  "governor",
  "home",
- "indexmap 2.7.1",
  "jemalloc_pprof",
  "memory-stats",
  "metrics",

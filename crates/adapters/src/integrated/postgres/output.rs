@@ -43,6 +43,9 @@ pub struct PostgresOutputEndpoint {
     key_schema: Relation,
     value_schema: Relation,
     keys: HashSet<String>,
+    controller: Weak<ControllerInner>,
+    num_bytes: usize,
+    num_rows: usize,
     _pin: PhantomPinned,
 }
 
@@ -166,6 +169,7 @@ impl PostgresOutputEndpoint {
         let out = Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
+            controller,
             table,
             client,
             transaction: None,
@@ -174,6 +178,8 @@ impl PostgresOutputEndpoint {
             upsert,
             keys,
             key_schema,
+            num_rows: 0,
+            num_bytes: 0,
             value_schema: value_schema.to_owned(),
             _pin: PhantomPinned,
         };
@@ -187,41 +193,47 @@ impl PostgresOutputEndpoint {
         self.transaction.as_mut().ok_or(anyhow!("postgres: unreachable: attempting to perform a transaction that hasn't been created yet"))
     }
 
-    pub fn insert(&mut self, value: &str) -> AnyResult<()> {
+    fn exec_statement(
+        &mut self,
+        stmt: Statement,
+        value: &mut Vec<u8>,
+        name: &str,
+    ) -> AnyResult<()> {
         if value.len() <= 2 {
             return Ok(());
         }
 
-        let ins = self.insert.clone();
+        self.num_bytes += value.len();
+
+        let v: &str = std::str::from_utf8(value.as_slice())
+            .map_err(|e| anyhow!("postgres: record contains non utf-8 characters: {e}"))?;
+
         self.transaction()?
-            .execute(&ins, &[&value])
-            .map_err(|e| anyhow!("postgres: failed to insert data: {value}: {e}"))?;
+            .execute(&stmt, &[&v])
+            .map_err(|e| anyhow!("postgres: failed to execute {name} statement: {v}: {e}"))?;
+
+        value.clear();
+        value.push(b'[');
+
         Ok(())
     }
 
-    pub fn upsert(&mut self, value: &str) -> AnyResult<()> {
-        if value.len() <= 2 {
-            return Ok(());
-        }
-
-        let ups = self.upsert.clone();
-        self.transaction()?
-            .execute(&ups, &[&value])
-            .map_err(|e| anyhow!("postgres: failed to upsert data: {value}: {e}"))?;
-
-        Ok(())
+    /// Executes the insert statement within the transaction and resets the
+    /// buffer back to `[`.
+    pub fn insert(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
+        self.exec_statement(self.insert.clone(), value, "insert")
     }
 
-    pub fn delete(&mut self, value: &str) -> AnyResult<()> {
-        if value.len() <= 2 {
-            return Ok(());
-        }
+    /// Executes the upsert statement within the transaction and resets the
+    /// buffer back to `[`.
+    pub fn upsert(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
+        self.exec_statement(self.upsert.clone(), value, "upsert")
+    }
 
-        let del = self.delete.clone();
-        self.transaction()?
-            .execute(&del, &[&value])
-            .map_err(|e| anyhow!("postgres: failed to delete data: {value}: {e}"))?;
-        Ok(())
+    /// Executes the delete statement within the transaction and resets the
+    /// buffer back to `[`.
+    pub fn delete(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
+        self.exec_statement(self.delete.clone(), value, "delete")
     }
 
     pub fn span(&self) -> EnteredSpan {
@@ -294,11 +306,25 @@ impl PostgresOutputEndpoint {
 }
 
 impl OutputConsumer for PostgresOutputEndpoint {
+    /// 1 MiB
     fn max_buffer_size_bytes(&self) -> usize {
-        usize::MAX
+        usize::pow(2, 20)
     }
 
     fn batch_start(&mut self, _: Step) {
+        // Safety
+        //
+        // A transaction is a reference to the `client`. The `client`'s lifetime
+        // is longer than that of a transaction, which only lasts for the
+        // duration of a batch.
+        //
+        // We transmute from Transaction<'a> to Transaction<'static> as it is
+        // a reference to the `client` field in [`PostgresOutputEndpoint`].
+        // This means, that moving [`PostgresOutputEndpoint`] after a batch
+        // has been started, will result in `transaction` being a
+        // dangling pointer.
+        //
+        // TODO: Consider [`std::pin::Pin`]ing the integrated conenctor.
         let transaction: postgres::Transaction<'static> = unsafe {
             std::mem::transmute(
                 self.client
@@ -331,6 +357,14 @@ impl OutputConsumer for PostgresOutputEndpoint {
         transaction
             .commit()
             .expect("postgres: failed to commit transaction");
+
+        if let Some(controller) = self.controller.upgrade() {
+            controller.status.output_buffer(
+                self.endpoint_id,
+                std::mem::take(&mut self.num_bytes),
+                std::mem::take(&mut self.num_rows),
+            )
+        }
     }
 }
 
@@ -340,9 +374,11 @@ impl Encoder for PostgresOutputEndpoint {
     }
 
     fn encode(&mut self, batch: &dyn SerBatchReader) -> anyhow::Result<()> {
-        let mut insert_buffer = "[".to_owned();
-        let mut delete_buffer = "[".to_owned();
-        let mut upsert_buffer = "[".to_owned();
+        let mut insert_buffer: Vec<u8> = vec![b'['];
+        let mut delete_buffer: Vec<u8> = vec![b'['];
+        let mut upsert_buffer: Vec<u8> = vec![b'['];
+
+        let max_buffer_size = OutputConsumer::max_buffer_size_bytes(self);
 
         let mut cursor = batch.cursor(RecordFormat::Json(Default::default()))?;
 
@@ -350,43 +386,59 @@ impl Encoder for PostgresOutputEndpoint {
             if let Some(op) = self.operation_type(cursor.as_mut())? {
                 match op {
                     OperationType::Insert => {
-                        let buf = unsafe { insert_buffer.as_mut_vec() };
+                        let buf = &mut insert_buffer;
+                        let mut new_buf: Vec<u8> = Vec::new();
                         if buf.last() != Some(&b'[') {
-                            buf.push(b',');
+                            new_buf.push(b',');
                         }
-                        cursor.serialize_val(buf)?;
+                        cursor.serialize_val(&mut new_buf)?;
+                        if new_buf.len() + buf.len() > max_buffer_size {
+                            self.insert(buf)?;
+                        }
+                        buf.append(&mut new_buf);
                     }
                     OperationType::Delete => {
-                        let buf = unsafe { delete_buffer.as_mut_vec() };
+                        let buf = &mut delete_buffer;
+                        let mut new_buf: Vec<u8> = Vec::new();
                         if buf.last() != Some(&b'[') {
-                            buf.push(b',');
+                            new_buf.push(b',');
                         }
-                        cursor.serialize_key_fields(&self.keys, buf)?;
+                        cursor.serialize_key_fields(&self.keys, &mut new_buf)?;
+                        if new_buf.len() + buf.len() > max_buffer_size {
+                            self.delete(buf)?;
+                        }
+                        buf.append(&mut new_buf);
                     }
                     OperationType::Upsert => {
                         if cursor.weight() < 0 {
                             cursor.step_val();
                         }
 
-                        let buf = unsafe { upsert_buffer.as_mut_vec() };
+                        let buf = &mut upsert_buffer;
+                        let mut new_buf: Vec<u8> = Vec::new();
                         if buf.last() != Some(&b'[') {
-                            buf.push(b',');
+                            new_buf.push(b',');
                         }
-                        cursor.serialize_val(buf)?;
+                        cursor.serialize_val(&mut new_buf)?;
+                        if new_buf.len() + buf.len() > max_buffer_size {
+                            self.upsert(buf)?;
+                        }
                     }
-                }
+                };
+
+                self.num_rows += 1;
             }
 
             cursor.step_key();
         }
 
-        insert_buffer.push(']');
-        delete_buffer.push(']');
-        upsert_buffer.push(']');
+        insert_buffer.push(b']');
+        delete_buffer.push(b']');
+        upsert_buffer.push(b']');
 
-        self.delete(&delete_buffer)?;
-        self.insert(&insert_buffer)?;
-        self.upsert(&upsert_buffer)?;
+        self.delete(&mut delete_buffer)?;
+        self.insert(&mut insert_buffer)?;
+        self.upsert(&mut upsert_buffer)?;
 
         Ok(())
     }
@@ -398,7 +450,7 @@ impl OutputEndpoint for PostgresOutputEndpoint {
     }
 
     fn max_buffer_size_bytes(&self) -> usize {
-        usize::MAX
+        todo!()
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> anyhow::Result<()> {
