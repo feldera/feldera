@@ -102,7 +102,6 @@ tokio-util = { workspace = true }
 home = { workspace = true }
 datafusion = { workspace = true }
 sha2 = { workspace = true }
-indexmap = { workspace = true }
 rmp-serde = { workspace = true }
 rmpv = { workspace = true, features = ["with-serde"] }
 serde_bytes = { workspace = true }
