@@ -502,7 +502,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             workers: 8,
-            storage: None,
+            storage: Some(StorageOptions::default()),
             fault_tolerance: None,
             cpu_profiler: true,
             tracing: {
