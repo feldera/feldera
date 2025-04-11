@@ -399,7 +399,7 @@ impl KafkaFtInputReaderInner {
                     self.pause_partitions()
                         .map_err(|error| self.refine_error(error).1)?;
                     for receiver in receivers.iter() {
-                        receiver.set_max_offset(0);
+                        receiver.set_max_offset(i64::MIN);
                     }
                     kafka_paused = true;
                 }
@@ -632,12 +632,15 @@ struct PartitionReceiver {
     partition: i32,
     queue: PartitionQueue<KafkaFtInputContext>,
 
-    /// The maximum message offset that we want to receive.
+    /// The maximum message offset that we want to receive, used as follows:
     ///
-    /// If we are replaying, then this is the offset of the final message to be
-    /// replayed.
+    /// - `i64::MIN`, the initial value, disables receiving messages entirely.
     ///
-    /// If we are not replaying, then this is `i64::MAX`.
+    /// - The offset of a specific message ensures that we will not read
+    ///   messages beyond that one.  This is used during replay, set to the
+    ///   offset of the final message to be replayed.
+    ///
+    /// - `i64::MAX`, used when replaying is complete, will read all messages.
     max_offset: AtomicI64,
 
     /// The minimum message offset that we could receive next in this partition
@@ -666,7 +669,7 @@ impl PartitionReceiver {
         Self {
             partition,
             queue,
-            max_offset: AtomicI64::new(0),
+            max_offset: AtomicI64::new(i64::MIN),
             next_offset: AtomicI64::new(next_offset),
             initial_next_offset: next_offset,
             messages: Mutex::new(BTreeSet::new()),
