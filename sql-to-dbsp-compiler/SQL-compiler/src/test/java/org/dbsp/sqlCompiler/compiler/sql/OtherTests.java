@@ -56,14 +56,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
@@ -222,7 +219,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
                 data).toStatement());
         DBSPExpression body = new DBSPBlockExpression(list, null);
-        DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
+        DBSPFunction tester = new DBSPFunction(CalciteObject.EMPTY, "test", new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream stream = new PrintStream(BaseSQLTests.TEST_FILE_PATH);
@@ -255,7 +252,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
                 data).toStatement());
         DBSPExpression body = new DBSPBlockExpression(list, null);
-        DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
+        DBSPFunction tester = new DBSPFunction(CalciteObject.EMPTY, "test", new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream outputStream = new PrintStream(BaseSQLTests.TEST_FILE_PATH, StandardCharsets.UTF_8);

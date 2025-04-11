@@ -154,14 +154,14 @@ public class CatalogTests extends BaseSQLTests {
                     )""",
                 "Default value for column 'r1' must be a compile-time constant.*" +
                 "Default value for column 'insert_time' must be a compile-time constant", true);
-        this.compileRustTestCase("""
+        this.statementsFailingInCompilation("""
                 CREATE FUNCTION ZERO() RETURNS INT AS 0;
                 CREATE FUNCTION PLUSONE(x integer) RETURNS INT AS x + 1;
                 CREATE FUNCTION NONCONSTANT() RETURNS TIMESTAMP AS NOW();
                 CREATE TABLE t (
                         r INT DEFAULT ZERO(),
                         r2 INT DEFAULT PLUSONE(ZERO())
-                    )""");
+                    )""", "Non-deterministic user-defined functions are not supported");
     }
 
     @Test

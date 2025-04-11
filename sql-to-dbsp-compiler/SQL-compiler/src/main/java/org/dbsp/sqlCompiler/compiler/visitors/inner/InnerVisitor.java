@@ -76,7 +76,6 @@ import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComparatorItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
@@ -325,10 +324,6 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
 
     public VisitDecision preorder(DBSPLetStatement node) {
         return this.preorder((DBSPStatement) node);
-    }
-
-    public VisitDecision preorder(DBSPConstItem node) {
-        return this.preorder((DBSPItem) node);
     }
 
     public VisitDecision preorder(DBSPFunctionItem node) {
@@ -925,10 +920,6 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
 
     public void postorder(DBSPItem node) {
         this.postorder((DBSPStatement) node);
-    }
-
-    public void postorder(DBSPConstItem node) {
-        this.postorder((DBSPItem) node);
     }
 
     public void postorder(DBSPFunctionItem node) {

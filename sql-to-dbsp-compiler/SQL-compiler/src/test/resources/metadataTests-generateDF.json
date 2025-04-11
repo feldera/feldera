@@ -76,21 +76,24 @@
       "calcite": {
         "partial": 0
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "8b384059bdb44ad811ab341cc5e2a59697f39aac7b463cab027b185db8105e73"
     }, "s1": {
       "operation": "constant",
       "inputs": [],
       "calcite": {
         "partial": 3
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "8acabcd0cc1e2a8cb6978f135ddc32f6fbe9367639eae13ef3224540393d9708"
     }, "s2": {
       "operation": "multiset t",
       "inputs": [],
       "calcite": {
         "final": 1
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "c34714d45e88dd13c0abe1a709eee661cd6494ff2736f095c24b5add3103cde8"
     }, "s3": {
       "operation": "map_index",
       "inputs": [
@@ -104,7 +107,8 @@
             "partial": 3
           }]
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "90fc2d18f514fb1195d45924101472c0f6edd8ae7bd8b48c297f7c14e4559314"
     }, "s4": {
       "operation": "differentiate",
       "inputs": [
@@ -113,7 +117,8 @@
       "calcite": {
         "partial": 3
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "ea0f5e09135c0295b5bab326b5904ac8c8c3907080db811a3057011e93b14858"
     }, "s5": {
       "operation": "aggregate_linear_postprocess",
       "inputs": [
@@ -124,7 +129,8 @@
       },
       "positions": [
         {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
-      ]
+      ],
+      "persistent_id": "0eb727d4821dead2e58bcfd0375ec4f8ad1a79e73d83b5162ee222522384f4bc"
     }, "s6": {
       "operation": "map",
       "inputs": [
@@ -133,7 +139,8 @@
       "calcite": {
         "partial": 3
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "91350935cf25c4df4b2cd694cefe5cde71ff21c1045adf6d706444ae5632da33"
     }, "s7": {
       "operation": "map",
       "inputs": [
@@ -142,7 +149,8 @@
       "calcite": {
         "partial": 3
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "14acabbb0e718fd811810bd0dd2eb481977cd8b7af68c38a101fc29a58cb49ba"
     }, "s8": {
       "operation": "neg",
       "inputs": [
@@ -151,7 +159,8 @@
       "calcite": {
         "partial": 3
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "fd3f34052e023ad8f2278cc105d458641754c726088d6020c6a380eeb17c3487"
     }, "s9": {
       "operation": "integrate",
       "inputs": [
@@ -160,7 +169,8 @@
       "calcite": {
         "partial": 3
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "149aff585cd89bedb3e340c385788cd0d72b2c5f5b2524ea19e9cde2c49916f3"
     }, "s10": {
       "operation": "integrate",
       "inputs": [
@@ -169,7 +179,8 @@
       "calcite": {
         "partial": 3
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "cb5603d163f0e6fd30330e7f9973d00f91cac1c9d0739c7be7735e92601d3e53"
     }, "s11": {
       "operation": "sum",
       "inputs": [
@@ -180,7 +191,8 @@
       "calcite": {
         "partial": 3
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "45a4e6bee369f75351d512573d1e54b9717a5c64d9bf62e8ccbb6d238ce497ec"
     }, "s12": {
       "operation": "inspect",
       "inputs": [
@@ -189,7 +201,8 @@
       "calcite": {
         "final": 3
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "fa20d104fa4772b6f6521bdf29331c01ddc49cc4b7f9d7afc441298b2e95ed34"
     }, "s13": {
       "operation": "inspect",
       "inputs": [
@@ -198,7 +211,8 @@
       "calcite": {
         "final": 0
       },
-      "positions": []
+      "positions": [],
+      "persistent_id": "6f993c13fc9c17553263ce8f613ccd7335ef057c1d05214ea4fdc4f6a1218793"
     }
   },
   "sources": "CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);\nCREATE VIEW V AS SELECT SUM(COL1) FROM T;\n"

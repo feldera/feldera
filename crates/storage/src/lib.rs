@@ -2,6 +2,7 @@
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use feldera_types::config::{StorageBackendConfig, StorageConfig, StorageOptions};
@@ -108,11 +109,33 @@ pub trait StorageBackend: Send + Sync {
     /// directories within `name` that don't already exist.
     fn write(&self, name: &StoragePath, content: FBuf) -> Result<(), StorageError> {
         let mut writer = self.create_named(name)?;
-        writer.write_block(0, content)?;
+        writer.write_block(content)?;
         let (reader, _path) = writer.complete()?;
         reader.mark_for_checkpoint();
         Ok(())
     }
+
+    /// Returns a value that represents the number of bytes of storage in use.
+    /// The storage backend updates this value when its own functions cause more
+    /// or less storage to be used:
+    ///
+    /// - Writing to a file.
+    ///
+    /// - Deleting a file (by dropping a [FileWriter] without completing, or by
+    ///   dropping a [FileReader] without marking it for a checkpoint, or by
+    ///   calling functions to delete files.
+    ///
+    /// The backend is *not* required to:
+    ///
+    /// - Initially report how much storage is in use. Instead, it just starts
+    ///   out at zero. The client can traverse the storage itself and store the
+    ///   correct initial value.
+    ///
+    /// - Detect changes made by a different backend or outside any backend.
+    ///
+    /// The value is signed because the problems above can cause it to become
+    /// negative.
+    fn usage(&self) -> Arc<AtomicI64>;
 }
 
 impl dyn StorageBackend {
@@ -157,10 +180,9 @@ impl dyn StorageBackend {
 /// [FileWriter::complete]. Until then, the file is temporary and will be
 /// deleted if it is dropped.
 pub trait FileWriter: Send + Sync + HasFileId {
-    /// Writes `data` at the given byte `offset`.  `offset` must be a multiple
-    /// of 512 and `data.len()` must be a multiple of 512.  Returns the data
-    /// that was written encapsulated in an `Arc`.
-    fn write_block(&mut self, offset: u64, data: FBuf) -> Result<Arc<FBuf>, StorageError>;
+    /// Writes `data` at the end of the file. len()` must be a multiple of 512.
+    /// Returns the data that was written encapsulated in an `Arc`.
+    fn write_block(&mut self, data: FBuf) -> Result<Arc<FBuf>, StorageError>;
 
     /// Completes writing of a file and returns a reader for the file and the
     /// file's path. The file is treated as temporary and will be deleted if the
@@ -191,7 +213,10 @@ pub trait FileReader: Send + Sync + HasFileId {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum StorageFileType {
     /// A regular file.
-    File,
+    File {
+        /// File size in bytes.
+        size: u64,
+    },
 
     /// A directory.
     ///

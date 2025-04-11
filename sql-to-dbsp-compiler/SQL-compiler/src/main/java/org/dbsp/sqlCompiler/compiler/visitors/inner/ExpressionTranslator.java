@@ -14,7 +14,6 @@ import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
-import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
@@ -257,12 +256,6 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     }
 
     @Override
-    public void postorder(DBSPConstItem node) {
-        DBSPExpression expression = this.getEN(node.expression);
-        this.map(node, new DBSPConstItem(node.name, node.type, expression));
-    }
-
-    @Override
     public void postorder(DBSPIfExpression node) {
         DBSPExpression condition = this.getE(node.condition);
         DBSPExpression positive = this.getE(node.positive);
@@ -495,7 +488,7 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     @Override
     public void postorder(DBSPFunction function) {
         DBSPExpression body = this.getEN(function.body);
-        DBSPFunction result = new DBSPFunction(
+        DBSPFunction result = new DBSPFunction(function.getNode(),
                 function.name, function.parameters, function.returnType, body, function.annotations);
         this.set(function, result);
     }

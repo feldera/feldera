@@ -2094,8 +2094,8 @@ public class RegressionTests extends SqlIoTest {
                 "CREATE VIEW baz AS select DATEADD(DAY, -360, DATE '2020-01-01')",
                 """
                 Not yet implemented: Function 'DATEADD' not yet implemented
-                This is tracked by issue https://github.com/feldera/feldera/issues/1265\s
-                Perhaps you can use DATE_ADD or addition between a date and an interval?:
+                This is tracked by issue https://github.com/feldera/feldera/issues/1265
+                Perhaps you can use DATE_ADD or addition between a date and an interval?
                     1|CREATE VIEW baz AS select DATEADD(DAY, -360, DATE '2020-01-01')
                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^""");
     }
@@ -2124,5 +2124,11 @@ public class RegressionTests extends SqlIoTest {
                     FROM foo
                     GROUP BY baz
                 );""", "Aggregate function not yet implemented");
+    }
+
+    @Test
+    public void issue3059() {
+        this.statementsFailingInCompilation("CREATE FUNCTION F(x INT) RETURNS BIGINT AS YEAR(NOW()) + x;",
+                "Non-deterministic UDF");
     }
 }

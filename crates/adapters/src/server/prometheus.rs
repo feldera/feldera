@@ -330,13 +330,9 @@ struct GlobalMetrics {
 
 impl GlobalMetrics {
     fn update(&self, status: &ControllerStatus) {
-        if let Some(ref cpu_msecs) = status.global_metrics.cpu_msecs {
-            self.cpu_msecs.set(cpu_msecs.load(Ordering::Acquire) as f64);
-        }
+        self.cpu_msecs.set(status.global_metrics.cpu_msecs() as f64);
 
-        if let Some(ref rss_bytes) = status.global_metrics.rss_bytes {
-            self.rss_bytes.set(rss_bytes.load(Ordering::Acquire) as f64);
-        }
+        self.rss_bytes.set(status.global_metrics.rss_bytes() as f64);
 
         self.pipeline_completed
             .set(f64::from(status.pipeline_complete()));

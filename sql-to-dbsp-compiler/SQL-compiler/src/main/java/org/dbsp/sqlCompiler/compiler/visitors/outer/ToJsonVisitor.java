@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.apache.calcite.rel.RelNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -15,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.util.HashString;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -60,10 +62,6 @@ public class ToJsonVisitor extends CircuitDispatcher {
         this.builder = builder;
         this.verbosity = verbosity;
         this.relId = id;
-    }
-
-    Integer getRelId(RelNode rel) {
-        return Utilities.getExists(this.relId, rel);
     }
 
     Set<SourcePositionRange> getPositions() {
@@ -136,7 +134,12 @@ public class ToJsonVisitor extends CircuitDispatcher {
                     .decrease()
                     .newline();
         }
-        this.builder.append("]").newline();
+        this.builder.append("],").newline();
+        HashString hash = OperatorHash.getHash(operator, true);
+        if (hash != null) {
+            this.builder.appendJsonLabelAndColon("persistent_id");
+            this.builder.append(Utilities.doubleQuote(hash.toString())).newline();
+        }
         this.builder.decrease().append("}");
     }
 

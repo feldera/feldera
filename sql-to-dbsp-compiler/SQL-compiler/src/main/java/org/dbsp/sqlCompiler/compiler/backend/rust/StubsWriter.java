@@ -41,7 +41,9 @@ public class StubsWriter extends BaseRustCodeGenerator {
         String name = "udf::" + function.name;
         List<DBSPExpression> arguments = Linq.map(function.parameters, DBSPParameter::asVariable);
         DBSPExpression expression = new DBSPApplyExpression(name, function.returnType, arguments.toArray(new DBSPExpression[0]));
-        return new DBSPFunction(function.name, function.parameters, function.returnType, expression, function.annotations);
+        return new DBSPFunction(
+                function.getNode(), function.name, function.parameters,
+                function.returnType, expression, function.annotations);
     }
 
     @Override

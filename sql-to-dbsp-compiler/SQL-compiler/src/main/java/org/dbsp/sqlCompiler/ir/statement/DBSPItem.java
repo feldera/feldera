@@ -8,8 +8,8 @@ import org.dbsp.sqlCompiler.ir.type.IHasType;
 
 /** A base class for Rust <a href="https://doc.rust-lang.org/reference/items.html">items</a>. */
 public abstract class DBSPItem extends DBSPStatement implements IHasType, IDBSPDeclaration {
-    protected DBSPItem() {
-        super(CalciteObject.EMPTY);
+    protected DBSPItem(CalciteObject object) {
+        super(object);
     }
     public abstract String getName();
     /** Get a path expression that references this item by name */

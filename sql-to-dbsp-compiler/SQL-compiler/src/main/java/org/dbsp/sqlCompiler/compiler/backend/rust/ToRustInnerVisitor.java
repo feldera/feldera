@@ -125,7 +125,6 @@ import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComparatorItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
@@ -1767,21 +1766,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         this.builder.append(expression.variable);
         this.pop(expression);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPConstItem item) {
-        this.push(item);
-        this.builder.append("const ")
-                .append(item.name).append(": ");
-        item.type.accept(this);
-        if (item.expression != null) {
-            this.builder.append(" = ");
-            item.expression.accept(this);
-        }
-        this.builder.append(";");
-        this.pop(item);
         return VisitDecision.STOP;
     }
 

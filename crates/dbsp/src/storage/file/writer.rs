@@ -1026,7 +1026,7 @@ impl BlockWriter {
                 .as_mut()
                 .unwrap()
                 .as_mut()
-                .write_block(self.offset, compressed)?;
+                .write_block(compressed)?;
 
             (Arc::new(block), location)
         } else {
@@ -1042,7 +1042,7 @@ impl BlockWriter {
                 .as_mut()
                 .unwrap()
                 .as_mut()
-                .write_block(self.offset, block)?;
+                .write_block(block)?;
             (block, location)
         };
 
