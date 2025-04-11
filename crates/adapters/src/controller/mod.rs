@@ -735,10 +735,16 @@ impl CircuitThread {
             .unwrap_or_else(|e| self.controller.error(e.into()));
         debug!("circuit thread: 'circuit.step' returned");
 
-        let processed_records = self.processed_records(total_consumed);
-
-        // Update `trace_snapshot` to the latest traces
+        // Update `trace_snapshot` to the latest traces.
+        //
+        // We do this before updating `total_processed_records` so that ad hoc
+        // query results always reflect all data that we have reported
+        // processing; otherwise, there is a race for any code that runs a query
+        // as soon as input has been processed.
         self.update_snapshot();
+
+        // Record that we've processed the records.
+        let processed_records = self.processed_records(total_consumed);
 
         // Push output batches to output pipelines.
         if let Some(ft) = self.ft.as_mut() {
