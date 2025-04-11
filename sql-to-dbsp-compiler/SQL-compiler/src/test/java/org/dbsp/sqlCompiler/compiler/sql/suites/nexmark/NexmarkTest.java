@@ -829,13 +829,47 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
 
     @Test
     public void q9test() {
-        this.createTest(9, "", """
- id | item | description | initialBid | reserve | date_time | expires | seller | category | extra | auction | bidder | price | bid_datetime | bid_extra | weight
------------------------------------------------------------------------------------------------------------------------------------------------------------------""");
+        // The first batch has a single auction for seller 99 with a highest bid of 100
+        // (currently).
+        this.createTest(9, """
+INSERT INTO AUCTION VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:00', '2020-01-01 00:00:10', 99, 1, '');
+INSERT INTO BID VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 00:00:01', '');
+INSERT INTO BID VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 00:00:02', '');
+""", """
+ id | item | description | initialBid | reserve | date_time           | expires             | seller | category | extra | auction | bidder | price | bid_datetime         | bid_extra | weight
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  1 | item-name | description | 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:10 |     99 |        1 |       |       1 |      1 |    100 | 2020-01-01 00:00:02 |           | 1""",
+        // The second batch has a new highest bid for the (currently) only auction.
+        // And adds a new auction without any bids (empty join).
+        """
+INSERT INTO BID VALUES(1, 1, 200, 'my-channel', 'https://example.com', '2020-01-01 00:00:09', '');
+INSERT INTO AUCTION VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 00:00:00', '2020-01-01 00:00:20', 101, 1, '');
+                        """, """
+ id | item | description | initialBid | reserve | date_time           | expires             | seller | category | extra | auction | bidder | price | bid_datetime         | bid_extra | weight
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  1 | item-name | description | 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:10 |     99 |        1 |       |       1 |      1 |    100 | 2020-01-01 00:00:02 |           | -1
+  1 | item-name | description | 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:10 |     99 |        1 |       |       1 |      1 |    200 | 2020-01-01 00:00:09 |           | 1""",
+        // The third batch has a new bid, but it's not higher, so no effect to the first
+        // auction. A bid added for the second auction, so it is added.
+                """
+INSERT INTO BID VALUES(1, 1, 150, 'my-channel', 'https://example.com', '2020-01-01 00:00:09.5', '');
+INSERT INTO BID VALUES(2, 1, 400, 'my-channel', 'https://example.com', '2020-01-01 00:00:19', '');""", """
+                
+id | item | description | initialBid | reserve | date_time           | expires             | seller | category | extra | auction | bidder | price | bid_datetime         | bid_extra | weight
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 2 | item-name | description | 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:20 |    101 |        1 |       |       2 |      1 |    400 | 2020-01-01 00:00:19 |           | 1""",
+        // The fourth and final batch has a new bid for auction 2, but it's
+        // come in too late to be valid, so no change.
+                """
+INSERT INTO BID VALUES(2, 1, 999, 'my-channel', 'https://example.com', '2020-01-01 00:00:20.1', '');""", """
+id | item | description | initialBid | reserve | date_time | expires | seller | category | extra | auction | bidder | price | bid_datetime | bid_extra | weight
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------"""
+        );
     }
 
     @Test
     public void q10test() {
+        // No test data in Rust
         this.createTest(10, "",
                 """
  auction | bidder | price | date_time | extra | date | time | weight
@@ -852,18 +886,45 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
 
     @Test
     public void q13test() {
-        this.createTest(13, "",
+        // The original Rust test has a bigger side_input table - all pairs with equal values 0-9999
+        this.createTest(13, """
+INSERT INTO SIDE_INPUT VALUES('2020-01-01 00:00:00', 5, 5);
+INSERT INTO SIDE_INPUT VALUES('2020-01-01 00:00:00', 1005, 1005);
+INSERT INTO BID VALUES(1005, 1, 99, 'my-channel', 'https://example.com', '2020-01-01 00:00:00', '');
+INSERT INTO BID VALUES(10005, 1, 99, 'my-channel', 'https://example.com', '2020-01-01 00:00:00', '');""",
                 """
- auction | bidder | price | date_time | value
-----------------------------------------------""");
+ auction | bidder | price | date_time           | value | weight
+------------------------------------------------------------------
+    1005 |      1 |    99 | 2020-01-01 00:00:00 | 1005| 1
+   10005 |      1 |    99 | 2020-01-01 00:00:00 | 5| 1""");
     }
 
     @Test
     public void q15test() {
-        var ccs = this.createTest(15, "",
+        var ccs = this.createTest(15, "INSERT INTO BID VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');",
                 """
- day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------""");
+day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions | weight
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1970-01-01 | 1   |          1 |          0 |          0 |             1 |             1 |             0 |             0 |              1 |              1 |              0 |              0 | 1""", """
+INSERT INTO BID VALUES(2, 1, 10001, 'my-channel', 'https://example.com', '1970-01-01 00:00:06', '');
+INSERT INTO BID VALUES(3, 2, 1000001, 'my-channel', 'https://example.com', '1970-01-01 23:59:59.999', '');
+INSERT INTO BID VALUES(3, 3, 99, 'my-channel', 'https://example.com', '1970-01-02 00:00:00.001', '');
+INSERT INTO BID VALUES(3, 4, 99, 'my-channel', 'https://example.com', '1970-01-03 00:00:00.001', '');
+INSERT INTO BID VALUES(3, 5, 99, 'my-channel', 'https://example.com', '1970-01-04 00:00:00.001', '');
+INSERT INTO BID VALUES(3, 2, 99, 'my-channel', 'https://example.com', '1970-01-05 00:00:00.001', '');""",
+                """
+ day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions | weight
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1970-01-01 | 1    |          1 |          0 |          0 |             1 |             1 |             0 |             0 |              1 |              1 |              0 |              0 | -1
+1970-01-01 | 3    |          1 |          1 |          1 |             2 |             1 |             1 |             1 |              3 |              1 |              1 |              1 | 1
+1970-01-02 | 1    |          1 |          0 |          0 |             1 |             1 |             0 |             0 |              1 |              1 |              0 |              0 | 1
+1970-01-03 | 1    |          1 |          0 |          0 |             1 |             1 |             0 |             0 |              1 |              1 |              0 |              0 | 1
+1970-01-04 | 1    |          1 |          0 |          0 |             1 |             1 |             0 |             0 |              1 |              1 |              0 |              0 | 1
+1970-01-05 | 1    |          1 |          0 |          0 |             1 |             1 |             0 |             0 |              1 |              1 |              0 |              0 | 1""",
+                "INSERT INTO BID VALUES(4, 1, 99, 'my-channel', 'https://example.com', '2022-01-01 00:00:00', '');", """
+day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions | weight
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+2022-01-01 | 1   |          1 |          0 |          0 |             1 |             1 |             0 |             0 |              1 |              1 |              0 |              0 | 1""");
         // Test for https://github.com/feldera/feldera/issues/2250
         CircuitVisitor v = new CircuitVisitor(ccs.compiler) {
             @Override
