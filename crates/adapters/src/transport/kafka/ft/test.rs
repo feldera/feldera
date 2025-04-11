@@ -23,7 +23,8 @@ use feldera_types::config::{
 };
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{
-    default_group_join_timeout_secs, KafkaInputConfig, KafkaLogLevel, KafkaStartFromConfig,
+    default_group_join_timeout_secs, default_redpanda_server, KafkaInputConfig, KafkaLogLevel,
+    KafkaStartFromConfig,
 };
 use parquet::data_type::AsBytes;
 use proptest::prelude::*;
@@ -1111,7 +1112,7 @@ fn test_offset(
                     if let Some(auto_offset_reset) = auto_offset_reset {
                         kafka_options.insert("auto.offset.reset".into(), auto_offset_reset.into());
                     }
-                    kafka_options.insert("bootstrap.servers".into(), "localhost:9092".into());
+                    kafka_options.insert("bootstrap.servers".into(), default_redpanda_server());
                     kafka_options.insert("group.id".into(), "test-client".into());
                     kafka_options
                 },
