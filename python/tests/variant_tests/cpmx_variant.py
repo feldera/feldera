@@ -10,6 +10,7 @@ class varnttst_cmpx_var_tbl(TstTable):
                       id INT,
                       arr VARIANT ARRAY,
                       mapp MAP<VARCHAR, VARIANT>,
+                      mapp1 MAP<VARIANT, VARIANT>,
                       roww ROW(v1 VARIANT, v2 VARIANT)
                       )"""
         self.data = [
@@ -17,13 +18,15 @@ class varnttst_cmpx_var_tbl(TstTable):
                 "id": 0,
                 "arr": ["12, 22", "hello, hi, bye"],
                 "mapp": {"a": "ciao!", "b": "hello 45 234"},
+                "mapp1": {"c": "olaa,", "d": "friends!!"},
                 "roww": {"v1": "20", "v2": "bye bye!"},
             },
-            {"id": 1, "arr": None, "map": None, "roww": None},
+            {"id": 1, "arr": None, "mapp": None, "mapp1": None, "roww": None},
             {
                 "id": 2,
                 "arr": [None, None],
-                "map": {"a": None, "b": None},
+                "mapp": {"a": None, "b": None},
+                "mapp1": {"c": None, "d": None},
                 "roww": {"v1": None, "v2": None},
             },
         ]
@@ -37,13 +40,15 @@ class varnttst_read_cmpx_var(TstView):
                 "id": 0,
                 "arr": ['"12, 22"', '"hello, hi, bye"'],
                 "mapp": {"a": '"ciao!"', "b": '"hello 45 234"'},
+                "mapp1": {'"c"': '"olaa,"', '"d"': '"friends!!"'},
                 "roww": {"v1": '"20"', "v2": '"bye bye!"'},
             },
-            {"id": 1, "arr": None, "mapp": None, "roww": None},
+            {"id": 1, "arr": None, "mapp": None, "mapp1": None, "roww": None},
             {
                 "id": 2,
                 "arr": [None, None],
-                "mapp": None,
+                "mapp": {"a": None, "b": None},
+                "mapp1": {'"c"': None, '"d"': None},
                 "roww": {"v1": "null", "v2": "null"},
             },
         ]
@@ -83,8 +88,22 @@ class varnttst_arr_field_access_varnt(TstView):
                       FROM varnt_cmpx_var_tbl"""
 
 
+class varnttst_arr_field_nexist_varnt(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"id": 0, "arr_val3": None},
+            {"id": 1, "arr_val3": None},
+            {"id": 2, "arr_val3": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW arr_field_nexist_varnt AS SELECT
+                      id,
+                      arr[3] AS arr_val3
+                      FROM varnt_cmpx_var_tbl"""
+
+
 # Map
-class varnttst_map_field_access_varnt(TstView):
+class varnttst_map_field_access_varnt_var_key(TstView):
     def __init__(self):
         # checked manually
         self.data = [
@@ -92,10 +111,40 @@ class varnttst_map_field_access_varnt(TstView):
             {"id": 1, "a": None, "b": None},
             {"id": 2, "a": None, "b": None},
         ]
-        self.sql = """CREATE MATERIALIZED VIEW map_field_access_varnt AS SELECT
+        self.sql = """CREATE MATERIALIZED VIEW map_field_access_varnt_var_key AS SELECT
                       id,
                       mapp['a'] AS a,
                       mapp['b'] AS b
+                      FROM varnt_cmpx_var_tbl"""
+
+
+class varnttst_map_field_access_varnt_varnt_key(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"id": 0, "c": '"olaa,"', "d": '"friends!!"'},
+            {"id": 1, "c": None, "d": None},
+            {"id": 2, "c": None, "d": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW map_field_access_varnt_varnt_key AS SELECT
+                      id,
+                      mapp1[CAST('c' AS VARIANT)] AS c,
+                      mapp1[CAST('d' AS VARIANT)] AS d
+                      FROM varnt_cmpx_var_tbl"""
+
+
+class varnttst_map_field_nexist_varnt(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"id": 0, "q": None, "y": None},
+            {"id": 1, "q": None, "y": None},
+            {"id": 2, "q": None, "y": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW map_field_nexist_varnt AS SELECT
+                      id,
+                      mapp['q'] AS q,
+                      mapp['y'] AS y
                       FROM varnt_cmpx_var_tbl"""
 
 
