@@ -371,7 +371,14 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 16,
-                      "storage": null,
+                      "storage": {
+                        "backend": {
+                          "name": "default"
+                        },
+                        "min_storage_bytes": null,
+                        "compression": "default",
+                        "cache_mib": null
+                      },
                       "fault_tolerance": null,
                       "cpu_profiler": true,
                       "tracing": false,
@@ -509,7 +516,14 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
-                  "storage": null,
+                  "storage": {
+                    "backend": {
+                      "name": "default"
+                    },
+                    "min_storage_bytes": null,
+                    "compression": "default",
+                    "cache_mib": null
+                  },
                   "fault_tolerance": null,
                   "cpu_profiler": true,
                   "tracing": false,
@@ -558,7 +572,14 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": null,
+                    "storage": {
+                      "backend": {
+                        "name": "default"
+                      },
+                      "min_storage_bytes": null,
+                      "compression": "default",
+                      "cache_mib": null
+                    },
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -702,7 +723,14 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": null,
+                    "storage": {
+                      "backend": {
+                        "name": "default"
+                      },
+                      "min_storage_bytes": null,
+                      "compression": "default",
+                      "cache_mib": null
+                    },
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -809,7 +837,14 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
-                  "storage": null,
+                  "storage": {
+                    "backend": {
+                      "name": "default"
+                    },
+                    "min_storage_bytes": null,
+                    "compression": "default",
+                    "cache_mib": null
+                  },
                   "fault_tolerance": null,
                   "cpu_profiler": true,
                   "tracing": false,
@@ -858,7 +893,14 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": null,
+                    "storage": {
+                      "backend": {
+                        "name": "default"
+                      },
+                      "min_storage_bytes": null,
+                      "compression": "default",
+                      "cache_mib": null
+                    },
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -919,7 +961,14 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": null,
+                    "storage": {
+                      "backend": {
+                        "name": "default"
+                      },
+                      "min_storage_bytes": null,
+                      "compression": "default",
+                      "cache_mib": null
+                    },
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -1147,7 +1196,14 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "storage": null,
+                    "storage": {
+                      "backend": {
+                        "name": "default"
+                      },
+                      "min_storage_bytes": null,
+                      "compression": "default",
+                      "cache_mib": null
+                    },
                     "fault_tolerance": null,
                     "cpu_profiler": true,
                     "tracing": false,
@@ -4496,7 +4552,14 @@
                     "$ref": "#/components/schemas/StorageOptions"
                   }
                 ],
-                "default": null,
+                "default": {
+                  "backend": {
+                    "name": "default"
+                  },
+                  "min_storage_bytes": null,
+                  "compression": "default",
+                  "cache_mib": null
+                },
                 "nullable": true
               },
               "tracing": {
@@ -5393,7 +5456,14 @@
                 "$ref": "#/components/schemas/StorageOptions"
               }
             ],
-            "default": null,
+            "default": {
+              "backend": {
+                "name": "default"
+              },
+              "min_storage_bytes": null,
+              "compression": "default",
+              "cache_mib": null
+            },
             "nullable": true
           },
           "tracing": {
