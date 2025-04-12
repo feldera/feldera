@@ -70,7 +70,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
             DBSPTypeIndexedZSet outputType,
             OutputPort dataInput, OutputPort waterlineInput) {
         super(node, "partitioned_rolling_aggregate_with_waterline",
-                function, outputType, true, dataInput, waterlineInput);
+                function, outputType, true, dataInput, waterlineInput, true);
         this.aggregate = aggregate;
         this.lower = lower;
         this.upper = upper;

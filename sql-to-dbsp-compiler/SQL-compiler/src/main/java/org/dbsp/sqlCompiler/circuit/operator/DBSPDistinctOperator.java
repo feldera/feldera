@@ -35,7 +35,7 @@ import java.util.List;
 
 public final class DBSPDistinctOperator extends DBSPUnaryOperator {
     public DBSPDistinctOperator(CalciteRelNode node, OutputPort input) {
-        super(node, "distinct", null, input.outputType(), false, input);
+        super(node, "distinct", null, input.outputType(), false, input, true);
     }
 
     @Override

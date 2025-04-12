@@ -45,7 +45,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
             @Nullable DBSPExpression function,
             @Nullable DBSPAggregate aggregate, OutputPort input) {
         super(node, "aggregate", outputType,
-                function, aggregate, false, input);
+                function, aggregate, false, input, true);
     }
 
     @Override
