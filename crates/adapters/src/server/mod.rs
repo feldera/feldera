@@ -1232,7 +1232,13 @@ outputs:
         thread::spawn(move || {
             bootstrap(
                 args,
-                Box::new(|workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema()))),
+                Box::new(|workers| {
+                    Ok(test_circuit::<TestStruct>(
+                        workers,
+                        &TestStruct::schema(),
+                        None,
+                    ))
+                }),
                 state_clone,
                 std::sync::mpsc::channel().0,
             )

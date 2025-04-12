@@ -247,7 +247,7 @@ impl Controller {
         config: &InputEndpointConfig,
     ) -> Result<EndpointId, ControllerError> {
         debug!("Connecting input endpoint '{endpoint_name}'; config: {config:?}");
-        self.inner.fail_if_restoring()?;
+        self.inner.fail_if_bootstrapping_or_restoring()?;
         self.inner.connect_input(endpoint_name, config)
     }
 
@@ -282,7 +282,7 @@ impl Controller {
         endpoint_config: InputEndpointConfig,
         endpoint: Box<dyn TransportInputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
-        self.inner.fail_if_restoring()?;
+        self.inner.fail_if_bootstrapping_or_restoring()?;
         self.inner
             .add_input_endpoint(endpoint_name, endpoint_config, Some(endpoint))
     }
@@ -444,7 +444,7 @@ impl Controller {
     /// The callback-based nature of this function makes it useful in
     /// asynchronous contexts.
     pub fn start_checkpoint(&self, cb: CheckpointCallbackFn) {
-        match self.inner.fail_if_restoring() {
+        match self.inner.fail_if_bootstrapping_or_restoring() {
             Err(error) => cb(Err(error)),
             Ok(()) => self.inner.checkpoint(cb),
         }
@@ -464,7 +464,7 @@ impl Controller {
     /// The callback-based nature of this function makes it useful in
     /// asynchronous contexts.
     pub fn start_suspend(&self, cb: SuspendCallbackFn) {
-        match self.inner.fail_if_restoring() {
+        match self.inner.fail_if_bootstrapping_or_restoring() {
             Err(error) => cb(Err(error)),
             Ok(()) => self.inner.suspend(cb),
         }
@@ -587,28 +587,63 @@ impl CircuitThread {
         let (parker, backpressure_thread, command_receiver, controller) =
             ControllerInner::new(pipeline_config, catalog, error_cb, processed_records)?;
 
+        controller
+            .status
+            .set_bootstrap_in_progress(circuit.bootstrap_in_progress());
+
         // Seek each input endpoint to its initial offset.
         //
         // If we're not restoring from a checkpoint, `input_metadata` will be empty so
         // this will do nothing.
         if let Some(input_metadata) = &input_metadata {
             for (endpoint_name, metadata) in &input_metadata.0 {
-                let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
-                controller.status.input_status()[&endpoint_id]
-                    .reader
-                    .seek(metadata.clone());
+                let Ok(endpoint_id) = controller.input_endpoint_id_by_name(endpoint_name) else {
+                    info!("Found checkpointed state for input connector '{endpoint_name}', but the connector is not present in the new pipeline configuration; this connector will not be added to the pipeline");
+                    continue;
+                };
+
+                let endpoint = &controller.status.input_status()[&endpoint_id];
+
+                let node_id = controller
+                    .catalog
+                    .input_collection_handle(&SqlIdentifier::from(&endpoint.config.stream))
+                    .unwrap()
+                    .node_id;
+
+                if let Some(replay_info) = circuit.bootstrap_info() {
+                    if replay_info.need_backfill.contains(&node_id) {
+                        info!("Found checkpointed state for input connector '{endpoint_name}', but the table that the connector is attached to has been modified and its state has been cleared; the connector will restart from scratch");
+                        continue;
+                    }
+                }
+
+                endpoint.reader.seek(metadata.clone());
             }
         }
 
         let ft = match ft_model {
             Some(FtModel::ExactlyOnce) => {
                 let backend = storage.clone().unwrap();
-                let ft = if input_metadata.is_some() {
+                let mut ft = if input_metadata.is_some() {
                     FtState::open(backend, step, controller.clone())
                 } else {
                     FtState::create(backend, controller.clone())
-                };
-                Some(ft?)
+                }?;
+
+                // Normally, the pipeline can be modified between a suspend and a resume, but not between a failure
+                // and a recovery. If the pipeline has been modified (bootstrap_in_progress returns true), and its
+                // replay journal is not empty (is_replaying), we may not be able to recover it reliably, so just
+                // give up now.
+                if ft.is_replaying() && circuit.bootstrap_in_progress() {
+                    return Err(ControllerError::checkpoint_does_not_match_pipeline());
+                }
+
+                // Disable journaling while we're bootstrapping the circuit.
+                if circuit.bootstrap_in_progress() {
+                    ft.disable();
+                }
+
+                Some(ft)
             }
             Some(FtModel::AtLeastOnce) => None,
             None => {
@@ -683,7 +718,12 @@ impl CircuitThread {
                 continue;
             }
 
-            match trigger.trigger(self.last_checkpoint, self.replaying(), running) {
+            match trigger.trigger(
+                self.last_checkpoint,
+                self.replaying(),
+                self.circuit.bootstrap_in_progress(),
+                running,
+            ) {
                 Action::Step => {
                     let done = !self.step()?;
                     self.controller
@@ -699,7 +739,15 @@ impl CircuitThread {
                         break;
                     }
                 }
-                Action::Checkpoint => drop(self.checkpoint()),
+                Action::Checkpoint => {
+                    drop(self.checkpoint());
+
+                    // We may have disabled FT during backfill. Re-enable it after
+                    // reaching a checkpoint.
+                    if let Some(ft) = &mut self.ft {
+                        ft.enable();
+                    }
+                }
                 Action::Park(Some(deadline)) => self.parker.park_deadline(deadline),
                 Action::Park(None) => self.parker.park(),
             }
@@ -725,6 +773,7 @@ impl CircuitThread {
         else {
             return Ok(false);
         };
+
         self.input_metadata = Some(CheckpointOffsets(
             step_metadata
                 .iter()
@@ -744,6 +793,11 @@ impl CircuitThread {
             .step()
             .unwrap_or_else(|e| self.controller.error(e.into()));
         debug!("circuit thread: 'circuit.step' returned");
+
+        // If bootstrapping has completed, update the status flag.
+        self.controller
+            .status
+            .set_bootstrap_in_progress(self.circuit.bootstrap_in_progress());
 
         // Update `trace_snapshot` to the latest traces.
         //
@@ -898,6 +952,14 @@ impl CircuitThread {
     /// Returns information about the input that was flushed, or `Err(())` if
     /// the pipeline should shut down.
     fn flush_input_to_circuit(&mut self) -> Result<FlushedInput, ()> {
+        // No ingestion during bootstrap.
+        if self.controller.status.bootstrap_in_progress() {
+            return Ok(FlushedInput {
+                total_consumed: 0,
+                step_metadata: HashMap::new(),
+            });
+        }
+
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //
         // The set of endpoint ids could change while we're waiting, because
@@ -1080,6 +1142,9 @@ struct FlushedInput {
 
 /// Tracks fault-tolerant state in a controller [CircuitThread].
 struct FtState {
+    /// Used to temporarily disable journaling.
+    enabled: bool,
+
     /// The controller.
     controller: Arc<ControllerInner>,
 
@@ -1109,6 +1174,7 @@ impl FtState {
             Self::replay_step(step, record, &controller)?;
         }
         Ok(Self {
+            enabled: true,
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
             replay_step,
@@ -1144,11 +1210,20 @@ impl FtState {
         checkpoint.write(&*backend, &StoragePath::from(STATE_FILE))?;
 
         Ok(Self {
+            enabled: true,
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
             replay_step: None,
             journal,
         })
+    }
+
+    fn disable(&mut self) {
+        self.enabled = false;
+    }
+
+    fn enable(&mut self) {
+        self.enabled = true;
     }
 
     fn initial_input_endpoints(controller: &ControllerInner) -> HashMap<EndpointId, String> {
@@ -1196,6 +1271,9 @@ impl FtState {
         input_logs: HashMap<String, InputLog>,
         step: Step,
     ) -> Result<(), ControllerError> {
+        if !self.enabled {
+            return Ok(());
+        }
         match &self.replay_step {
             None => {
                 let mut remove_inputs = HashSet::new();
@@ -1249,6 +1327,10 @@ impl FtState {
 
     /// If we just replayed a step, try to replay the next one too.
     fn next_step(&mut self, step: Step) -> Result<(), ControllerError> {
+        if !self.enabled {
+            return Ok(());
+        }
+
         if self.is_replaying() {
             // Read a step.
             self.replay_step = self.journal.read(step)?;
@@ -1336,9 +1418,16 @@ impl StepTrigger {
     }
 
     /// Determines when to trigger the next step, given whether we're currently
-    /// `replaying` and whether the pipeline is currently `running`.  Returns
-    /// `None` to trigger a step right away, and otherwise how long to wait.
-    fn trigger(&mut self, last_checkpoint: Instant, replaying: bool, running: bool) -> Action {
+    /// `replaying` from a checkpoint, `bootstrapping` modified parts of the circuit,
+    /// and whether the pipeline is currently `running`.  Returns
+    /// `Action::Step` to trigger a step right away, and otherwise how long to wait.
+    fn trigger(
+        &mut self,
+        last_checkpoint: Instant,
+        replaying: bool,
+        bootstrapping: bool,
+        running: bool,
+    ) -> Action {
         let buffered_records = self.controller.status.num_buffered_input_records();
 
         // `self.tick` but `None` if we're not running.
@@ -1356,7 +1445,7 @@ impl StepTrigger {
         }
 
         let now = Instant::now();
-        if replaying {
+        if replaying || bootstrapping {
             step(self, now)
         } else if checkpoint.is_some_and(|t| now >= t) {
             Action::Checkpoint
@@ -1543,7 +1632,7 @@ impl ControllerInit {
             layout: Layout::new_solo(pipeline_config.global.workers as usize),
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             storage,
-            mode: Mode::Ephemeral,
+            mode: Mode::Persistent,
         })
     }
 }
@@ -1642,8 +1731,13 @@ impl BackpressureThread {
                 PipelineState::Terminated => return,
             };
 
+            let bootstrap_in_progress = controller.status.bootstrap_in_progress();
+
             for (epid, ep) in controller.status.input_status().iter() {
-                let should_run = globally_running && !ep.is_paused_by_user() && !ep.is_full();
+                let should_run = globally_running
+                    && !bootstrap_in_progress
+                    && !ep.is_paused_by_user()
+                    && !ep.is_full();
                 match should_run {
                     true => {
                         if running_endpoints.insert(*epid) {
@@ -1950,7 +2044,7 @@ pub struct ControllerInner {
     /// Is fault tolerance enabled?
     fault_tolerant: bool,
 
-    /// Is the circuit thread still restoring from a checkpoint?
+    /// Is the circuit thread still restoring from a checkpoint (this includes the journal replay phase)?
     restoring: AtomicBool,
 }
 
@@ -2747,12 +2841,37 @@ impl ControllerInner {
         ControllerError::RestoreInProgress
     }
 
+    fn warn_bootstrapping() -> ControllerError {
+        static RATE_LIMIT: LazyLock<DefaultDirectRateLimiter> =
+            LazyLock::new(|| RateLimiter::direct(Quota::per_minute(nonzero!(10u32))));
+        if RATE_LIMIT.check().is_ok() {
+            warn!("Failing request while bootstrapping is in progress");
+        }
+        ControllerError::BootstrapInProgress
+    }
+
     fn fail_if_restoring(&self) -> Result<(), ControllerError> {
         if self.restoring.load(Ordering::Acquire) {
             Err(Self::warn_restoring())
         } else {
             Ok(())
         }
+    }
+
+    fn fail_if_bootstrapping(&self) -> Result<(), ControllerError> {
+        if self.status.bootstrap_in_progress() {
+            Err(Self::warn_bootstrapping())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Some operations are not allowed while the pipeline is either bootstrapping or restoring
+    /// from a checkpoint.
+    fn fail_if_bootstrapping_or_restoring(&self) -> Result<(), ControllerError> {
+        self.fail_if_bootstrapping()?;
+        self.fail_if_restoring()?;
+        Ok(())
     }
 
     /// Returns whether this pipeline supports suspend-and-resume.
@@ -2972,6 +3091,7 @@ mod test {
     use std::{
         fs::{create_dir, remove_file, File},
         io::Write,
+        path::Path,
         thread::sleep,
         time::Duration,
     };
@@ -3025,6 +3145,7 @@ inputs:
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
                     &TestStruct::schema(),
+                    None,
                 ))
             },
             &config,
@@ -3096,6 +3217,7 @@ inputs:
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
                     &TestStruct::schema(),
+                    None,
                 ))
             },
             &config,
@@ -3182,7 +3304,7 @@ outputs:
             info!("output file: {output_path}");
             let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
             let controller = Controller::with_config(
-                    |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[])),
+                    |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], None)),
                     &config,
                     Box::new(|e| panic!("error: {e}")),
                 )
@@ -3352,7 +3474,13 @@ outputs:
             // Start pipeline.
             println!("start pipeline");
             let controller = Controller::with_config(
-                |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[])),
+                |circuit_config| {
+                    Ok(test_circuit::<TestStruct>(
+                        circuit_config,
+                        &[],
+                        Some("output"),
+                    ))
+                },
                 &config,
                 Box::new(|e| panic!("error: {e}")),
             )
@@ -3492,6 +3620,7 @@ inputs:
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
                     &TestStruct::schema(),
+                    None,
                 ))
             },
             &config,
@@ -3585,6 +3714,7 @@ inputs:
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
                     &TestStruct::schema(),
+                    None,
                 ))
             },
             &config,
@@ -3746,7 +3876,13 @@ outputs:
             // Start pipeline.
             println!("start pipeline");
             let controller = Controller::with_config(
-                |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[])),
+                |circuit_config| {
+                    Ok(test_circuit::<TestStruct>(
+                        circuit_config,
+                        &[],
+                        Some("output"),
+                    ))
+                },
                 &config,
                 Box::new(|e| panic!("error: {e}")),
             )
@@ -3755,43 +3891,12 @@ outputs:
 
             // Wait for the records that are not in the checkpoint to be
             // processed or replayed.
-            let expect_n = total_records - checkpointed_records;
-            println!(
-                "wait for {} records {checkpointed_records}..{total_records}",
-                expect_n
-            );
-            let mut last_n = 0;
-            wait(
-                || {
-                    let n = controller
-                        .status()
-                        .output_status()
-                        .get(&0)
-                        .unwrap()
-                        .transmitted_records() as usize;
-                    if n > last_n {
-                        println!("received {n} records");
-                        last_n = n;
-                    }
-                    n >= expect_n
-                },
-                10_000,
-            )
-            .unwrap();
-
-            // No more records should arrive, but give the controller some time
-            // to send some more in case there's a bug.
-            sleep(Duration::from_millis(100));
-
-            // Then verify that the number is as expected.
-            assert_eq!(
-                controller
-                    .status()
-                    .output_status()
-                    .get(&0)
-                    .unwrap()
-                    .transmitted_records(),
-                expect_n as u64
+            wait_for_output(
+                &controller,
+                &(checkpointed_records..total_records)
+                    .map(|id| TestStruct::for_id(id as u32))
+                    .collect::<Vec<_>>(),
+                &output_path,
             );
 
             // Suspend.
@@ -3802,38 +3907,225 @@ outputs:
             println!("stop controller");
             controller.stop().unwrap();
 
-            // Read output and compare. Our output adapter, which is not
-            // fault-tolerant, truncates the output file to length 0 each
-            // time. Therefore, the output file should contain all the records
-            // in `checkpointed_records..total_records`.
-            let mut actual = CsvReaderBuilder::new()
-                .has_headers(false)
-                .from_path(&output_path)
-                .unwrap()
-                .deserialize::<(TestStruct, i32)>()
-                .map(|res| {
-                    let (val, weight) = res.unwrap();
-                    assert_eq!(weight, 1);
-                    val
-                })
-                .collect::<Vec<_>>();
-            actual.sort();
-
-            assert_eq!(actual.len(), expect_n);
-            for (record, expect_record) in actual
-                .into_iter()
-                .zip((checkpointed_records..).map(|id| TestStruct::for_id(id as u32)))
-            {
-                assert_eq!(record, expect_record);
-            }
-
             checkpointed_records = total_records;
             println!();
+        }
+    }
+
+    /// Test suspend and resume with bootstrapping of modified parts of the circuit
+    /// on resume.
+    ///
+    /// Starts the pipeline, then for each element of `rounds`:
+    ///
+    /// * append the specified number of records to the input file
+    /// * wait for the newly added records to show up in the output file
+    /// * suspend the pipeline
+    /// * modify the pipeline by changinging the persistent id of the output stream
+    /// * resume the pipeline, make sure that the entire input shows up in the
+    /// output stream.
+    fn test_bootstrap(rounds: &[usize]) {
+        init_test_logger();
+        let tempdir = TempDir::new().unwrap();
+
+        // This allows the temporary directory to be deleted when we finish.  If
+        // you want to keep it for inspection instead, comment out the following
+        // line and then remove the comment markers on the two lines after that.
+        let tempdir_path = tempdir.path();
+        //let tempdir_path = tempdir.into_path();
+        //println!("{}", tempdir_path.display());
+
+        let storage_dir = tempdir_path.join("storage");
+        create_dir(&storage_dir).unwrap();
+        let input_path = tempdir_path.join("input.csv");
+        let input_file = File::create(&input_path).unwrap();
+        let output_path = tempdir_path.join("output.csv");
+
+        let config_str = format!(
+            r#"
+name: test
+workers: 4
+storage_config:
+    path: {storage_dir:?}
+storage: true
+clock_resolution_usecs: null
+inputs:
+    test_input1:
+        stream: test_input1
+        transport:
+            name: file_input
+            config:
+                path: {input_path:?}
+                follow: true
+        format:
+            name: csv
+outputs:
+    test_output1:
+        stream: test_output1
+        transport:
+            name: file_output
+            config:
+                path: {output_path:?}
+        format:
+            name: csv
+            config:
+        "#
+        );
+
+        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(&input_file);
+
+        // Number of records written to the input.
+        let mut total_records = 0usize;
+
+        // Start pipeline.
+        println!("start pipeline");
+        let mut controller = Controller::with_config(
+            |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], Some("v0"))),
+            &config,
+            Box::new(|e| panic!("error: {e}")),
+        )
+        .unwrap();
+        controller.start();
+
+        for (round, n_records) in rounds.iter().copied().enumerate() {
+            println!("--- round {round}: add {n_records} records and suspend --- ");
+
+            // Write records to the input file.
+            println!(
+                "Writing records {total_records}..{}",
+                total_records + n_records
+            );
+            if n_records > 0 {
+                for id in total_records..total_records + n_records {
+                    writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+                }
+                writer.flush().unwrap();
+                total_records += n_records;
+            }
+
+            // Wait for the new records to be processed.
+            wait_for_output(
+                &controller,
+                &(0..total_records)
+                    .map(|id| TestStruct::for_id(id as u32))
+                    .collect::<Vec<_>>(),
+                &output_path,
+            );
+
+            // Suspend.
+            println!("suspend");
+            controller.suspend().unwrap();
+
+            // Stop controller.
+            println!("stop controller");
+            controller.stop().unwrap();
+
+            // Resume modified pipeline.
+            controller = Controller::with_config(
+                move |circuit_config| {
+                    Ok(test_circuit::<TestStruct>(
+                        circuit_config,
+                        &[],
+                        Some(&format!("v{}", round + 1)),
+                    ))
+                },
+                &config,
+                Box::new(|e| panic!("error: {e}")),
+            )
+            .unwrap();
+            controller.start();
+
+            // Wait for the entire input to show up in the output stream.
+            wait_for_output(
+                &controller,
+                &(0..total_records)
+                    .map(|id| TestStruct::for_id(id as u32))
+                    .collect::<Vec<_>>(),
+                &output_path,
+            );
+
+            println!();
+        }
+    }
+
+    fn wait_for_output(
+        controller: &Controller,
+        expected_output: &[TestStruct],
+        csv_file_path: &Path,
+    ) {
+        let expect_n = expected_output.len();
+
+        println!("wait for {expect_n} records");
+
+        let mut last_n = 0;
+
+        // Make sure that the entire input shows up in the output file.
+        wait(
+            || {
+                let n = controller
+                    .status()
+                    .output_status()
+                    .get(&0)
+                    .unwrap()
+                    .transmitted_records() as usize;
+                if n > last_n {
+                    println!("received {n} records");
+                    last_n = n;
+                }
+                n >= expect_n
+            },
+            10_000,
+        )
+        .unwrap();
+
+        // No more records should arrive, but give the controller some time
+        // to send some more in case there's a bug.
+        sleep(Duration::from_millis(100));
+
+        // Then verify that the number is as expected.
+        assert_eq!(
+            controller
+                .status()
+                .output_status()
+                .get(&0)
+                .unwrap()
+                .transmitted_records(),
+            expect_n as u64
+        );
+
+        // Read output and compare. Our output adapter, which is not
+        // fault-tolerant, truncates the output file to length 0 each
+        // time. Therefore, the output file should contain all the records
+        // in `checkpointed_records..total_records`.
+        let mut actual = CsvReaderBuilder::new()
+            .has_headers(false)
+            .from_path(csv_file_path)
+            .unwrap()
+            .deserialize::<(TestStruct, i32)>()
+            .map(|res| {
+                let (val, weight) = res.unwrap();
+                assert_eq!(weight, 1);
+                val
+            })
+            .collect::<Vec<_>>();
+        actual.sort();
+
+        assert_eq!(actual.len(), expect_n);
+        for (record, expect_record) in actual.into_iter().zip(expected_output.iter().cloned()) {
+            assert_eq!(record, expect_record);
         }
     }
 
     #[test]
     fn suspend() {
         test_suspend(&[2500, 2500, 2500, 2500, 2500]);
+    }
+
+    #[test]
+    fn bootstrap() {
+        test_bootstrap(&[2500, 2500, 2500, 2500, 2500]);
     }
 }

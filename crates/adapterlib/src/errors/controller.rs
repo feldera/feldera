@@ -564,44 +564,72 @@ pub enum ControllerError {
     },
 
     /// Error parsing program schema.
-    SchemaParseError { error: String },
+    SchemaParseError {
+        error: String,
+    },
 
     /// Error validating program schema.
-    SchemaValidationError { error: String },
+    SchemaValidationError {
+        error: String,
+    },
 
     /// Error parsing the checkpoint.
-    CheckpointParseError { error: String },
+    CheckpointParseError {
+        error: String,
+    },
+
+    CheckpointDoesNotMatchPipeline,
 
     /// Operation cannot be initiated now because the pipeline is being restored
     /// from a checkpoint.
     RestoreInProgress,
 
+    /// Operation cannot be initiated now because the pipeline is bootstrapping new/modified views.
+    BootstrapInProgress,
+
     /// Error in journal metadata.
     StepError(StepError),
 
     /// Unexpected step number.
-    UnexpectedStep { actual: Step, expected: Step },
+    UnexpectedStep {
+        actual: Step,
+        expected: Step,
+    },
 
     /// Step replay failure.
-    ReplayFailure { error: String },
+    ReplayFailure {
+        error: String,
+    },
 
     /// Feature is not supported.
-    NotSupported { error: String },
+    NotSupported {
+        error: String,
+    },
 
     /// Error parsing program IR file.
-    IrParseError { error: String },
+    IrParseError {
+        error: String,
+    },
 
     /// Error parsing CLI arguments.
-    CliArgsError { error: String },
+    CliArgsError {
+        error: String,
+    },
 
     /// Invalid controller configuration.
-    Config { config_error: ConfigError },
+    Config {
+        config_error: ConfigError,
+    },
 
     /// Unknown input endpoint name.
-    UnknownInputEndpoint { endpoint_name: String },
+    UnknownInputEndpoint {
+        endpoint_name: String,
+    },
 
     /// Unknown output endpoint name.
-    UnknownOutputEndpoint { endpoint_name: String },
+    UnknownOutputEndpoint {
+        endpoint_name: String,
+    },
 
     /// Error parsing input data.
     ///
@@ -641,10 +669,14 @@ pub enum ControllerError {
     },
 
     /// Error evaluating the DBSP circuit.
-    DbspError { error: DbspError },
+    DbspError {
+        error: DbspError,
+    },
 
     /// Error inside the Prometheus module.
-    PrometheusError { error: String },
+    PrometheusError {
+        error: String,
+    },
 
     // TODO: we currently don't have a way to include more info about the panic.
     /// Panic inside the DBSP runtime.
@@ -685,6 +717,7 @@ impl ResponseError for ControllerError {
             Self::NotSupported { .. } => StatusCode::BAD_REQUEST,
             Self::EnterpriseFeature(_) => StatusCode::NOT_IMPLEMENTED,
             Self::RestoreInProgress => StatusCode::SERVICE_UNAVAILABLE,
+            Self::BootstrapInProgress => StatusCode::SERVICE_UNAVAILABLE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -785,7 +818,9 @@ impl DbspDetailedError for ControllerError {
             Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
             Self::SchemaValidationError { .. } => Cow::from("SchemaParseError"),
             Self::CheckpointParseError { .. } => Cow::from("CheckpointParseError"),
+            Self::CheckpointDoesNotMatchPipeline => Cow::from("CheckpointDoesNotMatchPipeline"),
             Self::RestoreInProgress => Cow::from("RestoreInProgress"),
+            Self::BootstrapInProgress => Cow::from("BootstrapInProgress"),
             Self::StepError { .. } => Cow::from("StepError"),
             Self::UnexpectedStep { .. } => Cow::from("UnexpectedStep"),
             Self::ReplayFailure { .. } => Cow::from("ReplayFailure"),
@@ -840,8 +875,17 @@ impl Display for ControllerError {
             Self::CheckpointParseError { error } => {
                 write!(f, "Error parsing checkpoint file: {error}")
             }
+            Self::CheckpointDoesNotMatchPipeline => {
+                write!(f, "Recovery failed: the pipeline has been recovered from a checkpoint, but the checkpoint does not match the current pipeline definition. This can be caused by a corrupted checkpoint or an internal error.")
+            }
             Self::RestoreInProgress => {
-                write!(f, "Operation cannot be initiated now because the pipeline is being restoring from a checkpoint.")
+                write!(f, "Operation cannot be initiated now because the pipeline is restoring from a checkpoint.")
+            }
+            Self::BootstrapInProgress => {
+                write!(
+                    f,
+                    "Operation cannot be initiated while the pipeline is bootstrapping."
+                )
             }
             Self::StepError(error) => write!(f, "Error with persistent input steps: {error}"),
             Self::UnexpectedStep { actual, expected } => {
@@ -954,6 +998,10 @@ impl ControllerError {
         Self::SchemaParseError {
             error: error.to_string(),
         }
+    }
+
+    pub fn checkpoint_does_not_match_pipeline() -> Self {
+        Self::CheckpointDoesNotMatchPipeline
     }
 
     pub fn schema_validation_error(error: &str) -> Self {
@@ -1200,7 +1248,7 @@ impl ControllerError {
             Self::IoError { io_error, .. } => io_error.kind(),
             Self::StorageError { error, .. } => error.kind(),
             Self::StepError(error) => error.kind(),
-            Self::RestoreInProgress => ErrorKind::ResourceBusy,
+            Self::RestoreInProgress | Self::BootstrapInProgress => ErrorKind::ResourceBusy,
             Self::NotSupported { .. } => ErrorKind::Unsupported,
             Self::DbspError {
                 error: DbspError::IO(error),
@@ -1209,6 +1257,7 @@ impl ControllerError {
             | Self::SchemaParseError { .. }
             | Self::SchemaValidationError { .. }
             | Self::CheckpointParseError { .. }
+            | Self::CheckpointDoesNotMatchPipeline
             | Self::UnexpectedStep { .. }
             | Self::ReplayFailure { .. }
             | Self::IrParseError { .. }
