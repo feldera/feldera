@@ -7,6 +7,7 @@ use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
 use apache_avro::{schema::NamesRef, types::Value as AvroValue, Schema as AvroSchema};
 use arrow::record_batch::RecordBatch;
+use dbsp::circuit::NodeId;
 use dyn_clone::DynClone;
 use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::format::json::JsonFlavor;
@@ -523,16 +524,24 @@ pub trait CircuitCatalog: Send + Sync {
 pub struct InputCollectionHandle {
     pub schema: Relation,
     pub handle: Box<dyn DeCollectionHandle>,
+
+    /// Node id of the input stream in the circuit.
+    ///
+    /// Used to check whether the input stream needs to be backfilled during bootstrapping,
+    /// i.e., whether attached input connectors should be reset to their initial offsets or
+    /// continue from the checkpointed offsets.
+    pub node_id: NodeId,
 }
 
 impl InputCollectionHandle {
-    pub fn new<H>(schema: Relation, handle: H) -> Self
+    pub fn new<H>(schema: Relation, handle: H, node_id: NodeId) -> Self
     where
         H: DeCollectionHandle + 'static,
     {
         Self {
             schema,
             handle: Box::new(handle),
+            node_id,
         }
     }
 }

@@ -58,7 +58,7 @@ pub use data::{
     DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergTestStruct, KeyStruct, TestStruct,
     TestStruct2,
 };
-use dbsp::circuit::CircuitConfig;
+use dbsp::circuit::{CircuitConfig, NodeId};
 use dbsp::utils::Tup2;
 use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{Field, Relation};
@@ -119,7 +119,7 @@ where
     let input_handle = <MockDeZSet<T, U>>::new();
     let consumer = MockInputConsumer::new();
     let parser = MockInputParser::from_handle(
-        &InputCollectionHandle::new(schema.clone(), input_handle.clone()),
+        &InputCollectionHandle::new(schema.clone(), input_handle.clone(), NodeId::new(0)),
         config,
     );
     Ok((consumer, parser, input_handle))
@@ -205,6 +205,7 @@ where
 pub fn test_circuit<T>(
     config: CircuitConfig,
     schema: &[Field],
+    persistent_output_id: Option<&str>,
 ) -> (DBSPHandle, Box<dyn CircuitCatalog>)
 where
     T: DBData
@@ -213,9 +214,12 @@ where
         + Sync,
 {
     let schema = schema.to_vec();
+    let persistent_output_id = persistent_output_id.map(|id| id.to_string());
+
     let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
         let mut catalog = Catalog::new();
         let (input, hinput) = circuit.add_input_zset::<T>();
+        input.set_persistent_id(Some("input"));
 
         let input_schema = serde_json::to_string(&Relation::new(
             "test_input1".into(),
@@ -234,7 +238,13 @@ where
         .unwrap();
 
         catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
-        catalog.register_materialized_output_zset(input, &output_schema);
+
+        let persistent_output_id = persistent_output_id.as_deref();
+        catalog.register_materialized_output_zset_persistent(
+            persistent_output_id,
+            input,
+            &output_schema,
+        );
 
         Ok(catalog)
     })
@@ -274,7 +284,7 @@ where
     let mut parser = format
         .new_parser(
             "BaseConsumer",
-            &InputCollectionHandle::new(schema, buffer.clone()),
+            &InputCollectionHandle::new(schema, buffer.clone(), NodeId::new(0)),
             &serde_yaml::from_str::<serde_yaml::Value>(format_config_yaml).unwrap(),
         )
         .unwrap();

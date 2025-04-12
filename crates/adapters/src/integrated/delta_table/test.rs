@@ -292,7 +292,7 @@ inputs:
     let schema = schema.to_vec();
 
     Controller::with_config(
-        move |workers| Ok(test_circuit::<T>(workers, &schema)),
+        move |workers| Ok(test_circuit::<T>(workers, &schema, None)),
         &config,
         Box::new(move |e| panic!("delta_table_input_test: error: {e}")),
     )
@@ -359,7 +359,7 @@ outputs:
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     Controller::with_config(
-        |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema())),
+        |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema(), None)),
         &config,
         Box::new(move |e| panic!("delta_to_delta pipeline: error: {e}")),
     )
@@ -403,7 +403,7 @@ inputs:
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     Controller::with_config(
-        |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema())),
+        |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema(), None)),
         &config,
         Box::new(move |e| panic!("delta_read pipeline: error: {e}")),
     )
@@ -463,7 +463,7 @@ outputs:
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     Controller::with_config(
-        |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema())),
+        |workers| Ok(test_circuit::<T>(workers, &DeltaTestStruct::schema(), None)),
         &config,
         Box::new(move |e| panic!("delta_write pipeline: error: {e}")),
     )
@@ -557,6 +557,7 @@ outputs:
             Ok(test_circuit::<DeltaTestStruct>(
                 workers,
                 &DeltaTestStruct::schema(),
+                None,
             ))
         },
         &config,

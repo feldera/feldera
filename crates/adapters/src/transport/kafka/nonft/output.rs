@@ -253,7 +253,13 @@ outputs:
         let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
 
         match Controller::with_config(
-            |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
+            |workers| {
+                Ok(test_circuit::<TestStruct>(
+                    workers,
+                    &TestStruct::schema(),
+                    None,
+                ))
+            },
             &config,
             Box::new(|e| panic!("error: {e}")),
         ) {

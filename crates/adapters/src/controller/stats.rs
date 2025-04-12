@@ -90,6 +90,10 @@ pub struct GlobalControllerMetrics {
     #[serde(serialize_with = "serialize_atomic")]
     state: Atomic<PipelineState>,
 
+    /// The pipeline has been resumed from a checkpoint and is currently bootstrapping
+    /// new and modified views.
+    bootstrap_in_progress: AtomicBool,
+
     /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
     pub rss_bytes: AtomicU64,
@@ -172,6 +176,7 @@ impl GlobalControllerMetrics {
     fn new(processed_records: u64) -> Self {
         Self {
             state: Atomic::new(PipelineState::Paused),
+            bootstrap_in_progress: AtomicBool::new(false),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
             uptime_msecs: AtomicU64::new(0),
@@ -232,6 +237,15 @@ impl GlobalControllerMetrics {
 
     fn unset_step_requested(&self) -> bool {
         self.step_requested.swap(false, Ordering::Acquire)
+    }
+
+    fn bootstrap_in_progress(&self) -> bool {
+        self.bootstrap_in_progress.load(Ordering::Acquire)
+    }
+
+    fn set_bootstrap_in_progress(&self, bootstrap_in_progress: bool) {
+        self.bootstrap_in_progress
+            .store(bootstrap_in_progress, Ordering::Release);
     }
 
     fn set_step_requested(&self) -> bool {
@@ -567,6 +581,15 @@ impl ControllerStatus {
 
     pub fn unset_step_requested(&self) -> bool {
         self.global_metrics.unset_step_requested()
+    }
+
+    pub fn bootstrap_in_progress(&self) -> bool {
+        self.global_metrics.bootstrap_in_progress()
+    }
+
+    pub fn set_bootstrap_in_progress(&self, bootstrap_in_progress: bool) {
+        self.global_metrics
+            .set_bootstrap_in_progress(bootstrap_in_progress);
     }
 
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {
