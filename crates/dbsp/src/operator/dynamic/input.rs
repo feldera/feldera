@@ -224,20 +224,22 @@ impl RootCircuit {
 
     pub fn dyn_add_input_set_mono(
         &self,
+        persistent_id: Option<&str>,
         factories: &AddInputSetFactories<OrdZSet<DynData>>,
     ) -> (ZSetStream<DynData>, UpsertHandle<DynData, DynBool>) {
-        self.dyn_add_input_set(factories)
+        self.dyn_add_input_set(persistent_id, factories)
     }
 
     pub fn dyn_add_input_map_mono(
         &self,
+        persistent_id: Option<&str>,
         factories: &AddInputMapFactories<OrdIndexedZSet<DynData, DynData>, DynData>,
         patch_func: PatchFunc<DynData, DynData>,
     ) -> (
         IndexedZSetStream<DynData, DynData>,
         UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
     ) {
-        self.dyn_add_input_map(factories, patch_func)
+        self.dyn_add_input_map(persistent_id, factories, patch_func)
     }
 }
 
@@ -367,6 +369,7 @@ impl RootCircuit {
     #[track_caller]
     fn add_set_update<K, B>(
         &self,
+        persistent_id: Option<&str>,
         factories: &AddInputSetFactories<B>,
         input_stream: Stream<Self, Box<DynPairs<K, DynBool>>>,
     ) -> Stream<Self, B>
@@ -400,12 +403,13 @@ impl RootCircuit {
             // UpsertHandle shards its inputs.
             .mark_sharded();
 
-        sorted.update_set::<B>(&factories.update_set_factories)
+        sorted.update_set::<B>(persistent_id, &factories.update_set_factories)
     }
 
     #[track_caller]
     fn add_upsert_indexed<K, V, U, B>(
         &self,
+        persistent_id: Option<&str>,
         factories: &AddInputMapFactories<B, U>,
         input_stream: Stream<Self, Box<DynPairs<K, DynUpdate<V, U>>>>,
         patch_func: PatchFunc<V, U>,
@@ -427,7 +431,7 @@ impl RootCircuit {
             // UpsertHandle shards its inputs.
             .mark_sharded();
 
-        sorted.input_upsert::<B>(&factories.upsert_factories, patch_func)
+        sorted.input_upsert::<B>(persistent_id, &factories.upsert_factories, patch_func)
     }
 
     /// Create an input table with set semantics.
@@ -479,6 +483,7 @@ impl RootCircuit {
     #[track_caller]
     pub fn dyn_add_input_set<K>(
         &self,
+        persistent_id: Option<&str>,
         factories: &AddInputSetFactories<OrdZSet<K>>,
     ) -> (ZSetStream<K>, UpsertHandle<K, DynBool>)
     where
@@ -498,7 +503,7 @@ impl RootCircuit {
             );
 
             let upsert: Stream<RootCircuit, OrdZSet<K>> =
-                self.add_set_update(factories, input_stream);
+                self.add_set_update(persistent_id, factories, input_stream);
 
             (upsert, upsert_handle)
         })
@@ -568,6 +573,7 @@ impl RootCircuit {
     #[track_caller]
     pub fn dyn_add_input_map<K, V, U>(
         &self,
+        persistent_id: Option<&str>,
         factories: &AddInputMapFactories<OrdIndexedZSet<K, V>, U>,
         patch_func: PatchFunc<V, U>,
     ) -> (IndexedZSetStream<K, V>, UpsertHandle<K, DynUpdate<V, U>>)
@@ -589,7 +595,8 @@ impl RootCircuit {
                 input_handle,
             );
 
-            let upsert = self.add_upsert_indexed(factories, input_stream, patch_func);
+            let upsert =
+                self.add_upsert_indexed(persistent_id, factories, input_stream, patch_func);
 
             (upsert, zset_handle)
         })

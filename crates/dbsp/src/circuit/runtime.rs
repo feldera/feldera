@@ -38,8 +38,11 @@ use std::{
 use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
 
-use super::dbsp_handle::Layout;
+use super::dbsp_handle::{Layout, Mode};
 use super::CircuitConfig;
+
+/// The number of tuples a stateful operator outputs per step during replay.
+pub const DEFAULT_REPLAY_STEP_SIZE: usize = 10000;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Error {
@@ -242,6 +245,8 @@ struct RuntimeStorage {
 
 struct RuntimeInner {
     layout: Layout,
+    mode: Mode,
+
     storage: Option<RuntimeStorage>,
     store: LocalStore,
     kill_signal: AtomicBool,
@@ -251,6 +256,7 @@ struct RuntimeInner {
     worker_sequence_numbers: Vec<AtomicUsize>,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
+    replay_step_size: AtomicUsize,
 }
 
 impl Debug for RuntimeInner {
@@ -359,6 +365,7 @@ impl RuntimeInner {
 
         Ok(Self {
             layout: config.layout,
+            mode: config.mode,
             storage,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
@@ -369,6 +376,7 @@ impl RuntimeInner {
             pin_cpus: map_pin_cpus(nworkers, &config.pin_cpus),
             worker_sequence_numbers: (0..nworkers).map(|_| AtomicUsize::new(0)).collect(),
             panic_info: (0..nworkers).map(|_| RwLock::new(None)).collect(),
+            replay_step_size: AtomicUsize::new(DEFAULT_REPLAY_STEP_SIZE),
         })
     }
 
@@ -591,6 +599,39 @@ impl Runtime {
     /// multihost runtime, this is a global index across all hosts.
     pub fn worker_index() -> usize {
         WORKER_INDEX.get()
+    }
+
+    pub fn mode() -> Mode {
+        RUNTIME
+            .with(|rt| Some(rt.borrow().as_ref()?.inner().mode.clone()))
+            .unwrap_or_default()
+    }
+
+    pub fn get_mode(&self) -> Mode {
+        self.inner().mode.clone()
+    }
+
+    /// Configure the number of tuples a stateful operator outputs per step during replay.
+    ///
+    /// The default is `DEFAULT_REPLAY_STEP_SIZE`.
+    pub fn set_replay_step_size(&self, step_size: usize) {
+        self.inner()
+            .replay_step_size
+            .store(step_size, Ordering::Release);
+    }
+
+    /// Get currently configured replay step size.
+    ///
+    /// Returns `DEFAULT_REPLAY_STEP_SIZE` if the current thread doesn't have a runtime.
+    pub fn replay_step_size() -> usize {
+        RUNTIME
+            .with(|rt| Some(rt.borrow().as_ref()?.get_replay_step_size()))
+            .unwrap_or(DEFAULT_REPLAY_STEP_SIZE)
+    }
+
+    /// Get currently configured replay step size.
+    pub fn get_replay_step_size(&self) -> usize {
+        self.inner().replay_step_size.load(Ordering::Acquire)
     }
 
     /// Returns the worker index as a string.
@@ -868,7 +909,7 @@ mod tests {
     use super::Runtime;
     use crate::{
         circuit::{
-            dbsp_handle::CircuitStorageConfig,
+            dbsp_handle::{CircuitStorageConfig, Mode},
             schedule::{DynamicScheduler, Scheduler},
             CircuitConfig, Layout,
         },
@@ -892,6 +933,7 @@ mod tests {
         let path_clone = path.clone();
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
+            mode: Mode::Ephemeral,
             pin_cpus: Vec::new(),
             storage: Some(
                 CircuitStorageConfig::for_config(

@@ -19,7 +19,7 @@ where
     #[allow(clippy::type_complexity)]
     pub fn topk_asc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val>> {
         let factories = TopKFactories::new::<B::Key, B::Val>();
-        self.inner().dyn_topk_asc(&factories, k).typed()
+        self.inner().dyn_topk_asc(None, &factories, k).typed()
     }
 
     /// Pick `k` largest values in each group.
@@ -29,7 +29,7 @@ where
     pub fn topk_desc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val>> {
         let factories = TopKFactories::new::<B::Key, B::Val>();
 
-        self.inner().dyn_topk_desc(&factories, k).typed()
+        self.inner().dyn_topk_desc(None, &factories, k).typed()
     }
 }
 
@@ -53,6 +53,13 @@ where
     where
         F: CmpFunc<V>,
     {
+        self.topk_custom_order_persistent::<F>(None, k)
+    }
+
+    pub fn topk_custom_order_persistent<F>(&self, persistent_id: Option<&str>, k: usize) -> Self
+    where
+        F: CmpFunc<V>,
+    {
         let factories = TopKCustomOrdFactories::<DynData, DynData, DynData, DynZWeight>::new::<
             K,
             V,
@@ -62,6 +69,7 @@ where
 
         self.inner()
             .dyn_topk_custom_order_mono(
+                persistent_id,
                 &factories,
                 k,
                 Box::new(
@@ -115,6 +123,22 @@ where
         EF: Fn(&V, &V) -> bool + 'static,
         OF: Fn(i64, &V) -> OV + 'static,
     {
+        self.topk_rank_custom_order_persistent::<CF, EF, OF, OV>(None, k, rank_eq_func, output_func)
+    }
+
+    pub fn topk_rank_custom_order_persistent<CF, EF, OF, OV>(
+        &self,
+        persistent_id: Option<&str>,
+        k: usize,
+        rank_eq_func: EF,
+        output_func: OF,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
+    where
+        CF: CmpFunc<V>,
+        OV: DBData,
+        EF: Fn(&V, &V) -> bool + 'static,
+        OF: Fn(i64, &V) -> OV + 'static,
+    {
         let factories = TopKRankCustomOrdFactories::<DynData, DynData, DynData>::new::<
             K,
             WithCustomOrd<V, CF>,
@@ -123,6 +147,7 @@ where
 
         self.inner()
             .dyn_topk_rank_custom_order_mono(
+                persistent_id,
                 &factories,
                 k,
                 Box::new(
@@ -162,6 +187,27 @@ where
         EF: Fn(&V, &V) -> bool + 'static,
         OF: Fn(i64, &V) -> OV + 'static,
     {
+        self.topk_dense_rank_custom_order_persistent::<CF, EF, OF, OV>(
+            None,
+            k,
+            rank_eq_func,
+            output_func,
+        )
+    }
+
+    pub fn topk_dense_rank_custom_order_persistent<CF, EF, OF, OV>(
+        &self,
+        persistent_id: Option<&str>,
+        k: usize,
+        rank_eq_func: EF,
+        output_func: OF,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
+    where
+        CF: CmpFunc<V>,
+        OV: DBData,
+        EF: Fn(&V, &V) -> bool + 'static,
+        OF: Fn(i64, &V) -> OV + 'static,
+    {
         let factories = TopKRankCustomOrdFactories::<DynData, DynData, DynData>::new::<
             K,
             WithCustomOrd<V, CF>,
@@ -170,6 +216,7 @@ where
 
         self.inner()
             .dyn_topk_dense_rank_custom_order_mono(
+                persistent_id,
                 &factories,
                 k,
                 Box::new(
@@ -219,6 +266,20 @@ where
         OV: DBData,
         OF: Fn(i64, &V) -> OV + 'static,
     {
+        self.topk_row_number_custom_order_persistent::<CF, OF, OV>(None, k, output_func)
+    }
+
+    pub fn topk_row_number_custom_order_persistent<CF, OF, OV>(
+        &self,
+        persistent_id: Option<&str>,
+        k: usize,
+        output_func: OF,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
+    where
+        CF: CmpFunc<V>,
+        OV: DBData,
+        OF: Fn(i64, &V) -> OV + 'static,
+    {
         let factories = TopKRankCustomOrdFactories::<DynData, DynData, DynData>::new::<
             K,
             WithCustomOrd<V, CF>,
@@ -227,6 +288,7 @@ where
 
         self.inner()
             .dyn_topk_row_number_custom_order_mono(
+                persistent_id,
                 &factories,
                 k,
                 Box::new(

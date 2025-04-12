@@ -83,6 +83,11 @@ where
                                         self,
                                     )
                                 }
+                                .set_persistent_id(
+                                    self.get_persistent_id()
+                                        .map(|name| format!("{name}.gather-{receiver_worker}"))
+                                        .as_deref(),
+                                )
                             },
                         )
                         .clone()

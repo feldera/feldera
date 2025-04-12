@@ -365,6 +365,7 @@ where
     /// See [`Stream::partitioned_rolling_aggregate_with_waterline`].
     pub fn dyn_partitioned_rolling_aggregate_with_waterline<PK, TS, V, Acc, Out>(
         &self,
+        persistent_id: Option<&str>,
         factories: &PartitionedRollingAggregateWithWaterlineFactories<PK, TS, V, Acc, Out, B>,
         waterline: &Stream<RootCircuit, Box<DynDataTyped<TS>>>,
         partition_func: Box<dyn PartitionFunc<B::Val, PK, V>>,
@@ -425,26 +426,39 @@ where
                 // by partition id.
                 let partition_func_clone = clone_box(partition_func.as_ref());
 
-                let partitioned_window = window.dyn_map_index(
-                    &factories.rolling_aggregate_factories.input_factories,
-                    Box::new(move |(ts, v), res| {
-                        let (partition_key, ts_val) = res.split_mut();
-                        let (res_ts, val) = ts_val.split_mut();
-                        partition_func_clone(v, partition_key, val);
-                        unsafe { *res_ts.downcast_mut::<TS>() = *ts.downcast::<TS>() };
-                    }),
-                );
-                let partitioned_self = self.dyn_map_index(
-                    &factories.rolling_aggregate_factories.input_factories,
-                    Box::new(move |(ts, v), res| {
-                        let (partition_key, ts_val) = res.split_mut();
-                        let (res_ts, val) = ts_val.split_mut();
-                        partition_func(v, partition_key, val);
-                        unsafe { *res_ts.downcast_mut::<TS>() = *ts.downcast::<TS>() };
-                    }),
-                );
+                let partitioned_window = window
+                    .dyn_map_index(
+                        &factories.rolling_aggregate_factories.input_factories,
+                        Box::new(move |(ts, v), res| {
+                            let (partition_key, ts_val) = res.split_mut();
+                            let (res_ts, val) = ts_val.split_mut();
+                            partition_func_clone(v, partition_key, val);
+                            unsafe { *res_ts.downcast_mut::<TS>() = *ts.downcast::<TS>() };
+                        }),
+                    )
+                    .set_persistent_id(
+                        persistent_id
+                            .map(|name| format!("{name}-partitioned_window"))
+                            .as_deref(),
+                    );
+                let partitioned_self = self
+                    .dyn_map_index(
+                        &factories.rolling_aggregate_factories.input_factories,
+                        Box::new(move |(ts, v), res| {
+                            let (partition_key, ts_val) = res.split_mut();
+                            let (res_ts, val) = ts_val.split_mut();
+                            partition_func(v, partition_key, val);
+                            unsafe { *res_ts.downcast_mut::<TS>() = *ts.downcast::<TS>() };
+                        }),
+                    )
+                    .set_persistent_id(
+                        persistent_id
+                            .map(|name| format!("{name}-partitioned"))
+                            .as_deref(),
+                    );
 
                 partitioned_self.dyn_partitioned_rolling_aggregate_inner(
+                    persistent_id,
                     &factories.rolling_aggregate_factories,
                     &partitioned_window,
                     aggregator,
@@ -458,6 +472,7 @@ where
     /// batch type.
     pub fn dyn_partitioned_rolling_aggregate<PK, TS, V, Acc, Out>(
         &self,
+        persistent_id: Option<&str>,
         factories: &PartitionedRollingAggregateFactories<
             TS,
             V,
@@ -496,17 +511,24 @@ where
         //                                                                   delayed_trace └────┘
         // ```
         self.circuit().region("partitioned_rolling_aggregate", || {
-            let partitioned = self.dyn_map_index(
-                &factories.input_factories,
-                Box::new(move |(ts, v), res| {
-                    let (partition_key, ts_val) = res.split_mut();
-                    let (res_ts, val) = ts_val.split_mut();
-                    partition_func(v, partition_key, val);
-                    unsafe { *res_ts.downcast_mut::<TS>() = *ts.downcast::<TS>() };
-                }),
-            );
+            let partitioned = self
+                .dyn_map_index(
+                    &factories.input_factories,
+                    Box::new(move |(ts, v), res| {
+                        let (partition_key, ts_val) = res.split_mut();
+                        let (res_ts, val) = ts_val.split_mut();
+                        partition_func(v, partition_key, val);
+                        unsafe { *res_ts.downcast_mut::<TS>() = *ts.downcast::<TS>() };
+                    }),
+                )
+                .set_persistent_id(
+                    persistent_id
+                        .map(|name| format!("{name}-partitioned"))
+                        .as_deref(),
+                );
 
             partitioned.dyn_partitioned_rolling_aggregate_inner(
+                persistent_id,
                 factories,
                 &partitioned,
                 aggregator,
@@ -519,6 +541,7 @@ where
     /// See [`Stream::partitioned_rolling_aggregate_linear`].
     pub fn dyn_partitioned_rolling_aggregate_linear<PK, TS, V, A, O>(
         &self,
+        persistent_id: Option<&str>,
         factories: &PartitionedRollingAggregateLinearFactories<
             TS,
             V,
@@ -551,6 +574,7 @@ where
             output_func,
         );
         self.dyn_partitioned_rolling_aggregate::<PK, TS, V, _, _>(
+            persistent_id,
             &factories.rolling_aggregate_factories,
             partition_func,
             &aggregator,
@@ -560,6 +584,7 @@ where
 
     pub fn dyn_partitioned_rolling_average<PK, TS, V, W>(
         &self,
+        persistent_id: Option<&str>,
         factories: &PartitionedRollingAverageFactories<
             TS,
             V,
@@ -584,6 +609,7 @@ where
     {
         let weight_factory = factories.weight_factory;
         self.dyn_partitioned_rolling_aggregate_linear(
+            persistent_id,
             &factories.aggregate_factories,
             partition_func,
             Box::new(move |v: &V, w: &B::R, avg: &mut DynAverage<W, B::R>| {
@@ -606,6 +632,7 @@ impl<B> Stream<RootCircuit, B> {
     #[doc(hidden)]
     pub fn dyn_partitioned_rolling_aggregate_inner<TS, V, Acc, Out, O>(
         &self,
+        partition_id: Option<&str>,
         factories: &PartitionedRollingAggregateFactories<TS, V, Acc, Out, B, O>,
         self_window: &Self,
         aggregator: &dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>,
@@ -624,9 +651,13 @@ impl<B> Stream<RootCircuit, B> {
         let stream = self.dyn_shard(&factories.input_factories);
         let stream_window = self_window.dyn_shard(&factories.input_factories);
 
+        let partitioned_tree_aggregate_name =
+            partition_id.map(|name| format!("{name}-tree_aggregate"));
+
         // Build the radix tree over the bounded window.
         let tree = stream_window
             .partitioned_tree_aggregate::<TS, V, Acc, Out>(
+                partitioned_tree_aggregate_name.as_deref(),
                 &factories.partitioned_tree_aggregate_factories,
                 aggregator,
             )
@@ -638,8 +669,11 @@ impl<B> Stream<RootCircuit, B> {
         bounds.add_key_bound(TraceBound::new());
         bounds.add_val_bound(bound);
 
-        let feedback =
-            circuit.add_integrate_trace_feedback::<Spine<O>>(&factories.output_factories, bounds);
+        let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(
+            partition_id,
+            &factories.output_factories,
+            bounds,
+        );
 
         let output = circuit
             .add_quaternary_operator(

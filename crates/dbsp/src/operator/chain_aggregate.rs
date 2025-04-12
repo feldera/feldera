@@ -35,11 +35,27 @@ where
         FInit: Fn(&V, ZWeight) -> A + 'static,
         FUpdate: Fn(A, &V, ZWeight) -> A + 'static,
     {
+        self.chain_aggregate_persistent::<A, FInit, FUpdate>(None, finit, fupdate)
+    }
+
+    #[track_caller]
+    pub fn chain_aggregate_persistent<A, FInit, FUpdate>(
+        &self,
+        persistent_id: Option<&str>,
+        finit: FInit,
+        fupdate: FUpdate,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, A>>
+    where
+        A: DBData,
+        FInit: Fn(&V, ZWeight) -> A + 'static,
+        FUpdate: Fn(A, &V, ZWeight) -> A + 'static,
+    {
         let input_factories = BatchReaderFactories::new::<K, V, ZWeight>();
         let output_factories = BatchReaderFactories::new::<K, A, ZWeight>();
 
         self.inner()
             .dyn_chain_aggregate_mono(
+                persistent_id,
                 &input_factories,
                 &output_factories,
                 Box::new(move |acc: &mut DynData, v: &DynData, w: ZWeight| unsafe {

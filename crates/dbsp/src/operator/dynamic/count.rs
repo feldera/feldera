@@ -83,14 +83,16 @@ where
     #[allow(clippy::type_complexity)]
     pub fn dyn_weighted_count(
         &self,
+        persistent_id: Option<&str>,
         factories: &IncAggregateLinearFactories<Z, Z::R, OrdIndexedZSet<Z::Key, Z::R>, C::Time>,
     ) -> Stream<C, OrdIndexedZSet<Z::Key, Z::R>> {
-        self.dyn_weighted_count_generic(factories, Box::new(|w, out| w.move_to(out)))
+        self.dyn_weighted_count_generic(persistent_id, factories, Box::new(|w, out| w.move_to(out)))
     }
 
     /// Like [`Self::dyn_weighted_count`], but can return any batch type.
     pub fn dyn_weighted_count_generic<A, O>(
         &self,
+        persistent_id: Option<&str>,
         factories: &IncAggregateLinearFactories<Z, Z::R, O, C::Time>,
         out_func: Box<dyn WeightedCountOutFunc<Z::R, A>>,
     ) -> Stream<C, O>
@@ -99,6 +101,7 @@ where
         A: DataTrait + ?Sized,
     {
         self.dyn_aggregate_linear_generic(
+            persistent_id,
             factories,
             Box::new(|_k, _v, w, res| w.clone_to(res)),
             out_func,
@@ -109,17 +112,19 @@ where
     #[allow(clippy::type_complexity)]
     pub fn dyn_distinct_count(
         &self,
+        persistent_id: Option<&str>,
         factories: &DistinctCountFactories<Z, OrdIndexedZSet<Z::Key, Z::R>, C::Time>,
     ) -> Stream<C, OrdIndexedZSet<Z::Key, Z::R>>
     where
         Z: Send,
     {
-        self.dyn_distinct_count_generic(factories, Box::new(|w, out| w.move_to(out)))
+        self.dyn_distinct_count_generic(persistent_id, factories, Box::new(|w, out| w.move_to(out)))
     }
 
     /// Like [`Self::dyn_distinct_count`], but can return any batch type.
     pub fn dyn_distinct_count_generic<A, O>(
         &self,
+        persistent_id: Option<&str>,
         factories: &DistinctCountFactories<Z, O, C::Time>,
         out_func: Box<dyn WeightedCountOutFunc<Z::R, A>>,
     ) -> Stream<C, O>
@@ -129,7 +134,7 @@ where
         Z: Send,
     {
         self.dyn_distinct(&factories.distinct_factories)
-            .dyn_weighted_count_generic(&factories.aggregate_factories, out_func)
+            .dyn_weighted_count_generic(persistent_id, &factories.aggregate_factories, out_func)
     }
 
     /// See [`Stream::stream_weighted_count`].
