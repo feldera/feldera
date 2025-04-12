@@ -283,6 +283,7 @@ where
     /// each key in the input stream.
     fn dyn_group_transform<OV>(
         &self,
+        persistent_id: Option<&str>,
         input_factories: &B::Factories,
         output_factories: &OrdIndexedWSetFactories<B::Key, OV, DynZWeight>,
         transformer: Box<dyn GroupTransformer<B::Val, OV>>,
@@ -290,13 +291,19 @@ where
     where
         OV: DataTrait + ?Sized,
     {
-        self.dyn_group_transform_generic(input_factories, output_factories, transformer)
+        self.dyn_group_transform_generic(
+            persistent_id,
+            input_factories,
+            output_factories,
+            transformer,
+        )
     }
 
     /// Like [`group_transform`](`Self::group_transform`), but can output any
     /// indexed Z-set, not just [`OrdIndexedZSet`]
     fn dyn_group_transform_generic<OB>(
         &self,
+        persistent_id: Option<&str>,
         input_factories: &B::Factories,
         output_factories: &OB::Factories,
         transform: Box<dyn GroupTransformer<B::Val, OB::Val>>,
@@ -321,7 +328,11 @@ where
         //                                                                             └────┘
         // ```
         let bounds = TraceBounds::unbounded();
-        let feedback = circuit.add_integrate_trace_feedback::<Spine<OB>>(output_factories, bounds);
+        let feedback = circuit.add_integrate_trace_feedback::<Spine<OB>>(
+            persistent_id,
+            output_factories,
+            bounds,
+        );
 
         let output = circuit
             .add_ternary_operator(

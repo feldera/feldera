@@ -48,6 +48,7 @@ where
 
         self.inner()
             .dyn_average::<DynData, DynWeight>(
+                None,
                 &factories,
                 Box::new(move |_k, v, w, sum| unsafe {
                     *sum.downcast_mut() = f(v.downcast()).mul_by_ref(w.downcast());

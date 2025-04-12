@@ -52,7 +52,7 @@ where
         >::new(aggregator);
 
         self.inner()
-            .dyn_aggregate(&aggregate_factories, &dyn_aggregator)
+            .dyn_aggregate(None, &aggregate_factories, &dyn_aggregator)
             .typed()
     }
 }
@@ -186,6 +186,7 @@ where
 
         self.inner()
             .dyn_aggregate_generic(
+                None,
                 &factories,
                 &DynAggregatorImpl::<Z::DynV, Z::Val, _, Z::DynR, Z::R, _, DynData, O::DynV>::new(
                     aggregator,
@@ -221,6 +222,7 @@ where
 
         self.inner()
             .dyn_aggregate_linear_generic(
+                None,
                 &factories,
                 Box::new(move |_k, v, r, acc| unsafe {
                     *acc.downcast_mut::<A>() = f(v.downcast::<Z::Val>()).mul_by_ref(&**r)
@@ -258,6 +260,7 @@ where
 
         self.inner()
             .dyn_aggregate_linear_generic(
+                None,
                 &factories,
                 Box::new(move |_k, v, r, acc| unsafe {
                     *acc.downcast_mut::<A>() = f(v.downcast::<Z::Val>()).mul_by_ref(&**r)
@@ -349,6 +352,32 @@ where
         F: Fn(&V) -> A + Clone + 'static,
         OF: Fn(A) -> OV + Clone + 'static,
     {
+        self.aggregate_linear_postprocess_retain_keys_persistent::<F, A, OF, OV, TS, RK>(
+            None,
+            waterline,
+            retain_key_func,
+            f,
+            of,
+        )
+    }
+
+    #[track_caller]
+    pub fn aggregate_linear_postprocess_retain_keys_persistent<F, A, OF, OV, TS, RK>(
+        &self,
+        persistent_id: Option<&str>,
+        waterline: &Stream<RootCircuit, TypedBox<TS, DynData>>,
+        retain_key_func: RK,
+        f: F,
+        of: OF,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
+    where
+        A: DBWeight + MulByRef<ZWeight, Output = A>,
+        OV: DBData,
+        TS: DBData,
+        RK: Fn(&K, &TS) -> bool + Clone + Send + Sync + 'static,
+        F: Fn(&V) -> A + Clone + 'static,
+        OF: Fn(A) -> OV + Clone + 'static,
+    {
         let factories: IncAggregateLinearFactories<
             DynOrdIndexedZSet<DynData, DynData>,
             DynWeight,
@@ -358,6 +387,7 @@ where
 
         self.inner()
             .dyn_aggregate_linear_retain_keys_mono(
+                persistent_id,
                 &factories,
                 &waterline.inner_data(),
                 Box::new(move |ts| {
@@ -410,6 +440,7 @@ where
 
         self.inner()
             .dyn_aggregate_linear_retain_keys_mono(
+                None,
                 &factories,
                 &waterline.inner_data(),
                 Box::new(move |ts| {

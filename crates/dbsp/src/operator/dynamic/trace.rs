@@ -1,6 +1,10 @@
-use crate::circuit::circuit_builder::StreamId;
+use crate::circuit::circuit_builder::{register_replay_stream, StreamId};
 use crate::circuit::metadata::NUM_INPUTS;
 use crate::circuit::metrics::Gauge;
+use crate::dynamic::{Weight, WeightTrait};
+use crate::operator::require_persistent_id;
+use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
+use crate::Runtime;
 use crate::{
     circuit::{
         metadata::{
@@ -19,6 +23,7 @@ use crate::{
 use dyn_clone::clone_box;
 use feldera_storage::StoragePath;
 use minitrace::trace;
+use ouroboros::self_referencing;
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
@@ -122,7 +127,9 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
     pub(crate) fn new() -> Self {
         Self(Rc::new(RefCell::new(TraceBoundsInner {
             key_predicate: Predicate::Bounds(Vec::new()),
+            unique_key_name: None,
             val_predicate: Predicate::Bounds(Vec::new()),
+            unique_val_name: None,
         })))
     }
 
@@ -131,7 +138,9 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
     pub(crate) fn unbounded() -> Self {
         Self(Rc::new(RefCell::new(TraceBoundsInner {
             key_predicate: Predicate::Bounds(vec![TraceBound::new()]),
+            unique_key_name: None,
             val_predicate: Predicate::Bounds(vec![TraceBound::new()]),
+            unique_val_name: None,
         })))
     }
 
@@ -148,6 +157,10 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
         self.0.borrow_mut().key_predicate = Predicate::Filter(filter);
     }
 
+    pub(crate) fn set_unique_key_bound_name(&self, unique_name: Option<&str>) {
+        self.0.borrow_mut().unique_key_name = unique_name.map(str::to_string);
+    }
+
     pub(crate) fn add_val_bound(&self, bound: TraceBound<V>) {
         match &mut self.0.borrow_mut().val_predicate {
             Predicate::Bounds(bounds) => bounds.push(bound),
@@ -159,6 +172,10 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
     /// set using [`Self::add_val_bound`].
     pub(crate) fn set_val_filter(&self, filter: Filter<V>) {
         self.0.borrow_mut().val_predicate = Predicate::Filter(filter);
+    }
+
+    pub(crate) fn set_unique_val_bound_name(&self, unique_name: Option<&str>) {
+        self.0.borrow_mut().unique_val_name = unique_name.map(str::to_string);
     }
 
     /// Returns effective key retention condition, computed as the
@@ -242,8 +259,10 @@ impl<V: Debug + ?Sized> Predicate<V> {
 struct TraceBoundsInner<K: ?Sized + 'static, V: ?Sized + 'static> {
     /// Key bounds _or_ retainment condition.
     key_predicate: Predicate<K>,
+    unique_key_name: Option<String>,
     /// Value bounds _or_ retainment condition.
     val_predicate: Predicate<V>,
+    unique_val_name: Option<String>,
 }
 
 impl<K: Debug + ?Sized + 'static, V: Debug + ?Sized + 'static> TraceBoundsInner<K, V> {
@@ -305,17 +324,24 @@ where
     pub fn dyn_trace(
         &self,
         output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
+        batch_factories: &B::Factories,
     ) -> Stream<C, FileValSpine<B, C>>
     where
         B: Batch<Time = ()>,
     {
-        self.dyn_trace_with_bound(output_factories, TraceBound::new(), TraceBound::new())
+        self.dyn_trace_with_bound(
+            output_factories,
+            batch_factories,
+            TraceBound::new(),
+            TraceBound::new(),
+        )
     }
 
     /// See [`Stream::trace_with_bound`].
     pub fn dyn_trace_with_bound(
         &self,
         output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
+        batch_factories: &B::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
     ) -> Stream<C, FileValSpine<B, C>>
@@ -329,33 +355,44 @@ where
                 let circuit = self.circuit();
 
                 circuit.region("trace", || {
-                    let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
+                    let persistent_id = self.get_persistent_id();
+                    let z1 = Z1Trace::new(
                         output_factories,
+                        batch_factories,
                         false,
                         circuit.root_scope(),
                         bounds.clone(),
-                    ));
+                    );
+                    let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
+                        persistent_id
+                            .map(|name| format!("{name}.integral"))
+                            .as_deref(),
+                        z1,
+                    );
+
+                    let replay_stream = z1feedback.operator_mut().prepare_replay_stream(self);
+
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<FileValSpine<B, C>, B, C>>::new(
                             output_factories,
                             circuit.clone(),
                         ),
-                        (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                        (
-                            &self.try_sharded_version(),
-                            OwnershipPreference::PREFER_OWNED,
-                        ),
+                        (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                        (self, OwnershipPreference::PREFER_OWNED),
                     );
-                    if self.has_sharded_version() {
-                        local.mark_sharded();
+                    if self.is_sharded() {
+                        delayed_trace.mark_sharded();
                         trace.mark_sharded();
                     }
+
                     z1feedback.connect_with_preference(
                         &trace,
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), local);
+                    register_replay_stream(circuit, self, &replay_stream);
+
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     trace
                 })
             })
@@ -374,6 +411,7 @@ where
         Box<TS>: Clone,
     {
         let bounds = self.trace_bounds();
+        bounds.set_unique_key_bound_name(bounds_stream.get_persistent_id().as_deref());
         bounds_stream.inspect(move |ts| {
             let filter = retain_key_func(ts.as_ref());
             bounds.set_key_filter(filter);
@@ -392,6 +430,8 @@ where
         Box<TS>: Clone,
     {
         let bounds = self.trace_bounds();
+        bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
+
         bounds_stream.inspect(move |ts| {
             let filter = retain_val_func(ts.as_ref());
             bounds.set_val_filter(filter);
@@ -484,26 +524,40 @@ where
                 let circuit = self.circuit();
                 let bounds = bounds.clone();
 
+                let persistent_id = self.get_persistent_id();
+
                 circuit.region("integrate_trace", || {
-                    let (ExportStream { local, export }, z1feedback) = circuit
-                        .add_feedback_with_export(Z1Trace::new(
-                            input_factories,
-                            true,
-                            circuit.root_scope(),
-                            bounds,
-                        ));
+                    let z1 = Z1Trace::new(
+                        input_factories,
+                        input_factories,
+                        true,
+                        circuit.root_scope(),
+                        bounds,
+                    );
+
+                    let (
+                        ExportStream {
+                            local: delayed_trace,
+                            export,
+                        },
+                        z1feedback,
+                    ) = circuit.add_feedback_with_export_persistent(
+                        persistent_id
+                            .map(|name| format!("{name}.integral"))
+                            .as_deref(),
+                        z1,
+                    );
+
+                    let replay_stream = z1feedback.operator_mut().prepare_replay_stream(self);
 
                     let trace = circuit.add_binary_operator_with_preference(
                         UntimedTraceAppend::<Spine<B>>::new(),
-                        (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                        (
-                            &self.try_sharded_version(),
-                            OwnershipPreference::PREFER_OWNED,
-                        ),
+                        (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                        (self, OwnershipPreference::PREFER_OWNED),
                     );
 
-                    if self.has_sharded_version() {
-                        local.mark_sharded();
+                    if self.is_sharded() {
+                        delayed_trace.mark_sharded();
                         trace.mark_sharded();
                     }
 
@@ -512,7 +566,9 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), local);
+                    register_replay_stream(circuit, self, &replay_stream);
+
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     circuit.cache_insert(ExportId::new(trace.stream_id()), export);
 
                     trace
@@ -528,7 +584,7 @@ where
     C: Circuit,
     T: Trace,
 {
-    feedback: FeedbackConnector<C, T, T, Z1Trace<T>>,
+    feedback: FeedbackConnector<C, T, T, Z1Trace<C, T::Batch, T>>,
     /// `delayed_trace` stream in the diagram in
     /// [`trait TraceFeedback`] documentation.
     pub delayed_trace: Stream<C, T>,
@@ -538,11 +594,13 @@ where
 
 impl<C, T> TraceFeedbackConnector<C, T>
 where
-    T: Trace + Clone,
+    T: Trace<Time = ()> + Clone,
     C: Circuit,
 {
     pub fn connect(self, stream: &Stream<C, T::Batch>) {
         let circuit = self.delayed_trace.circuit();
+
+        let replay_stream = self.feedback.operator_mut().prepare_replay_stream(stream);
 
         let trace = circuit.add_binary_operator_with_preference(
             <UntimedTraceAppend<T>>::new(),
@@ -550,19 +608,18 @@ where
                 &self.delayed_trace,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             ),
-            (
-                &stream.try_sharded_version(),
-                OwnershipPreference::PREFER_OWNED,
-            ),
+            (stream, OwnershipPreference::PREFER_OWNED),
         );
 
-        if stream.has_sharded_version() {
+        if stream.is_sharded() {
             self.delayed_trace.mark_sharded();
             trace.mark_sharded();
         }
 
         self.feedback
             .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+
+        register_replay_stream(circuit, stream, &replay_stream);
 
         circuit.cache_insert(
             DelayedTraceId::new(trace.stream_id()),
@@ -602,14 +659,25 @@ where
 pub trait TraceFeedback: Circuit {
     fn add_integrate_trace_feedback<T>(
         &self,
+        persistent_id: Option<&str>,
         factories: &T::Factories,
         bounds: TraceBounds<T::Key, T::Val>,
     ) -> TraceFeedbackConnector<Self, T>
     where
         T: Trace<Time = ()> + Clone,
     {
-        let (ExportStream { local, export }, feedback) = self.add_feedback_with_export(
-            Z1Trace::new(factories, true, self.root_scope(), bounds.clone()),
+        // We'll give `Z1Trace` a real name inside `TraceFeedbackConnector::connect`, where we have the name of the input stream.
+        let (ExportStream { local, export }, feedback) = self.add_feedback_with_export_persistent(
+            persistent_id
+                .map(|name| format!("{name}.integral"))
+                .as_deref(),
+            Z1Trace::new(
+                factories,
+                factories,
+                true,
+                self.root_scope(),
+                bounds.clone(),
+            ),
         );
 
         TraceFeedbackConnector {
@@ -654,6 +722,15 @@ where
     _phantom: PhantomData<T>,
 }
 
+impl<T> Default for UntimedTraceAppend<T>
+where
+    T: Trace,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> UntimedTraceAppend<T>
 where
     T: Trace,
@@ -664,15 +741,6 @@ where
             num_inputs_metric: None,
             _phantom: PhantomData,
         }
-    }
-}
-
-impl<T> Default for UntimedTraceAppend<T>
-where
-    T: Trace,
-{
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -863,10 +931,31 @@ where
     }
 }
 
-pub struct Z1Trace<T: Trace> {
+#[self_referencing]
+struct ReplayState<T: Trace> {
+    trace: T,
+    #[borrows(trace)]
+    #[covariant]
+    cursor: Box<dyn MergeCursor<T::Key, T::Val, T::Time, T::R> + Send + 'this>,
+}
+
+impl<T: Trace> ReplayState<T> {
+    fn create(trace: T) -> Self {
+        ReplayStateBuilder {
+            trace,
+            cursor_builder: |trace| trace.merge_cursor(None, None),
+        }
+        .build()
+    }
+}
+
+pub struct Z1Trace<C: Circuit, B: Batch, T: Trace> {
+    // For error reporting.
+    global_id: GlobalNodeId,
     time: T::Time,
     trace: Option<T>,
-    factories: T::Factories,
+    replay_state: Option<ReplayState<T>>,
+    trace_factories: T::Factories,
     // `dirty[scope]` is `true` iff at least one non-empty update was added to the trace
     // since the previous clock cycle at level `scope`.
     dirty: Vec<bool>,
@@ -878,34 +967,82 @@ pub struct Z1Trace<T: Trace> {
 
     // Metrics maintained by the trace.
     trace_metrics: Option<T::Metrics>,
+    batch_factories: B::Factories,
+    // Stream whose integral this Z1 operator stores, if any.
+    delta_stream: Option<Stream<C, B>>,
 }
 
-impl<T> Z1Trace<T>
+impl<C, B, T> Z1Trace<C, B, T>
 where
+    C: Circuit,
+    B: Batch,
     T: Trace,
 {
     pub fn new(
-        factories: &T::Factories,
+        trace_factories: &T::Factories,
+        batch_factories: &B::Factories,
         reset_on_clock_start: bool,
         root_scope: Scope,
         bounds: TraceBounds<T::Key, T::Val>,
     ) -> Self {
         Self {
+            global_id: GlobalNodeId::root(),
             time: <T::Time as Timestamp>::clock_start(),
             trace: None,
-            factories: factories.clone(),
+            replay_state: None,
+            trace_factories: trace_factories.clone(),
+            batch_factories: batch_factories.clone(),
             dirty: vec![false; root_scope as usize + 1],
             root_scope,
             reset_on_clock_start,
             bounds,
             total_size_metric: None,
             trace_metrics: None,
+            delta_stream: None,
         }
+    }
+
+    /// Creates a stream that will be used to replay the contents of `stream`.
+    ///
+    /// Given a circuit that implements an integral, the Z-1 operator can be used
+    /// to replay the `delta` stream during bootstrapping.  This function sets this
+    /// up at circuit construction time. It creates a new stream (`replay_stream`)
+    /// that aliases `stream` internally.  In replay mode, Z-1 will send the contents
+    /// of the integral to `replay_stream` chunk-by-chunk.
+    ///
+    ///   │stream
+    ///   │
+    ///   │
+    ///   │◄............
+    ///   │            .replay_stream
+    ///   ▼            .
+    /// ┌───┐        ┌───┐
+    /// │ + ├───────►│Z-1│
+    /// └───┘        └─┬─┘
+    ///   ▲            │
+    ///   │            │
+    ///   └────────────┘
+    ///
+    /// Note that at most one of `stream` or `replay_stream` can be active at a time.
+    /// During normal operation, `stream` is active and `replay_stream` is not.  During
+    /// replay, `replay_stream` is active while the operator that normally write to
+    /// stream is disabled.
+    pub fn prepare_replay_stream(&mut self, stream: &Stream<C, B>) -> Stream<C, B> {
+        let replay_stream = Stream::with_value(
+            stream.circuit().clone(),
+            self.global_id.local_node_id().unwrap(),
+            stream.value(),
+        );
+
+        self.delta_stream = Some(replay_stream.clone());
+        replay_stream
     }
 }
 
-impl<T> Operator for Z1Trace<T>
+impl<C, B, T> Operator for Z1Trace<C, B, T>
 where
+    C: Circuit,
+    B: Batch,
     T: Trace,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -916,7 +1053,7 @@ where
         self.dirty[scope as usize] = false;
 
         if scope == 0 && self.trace.is_none() {
-            self.trace = Some(T::new(&self.factories));
+            self.trace = Some(T::new(&self.trace_factories));
         }
     }
 
@@ -930,6 +1067,7 @@ where
     }
 
     fn init(&mut self, global_id: &GlobalNodeId) {
+        self.global_id = global_id.clone();
         self.total_size_metric = Some(Gauge::new(
             "total_size",
             None,
@@ -985,29 +1123,119 @@ where
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        !self.dirty[scope as usize]
+        !self.dirty[scope as usize] && self.replay_state.is_none()
     }
 
-    fn commit(&mut self, base: &StoragePath, pid: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+        let pid = require_persistent_id(pid, &self.global_id)?;
         self.trace
             .as_mut()
             .map(|trace| trace.commit(base, pid))
             .unwrap_or(Ok(()))
     }
 
-    fn restore(&mut self, base: &StoragePath, pid: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+        let pid = require_persistent_id(pid, &self.global_id)?;
+
         self.trace
             .as_mut()
             .map(|trace| trace.restore(base, pid))
             .unwrap_or(Ok(()))
     }
+
+    fn clear_state(&mut self) -> Result<(), Error> {
+        // println!("Z1Trace-{}::clear_state", &self.global_id);
+        self.trace = Some(T::new(&self.trace_factories));
+        self.replay_state = None;
+        self.dirty = vec![false; self.root_scope as usize + 1];
+        if let Some(metric) = self.total_size_metric.as_ref() {
+            metric.set(0.0)
+        }
+
+        Ok(())
+    }
+
+    fn start_replay(&mut self) -> Result<(), Error> {
+        // The second condition is necessary if `start_replay` is called twice, for the input
+        // and output halves of Z1.
+        // println!(
+        //     "Z1Trace-{}::start_replay delta_stream: {:?}",
+        //     &self.global_id,
+        //     self.delta_stream.is_some()
+        // );
+        if self.delta_stream.is_some() && self.replay_state.is_none() {
+            let trace = self.trace.take().expect("Z1Trace::start_replay: no trace");
+            self.trace = Some(T::new(&self.trace_factories));
+
+            //println!("Z1Trace-{}::initializing replay_state", &self.global_id);
+
+            self.replay_state = Some(ReplayState::create(trace));
+        }
+
+        Ok(())
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.replay_state.is_none()
+    }
+
+    fn end_replay(&mut self) -> Result<(), Error> {
+        //println!("Z1Trace-{}::end_replay", &self.global_id);
+
+        self.replay_state = None;
+
+        Ok(())
+    }
 }
 
-impl<T> StrictOperator<T> for Z1Trace<T>
+impl<C, B, T> StrictOperator<T> for Z1Trace<C, B, T>
 where
+    C: Circuit,
+    B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R>,
     T: Trace,
 {
     fn get_output(&mut self) -> T {
+        //println!("Z1-{}::get_output", &self.global_id);
+        let replay_step_size = Runtime::replay_step_size();
+
+        if let Some(replay) = &mut self.replay_state {
+            //println!("Z1-{}::get_output: replaying", &self.global_id);
+            let mut builder =
+                <B::Builder as Builder<B>>::with_capacity(&self.batch_factories, replay_step_size);
+
+            let mut num_values = 0;
+            let mut weight = self.batch_factories.weight_factory().default_box();
+
+            while replay.borrow_cursor().key_valid() && num_values < replay_step_size {
+                let mut values_added = false;
+                while replay.borrow_cursor().val_valid() && num_values < replay_step_size {
+                    weight.set_zero();
+                    replay.with_cursor_mut(|cursor| {
+                        cursor.map_times(&mut |_t, w| weight.add_assign(w))
+                    });
+
+                    if !weight.is_zero() {
+                        builder.push_val_diff(replay.borrow_cursor().val(), weight.as_ref());
+                        values_added = true;
+                        num_values += 1;
+                    }
+                    replay.with_cursor_mut(|cursor| cursor.step_val());
+                }
+                if values_added {
+                    builder.push_key(replay.borrow_cursor().key());
+                }
+                if !replay.borrow_cursor().val_valid() {
+                    replay.with_cursor_mut(|cursor| cursor.step_key());
+                }
+            }
+
+            let batch = builder.done();
+            self.delta_stream.as_ref().unwrap().value().put(batch);
+            if !replay.borrow_cursor().key_valid() {
+                self.replay_state = None;
+            }
+        }
+
         let mut result = self.trace.take().unwrap();
         result.clear_dirty_flag();
         result
@@ -1022,8 +1250,10 @@ where
     }
 }
 
-impl<T> StrictUnaryOperator<T, T> for Z1Trace<T>
+impl<C, B, T> StrictUnaryOperator<T, T> for Z1Trace<C, B, T>
 where
+    C: Circuit,
+    B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R>,
     T: Trace,
 {
     async fn eval_strict(&mut self, _i: &T) {
@@ -1032,6 +1262,8 @@ where
 
     #[trace]
     async fn eval_strict_owned(&mut self, mut i: T) {
+        // println!("Z1-{}::eval_strict_owned", &self.global_id);
+
         self.time = self.time.advance(0);
 
         let dirty = i.dirty();

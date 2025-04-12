@@ -55,6 +55,7 @@ where
 
         self.inner()
             .dyn_lag(
+                None,
                 &factories,
                 offset,
                 Box::new(move |v, ov: &mut DynData| unsafe {
@@ -94,6 +95,24 @@ where
         PF: Fn(Option<&V>) -> VL + 'static,
         OF: Fn(&V, &VL) -> OV + 'static,
     {
+        self.lag_custom_order_persistent::<VL, OV, PF, CF, OF>(None, offset, project, output)
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn lag_custom_order_persistent<VL, OV, PF, CF, OF>(
+        &self,
+        persistent_id: Option<&str>,
+        offset: isize,
+        project: PF,
+        output: OF,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
+    where
+        VL: DBData,
+        OV: DBData,
+        CF: CmpFunc<V>,
+        PF: Fn(Option<&V>) -> VL + 'static,
+        OF: Fn(&V, &VL) -> OV + 'static,
+    {
         let factories = LagCustomOrdFactories::<
             DynOrdIndexedZSet<DynData, DynData>,
             DynData,
@@ -103,6 +122,7 @@ where
 
         self.inner()
             .dyn_lag_custom_order_mono(
+                persistent_id,
                 &factories,
                 offset,
                 Box::new(move |v1, v2: &mut DynData| unsafe {

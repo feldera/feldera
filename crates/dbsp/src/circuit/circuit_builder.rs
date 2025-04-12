@@ -48,20 +48,23 @@ use crate::{
     circuit_cache_key,
     operator::communication::Exchange,
     time::{Timestamp, UnitTimestamp},
-    Error as DbspError, Error, Runtime,
+    Error as DbspError, Runtime,
 };
 use anyhow::Error as AnyError;
+use dyn_clone::{clone_box, DynClone};
 use feldera_storage::StoragePath;
 use serde::Serialize;
 use std::{
-    any::type_name_of_val,
+    any::{type_name_of_val, Any, TypeId},
     borrow::Cow,
     cell::{Ref, RefCell, RefMut},
-    collections::HashMap,
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{self, Debug, Display, Write},
     future::Future,
+    io::ErrorKind,
     iter::repeat,
     marker::PhantomData,
+    mem::transmute,
     ops::Deref,
     panic::Location,
     pin::Pin,
@@ -70,17 +73,27 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
-use tracing::info;
+use tracing::{debug, info};
 use typedmap::{TypedMap, TypedMapKey};
+
+use super::dbsp_handle::Mode;
+
+/// Label name used to store operator's persistent id,
+/// i.e., id stable across circuit modifications.
+const LABEL_PERSISTENT_OPERATOR_ID: &str = "persistent_id";
 
 /// Value stored in the stream.
 struct StreamValue<D> {
     /// Value written to the stream at the current clock cycle;
     /// `None` after the last consumer has retrieved the value from the stream.
     val: Option<D>,
+
     /// The number of consumers connected to the stream.  Each consumer
     /// reads from the stream exactly once at every clock cycle.
+    ///
+    /// Controlled by the scheduler via `register_consumer` and `clear_consumer_count`.
     consumers: usize,
+
     /// The number of remaining consumers still expected to read from the stream
     /// at the current clock cycle.  This value is reset to `consumers` when
     /// a new value is written to the stream.  It is decremented on each access.
@@ -192,6 +205,26 @@ impl<D> RefStreamValue<D> {
         >(self.0.clone()))
     }
 }
+
+/// An object-safe interface to a stream.
+///
+/// The `Stream` type is parameterized with circuit and content types, and is not object-safe.
+/// This abstract trait abstracts away those types, allowing to pass streams around as trait objects.
+pub trait StreamMetadata: DynClone + 'static {
+    fn stream_id(&self) -> StreamId;
+    fn local_node_id(&self) -> NodeId;
+    fn origin_node_id(&self) -> &GlobalNodeId;
+    fn num_consumers(&self) -> usize;
+
+    /// Resets consumer count to 0.
+    fn clear_consumer_count(&self);
+
+    /// Invoked by the scheduler exactly once for each consumer operator attached
+    /// to the stream.
+    fn register_consumer(&self);
+}
+
+dyn_clone::clone_trait_object!(StreamMetadata);
 
 /// A `Stream<C, D>` stores the output value of type `D` of an operator in a
 /// circuit with type `C`.
@@ -655,6 +688,31 @@ pub struct Stream<C, D> {
     val: RefStreamValue<D>,
 }
 
+impl<C, D> StreamMetadata for Stream<C, D>
+where
+    C: Clone + 'static,
+    D: 'static,
+{
+    fn stream_id(&self) -> StreamId {
+        self.stream_id
+    }
+    fn local_node_id(&self) -> NodeId {
+        self.local_node_id
+    }
+    fn origin_node_id(&self) -> &GlobalNodeId {
+        &self.origin_node_id
+    }
+    fn clear_consumer_count(&self) {
+        self.val.get_mut().consumers = 0;
+    }
+    fn num_consumers(&self) -> usize {
+        self.val.get().consumers
+    }
+    fn register_consumer(&self) {
+        self.val.get_mut().consumers += 1;
+    }
+}
+
 impl<C, D> Clone for Stream<C, D>
 where
     C: Clone,
@@ -754,6 +812,10 @@ where
         }
     }
 
+    pub fn value(&self) -> RefStreamValue<D> {
+        self.val.clone()
+    }
+
     /// Export stream to the parent circuit.
     ///
     /// Creates a stream in the parent circuit that contains the last value in
@@ -769,6 +831,31 @@ where
         self.circuit()
             .cache_get_or_insert_with(ExportId::new(self.stream_id()), || unimplemented!())
             .clone()
+    }
+
+    /// Call `set_label` on the node that produces this stream.
+    pub fn set_label(&self, key: &str, val: &str) -> Self {
+        self.circuit.set_node_label(&self.origin_node_id, key, val);
+        self.clone()
+    }
+
+    /// Call `get_label` on the node that produces this stream.
+    pub fn get_label(&self, key: &str) -> Option<String> {
+        self.circuit.get_node_label(&self.origin_node_id, key)
+    }
+
+    /// Set persistent id for the operator that produces this stream.
+    pub fn set_persistent_id(&self, name: Option<&str>) -> Self {
+        if let Some(name) = name {
+            self.set_label(LABEL_PERSISTENT_OPERATOR_ID, name)
+        } else {
+            self.clone()
+        }
+    }
+
+    /// Get persistent id for the operator that produces this stream.
+    pub fn get_persistent_id(&self) -> Option<String> {
+        self.get_label(LABEL_PERSISTENT_OPERATOR_ID)
     }
 }
 
@@ -849,6 +936,33 @@ pub trait Node {
     /// Global node id.
     fn global_id(&self) -> &GlobalNodeId;
 
+    /// Persistent node id that remains stable across circuit restarts.  This Id can be used
+    /// to pick up operator state from a checkpoint after restart.
+    ///
+    /// * In ephemeral mode, this id is derived from the global node id. Such an Id can be used
+    ///   to recover the operator after a failure, when the circuit is identical to the one that was
+    ///   running before the failure.
+    ///
+    /// * In persistent mode, this id is derived from the operator's persistent Id assigned to it
+    ///   by the compiler during circuit construction.  This Id will remain stable across circuit
+    ///   restarts even if the circuit changes, as long as all ancestors of the node remain the
+    ///   same. The function will return `None` in persistent mode if the operator
+    ///   does not have a compiler-assigned persistent Id.
+    fn persistent_id(&self) -> Option<String> {
+        let worker_index = Runtime::worker_index();
+
+        match Runtime::mode() {
+            Mode::Ephemeral => Some(format!(
+                "{worker_index}-{}",
+                self.global_id().path_as_string()
+            )),
+            Mode::Persistent => self
+                .get_label(LABEL_PERSISTENT_OPERATOR_ID)
+                .map(|operator_id| format!("{worker_index}-{operator_id}")),
+        }
+    }
+
+    /// Operator name, e.g., "Map", "Join", etc.
     fn name(&self) -> Cow<'static, str>;
 
     /// `true` if the node encapsulates an asynchronous operator (see
@@ -899,9 +1013,23 @@ pub trait Node {
 
     fn fixedpoint(&self, scope: Scope) -> bool;
 
-    fn map_nodes_recursive(&self, _f: &mut dyn FnMut(&dyn Node)) {}
+    /// Invoke closure on all children of `self`, terminate on the first
+    /// error.
+    fn map_nodes_recursive(
+        &self,
+        _f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        Ok(())
+    }
 
-    fn map_nodes_recursive_mut(&self, _f: &mut dyn FnMut(&mut dyn Node)) {}
+    /// Invoke closure on all children of `self`, terminate on the first
+    /// error.
+    fn map_nodes_recursive_mut(
+        &self,
+        _f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        Ok(())
+    }
 
     /// Instructs the node to commit the state of its inner operator to
     /// persistent storage within directory `base`.
@@ -911,9 +1039,58 @@ pub trait Node {
     /// the given checkpoint in directory `base`.
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError>;
 
+    /// Reset the state of the operator to default.
+    ///
+    /// Used during replay, when the replay algorithm determines
+    /// that the operator that may have previously picked up its state
+    /// from a checkpoint must be backfilled from clean state.
+    fn clear_state(&mut self) -> Result<(), DbspError>;
+
+    /// Place operator in the replay mode.
+    ///
+    /// In the replay mode the operator streams its stored state to a temporary
+    /// replay stream.
+    ///
+    /// # Panics
+    ///
+    /// Panics for operators that don't support replay.
+    fn start_replay(&mut self) -> Result<(), DbspError>;
+
+    /// Check if the operator has finished replaying its stored state.
+    ///
+    /// # Panics
+    ///
+    /// Panics for operators that don't support replay.
+    fn is_replay_complete(&self) -> bool;
+
+    /// Notify the operator that the circuit is exiting the replay mode.
+    ///
+    /// The operator can cleanup any state needed for replay at this point.
+    ///
+    /// # Panics
+    ///
+    /// Panics for operators that don't support replay.
+    fn end_replay(&mut self) -> Result<(), DbspError>;
+
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
     fn fingerprint(&self, fip: &mut Fingerprinter) {
         fip.hash(type_name_of_val(self));
+    }
+
+    /// Tag the node with a text label.
+    fn set_label(&mut self, key: &str, value: &str);
+
+    /// Get the label associated with the given key.
+    fn get_label(&self, key: &str) -> Option<&str>;
+
+    /// Apply closure to a child node of `self`.
+    fn map_child(&self, _path: &[NodeId], _f: &mut dyn FnMut(&dyn Node)) {
+        panic!("map_child: not a circuit node")
+    }
+
+    /// Apply closure to a child node of `self`.
+    fn map_child_mut(&self, _path: &[NodeId], _f: &mut dyn FnMut(&mut dyn Node)) {
+        panic!("map_child_mut: not a circuit node")
     }
 }
 
@@ -1039,19 +1216,35 @@ impl GlobalNodeId {
             .map(|(_, prefix)| GlobalNodeId::from_path(prefix))
     }
 
+    /// Returns `true` if `self` is a child of `parent`.
+    pub fn is_child_of(&self, parent: &Self) -> bool {
+        self.parent_id().as_ref() == Some(parent)
+    }
+
     /// Get the path from global.
     pub fn path(&self) -> &[NodeId] {
         &self.0
     }
 
-    /// Generate unique id for use in persistent storage.
-    pub(crate) fn persistent_id(&self) -> String {
-        let mut pid = String::with_capacity(3 + self.0.len() * 3);
-        write!(&mut pid, "{}", Runtime::worker_index()).unwrap();
-        for e in &self.0 {
-            write!(&mut pid, "-{}", e.0).unwrap();
-        }
-        pid
+    /// Ancestor of `self` in the top-level circuit.
+    ///
+    /// For a top-level node, its node id. For a nested node,
+    /// returns the node id of the ancestor whose parent is the root node.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `self` is the root node.
+    pub fn top_level_ancestor(&self) -> NodeId {
+        self.0[0]
+    }
+
+    /// Convert to string in the `x-y-z` format.
+    pub(crate) fn path_as_string(&self) -> String {
+        self.0
+            .iter()
+            .map(|node_id| node_id.0.to_string())
+            .collect::<Vec<_>>()
+            .join("-")
     }
 
     pub(crate) fn metrics_id(&self) -> String {
@@ -1179,6 +1372,7 @@ impl Display for OwnershipPreference {
 /// operators or a dependency (i.e., a requirement that one operator
 /// must be evaluated before the other even if they are not connected
 /// by a stream).
+#[derive(Clone)]
 pub struct Edge {
     /// Source node.
     pub from: NodeId,
@@ -1188,6 +1382,9 @@ pub struct Edge {
     /// to the local circuit, this is just the full path to the `from`
     /// node.
     pub origin: GlobalNodeId,
+    /// Stream associated with the edge, if any.  If `None`, this is a
+    /// dependency edge.
+    pub stream: Option<Box<dyn StreamMetadata>>,
     /// Ownership preference associated with the consumer of this
     /// stream or `None` if this is a dependency edge.
     pub ownership_preference: Option<OwnershipPreference>,
@@ -1202,11 +1399,38 @@ impl Edge {
 
     /// `true` if `self` is a stream edge.
     pub(super) fn is_stream(&self) -> bool {
-        self.ownership_preference.is_some()
+        self.stream.is_some()
+    }
+
+    pub(super) fn stream_id(&self) -> Option<StreamId> {
+        self.stream.as_ref().map(|meta| meta.stream_id())
     }
 }
 
 circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
+
+// `stream` => `replay_stream` mapping designates `replay_stream`
+// as a replay source for `stream`.
+circuit_cache_key!(ReplaySource(StreamId => Box<dyn StreamMetadata>));
+
+/// Register `replay_stream` as a replay source for `stream`.
+pub(crate) fn register_replay_stream<C, B>(
+    circuit: &C,
+    stream: &Stream<C, B>,
+    replay_stream: &Stream<C, B>,
+) where
+    C: Circuit,
+    B: 'static,
+{
+    // We currently only support using operators in the top-level circuit
+    // as replay sources.
+    if TypeId::of::<()>() == TypeId::of::<C::Time>() {
+        circuit.cache_insert(
+            ReplaySource::new(stream.stream_id()),
+            Box::new(replay_stream.clone()),
+        );
+    }
+}
 
 /// Trait for an object that has a clock associated with it.
 /// This is implemented trivially for root circuits.
@@ -1275,7 +1499,12 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// Returns the parent circuit of `self`.
     fn parent(&self) -> Self::Parent;
 
-    fn edges(&self) -> Ref<'_, [Edge]>;
+    /// Return the root of the circuit tree.
+    fn root_circuit(&self) -> RootCircuit;
+
+    fn edges(&self) -> Ref<'_, Edges>;
+
+    fn edges_mut(&self) -> RefMut<'_, Edges>;
 
     /// Global id of the circuit node.
     ///
@@ -1322,6 +1551,60 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// Circuit's global node id.
     fn global_node_id(&self) -> GlobalNodeId;
 
+    /// Apply closure `f` to a node with specified global id.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
+    /// if there is another mutable reference to the node.
+    fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T;
+
+    /// Apply closure `f` to a node with specified global id.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
+    /// if there is another mutable or immutable reference to the node.
+    fn map_node_mut<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T;
+
+    /// Apply closure `f` to a node with specified node id.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self`.
+    fn map_local_node_mut<T>(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T;
+
+    /// Tag the node with a text label.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
+    /// if there is another mutable or immutable reference to the node.
+    fn set_node_label(&self, id: &GlobalNodeId, key: &str, val: &str) {
+        self.map_node_mut(id, &mut |node| node.set_label(key, val));
+    }
+
+    fn set_persistent_node_id(&self, id: &GlobalNodeId, persistent_id: Option<&str>) {
+        if let Some(persistent_id) = persistent_id {
+            self.set_node_label(id, LABEL_PERSISTENT_OPERATOR_ID, persistent_id);
+        }
+    }
+
+    /// Get node label.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
+    /// if there is another mutable or immutable reference to the node.
+    fn get_node_label(&self, id: &GlobalNodeId, key: &str) -> Option<String> {
+        self.map_node(id, &mut |node| node.get_label(key).map(str::to_string))
+    }
+
+    /// Node label for persistent operator id.
+    fn get_persistent_node_id(&self, id: &GlobalNodeId) -> Option<String> {
+        self.get_node_label(id, LABEL_PERSISTENT_OPERATOR_ID)
+    }
+
     /// Lookup a value in the circuit cache or create and insert a new value
     /// if it does not exist.
     ///
@@ -1362,8 +1645,18 @@ pub trait Circuit: WithClock + Clone + 'static {
         K: TypedMapKey<CircuitStoreMarker> + 'static,
         K::Value: Clone;
 
+    /// Check if a stream can be replayed, if so, return the replay stream that can be used to
+    /// replay the contents of `stream_id`.
+    fn get_replay_source(&self, stream_id: StreamId) -> Option<Box<dyn StreamMetadata>> {
+        self.cache_get(&ReplaySource::new(stream_id))
+    }
+
+    /// For every edge in `self` with stream id equal to `stream_id`, create an additional replay edge with
+    /// the same destination node attached to `replay_stream`.
+    fn add_replay_edges(&self, stream_id: StreamId, replay_stream: &dyn StreamMetadata);
+
     /// Connect `stream` as input to `to`.
-    fn connect_stream<T>(
+    fn connect_stream<T: 'static>(
         &self,
         stream: &Stream<Self, T>,
         to: NodeId,
@@ -1452,7 +1745,7 @@ pub trait Circuit: WithClock + Clone + 'static {
         RcvOp: SourceOperator<O>;
 
     /// Add a sink operator (see [`SinkOperator`]).
-    fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>)
+    fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>) -> GlobalNodeId
     where
         I: Data,
         Op: SinkOperator<I>;
@@ -1464,7 +1757,8 @@ pub trait Circuit: WithClock + Clone + 'static {
         operator: Op,
         input_stream: &Stream<Self, I>,
         input_preference: OwnershipPreference,
-    ) where
+    ) -> GlobalNodeId
+    where
         I: Data,
         Op: SinkOperator<I>;
 
@@ -1696,6 +1990,24 @@ pub trait Circuit: WithClock + Clone + 'static {
         O: Data,
         Op: StrictUnaryOperator<I, O>;
 
+    /// Like `add_feedback`, but also assigns persistent id to the output half of the the strict operator.
+    fn add_feedback_persistent<I, O, Op>(
+        &self,
+        persistent_id: Option<&str>,
+        operator: Op,
+    ) -> (Stream<Self, O>, FeedbackConnector<Self, I, O, Op>)
+    where
+        I: Data,
+        O: Data,
+        Op: StrictUnaryOperator<I, O>,
+    {
+        let (output, feedback) = self.add_feedback(operator);
+
+        output.set_persistent_id(persistent_id);
+
+        (output, feedback)
+    }
+
     /// Like `add_feedback`, but additionally makes the output of the operator
     /// available to the parent circuit.
     ///
@@ -1717,6 +2029,24 @@ pub trait Circuit: WithClock + Clone + 'static {
         I: Data,
         O: Data,
         Op: StrictUnaryOperator<I, O>;
+
+    /// Like `add_feedback_with_export`, but also assigns persistent id to the output hald of the strict operator.
+    fn add_feedback_with_export_persistent<I, O, Op>(
+        &self,
+        persistent_id: Option<&str>,
+        operator: Op,
+    ) -> (ExportStream<Self, O>, FeedbackConnector<Self, I, O, Op>)
+    where
+        I: Data,
+        O: Data,
+        Op: StrictUnaryOperator<I, O>,
+    {
+        let (export, feedback) = self.add_feedback_with_export(operator);
+
+        export.local.set_persistent_id(persistent_id);
+
+        (export, feedback)
+    }
 
     fn connect_feedback_with_preference<I, O, Op>(
         &self,
@@ -1901,6 +2231,110 @@ pub trait Circuit: WithClock + Clone + 'static {
         Op: ImportOperator<I, O>;
 }
 
+/// A collection of edges in a circuit, indexed by source, destination, and stream id.
+pub struct Edges {
+    by_source: BTreeMap<NodeId, Vec<Rc<Edge>>>,
+    by_destination: BTreeMap<NodeId, Vec<Rc<Edge>>>,
+    by_stream: BTreeMap<Option<StreamId>, Vec<Rc<Edge>>>,
+}
+
+impl Edges {
+    fn new() -> Self {
+        Self {
+            by_source: BTreeMap::new(),
+            by_destination: BTreeMap::new(),
+            by_stream: BTreeMap::new(),
+        }
+    }
+
+    fn add_edge(&mut self, edge: Edge) {
+        let edge = Rc::new(edge);
+
+        self.by_source
+            .entry(edge.from)
+            .or_default()
+            .push(edge.clone());
+        self.by_destination
+            .entry(edge.to)
+            .or_default()
+            .push(edge.clone());
+
+        self.by_stream
+            .entry(edge.stream.as_ref().map(|s| s.stream_id()))
+            .or_default()
+            .push(edge);
+    }
+
+    fn extend<I>(&mut self, edges: I)
+    where
+        I: IntoIterator<Item = Edge>,
+    {
+        for edge in edges {
+            self.add_edge(edge)
+        }
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Edge> {
+        self.by_source
+            .values()
+            .flat_map(|edges| edges.iter().map(|edge| edge.as_ref()))
+    }
+
+    pub(crate) fn get_by_stream_id(&self, stream_id: &Option<StreamId>) -> Option<&[Rc<Edge>]> {
+        self.by_stream.get(stream_id).map(|v| v.as_slice())
+    }
+
+    fn delete_stream(&mut self, stream_id: StreamId) {
+        if let Some(edges) = self.by_stream.remove(&Some(stream_id)) {
+            for edge in edges {
+                if let Some(v) = self.by_source.get_mut(&edge.from) {
+                    v.retain(|e| e.stream_id() != Some(stream_id))
+                }
+                if let Some(v) = self.by_destination.get_mut(&edge.to) {
+                    v.retain(|e| e.stream_id() != Some(stream_id))
+                }
+            }
+        }
+    }
+
+    /// Nodes that depend on node_id directly.
+    ///
+    /// Nodes that have an incoming _dependency_ edge from `node_id`.
+    pub(crate) fn depend_on(&self, node_id: NodeId) -> impl Iterator<Item = &Edge> {
+        self.by_source.get(&node_id).into_iter().flat_map(|edges| {
+            edges.iter().filter_map(|edge| {
+                if edge.is_dependency() {
+                    Some(edge.as_ref())
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
+    /// Nodes that `node_id` depends on directly.
+    ///
+    /// Nodes that have an outgoing _dependency_ edge to `node_id`.
+    pub(crate) fn dependencies_of(&self, node_id: NodeId) -> impl Iterator<Item = &Edge> {
+        self.by_destination
+            .get(&node_id)
+            .into_iter()
+            .flat_map(|edges| {
+                edges.iter().filter_map(|edge| {
+                    if edge.is_dependency() {
+                        Some(edge.as_ref())
+                    } else {
+                        None
+                    }
+                })
+            })
+    }
+
+    fn clear(&mut self) {
+        *self = Self::new();
+    }
+}
+
 /// A circuit consists of nodes and edges.  An edge from
 /// node1 to node2 indicates that the output stream of node1
 /// is connected to an input of node2.
@@ -1909,12 +2343,17 @@ where
     P: WithClock,
 {
     parent: P,
+
+    /// Root of the circuit tree.  `None` if this is the root circuit.
+    root: Option<RootCircuit>,
+
     root_scope: Scope,
-    // Circuit's node id within the parent circuit.
+
+    /// Circuit's node id within the parent circuit.
     node_id: NodeId,
     global_node_id: GlobalNodeId,
     nodes: RefCell<Vec<RefCell<Box<dyn Node>>>>,
-    edges: RefCell<Vec<Edge>>,
+    edges: RefCell<Edges>,
     circuit_event_handlers: CircuitEventHandlers,
     scheduler_event_handlers: SchedulerEventHandlers,
     store: RefCell<CircuitCache>,
@@ -1925,8 +2364,10 @@ impl<P> CircuitInner<P>
 where
     P: WithClock,
 {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         parent: P,
+        root: Option<RootCircuit>,
         root_scope: Scope,
         node_id: NodeId,
         global_node_id: GlobalNodeId,
@@ -1936,11 +2377,12 @@ where
     ) -> Self {
         Self {
             parent,
+            root,
             root_scope,
             node_id,
             global_node_id,
             nodes: RefCell::new(Vec::new()),
-            edges: RefCell::new(Vec::new()),
+            edges: RefCell::new(Edges::new()),
             circuit_event_handlers,
             scheduler_event_handlers,
             store: RefCell::new(TypedMap::new()),
@@ -1949,7 +2391,7 @@ where
     }
 
     fn add_edge(&self, edge: Edge) {
-        self.edges.borrow_mut().push(edge);
+        self.edges.borrow_mut().add_edge(edge);
     }
 
     fn add_node<N>(&self, mut node: N)
@@ -2151,8 +2593,8 @@ impl RootCircuit {
 
         let mut circuit = RootCircuit::new();
         let res = constructor(&mut circuit).map_err(DbspError::Constructor)?;
-        let executor =
-            Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<RootCircuit>>;
+        let mut executor = Box::new(<OnceExecutor<S>>::new()) as Box<dyn Executor<RootCircuit>>;
+        executor.prepare(&circuit, None)?;
 
         // Alternatively, `CircuitHandle` should expose `clock_start` and `clock_end`
         // APIs, so that the user can reset the circuit at runtime and start
@@ -2165,6 +2607,7 @@ impl RootCircuit {
                 circuit,
                 executor,
                 tokio_runtime,
+                replay_info: None,
             },
             res,
         ))
@@ -2178,6 +2621,7 @@ impl RootCircuit {
         Self {
             inner: Rc::new(CircuitInner::new(
                 (),
+                None,
                 0,
                 NodeId::root(),
                 GlobalNodeId::root(),
@@ -2263,9 +2707,12 @@ where
         let root_scope = parent.root_scope() + 1;
         let last_stream_id = parent.last_stream_id();
 
+        let root = parent.root_circuit();
+
         ChildCircuit {
             inner: Rc::new(CircuitInner::new(
                 parent,
+                Some(root),
                 root_scope,
                 id,
                 global_node_id,
@@ -2309,6 +2756,7 @@ where
             from,
             to,
             origin,
+            stream: None,
             ownership_preference: None,
         });
     }
@@ -2348,19 +2796,58 @@ where
     }
 
     /// Recursively apply `f` to all nodes in `self` and its children.
-    pub(crate) fn map_nodes_recursive(&self, f: &mut dyn FnMut(&dyn Node)) {
+    ///
+    /// Stop at the first error.
+    pub(crate) fn map_nodes_recursive(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
         for node in self.inner().nodes.borrow().iter() {
-            f(node.borrow().as_ref());
-            node.borrow().map_nodes_recursive(f);
+            f(node.borrow().as_ref())?;
+            node.borrow().map_nodes_recursive(f)?;
         }
+        Ok(())
     }
 
     /// Recursively apply `f` to all nodes in `self` and its children mutably.
-    pub(crate) fn map_nodes_recursive_mut(&mut self, f: &mut dyn FnMut(&mut dyn Node)) {
+    ///
+    /// Stop at the first error.
+    pub(crate) fn map_nodes_recursive_mut(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
         for node in self.inner().nodes.borrow_mut().iter_mut() {
-            f(node.borrow_mut().as_mut());
-            node.borrow_mut().map_nodes_recursive_mut(f);
+            f(node.borrow_mut().as_mut())?;
+            node.borrow_mut().map_nodes_recursive_mut(f)?;
         }
+
+        Ok(())
+    }
+
+    /// Apply `f` to all immediate children of `self`.
+    ///
+    /// Stop at the first error.
+    #[allow(dead_code)]
+    pub(crate) fn map_nodes(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        for node in self.inner().nodes.borrow().iter() {
+            f(node.borrow().as_ref())?;
+        }
+        Ok(())
+    }
+
+    /// Apply `f` to all immedite children of `self`.
+    pub(crate) fn map_nodes_mut(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        for node in self.inner().nodes.borrow_mut().iter_mut() {
+            f(node.borrow_mut().as_mut())?;
+        }
+
+        Ok(())
     }
 
     fn clear(&mut self) {
@@ -2378,6 +2865,28 @@ where
     pub(super) fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
         self.inner().log_scheduler_event(event);
     }
+
+    /// Apply `f` to the node with the specified `path` relative to `self`.
+    pub(crate) fn map_node_inner(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
+        let nodes = self.inner().nodes.borrow();
+        let node = nodes[path[0].0].borrow();
+        if path.len() == 1 {
+            f(node.as_ref())
+        } else {
+            node.map_child(&path[1..], &mut |node| f(node));
+        }
+    }
+
+    /// Apply `f` to the node with the specified `path` relative to `self`.
+    pub(crate) fn map_node_mut_inner(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
+        let nodes = self.inner().nodes.borrow();
+        let mut node = nodes[path[0].0].borrow_mut();
+        if path.len() == 1 {
+            f(node.as_mut())
+        } else {
+            node.map_child_mut(&path[1..], &mut |node| f(node));
+        }
+    }
 }
 
 impl<P> Circuit for ChildCircuit<P>
@@ -2390,8 +2899,20 @@ where
         self.inner().parent.clone()
     }
 
-    fn edges(&self) -> Ref<'_, [Edge]> {
-        Ref::map(self.inner().edges.borrow(), |edges| edges.as_slice())
+    fn root_circuit(&self) -> RootCircuit {
+        if <dyn Any>::is::<RootCircuit>(self) {
+            unsafe { transmute::<&Self, &RootCircuit>(self) }.clone()
+        } else {
+            self.inner().root.as_ref().unwrap().clone()
+        }
+    }
+
+    fn edges(&self) -> Ref<'_, Edges> {
+        self.inner().edges.borrow()
+    }
+
+    fn edges_mut(&self) -> RefMut<'_, Edges> {
+        self.inner().edges.borrow_mut()
     }
 
     fn num_nodes(&self) -> usize {
@@ -2410,6 +2931,39 @@ where
             .iter()
             .map(|node| node.borrow().local_id())
             .collect()
+    }
+
+    fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T {
+        let path = id.path();
+        let mut result: Option<T> = None;
+
+        assert!(path.starts_with(self.global_id().path()));
+
+        self.map_node_inner(
+            path.strip_prefix(self.global_id().path()).unwrap(),
+            &mut |node| result = Some(f(node)),
+        );
+        result.unwrap()
+    }
+
+    fn map_node_mut<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T {
+        let path = id.path();
+        let mut result: Option<T> = None;
+
+        assert!(path.starts_with(self.global_id().path()));
+
+        self.map_node_mut_inner(
+            path.strip_prefix(self.global_id().path()).unwrap(),
+            &mut |node| result = Some(f(node)),
+        );
+        result.unwrap()
+    }
+
+    fn map_local_node_mut<T>(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T {
+        let mut result: Option<T> = None;
+
+        self.map_node_mut_inner(&[id], &mut |node| result = Some(f(node)));
+        result.unwrap()
     }
 
     fn allocate_stream_id(&self) -> StreamId {
@@ -2477,7 +3031,7 @@ where
         })
     }
 
-    fn connect_stream<T>(
+    fn connect_stream<T: 'static>(
         &self,
         stream: &Stream<Self, T>,
         to: NodeId,
@@ -2489,14 +3043,12 @@ where
             ownership_preference,
         ));
 
-        // Safe because the circuit isn't running yet.
-        stream.val.get_mut().consumers += 1;
-
         debug_assert_eq!(self.global_node_id(), stream.circuit.global_node_id());
         self.inner().add_edge(Edge {
             from: stream.local_node_id(),
             to,
             origin: stream.origin_node_id().clone(),
+            stream: Some(Box::new(stream.clone())),
             ownership_preference: Some(ownership_preference),
         });
     }
@@ -2669,7 +3221,7 @@ where
         output_stream
     }
 
-    fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>)
+    fn add_sink<I, Op>(&self, operator: Op, input_stream: &Stream<Self, I>) -> GlobalNodeId
     where
         I: Data,
         Op: SinkOperator<I>,
@@ -2683,15 +3235,17 @@ where
         operator: Op,
         input_stream: &Stream<Self, I>,
         input_preference: OwnershipPreference,
-    ) where
+    ) -> GlobalNodeId
+    where
         I: Data,
         Op: SinkOperator<I>,
     {
         self.add_node(|id| {
+            let global_node_id = GlobalNodeId::child_of(self, id);
             // Log the operator event before the connection event, so that handlers
             // don't observe edges that connect to nodes they haven't seen yet.
             self.log_circuit_event(&CircuitEvent::operator(
-                GlobalNodeId::child_of(self, id),
+                global_node_id.clone(),
                 operator.name(),
                 operator.location(),
             ));
@@ -2699,9 +3253,9 @@ where
             self.connect_stream(input_stream, id, input_preference);
             (
                 SinkNode::new(operator, input_stream.clone(), self.clone(), id),
-                (),
+                global_node_id,
             )
-        });
+        })
     }
 
     /// Add a binary sink operator (see [`BinarySinkOperator`]).
@@ -3082,6 +3636,9 @@ where
         })
     }
 
+    /// Connect feedback loop.
+    ///
+    /// Returns node id of the input half of Z-1.
     fn connect_feedback_with_preference<I, O, Op>(
         &self,
         output_node_id: NodeId,
@@ -3103,7 +3660,7 @@ where
             self.connect_stream(input_stream, id, input_preference);
             self.add_dependency(output_node_id, id);
             (output_node, ())
-        });
+        })
     }
 
     fn subcircuit<F, T, E>(
@@ -3146,7 +3703,8 @@ where
     {
         self.subcircuit(true, |child| {
             let (termination_check, res) = constructor(child)?;
-            let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
+            let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
+            executor.prepare(child, None)?;
             Ok((res, executor))
         })
     }
@@ -3205,7 +3763,8 @@ where
                         }
                         Ok(global_fixedpoint)
                     };
-                    let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
+                    let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
+                    executor.prepare(child, None)?;
                     Ok((res, executor))
                 })
             }
@@ -3214,7 +3773,8 @@ where
                 let child_clone = child.clone();
 
                 let termination_check = move || Ok(child_clone.inner().fixedpoint(0));
-                let executor = <IterativeExecutor<_, S>>::new(child, termination_check)?;
+                let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
+                executor.prepare(child, None)?;
                 Ok((res, executor))
             }),
         }
@@ -3257,6 +3817,33 @@ where
             let output_stream = node.output_stream();
             (node, output_stream)
         })
+    }
+
+    fn add_replay_edges(&self, stream_id: StreamId, replay_stream: &dyn StreamMetadata) {
+        let mut edges = self.edges_mut();
+        let mut new_edges = Vec::new();
+
+        let Some(edges_to_replay) = edges.get_by_stream_id(&Some(stream_id)) else {
+            return;
+        };
+
+        for edge in edges_to_replay {
+            // println!(
+            //     "Adding replay edge ({}) {} -> {}",
+            //     replay_stream.origin_node_id(),
+            //     replay_stream.local_node_id(),
+            //     edge.to
+            // );
+            new_edges.push(Edge {
+                from: replay_stream.local_node_id(),
+                to: edge.to,
+                origin: replay_stream.origin_node_id().clone(),
+                stream: Some(clone_box(replay_stream)),
+                ownership_preference: edge.ownership_preference,
+            });
+        }
+
+        edges.extend(new_edges);
     }
 }
 
@@ -3320,6 +3907,7 @@ where
     operator: Op,
     parent_stream: Stream<C::Parent, I>,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, O, Op> ImportNode<C, I, O, Op>
@@ -3335,6 +3923,7 @@ where
             operator,
             parent_stream,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -3347,7 +3936,7 @@ impl<C, I, O, Op> Node for ImportNode<C, I, O, Op>
 where
     C: Circuit,
     C::Parent: Circuit,
-    I: Clone,
+    I: Clone + 'static,
     O: Clone,
     Op: ImportOperator<I, O>,
 {
@@ -3417,13 +4006,35 @@ where
     }
 
     fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -3431,6 +4042,7 @@ struct SourceNode<C, O, Op> {
     id: GlobalNodeId,
     operator: Op,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, O, Op> SourceNode<C, O, Op>
@@ -3443,6 +4055,7 @@ where
             id: circuit.global_node_id().child(id),
             operator,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -3513,13 +4126,35 @@ where
     }
 
     fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -3528,6 +4163,7 @@ struct UnaryNode<C, I, O, Op> {
     operator: Op,
     input_stream: Stream<C, I>,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, O, Op> UnaryNode<C, I, O, Op>
@@ -3541,6 +4177,7 @@ where
             operator,
             input_stream,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -3552,7 +4189,7 @@ where
 impl<C, I, O, Op> Node for UnaryNode<C, I, O, Op>
 where
     C: Circuit,
-    I: Clone,
+    I: Clone + 'static,
     O: Clone,
     Op: UnaryOperator<I, O>,
 {
@@ -3623,13 +4260,35 @@ where
     }
 
     fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -3637,6 +4296,7 @@ struct SinkNode<C, I, Op> {
     id: GlobalNodeId,
     operator: Op,
     input_stream: Stream<C, I>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, Op> SinkNode<C, I, Op>
@@ -3649,6 +4309,7 @@ where
             id: circuit.global_node_id().child(id),
             operator,
             input_stream,
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -3656,7 +4317,7 @@ where
 impl<C, I, Op> Node for SinkNode<C, I, Op>
 where
     C: Circuit,
-    I: Clone,
+    I: Clone + 'static,
     Op: SinkOperator<I>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -3725,13 +4386,35 @@ where
     }
 
     fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -3742,6 +4425,7 @@ struct BinarySinkNode<C, I1, I2, Op> {
     input_stream2: Stream<C, I2>,
     // `true` if both input streams are aliases of the same stream.
     is_alias: bool,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I1, I2, Op> BinarySinkNode<C, I1, I2, Op>
@@ -3765,6 +4449,7 @@ where
             input_stream1,
             input_stream2,
             is_alias,
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -3772,8 +4457,8 @@ where
 impl<C, I1, I2, Op> Node for BinarySinkNode<C, I1, I2, Op>
 where
     C: Circuit,
-    I1: Clone,
-    I2: Clone,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
     Op: BinarySinkOperator<I1, I2>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -3885,13 +4570,35 @@ where
     }
 
     fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -3903,6 +4610,7 @@ struct BinaryNode<C, I1, I2, O, Op> {
     output_stream: Stream<C, O>,
     // `true` if both input streams are aliases of the same stream.
     is_alias: bool,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I1, I2, O, Op> BinaryNode<C, I1, I2, O, Op>
@@ -3925,6 +4633,7 @@ where
             input_stream2,
             is_alias,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -3936,8 +4645,8 @@ where
 impl<C, I1, I2, O, Op> Node for BinaryNode<C, I1, I2, O, Op>
 where
     C: Circuit,
-    I1: Clone,
-    I2: Clone,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
     O: Clone,
     Op: BinaryOperator<I1, I2, O>,
 {
@@ -4044,14 +4753,36 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), Error> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -4062,6 +4793,7 @@ struct TernaryNode<C, I1, I2, I3, O, Op> {
     input_stream2: Stream<C, I2>,
     input_stream3: Stream<C, I3>,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I1, I2, I3, O, Op> TernaryNode<C, I1, I2, I3, O, Op>
@@ -4089,6 +4821,7 @@ where
             // is_alias1,
             // is_alias2,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -4100,9 +4833,9 @@ where
 impl<C, I1, I2, I3, O, Op> Node for TernaryNode<C, I1, I2, I3, O, Op>
 where
     C: Circuit,
-    I1: Clone,
-    I2: Clone,
-    I3: Clone,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
+    I3: Clone + 'static,
     O: Clone,
     Op: TernaryOperator<I1, I2, I3, O>,
 {
@@ -4178,14 +4911,36 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), Error> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -4197,6 +4952,7 @@ struct QuaternaryNode<C, I1, I2, I3, I4, O, Op> {
     input_stream3: Stream<C, I3>,
     input_stream4: Stream<C, I4>,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
     // // `true` if `input_stream1` is an alias to `input_stream2`, `input_stream3` or
     // // `input_stream4`.
     // is_alias1: bool,
@@ -4241,6 +4997,7 @@ where
             // is_alias2,
             // is_alias3,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -4252,10 +5009,10 @@ where
 impl<C, I1, I2, I3, I4, O, Op> Node for QuaternaryNode<C, I1, I2, I3, I4, O, Op>
 where
     C: Circuit,
-    I1: Clone,
-    I2: Clone,
-    I3: Clone,
-    I4: Clone,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
+    I3: Clone + 'static,
+    I4: Clone + 'static,
     O: Clone,
     Op: QuaternaryOperator<I1, I2, I3, I4, O>,
 {
@@ -4333,14 +5090,36 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), Error> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -4356,6 +5135,7 @@ where
     // // Streams that are aliases.
     // aliases: Vec<usize>,
     output_stream: Stream<C, O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, O, Op> NaryNode<C, I, O, Op>
@@ -4387,6 +5167,7 @@ where
             input_streams,
             //aliases,
             output_stream: Stream::new(circuit, id),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -4473,14 +5254,36 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), Error> {
-        self.operator
-            .commit(base, &self.global_id().persistent_id())
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator.commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator
-            .restore(base, &self.global_id().persistent_id())
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -4498,6 +5301,7 @@ where
     output_stream: Stream<C, O>,
     export_stream: Option<Stream<C::Parent, O>>,
     phantom_input: PhantomData<I>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, O, Op> FeedbackOutputNode<C, I, O, Op>
@@ -4512,6 +5316,7 @@ where
             output_stream: Stream::new(circuit.clone(), id),
             export_stream: None,
             phantom_input: PhantomData,
+            labels: BTreeMap::new(),
         }
     }
 
@@ -4599,16 +5404,40 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .borrow_mut()
-            .commit(base, &self.global_id().persistent_id())
+            .commit(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .borrow_mut()
-            .restore(base, &self.global_id().persistent_id())
+            .restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.borrow_mut().clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.borrow_mut().start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.borrow().is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.borrow_mut().end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -4619,6 +5448,7 @@ struct FeedbackInputNode<C, I, O, Op> {
     operator: Rc<RefCell<Op>>,
     input_stream: Stream<C, I>,
     phantom_output: PhantomData<O>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<C, I, O, Op> FeedbackInputNode<C, I, O, Op>
@@ -4632,6 +5462,7 @@ where
             operator,
             input_stream,
             phantom_output: PhantomData,
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -4640,6 +5471,7 @@ impl<C, I, O, Op> Node for FeedbackInputNode<C, I, O, Op>
 where
     Op: StrictUnaryOperator<I, O>,
     I: Data,
+    C: Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         self.operator.borrow().name()
@@ -4706,7 +5538,7 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn commit(&mut self, _base: &StoragePath) -> Result<(), Error> {
+    fn commit(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         // The Z-1 operator consists of two logical parts.
         // The first part gets invoked at the start of a clock cycle to retrieve the
         // state stored at the previous clock tick. The second one gets invoked
@@ -4719,6 +5551,30 @@ where
     fn restore(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         // See comment in `commit`.
         Ok(())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        Ok(())
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.borrow_mut().start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.borrow().is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.borrow_mut().end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
     }
 }
 
@@ -4759,6 +5615,10 @@ where
     O: Data,
     C: Circuit,
 {
+    pub fn operator_mut(&self) -> RefMut<Op> {
+        self.operator.borrow_mut()
+    }
+
     /// Connect `input_stream` as input to the operator.
     ///
     /// See [`Circuit::add_feedback`] for details.
@@ -4777,7 +5637,7 @@ where
             self.operator,
             input_stream,
             input_preference,
-        );
+        )
     }
 }
 
@@ -4789,6 +5649,7 @@ where
     id: GlobalNodeId,
     circuit: ChildCircuit<P>,
     executor: Box<dyn Executor<ChildCircuit<P>>>,
+    labels: BTreeMap<String, String>,
 }
 
 impl<P> Drop for ChildNode<P>
@@ -4814,6 +5675,7 @@ where
             id: circuit.global_node_id(),
             circuit,
             executor: Box::new(executor) as Box<dyn Executor<ChildCircuit<P>>>,
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -4860,16 +5722,51 @@ where
         self.circuit.inner().fixedpoint(scope + 1)
     }
 
-    fn map_nodes_recursive(&self, f: &mut dyn FnMut(&dyn Node)) {
-        self.circuit.map_nodes_recursive(f);
+    fn map_nodes_recursive(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        self.circuit.map_nodes_recursive(f)
     }
 
-    fn commit(&mut self, _base: &StoragePath) -> Result<(), Error> {
+    fn commit(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         Ok(())
     }
 
     fn restore(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         Ok(())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.circuit.map_nodes_mut(&mut |node| node.clear_state())
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        Ok(())
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        true
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        Ok(())
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn map_child(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
+        self.circuit.map_node_inner(path, f);
+    }
+
+    fn map_child_mut(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
+        self.circuit.map_node_mut_inner(path, f);
     }
 }
 
@@ -4882,6 +5779,7 @@ pub struct CircuitHandle {
     circuit: RootCircuit,
     executor: Box<dyn Executor<RootCircuit>>,
     tokio_runtime: TokioRuntime,
+    replay_info: Option<BootstrapInfo>,
 }
 
 impl Drop for CircuitHandle {
@@ -4904,6 +5802,17 @@ impl Drop for CircuitHandle {
     }
 }
 
+/// Operators involved in the replay phase of a circuit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BootstrapInfo {
+    /// Operators that will replay their contents during the replay phase.
+    pub replay_sources: BTreeMap<NodeId, StreamId>,
+
+    /// Operators that require backfill from upstream nodes.
+    #[allow(dead_code)]
+    pub need_backfill: BTreeSet<NodeId>,
+}
+
 impl CircuitHandle {
     /// Function that drives the execution of the circuit.
     ///
@@ -4912,20 +5821,22 @@ impl CircuitHandle {
     /// store the desired input value in each input stream using its input
     /// handle.  Each call stores a value in each output stream so, after
     /// calling, the client may obtain these values using their output handles.
-    pub fn step(&self) -> Result<(), SchedulerError> {
-        self.tokio_runtime.block_on(async {
-            let local_set = LocalSet::new();
-            local_set
-                .run_until(async { self.executor.run(&self.circuit).await })
-                .await
-        })
+    pub fn step(&self) -> Result<(), DbspError> {
+        self.tokio_runtime
+            .block_on(async {
+                let local_set = LocalSet::new();
+                local_set
+                    .run_until(async { self.executor.run(&self.circuit).await })
+                    .await
+            })
+            .map_err(DbspError::Scheduler)
     }
 
-    pub fn commit(&mut self, base: &StoragePath) -> Result<(), SchedulerError> {
+    pub fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
                 let start = Instant::now();
-                node.commit(base).expect("committed");
+                node.commit(base)?;
                 let elapsed = start.elapsed();
                 if elapsed >= Duration::from_millis(100) {
                     info!(
@@ -4935,22 +5846,356 @@ impl CircuitHandle {
                         elapsed.as_secs_f64()
                     );
                 }
-            });
-        Ok(())
+
+                Ok(())
+            })
     }
 
-    pub fn restore(&mut self, base: &StoragePath) -> Result<(), SchedulerError> {
-        self.circuit
-            .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
-                node.restore(base).expect("restored");
-            });
+    /// Restores the circuit from a checkpoint.
+    ///
+    /// Restore the circuit from a checkpoint and prepare it to backfill new and
+    /// modified parts of the circuit if necessary.
+    ///
+    /// 1. Find and restore the checkpointed state of each operator.
+    /// 2. Identify stateful operators (such as integrals and output nodes) that don't have
+    ///    a checkpoint and require backfill (the `need_backfill` set).
+    /// 3. Iterate backward from `need_backfill` nodes to find all operators that
+    ///    should participate in the replay phase of the circuit. Iteration stops when
+    ///    reaching a stream whose contents can be replayed from an existing node
+    ///    that has a checkpoint or an input node.
+    /// 4. If the circuit requires backfill, prepare the circuit for replay by
+    ///    configuring the scheduler to only schedule nodes that participate in
+    ///    backfill.
+    ///
+    /// Returns `None` if the circuit does not require backfill; returns info about
+    /// nodes that participate in backfill otherwise.
+    ///
+    /// * After calling this function, the client can invoke `step` repeatedly for replay to make progress.
+    /// * Use `is_replay_complete` to determine whether the circuit has finished the replay.
+    /// * Use `complete_replay` to finalize the replay phase and prepare the circuit for normal operation after replay is complete.
+    pub fn restore(&mut self, base: &StoragePath) -> Result<Option<BootstrapInfo>, DbspError> {
+        // Nodes that will act as replay sources during the replay phase of the circuit.
+        let mut replay_sources: BTreeMap<NodeId, StreamId> = BTreeMap::new();
+
+        // Nodes that require backfill from upstream nodes.
+        let mut need_backfill: BTreeSet<GlobalNodeId> = BTreeSet::new();
+
+        // debug!("CircuitHandle::restore: restoring from checkpoint {}", base);
+
+        // Initialize `need_backfill` to operators without a checkpoint.
+        // Fail if there are any errors other than NotFound.
+        // By the end of this, `need_backfill` will contain all new integrals and output
+        // nodes that need backfill.
+        self.circuit.map_nodes_recursive_mut(
+            &mut |node: &mut dyn Node| match node.restore(base) {
+                Err(e) if Runtime::mode() == Mode::Ephemeral => Err(e),
+                Err(DbspError::Storage(ioerror)) if ioerror.kind() == ErrorKind::NotFound => {
+                    need_backfill.insert(node.global_id().clone());
+                    Ok(())
+                }
+                Err(DbspError::IO(ioerror)) if ioerror.kind() == ErrorKind::NotFound => {
+                    need_backfill.insert(node.global_id().clone());
+                    Ok(())
+                }
+                Err(e) => Err(e),
+                Ok(()) => Ok(()),
+            },
+        )?;
+
+        // debug!(
+        //     "worker {}: CircuitHandle::restore: found {} operators that require backfill: {:?}",
+        //     Runtime::worker_index(),
+        //     need_backfill.len(),
+        //     need_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>()
+        // );
+
+        // We can only backfill a nested circuit as a whole, so if we encounter at least
+        // one node in a nested circuit that needs backfill, we backfill the
+        // entire circuit.
+        let need_backfill = need_backfill
+            .into_iter()
+            .map(|gid| gid.top_level_ancestor())
+            .collect::<BTreeSet<_>>();
+
+        // Iterate backward from `need_backfill` nodes to find all operators that
+        // should participate in the replay.
+
+        // All nodes that participate in the replay phase, including replay sources and
+        // nodes that need backfilling.
+        let mut participate_in_backfill = need_backfill.clone();
+
+        // New nodes computed at each iteration.
+        let mut participate_in_backfill_new = need_backfill.clone();
+
+        while !participate_in_backfill_new.is_empty() {
+            participate_in_backfill_new = self.compute_replay_nodes_step(
+                &mut replay_sources,
+                &need_backfill,
+                participate_in_backfill_new,
+                &mut participate_in_backfill,
+            )?;
+        }
+
+        debug!(
+            "worker {}: CircuitHandle::restore: replaying {} operators: {:?}\n  backfilling {} operators: {:?}\n  replay circuit consists of {} operators: {:?}",
+            Runtime::worker_index(),
+            replay_sources.len(),
+            replay_sources.keys().cloned().collect::<Vec<NodeId>>(),
+            need_backfill.len(),
+            need_backfill.iter().cloned().collect::<Vec<NodeId>>(),
+            participate_in_backfill.len(),
+            participate_in_backfill.iter().cloned().collect::<Vec<NodeId>>()
+        );
+
+        assert!(replay_sources
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .intersection(&need_backfill)
+            .collect::<Vec<_>>()
+            .is_empty());
+
+        if !participate_in_backfill.is_empty() {
+            // Configure all `replay_nodes` to run in replay mode.
+            for node_id in replay_sources.keys() {
+                self.circuit
+                    .map_local_node_mut(*node_id, &mut |node| node.start_replay())?;
+            }
+
+            // Clear the state of `need_backfill` nodes.
+            for node_id in need_backfill.iter() {
+                self.circuit
+                    .map_local_node_mut(*node_id, &mut |node| node.clear_state())?;
+            }
+
+            // Prepare the scheduler to only run `participate_in_backfill`.
+            self.executor
+                .prepare(&self.circuit, Some(&participate_in_backfill))?;
+
+            // info!("CircuitHandle::restore: replay circuit is ready");
+
+            // self.circuit.to_dot_file(
+            //     |node| {
+            //         if !node.global_id().is_child_of(self.circuit.global_id()) {
+            //             return None;
+            //         }
+            //         let color = if replay_sources.contains_key(&node.local_id()) {
+            //             Some(0xff5555)
+            //         } else if participate_in_backfill.contains(&node.local_id()) {
+            //             Some(0x5555ff)
+            //         } else {
+            //             None
+            //         };
+            //         Some(DotNodeAttributes::new().with_color(color))
+            //     },
+            //     |edge| {
+            //         let style = if edge.is_dependency() {
+            //             Some("dotted".to_string())
+            //         } else {
+            //             None
+            //         };
+            //         let label = if let Some(stream) = &edge.stream {
+            //             Some(format!("consumers: {}", stream.num_consumers()))
+            //         } else {
+            //             None
+            //         };
+            //         Some(
+            //             DotEdgeAttributes::new(edge.stream_id())
+            //                 .with_style(style)
+            //                 .with_label(label),
+            //         )
+            //     },
+            //     "replay.dot",
+            // );
+            // info!("CircuitHandle::restore: replay circuit is written to replay.dot");
+
+            let replay_info = BootstrapInfo {
+                replay_sources: replay_sources.clone(),
+                need_backfill: participate_in_backfill.clone(),
+            };
+
+            self.replay_info = Some(replay_info.clone());
+
+            Ok(Some(replay_info))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Iterative step of computing the set of nodes that participate in the replay phase.
+    ///
+    /// Find all input streams of nodes in `participate_in_backfill_new`.
+    ///
+    /// * For streams that can be replayed from a replay source:
+    ///  - add the replay source to `replay_sources` and `participate_in_backfill`.
+    ///  - create replay streams from the replay source to each consumer of the original stream.
+    /// * For other streams, add their origin nodes to `participate_in_backfill`.
+    ///
+    /// Return the set of nodes newly added to `participate_in_backfill`.
+    fn compute_replay_nodes_step(
+        &self,
+        replay_sources: &mut BTreeMap<NodeId, StreamId>,
+        need_backfill: &BTreeSet<NodeId>,
+        participate_in_backfill_new: BTreeSet<NodeId>,
+        participate_in_backfill: &mut BTreeSet<NodeId>,
+    ) -> Result<BTreeSet<NodeId>, DbspError> {
+        let mut inputs = BTreeSet::new();
+
+        for node_id in participate_in_backfill_new.iter() {
+            // Compute immediate ancestors of node_id, including:
+            // 1. Nodes connected to node_id by a stream.
+            // 2. Nodes that depend on node_id -- makes sure that if we schedule the output half of a strict operator,
+            //    we will also schedule the input half.
+            // 3. Nodes that node_id depends on -- Makes sure that if we schedule the output of an exchange operator,
+            //    we will schedule the input part as well.
+
+            // 1.
+            let node_inputs = self
+                .circuit
+                .edges()
+                .by_destination
+                .get(node_id)
+                .iter()
+                .flat_map(|edges| edges.iter())
+                .filter(|edge| edge.is_stream())
+                .map(|edge| {
+                    // If the origin of the stream is a node inside the nested circuit, we will clear and replay the
+                    // entire nested circuit, as we don't currently have a way to replay state from inside a nested
+                    // circuit into a parent circuit.
+                    (Some(edge.stream_id().unwrap()), edge.from)
+                })
+                .collect::<Vec<_>>();
+
+            for input in node_inputs.into_iter() {
+                inputs.insert(input);
+            }
+
+            // 2.
+            for edge in self.circuit.edges().dependencies_of(*node_id) {
+                inputs.insert((None, edge.from));
+            }
+
+            // 3.
+            for edge in self.circuit.edges().depend_on(*node_id) {
+                inputs.insert((None, edge.to));
+            }
+        }
+
+        let mut participate_in_backfill_new = BTreeSet::new();
+
+        let mut replay_streams = BTreeMap::new();
+
+        for (stream_id, mut node_id) in inputs.into_iter() {
+            // println!("replay needed for ({stream_id}, {node_id})");
+
+            // Add all ancestors of `participate_in_backfill_new` to the `participate_in_backfill` set, except streams
+            // that can be replayed from a different node.
+            if let Some(stream_id) = stream_id {
+                if let Some(replay_source) = self.circuit.get_replay_source(stream_id) {
+                    // If the replay source is itself in the need_backfill set (i.e., it's an integral without
+                    // a checkpoint), it cannot be used for replay.
+                    if !need_backfill.contains(&replay_source.local_node_id()) {
+                        replay_streams.insert(stream_id, replay_source.clone());
+                        // trace!(
+                        //     "worker {}: Replacing node_id {node_id} with replay source {}",
+                        //     Runtime::worker_index(),
+                        //     replay_source.origin_node_id()
+                        // );
+
+                        // Replace the node_id with the replay source.
+                        node_id = replay_source.local_node_id();
+                    }
+                }
+            }
+
+            if !participate_in_backfill.contains(&node_id) {
+                // println!("Adding {gid} to participate_in_backfill via {stream_id:?}");
+                participate_in_backfill.insert(node_id);
+                participate_in_backfill_new.insert(node_id);
+            }
+        }
+
+        // Connect `replay_streams` to all operators that consume the original stream.
+        for (original_stream, replay_stream) in replay_streams.into_iter() {
+            replay_sources
+                .entry(replay_stream.local_node_id())
+                .or_insert_with(|| {
+                    self.circuit
+                        .add_replay_edges(original_stream, replay_stream.as_ref());
+                    replay_stream.stream_id()
+                });
+        }
+
+        Ok(participate_in_backfill_new)
+    }
+
+    /// Returns `true` if all replay sources have completed their replay.
+    pub fn is_replay_complete(&self) -> bool {
+        let Some(replay_info) = self.replay_info.as_ref() else {
+            return true;
+        };
+
+        replay_info.replay_sources.keys().all(|node_id| {
+            self.circuit
+                .map_local_node_mut(*node_id, &mut |node| node.is_replay_complete())
+        })
+    }
+
+    /// Finalize the replay phase of the circuit.
+    ///
+    /// * Notify all replay sources to go back to normal operation.
+    /// * Delete all replay streams.
+    /// * Prepare the scheduler to run the full circuit.
+    pub fn complete_replay(&mut self) -> Result<(), DbspError> {
+        // info!("Replay complete");
+
+        let Some(replay_info) = self.replay_info.take() else {
+            return Ok(());
+        };
+
+        // End replay mode.
+        for (node_id, stream_id) in replay_info.replay_sources.iter() {
+            self.circuit
+                .map_local_node_mut(*node_id, &mut |node| node.end_replay())?;
+            self.circuit.edges_mut().delete_stream(*stream_id);
+        }
+
+        // Prepare the scheduler to run the full circuit.
+        self.executor.prepare(&self.circuit, None)?;
+
+        // if Runtime::worker_index() == 0 {
+        //     self.circuit.to_dot_file(
+        //         |_node| Some(crate::circuit::dot::DotNodeAttributes::new()),
+        //         |edge| {
+        //             let style = if edge.is_dependency() {
+        //                 Some("dotted".to_string())
+        //             } else {
+        //                 None
+        //             };
+        //             let label = if let Some(stream) = &edge.stream {
+        //                 Some(format!("consumers: {}", stream.num_consumers()))
+        //             } else {
+        //                 None
+        //             };
+        //             Some(
+        //                 crate::circuit::dot::DotEdgeAttributes::new(edge.stream_id())
+        //                     .with_style(style)
+        //                     .with_label(label),
+        //             )
+        //         },
+        //         "final.dot",
+        //     );
+        //     info!("CircuitHandle::restore: final circuit is written to final.dot");
+        // }
+
         Ok(())
     }
 
     pub fn fingerprint(&self) -> u64 {
         let mut fip = Fingerprinter::default();
-        self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
+        let _ = self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
             node.fingerprint(&mut fip);
+            Ok(())
         });
         fip.finish()
     }

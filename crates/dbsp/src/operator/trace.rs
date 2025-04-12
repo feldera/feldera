@@ -27,8 +27,11 @@ where
     /// timestamp and adds it to a trace.
     #[track_caller]
     pub fn trace(&self) -> Stream<C, TypedBatch<K, V, R, FileValSpine<B, C>>> {
-        let factories = BatchReaderFactories::new::<K, V, R>();
-        self.inner().dyn_trace(&factories).typed()
+        let trace_factories = BatchReaderFactories::new::<K, V, R>();
+        let batch_factories = BatchReaderFactories::new::<K, V, R>();
+        self.inner()
+            .dyn_trace(&trace_factories, &batch_factories)
+            .typed()
     }
 
     /// Record batches in `self` in a trace with bounds `lower_key_bound` and
@@ -50,9 +53,16 @@ where
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
     ) -> Stream<C, TypedBatch<K, V, R, FileValSpine<B, C>>> {
-        let factories = BatchReaderFactories::new::<K, V, R>();
+        let trace_factories = BatchReaderFactories::new::<K, V, R>();
+        let batch_factories = BatchReaderFactories::new::<K, V, R>();
+
         self.inner()
-            .dyn_trace_with_bound(&factories, lower_key_bound, lower_val_bound)
+            .dyn_trace_with_bound(
+                &trace_factories,
+                &batch_factories,
+                lower_key_bound,
+                lower_val_bound,
+            )
             .typed()
     }
 }

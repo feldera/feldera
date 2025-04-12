@@ -49,6 +49,10 @@ mod semijoin;
 pub mod time_series;
 mod trace;
 
+use crate::circuit::GlobalNodeId;
+use crate::storage::backend::StorageError;
+use crate::Error;
+
 pub use self::csv::CsvSource;
 pub use apply::Apply;
 pub use condition::Condition;
@@ -75,3 +79,11 @@ pub use sample::{MAX_QUANTILES, MAX_SAMPLE_SIZE};
 pub use sum::Sum;
 pub use time_series::OrdPartitionedIndexedZSet;
 pub use z1::{DelayedFeedback, DelayedNestedFeedback, Z1Nested, Z1};
+
+/// Returns a `NoPersistentId` error if `persistent_id` is `None`.
+fn require_persistent_id<'a>(
+    persistent_id: Option<&'a str>,
+    global_id: &GlobalNodeId,
+) -> Result<&'a str, Error> {
+    persistent_id.ok_or_else(|| Error::Storage(StorageError::NoPersistentId(global_id.to_string())))
+}

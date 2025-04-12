@@ -859,9 +859,9 @@ dependencies = [
 
 [[package]]
 name = "ascii_table"
-version = "4.0.5"
+version = "4.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adb7e515f68a8667f957e85c7d59639fe1fa2e0b06c3c2394869b73a404e52ed"
+checksum = "75054ce561491263d7b80dc2f6f6c6f8cdfd0c7a7c17c5cf3b8117829fa72ae1"
 
 [[package]]
 name = "assert-json-diff"
@@ -3657,6 +3657,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "typedmap",
  "uuid",
  "xxhash-rust",

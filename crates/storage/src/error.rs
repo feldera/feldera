@@ -25,6 +25,10 @@ pub enum StorageError {
     #[error("Couldn't find the specified checkpoint ({0:?}).")]
     CheckpointNotFound(Uuid),
 
+    /// The operator wasn't assigned a persistent ID when the circuit was constructed.
+    #[error("Internal error: operator {0} has not been assigned a persistent id.")]
+    NoPersistentId(String),
+
     /// Cannot perform operation because storage is not enabled.
     #[error("Cannot perform operation because storage is not enabled.")]
     StorageDisabled,
@@ -107,6 +111,7 @@ impl StorageError {
         match self {
             StorageError::StdIo(kind) => *kind,
             StorageError::StorageLocked(..) => ErrorKind::ResourceBusy,
+            StorageError::NoPersistentId(_) => ErrorKind::Other,
             StorageError::CheckpointNotFound(_) => ErrorKind::NotFound,
             StorageError::StorageDisabled => ErrorKind::Other,
             StorageError::BloomFilter => ErrorKind::Other,

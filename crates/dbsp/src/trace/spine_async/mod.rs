@@ -1194,6 +1194,7 @@ where
 
     fn restore(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
         let pspine_path = Self::checkpoint_file(base, persistent_id);
+
         let content = Runtime::storage_backend().unwrap().read(&pspine_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedSpine>(&content) };
 

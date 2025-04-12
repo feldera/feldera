@@ -333,7 +333,7 @@ where
                 ),
                 self,
                 // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
-                &self.dyn_trace(&factories.trace_factories),
+                &self.dyn_trace(&factories.trace_factories, &factories.input_factories),
             )
         }
         .mark_sharded()
