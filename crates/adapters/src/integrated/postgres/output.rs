@@ -199,6 +199,10 @@ impl PostgresOutputEndpoint {
         value: &mut Vec<u8>,
         name: &str,
     ) -> AnyResult<()> {
+        if value.last() != Some(&b']') {
+            value.push(b']');
+        }
+
         if value.len() <= 2 {
             return Ok(());
         }
@@ -423,6 +427,7 @@ impl Encoder for PostgresOutputEndpoint {
                         if new_buf.len() + buf.len() > max_buffer_size {
                             self.upsert(buf)?;
                         }
+                        buf.append(&mut new_buf);
                     }
                 };
 
@@ -431,10 +436,6 @@ impl Encoder for PostgresOutputEndpoint {
 
             cursor.step_key();
         }
-
-        insert_buffer.push(b']');
-        delete_buffer.push(b']');
-        upsert_buffer.push(b']');
 
         self.delete(&mut delete_buffer)?;
         self.insert(&mut insert_buffer)?;
