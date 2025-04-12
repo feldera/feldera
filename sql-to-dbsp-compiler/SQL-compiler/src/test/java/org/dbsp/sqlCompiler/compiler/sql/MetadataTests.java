@@ -317,7 +317,6 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void stripConnectors() throws IOException, SQLException {
         // Test that the connectors property is stripped from the generated Rust
-        NameGen.reset();
         String sql = """
                CREATE TABLE T (
                   COL1 INT
@@ -338,7 +337,6 @@ public class MetadataTests extends BaseSQLTests {
         String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
         Assert.assertFalse(rust.contains("connectors"));
 
-        NameGen.reset();
         sql = """
                CREATE TABLE T (COL1 INT);
                CREATE VIEW V AS SELECT * FROM T;""";

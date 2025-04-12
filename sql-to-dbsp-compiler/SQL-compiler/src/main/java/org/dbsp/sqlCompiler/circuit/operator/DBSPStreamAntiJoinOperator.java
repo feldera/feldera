@@ -16,7 +16,7 @@ import java.util.List;
 /** Currently there is no corespondent operator in DBSP. */
 public final class DBSPStreamAntiJoinOperator extends DBSPBinaryOperator {
     public DBSPStreamAntiJoinOperator(CalciteRelNode node, OutputPort left, OutputPort right) {
-        super(node, "stream_antijoin", null, left.outputType(), left.isMultiset(), left, right);
+        super(node, "stream_antijoin", null, left.outputType(), left.isMultiset(), left, right, false);
         left.getOutputIndexedZSetType();
         right.getOutputIndexedZSetType();
         assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType) :

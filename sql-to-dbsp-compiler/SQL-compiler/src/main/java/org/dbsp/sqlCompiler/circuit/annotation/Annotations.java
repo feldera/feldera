@@ -22,7 +22,7 @@ public class Annotations {
             var it = annotations.elements();
             while (it.hasNext()) {
                 JsonNode annotation = it.next();
-                Annotation anno = Annotation.fromJson(annotation);
+                Annotation anno = org.dbsp.sqlCompiler.circuit.annotation.Annotation.fromJson(annotation);
                 result.add(anno);
             }
         } catch (ClassNotFoundException ex) {
@@ -51,6 +51,10 @@ public class Annotations {
     }
 
     public List<Annotation> get(Predicate<Annotation> test) { return Linq.where(this.annotations, test); }
+
+    public <T extends Annotation> List<T> get(Class<T> clazz) {
+        return Linq.map(Linq.where(this.annotations, a -> a.is(clazz)), a -> a.to(clazz));
+    }
 
     /** Return the single annotation of the specified type, or null if the annotation is not found. */
     public @Nullable <T extends Annotation> T first(Class<T> clazz) {

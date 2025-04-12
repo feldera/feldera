@@ -35,7 +35,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
 
     public DBSPApplyOperator(CalciteRelNode node, DBSPClosureExpression function,
                              DBSPType outputType, OutputPort input, @Nullable String comment) {
-        super(node, "apply", function, outputType, false, input, comment);
+        super(node, "apply", function, outputType, false, input, comment, false);
         assert function.parameters.length == 1: "Expected 1 parameter for function " + function;
         DBSPType paramType = function.parameters[0].getType().deref();
         assert input.outputType().sameType(paramType) :

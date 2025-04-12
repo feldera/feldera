@@ -29,7 +29,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
             CalciteRelNode node, boolean lowerInclusive, boolean upperInclusive,
             OutputPort data, OutputPort control) {
         super(node, "window", null, data.outputType(), data.isMultiset(),
-                data, control);
+                data, control, false);
         // Check that the left input and output are indexed ZSets
         this.getOutputIndexedZSetType();
         this.lowerInclusive = lowerInclusive;

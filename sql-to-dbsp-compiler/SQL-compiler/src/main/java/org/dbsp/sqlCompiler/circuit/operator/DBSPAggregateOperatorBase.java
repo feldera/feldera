@@ -25,8 +25,9 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
                                         @Nullable DBSPExpression function,
                                         @Nullable DBSPAggregate aggregate,
                                         boolean multiset,
-                                        OutputPort source) {
-        super(node, operation, function, outputType, multiset, source);
+                                        OutputPort source,
+                                        boolean containsIntegrate) {
+        super(node, operation, function, outputType, multiset, source, containsIntegrate);
         this.aggregate = aggregate;
         // There are really two different representations of an aggregate operator,
         // which reuse the same classes: a high-level one, which contains an Aggregate,

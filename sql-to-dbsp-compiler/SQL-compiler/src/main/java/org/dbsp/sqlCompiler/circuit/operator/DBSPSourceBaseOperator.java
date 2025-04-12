@@ -46,7 +46,7 @@ public abstract class DBSPSourceBaseOperator extends DBSPSimpleOperator {
     protected DBSPSourceBaseOperator(
             CalciteRelNode node, String operation, DBSPType outputType, boolean isMultiset,
             ProgramIdentifier tableName, @Nullable String comment) {
-        super(node, operation + " " + tableName, null, outputType, isMultiset, comment);
+        super(node, operation + " " + tableName, null, outputType, isMultiset, comment, false);
         this.tableName = tableName;
     }
 

@@ -45,7 +45,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
                                        @Nullable DBSPAggregate aggregate,
                                        OutputPort input) {
         super(node, "stream_aggregate",
-                outputType, function, aggregate, false, input);
+                outputType, function, aggregate, false, input, false);
         assert aggregate == null || !aggregate.isLinear();
     }
 
