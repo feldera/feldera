@@ -40,7 +40,7 @@ import java.util.List;
 
 public final class DBSPSumOperator extends DBSPSimpleOperator {
     public DBSPSumOperator(CalciteRelNode node, List<OutputPort> inputs) {
-        super(node, "sum", null, inputs.get(0).outputType(), true);
+        super(node, "sum", null, inputs.get(0).outputType(), true, false);
         for (OutputPort op: inputs) {
             this.addInput(op);
             if (!op.outputType().sameType(this.outputType)) {

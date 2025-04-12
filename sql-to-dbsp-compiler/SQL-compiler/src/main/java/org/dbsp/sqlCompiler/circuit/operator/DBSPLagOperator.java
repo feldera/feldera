@@ -39,7 +39,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
                            DBSPExpression projection, DBSPExpression function,
                            DBSPExpression comparator,
                            DBSPTypeIndexedZSet outputType, OutputPort source) {
-        super(node, "lag_custom_order", function, outputType, source.isMultiset(), source);
+        super(node, "lag_custom_order", function, outputType, source.isMultiset(), source, true);
         assert comparator.is(DBSPComparatorExpression.class) || comparator.is(DBSPPathExpression.class);
         this.comparator = comparator;
         this.projection = projection;

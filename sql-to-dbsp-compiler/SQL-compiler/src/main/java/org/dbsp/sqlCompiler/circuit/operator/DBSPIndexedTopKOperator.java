@@ -76,7 +76,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
                                    DBSPEqualityComparatorExpression equalityComparator,
                                    @Nullable DBSPClosureExpression outputProducer, OutputPort source) {
         super(node, "topK", comparator,
-                outputType(source.getOutputIndexedZSetType(), outputProducer), source.isMultiset(), source);
+                outputType(source.getOutputIndexedZSetType(), outputProducer), source.isMultiset(), source, true);
         assert comparator.is(DBSPComparatorExpression.class) || comparator.is(DBSPPathExpression.class);
         this.limit = limit;
         this.numbering = numbering;

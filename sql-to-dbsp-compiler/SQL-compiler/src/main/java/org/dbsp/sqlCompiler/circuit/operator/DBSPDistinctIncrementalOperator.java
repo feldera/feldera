@@ -16,9 +16,8 @@ import java.util.List;
 
 @NonCoreIR
 public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator {
-    // In the DBSP paper this operator was called H
     public DBSPDistinctIncrementalOperator(CalciteRelNode node, OutputPort integral, OutputPort delta) {
-        super(node, "distinct_incremental", null, delta.outputType(), false, integral, delta);
+        super(node, "distinct_incremental", null, delta.outputType(), false, integral, delta, false);
     }
 
     @Override

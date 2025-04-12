@@ -63,7 +63,7 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator {
     public DBSPNoopOperator(CalciteRelNode node, OutputPort source,
                             @Nullable String comment) {
         super(node, "noop", getClosure(source.outputType()),
-                source.outputType(), source.isMultiset(), source, comment);
+                source.outputType(), source.isMultiset(), source, comment, false);
     }
 
     @Override

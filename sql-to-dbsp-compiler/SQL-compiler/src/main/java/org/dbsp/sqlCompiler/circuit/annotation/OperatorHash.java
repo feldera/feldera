@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.util.HashString;
 import org.dbsp.util.JsonStream;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -24,10 +25,6 @@ public class OperatorHash extends Annotation {
         return true;
     }
 
-    public boolean isGlobal(boolean global) {
-        return this.global == global;
-    }
-
     public static OperatorHash fromJson(JsonNode node) {
         String hash = Utilities.getStringProperty(node, "hash");
         boolean global = Utilities.getBooleanProperty(node, "global");
@@ -36,11 +33,11 @@ public class OperatorHash extends Annotation {
 
     @Nullable
     public static HashString getHash(DBSPOperator operator, boolean global) {
-        List<Annotation> name = operator.annotations.get(
-                t -> t.is(OperatorHash.class) && t.to(OperatorHash.class).isGlobal(global));
+        List<OperatorHash> name = Linq.where(operator.annotations.get(OperatorHash.class),
+                a -> a.global == global);
         if (!name.isEmpty()) {
             // there should be only one
-            return name.get(0).to(OperatorHash.class).hash;
+            return name.get(0).hash;
         }
         return null;
     }

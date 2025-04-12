@@ -85,7 +85,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 .append(name)
                 .append("(circuit: &")
                 .append(this.dbspCircuit(this.topLevel))
-                .append(",");
+                .append(", hash: Option<&str>, ");
         if (this.topLevel)
             this.builder().append("catalog: &mut Catalog,");
         this.builder().increase();
