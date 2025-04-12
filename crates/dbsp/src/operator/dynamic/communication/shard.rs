@@ -109,7 +109,11 @@ where
                             self.circuit()
                                 .cache_insert(UnshardId::new(output.stream_id()), self.clone());
 
-                            output
+                            output.set_persistent_id(
+                                self.get_persistent_id()
+                                    .map(|name| format!("{name}.shard"))
+                                    .as_deref(),
+                            )
                         },
                     )
                     .clone();

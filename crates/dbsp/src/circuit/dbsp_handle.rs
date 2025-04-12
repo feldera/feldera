@@ -3,7 +3,7 @@ use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
 use crate::{
     circuit::runtime::RuntimeHandle, profile::Profiler, Error as DbspError, RootCircuit, Runtime,
-    RuntimeError, SchedulerError,
+    RuntimeError,
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
@@ -14,6 +14,7 @@ use metrics::counter;
 use minitrace::collector::SpanContext;
 use minitrace::local::LocalSpan;
 use minitrace::Span;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{
@@ -27,13 +28,16 @@ use std::{
     thread::Result as ThreadResult,
     time::Instant,
 };
+use tracing::info;
 use uuid::Uuid;
 
 #[cfg(doc)]
 use crate::circuit::circuit_builder::Stream;
 use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 
+use super::circuit_builder::BootstrapInfo;
 use super::runtime::WorkerPanicInfo;
+use super::SchedulerError;
 
 /// A host for some workers in the [`Layout`] for a multi-host DBSP circuit.
 #[allow(clippy::manual_non_exhaustive)]
@@ -209,6 +213,28 @@ impl Display for LayoutError {
 
 impl StdError for LayoutError {}
 
+/// DBSP circuit execution mode.
+#[derive(Copy, Clone, Default, PartialEq, Eq, Debug)]
+pub enum Mode {
+    /// Operators in the circuit have persistent id's.
+    ///
+    /// In this mode, operators are assigned persistent id's by the compiler. These id's
+    /// are preserved across circuit restarts for parts of the circuit that remain
+    /// unmodified.  This allows the circuit to partially or completely restore its state from
+    /// a checkpoint.
+    ///
+    /// In persistent mode, the circuit may fail to start if not all operators are assigned
+    /// persistent id's.
+    Persistent,
+
+    /// Circuit operators are assigned ephemeral id's.
+    ///
+    /// In this mode, operators are not assigned persistent id's. The circuit can only
+    /// restore its state from a checkpoint if the entire circuit is unmodified.
+    #[default]
+    Ephemeral,
+}
+
 /// A config for instantiating a multithreaded/multihost runtime to execute
 /// circuits.
 ///
@@ -222,6 +248,8 @@ pub struct CircuitConfig {
 
     /// Optionally, CPU numbers for pinning the worker threads.
     pub pin_cpus: Vec<usize>,
+
+    pub mode: Mode,
 
     /// Storage configuration. If present, then storage is enabled..
     pub storage: Option<CircuitStorageConfig>,
@@ -282,8 +310,14 @@ impl CircuitConfig {
         Self {
             layout: Layout::new_solo(n),
             pin_cpus: Vec::new(),
+            mode: Mode::Ephemeral,
             storage: None,
         }
+    }
+
+    pub fn with_mode(mut self, mode: Mode) -> Self {
+        self.mode = mode;
+        self
     }
 }
 
@@ -408,6 +442,29 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::BootstrapStep(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span = LocalSpan::enter_with_local_parent("worker-step")
+                            .with_property(|| ("worker", worker_index_str));
+                        if let Err(e) = circuit.step() {
+                            if status_sender.send(Err(e)).is_err() {
+                                return;
+                            }
+                        } else if status_sender
+                            .send(Ok(Response::BootstrapComplete(
+                                circuit.is_replay_complete(),
+                            )))
+                            .is_err()
+                        {
+                            return;
+                        };
+                    }
+                    Ok(Command::CompleteBootstrap) => {
+                        let status = circuit.complete_replay().map(|_| Response::Unit);
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
                     Ok(Command::EnableProfiler) => {
                         profiler.enable_cpu_profiler();
                         // Send response.
@@ -434,17 +491,14 @@ impl Runtime {
                         }
                     }
                     Ok(Command::Commit(base)) => {
-                        circuit.commit(&base).expect("commit failed");
-                        if status_sender.send(Ok(Response::CheckpointCreated)).is_err() {
+                        let response = circuit.commit(&base).map(|_| Response::CheckpointCreated);
+                        if status_sender.send(response).is_err() {
                             return;
                         }
                     }
                     Ok(Command::Restore(base)) => {
-                        circuit.restore(&base).expect("restore failed");
-                        if status_sender
-                            .send(Ok(Response::CheckpointRestored))
-                            .is_err()
-                        {
+                        let result = circuit.restore(&base).map(Response::CheckpointRestored);
+                        if status_sender.send(result).is_err() {
                             return;
                         }
                     }
@@ -515,9 +569,16 @@ impl Runtime {
 #[derive(Clone)]
 enum Command {
     Step(Arc<Span>),
+    /// Execute a step in bootstrap mode.
+    BootstrapStep(Arc<Span>),
+    CompleteBootstrap,
     EnableProfiler,
-    DumpProfile { runtime_elapsed: Duration },
-    RetrieveProfile { runtime_elapsed: Duration },
+    DumpProfile {
+        runtime_elapsed: Duration,
+    },
+    RetrieveProfile {
+        runtime_elapsed: Duration,
+    },
     Commit(StoragePath),
     Restore(StoragePath),
 }
@@ -525,10 +586,11 @@ enum Command {
 #[derive(Debug)]
 enum Response {
     Unit,
+    BootstrapComplete(bool),
     ProfileDump(Graph),
     Profile(WorkerProfile),
     CheckpointCreated,
-    CheckpointRestored,
+    CheckpointRestored(Option<BootstrapInfo>),
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -551,10 +613,13 @@ pub struct DBSPHandle {
     command_senders: Vec<Sender<Command>>,
 
     /// Channels used to receive command completion status from workers.
-    status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
+    status_receivers: Vec<Receiver<Result<Response, DbspError>>>,
 
     /// For creating checkpoints, if we can.
     checkpointer: Option<Checkpointer>,
+
+    /// Information about operators that participate in bootstrapping the new parts of the circuit.
+    bootstrap_info: Option<BootstrapInfo>,
 }
 
 impl DBSPHandle {
@@ -562,7 +627,7 @@ impl DBSPHandle {
         backend: Option<Arc<dyn StorageBackend>>,
         runtime: RuntimeHandle,
         command_senders: Vec<Sender<Command>>,
-        status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
+        status_receivers: Vec<Receiver<Result<Response, DbspError>>>,
         fingerprint: u64,
     ) -> Result<Self, DbspError> {
         let checkpointer = backend
@@ -575,6 +640,7 @@ impl DBSPHandle {
             status_receivers,
             checkpointer,
             runtime_elapsed: Duration::ZERO,
+            bootstrap_info: None,
         })
     }
 
@@ -641,7 +707,7 @@ impl DBSPHandle {
                 }
                 Ok(Err(e)) => {
                     let _ = self.kill_inner();
-                    return Err(DbspError::Scheduler(e));
+                    return Err(e);
                 }
                 Ok(Ok(resp)) => handler(worker, resp),
             }
@@ -652,6 +718,28 @@ impl DBSPHandle {
 
     /// Evaluate the circuit for one clock cycle.
     pub fn step(&mut self) -> Result<(), DbspError> {
+        if self.bootstrap_in_progress() {
+            self.step_bootstrap()
+        } else {
+            self.step_regular()
+        }
+    }
+
+    pub fn set_replay_step_size(&mut self, step_size: usize) {
+        if let Some(handle) = self.runtime.as_ref() {
+            handle.runtime().set_replay_step_size(step_size);
+        }
+    }
+
+    pub fn get_replay_step_size(&self) -> usize {
+        if let Some(handle) = self.runtime.as_ref() {
+            handle.runtime().get_replay_step_size()
+        } else {
+            0
+        }
+    }
+
+    fn step_regular(&mut self) -> Result<(), DbspError> {
         counter!("feldera.dbsp.step").increment(1);
         let start = Instant::now();
         let span = Arc::new(Span::root("step", SpanContext::random()));
@@ -662,6 +750,48 @@ impl DBSPHandle {
                 start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
         }
         result
+    }
+
+    /// In the bootstrap mode, after performing a step, check if all workers have finished bootstrapping.
+    /// If so, notify all workers to exit the bootstrap phase and start normal operation.
+    fn step_bootstrap(&mut self) -> Result<(), DbspError> {
+        counter!("feldera.dbsp.step").increment(1);
+        let start = Instant::now();
+        let span = Arc::new(Span::root("step_bootstrap", SpanContext::random()));
+        let _guard = span.set_local_parent();
+
+        let mut replay_complete = Vec::with_capacity(self.status_receivers.len());
+
+        let result = self.broadcast_command(Command::BootstrapStep(span), |_worker, response| {
+            let Response::BootstrapComplete(complete) = response else {
+                panic!("Expected BootstrapComplete response, got {response:?}");
+            };
+            replay_complete.push(complete);
+        });
+
+        if let Some(handle) = self.runtime.as_ref() {
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+
+        result?;
+
+        if replay_complete.iter().all(|complete| *complete) {
+            info!("Bootstrap complete");
+            self.send_complete_bootstrap()?;
+        }
+
+        Ok(())
+    }
+
+    /// The circuit has been resumed from a checkpoint and is currently bootstrapping the modified part of the circuit.
+    pub fn bootstrap_in_progress(&self) -> bool {
+        self.bootstrap_info.is_some()
+    }
+
+    /// In the bootstrap mode, returns information about operators involved in bootstrapping.
+    pub fn bootstrap_info(&self) -> &Option<BootstrapInfo> {
+        &self.bootstrap_info
     }
 
     /// Returns the time elapsed while the circuit is executing a step,
@@ -701,9 +831,51 @@ impl DBSPHandle {
         Ok(())
     }
 
-    /// Used to reset operator state to the point of the given Commit.
+    /// Reset circuit state to the point of the given Commit.
+    ///
+    /// If the circuit needs bootstrapping new operators, put it in the bootstrap mode.
     fn send_restore(&mut self, base: StoragePath) -> Result<(), DbspError> {
-        self.broadcast_command(Command::Restore(base), |_, _| {})?;
+        let mut worker_replay_info = BTreeMap::<usize, Option<BootstrapInfo>>::new();
+
+        self.broadcast_command(Command::Restore(base), |worker, resp| {
+            let Response::CheckpointRestored(replay_info) = resp else {
+                panic!("Expected checkpoint restore response, got {resp:?}");
+            };
+            worker_replay_info.insert(worker, replay_info);
+        })?;
+
+        // All workers should have the same replay info.
+        for i in 1..worker_replay_info.len() {
+            if worker_replay_info[&i] != worker_replay_info[&0] {
+                let mut info = Vec::new();
+                for j in 0..worker_replay_info.len() {
+                    info.push(format!(
+                        "  worker {j} replay info: {:?}",
+                        worker_replay_info[&j]
+                    ));
+                }
+                let info = info.join("\n");
+                return Err(DbspError::Scheduler(SchedulerError::ReplayInfoConflict { error: format!("worker 0 and worker {i} returned different replay info after restarting from a checkpoint; this can be caused by a bug or data corruption; replay info\n{info}") }));
+            }
+        }
+
+        self.bootstrap_info = worker_replay_info[&0].clone();
+
+        if let Some(bootstrap_info) = &self.bootstrap_info {
+            info!("Circuit restored from checkpoint, bootstrapping new parts of the circuit: {bootstrap_info:?}");
+        }
+
+        Ok(())
+    }
+
+    /// Notifies workers to exit the replay phase and start normal operation
+    /// (during the replay phase only the operators involved in replay are scheduled).
+    fn send_complete_bootstrap(&mut self) -> Result<(), DbspError> {
+        self.broadcast_command(Command::CompleteBootstrap, |_, _| {})?;
+
+        info!("Boostrap complete");
+        self.bootstrap_info = None;
+
         Ok(())
     }
 
@@ -832,7 +1004,7 @@ pub(crate) mod tests {
     use std::time::Duration;
     use std::{fs, vec};
 
-    use super::CircuitStorageConfig;
+    use super::{CircuitStorageConfig, Mode};
     use crate::circuit::checkpointer::Checkpointer;
     use crate::circuit::{CircuitConfig, Layout};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
@@ -1093,6 +1265,7 @@ pub(crate) mod tests {
         let temp = tempdir().expect("Can't create temp dir for storage");
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
+            mode: Mode::Ephemeral,
             pin_cpus: Vec::new(),
             storage: Some(
                 CircuitStorageConfig::for_config(

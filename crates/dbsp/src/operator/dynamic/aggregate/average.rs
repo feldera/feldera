@@ -270,6 +270,7 @@ where
     #[track_caller]
     pub fn dyn_average<A, W>(
         &self,
+        persistent_id: Option<&str>,
         factories: &AvgFactories<Z, A, W, C::Time>,
         f: Box<dyn Fn(&Z::Key, &Z::Val, &DynZWeight, &mut W)>,
         out_func: Box<dyn AggOutputFunc<W, A>>,
@@ -281,6 +282,7 @@ where
     {
         let weight_factory = factories.weight_factory;
         self.dyn_aggregate_linear_generic(
+            persistent_id,
             &factories.aggregate_factories,
             Box::new(
                 move |k: &Z::Key, v: &Z::Val, w: &Z::R, avg: &mut DynAverage<W, Z::R>| {

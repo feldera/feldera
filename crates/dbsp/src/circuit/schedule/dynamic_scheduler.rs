@@ -41,7 +41,7 @@
 
 use std::{
     cell::{RefCell, RefMut},
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     panic,
     sync::{Arc, Mutex},
 };
@@ -124,10 +124,8 @@ impl Notifications {
 /// Dynamic scheduler internals.
 struct Inner {
     // Immutable fields (initialized once when preparing the scheduler).
-    /// List of tasks that must be evaluated at each clock cycle.
-    /// Tasks are stored in the same order as nodes in the circuit and
-    /// task index is equal to the node id.
-    tasks: Vec<Task>,
+    /// Tasks that must be evaluated at each clock cycle.
+    tasks: HashMap<NodeId, Task>,
 
     // Mutable fields.
     /// Ready notifications received while the scheduler was busy or sleeping.
@@ -148,13 +146,11 @@ impl Inner {
     where
         C: Circuit,
     {
-        let id = node_id.id();
-
         // Don't use iterator, as we will borrow `tasks` again below.
-        for i in 0..self.tasks[id].successors.len() {
-            let succ_id = self.tasks[id].successors[i];
-            debug_assert!(succ_id.id() < self.tasks.len());
-            let successor = &mut self.tasks[succ_id.id()];
+        for i in 0..self.tasks[&node_id].successors.len() {
+            let succ_id = self.tasks[&node_id].successors[i];
+            debug_assert!(self.tasks.contains_key(&succ_id));
+            let successor = self.tasks.get_mut(&succ_id).unwrap();
             debug_assert_ne!(successor.unsatisfied_dependencies, 0);
             successor.unsatisfied_dependencies -= 1;
             if successor.unsatisfied_dependencies == 0 && successor.is_ready {
@@ -175,7 +171,7 @@ impl Inner {
         #[allow(unknown_lints)]
         #[allow(clippy::significant_drop_in_scrutinee)]
         for id in nodes.drain() {
-            let task = &mut self.tasks[id.id()];
+            let task = self.tasks.get_mut(&id).unwrap();
             debug_assert!(task.is_async);
 
             // Ignore duplicate notifications.
@@ -200,12 +196,19 @@ impl Inner {
         }
     }
 
-    fn prepare<C>(circuit: &C) -> Result<Self, Error>
+    fn prepare<C>(circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<Self, Error>
     where
         C: Circuit,
     {
+        let nodes = nodes
+            .map(|nodes| nodes.iter().cloned().collect::<BTreeSet<_>>())
+            .unwrap_or_else(|| BTreeSet::from_iter(circuit.node_ids()));
+
         // Check that ownership constraints don't introduce cycles.
-        let mut g = circuit_graph(circuit);
+        let mut g: petgraph::prelude::GraphMap<NodeId, (), petgraph::Directed> =
+            circuit_graph(circuit);
+
+        // println!("g: {g:#?}");
 
         let extra_constraints = ownership_constraints(circuit)?;
 
@@ -218,29 +221,44 @@ impl Inner {
             node_id: GlobalNodeId::child_of(circuit, e.node_id()),
         })?;
 
-        let num_nodes = circuit.num_nodes();
+        let num_nodes = nodes.len();
         let mut successors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
         let mut predecessors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
+        circuit.edges().iter().for_each(|edge| {
+            if let Some(stream) = &edge.stream {
+                // println!("clearing consumer count for stream {}", stream.stream_id());
+                stream.clear_consumer_count();
+            }
+        });
 
         for edge in circuit.edges().iter() {
-            successors.entry(edge.from).or_default().push(edge.to);
+            if nodes.contains(&edge.to) && nodes.contains(&edge.from) {
+                successors.entry(edge.from).or_default().push(edge.to);
 
-            predecessors.entry(edge.to).or_default().push(edge.from);
+                predecessors.entry(edge.to).or_default().push(edge.from);
+                if let Some(stream) = &edge.stream {
+                    // println!(
+                    //     "Registering {} as consumer for stream {}",
+                    //     edge.to,
+                    //     stream.stream_id()
+                    // );
+                    stream.register_consumer();
+                }
+            }
         }
 
         // Add ownership constraints to the graph.
         for (from, to) in extra_constraints.into_iter() {
-            successors.entry(from).or_default().push(to);
-            predecessors.entry(to).or_default().push(from);
+            if nodes.contains(&to) && nodes.contains(&from) {
+                successors.entry(from).or_default().push(to);
+                predecessors.entry(to).or_default().push(from);
+            }
         }
 
-        let mut tasks = Vec::with_capacity(num_nodes);
+        let mut tasks = HashMap::new();
         let mut num_async_nodes = 0;
 
-        for (i, node_id) in circuit.node_ids().into_iter().enumerate() {
-            // We rely on node id to be equal to its index.
-            assert!(i == node_id.id());
-
+        for &node_id in nodes.iter() {
             let num_predecessors = predecessors.entry(node_id).or_default().len();
 
             let is_async = circuit.is_async_node(node_id);
@@ -248,15 +266,18 @@ impl Inner {
                 num_async_nodes += 1;
             }
 
-            tasks.push(Task {
+            tasks.insert(
                 node_id,
-                num_predecessors,
-                successors: successors.entry(node_id).or_default().clone(),
-                is_async,
-                unsatisfied_dependencies: num_predecessors,
-                is_ready: !is_async,
-                scheduled: false,
-            });
+                Task {
+                    node_id,
+                    num_predecessors,
+                    successors: successors.entry(node_id).or_default().clone(),
+                    is_async,
+                    unsatisfied_dependencies: num_predecessors,
+                    is_ready: !is_async,
+                    scheduled: false,
+                },
+            );
         }
 
         let scheduler = Self {
@@ -267,7 +288,7 @@ impl Inner {
         };
 
         // Setup scheduler callbacks.
-        for node_id in circuit.node_ids().into_iter() {
+        for &node_id in nodes.iter() {
             if circuit.is_async_node(node_id) {
                 let notifications = scheduler.notifications.clone();
                 circuit.register_ready_callback(
@@ -291,7 +312,7 @@ impl Inner {
     where
         C: Circuit,
     {
-        let task = &mut self.tasks[node_id.id()];
+        let task = self.tasks.get_mut(&node_id).unwrap();
         debug_assert_eq!(task.unsatisfied_dependencies, 0);
         debug_assert!(task.is_ready);
         debug_assert!(!task.scheduled);
@@ -332,17 +353,20 @@ impl Inner {
             return Ok(());
         }
 
+        let mut spawn = Vec::with_capacity(self.tasks.len());
+
         // Reset unsatisfied dependencies, initialize runnable queue.
-        for i in 0..self.tasks.len() {
-            let task = &mut self.tasks[i];
+        for task in self.tasks.values_mut() {
             task.unsatisfied_dependencies = task.num_predecessors;
             task.scheduled = false;
 
-            let node_id = task.node_id;
-
             if task.unsatisfied_dependencies == 0 && task.is_ready {
-                self.spawn_task(circuit, node_id);
+                spawn.push(task.node_id);
             }
+        }
+
+        for node_id in spawn.into_iter() {
+            self.spawn_task(circuit, node_id);
         }
 
         loop {
@@ -367,8 +391,8 @@ impl Inner {
                         Ok(result) => result
                     };
 
-                    if self.tasks[node_id.id()].is_async {
-                        self.tasks[node_id.id()].is_ready = false;
+                    if self.tasks[&node_id].is_async {
+                        self.tasks.get_mut(&node_id).unwrap().is_ready = false;
                     }
 
                     if let Err(error) = task_result {
@@ -405,20 +429,28 @@ impl Inner {
     }
 }
 
-pub struct DynamicScheduler(RefCell<Inner>);
+pub struct DynamicScheduler(Option<RefCell<Inner>>);
 
 impl DynamicScheduler {
     fn inner_mut(&self) -> RefMut<'_, Inner> {
-        self.0.borrow_mut()
+        self.0
+            .as_ref()
+            .expect("DynamicScheduler: prepare() must be called before running the circuit")
+            .borrow_mut()
     }
 }
 
 impl Scheduler for DynamicScheduler {
-    fn prepare<C>(circuit: &C) -> Result<Self, Error>
+    fn new() -> Self {
+        Self(None)
+    }
+
+    fn prepare<C>(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>
     where
         C: Circuit,
     {
-        Ok(Self(RefCell::new(Inner::prepare(circuit)?)))
+        self.0 = Some(RefCell::new(Inner::prepare(circuit, nodes)?));
+        Ok(())
     }
 
     #[allow(clippy::await_holding_refcell_ref)]

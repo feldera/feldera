@@ -91,6 +91,29 @@ where
         Agg: Aggregator<OV, (), ZWeight>,
         PF: Fn(&V) -> (PK, OV) + Clone + 'static,
     {
+        self.partitioned_rolling_aggregate_with_waterline_persistent::<PK, OV, Agg, PF>(
+            None,
+            waterline,
+            partition_func,
+            aggregator,
+            range,
+        )
+    }
+
+    pub fn partitioned_rolling_aggregate_with_waterline_persistent<PK, OV, Agg, PF>(
+        &self,
+        persistent_id: Option<&str>,
+        waterline: &Stream<RootCircuit, TypedBox<TS, DynDataTyped<TS>>>,
+        partition_func: PF,
+        aggregator: Agg,
+        range: RelRange<TS>,
+    ) -> OrdPartitionedOverStream<PK, TS, Agg::Output>
+    where
+        PK: DBData,
+        OV: DBData,
+        Agg: Aggregator<OV, (), ZWeight>,
+        PF: Fn(&V) -> (PK, OV) + Clone + 'static,
+    {
         let factories = PartitionedRollingAggregateWithWaterlineFactories::<
             DynData,
             TS,
@@ -102,6 +125,7 @@ where
 
         self.inner()
             .dyn_partitioned_rolling_aggregate_with_waterline::<_, TS, _, DynData, DynData>(
+                persistent_id,
                 &factories,
                 &waterline.inner_data(),
                 Box::new(
@@ -145,11 +169,33 @@ where
         PK: DBData,
         PF: Fn(&V) -> (PK, OV) + Clone + 'static,
     {
+        self.partitioned_rolling_aggregate_persistent::<PK, OV, Agg, PF>(
+            None,
+            partition_func,
+            aggregator,
+            range,
+        )
+    }
+
+    pub fn partitioned_rolling_aggregate_persistent<PK, OV, Agg, PF>(
+        &self,
+        persistent_id: Option<&str>,
+        partition_func: PF,
+        aggregator: Agg,
+        range: RelRange<TS>,
+    ) -> OrdPartitionedOverStream<PK, TS, Agg::Output>
+    where
+        Agg: Aggregator<OV, (), ZWeight>,
+        OV: DBData,
+        PK: DBData,
+        PF: Fn(&V) -> (PK, OV) + Clone + 'static,
+    {
         let factories =
             PartitionedRollingAggregateFactories::new::<PK, OV, Agg::Accumulator, Agg::Output>();
 
         self.inner()
             .dyn_partitioned_rolling_aggregate::<_, _, _, DynData, _>(
+                persistent_id,
                 &factories,
                 Box::new(
                     move |v, pk: &mut DynData /* <PK> */, ov: &mut DynData /* <OV> */| unsafe {
@@ -202,6 +248,7 @@ where
 
         self.inner()
             .dyn_partitioned_rolling_aggregate_linear(
+                None,
                 &factories,
                 Box::new(
                     move |v, pk: &mut DynData /* <PK> */, ov: &mut DynData /* <OV> */| unsafe {
@@ -239,6 +286,7 @@ where
 
         self.inner()
             .dyn_partitioned_rolling_average(
+                None,
                 &factories,
                 Box::new(
                     move |v, pk: &mut DynData /* <PK> */, ov: &mut DynData /* <OV> */| unsafe {

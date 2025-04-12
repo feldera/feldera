@@ -1,12 +1,14 @@
-use super::Mailbox;
+use super::{require_persistent_id, Mailbox};
 use crate::{
     circuit::{
         operator_traits::{BinarySinkOperator, Operator, SinkOperator},
-        LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
+        GlobalNodeId, LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
     },
+    storage::file::to_bytes,
     trace::BatchReaderFactories,
-    Batch, Circuit, Runtime, Stream,
+    Batch, Circuit, Error, Runtime, Stream,
 };
+use feldera_storage::StoragePath;
 use std::{
     borrow::Cow,
     fmt::Debug,
@@ -30,8 +32,15 @@ where
     /// the [`OutputHandle`] API.
     #[track_caller]
     pub fn output(&self) -> OutputHandle<T> {
+        self.output_persistent(None)
+    }
+
+    #[track_caller]
+    pub fn output_persistent(&self, persistent_id: Option<&str>) -> OutputHandle<T> {
         let (output, output_handle) = Output::new();
-        self.circuit().add_sink(output, self);
+        let gid = self.circuit().add_sink(output, self);
+        self.circuit().set_persistent_node_id(&gid, persistent_id);
+
         output_handle
     }
 
@@ -271,6 +280,7 @@ where
 /// Sink operator that stores the contents of its input stream in
 /// an `OutputHandle`.
 struct Output<T> {
+    global_id: GlobalNodeId,
     mailbox: Mailbox<Option<T>>,
 }
 
@@ -282,18 +292,50 @@ where
         let handle = OutputHandle::new();
         let mailbox = handle.mailbox(Runtime::worker_index()).clone();
 
-        let output = Self { mailbox };
+        let output = Self {
+            global_id: GlobalNodeId::root(),
+            mailbox,
+        };
 
         (output, handle)
+    }
+
+    /// Return the absolute path of the file for a checkpointed Window.
+    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
+        base.child(format!("output-{}.dat", persistent_id))
     }
 }
 
 impl<T> Operator for Output<T>
 where
-    T: 'static,
+    T: Clone + Send + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Output")
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.global_id = global_id.clone();
+    }
+
+    fn commit(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+        let pid = require_persistent_id(pid, &self.global_id)?;
+        let as_bytes = to_bytes(&()).expect("Serializing () should work.");
+
+        Runtime::storage_backend()
+            .unwrap()
+            .write(&Self::checkpoint_file(base, pid), as_bytes)?;
+
+        Ok(())
+    }
+
+    fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+        let pid = require_persistent_id(pid, &self.global_id)?;
+
+        let path = Self::checkpoint_file(base, pid);
+        let _content = Runtime::storage_backend().unwrap().read(&path)?;
+
+        Ok(())
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -303,7 +345,7 @@ where
 
 impl<T> SinkOperator<T> for Output<T>
 where
-    T: Debug + Clone + 'static,
+    T: Debug + Clone + Send + 'static,
 {
     async fn eval(&mut self, val: &T) {
         self.mailbox.set(Some(val.clone()));

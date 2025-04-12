@@ -425,10 +425,11 @@ impl Profiler {
         let mut metadata = HashMap::<GlobalNodeId, OperatorMeta>::new();
 
         // Collect node metadata.
-        self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
+        let _ = self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
             let mut meta = OperatorMeta::new();
             node.metadata(&mut meta);
             metadata.insert(node.global_id().clone(), meta);
+            Ok(())
         });
 
         // Compute total time

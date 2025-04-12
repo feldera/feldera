@@ -30,12 +30,15 @@ pub mod schedule;
 pub mod tokio;
 pub mod trace;
 
+#[cfg(test)]
+mod replay_tests;
+
 pub use circuit_builder::{
     ChildCircuit, Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId,
     NestedCircuit, NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,
 };
 pub use dbsp_handle::{
-    CircuitConfig, CircuitStorageConfig, DBSPHandle, Host, Layout, StorageCacheConfig,
+    CircuitConfig, CircuitStorageConfig, DBSPHandle, Host, Layout, Mode, StorageCacheConfig,
     StorageConfig, StorageOptions,
 };
 pub use runtime::{Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};
