@@ -213,6 +213,10 @@ pub enum JsonFlavor {
     /// (For internal use only)
     #[serde(rename = "datagen")]
     Datagen,
+    /// Postgres format.
+    /// (For internal use only)
+    #[serde(rename = "postgres")]
+    Postgres,
 }
 
 // TODO: support multiple update formats, e.g., `WeightedUpdate`

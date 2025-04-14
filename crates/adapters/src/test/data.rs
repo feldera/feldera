@@ -12,6 +12,8 @@ use feldera_types::{
 use prop::sample::SizeRange;
 use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
+use rand::distributions::Standard;
+use rand::prelude::Distribution;
 use rust_decimal::Decimal;
 use size_of::SizeOf;
 use std::collections::BTreeMap;
@@ -89,6 +91,17 @@ impl TestStruct {
                 { "name": "s", "type": "string" }
             ]
         }"#
+    }
+}
+
+impl Distribution<TestStruct> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> TestStruct {
+        TestStruct {
+            id: rng.gen_range(0..(i32::MAX as u32)),
+            b: rng.gen(),
+            i: rng.gen(),
+            s: rng.gen::<u32>().to_string(),
+        }
     }
 }
 

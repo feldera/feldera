@@ -19,7 +19,8 @@ use crate::{
 use anyhow::{anyhow, bail, Result as AnyResult};
 use feldera_adapterlib::transport::{AsyncErrorCallback, Step};
 use feldera_types::{
-    format::csv::CsvParserConfig, program_schema::Relation,
+    format::{csv::CsvParserConfig, json::JsonFlavor},
+    program_schema::Relation,
     transport::postgres::PostgresWriterConfig,
 };
 use postgres::{Client, NoTls, Statement};
@@ -384,7 +385,7 @@ impl Encoder for PostgresOutputEndpoint {
 
         let max_buffer_size = OutputConsumer::max_buffer_size_bytes(self);
 
-        let mut cursor = batch.cursor(RecordFormat::Json(Default::default()))?;
+        let mut cursor = batch.cursor(RecordFormat::Json(JsonFlavor::Postgres))?;
 
         while cursor.key_valid() {
             if let Some(op) = self.operation_type(cursor.as_mut())? {
