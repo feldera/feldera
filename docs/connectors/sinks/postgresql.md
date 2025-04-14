@@ -40,28 +40,26 @@ More complex types from PostgreSQL might work but are not yet officially support
 Please [let us know](https://github.com/feldera/feldera/issues) if you need support for a specific type.
 :::
 
-| PostgreSQL type | Feldera SQL type | Comment                                                        |
-|-----------------|------------------|----------------------------------------------------------------|
-| `BOOL`          | `BOOLEAN`        |                                                                |
-| `BYTEA`         | `BYTEA`          |                                                                |
-| `CHAR`          | `CHAR`           |                                                                |
-| `VARCHAR`       | `VARCHAR`        |                                                                |
-| `BPCHAR`        | `STRING`         |                                                                |
-| `NAME`          | `STRING`         |                                                                |
-| `DATE`          | `DATE`           |                                                                |
-| `TIME`          | `TIME`           |                                                                |
-| `TIMESTAMP`     | `TIMESTAMP`      | Feldera currently does not support timestamps with time zones. |
-| `INT2`          | `INT2`           |                                                                |
-| `INT4`          | `INT4`           |                                                                |
-| `INT8`          | `INT8`           |                                                                |
-| `FLOAT4`        | `FLOAT4`         |                                                                |
-| `FLOAT8`        | `FLOAT8`         |                                                                |
-| `TEXT`          | `TEXT`           |                                                                |
-| `UUID`          | `UUID`           |                                                                |
-| `JSON`          | `VARIANT`        |                                                                |
-| `NUMERIC(P,S)`  | `DECIMAL(P,S)`   | The largest supported precision `P` is 28 and scale `S` is 10. |
-| `T[]`           | `T ARRAY`        |                                                                |
-
+| Feldera Type      | PostgreSQL Type                      | Comments                                               |
+|-------------------|--------------------------------------|--------------------------------------------------------|
+| BOOL              | BOOL                                 |                                                        |
+| TINYINT           | SMALLINT, INT, BIGINT                | No direct equivalent but can be stored in wider types. |
+| SMALLINT          | SMALLINT                             |                                                        |
+| INT               | INT                                  |                                                        |
+| BIGINT            | BIGINT                               |                                                        |
+| DECIMAL           | DECIMAL                              |                                                        |
+| REAL              | FLOAT                                |                                                        |
+| DOUBLE            | DOUBLE PRECISION                     |                                                        |
+| VARCHAR           | VARCHAR                              |                                                        |
+| TIME              | TIME                                 |                                                        |
+| DATE              | DATE                                 |                                                        |
+| TIMESTAMP         | TIMESTAMP                            | Feldera TIMESTAMPs do not have timezone information.   |
+| VARIANT           | JSON, JSONB                          |                                                        |
+| UUID              | UUID                                 |                                                        |
+| VARBINARY         | BYTEA                                |                                                        |
+| ARRAY             | ARRAY                                | VARCHAR ARRAY <-> VARCHAR ARRAY                        |
+| User Defined Type | Equivalent PostgreSQL Composite Type |                                                        |
+| MAP               | JSON, JSONB                          | No equivalent type, store as JSON / JSONB.             |
 
 ## Example
 

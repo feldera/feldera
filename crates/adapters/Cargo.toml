@@ -151,3 +151,4 @@ mockall = { workspace = true }
 pretty_assertions = { workspace = true }
 feldera-sqllib = { workspace = true }
 google-cloud-googleapis = { workspace = true }
+postgres-types = { version = "0.2.9", features = ["derive"] }
