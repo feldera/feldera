@@ -20,9 +20,13 @@ in the PostgreSQL table.
 | Property | Type   | Default | Description                                                                                                                                                                                                                                     |
 |----------|--------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `uri`*   | string |         | A PostgreSQL connection URL, e.g., "postgresql://postgres:1234@127.0.0.1:7373/postgres" (see the tokio-postgres [Config](https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html) struct for a detailed list of options) |
-| `table`* | string |         | The PostgreSQL table to write the outputs to. The schema of this table should match the output view schema.                                                                                                                                     |
+| `table`* | string |         | The PostgreSQL table to write the outputs to. The schema of this table should be compatible with the schema of the output view.                                                                                                                 |
 
 [*]: Required fields
+
+- The schema of the PostgreSQL table should be compatible with the schema of the Feldera output view.
+- Narrower Feldera types such as `INT2` and `FLOAT4` can be stored in wider PostgreSQL column types like `INT8` and `FLOAT8` respectively.
+- If certain columns in the PostgreSQL table are **nullable** or have **default** values, it is fine for the Feldera view to not contain these columns.
 
 ### Connecting with TLS / SSL
 
@@ -57,7 +61,7 @@ Please [let us know](https://github.com/feldera/feldera/issues) if you need supp
 | VARIANT           | JSON, JSONB                          |                                                        |
 | UUID              | UUID                                 |                                                        |
 | VARBINARY         | BYTEA                                |                                                        |
-| ARRAY             | ARRAY                                | VARCHAR ARRAY <-> VARCHAR ARRAY                        |
+| ARRAY             | ARRAY                                |                                                        |
 | User Defined Type | Equivalent PostgreSQL Composite Type |                                                        |
 | MAP               | JSON, JSONB                          | No equivalent type, store as JSON / JSONB.             |
 

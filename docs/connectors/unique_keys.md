@@ -38,7 +38,7 @@ as follows:
 
 The specific behavior of this transformation depends on the data format and transport protocol used. Currently, the `index` property is supported only for:
 - Kafka output connectors configured with the [Avro format](/formats/avro/)
-- Postgres output connector [Postgres Output](/connectors/sinks/postgresql)
+- [Postgres output connector](/connectors/sinks/postgresql)
 
 :::info
 
