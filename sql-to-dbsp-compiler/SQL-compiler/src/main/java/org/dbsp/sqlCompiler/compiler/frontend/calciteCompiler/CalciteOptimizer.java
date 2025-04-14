@@ -239,6 +239,22 @@ public class CalciteOptimizer implements IWritesLogs {
                 //CoreRules.PROJECT_JOIN_TRANSPOSE
         ));
 
+        this.addStep(new BaseOptimizerStep("Pushdown", 2) {
+            @Override
+            HepProgram getProgram(RelNode node, int level) {
+                // This is a fragment of the Join order rule above
+                // It is worth repeating after moving projections.
+                this.addRules(level,
+                        CoreRules.JOIN_CONDITION_PUSH,
+                        CoreRules.JOIN_PUSH_EXPRESSIONS,
+                        // TODO: Rule is unsound
+                        // https://github.com/feldera/feldera/issues/1702
+                        CoreRules.FILTER_INTO_JOIN
+                );
+                this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
+                return this.builder.build();
+            }
+        });
         this.addStep(merge);
         this.addStep(new SimpleOptimizerStep("Remove dead code", 0,
                 CoreRules.AGGREGATE_REMOVE,

@@ -187,8 +187,8 @@ public class CompilerMain {
             } catch (IOException e) {
                 compiler.reportError(SourcePositionRange.INVALID,
                         "Error writing to file", e.getMessage());
+                return compiler.messages;
             }
-            return compiler.messages;
         }
         if (this.options.ioOptions.emitDataflow != null) {
             try {
@@ -199,8 +199,8 @@ public class CompilerMain {
             } catch (IOException e) {
                 compiler.reportError(SourcePositionRange.INVALID,
                         "Error writing to file", e.getMessage());
+                return compiler.messages;
             }
-            return compiler.messages;
         }
 
         String dotFormat = (this.options.ioOptions.emitJpeg ? "jpg"

@@ -119,6 +119,60 @@
         },
         {
           "id": 4,
+          "relOp": "LogicalFilter",
+          "condition": {
+            "op": {
+              "name": "<",
+              "kind": "LESS_THAN",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 0,
+                "name": "$0"
+              },
+              {
+                "literal": 10,
+                "type": {
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              }
+            ]
+          },
+          "inputs": [
+            3
+          ]
+        },
+        {
+          "id": 5,
+          "relOp": "LogicalFilter",
+          "condition": {
+            "op": {
+              "name": "<",
+              "kind": "LESS_THAN",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 0,
+                "name": "$0"
+              },
+              {
+                "literal": 10,
+                "type": {
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              }
+            ]
+          },
+          "inputs": [
+            2
+          ]
+        },
+        {
+          "id": 6,
           "relOp": "LogicalJoin",
           "condition": {
             "op": {
@@ -139,68 +193,12 @@
           },
           "joinType": "inner",
           "inputs": [
-            3,
-            2
+            4,
+            5
           ]
         },
         {
-          "id": 5,
-          "relOp": "LogicalFilter",
-          "condition": {
-            "op": {
-              "name": "AND",
-              "kind": "AND",
-              "syntax": "BINARY"
-            },
-            "operands": [
-              {
-                "op": {
-                  "name": "<",
-                  "kind": "LESS_THAN",
-                  "syntax": "BINARY"
-                },
-                "operands": [
-                  {
-                    "input": 0,
-                    "name": "$0"
-                  },
-                  {
-                    "literal": 10,
-                    "type": {
-                      "type": "INTEGER",
-                      "nullable": false
-                    }
-                  }
-                ]
-              },
-              {
-                "op": {
-                  "name": "<",
-                  "kind": "LESS_THAN",
-                  "syntax": "BINARY"
-                },
-                "operands": [
-                  {
-                    "input": 3,
-                    "name": "$3"
-                  },
-                  {
-                    "literal": 10,
-                    "type": {
-                      "type": "INTEGER",
-                      "nullable": false
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          "inputs": [
-            4
-          ]
-        },
-        {
-          "id": 6,
+          "id": 7,
           "relOp": "LogicalProject",
           "fields": [
             "n",
@@ -246,16 +244,16 @@
             }
           ],
           "inputs": [
-            5
+            6
           ]
         },
         {
-          "id": 7,
+          "id": 8,
           "relOp": "LogicalUnion",
           "all": true,
           "inputs": [
             1,
-            6
+            7
           ]
         }
       ]
@@ -281,12 +279,12 @@
     }, "s2": {
       "operation": "nested",
       "outputs": [
-        { "node": "s10", "output": 0 }
+        { "node": "s9", "output": 0 }
       ],
       "s3": {
         "operation": "Z fibonacci-decl",
         "inputs": [],
-        "backedges": [{ "node": "s10", "output": 0 }],
+        "backedges": [{ "node": "s9", "output": 0 }],
         "calcite": {
           "final": 2
         },
@@ -301,16 +299,16 @@
         "calcite": {
           "seq": [
             {
-              "final": 3
+              "final": 5
             },{
-              "partial": 4
+              "partial": 6
             }]
         },
         "positions": [
           {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50},
-          {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26}
+          {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
         ],
-        "persistent_id": "9bc1556f02e402b85edcd9797c580d665267cd7220de5b1ab815c36e39133947"
+        "persistent_id": "a05d1bb2948240003bb8d8bc03c31fa7427e559b587c47d9633d3f65016b56a2"
       },
       "s5": {
         "operation": "flat_map_index",
@@ -318,49 +316,37 @@
           { "node": "s3", "output": 0 }
         ],
         "calcite": {
-          "partial": 4
-        },
-        "positions": [
-          {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50}
-        ],
-        "persistent_id": "010fdb3c28112c208f64641ab254741c1b89f03b999b4207d8addd4eeb55b89d"
-      },
-      "s6": {
-        "operation": "join_flatmap",
-        "inputs": [
-          { "node": "s4", "output": 0 },
-          { "node": "s5", "output": 0 }
-        ],
-        "calcite": {
           "seq": [
             {
-              "final": 5
+              "final": 3
             },{
-              "partial": 4
+              "final": 4
+            },{
+              "partial": 6
             }]
         },
         "positions": [
-          {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21},
-          {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37},
-          {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":37}
+          {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50},
+          {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26},
+          {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
-        "persistent_id": "81b28d39cec5af63ed88631cdebeed629ace3ef9ce097d6ac2bdc6dd8d37e379"
+        "persistent_id": "cf57508bf361b88abcf8f94f2f9f7f3439fe69d013abb32d8a778508059d5937"
       },
-      "s7": {
+      "s6": {
         "operation": "delta0",
         "inputs": [
           { "node": "s1", "output": 0 }
         ],
         "calcite": {
-          "final": 7
+          "final": 8
         },
         "positions": [],
         "persistent_id": "9d4f3c90c0f1919bb42ef761cd64a6f0467bd5999cb42dfda612bd126183a99d"
       },
-      "s8": {
+      "s7": {
         "operation": "map",
         "inputs": [
-          { "node": "s7", "output": 0 }
+          { "node": "s6", "output": 0 }
         ],
         "calcite": null,
         "positions": [
@@ -368,43 +354,44 @@
         ],
         "persistent_id": "b385a5f14dc040c7e00a50cd64215f27b588b27de3b27c3cde65b7b0e3ca130d"
       },
-      "s9": {
-        "operation": "flat_map",
+      "s8": {
+        "operation": "join",
         "inputs": [
-          { "node": "s6", "output": 0 }
+          { "node": "s5", "output": 0 },
+          { "node": "s4", "output": 0 }
         ],
         "calcite": {
-          "final": 6
+          "partial": 6
         },
         "positions": [
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":15,"start_column":9,"end_line_number":15,"end_column":18}
         ],
-        "persistent_id": "262b9ec01a84e115d6cfc5e2bd6d795590041d8bb65e3db31765e254f12dbc50"
+        "persistent_id": "ee036b6dcd0e5861401629b33db28974f61cebef835167fa623b7423912c5e18"
       },
-      "s10": {
+      "s9": {
         "operation": "sum",
         "inputs": [
-          { "node": "s8", "output": 0 },
-          { "node": "s9", "output": 0 }
+          { "node": "s7", "output": 0 },
+          { "node": "s8", "output": 0 }
         ],
         "calcite": {
-          "final": 7
+          "final": 8
         },
         "positions": [],
-        "persistent_id": "ba435f255116ec96680198ccb989a0e35c140218e242b93ef1d84dc64023f641"
+        "persistent_id": "5f95174f92c888c6d419209df06d0a3a787a9b4b46475bec95f68bd0e69dec4d"
       }
-    }, "s11": {
+    }, "s10": {
       "operation": "inspect",
       "inputs": [
         { "node": "s2", "output": 0 }
       ],
       "calcite": {
-        "final": 7
+        "final": 8
       },
       "positions": [],
-      "persistent_id": "4ea15e9b0bf8b369d1f040062b27b5350f7135d758670716b05eccee77bb386f"
-    }, "s12": {
+      "persistent_id": "6f527753e537a606f7cfedd98c33037c3a3d14b8574c5dfffa21329863925147"
+    }, "s11": {
       "operation": "inspect",
       "inputs": [
         { "node": "s0", "output": 0 }
