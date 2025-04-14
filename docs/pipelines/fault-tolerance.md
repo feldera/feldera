@@ -105,17 +105,15 @@ Feldera pipeline:
 
 3. To additionally enable fault tolerance:
 
-   - In the web UI, click on the gear icon ⚙️.  In the dialog box,
-     change `fault_tolerance` to `{}`, then click on the Apply button.
-     If clicking on Apply does not dismiss the dialog box, then either
+   - In the web UI, click on the gear icon ⚙️.  In the dialog box, find
+     `fault_tolerance`, and then `model` inside it, and change its
+     value to `"exactly_once"`, then click on the Apply button.  If
+     clicking on Apply does not dismiss the dialog box, then either
      storage has not been enabled or the running version of Feldera is
      not the enterprise edition.
-
-     (Again, click on the ⚙️ again afterward to see the available
-     fault tolerance settings.)
 
    - Using the `fda` command line tool:
 
      ```
-     fda set-config <pipeline> fault_tolerance true
+     fda set-config <pipeline> fault_tolerance exactly_once
      ```

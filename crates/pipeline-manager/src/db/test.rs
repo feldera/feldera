@@ -21,7 +21,7 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use feldera_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig};
+use feldera_types::config::{FtConfig, PipelineConfig, ResourceConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use openssl::sha;
@@ -240,7 +240,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             min_batch_size_records: val.val2,
             max_buffering_delay_usecs: val.val3,
             storage: val.val4.then(Default::default),
-            fault_tolerance: None,
+            fault_tolerance: FtConfig::default(),
             tracing: val.val5,
             tracing_endpoint_jaeger: val.val6,
             resources: ResourceConfig {
@@ -969,7 +969,7 @@ async fn pipeline_versioning() {
     let new_runtime_config = serde_json::to_value(RuntimeConfig {
         workers: 100,
         storage: None,
-        fault_tolerance: None,
+        fault_tolerance: FtConfig::default(),
         cpu_profiler: false,
         tracing: false,
         tracing_endpoint_jaeger: "".to_string(),
@@ -1439,7 +1439,7 @@ async fn pipeline_provision_version_guard() {
                 serde_json::to_value(RuntimeConfig {
                     workers: 10,
                     storage: None,
-                    fault_tolerance: None,
+                    fault_tolerance: FtConfig::default(),
                     cpu_profiler: false,
                     tracing: false,
                     tracing_endpoint_jaeger: "".to_string(),

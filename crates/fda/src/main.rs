@@ -10,7 +10,7 @@ use arrow::util::pretty::pretty_format_batches;
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use env_logger::Env;
-use feldera_types::config::{FtConfig, RuntimeConfig, StorageOptions};
+use feldera_types::config::{FtModel, RuntimeConfig, StorageOptions};
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
 use json_to_table::json_to_table;
@@ -418,14 +418,13 @@ fn patch_runtime_config(
         }
         RuntimeConfigKey::FaultTolerance => {
             let enable: bool = value.parse().map_err(|_| ())?;
-            rc.fault_tolerance = match enable {
+            rc.fault_tolerance.model = match enable {
                 false => None,
-                true => Some(FtConfig::default()),
+                true => Some(FtModel::default()),
             }
         }
         RuntimeConfigKey::CheckpointInterval => {
-            let ft = rc.fault_tolerance.get_or_insert_with(FtConfig::default);
-            ft.checkpoint_interval_secs = value.parse().map_err(|_| ())?;
+            rc.fault_tolerance.checkpoint_interval_secs = value.parse().map_err(|_| ())?;
         }
         RuntimeConfigKey::CpuProfiler => {
             rc.cpu_profiler = value.parse().map_err(|_| ())?;

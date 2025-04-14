@@ -25,6 +25,8 @@ use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 use std::fmt::Display;
 use std::path::Path;
+use std::str::FromStr;
+use std::time::Duration;
 use std::{borrow::Cow, cmp::max, collections::BTreeMap};
 use utoipa::ToSchema;
 
@@ -327,10 +329,9 @@ pub struct RuntimeConfig {
     #[serde(deserialize_with = "deserialize_storage_options")]
     pub storage: Option<StorageOptions>,
 
-    /// Configures fault tolerance with the specified start up behavior. Fault
-    /// tolerance is disabled if this or `storage` is `None`.
+    /// Fault tolerance configuration.
     #[serde(deserialize_with = "deserialize_fault_tolerance")]
-    pub fault_tolerance: Option<FtConfig>,
+    pub fault_tolerance: FtConfig,
 
     /// Enable CPU profiler.
     ///
@@ -448,16 +449,21 @@ where
     deserializer.deserialize_any(BoolOrStruct)
 }
 
-/// Accepts old 'initial_state' and 'latest_checkpoint' and converts them to the
-/// new format.
-fn deserialize_fault_tolerance<'de, D>(deserializer: D) -> Result<Option<FtConfig>, D::Error>
+/// Accepts very old 'initial_state' and 'latest_checkpoint' as enabling fault
+/// tolerance.
+///
+/// Accepts `null` as disabling fault tolerance.
+///
+/// Otherwise, deserializes [FtConfig] in the way that one might otherwise
+/// expect.
+fn deserialize_fault_tolerance<'de, D>(deserializer: D) -> Result<FtConfig, D::Error>
 where
     D: Deserializer<'de>,
 {
     struct StringOrStruct;
 
     impl<'de> Visitor<'de> for StringOrStruct {
-        type Value = Option<FtConfig>;
+        type Value = FtConfig;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             formatter.write_str("none or FtConfig or 'initial_state' or 'latest_checkpoint'")
@@ -468,7 +474,10 @@ where
             E: de::Error,
         {
             match v {
-                "initial_state" | "latest_checkpoint" => Ok(Some(FtConfig::default())),
+                "initial_state" | "latest_checkpoint" => Ok(FtConfig {
+                    model: Some(FtModel::default()),
+                    ..FtConfig::default()
+                }),
                 _ => Err(de::Error::invalid_value(de::Unexpected::Str(v), &self)),
             }
         }
@@ -477,21 +486,21 @@ where
         where
             E: de::Error,
         {
-            Ok(None)
+            Ok(FtConfig::default())
         }
 
         fn visit_none<E>(self) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
-            Ok(None)
+            Ok(FtConfig::default())
         }
 
-        fn visit_map<M>(self, map: M) -> Result<Option<FtConfig>, M::Error>
+        fn visit_map<M>(self, map: M) -> Result<FtConfig, M::Error>
         where
             M: MapAccess<'de>,
         {
-            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map)).map(Some)
+            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
         }
     }
 
@@ -503,7 +512,7 @@ impl Default for RuntimeConfig {
         Self {
             workers: 8,
             storage: Some(StorageOptions::default()),
-            fault_tolerance: None,
+            fault_tolerance: FtConfig::default(),
             cpu_profiler: true,
             tracing: {
                 // We discovered that the jaeger crate can use up gigabytes of RAM, so it's not harmless
@@ -525,22 +534,198 @@ impl Default for RuntimeConfig {
     }
 }
 
-/// Fault-tolerance configuration for runtime startup.
+/// Fault-tolerance configuration.
+///
+/// The default [FtConfig] (via [FtConfig::default]) disables fault tolerance,
+/// which is the configuration that one gets if [RuntimeConfig] omits fault
+/// tolerance configuration.
+///
+/// The default value for [FtConfig::model] enables fault tolerance, as
+/// `Some(FtModel::default())`.  This is the configuration that one gets if
+/// [RuntimeConfig] includes a fault tolerance configuration but does not
+/// specify a particular model.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(default)]
 #[serde(rename_all = "snake_case")]
 pub struct FtConfig {
+    /// Fault tolerance model to use.
+    #[serde(with = "none_as_string")]
+    #[serde(default = "default_model")]
+    pub model: Option<FtModel>,
+
     /// Interval between automatic checkpoints, in seconds.
     ///
-    /// The default is 60 seconds.  A value of 0 disables automatic
-    /// checkpointing.
+    /// The default is 60 seconds.  Values less than 1 or greater than 3600 will
+    /// be forced into that range.
+    #[serde(default = "default_checkpoint_interval_secs")]
     pub checkpoint_interval_secs: u64,
+}
+
+fn default_model() -> Option<FtModel> {
+    Some(FtModel::default())
+}
+
+pub fn default_checkpoint_interval_secs() -> u64 {
+    60
 }
 
 impl Default for FtConfig {
     fn default() -> Self {
         Self {
-            checkpoint_interval_secs: 60,
+            model: None,
+            checkpoint_interval_secs: default_checkpoint_interval_secs(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::deserialize_fault_tolerance;
+    use crate::config::{FtConfig, FtModel};
+    use serde::{Deserialize, Serialize};
+
+    #[test]
+    fn ft_config() {
+        #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Debug)]
+        #[serde(default)]
+        struct Wrapper {
+            #[serde(deserialize_with = "deserialize_fault_tolerance")]
+            config: FtConfig,
+        }
+
+        // Omitting FtConfig, or specifying null, or specifying model "none", disables fault tolerance.
+        for s in [
+            "{}",
+            r#"{"config": null}"#,
+            r#"{"config": {"model": "none"}}"#,
+        ] {
+            let config: Wrapper = serde_json::from_str(s).unwrap();
+            assert_eq!(
+                config,
+                Wrapper {
+                    config: FtConfig {
+                        model: None,
+                        ..FtConfig::default()
+                    }
+                }
+            );
+        }
+
+        // Serializing disabled FT produces explicit "none" form.
+        let s = serde_json::to_string(&Wrapper {
+            config: FtConfig::default(),
+        })
+        .unwrap();
+        assert!(s.contains("\"none\""));
+
+        // `{}` for FtConfig, or `{...}` with `model` omitted, enables fault
+        // tolerance.
+        for s in [r#"{"config": {}}"#, r#"{"checkpoint_interval_secs": 60}"#] {
+            assert_eq!(
+                serde_json::from_str::<FtConfig>(s).unwrap(),
+                FtConfig {
+                    model: Some(FtModel::default()),
+                    ..FtConfig::default()
+                }
+            );
+        }
+    }
+}
+
+impl FtConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.model.is_some()
+    }
+
+    /// Returns the checkpoint interval, if fault tolerance is enabled, and
+    /// otherwise `None`.
+    pub fn checkpoint_interval(&self) -> Option<Duration> {
+        self.is_enabled()
+            .then(|| Duration::from_secs(self.checkpoint_interval_secs.clamp(1, 3600)))
+    }
+}
+
+/// Serde implementation for de/serializing a string into `Option<T>` where
+/// `"none"` indicates `None` and any other string indicates `Some`.
+///
+/// This could be extended to handle non-strings by adding more forwarding
+/// `visit_*` methods to the Visitor implementation.  I don't see a way to write
+/// them automatically.
+mod none_as_string {
+    use std::marker::PhantomData;
+
+    use serde::de::{Deserialize, Deserializer, IntoDeserializer, Visitor};
+    use serde::ser::{Serialize, Serializer};
+
+    pub(super) fn serialize<S, T>(value: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Serialize,
+    {
+        match value.as_ref() {
+            Some(value) => value.serialize(serializer),
+            None => "none".serialize(serializer),
+        }
+    }
+
+    struct NoneAsString<T>(PhantomData<fn() -> T>);
+
+    impl<'de, T> Visitor<'de> for NoneAsString<T>
+    where
+        T: Deserialize<'de>,
+    {
+        type Value = Option<T>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("string")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Option<T>, E>
+        where
+            E: serde::de::Error,
+        {
+            if &value.to_ascii_lowercase() == "none" {
+                Ok(None)
+            } else {
+                Ok(Some(T::deserialize(value.into_deserializer())?))
+            }
+        }
+    }
+
+    pub(super) fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        deserializer.deserialize_str(NoneAsString(PhantomData))
+    }
+}
+
+/// Fault tolerance model.
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FtModel {
+    /// Each record is output exactly once.  Crashes do not drop or duplicating
+    /// input or output.
+    #[default]
+    ExactlyOnce,
+}
+
+pub struct FtModelUnknown;
+
+impl FromStr for FtModel {
+    type Err = FtModelUnknown;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "exactly_once" => Ok(Self::ExactlyOnce),
+            _ => Err(FtModelUnknown),
         }
     }
 }

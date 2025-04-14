@@ -412,7 +412,7 @@ where
     })?;
 
     #[cfg(not(feature = "feldera-enterprise"))]
-    if config.global.fault_tolerance.is_some() {
+    if config.global.fault_tolerance.is_enabled() {
         return Err(ControllerError::EnterpriseFeature("fault tolerance"));
     }
 
