@@ -63,7 +63,7 @@ pub(crate) fn validate_runtime_config(
     match deserialize_result {
         Ok(runtime_config) => {
             #[cfg(not(feature = "feldera-enterprise"))]
-            if runtime_config.fault_tolerance.is_some() {
+            if runtime_config.fault_tolerance.is_enabled() {
                 let e = ValidationError::EnterpriseFeature("fault tolerance".to_string());
                 if log_if_invalid {
                     error!("Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid runtime configuration due to: {e}");

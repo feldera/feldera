@@ -94,11 +94,11 @@ use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::{get_input_format, get_output_format};
 use crate::integrated::create_integrated_input_endpoint;
 pub use error::{ConfigError, ControllerError};
-use feldera_types::config::OutputBufferConfig;
 pub use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
+use feldera_types::config::{FtConfig, OutputBufferConfig};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
 pub use stats::{ControllerMetric, ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
@@ -571,7 +571,7 @@ impl CircuitThread {
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
     {
-        let ft = config.global.fault_tolerance.is_some();
+        let ft = config.global.fault_tolerance.is_enabled();
         let ControllerInit {
             pipeline_config,
             circuit_config,
@@ -1318,13 +1318,7 @@ impl StepTrigger {
         let max_buffering_delay = Duration::from_micros(config.max_buffering_delay_usecs);
         let min_batch_size_records = config.min_batch_size_records;
         let clock_resolution = config.clock_resolution_usecs.map(Duration::from_micros);
-        let checkpoint_interval =
-            config
-                .fault_tolerance
-                .and_then(|ft| match ft.checkpoint_interval_secs {
-                    0 => None,
-                    secs => Some(Duration::from_secs(secs)),
-                });
+        let checkpoint_interval = config.fault_tolerance.checkpoint_interval();
         Self {
             controller,
             tick: clock_resolution.map(|delay| Instant::now() + delay),
@@ -1441,7 +1435,7 @@ impl ControllerInit {
         metrics_recorder::init(pipeline_name);
 
         let Some((storage_config, storage_options)) = config.storage() else {
-            if config.global.fault_tolerance.is_none() {
+            if !config.global.fault_tolerance.is_enabled() {
                 info!("storage not configured, so suspend-and-resume and fault tolerance will not be available");
                 return Self::without_resume(config, None);
             } else {
@@ -1493,17 +1487,15 @@ impl ControllerInit {
                 // Can't change number of workers yet.
                 workers: checkpoint_config.global.workers,
 
-                // Whether fault tolerance is enabled is determined by the
-                // checkpoint we read, but the pipeline manager can override the
-                // details of the configuration.
-                fault_tolerance: {
-                    match (
-                        config.global.fault_tolerance,
-                        checkpoint_config.global.fault_tolerance,
-                    ) {
-                        (Some(provided), Some(_read)) => Some(provided),
-                        (_, read) => read,
-                    }
+                // The checkpoint determines the fault tolerance model, but the
+                // pipeline manager can override the details of the
+                // configuration (so far just the checkpoint interval).
+                fault_tolerance: FtConfig {
+                    model: checkpoint_config.global.fault_tolerance.model,
+                    checkpoint_interval_secs: config
+                        .global
+                        .fault_tolerance
+                        .checkpoint_interval_secs,
                 },
 
                 // Take all the other settings from the pipeline manager.
@@ -1981,8 +1973,8 @@ impl ControllerInner {
             backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
             error_cb,
             session_ctxt,
-            fault_tolerant: config.global.fault_tolerance.is_some(),
-            restoring: AtomicBool::new(config.global.fault_tolerance.is_some()),
+            fault_tolerant: config.global.fault_tolerance.is_enabled(),
+            restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
         });
         controller.initialize_adhoc_queries();
 
