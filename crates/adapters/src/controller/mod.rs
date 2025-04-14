@@ -98,7 +98,7 @@ pub use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
-use feldera_types::config::{FtConfig, OutputBufferConfig};
+use feldera_types::config::{FtConfig, FtModel, OutputBufferConfig};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
 pub use stats::{ControllerMetric, ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
@@ -571,7 +571,7 @@ impl CircuitThread {
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
     {
-        let ft = config.global.fault_tolerance.is_enabled();
+        let ft_model = config.global.fault_tolerance.model;
         let ControllerInit {
             pipeline_config,
             circuit_config,
@@ -600,28 +600,33 @@ impl CircuitThread {
             }
         }
 
-        let ft = if ft {
-            let backend = storage.clone().unwrap();
-            let ft = if input_metadata.is_some() {
-                FtState::open(backend, step, controller.clone())
-            } else {
-                FtState::create(backend, controller.clone())
-            };
-            Some(ft?)
-        } else {
-            if let Some(backend) = &storage {
-                // We're not fault-tolerant, so it's not a good idea to resume
-                // from the same checkpoint twice.  Delete it.
-                backend
-                    .delete_if_exists(&StoragePath::from(STATE_FILE))
-                    .map_err(|error| {
-                        ControllerError::storage_error(
-                            "delete non-FT checkpoint following resume",
-                            error,
-                        )
-                    })?;
+        let ft = match ft_model {
+            Some(FtModel::ExactlyOnce) => {
+                let backend = storage.clone().unwrap();
+                let ft = if input_metadata.is_some() {
+                    FtState::open(backend, step, controller.clone())
+                } else {
+                    FtState::create(backend, controller.clone())
+                };
+                Some(ft?)
             }
-            None
+            Some(FtModel::AtLeastOnce) => None,
+            None => {
+                if let Some(backend) = &storage {
+                    // We're not fault-tolerant (not even at-least-once), so
+                    // it's not a good idea to resume from the same checkpoint
+                    // twice.  Delete it.
+                    backend
+                        .delete_if_exists(&StoragePath::from(STATE_FILE))
+                        .map_err(|error| {
+                            ControllerError::storage_error(
+                                "delete non-FT checkpoint following resume",
+                                error,
+                            )
+                        })?;
+                }
+                None
+            }
         };
 
         let storage_thread = storage.as_ref().map(|backend| {

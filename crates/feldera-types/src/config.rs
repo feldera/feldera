@@ -711,10 +711,14 @@ mod none_as_string {
 #[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FtModel {
-    /// Each record is output exactly once.  Crashes do not drop or duplicating
+    /// Each record is output exactly once.  Crashes do not drop or duplicate
     /// input or output.
     #[default]
     ExactlyOnce,
+
+    /// Each record is output at least once.  Crashes may duplicate output, but
+    /// no input or output is dropped.
+    AtLeastOnce,
 }
 
 pub struct FtModelUnknown;
@@ -725,6 +729,7 @@ impl FromStr for FtModel {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "exactly_once" => Ok(Self::ExactlyOnce),
+            "at_least_once" => Ok(Self::AtLeastOnce),
             _ => Err(FtModelUnknown),
         }
     }

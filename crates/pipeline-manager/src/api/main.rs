@@ -161,6 +161,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::config::FormatConfig,
         feldera_types::config::ResourceConfig,
         feldera_types::config::ObjectStorageConfig,
+        feldera_types::config::FtModel,
         feldera_types::transport::adhoc::AdHocInputConfig,
         feldera_types::transport::file::FileInputConfig,
         feldera_types::transport::file::FileOutputConfig,

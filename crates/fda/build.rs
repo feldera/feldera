@@ -5,6 +5,7 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
     vec![
         ("PipelineConfig", "feldera_types::config::PipelineConfig"),
         ("StorageConfig", "feldera_types::config::StorageConfig"),
+        ("FtModel", "feldera_types::config::FtModel"),
         (
             "StorageCacheConfig",
             "feldera_types::config::StorageCacheConfig",

@@ -379,7 +379,10 @@
                         "compression": "default",
                         "cache_mib": null
                       },
-                      "fault_tolerance": null,
+                      "fault_tolerance": {
+                        "model": "none",
+                        "checkpoint_interval_secs": 60
+                      },
                       "cpu_profiler": true,
                       "tracing": false,
                       "tracing_endpoint_jaeger": "",
@@ -437,7 +440,10 @@
                         "compression": "default",
                         "cache_mib": null
                       },
-                      "fault_tolerance": null,
+                      "fault_tolerance": {
+                        "model": "none",
+                        "checkpoint_interval_secs": 60
+                      },
                       "cpu_profiler": false,
                       "tracing": false,
                       "tracing_endpoint_jaeger": "",
@@ -524,7 +530,10 @@
                     "compression": "default",
                     "cache_mib": null
                   },
-                  "fault_tolerance": null,
+                  "fault_tolerance": {
+                    "model": "none",
+                    "checkpoint_interval_secs": 60
+                  },
                   "cpu_profiler": true,
                   "tracing": false,
                   "tracing_endpoint_jaeger": "",
@@ -580,7 +589,10 @@
                       "compression": "default",
                       "cache_mib": null
                     },
-                    "fault_tolerance": null,
+                    "fault_tolerance": {
+                      "model": "none",
+                      "checkpoint_interval_secs": 60
+                    },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
@@ -731,7 +743,10 @@
                       "compression": "default",
                       "cache_mib": null
                     },
-                    "fault_tolerance": null,
+                    "fault_tolerance": {
+                      "model": "none",
+                      "checkpoint_interval_secs": 60
+                    },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
@@ -845,7 +860,10 @@
                     "compression": "default",
                     "cache_mib": null
                   },
-                  "fault_tolerance": null,
+                  "fault_tolerance": {
+                    "model": "none",
+                    "checkpoint_interval_secs": 60
+                  },
                   "cpu_profiler": true,
                   "tracing": false,
                   "tracing_endpoint_jaeger": "",
@@ -901,7 +919,10 @@
                       "compression": "default",
                       "cache_mib": null
                     },
-                    "fault_tolerance": null,
+                    "fault_tolerance": {
+                      "model": "none",
+                      "checkpoint_interval_secs": 60
+                    },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
@@ -969,7 +990,10 @@
                       "compression": "default",
                       "cache_mib": null
                     },
-                    "fault_tolerance": null,
+                    "fault_tolerance": {
+                      "model": "none",
+                      "checkpoint_interval_secs": 60
+                    },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
@@ -1204,7 +1228,10 @@
                       "compression": "default",
                       "cache_mib": null
                     },
-                    "fault_tolerance": null,
+                    "fault_tolerance": {
+                      "model": "none",
+                      "checkpoint_interval_secs": 60
+                    },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
@@ -3730,16 +3757,31 @@
       },
       "FtConfig": {
         "type": "object",
-        "description": "Fault-tolerance configuration for runtime startup.",
+        "description": "Fault-tolerance configuration.\n\nThe default [FtConfig] (via [FtConfig::default]) disables fault tolerance,\nwhich is the configuration that one gets if [RuntimeConfig] omits fault\ntolerance configuration.\n\nThe default value for [FtConfig::model] enables fault tolerance, as\n`Some(FtModel::default())`.  This is the configuration that one gets if\n[RuntimeConfig] includes a fault tolerance configuration but does not\nspecify a particular model.",
         "properties": {
           "checkpoint_interval_secs": {
             "type": "integer",
             "format": "int64",
-            "description": "Interval between automatic checkpoints, in seconds.\n\nThe default is 60 seconds.  A value of 0 disables automatic\ncheckpointing.",
-            "default": 60,
+            "description": "Interval between automatic checkpoints, in seconds.\n\nThe default is 60 seconds.  Values less than 1 or greater than 3600 will\nbe forced into that range.",
             "minimum": 0
+          },
+          "model": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FtModel"
+              }
+            ],
+            "nullable": true
           }
         }
+      },
+      "FtModel": {
+        "type": "string",
+        "description": "Fault tolerance model.",
+        "enum": [
+          "exactly_once",
+          "at_least_once"
+        ]
       },
       "GenerationPlan": {
         "type": "object",
@@ -4497,8 +4539,10 @@
                     "$ref": "#/components/schemas/FtConfig"
                   }
                 ],
-                "default": null,
-                "nullable": true
+                "default": {
+                  "model": "none",
+                  "checkpoint_interval_secs": 60
+                }
               },
               "max_buffering_delay_usecs": {
                 "type": "integer",
@@ -5401,8 +5445,10 @@
                 "$ref": "#/components/schemas/FtConfig"
               }
             ],
-            "default": null,
-            "nullable": true
+            "default": {
+              "model": "none",
+              "checkpoint_interval_secs": 60
+            }
           },
           "max_buffering_delay_usecs": {
             "type": "integer",

@@ -17,7 +17,7 @@ export type AdHocInputConfig = {
 /**
  * URL-encoded `format` argument to the `/query` endpoint.
  */
-export type AdHocResultFormat = 'text' | 'json' | 'parquet'
+export type AdHocResultFormat = 'text' | 'json' | 'parquet' | 'arrow_ipc'
 
 /**
  * URL-encoded arguments to the `/query` endpoint.
@@ -668,17 +668,32 @@ export type FormatConfig = {
 }
 
 /**
- * Fault-tolerance configuration for runtime startup.
+ * Fault-tolerance configuration.
+ *
+ * The default [FtConfig] (via [FtConfig::default]) disables fault tolerance,
+ * which is the configuration that one gets if [RuntimeConfig] omits fault
+ * tolerance configuration.
+ *
+ * The default value for [FtConfig::model] enables fault tolerance, as
+ * `Some(FtModel::default())`.  This is the configuration that one gets if
+ * [RuntimeConfig] includes a fault tolerance configuration but does not
+ * specify a particular model.
  */
 export type FtConfig = {
   /**
    * Interval between automatic checkpoints, in seconds.
    *
-   * The default is 60 seconds.  A value of 0 disables automatic
-   * checkpointing.
+   * The default is 60 seconds.  Values less than 1 or greater than 3600 will
+   * be forced into that range.
    */
   checkpoint_interval_secs?: number
+  model?: FtModel | null
 }
+
+/**
+ * Fault tolerance model.
+ */
+export type FtModel = 'exactly_once' | 'at_least_once'
 
 /**
  * A random generation plan for a table that generates either a limited amount of rows or runs continuously.
@@ -1031,18 +1046,10 @@ export type KafkaHeaderValue = Blob | File
  */
 export type KafkaInputConfig = {
   /**
-   * Deprecated.
-   */
-  fault_tolerance?: string | null
-  /**
    * Maximum timeout in seconds to wait for the endpoint to join the Kafka
    * consumer group during initialization.
    */
   group_join_timeout_secs?: number
-  /**
-   * Deprecated.
-   */
-  kafka_service?: string | null
   log_level?: KafkaLogLevel | null
   /**
    * Set to 1 or more to fix the number of threads used to poll
@@ -1053,28 +1060,24 @@ export type KafkaInputConfig = {
    * messagee
    */
   poller_threads?: number | null
+  start_from?: KafkaStartFromConfig
   /**
-   * A list of offsets and partitions specifying where to begin reading individual input topics.
-   *
-   * When specified, this property must contain a list of JSON objects with the following fields:
-   * - `topic`: The name of the Kafka topic.
-   * - `partition`: The partition number within the topic.
-   * - `offset`: The specific offset from which to start consuming messages.
+   * Topic to subscribe to.
    */
-  start_from?: Array<KafkaStartFromConfig>
-  /**
-   * List of topics to subscribe to.
-   */
-  topics: Array<string>
+  topic: string
   /**
    * Options passed directly to `rdkafka`.
    *
    * [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
-   * used to configure the Kafka consumer.  Not all options are valid with
-   * this Kafka adapter:
+   * used to configure the Kafka consumer.
    *
-   * * "enable.auto.commit", if present, must be set to "false",
-   * * "enable.auto.offset.store", if present, must be set to "false"
+   * This input connector does not use consumer groups, so options related to
+   * consumer groups are rejected, including:
+   *
+   * * `group.id`, if present, is ignored.
+   * * `auto.offset.reset` (use `start_from` instead).
+   * * "enable.auto.commit", if present, must be set to "false".
+   * * "enable.auto.offset.store", if present, must be set to "false".
    */
   '[key: string]': (string | number | unknown | KafkaStartFromConfig) | undefined
 }
@@ -1153,22 +1156,19 @@ export type KafkaOutputFtConfig = {
 }
 
 /**
- * Configuration for starting from a specific offset in a Kafka topic partition.
+ * Where to begin reading a Kafka topic.
  */
-export type KafkaStartFromConfig = {
-  /**
-   * The offset in the specified partition to start reading from.
-   */
-  offset: number
-  /**
-   * The parition within the topic.
-   */
-  partition: number
-  /**
-   * The Kafka topic.
-   */
-  topic: string
-}
+export type KafkaStartFromConfig =
+  | 'earliest'
+  | 'latest'
+  | {
+      /**
+       * Start from particular offsets in the topic.
+       *
+       * The number of offsets must match the number of partitions in the topic.
+       */
+      offsets: Array<number>
+    }
 
 export type LicenseInformation = {
   /**
@@ -1495,12 +1495,25 @@ export type PipelineConfig = {
    * The default value is `true`.
    */
   cpu_profiler?: boolean
-  fault_tolerance?: FtConfig | null
+  fault_tolerance?: FtConfig
   /**
    * Maximal delay in microseconds to wait for `min_batch_size_records` to
    * get buffered by the controller, defaults to 0.
    */
   max_buffering_delay_usecs?: number
+  /**
+   * The maximum number of connectors initialized in parallel during pipeline
+   * startup.
+   *
+   * At startup, the pipeline must initialize all of its input and output connectors.
+   * Depending on the number and types of connectors, this can take a long time.
+   * To accelerate the process, multiple connectors are initialized concurrently.
+   * This option controls the maximum number of connectors that can be intitialized
+   * in parallel.
+   *
+   * The default is 10.
+   */
+  max_parallel_connector_init?: number | null
   /**
    * Minimal input batch size.
    *
@@ -2095,12 +2108,25 @@ export type RuntimeConfig = {
    * The default value is `true`.
    */
   cpu_profiler?: boolean
-  fault_tolerance?: FtConfig | null
+  fault_tolerance?: FtConfig
   /**
    * Maximal delay in microseconds to wait for `min_batch_size_records` to
    * get buffered by the controller, defaults to 0.
    */
   max_buffering_delay_usecs?: number
+  /**
+   * The maximum number of connectors initialized in parallel during pipeline
+   * startup.
+   *
+   * At startup, the pipeline must initialize all of its input and output connectors.
+   * Depending on the number and types of connectors, this can take a long time.
+   * To accelerate the process, multiple connectors are initialized concurrently.
+   * This option controls the maximum number of connectors that can be intitialized
+   * in parallel.
+   *
+   * The default is 10.
+   */
+  max_parallel_connector_init?: number | null
   /**
    * Minimal input batch size.
    *
