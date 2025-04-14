@@ -19,7 +19,7 @@ the \`fda\` command-line tool.`,
 export const $AdHocResultFormat = {
   type: 'string',
   description: 'URL-encoded `format` argument to the `/query` endpoint.',
-  enum: ['text', 'json', 'parquet']
+  enum: ['text', 'json', 'parquet', 'arrow_ipc']
 } as const
 
 export const $AdhocQueryArgs = {
@@ -892,19 +892,41 @@ endpoint or to encode data sent to the endpoint.`,
 
 export const $FtConfig = {
   type: 'object',
-  description: 'Fault-tolerance configuration for runtime startup.',
+  description: `Fault-tolerance configuration.
+
+The default [FtConfig] (via [FtConfig::default]) disables fault tolerance,
+which is the configuration that one gets if [RuntimeConfig] omits fault
+tolerance configuration.
+
+The default value for [FtConfig::model] enables fault tolerance, as
+\`Some(FtModel::default())\`.  This is the configuration that one gets if
+[RuntimeConfig] includes a fault tolerance configuration but does not
+specify a particular model.`,
   properties: {
     checkpoint_interval_secs: {
       type: 'integer',
       format: 'int64',
       description: `Interval between automatic checkpoints, in seconds.
 
-The default is 60 seconds.  A value of 0 disables automatic
-checkpointing.`,
-      default: 60,
+The default is 60 seconds.  Values less than 1 or greater than 3600 will
+be forced into that range.`,
       minimum: 0
+    },
+    model: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/FtModel'
+        }
+      ],
+      nullable: true
     }
   }
+} as const
+
+export const $FtModel = {
+  type: 'string',
+  description: 'Fault tolerance model.',
+  enum: ['exactly_once', 'at_least_once']
 } as const
 
 export const $GenerationPlan = {
@@ -1337,24 +1359,14 @@ export const $KafkaHeaderValue = {
 export const $KafkaInputConfig = {
   type: 'object',
   description: 'Configuration for reading data from Kafka topics with `InputTransport`.',
-  required: ['topics'],
+  required: ['topic'],
   properties: {
-    fault_tolerance: {
-      type: 'string',
-      description: 'Deprecated.',
-      nullable: true
-    },
     group_join_timeout_secs: {
       type: 'integer',
       format: 'int32',
       description: `Maximum timeout in seconds to wait for the endpoint to join the Kafka
 consumer group during initialization.`,
       minimum: 0
-    },
-    kafka_service: {
-      type: 'string',
-      description: 'Deprecated.',
-      nullable: true
     },
     log_level: {
       allOf: [
@@ -1376,23 +1388,11 @@ messagee`,
       minimum: 0
     },
     start_from: {
-      type: 'array',
-      items: {
-        $ref: '#/components/schemas/KafkaStartFromConfig'
-      },
-      description: `A list of offsets and partitions specifying where to begin reading individual input topics.
-
-When specified, this property must contain a list of JSON objects with the following fields:
-- \`topic\`: The name of the Kafka topic.
-- \`partition\`: The partition number within the topic.
-- \`offset\`: The specific offset from which to start consuming messages.`
+      $ref: '#/components/schemas/KafkaStartFromConfig'
     },
-    topics: {
-      type: 'array',
-      items: {
-        type: 'string'
-      },
-      description: 'List of topics to subscribe to.'
+    topic: {
+      type: 'string',
+      description: 'Topic to subscribe to.'
     }
   },
   additionalProperties: {
@@ -1400,11 +1400,15 @@ When specified, this property must contain a list of JSON objects with the follo
     description: `Options passed directly to \`rdkafka\`.
 
 [\`librdkafka\` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
-used to configure the Kafka consumer.  Not all options are valid with
-this Kafka adapter:
+used to configure the Kafka consumer.
 
-* "enable.auto.commit", if present, must be set to "false",
-* "enable.auto.offset.store", if present, must be set to "false"`
+This input connector does not use consumer groups, so options related to
+consumer groups are rejected, including:
+
+* \`group.id\`, if present, is ignored.
+* \`auto.offset.reset\` (use \`start_from\` instead).
+* "enable.auto.commit", if present, must be set to "false".
+* "enable.auto.offset.store", if present, must be set to "false".`
   }
 } as const
 
@@ -1502,27 +1506,38 @@ These options override \`kafka_options\` for producers, and may be empty.`,
 } as const
 
 export const $KafkaStartFromConfig = {
-  type: 'object',
-  description: 'Configuration for starting from a specific offset in a Kafka topic partition.',
-  required: ['topic', 'partition', 'offset'],
-  properties: {
-    offset: {
-      type: 'integer',
-      format: 'int64',
-      description: 'The offset in the specified partition to start reading from.',
-      minimum: 0
-    },
-    partition: {
-      type: 'integer',
-      format: 'int32',
-      description: 'The parition within the topic.',
-      minimum: 0
-    },
-    topic: {
+  oneOf: [
+    {
       type: 'string',
-      description: 'The Kafka topic.'
+      description: 'Start from the beginning of the topic.',
+      enum: ['earliest']
+    },
+    {
+      type: 'string',
+      description: `Start from the current end of the topic.
+
+This will only read any data that is added to the topic after the
+connector initializes.`,
+      enum: ['latest']
+    },
+    {
+      type: 'object',
+      required: ['offsets'],
+      properties: {
+        offsets: {
+          type: 'array',
+          items: {
+            type: 'integer',
+            format: 'int64'
+          },
+          description: `Start from particular offsets in the topic.
+
+The number of offsets must match the number of partitions in the topic.`
+        }
+      }
     }
-  }
+  ],
+  description: 'Where to begin reading a Kafka topic.'
 } as const
 
 export const $LicenseInformation = {
@@ -1975,8 +1990,10 @@ The default value is \`true\`.`,
               $ref: '#/components/schemas/FtConfig'
             }
           ],
-          default: null,
-          nullable: true
+          default: {
+            model: 'none',
+            checkpoint_interval_secs: 60
+          }
         },
         max_buffering_delay_usecs: {
           type: 'integer',
@@ -1984,6 +2001,23 @@ The default value is \`true\`.`,
           description: `Maximal delay in microseconds to wait for \`min_batch_size_records\` to
 get buffered by the controller, defaults to 0.`,
           default: 0,
+          minimum: 0
+        },
+        max_parallel_connector_init: {
+          type: 'integer',
+          format: 'int64',
+          description: `The maximum number of connectors initialized in parallel during pipeline
+startup.
+
+At startup, the pipeline must initialize all of its input and output connectors.
+Depending on the number and types of connectors, this can take a long time.
+To accelerate the process, multiple connectors are initialized concurrently.
+This option controls the maximum number of connectors that can be intitialized
+in parallel.
+
+The default is 10.`,
+          default: null,
+          nullable: true,
           minimum: 0
         },
         min_batch_size_records: {
@@ -2045,7 +2079,14 @@ Setting this value will override the default of the runner.`,
               $ref: '#/components/schemas/StorageOptions'
             }
           ],
-          default: null,
+          default: {
+            backend: {
+              name: 'default'
+            },
+            min_storage_bytes: null,
+            compression: 'default',
+            cache_mib: null
+          },
           nullable: true
         },
         tracing: {
@@ -3050,8 +3091,10 @@ The default value is \`true\`.`,
           $ref: '#/components/schemas/FtConfig'
         }
       ],
-      default: null,
-      nullable: true
+      default: {
+        model: 'none',
+        checkpoint_interval_secs: 60
+      }
     },
     max_buffering_delay_usecs: {
       type: 'integer',
@@ -3059,6 +3102,23 @@ The default value is \`true\`.`,
       description: `Maximal delay in microseconds to wait for \`min_batch_size_records\` to
 get buffered by the controller, defaults to 0.`,
       default: 0,
+      minimum: 0
+    },
+    max_parallel_connector_init: {
+      type: 'integer',
+      format: 'int64',
+      description: `The maximum number of connectors initialized in parallel during pipeline
+startup.
+
+At startup, the pipeline must initialize all of its input and output connectors.
+Depending on the number and types of connectors, this can take a long time.
+To accelerate the process, multiple connectors are initialized concurrently.
+This option controls the maximum number of connectors that can be intitialized
+in parallel.
+
+The default is 10.`,
+      default: null,
+      nullable: true,
       minimum: 0
     },
     min_batch_size_records: {
@@ -3120,7 +3180,14 @@ Setting this value will override the default of the runner.`,
           $ref: '#/components/schemas/StorageOptions'
         }
       ],
-      default: null,
+      default: {
+        backend: {
+          name: 'default'
+        },
+        min_storage_bytes: null,
+        compression: 'default',
+        cache_mib: null
+      },
       nullable: true
     },
     tracing: {

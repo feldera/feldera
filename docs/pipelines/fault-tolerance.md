@@ -1,7 +1,7 @@
 # Fault tolerance and suspend/resume
 
-Feldera supports three ways to gracefully stop a pipeline and later
-restart it from the same point:
+Feldera supports the following ways to gracefully stop a pipeline and
+later restart it from the same point:
 
 * Pause and resume.  A paused pipeline continues to run and occupy
   memory on its host, but it does not ingest any more input until
@@ -18,6 +18,13 @@ restart it from the same point:
   pipeline, it uses the checkpoint to resume from the exact point
   where it left off, without dropping or duplicating input or output.
 
+  Suspending a pipeline allows it to resume gracefully on a different
+  host or with a modified configuration.  With Feldera deployed in
+  Kubernetes, suspending a pipeline temrinates its current pod while
+  keeping its state in EBS or S3.  The pipeline can then resume in a
+  new pod which can have more or fewer resources than the original
+  pod.
+
   The "suspend" API suspends a pipeline, and the "start" API (or ▶️ in
   the web UI) resumes it.
 
@@ -26,39 +33,58 @@ restart it from the same point:
   [fault-tolerant connectors](#fault-tolerant-connectors) and have
   storage configured.
 
-* Fault tolerance.  Fault tolerance extends suspend and resume so
-  that, in addition to resuming from the point of a suspend request,
-  Feldera can also restart from the exact point of any unplanned,
-  abrupt shutdown or crash.
+* At-least-once fault tolerance.  The pipeline regularly (by default,
+  every minute) writes a checkpoint to storage.  If the pipeline
+  crashes, then it resumes from the most recent checkpoint, restarting
+  input connectors from the point just before the checkpoint.  Any
+  output already produced beyond the checkpoint will be produced
+  again, meaning that, overall, output records are produced at least
+  once.
 
-  Fault tolerance is in the Feldera enterprise edition only, with the
-  same configuration requirements as suspend and resume.  Fault
-  tolerance has some performance cost so, in addition, it must be
-  enabled explicitly on a pipeline.
+  At-least-once fault tolerance is in the Feldera enterprise edition
+  only, with the same configuration requirements as suspend and
+  resume.  Writing checkpoints has some performance cost so, in
+  addition, it must be enabled explicitly on a pipeline.
 
-The following sections describe suspend and resume and fault tolerance
-in more detail.
+  An at-least-once fault tolerant pipeline can also be suspended and
+  resumed.
+
+* Exactly once fault tolerance.  This extends at-least-once fault
+  tolerance with input and output journaling so that the pipeline
+  restarts from the exact state prior to any unplanned, abrupt
+  shutdown or crash.  Restart of a fault-tolerant pipeline does not
+  drop or duplicate input or output, meaning that each output record
+  is produced exactly once.
+
+  Exactly once fault tolerance is in the Feldera enterprise edition
+  only, with the same configuration requirements as suspend and
+  resume.  Journaling adds some performance cost to periodic
+  checkpointing so, in addition, it must be enabled explicitly on a
+  pipeline.
+
+  A fault-tolerant pipeline can also be suspended and resumed.
+
+The following sections describes these features in more detail.
 
 ## Implementation
 
-Feldera implements suspend and resume by writing a **checkpoint** to
+Feldera implements these features by writing a **checkpoint** to
 storage, that is, a consistent snapshot of the Feldera system's state,
 including computation and the input and output adapters.  On resume,
 Feldera loads its state from the checkpoint, and then restarts each of
 the connectors at the point where it left off.
 
-Fault tolerance builds on top of checkpointing by periodically writing
-a checkpoint to storage.  Between checkpoints, for each batch of data
-that Feldera processes through the pipeline, it writes enough
-information to a separate **journal** to obtain another copy of the
-batch's input data later.
+In addition, exactly once fault tolerance writes additional data to a
+separate **journal** between checkpoints.  For each batch of data that
+Feldera processes through the pipeline, it writes enough information
+to the journal to obtain another copy of the batch's input data later.
 
-When a fault-tolerant pipeline restarts, it loads its state from the
-most recent checkpoint, then it replays any data from input connectors
-previously processed beyond that checkpoint.  If replay produces
-output that was previously sent to output connectors, it discards that
-output.  After replay completes, the pipeline continues with new input
-that has not previously been processed.
+When an exactly once fault-tolerant pipeline restarts, it loads its
+state from the most recent checkpoint, then it replays any data from
+input connectors previously processed beyond that checkpoint.  If
+replay produces output that was previously sent to output connectors,
+it discards that output.  After replay completes, the pipeline
+continues with new input that has not previously been processed.
 
 ## Fault-tolerant connectors
 
@@ -86,7 +112,9 @@ Feldera pipeline:
 1. Ensure that all of the pipeline's connectors support fault tolerance, as
    described in the previous section.
 
-2. Enable storage in one of the following ways:
+2. Recent versions of Feldera enable storage in new pipelines by
+   default.  If storage is not yet enabled, enable it in one of the
+   following ways:
 
    - In the web UI, click on the gear icon ⚙️.  In the dialog box,
      change `storage` to `{}`, e.g.:
@@ -112,8 +140,9 @@ Feldera pipeline:
      storage has not been enabled or the running version of Feldera is
      not the enterprise edition.
 
-   - Using the `fda` command line tool:
+   - With the `fda` command line tool, use one of these commands:
 
      ```
+     fda set-config <pipeline> fault_tolerance at_least_once
      fda set-config <pipeline> fault_tolerance exactly_once
      ```

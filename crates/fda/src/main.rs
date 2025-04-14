@@ -417,10 +417,10 @@ fn patch_runtime_config(
             }
         }
         RuntimeConfigKey::FaultTolerance => {
-            let enable: bool = value.parse().map_err(|_| ())?;
-            rc.fault_tolerance.model = match enable {
-                false => None,
-                true => Some(FtModel::default()),
+            rc.fault_tolerance.model = match value {
+                "false" | "none" => None,
+                "true" => Some(FtModel::default()),
+                _ => Some(value.parse().map_err(|_| ())?),
             }
         }
         RuntimeConfigKey::CheckpointInterval => {
