@@ -46,6 +46,21 @@ import java.util.List;
 
 /** Tests about table and view metadata */
 public class MetadataTests extends BaseSQLTests {
+    File createTempOutputFile() throws IOException {
+        return File.createTempFile("out", ".rs", new File(RUST_DIRECTORY));
+    }
+
+    File createTempJsonFile() throws IOException {
+        File file = File.createTempFile("out", ".json", new File("."));
+        file.deleteOnExit();
+        return file;
+    }
+
+    void deleteTempFile(File file) {
+        //noinspection ResultOfMethodCallIgnored
+        file.delete();
+    }
+
     @Test
     public void systemView() {
         // Create a view named like a system view
@@ -102,13 +117,11 @@ public class MetadataTests extends BaseSQLTests {
                     NULL AS parent_id
                 FROM t""";
         File file = createInputScript(sql);
-        File json = File.createTempFile("out", ".json", new File("."));
-        json.deleteOnExit();
-        File tmp = File.createTempFile("out", ".rs", new File(RUST_DIRECTORY));
+        File json = this.createTempJsonFile();
+        File tmp = this.createTempOutputFile();
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
-        //noinspection ResultOfMethodCallIgnored
-        tmp.delete();
+        this.deleteTempFile(tmp);
         Assert.assertEquals(0, message.exitCode);
         //noinspection ResultOfMethodCallIgnored
         tmp.delete();
@@ -761,9 +774,10 @@ public class MetadataTests extends BaseSQLTests {
             CREATE VIEW V1 AS SELECT COL1 FROM T;
             CREATE VIEW V2 AS SELECT SUM(COL1) FROM T;""";
         File file = createInputScript(sql);
-        File json = File.createTempFile("out", ".json", new File("."));
-        json.deleteOnExit();
-        CompilerMain.execute("--plan", json.getPath(), file.getPath());
+        File json = this.createTempJsonFile();
+        File out = this.createTempOutputFile();
+        CompilerMain.execute("--plan", json.getPath(), "-o", out.getPath(), file.getPath());
+        this.deleteTempFile(out);
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generatePlan.json");
         Assert.assertEquals(expected, jsonContents);
@@ -778,16 +792,33 @@ public class MetadataTests extends BaseSQLTests {
             CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
             CREATE VIEW V AS SELECT SUM(COL1) FROM T;""";
         File file = createInputScript(sql);
-        File json = File.createTempFile("out", ".json", new File("."));
-        json.deleteOnExit();
-        CompilerMessages msg = CompilerMain.execute("--dataflow", json.getPath(), file.getPath());
+        File json = this.createTempJsonFile();
+        File out = this.createTempOutputFile();
+        CompilerMessages msg = CompilerMain.execute(
+                "--dataflow", json.getPath(), "-o", out.getPath(), file.getPath());
         assert msg.exitCode == 0;
+        this.deleteTempFile(out);
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDF.json");
         Assert.assertEquals(expected, jsonContents);
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
+    }
+
+    @Test
+    public void issue3861() throws IOException, SQLException {
+        String sql = """
+            CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);
+            CREATE VIEW V AS SELECT SUM(COL1) FROM T;""";
+        File file = createInputScript(sql);
+        File json = this.createTempJsonFile();
+        File out = this.createTempOutputFile();
+        CompilerMessages msg = CompilerMain.execute("--dataflow", json.getPath(), file.getPath(), "-o", out.getPath());
+        assert msg.exitCode == 0;
+        Assert.assertTrue(json.exists());
+        Assert.assertTrue(out.exists());
+        this.deleteTempFile(out);
     }
 
     @Test
@@ -815,10 +846,12 @@ public class MetadataTests extends BaseSQLTests {
                     where curr.n < 10 and prev.n < 10
                 );""";
         File file = createInputScript(sql);
-        File json = File.createTempFile("out", ".json", new File("."));
-        json.deleteOnExit();
-        CompilerMessages msg = CompilerMain.execute("--dataflow", json.getPath(), file.getPath());
+        File json = this.createTempJsonFile();
+        File out = this.createTempOutputFile();
+        CompilerMessages msg = CompilerMain.execute(
+                "--dataflow", json.getPath(), "-o", out.getPath(), file.getPath());
         assert msg.exitCode == 0;
+        this.deleteTempFile(out);
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDFRecursive.json");
         Assert.assertEquals(expected, jsonContents);
@@ -854,18 +887,14 @@ public class MetadataTests extends BaseSQLTests {
                 
                 create view fib_outputs as select * from fibonacci;""";
         File file = createInputScript(sql);
-        File json = File.createTempFile("out", ".json", new File("."));
-        json.deleteOnExit();
-        File tmp = File.createTempFile("out", ".rs", new File(RUST_DIRECTORY));
+        File json = this.createTempJsonFile();
+        File out = this.createTempOutputFile();
         CompilerMessages message = CompilerMain.execute(
-                "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
-        //noinspection ResultOfMethodCallIgnored
-        tmp.delete();
+                "-js", json.getPath(), "-o", out.getPath(), file.getPath());
+        this.deleteTempFile(out);
         assert message.exitCode == 0;
         String js = Utilities.readFile(json.toPath());
         Assert.assertFalse(js.contains("fibonacci" + DeclareViewStatement.declSuffix));
-        //noinspection ResultOfMethodCallIgnored
-        tmp.delete();
     }
 
     @Test
@@ -882,13 +911,11 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT COL1 AS "xCol" FROM T;
                 CREATE VIEW V1 ("yCol") AS SELECT COL1 FROM T;""";
         File file = createInputScript(sql);
-        File json = File.createTempFile("out", ".json", new File("."));
-        json.deleteOnExit();
-        File tmp = File.createTempFile("out", ".rs", new File(RUST_DIRECTORY));
+        File json = this.createTempJsonFile();
+        File out = this.createTempOutputFile();
         CompilerMessages message = CompilerMain.execute(
-                "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
-        @SuppressWarnings("unused")
-        boolean success = tmp.delete();
+                "-js", json.getPath(), "-o", out.getPath(), file.getPath());
+        this.deleteTempFile(out);
         if (message.exitCode != 0)
             System.err.println(message);
         Assert.assertEquals(0, message.exitCode);
