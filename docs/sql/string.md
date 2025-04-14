@@ -199,7 +199,7 @@ addition to the normal way of `''`.
         If the delimiter is empty, return an array with the original string.  If the original
         string is empty, return an empty array.  If either argument is `NULL`, return `NULL`.
         If delimiter is absent assume it is the string <code>','</code>.</td>
-    <td><code>SPLIT('a|b|c|', '|')</code> => { 'a', 'b', 'c', '' }</td>
+    <td><code>SPLIT('a|b|c|', '|')</code> => <code>['a', 'b', 'c', '']</code></td>
   </tr>
   <tr>
     <td><a id="split_part"></a><code>SPLIT_PART(string, delimiter, n)</code></td>
