@@ -504,6 +504,10 @@ pub struct ProgramInfo {
     #[serde(default)] // TODO: when a breaking migration can happen, remove this default
     pub udf_stubs: String,
 
+    /// Dataflow graph of the program.
+    #[serde(default)] // TODO: when a breaking migration can happen, remove this default
+    pub dataflow: serde_json::Value,
+
     /// Input connectors derived from the schema.
     pub input_connectors: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
 
@@ -517,6 +521,7 @@ pub fn generate_program_info(
     program_schema: ProgramSchema,
     main_rust: String,
     udf_stubs: String,
+    dataflow: serde_json::Value,
 ) -> Result<ProgramInfo, ConnectorGenerationError> {
     // Input connectors
     let mut input_connectors = vec![];
@@ -621,6 +626,7 @@ pub fn generate_program_info(
         schema: program_schema,
         udf_stubs,
         main_rust,
+        dataflow,
         input_connectors: inputs,
         output_connectors: outputs,
     })
