@@ -541,6 +541,21 @@ public class SqlToRelCompiler implements IWritesLogs {
         public boolean isGroupByOrdinal() {
             return true;
         }
+
+        @Override
+        public SqlConformance.SelectAliasLookup isSelectAlias() {
+            return SelectAliasLookup.LEFT_TO_RIGHT;
+        }
+
+        @Override
+        public boolean isGroupByAlias() {
+            return true;
+        }
+
+        @Override
+        public boolean isHavingAlias() {
+            return true;
+        }
     }
 
     /** Add a new set of operators to the operator table.  Creates a new validator, converter */

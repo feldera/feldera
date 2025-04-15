@@ -9,7 +9,7 @@ set -e
 # Default is to use the next version
 NEXT='y'
 
-if true; then
+if false; then
     # This is the standard behavior
     CALCITE_REPO="https://github.com/apache/calcite.git"
     CALCITE_BRANCH="main"
@@ -18,8 +18,8 @@ else
     # Switch to this script when testing a branch in mihaibudiu's fork that
     # hasn't been merged yet
     CALCITE_REPO="https://github.com/mihaibudiu/calcite.git"
-    CALCITE_BRANCH="stable-variant"
-    CALCITE_NEXT_COMMIT="6317e1cbf1914390a6c1062c8563187b65468729"
+    CALCITE_BRANCH="issue6939"
+    CALCITE_NEXT_COMMIT="1f791726f428ef112b006e0b444bfaaa89627000"
 fi
 CALCITE_NEXT="1.40.0"
 CALCITE_CURRENT="1.39.0"
