@@ -704,7 +704,7 @@ async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
             }
         };
         receiver.await.unwrap()?;
-        Ok(HttpResponse::Ok())
+        Ok(HttpResponse::Ok().json("Checkpoint completed"))
     }
 
     #[cfg(not(feature = "feldera-enterprise"))]
