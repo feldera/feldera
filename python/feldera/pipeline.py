@@ -816,3 +816,18 @@ resume a paused pipeline."""
 
         self.refresh()
         return self._inner.program_error
+
+    def errors(self) -> List[Mapping[str, Any]]:
+        """
+        Returns a list of all errors in this pipeline.
+        """
+        errors = []
+        perr = self.program_error()
+        for e in perr.keys():
+            err = perr.get(e)
+            if err and err.get("exit_code", 0) != 0:
+                errors.append({e: err})
+        derr = self.deployment_error()
+        if derr:
+            errors.append(derr)
+        return errors

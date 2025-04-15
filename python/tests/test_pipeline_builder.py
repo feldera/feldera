@@ -1173,6 +1173,19 @@ CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
         pipeline.shutdown()
         pipeline.delete()
 
+    def test_errors0(self):
+        sql = "SELECT invalid"
+        name = "test_errors0"
+
+        try:
+            _ = PipelineBuilder(TEST_CLIENT, name, sql).create_or_replace()
+        except Exception:
+            pass
+
+        pipeline = Pipeline.get(name, TEST_CLIENT)
+
+        assert pipeline.errors()[0]["sql_compilation"]["exit_code"] != 0
+
 
 if __name__ == "__main__":
     unittest.main()
