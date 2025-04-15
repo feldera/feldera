@@ -180,17 +180,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public void getDataflow(Appendable appendable, DBSPCircuit circuit) throws IOException {
         IIndentStream result = new IndentStream(appendable).setIndentAmount(2);
         result.append("{").increase();
-        result.appendJsonLabelAndColon("plan");
+        result.appendJsonLabelAndColon("calcite_plan");
         Map<RelNode, Integer> remap = this.getPlans(result);
         result.append(",").newline();
-        result.appendJsonLabelAndColon("dataflow");
+        result.appendJsonLabelAndColon("mir");
         ToJsonVisitor toJson = new ToJsonVisitor(
                 this, result, this.options.ioOptions.verbosity, remap);
         toJson.apply(circuit);
-        result.append(",").newline();
-        String program = this.sources.getWholeProgram();
-        result.appendJsonLabelAndColon("sources");
-        result.append(Utilities.deterministicObjectMapper().writeValueAsString(program));
         result.newline().decrease().append("}");
     }
 

@@ -1,5 +1,5 @@
 {
-  "plan": {
+  "calcite_plan": {
     "error_view": {
       "rels": [
         {
@@ -259,7 +259,7 @@
       ]
     }
   },
-  "dataflow": {
+  "mir": {
     "s0": {
       "operation": "constant",
       "inputs": [],
@@ -404,6 +404,5 @@
       "positions": [],
       "persistent_id": "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9"
     }
-  },
-  "sources": "DECLARE RECURSIVE view fibonacci(n INT, value INT);\ncreate table input (x int);\n\ncreate view fibonacci AS\n(\n    -- Base case: first two Fibonacci numbers\n    select 0 as n, 0 as value\n    union all\n    select 1 as n, 1 as value\n)\nunion all\n(\n    -- Compute F(n)=F(n-1)+F(n-2)\n    select\n        prev.n + 1 as n,\n        (prev.value + curr.value) as value\n    from fibonacci as curr\n    join fibonacci as prev\n    on prev.n = curr.n - 1\n    where curr.n < 10 and prev.n < 10\n);\n"
+  }
 }
