@@ -1055,12 +1055,8 @@ struct FtState {
     /// The journal.
     journal: Journal,
 
-    /// If we are currently replaying a previous step, the input data checksums
-    /// for the step, so that we can check that our replay used the same input
-    /// data as the original run.
-    ///
-    /// If we are not replaying, this is `None`.
-    input_checksums: Option<StepInputChecksums>,
+    /// The journal record that we're replaying, if we're replaying.
+    replay_step: Option<StepMetadata>,
 
     /// Input endpoint ids and names at the time we wrote the last step,
     /// so that we can log changes for the replay log.
@@ -1076,26 +1072,15 @@ impl FtState {
     ) -> Result<Self, ControllerError> {
         info!("{STEPS_FILE}: opening to start from step {step}");
         let journal = Journal::open(backend, &StoragePath::from(STEPS_FILE));
-        let input_checksums = match journal.read(step)? {
-            Some(record) => {
-                // Start replaying the step.
-                Some(Self::replay_step(step, &record, &controller)?)
-            }
-            None => {
-                // The current step is not in the journal, meaning that
-                // there aren't any steps beyond the checkpoint.
-                //
-                // We can be somewhat confident that the journal file
-                // was not just lost or deleted because we insist on at
-                // least being able to open it to resume (a zero-length
-                // file is fine).
-                None
-            }
-        };
+        let replay_step = journal.read(step)?;
+        if let Some(record) = &replay_step {
+            // Start replaying the step.
+            Self::replay_step(step, &record, &controller)?;
+        }
         Ok(Self {
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
-            input_checksums,
+            replay_step,
             journal,
         })
     }
@@ -1130,7 +1115,7 @@ impl FtState {
         Ok(Self {
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
-            input_checksums: None,
+            replay_step: None,
             journal,
         })
     }
@@ -1150,7 +1135,7 @@ impl FtState {
         step: Step,
         metadata: &StepMetadata,
         controller: &Arc<ControllerInner>,
-    ) -> Result<StepInputChecksums, ControllerError> {
+    ) -> Result<(), ControllerError> {
         if metadata.step != step {
             return Err(ControllerError::UnexpectedStep {
                 actual: metadata.step,
@@ -1171,7 +1156,7 @@ impl FtState {
                 .reader
                 .replay(log.metadata.clone(), log.data.clone());
         }
-        Ok(metadata.into())
+        Ok(())
     }
 
     /// Writes `step_metadata` to the step writer.
@@ -1180,7 +1165,7 @@ impl FtState {
         input_logs: HashMap<String, InputLog>,
         step: Step,
     ) -> Result<(), ControllerError> {
-        match &self.input_checksums {
+        match &self.replay_step {
             None => {
                 let mut remove_inputs = HashSet::new();
                 let mut add_inputs = HashMap::new();
@@ -1211,9 +1196,10 @@ impl FtState {
                 };
                 self.journal.write(&step_metadata)?;
             }
-            Some(logged) => {
+            Some(record) => {
+                let logged = StepInputChecksums::from(&record.input_logs);
                 let replayed = StepInputChecksums::from(&input_logs);
-                if &replayed != logged {
+                if replayed != logged {
                     let error = format!("Logged and replayed step {step} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}");
                     error!("{error}");
                     return Err(ControllerError::ReplayFailure { error });
@@ -1234,17 +1220,17 @@ impl FtState {
     fn next_step(&mut self, step: Step) -> Result<(), ControllerError> {
         if self.is_replaying() {
             // Read a step.
-            match self.journal.read(step)? {
+            self.replay_step = self.journal.read(step)?;
+            match &self.replay_step {
                 None => {
                     // No more steps to replay.
                     info!("replay complete, starting pipeline");
-                    self.input_checksums = None;
+                    self.replay_step = None;
                     self.input_endpoints = Self::initial_input_endpoints(&self.controller);
                 }
                 Some(record) => {
                     // There's a step to replay.
-                    self.input_checksums =
-                        Some(Self::replay_step(step, &record, &self.controller)?);
+                    Self::replay_step(step, record, &self.controller)?;
                 }
             };
         }
@@ -1258,7 +1244,7 @@ impl FtState {
     }
 
     fn is_replaying(&self) -> bool {
-        self.input_checksums.is_some()
+        self.replay_step.is_some()
     }
 }
 
