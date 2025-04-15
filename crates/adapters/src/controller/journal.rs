@@ -111,7 +111,7 @@ pub struct StepMetadata {
 /// A journal record for a single endpoint for a single step.
 ///
 /// The endpoint's name is the key in [StepMetadata::input_logs].
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct InputLog {
     /// Data for replay.
     ///
