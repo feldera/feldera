@@ -30,9 +30,9 @@ public class StreamTests extends SqlIoTest {
         this.statementsFailingInCompilation("""
                 CREATE VIEW V AS SELECT * FROM TABLE(
                   TUMBLE(
-                    "DATA" => TABLE ORDERS,
-                    "TIMECOL" => DESCRIPTOR(ROWTIME),
-                    "SIZE" => INTERVAL -1 MINUTE))""",
+                    DATA => TABLE ORDERS,
+                    TIMECOL => DESCRIPTOR(ROWTIME),
+                    SIZE => INTERVAL -1 MINUTE))""",
                 "Tumbling window interval must be positive");
     }
 
@@ -41,9 +41,9 @@ public class StreamTests extends SqlIoTest {
         this.qs("""
                 SELECT * FROM TABLE(
                   TUMBLE(
-                    "DATA" => TABLE ORDERS,
-                    "TIMECOL" => DESCRIPTOR(ROWTIME),
-                    "SIZE" => INTERVAL '1' MINUTE));
+                    DATA => TABLE ORDERS,
+                    TIMECOL => DESCRIPTOR(ROWTIME),
+                    SIZE => INTERVAL '1' MINUTE));
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 | ROWTIME             | ID | PRODUCT | UNITS | window_start            | window_end              |
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
@@ -114,10 +114,10 @@ public class StreamTests extends SqlIoTest {
 
                 SELECT * FROM TABLE(
                   HOP(
-                    "DATA" => TABLE ORDERS,
-                    "TIMECOL" => DESCRIPTOR(ROWTIME),
-                    "SLIDE" => INTERVAL '5' MINUTE,
-                    "SIZE" => INTERVAL '10' MINUTE));
+                    DATA => TABLE ORDERS,
+                    TIMECOL => DESCRIPTOR(ROWTIME),
+                    SLIDE => INTERVAL '5' MINUTE,
+                    SIZE => INTERVAL '10' MINUTE));
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 | ROWTIME             | ID | PRODUCT | UNITS | window_start            | window_end              |
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
