@@ -102,7 +102,7 @@ connectors, then in the event of a crash and restart, Feldera may send
 duplicate output to those connectors, but it will not drop output.
 
 Feldera does not yet support fault tolerance or suspend and resume in
-pipelines that use recursive SQL or the SQL `NOW` function.
+pipelines that use the SQL `NOW` function.
 
 ## Enabling suspend and resume and fault tolerance
 
