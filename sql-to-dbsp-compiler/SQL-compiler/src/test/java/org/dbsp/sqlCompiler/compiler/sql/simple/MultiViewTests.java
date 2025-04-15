@@ -35,13 +35,9 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.junit.Test;
 
-/**
- * Tests where multiple views are defined in the same circuit.
- */
+/** Tests where multiple views are defined in the same circuit. */
 public class MultiViewTests extends BaseSQLTests {
-    /**
-     * Two output views.
-     */
+    /** Two output views. */
     @Test
     public void twoViewTest() {
         String query1 = "CREATE VIEW V1 AS SELECT T.COL3 FROM T";
@@ -64,9 +60,7 @@ public class MultiViewTests extends BaseSQLTests {
         ccs.addPair(inputChange, outputChange);
     }
 
-    /**
-     * A view is an input for another view.
-     */
+    /** A view is an input for another view. */
     @Test
     public void nestedViewTest() {
         String query1 = "CREATE VIEW V1 AS SELECT T.COL3 FROM T";
@@ -90,9 +84,7 @@ public class MultiViewTests extends BaseSQLTests {
         ccs.addChange(change);
     }
 
-    /**
-     * A view is used twice.
-     */
+    /** A view is used twice. */
     @Test
     public void multiViewTest() {
         String query1 = "CREATE VIEW V1 AS SELECT T.COL3 AS COL3 FROM T";

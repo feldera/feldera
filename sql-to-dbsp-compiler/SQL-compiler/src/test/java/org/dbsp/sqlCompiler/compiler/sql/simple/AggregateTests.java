@@ -96,9 +96,9 @@ public class AggregateTests extends SqlIoTest {
                 SELECT *
                 FROM TABLE(
                   TUMBLE(
-                    "DATA" => TABLE price,
-                    "TIMECOL" => DESCRIPTOR(ts),
-                    "SIZE" => INTERVAL '1' HOUR));""");
+                    DATA => TABLE price,
+                    TIMECOL => DESCRIPTOR(ts),
+                    SIZE => INTERVAL '1' HOUR));""");
     }
 
     @Test
@@ -119,9 +119,9 @@ public class AggregateTests extends SqlIoTest {
                      ARG_MAX(price, ts)
                 FROM TABLE(
                   TUMBLE(
-                    "DATA" => TABLE data,
-                    "TIMECOL" => DESCRIPTOR(ts),
-                    "SIZE" => INTERVAL '1' HOUR))
+                    DATA => TABLE data,
+                    TIMECOL => DESCRIPTOR(ts),
+                    SIZE => INTERVAL '1' HOUR))
                 GROUP BY
                   window_start, window_end;""");
         ccs.step("""

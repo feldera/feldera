@@ -55,10 +55,74 @@ case-insensitive.  This means that users *cannot* define new functions
 or types whose names match existing function names, if they only
 differ in case.
 
-Table functions have named parameters; the built-in table functions
-`TUMBLE` and `HOP` have been defined with uppercase parameter names,
-so these names have to be quoted when they are used (see [table
-functions](table.md)).
+## Lateral column aliasing
+
+Feldera SQL supports an extension to standard SQL where columns
+defined within a `SELECT` statement can be used immediately by
+expressions that appear to the right of their definition in the same
+`SELECT` statement.  These columns can also be referenced within the
+associated `GROUP BY` and `HAVING` statements.  This is a feature
+available in some SQL dialects such as Spark SQL, DuckDB, Snowflake,
+and Redshift.
+
+Example:
+
+```sql
+CREATE TABLE T(x INT);
+INSERT INTO T VALUES(3);
+
+SELECT 1 as X, X+X as Y;
+-- result is 1, 2
+
+SELECT x+1 as Y
+FROM T
+GROUP BY Y;
+-- result is 4
+
+SELECT x+1 as Y
+FROM T
+GROUP BY Y
+HAVING Y > 0;
+-- result is 4
+```
+
+These statements are illegal in standard SQL, but legal in Feldera
+SQL.
+
+Such statements are compiled by substituting the expression defining
+the column for the column name everywhere the column name is used.  So
+the above programs are equivalent to the following standard SQL
+programs:
+
+```sql
+SELECT 1 as X, 1+1 as Y;
+
+SELECT x+1 as Y
+FROM T
+GROUP BY x+1;
+
+SELECT x+1 as Y
+FROM T
+GROUP BY x+1
+HAVING x+1 > 0;
+```
+
+::: danger
+
+In order to preserve the semantics of standard SQL programs unchanged,
+a new column alias is used only if there is no column with the same
+name already available in the `FROM` statement.  In the following
+example:
+
+```sql
+SELECT 1+1 as x, x+x as Y FROM T;
+-- result is 2, 6, and not 2, 4!
+```
+
+the `SELECT` statement uses for `x` the value of the column from table
+`T`, and *not* the newly defined column `x`.
+
+:::
 
 ## Comments
 
