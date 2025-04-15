@@ -1,7 +1,15 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "feldera @ file:///${PROJECT_ROOT}/python",
+#     "requests<3",
+# ]
+# ///
+
 #!/bin/python3
 
 # Run locally with:
-#   python3 demo/all-packaged/run.py --api-url http://localhost:8080
+#   uv run demo/all-packaged/run.py --api-url http://localhost:8080
 
 import time
 import requests
