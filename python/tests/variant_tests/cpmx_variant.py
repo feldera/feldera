@@ -1,17 +1,19 @@
 from tests.aggregate_tests.aggtst_base import TstView, TstTable
 
 
-# Complex Types(Array, Map, Row)
+# Complex Types(Array, Map, Row, UDT)
 class varnttst_cmpx_var_tbl(TstTable):
     """Define the table used by the complex type tests"""
 
     def __init__(self):
-        self.sql = """CREATE TABLE varnt_cmpx_var_tbl(
+        self.sql = """CREATE TYPE varnt_type AS(v1 VARIANT, v2 VARIANT);
+                      CREATE TABLE varnt_cmpx_var_tbl(
                       id INT,
                       arr VARIANT ARRAY,
                       mapp MAP<VARCHAR, VARIANT>,
                       mapp1 MAP<VARIANT, VARIANT>,
-                      roww ROW(v1 VARIANT, v2 VARIANT)
+                      roww ROW(v1 VARIANT, v2 VARIANT),
+                      udt varnt_type
                       )"""
         self.data = [
             {
@@ -20,14 +22,23 @@ class varnttst_cmpx_var_tbl(TstTable):
                 "mapp": {"a": "ciao!", "b": "hello 45 234"},
                 "mapp1": {"c": "olaa,", "d": "friends!!"},
                 "roww": {"v1": "20", "v2": "bye bye!"},
+                "udt": {"v1": "ferris", "v2": "flies away?"},
             },
-            {"id": 1, "arr": None, "mapp": None, "mapp1": None, "roww": None},
+            {
+                "id": 1,
+                "arr": None,
+                "mapp": None,
+                "mapp1": None,
+                "roww": None,
+                "udt": None,
+            },
             {
                 "id": 2,
                 "arr": [None, None],
                 "mapp": {"a": None, "b": None},
                 "mapp1": {"c": None, "d": None},
                 "roww": {"v1": None, "v2": None},
+                "udt": {"v1": None, "v2": None},
             },
         ]
 
@@ -42,14 +53,23 @@ class varnttst_read_cmpx_var(TstView):
                 "mapp": {"a": '"ciao!"', "b": '"hello 45 234"'},
                 "mapp1": {'"c"': '"olaa,"', '"d"': '"friends!!"'},
                 "roww": {"v1": '"20"', "v2": '"bye bye!"'},
+                "udt": {"v1": '"ferris"', "v2": '"flies away?"'},
             },
-            {"id": 1, "arr": None, "mapp": None, "mapp1": None, "roww": None},
+            {
+                "id": 1,
+                "arr": None,
+                "mapp": None,
+                "mapp1": None,
+                "roww": None,
+                "udt": None,
+            },
             {
                 "id": 2,
                 "arr": [None, None],
                 "mapp": {"a": None, "b": None},
                 "mapp1": {'"c"': None, '"d"': None},
                 "roww": {"v1": "null", "v2": "null"},
+                "udt": {"v1": None, "v2": None},
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW read_cmpx_var AS SELECT
@@ -161,4 +181,20 @@ class varnttst_roww_field_access_varnt(TstView):
                       id,
                       varnt_cmpx_var_tbl.roww.v1,
                       varnt_cmpx_var_tbl.roww.v2
+                      FROM varnt_cmpx_var_tbl"""
+
+
+# UDT
+class varnttst_udt_field_access_varnt(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"id": 0, "v1": '"ferris"', "v2": '"flies away?"'},
+            {"id": 1, "v1": None, "v2": None},
+            {"id": 2, "v1": None, "v2": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW udt_field_access_varnt AS SELECT
+                      id,
+                      varnt_cmpx_var_tbl.udt.v1,
+                      varnt_cmpx_var_tbl.udt.v2
                       FROM varnt_cmpx_var_tbl"""
