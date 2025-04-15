@@ -83,6 +83,36 @@ Starting a Pipeline
 
     pipeline.start()
 
+Analyzing Existing Feldera Pipeline for Errors
+==============================================
+
+First let's create a Feldera pipeline that errors from the web console, with the
+name ``check_error`` and invalid SQL as follows:
+
+.. code-block:: sql
+
+   SELECT invalid
+
+This will fail to compile.
+
+We can use this Python SDK to connect to this Feldera pipeline to check if it has
+any errors as follows:
+
+.. code-block:: python
+
+    pipeline = Pipeline.get("check_error", client)
+    err = pipeline.errors()
+
+    if len(err) != 0:
+        print("got err: ", err)
+
+Here, ``err`` is a list of all errors in this pipeline. The above code will emit
+the following output:
+
+.. code-block:: text
+
+   got err:  [{'sql_compilation': {'exit_code': 1, 'messages': [{'start_line_number': 1, 'start_column': 1, 'end_line_number': 1, 'end_column': 14, 'warning': False, 'error_type': 'Not supported', 'message': 'Raw \'SELECT\' statements are not supported; did you forget to CREATE VIEW?: SELECT "invalid"', 'snippet': '    1|SELECT invalid\n      ^^^^^^^^^^^^^^\n'}]}}]
+
 
 Using Pandas DataFrames
 =======================
