@@ -964,6 +964,27 @@ impl CircuitThread {
 
             // Are we done?
             if waiting.is_empty() {
+                let step_metadata = if let Some(ft) = &self.ft {
+                    if let Some(replay_step) = &ft.replay_step {
+                        // Reuse input logs from the original step.  (The ones
+                        // just produced are empty, because replay doesn't
+                        // produce logs, since they'd be identical to the
+                        // original ones.)
+                        //
+                        // Usually, these logs are not used for anything, since
+                        // we're replaying, but in the corner case where this is
+                        // the final step to replay and we immediately
+                        // checkpoint, the checkpoint must have the log records
+                        // so that, on resume, it can seek the input connectors
+                        // to the proper location.
+                        replay_step.input_logs.clone()
+                    } else {
+                        step_metadata
+                    }
+                } else {
+                    step_metadata
+                };
+
                 return Ok(FlushedInput {
                     total_consumed,
                     step_metadata,
