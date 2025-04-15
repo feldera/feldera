@@ -1,5 +1,5 @@
 {
-  "plan": {
+  "calcite_plan": {
     "error_view": {
       "rels": [
         {
@@ -69,7 +69,7 @@
       ]
     }
   },
-  "dataflow": {
+  "mir": {
     "s0": {
       "operation": "constant",
       "inputs": [],
@@ -214,6 +214,5 @@
       "positions": [],
       "persistent_id": "6f993c13fc9c17553263ce8f613ccd7335ef057c1d05214ea4fdc4f6a1218793"
     }
-  },
-  "sources": "CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);\nCREATE VIEW V AS SELECT SUM(COL1) FROM T;\n"
+  }
 }
