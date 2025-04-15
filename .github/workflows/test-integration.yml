@@ -31,6 +31,13 @@ jobs:
       - name: Make binaries executable
         run: chmod +x ./build/*
 
+      - name: Validate and run packaged demos
+        run: |
+          (cd demo/packaged && uv run validate-preamble.py sql/*.sql)
+          uv run demo/all-packaged/run.py --api-url http://pipeline-manager:8080
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+
       - name: Run manager tests
         run: ./build/integration_test-*
         env:
