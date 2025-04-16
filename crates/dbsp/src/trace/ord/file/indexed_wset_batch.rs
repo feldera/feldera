@@ -471,13 +471,8 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    pub fn new_from(wset: &'s FileIndexedWSet<K, V, R>, lower_bound: usize) -> Self {
-        let key_cursor = wset
-            .file
-            .rows()
-            .subset(lower_bound as u64..)
-            .first()
-            .unwrap();
+    pub fn new(wset: &'s FileIndexedWSet<K, V, R>) -> Self {
+        let key_cursor = wset.file.rows().first().unwrap();
         let mut key = wset.factories.key_factory().default_box();
         unsafe { key_cursor.key(&mut key) };
 
@@ -493,10 +488,6 @@ where
             val,
             diff,
         }
-    }
-
-    pub fn new(wset: &'s FileIndexedWSet<K, V, R>) -> Self {
-        Self::new_from(wset, 0)
     }
 
     fn move_key<F>(&mut self, op: F)
