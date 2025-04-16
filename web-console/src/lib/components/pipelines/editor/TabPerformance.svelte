@@ -8,6 +8,7 @@
   import Dayjs from 'dayjs'
   import { getDeploymentStatusLabel } from '$lib/functions/pipelines/status'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -23,13 +24,14 @@
 {#if global}
   <div class="flex h-full flex-col gap-4 overflow-y-auto overflow-x-clip scrollbar">
     <div class="flex w-full flex-col gap-4">
-      <table class="mt-2 w-full max-w-[1000px] table-fixed sm:mt-0">
+      <table class="mt-2 w-full max-w-[1100px] table-auto border-separate border-spacing-1 sm:mt-0">
         <thead class="align-top text-sm sm:text-base">
           <tr>
-            <th class="w-3/12 text-start font-semibold sm:w-1/6"> Records Ingested </th>
-            <th class="w-3/12 text-start font-semibold sm:w-1/6"> Records Processed </th>
-            <th class="w-3/12 text-start font-semibold sm:w-1/6"> Records Buffered </th>
-            <th class="w-7/12 text-start font-semibold sm:w-2/6"> Last status update </th>
+            <th class="text-start font-semibold"> Records Ingested </th>
+            <th class="text-start font-semibold"> Records Processed </th>
+            <th class="text-start font-semibold"> Records Buffered </th>
+            <th class="text-start font-semibold"> Last status update </th>
+            <th class="text-start font-semibold"> Pipeline ID </th>
           </tr>
         </thead>
         <tbody class="align-top">
@@ -55,6 +57,11 @@
                 )
               )}
               since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}
+            </td>
+            <td class="pt-2">
+              <span class=" break-all">{pipeline.current.id}</span>
+              <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"
+              ></ClipboardCopyButton>
             </td>
           </tr>
         </tbody>
@@ -146,5 +153,7 @@
     </div>
   </div>
 {:else}
-  <span class="flex text-surface-600-400">Pipeline is not running</span>
+  <div>Pipeline is not running</div><br />
+  Pipeline ID: {pipeline.current.id}
+  <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"></ClipboardCopyButton>
 {/if}
