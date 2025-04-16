@@ -1096,7 +1096,7 @@ impl FtState {
         let replay_step = journal.read(step)?;
         if let Some(record) = &replay_step {
             // Start replaying the step.
-            Self::replay_step(step, &record, &controller)?;
+            Self::replay_step(step, record, &controller)?;
         }
         Ok(Self {
             input_endpoints: Self::initial_input_endpoints(&controller),
