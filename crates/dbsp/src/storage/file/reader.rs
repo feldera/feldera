@@ -2146,9 +2146,9 @@ where
     /// }
     /// ```
     ///
-    /// If this returns an `Error`, then the resulting `Path` can violate the
-    /// invariant that `self.data` is not a direct child of the last element in
-    /// `self.indexes`. The caller should not use this `Path` again.
+    /// If this returns `Ok(false)` or `Err(_)`, then the resulting `Path` can
+    /// violate the invariant that `self.data` is not a direct child of the last
+    /// element in `self.indexes`. The caller should not use this `Path` again.
     ///
     /// The same optimization would apply to backward seeks, but they haven't
     /// been important in practice yet.
@@ -2533,7 +2533,11 @@ where
             Position::After { .. } => (),
             Position::Row(path) => {
                 match path.advance_to_first_ge(row_group, compare) {
-                    Ok(false) => self.move_after(),
+                    Ok(false) => {
+                        // Discard `path`, which might now violate its internal
+                        // invariants (so don't even try to use it as a hint).
+                        *self = Position::After { hint: None };
+                    }
                     Ok(true) => (),
                     Err(error) => {
                         // Discard `path`, which might now violate its internal
