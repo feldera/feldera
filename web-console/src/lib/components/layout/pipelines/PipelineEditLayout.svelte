@@ -229,7 +229,7 @@ example = "1.0"`
     {#snippet afterStart()}
       <div class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 sm:flex-row sm:items-center">
         <PipelineBreadcrumbs
-          class="-ml-3 py-1 pl-3"
+          class="-ml-3 pb-1 pl-3"
           textClass="text-base"
           breadcrumbs={[
             ...(isTablet.current
@@ -269,7 +269,7 @@ example = "1.0"`
             {/if}
           {/snippet}
         </PipelineBreadcrumbs>
-        <PipelineStatus class="h-6 sm:mt-0.5" status={pipeline.current.status}></PipelineStatus>
+        <PipelineStatus class="h-6" status={pipeline.current.status}></PipelineStatus>
       </div>
     {/snippet}
     {#snippet beforeEnd()}
