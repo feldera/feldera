@@ -95,6 +95,13 @@ fda connector p1 example c start
 fda connector p1 example unknown start || true
 fda shutdown p1
 
+fda set-config p1 fault_tolerance true
+fda set-config p1 fault_tolerance false
+fda set-config p1 fault_tolerance none
+fda set-config p1 fault_tolerance at_least_once
+fda set-config p1 fault_tolerance exactly_once
+fail_on_success fda set-config p1 fault_tolerance exactly_one
+
 fda delete p1
 fda delete p2
 fda delete pudf
