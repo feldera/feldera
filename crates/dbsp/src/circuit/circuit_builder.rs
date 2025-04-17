@@ -2108,39 +2108,43 @@ pub trait Circuit: WithClock + Clone + 'static {
     ///     Error as DbspError,
     /// };
     ///
-    /// let (circuit_handle, _output_handle) = RootCircuit::build(|circuit| {
+    /// let (circuit_handle, output_handle) = RootCircuit::build(|root_circuit| {
     ///     // Generate sequence 0, 1, 2, ...
     ///     let mut n: usize = 0;
-    ///     let source = circuit.add_source(Generator::new(move || {
+    ///     let source = root_circuit.add_source(Generator::new(move || {
     ///         let result = n;
-    ///         n = n + 1;
+    ///         n += 1;
     ///         result
     ///     }));
     ///     // Compute factorial of each number in the sequence.
-    ///     let fact = circuit
-    ///         .iterate(|child| {
-    ///             let counter = Rc::new(RefCell::new(0));
+    ///     let fact = root_circuit
+    ///         .iterate(|child_circuit| {
+    ///             let counter = Rc::new(RefCell::new(1));
     ///             let counter_clone = counter.clone();
-    ///             let countdown = source.delta0(child).apply(move |parent_val| {
-    ///                 if *parent_val > 0 {
-    ///                     *counter_clone.borrow_mut() += *parent_val;
-    ///                 }
-    ///                 let res = *counter_clone.borrow();
-    ///                 *counter_clone.borrow_mut() -= 1;
+    ///             let countdown = source.delta0(child_circuit).apply(move |parent_val| {
+    ///                 let mut counter_borrow = counter_clone.borrow_mut();
+    ///                 *counter_borrow += *parent_val;
+    ///                 let res = *counter_borrow;
+    ///                 *counter_borrow -= 1;
     ///                 res
     ///             });
-    ///             let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
+    ///             let (z1_output, z1_feedback) = child_circuit.add_feedback_with_export(Z1::new(1));
     ///             let mul = countdown.apply2(&z1_output.local, |n1: &usize, n2: &usize| n1 * n2);
     ///             z1_feedback.connect(&mul);
-    ///             Ok((move || Ok(*counter.borrow() <= 1), z1_output.export))
-    ///         })
-    ///         .unwrap();
-    ///     fact.inspect(|n| eprintln!("Output: {}", n));
-    ///     Ok(())
+    ///             // Stop iterating when the countdown reaches 0.
+    ///             Ok((move || Ok(*counter.borrow() == 0), z1_output.export))
+    ///         })?;
+    ///     Ok(fact.output())
     /// })?;
     ///
-    /// for i in 0..3 {
+    /// let factorial = |n: usize| (1..=n).product::<usize>();
+    /// const ITERATIONS: usize = 10;
+    /// for i in 0..ITERATIONS {
     ///     circuit_handle.step()?;
+    ///     let result = output_handle.take_from_all();
+    ///     let result = result.first().unwrap();
+    ///     println!("Iteration {:3}: {:3}! = {}", i + 1, i, result);
+    ///     assert_eq!(*result, factorial(i));
     /// }
     ///
     /// Ok::<(), DbspError>(())
