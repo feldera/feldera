@@ -203,7 +203,12 @@ impl Controller {
                         }
                         Ok(circuit_thread) => {
                             let _ = init_status_sender.send(Ok(circuit_thread.controller.clone()));
-                            circuit_thread.run()
+                            circuit_thread.run().inspect_err(|error| {
+                                // Log the error before returning it from the
+                                // thread: otherwise, only [Controller::stop]
+                                // will join the thread and report the error.
+                                error!("circuit thread died with error: {error}")
+                            })
                         }
                     },
                 );
