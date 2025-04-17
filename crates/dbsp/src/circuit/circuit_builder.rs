@@ -2105,9 +2105,10 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// use dbsp::{
     ///     operator::{Generator, Z1},
     ///     Circuit, RootCircuit,
+    ///     Error as DbspError,
     /// };
     ///
-    /// let circuit = RootCircuit::build(|circuit| {
+    /// let (circuit_handle, _output_handle) = RootCircuit::build(|circuit| {
     ///     // Generate sequence 0, 1, 2, ...
     ///     let mut n: usize = 0;
     ///     let source = circuit.add_source(Generator::new(move || {
@@ -2136,7 +2137,13 @@ pub trait Circuit: WithClock + Clone + 'static {
     ///         .unwrap();
     ///     fact.inspect(|n| eprintln!("Output: {}", n));
     ///     Ok(())
-    /// });
+    /// })?;
+    ///
+    /// for i in 0..3 {
+    ///     circuit_handle.step()?;
+    /// }
+    ///
+    /// Ok::<(), DbspError>(())
     /// ```
     fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
