@@ -26,7 +26,7 @@ pub use crate::{
 use crate::{
     circuit::checkpointer::Checkpoint,
     dynamic::{DataTrait, DynData, DynUnit, Erase, LeanVec, WeightTrait},
-    trace::BatchReaderFactories,
+    trace::{BatchReaderFactories, Deserializer, Serializer},
     Circuit, Error,
 };
 use dyn_clone::clone_box;
@@ -524,35 +524,73 @@ pub struct TypedBox<T, D: ?Sized> {
     phantom: PhantomData<fn(&T)>,
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+pub struct ArchivedTypedBox<T: Archive>(<T as Archive>::Archived)
+where
+    <T as Archive>::Archived: PartialEq + Eq + PartialOrd + Ord;
+
 impl<T, D> Archive for TypedBox<T, D>
 where
-    D: ?Sized,
+    T: DBData + Erase<D>,
+    D: DataTrait + ?Sized,
 {
-    type Archived = ();
-    type Resolver = ();
-    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
-        todo!()
+    type Archived = ArchivedTypedBox<T>;
+    type Resolver = <T as Archive>::Resolver;
+
+    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+        let val: &T = self.deref();
+        val.resolve(pos, resolver, &mut (*out).0 as *mut T::Archived);
     }
 }
 
-impl<T, D, S> Serialize<S> for TypedBox<T, D>
+impl<T, D> Serialize<Serializer> for TypedBox<T, D>
 where
-    D: ?Sized,
-    S: Fallible + ?Sized,
+    T: DBData + Erase<D>,
+    D: DataTrait + ?Sized,
 {
-    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        todo!()
+    fn serialize(
+        &self,
+        serializer: &mut Serializer,
+    ) -> Result<Self::Resolver, <Serializer as Fallible>::Error> {
+        let val: &T = self.deref();
+        val.serialize(serializer)
     }
 }
 
-impl<T, D, De> Deserialize<TypedBox<T, D>, De> for Archived<TypedBox<T, D>>
+impl<T, D> Deserialize<TypedBox<T, D>, Deserializer> for Archived<TypedBox<T, D>>
 where
-    De: Fallible + ?Sized,
-    D: ?Sized,
+    D: DataTrait + ?Sized,
+    T: DBData + Erase<D>,
 {
-    fn deserialize(&self, _deserializer: &mut De) -> Result<TypedBox<T, D>, De::Error> {
-        todo!()
+    fn deserialize(
+        &self,
+        deserializer: &mut Deserializer,
+    ) -> Result<TypedBox<T, D>, <Deserializer as Fallible>::Error> {
+        let val: T = self.0.deserialize(deserializer)?;
+        Ok(TypedBox::new(val))
     }
+}
+
+#[cfg(test)]
+#[test]
+fn test_typedbox_rkyv() {
+    use rkyv::{archived_value, de::deserializers::SharedDeserializeMap, AlignedVec};
+
+    let tbox = TypedBox::<u64, DynData>::new(12345u64);
+
+    let mut s = Serializer::default();
+    rkyv::ser::Serializer::serialize_value(&mut s, &tbox).unwrap();
+
+    let bytes = s.into_serializer().into_inner().into_vec();
+
+    let archived: &<TypedBox<u64, DynData> as Archive>::Archived =
+        unsafe { archived_value::<TypedBox<u64, DynData>>(bytes.as_slice(), 0) };
+
+    let tbox2 = archived
+        .deserialize(&mut SharedDeserializeMap::new())
+        .unwrap();
+
+    assert_eq!(tbox, tbox2);
 }
 
 impl<T, D> Deref for TypedBox<T, D>
