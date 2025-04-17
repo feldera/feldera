@@ -1041,7 +1041,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     "Failed to parse value '{}' for updating key {:?}",
                     value, key
                 );
-                return;
+                std::process::exit(1);
             }
 
             let response = client
