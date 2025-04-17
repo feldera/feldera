@@ -13,7 +13,7 @@ with `git commit -s`.
 Our team develops and tests using Linux and MacOS. Windows Subsystem for Linux works fine too.
 
 The Feldera container images and CI workflows use Linux. You can see our setup in
-our [Dockerfile](deploy/Dockerfile) and [Earthfile](Earthfile).
+our [Dockerfile](deploy/Dockerfile).
 
 Our dependencies are:
 
@@ -30,7 +30,6 @@ Our dependencies are:
 - Cloud
     - Python 3
     - Redpanda or Kafka
-    - Earthly (https://earthly.dev/get-earthly)
 - Web Console
     - Bun (https://bun.sh/docs/installation)
 
