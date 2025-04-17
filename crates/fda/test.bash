@@ -28,26 +28,28 @@ compare_output() {
   fi
 }
 
+fda() {
+    ../../target/debug/fda "$@"
+}
 #export FELDERA_HOST=http://localhost:8080
-BINARY_PATH=../../target/debug/fda
 
 cargo build
 
-$BINARY_PATH pipelines
+fda pipelines
 
 # Cleanup, these commands might fail if the resources do not exist yet
-$BINARY_PATH shutdown p1 || true
-$BINARY_PATH delete p1 || true
-$BINARY_PATH delete p2 || true
-$BINARY_PATH delete pudf || true
-$BINARY_PATH delete unknown || true
-$BINARY_PATH delete punknown || true
-$BINARY_PATH apikey delete a || true
+fda shutdown p1 || true
+fda delete p1 || true
+fda delete p2 || true
+fda delete pudf || true
+fda delete unknown || true
+fda delete punknown || true
+fda apikey delete a || true
 
 # Tests
-$BINARY_PATH apikey create a
-$BINARY_PATH apikey list
-$BINARY_PATH apikey delete a
+fda apikey create a
+fda apikey list
+fda apikey delete a
 
 echo "base64 = '0.22.1'" > udf.toml
 echo "use feldera_sqllib::F32;" > udf.rs
@@ -56,51 +58,51 @@ CREATE TABLE example ( id INT NOT NULL PRIMARY KEY ) WITH ('connectors' = '[{ "n
 CREATE VIEW example_count WITH ('connectors' = '[{ "name": "c", "transport": { "name": "file_output", "config": { "path": "bla" } }, "format": { "name": "csv" } }]') AS ( SELECT COUNT(*) AS num_rows FROM example );
 EOF
 
-$BINARY_PATH create p1 program.sql
-$BINARY_PATH program get p1 | $BINARY_PATH create p2 -s
-compare_output "${BINARY_PATH} program get p1" "${BINARY_PATH} program get p2"
-$BINARY_PATH program set-config p1 dev
-$BINARY_PATH program config p1
-$BINARY_PATH program status p1
+fda create p1 program.sql
+fda program get p1 | fda create p2 -s
+compare_output "fda program get p1" "fda program get p2"
+fda program set-config p1 dev
+fda program config p1
+fda program status p1
 
-$BINARY_PATH create pudf program.sql --udf-toml udf.toml --udf-rs udf.rs
-compare_output "${BINARY_PATH} program get pudf --udf-toml" "cat udf.toml"
-compare_output "${BINARY_PATH} program get pudf --udf-rs" "cat udf.rs"
+fda create pudf program.sql --udf-toml udf.toml --udf-rs udf.rs
+compare_output "fda program get pudf --udf-toml" "cat udf.toml"
+compare_output "fda program get pudf --udf-rs" "cat udf.rs"
 
-$BINARY_PATH set-config p1 storage true
-$BINARY_PATH program set p1 --udf-toml udf.toml --udf-rs udf.rs
-$BINARY_PATH program set p2 --udf-rs udf.rs
-compare_output "${BINARY_PATH} program get p1" "${BINARY_PATH} program get p2"
-compare_output "${BINARY_PATH} program get p1 --udf-rs" "${BINARY_PATH} program get p2 --udf-rs"
+fda set-config p1 storage true
+fda program set p1 --udf-toml udf.toml --udf-rs udf.rs
+fda program set p2 --udf-rs udf.rs
+compare_output "fda program get p1" "fda program get p2"
+compare_output "fda program get p1 --udf-rs" "fda program get p2 --udf-rs"
 
-$BINARY_PATH config p1
+fda config p1
 
-$BINARY_PATH start p1
-$BINARY_PATH --format json stats p1 | jq '.metrics'
-$BINARY_PATH log p1
-$BINARY_PATH logs p1
-$BINARY_PATH connector p1 example c stats
-$BINARY_PATH connector p1 example_count c stats
-$BINARY_PATH connector p1 example unknown stats || true
-$BINARY_PATH connector p1 unknown c stats || true
-$BINARY_PATH connector unknown example c stats || true
-$BINARY_PATH connector p1 example c pause
-$BINARY_PATH connector p1 example_count c pause || true
-$BINARY_PATH connector p1 example c start
-$BINARY_PATH connector p1 example unknown start || true
-$BINARY_PATH shutdown p1
+fda start p1
+fda --format json stats p1 | jq '.metrics'
+fda log p1
+fda logs p1
+fda connector p1 example c stats
+fda connector p1 example_count c stats
+fda connector p1 example unknown stats || true
+fda connector p1 unknown c stats || true
+fda connector unknown example c stats || true
+fda connector p1 example c pause
+fda connector p1 example_count c pause || true
+fda connector p1 example c start
+fda connector p1 example unknown start || true
+fda shutdown p1
 
-$BINARY_PATH delete p1
-$BINARY_PATH delete p2
-$BINARY_PATH delete pudf
-$BINARY_PATH shell unknown || true
+fda delete p1
+fda delete p2
+fda delete pudf
+fda shell unknown || true
 
 # Verify argument conflicts, these invocations should fail
-fail_on_success $BINARY_PATH create set punknown --stdin
-fail_on_success $BINARY_PATH program set punknown file-path --stdin
-fail_on_success $BINARY_PATH program set p1 --udf-toml udf.toml --stdin
-fail_on_success $BINARY_PATH program set p1 --udf-rs udf.toml --stdin
-fail_on_success $BINARY_PATH program set p1 --udf-rs udf.toml --udf-toml udf.toml --stdin
+fail_on_success fda create set punknown --stdin
+fail_on_success fda program set punknown file-path --stdin
+fail_on_success fda program set p1 --udf-toml udf.toml --stdin
+fail_on_success fda program set p1 --udf-rs udf.toml --stdin
+fail_on_success fda program set p1 --udf-rs udf.toml --udf-toml udf.toml --stdin
 
 rm program.sql
 rm udf.toml
