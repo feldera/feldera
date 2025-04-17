@@ -1,6 +1,9 @@
 use crate::controller::ControllerMetric;
 use crate::dyn_event;
 use crate::format::{get_input_format, get_output_format};
+use crate::secret_resolver::{
+    resolve_secret_references_in_connector_config, DEFAULT_SECRETS_DIRECTORY_PATH,
+};
 use crate::{
     adhoc::stream_adhoc_result,
     controller::ConnectorConfig,
@@ -34,7 +37,7 @@ use futures_util::FutureExt;
 use minitrace::collector::Config;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::{
     borrow::Cow,
@@ -301,8 +304,27 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
     // Still running without logger here.
     eprintln!("Pipeline configuration:\n{yaml_config}");
 
-    serde_yaml::from_str(yaml_config.as_str())
-        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
+    // Deserialize the pipeline configuration
+    let mut pipeline_config: PipelineConfig = serde_yaml::from_str(yaml_config.as_str())
+        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
+
+    // Replace the secret references with their actual secret values
+    for (_k, v) in pipeline_config.inputs.iter_mut() {
+        v.connector_config = resolve_secret_references_in_connector_config(
+            Path::new(DEFAULT_SECRETS_DIRECTORY_PATH),
+            &v.connector_config,
+        )
+        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
+    }
+    for (_k, v) in pipeline_config.outputs.iter_mut() {
+        v.connector_config = resolve_secret_references_in_connector_config(
+            Path::new(DEFAULT_SECRETS_DIRECTORY_PATH),
+            &v.connector_config,
+        )
+        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
+    }
+
+    Ok(pipeline_config)
 }
 
 // Initialization thread function.
