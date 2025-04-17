@@ -295,7 +295,8 @@ impl StorageBackend for PosixBackend {
     fn create_named(&self, name: &StoragePath) -> Result<Box<dyn FileWriter>, StorageError> {
         fn try_create_named(this: &PosixBackend, path: &Path) -> Result<File, IoError> {
             OpenOptions::new()
-                .create_new(true)
+                .create(true)
+                .truncate(true)
                 .write(true)
                 .read(true)
                 .cache_flags(&this.cache)
