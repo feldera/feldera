@@ -1,6 +1,6 @@
 [package]
 name = "pipeline-manager"
-version = "0.44.0"
+version = "0.45.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Data pipeline manager for the Feldera continuous analytics platform."

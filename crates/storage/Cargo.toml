@@ -1,6 +1,6 @@
 [package]
 name = "feldera-storage"
-version = "0.44.0"
+version = "0.45.0"
 edition = "2021"
 description = "Storage crate for feldera"
 homepage = "https://github.com/feldera/feldera"
