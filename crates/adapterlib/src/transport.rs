@@ -62,6 +62,38 @@ pub trait IntegratedInputEndpoint: InputEndpoint {
 
 /// Commands for an [InputReader] to execute.
 ///
+/// # Transitions
+///
+/// The following diagram shows the possible order in which the controller can
+/// issue commands to [InputReader]s:
+///
+/// ```
+///   ┌─⯇─ (start) ─⯈──┐
+///   │      │         │
+///   │      ▼         │
+///   ├─⯇─ Seek ─⯈─────│
+///   │      │         │
+///   │      │  ┌───┐  │
+///   │      ▼  ▼   │  │
+///   ├─⯇─ Replay ──┘  │
+///   │      │         │
+///   │      ▼         │
+///   ├─⯇─ Extend⯇─────┤
+///   │      │         │
+///   │      │ ┌───┐   │
+///   │      ▼ ▼   │   │
+///   ├─⯇─ Queue ──┘   │
+///   │      │         │
+///   │      ▼         │
+///   ├─⯇─ Pause ─⯈────┘
+///   │      │
+///   │      ▼
+///   └───⯈Disconnect
+///          │
+///          ▼
+///        (end)
+/// ```
+///
 /// # Stalls
 ///
 /// When the controller issues a [InputReaderCommand::Replay] or
