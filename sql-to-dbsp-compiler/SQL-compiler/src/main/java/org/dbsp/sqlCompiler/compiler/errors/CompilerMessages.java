@@ -191,7 +191,7 @@ public class CompilerMessages {
         return (int)this.messages.stream().filter(m -> m.warning).count();
     }
 
-    public Message getError(int ct) {
+    public Message getMessage(int ct) {
         return this.messages.get(ct);
     }
 

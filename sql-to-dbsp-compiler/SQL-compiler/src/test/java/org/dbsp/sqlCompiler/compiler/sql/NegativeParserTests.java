@@ -160,7 +160,7 @@ public class NegativeParserTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertEquals(1, messages.exitCode);
         Assert.assertEquals(1, messages.errorCount());
-        CompilerMessages.Message msg = messages.getError(0);
+        CompilerMessages.Message msg = messages.getMessage(0);
         Assert.assertFalse(msg.warning);
         Assert.assertEquals("Non-query expression encountered in illegal context", msg.message);
 
@@ -168,7 +168,7 @@ public class NegativeParserTests extends BaseSQLTests {
         messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertEquals(1, messages.exitCode);
         Assert.assertEquals(1, messages.errorCount());
-        msg = messages.getError(0);
+        msg = messages.getMessage(0);
         Assert.assertFalse(msg.warning);
         Assert.assertEquals("Object 't' not found", msg.message);
 
@@ -176,7 +176,7 @@ public class NegativeParserTests extends BaseSQLTests {
         messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         Assert.assertEquals(1, messages.exitCode);
         Assert.assertEquals(1, messages.errorCount());
-        msg = messages.getError(0);
+        msg = messages.getMessage(0);
         Assert.assertFalse(msg.warning);
         TestUtil.assertMessagesContain(messages,
                 "cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n" +

@@ -326,6 +326,17 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test
+    public void testUnionWarning() throws SQLException {
+        final String script = "../../demo/packaged/sql/02-sec-ops.sql";
+        CompilerMessages messages = CompilerMain.execute(
+                "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.TEST_FILE_PATH, script);
+        for (int i = 0; i < messages.warningCount(); i++) {
+            CompilerMessages.Message msg = messages.getMessage(i);
+            Assert.assertNotEquals("Fields reordered", msg.errorType);
+        }
+    }
+
+    @Test
     public void testPackagedDemos() throws SQLException, IOException, InterruptedException {
         final String projectsDirectory = "../../demo/packaged/sql";
         final File dir = new File(projectsDirectory);
