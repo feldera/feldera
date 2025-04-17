@@ -70,7 +70,7 @@ impl Journal {
         })?;
         self.backend
             .write(&path, data)
-            .map_err(|error| StepError::storage_error(&self.path, error))?;
+            .map_err(|error| StepError::storage_error(&path, error))?;
         Ok(())
     }
 
