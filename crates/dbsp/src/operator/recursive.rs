@@ -152,50 +152,52 @@ where
     ///     OrdZSet,
     ///     Circuit, RootCircuit, Stream, zset, zset_set,
     ///     utils::Tup2,
+    ///     Error as DbspError,
     /// };
-    /// use std::vec;
+    ///
+    /// const STEPS: usize = 3;
     ///
     /// // Propagate labels along graph edges.
-    /// let root = RootCircuit::build(move |circuit| {
+    /// let (circuit_handle, _output_handle) = RootCircuit::build(move |root_circuit| {
     ///     // Graph topology.
-    ///     let mut edges = vec![
+    ///     let mut edges = ([
     ///         // Start with four nodes connected in a cycle.
     ///         zset_set! { Tup2(1, 2), Tup2(2, 3), Tup2(3, 4), Tup2(4, 1) },
     ///         // Add an edge.
     ///         zset_set! { Tup2(4, 5) },
     ///         // Remove an edge, breaking the cycle.
     ///         zset! { Tup2(1, 2) => -1 },
-    ///     ]
-    ///     .into_iter();
+    ///      ] as [_; STEPS])
+    ///          .into_iter();
     ///
-    ///     let edges = circuit
+    ///     let edges = root_circuit
     ///             .add_source(Generator::new(move || edges.next().unwrap()));
     ///
     ///     // Initial labeling of the graph.
-    ///     let mut init_labels = vec![
+    ///     let mut init_labels = ([
     ///         // Start with a single label on node 1.
     ///         zset_set! { Tup2(1, "l1".to_string()) },
     ///         // Add a label to node 2.
     ///         zset_set! { Tup2(2, "l2".to_string()) },
     ///         zset! { },
-    ///     ]
-    ///     .into_iter();
+    ///     ] as [_; STEPS])
+    ///         .into_iter();
     ///
-    ///     let init_labels = circuit
+    ///     let init_labels = root_circuit
     ///             .add_source(Generator::new(move || init_labels.next().unwrap()));
     ///
     ///     // Expected _changes_ to the output graph labeling after each clock cycle.
-    ///     let mut expected_outputs = vec![
+    ///     let mut expected_outputs = ([
     ///         zset! { Tup2(1, "l1".to_string()) => 1, Tup2(2, "l1".to_string()) => 1, Tup2(3, "l1".to_string()) => 1, Tup2(4, "l1".to_string()) => 1 },
     ///         zset! { Tup2(1, "l2".to_string()) => 1, Tup2(2, "l2".to_string()) => 1, Tup2(3, "l2".to_string()) => 1, Tup2(4, "l2".to_string()) => 1, Tup2(5, "l1".to_string()) => 1, Tup2(5, "l2".to_string()) => 1 },
     ///         zset! { Tup2(2, "l1".to_string()) => -1, Tup2(3, "l1".to_string()) => -1, Tup2(4, "l1".to_string()) => -1, Tup2(5, "l1".to_string()) => -1 },
-    ///     ]
-    ///     .into_iter();
+    ///     ] as [_; STEPS])
+    ///         .into_iter();
     ///
-    ///     let labels = circuit.recursive(|child, labels: Stream<_, OrdZSet<Tup2<u64, String>>>| {
+    ///     let labels = root_circuit.recursive(|child_circuit, labels: Stream<_, OrdZSet<Tup2<u64, String>>>| {
     ///         // Import `edges` and `init_labels` relations from the parent circuit.
-    ///         let edges = edges.delta0(child);
-    ///         let init_labels = init_labels.delta0(child);
+    ///         let edges = edges.delta0(child_circuit);
+    ///         let init_labels = init_labels.delta0(child_circuit);
     ///
     ///         // Given an edge `from -> to` where the `from` node is labeled with `l`,
     ///         // propagate `l` to node `to`.
@@ -206,19 +208,20 @@ where
     ///               )
     ///               .plus(&init_labels);
     ///         Ok(result)
-    ///     })
-    ///     .unwrap();
+    ///     })?;
     ///
     ///     labels.inspect(move |ls| {
     ///         assert_eq!(*ls, expected_outputs.next().unwrap());
     ///     });
-    ///     Ok(())
-    /// })
-    /// .unwrap().0;
     ///
-    /// for _ in 0..3 {
-    ///     root.step().unwrap();
+    ///     Ok(labels.output())
+    /// })?;
+    ///
+    /// for _ in 0..STEPS {
+    ///     circuit_handle.step().unwrap();
     /// }
+    ///
+    /// Ok::<(), DbspError>(())
     /// ```
     #[track_caller]
     pub fn recursive<F, S>(&self, f: F) -> Result<S::Output, SchedulerError>
