@@ -1,8 +1,9 @@
 use crate::catalog::InputCollectionHandle;
+use crate::format::avro::input;
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::parquet::test::load_parquet_file;
 use crate::format::relation_to_parquet_schema;
-use crate::integrated::delta_table::register_storage_handlers;
+use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
 use crate::test::{
     file_to_zset, list_files_recursive, test_circuit, wait, DatabricksPeople, DeltaTestStruct,
     MockDeZSet, MockUpdate,
@@ -16,7 +17,7 @@ use chrono::{DateTime, NaiveDate};
 use dbsp::typed_batch::DynBatchReader;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup2;
-use dbsp::{DBData, OrdZSet, ZSet};
+use dbsp::{BatchReader, DBData, OrdZSet, ZSet};
 use deltalake::datafusion::dataframe::DataFrameWriteOptions;
 use deltalake::datafusion::logical_expr::Literal;
 use deltalake::datafusion::prelude::{col, SessionContext};
@@ -48,6 +49,7 @@ use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::ffi::OsStr;
+use std::fmt::Debug;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::mem::forget;
@@ -110,11 +112,13 @@ where
 }
 
 /// Wait until `table` contains exactly `expected_count` records.
-async fn wait_for_count_records(
+async fn wait_for_output_records<T>(
     table: &mut Arc<DeltaTable>,
-    expected_count: usize,
+    expected_output: &[T],
     datafusion: &SessionContext,
-) {
+) where
+    T: for<'a> DeserializeWithContext<'a, SqlSerdeConfig> + DBData,
+{
     let start = Instant::now();
     loop {
         // select count() output_table == len().
@@ -124,16 +128,35 @@ async fn wait_for_count_records(
             .await
             .unwrap();
 
-        let count = datafusion
+        let data = datafusion
             .read_table(table.clone())
             .unwrap()
-            .count()
+            .collect()
             .await
             .unwrap();
 
-        info!("expected output table size: {expected_count}, current size: {count}");
+        let mut result = Vec::new();
 
-        if count == expected_count {
+        for batch in data.iter() {
+            let deserializer = serde_arrow::Deserializer::from_record_batch(batch).unwrap();
+            let mut records =
+                Vec::<T>::deserialize_with_context(deserializer, &delta_input_serde_config())
+                    .unwrap();
+
+            result.append(&mut records);
+        }
+
+        info!(
+            "expected output table size: {}, current size: {}",
+            expected_output.len(),
+            result.len()
+        );
+
+        if result.len() == expected_output.len() {
+            result.sort();
+            let mut expected_output = expected_output.to_vec();
+            expected_output.sort();
+            assert_eq!(result, expected_output);
             break;
         }
 
@@ -279,6 +302,7 @@ inputs:
 /// Build a pipeline that reads from a delta table and writes to a delta table.
 fn delta_to_delta_pipeline<T>(
     input_table_uri: &str,
+    skip_unused_columns: bool,
     input_config: &HashMap<String, String>,
     output_table_uri: &str,
     output_config: &HashMap<String, String>,
@@ -315,6 +339,7 @@ inputs:
             name: "delta_table_input"
             config:
                 uri: "{input_table_uri}"
+                skip_unused_columns: {skip_unused_columns}
 {}
 outputs:
     test_output1:
@@ -656,6 +681,7 @@ async fn test_follow(
     let pipeline = tokio::task::spawn_blocking(move || {
         delta_to_delta_pipeline::<DeltaTestStruct>(
             &input_table_uri_clone,
+            true,
             &input_config,
             &output_table_uri_clone,
             &output_config,
@@ -683,7 +709,24 @@ async fn test_follow(
     for chunk in data[split_at..].chunks(std::cmp::max(data[split_at..].len() / 10, 1)) {
         total_count += chunk.len();
         input_table = write_data_to_table(input_table, &arrow_schema, chunk).await;
-        wait_for_count_records(&mut output_table, total_count.div_ceil(2), &datafusion).await;
+        let expected_output = data[0..total_count]
+            .iter()
+            .filter_map(|x| {
+                if x.bigint % 2 == 0 {
+                    let mut x = x.clone();
+                    x.unused = None;
+                    Some(x)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        wait_for_output_records::<DeltaTestStruct>(
+            &mut output_table,
+            &expected_output,
+            &datafusion,
+        )
+        .await;
     }
 
     // TODO: this does not currently work because our output delta connector doesn't support
@@ -870,7 +913,7 @@ async fn delta_table_follow_file_test_common(snapshot: bool) {
     let mut runner = TestRunner::default();
     let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
 
-    let relation_schema = DeltaTestStruct::schema();
+    let relation_schema: Vec<Field> = DeltaTestStruct::schema();
 
     let input_table_dir = TempDir::new().unwrap();
     let input_table_uri = input_table_dir.path().display().to_string();

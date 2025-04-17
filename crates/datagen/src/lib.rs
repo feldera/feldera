@@ -1029,6 +1029,7 @@ impl<'a> RecordGenerator<'a> {
                 lateness: None,
                 watermark: None,
                 default: None,
+                unused: false,
             };
 
             if let Some(nl) = Self::maybe_null(field, settings, rng) {

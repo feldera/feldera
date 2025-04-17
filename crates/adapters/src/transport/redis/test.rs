@@ -40,6 +40,7 @@ fn test_redis_output() {
         int: 1,
         smallint: 2,
         string: "test".to_owned(),
+        unused: None,
         timestamp_ntz: Timestamp::new(1),
         tinyint: 1,
         string_array: vec!["a".to_owned(), "b".to_owned()],

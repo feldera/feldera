@@ -322,12 +322,21 @@ impl DeltaTableInputEndpointInner {
     /// table declaration.
     fn used_columns(&self, table: &DeltaTable) -> Vec<String> {
         // Column names in the SQL schema.
-        let sql_columns = self
-            .schema
-            .fields
-            .iter()
-            .map(|field| field.name.name())
-            .collect::<Vec<String>>();
+        let sql_columns = if self.config.skip_unused_columns {
+            self.schema
+                .fields
+                .iter()
+                // skip unused columns as long as they are nullable or have a default value.
+                .filter(|f| !f.unused || (!f.columntype.nullable && f.default.is_none()))
+                .map(|field| field.name.name())
+                .collect::<Vec<String>>()
+        } else {
+            self.schema
+                .fields
+                .iter()
+                .map(|field| field.name.name())
+                .collect::<Vec<String>>()
+        };
 
         if let Some(table_schema) = table.schema() {
             let delta_columns = table_schema
