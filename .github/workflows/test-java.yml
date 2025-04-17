@@ -39,3 +39,8 @@ jobs:
       - name: Run mvn test
         run: mvn test --no-transfer-progress -q -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false -Dtest=!OtherTests.rustFmt
         working-directory: ./sql-to-dbsp-compiler
+
+      - name: Run SLT tests
+        run: mvn test --no-transfer-progress -q -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RotateTests
+        working-directory: ./sql-to-dbsp-compiler
+

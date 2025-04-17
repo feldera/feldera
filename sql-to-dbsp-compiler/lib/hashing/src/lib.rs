@@ -9,6 +9,7 @@ use dbsp::dynamic::{DowncastTrait, Erase};
 use feldera_sqllib::{SqlString, WSet, Weight};
 use sltsqlvalue::*;
 use std::ops::{Add, Neg};
+use std::sync::Arc;
 
 #[derive(Eq, PartialEq)]
 pub enum SortOrder {
@@ -117,7 +118,7 @@ where
 /// Version of hash that takes the result of orderby: a zset that is expected
 /// to contain a single vector with all the data.
 pub fn zset_of_vectors_to_strings<K>(
-    set: &WSet<Vec<K>>,
+    set: &WSet<Arc<Vec<K>>>,
     format: SqlString,
     order: SortOrder,
 ) -> Vec<Vec<SqlString>>
@@ -125,13 +126,14 @@ where
     K: DBData + ToSqlRow,
 {
     let mut data_rows = DataRows::new(&format, &order);
-    let mut cursor = set.cursor();
+    let mut cursor = (*set).cursor();
     while cursor.key_valid() {
         let w = **cursor.weight();
         if w != Weight::one() {
             panic!("Weight is not one!");
         }
-        let row_vec: Vec<K> = unsafe { cursor.key().downcast::<Vec<K>>() }.to_vec();
+        let row_vec: &Arc<Vec<K>> = unsafe { cursor.key().downcast::<Arc<Vec<K>>>() };
+        let row_vec = (*row_vec).to_vec();
         let sql_rows = row_vec.iter().map(|k| k.to_row());
         for row in sql_rows {
             data_rows.push(row);
@@ -161,19 +163,20 @@ where
 
 /// Version of hash that takes the result of orderby: a zset that is expected
 /// to contain a single vector with all the data.
-pub fn hash_vectors<K>(set: &WSet<Vec<K>>, format: SqlString, order: SortOrder) -> String
+pub fn hash_vectors<K>(set: &WSet<Arc<Vec<K>>>, format: SqlString, order: SortOrder) -> SqlString
 where
     K: DBData + ToSqlRow,
 {
     // Result of orderby - there should be at most one row in the set.
     let mut builder = String::default();
-    let mut cursor = set.cursor();
+    let mut cursor = (*set).cursor();
     while cursor.key_valid() {
         let w = **cursor.weight();
         if w != Weight::one() {
             panic!("Weight is not one!");
         }
-        let row_vec: Vec<K> = unsafe { cursor.key().downcast::<Vec<K>>() }.to_vec();
+        let row_vec: &Arc<Vec<K>> = unsafe { cursor.key().downcast::<Arc<Vec<K>>>() };
+        let row_vec = (*row_vec).to_vec();
         let sql_rows = row_vec.iter().map(|k| k.to_row());
         let mut data_rows = DataRows::with_capacity(&format, &order, sql_rows.len());
         for row in sql_rows {
@@ -188,7 +191,7 @@ where
     }
     // println!("{}", builder);
     let digest = md5::compute(builder);
-    format!("{:x}", digest)
+    SqlString::from_ref(&format!("{:x}", digest))
 }
 
 // The count of elements in a zset that contains a vector is
