@@ -885,7 +885,6 @@ impl DBSPHandle {
     fn send_complete_bootstrap(&mut self) -> Result<(), DbspError> {
         self.broadcast_command(Command::CompleteBootstrap, |_, _| {})?;
 
-        info!("Boostrap complete");
         self.bootstrap_info = None;
 
         Ok(())
