@@ -1102,21 +1102,30 @@ public class CalciteToDBSPCompiler extends RelVisitor
             return false;
         if (!(left instanceof RelRecordType) || !(right instanceof  RelRecordType))
             return false;
+        // Turns out that types may not match in nullability...
+        // so we need to check whether the field names are the same but the types differ
         Set<String> leftNames = new HashSet<>();
         assert left.getFieldCount() == right.getFieldCount();
-        for (var field: left.getFieldList()) {
+        var leftFields = left.getFieldList();
+        for (var field: leftFields) {
             String name = field.getName();
             if (this.seemsGenerated(name))
                 return false;
             leftNames.add(field.getName());
         }
+        boolean anyDifferent = false;
+        int position = 0;
         for (var field: right.getFieldList()) {
             String name = field.getName();
+            String leftName = leftFields.get(position).getName();
+            position++;
             if (this.seemsGenerated(name))
                 return false;
             leftNames.remove(name);
+            if (!leftName.equals(name))
+                anyDifferent = true;
         }
-        if (!leftNames.isEmpty())
+        if (!leftNames.isEmpty() || !anyDifferent)
             // Field names do not match
             return false;
         this.compiler.reportWarning(node.getPositionRange(), "Fields reordered",
