@@ -39,7 +39,6 @@ fi
 
 # Run SQL benchmarks
 # These require a running instance of redpanda (if they don't use nexmark connector) and pipeline-manager.
-# The Earthfile should run those.
 
 KAFKA_BROKER=localhost:9092
 FELDERA_API=http://localhost:8080
