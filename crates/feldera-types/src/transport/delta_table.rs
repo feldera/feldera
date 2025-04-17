@@ -131,6 +131,21 @@ pub struct DeltaTableReaderConfig {
     /// the `where` clause of the `select * from my_table where ...` query.
     pub filter: Option<String>,
 
+    /// Don't read unused columns from the Delta table.
+    ///
+    /// When set to `true`, this option instructs the connector to avoid reading
+    /// columns from the Delta table that are not used in any view definitions.
+    /// To be skipped, the columns must be either nullable or have default
+    /// values. This can improve ingestion performance, especially for wide
+    /// tables.
+    ///
+    /// Note: The simplest way to exclude unused columns is to omit them from the Feldera SQL table
+    /// declaration. The connector never reads columns that aren't declared in the SQL schema.
+    /// Additionally, the SQL compiler emits warnings for declared but unused columns—use these as
+    /// a guide to optimize your schema.
+    #[serde(default)]
+    pub skip_unused_columns: bool,
+
     /// Optional snapshot filter.
     ///
     /// This option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.
@@ -227,7 +242,7 @@ fn test_delta_reader_config_serde() {
 
     let serialized_config = serde_json::to_string(&config).unwrap();
 
-    let expected = r#"{"uri":"protocol:/path/to/somewhere","timestamp_column":"ts","filter":null,"mode":"follow","snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","customoption1":"val1","customoption2":"val2","cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4}"#;
+    let expected = r#"{"uri":"protocol:/path/to/somewhere","timestamp_column":"ts","filter":null,"skip_unused_columns":false,"mode":"follow","snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","customoption1":"val1","customoption2":"val2","cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4}"#;
 
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),

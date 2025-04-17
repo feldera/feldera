@@ -244,6 +244,7 @@ pub struct Field {
     pub columntype: ColumnType,
     pub lateness: Option<String>,
     pub default: Option<String>,
+    pub unused: bool,
     pub watermark: Option<String>,
 }
 
@@ -254,12 +255,18 @@ impl Field {
             columntype,
             lateness: None,
             default: None,
+            unused: false,
             watermark: None,
         }
     }
 
     pub fn with_lateness(mut self, lateness: &str) -> Self {
         self.lateness = Some(lateness.to_string());
+        self
+    }
+
+    pub fn with_unused(mut self, unused: bool) -> Self {
+        self.unused = unused;
         self
     }
 }
@@ -294,6 +301,8 @@ impl<'de> Deserialize<'de> for Field {
             key: Option<Box<ColumnType>>,
             value: Option<Box<ColumnType>>,
             default: Option<String>,
+            #[serde(default)]
+            unused: bool,
             lateness: Option<String>,
             watermark: Option<String>,
         }
@@ -340,6 +349,7 @@ impl<'de> Deserialize<'de> for Field {
                 name: SqlIdentifier::new(helper.name.unwrap(), helper.case_sensitive),
                 columntype,
                 default: helper.default,
+                unused: helper.unused,
                 lateness: helper.lateness,
                 watermark: helper.watermark,
             }
@@ -1377,6 +1387,7 @@ mod tests {
                         },
                         lateness: None,
                         default: None,
+                        unused: false,
                         watermark: None,
                     }]),
                     key: None,
@@ -1384,6 +1395,7 @@ mod tests {
                 },
                 lateness: None,
                 default: None,
+                unused: false,
                 watermark: None,
             }
         );

@@ -899,6 +899,7 @@ pub struct DeltaTestStruct {
     pub int: i32,
     pub smallint: i16,
     pub string: String,
+    pub unused: Option<String>,
     pub timestamp_ntz: Timestamp,
     pub tinyint: i8,
     pub string_array: Vec<String>,
@@ -931,7 +932,8 @@ impl Arbitrary for DeltaTestStruct {
                 i16::arbitrary(),
             ),
             (
-                0i32..1000,                // string
+                0i32..1000, // string
+                1000i32..2000,
                 1704070800i64..1735693200, // Generate timestamps within a 1-year range
                 i8::arbitrary(),
                 collection::vec(i32::arbitrary().prop_map(|x| x.to_string()), 0..=2), // string array
@@ -956,6 +958,7 @@ impl Arbitrary for DeltaTestStruct {
                     (bigint, binary, boolean, date, decimal_digits, double, float, int, smallint),
                     (
                         string,
+                        unused,
                         timestamp_ntz,
                         tinyint,
                         string_array,
@@ -978,6 +981,7 @@ impl Arbitrary for DeltaTestStruct {
                         int,
                         smallint,
                         string: string.to_string(),
+                        unused: Some(unused.to_string()),
                         timestamp_ntz: Timestamp::new(timestamp_ntz * 1000),
                         tinyint,
                         string_array,
@@ -1014,6 +1018,7 @@ impl DeltaTestStruct {
             arrow::datatypes::Field::new("int", DataType::Int32, false),
             arrow::datatypes::Field::new("smallint", DataType::Int16, false),
             arrow::datatypes::Field::new("string", DataType::Utf8, false),
+            arrow::datatypes::Field::new("unused", DataType::Utf8, true),
             arrow::datatypes::Field::new(
                 "timestamp_ntz",
                 DataType::Timestamp(TimeUnit::Microsecond, None),
@@ -1075,6 +1080,7 @@ impl DeltaTestStruct {
             Field::new("int".into(), ColumnType::int(false)),
             Field::new("smallint".into(), ColumnType::smallint(false)),
             Field::new("string".into(), ColumnType::varchar(false)),
+            Field::new("unused".into(), ColumnType::varchar(true)).with_unused(true),
             Field::new("timestamp_ntz".into(), ColumnType::timestamp(false)),
             Field::new("tinyint".into(), ColumnType::tinyint(false)),
             Field::new(
@@ -1122,6 +1128,7 @@ impl DeltaTestStruct {
             Field::new("int".into(), ColumnType::int(false)),
             Field::new("smallint".into(), ColumnType::smallint(false)),
             Field::new("string".into(), ColumnType::varchar(false)),
+            Field::new("unused".into(), ColumnType::varchar(true)).with_unused(true),
             Field::new("timestamp_ntz".into(), ColumnType::timestamp(false))
                 .with_lateness("interval '10 days'"),
             Field::new("tinyint".into(), ColumnType::tinyint(false)),
@@ -1170,7 +1177,7 @@ impl DeltaTestStruct {
     }
 }
 
-serialize_table_record!(DeltaTestStruct[19]{
+serialize_table_record!(DeltaTestStruct[20]{
     bigint["bigint"]: i64,
     binary["binary"]: ByteArray,
     boolean["boolean"]: bool,
@@ -1181,6 +1188,7 @@ serialize_table_record!(DeltaTestStruct[19]{
     int["int"]: i32,
     smallint["smallint"]: i16,
     string["string"]: String,
+    unused["unused"]: Option<String>,
     timestamp_ntz["timestamp_ntz"]: Timestamp,
     tinyint["tinyint"]: i8,
     string_array["string_array"]: Vec<String>,
@@ -1192,7 +1200,7 @@ serialize_table_record!(DeltaTestStruct[19]{
     uuid["uuid"]: Uuid
 });
 
-deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", 19] {
+deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", 20] {
     (bigint, "bigint", false, i64, None),
     (binary, "binary", false, ByteArray, None),
     (boolean, "boolean", false, bool, None),
@@ -1203,6 +1211,7 @@ deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", 19] {
     (int, "int", false, i32, None),
     (smallint, "smallint", false, i16, None),
     (string, "string", false, String, None),
+    (unused, "unused", false, Option<String>, Some(None)),
     (timestamp_ntz, "timestamp_ntz", false, Timestamp, None),
     (tinyint, "tinyint", false, i8, None),
     (string_array, "string_array", false, Vec<String>, None),
