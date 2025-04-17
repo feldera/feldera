@@ -16,16 +16,19 @@ fail_on_success() {
 
 compare_output() {
   # Capture the output of both commands
-  output1=`$1`
-  output2=`$2`
+  output1=`$1`; status1=$?
+  output2=`$2`; status2=$?
 
   # Compare the outputs
-  if [ "$output1" = "$output2" ]; then
-    return 0
-  else
+  if [ "$output1" != "$output2" ]; then
     echo "The outputs are different."
     exit 1
   fi
+  if [ $status1 != $status2 ]; then
+    echo "Status values differ: $status1 != $status2"
+    exit 1
+  fi
+  return 0
 }
 
 fda() {
