@@ -24,9 +24,9 @@ in the PostgreSQL table.
 
 [*]: Required fields
 
-- The schema of the PostgreSQL table should be compatible with the schema of the Feldera output view.
+The schema of the PostgreSQL table should match the schema of the Feldera view, as outlined in the table below, with the following exceptions::
 - Narrower Feldera types such as `INT2` and `FLOAT4` can be stored in wider PostgreSQL column types like `INT8` and `FLOAT8` respectively.
-- If certain columns in the PostgreSQL table are **nullable** or have **default** values, it is fine for the Feldera view to not contain these columns.
+- Columns in the PostgreSQL table that are **nullable** or have **default** values may be omitted from the Feldera view.
 
 ### Connecting with TLS / SSL
 
@@ -40,7 +40,6 @@ This means that the ingestion rules are dictated by [`jsonb_populate_recordset`]
 
 :::info
 The following table lists supported PostgreSQL data types.
-More complex types from PostgreSQL might work but are not yet officially supported and tested.
 Please [let us know](https://github.com/feldera/feldera/issues) if you need support for a specific type.
 :::
 
@@ -63,7 +62,7 @@ Please [let us know](https://github.com/feldera/feldera/issues) if you need supp
 | VARBINARY         | BYTEA                                |                                                        |
 | ARRAY             | ARRAY                                |                                                        |
 | User Defined Type | Equivalent PostgreSQL Composite Type |                                                        |
-| MAP               | JSON, JSONB                          | No equivalent type, store as JSON / JSONB.             |
+| MAP               | JSON, JSONB                          | No direct equivalent type, but can be stored as JSON / JSONB.             |
 
 ## Example
 
@@ -128,7 +127,7 @@ Column names in Feldera SQL view and PostgreSQL table need to match.
 :::
 
 
-## Example for every type
+## Example demonstrating all supported types
 
 We create a Feldera pipeline including every supported PostgreSQL type:
 

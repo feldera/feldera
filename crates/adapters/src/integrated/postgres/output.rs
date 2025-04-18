@@ -84,7 +84,7 @@ impl PostgresOutputEndpoint {
         let key_schema = key_schema
             .to_owned()
             .ok_or(ControllerError::not_supported(
-                "Postgres output connector requires a unique key. Please specify the `index` property in the connector configuration. For more details, see: https://docs.feldera.com/connectors/unique_keys"
+                "Postgres output connector requires the view to have a unique key. Please specify the `index` property in the connector configuration. For more details, see: https://docs.feldera.com/connectors/unique_keys"
             ))?;
 
         let keys: HashSet<String> = key_schema
