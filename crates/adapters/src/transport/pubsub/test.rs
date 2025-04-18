@@ -333,7 +333,7 @@ fn test_pubsub_multiple_subscribers(data: Vec<Vec<TestStruct>>, topic: &str) {
     let (endpoint2, _consumer, _parser, zset2) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str2).unwrap(),
         Relation::empty(),
-     )
+    )
     .unwrap();
 
     endpoint2.extend();
@@ -427,7 +427,7 @@ fn test_pubsub_input_errors() {
     match mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
-      ) {
+    ) {
         Ok(_) => panic!("expected an error"),
         Err(e) => println!("test_pubsub_input: Error (expected): {e}"),
     };

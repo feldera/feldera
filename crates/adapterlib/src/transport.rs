@@ -40,7 +40,7 @@ pub trait InputEndpoint: Send {
     /// - An endpoint that returns `Some(FtModel::AtLeastOnce)` can support
     ///   suspend and resume and at-least-once fault tolerance.  Such an
     ///   endpoint must pass `Some(Resume::*)` to [InputConsumer::extended] for
-    ///   every step (see [Resume] for details).
+    ///   at least some steps (see [Resume] for details).
     ///
     /// - An endpoint that returns `Some(FtModel::ExactlyOnce)` can support
     ///   suspend and resume, at-least-once fault tolerance, and exactly once
@@ -512,17 +512,33 @@ pub trait InputConsumer: Send + Sync + DynClone {
 ///    input adapter must indicate, per step, how to restart from just after
 ///    that step, by passing `Some(Resume::*)` to [InputConsumer::extended].
 ///
+///    Such input adapters might have steps for which seeking would be
+///    impractical.  Such an input adapter may skip over those steps by passing
+///    `Some(Resume::Barrier)` instead; the controller will not try to
+///    checkpoint after them.
+///
 /// 2. To additionally support exactly once fault tolerance, the input adapter
 ///    must indicate, per step, both how to restart after the step and how to
 ///    replay exactly that step, by passing `Some(Resume::Replay { .. })` to
 ///    [InputConsumer::extended].
+///
+///    An input adapter that supports fault tolerance may not skip steps; that
+///    is, it must supply `Some(Resume::Replay { .. })` for every step.
+#[derive(Clone, Debug)]
 pub enum Resume {
+    /// The input adapter does not support resuming after this step.
+    Barrier,
+
+    /// The input adapter can resume just after this step, but it can't replay
+    /// the step exactly.
     Seek {
         /// Metadata needed for the controller to restart the input adapter from
         /// just after this input step using [InputReaderCommand::Seek].
         seek: JsonValue,
     },
 
+    /// The input adapter can replay this step exactly, or resume just after the
+    /// step.
     Replay {
         /// Metadata needed for the controller to restart the input adapter from
         /// just after this input step using [InputReaderCommand::Seek].
@@ -538,11 +554,23 @@ pub enum Resume {
 }
 
 impl Resume {
-    /// Consumes this [Resume] and returns just the `seek` value.
-    pub fn into_seek(self) -> JsonValue {
+    pub fn is_barrier(&self) -> bool {
+        matches!(self, Self::Barrier)
+    }
+
+    /// Returns the `seek` value, if any, in this [Resume].
+    pub fn seek(&self) -> Option<&JsonValue> {
         match self {
-            Resume::Seek { seek } => seek,
-            Resume::Replay { seek, .. } => seek,
+            Resume::Barrier => None,
+            Resume::Seek { seek } | Resume::Replay { seek, .. } => Some(seek),
+        }
+    }
+
+    /// Consumes this [Resume] and returns just the `seek` value, if any.
+    pub fn into_seek(self) -> Option<JsonValue> {
+        match self {
+            Resume::Barrier => None,
+            Resume::Seek { seek } | Resume::Replay { seek, .. } => Some(seek),
         }
     }
 
@@ -550,7 +578,7 @@ impl Resume {
     /// support.
     pub fn fault_tolerance(&self) -> FtModel {
         match self {
-            Resume::Seek { .. } => FtModel::AtLeastOnce,
+            &Resume::Barrier | Resume::Seek { .. } => FtModel::AtLeastOnce,
             Resume::Replay { .. } => FtModel::ExactlyOnce,
         }
     }

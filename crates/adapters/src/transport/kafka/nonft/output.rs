@@ -257,7 +257,7 @@ outputs:
                 Ok(test_circuit::<TestStruct>(
                     workers,
                     &TestStruct::schema(),
-                    None,
+                    &[None],
                 ))
             },
             &config,

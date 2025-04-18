@@ -21,7 +21,7 @@
 //! let reader = endpoint.open(consumer, 0);
 //! ```
 use adhoc::AdHocInputEndpoint;
-use anyhow::{Result as AnyResult};
+use anyhow::Result as AnyResult;
 use http::HttpInputEndpoint;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
@@ -52,6 +52,8 @@ use feldera_types::config::TransportConfig;
 #[cfg(feature = "with-redis")]
 use redis::output::RedisOutputEndpoint;
 
+#[cfg(test)]
+pub use crate::transport::file::set_barrier;
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
 #[cfg(feature = "with-kafka")]
 use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaOutputEndpoint};

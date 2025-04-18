@@ -31,19 +31,24 @@
 //! pending.
 
 use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
-use crate::PipelineState;
+use crate::{
+    controller::journal::{InputChecksums, InputLog},
+    PipelineState,
+};
 use anyhow::Error as AnyError;
 use atomic::Atomic;
 use bytemuck::NoUninit;
 use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
-use feldera_adapterlib::transport::{InputReader, Resume};
+use feldera_adapterlib::{
+    errors::controller::SuspendError,
+    transport::{InputReader, Resume},
+};
 use feldera_types::config::{FtModel, PipelineConfig};
 use memory_stats::memory_stats;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
 use metrics_util::{debugging::DebugValue, CompositeKey};
-use num_derive::FromPrimitive;
 use ordered_float::OrderedFloat;
 use rand::{seq::index::sample, thread_rng};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
@@ -57,30 +62,6 @@ use std::{
 };
 use tracing::{debug, error, info};
 use uuid::Uuid;
-
-/// Whether a pipeline supports suspend-and-resume.
-///
-/// A pipeline can be suspended if all of the following are true:
-///
-/// * Storage is enabled.
-/// * All input endpoints are fault-tolerant.
-/// * The pipeline is not replaying from the journal (which is relevant only
-///   if fault tolerance is enabled).
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromPrimitive, Serialize, NoUninit)]
-#[repr(u8)]
-pub enum CanSuspend {
-    /// Pipeline does not support suspend-and-resume because its configuration
-    /// precludes it.
-    #[default]
-    No,
-
-    /// Pipeline may be suspended.
-    Yes,
-
-    /// Pipeline supports suspend-and-resume, but it can't be triggered now (for
-    /// example, because the journal is replaying).
-    NotNow,
-}
 
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {
@@ -151,10 +132,10 @@ pub struct GlobalControllerMetrics {
     // This field is computed on-demand by calling `ControllerStatus::update`.
     pub pipeline_complete: AtomicBool,
 
-    /// Whether this pipeline can be suspended.
+    /// If this is empty, the pipeline can be suspended or checkpointed.  If
+    /// this is nonempty, it is the (permanent or temporary) reasons why not.
     // This field is computed on-demand by calling `ControllerStatus::update`.
-    #[serde(serialize_with = "serialize_atomic")]
-    pub can_suspend: Atomic<CanSuspend>,
+    pub suspend_error: Mutex<Option<SuspendError>>,
 
     /// Forces the controller to perform a step regardless of the state of
     /// input buffers.
@@ -187,7 +168,7 @@ impl GlobalControllerMetrics {
             total_input_records: AtomicU64::new(processed_records),
             total_processed_records: AtomicU64::new(processed_records),
             pipeline_complete: AtomicBool::new(false),
-            can_suspend: Atomic::new(CanSuspend::No),
+            suspend_error: Mutex::new(None),
             step_requested: AtomicBool::new(false),
         }
     }
@@ -860,14 +841,12 @@ impl ControllerStatus {
         true
     }
 
-    pub fn update(&self, can_suspend: CanSuspend) {
+    pub fn update(&self, suspend_error: Option<SuspendError>) {
         self.global_metrics
             .pipeline_complete
             .store(self.pipeline_complete(), Ordering::Release);
 
-        self.global_metrics
-            .can_suspend
-            .store(can_suspend, Ordering::Release);
+        *self.global_metrics.suspend_error.lock().unwrap() = suspend_error;
 
         let uptime = Utc::now() - self.global_metrics.start_time;
         self.global_metrics.uptime_msecs.store(
@@ -920,6 +899,39 @@ pub struct StepResults {
     pub resume: Option<Resume>,
 }
 
+#[derive(Debug)]
+pub struct MissingReplay;
+
+impl TryFrom<StepResults> for InputLog {
+    type Error = MissingReplay;
+
+    fn try_from(results: StepResults) -> Result<Self, Self::Error> {
+        match results.resume {
+            Some(Resume::Replay { seek, replay, hash }) => Ok(InputLog {
+                data: replay,
+                metadata: seek,
+                checksums: InputChecksums {
+                    num_records: results.num_records,
+                    hash,
+                },
+            }),
+            _ => Err(MissingReplay),
+        }
+    }
+}
+
+impl StepResults {
+    pub(super) fn checksums(&self) -> Option<InputChecksums> {
+        match self.resume {
+            Some(Resume::Replay { hash, .. }) => Some(InputChecksums {
+                hash,
+                num_records: self.num_records,
+            }),
+            _ => None,
+        }
+    }
+}
+
 /// Input endpoint status information.
 #[derive(Serialize)]
 pub struct InputEndpointStatus {
@@ -955,6 +967,14 @@ pub struct InputEndpointStatus {
     /// controlled via the `/tables/<table_name>/connectors/<connector_name>/start` and
     /// `/tables/<table_name>/connectors/<connector_name>/pause` endpoints.
     pub paused: AtomicBool,
+
+    /// Endpoint is currently a barrier checkpointing and suspend.
+    ///
+    /// An endpoint blocks checkpoint and suspend if its current input position
+    /// is not one where it can resume.  In such a case, the user can still
+    /// request checkpoint and suspend, which will be carried out as soon as the
+    /// endpoint or endpoints advance beyond the barriers.
+    pub barrier: AtomicBool,
 }
 
 impl InputEndpointStatus {
@@ -974,6 +994,7 @@ impl InputEndpointStatus {
             fatal_error: Mutex::new(None),
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
+            barrier: AtomicBool::new(false),
             reader,
             fault_tolerance,
         }
@@ -1051,6 +1072,14 @@ impl InputEndpointStatus {
         self.metrics
             .buffered_records
             .fetch_sub(num_records, Ordering::Relaxed);
+    }
+
+    pub fn is_barrier(&self) -> bool {
+        self.barrier.load(Ordering::Relaxed)
+    }
+
+    pub fn set_barrier(&self, barrier: bool) {
+        self.barrier.store(barrier, Ordering::Relaxed);
     }
 }
 

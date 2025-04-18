@@ -23,6 +23,25 @@ use xxhash_rust::xxh3::Xxh3Default;
 
 const SLEEP: Duration = Duration::from_millis(200);
 
+#[cfg(test)]
+use std::{collections::BTreeMap, sync::Mutex};
+
+#[cfg(test)]
+static BARRIERS: Mutex<BTreeMap<String, usize>> = Mutex::new(BTreeMap::new());
+
+fn get_barrier(_name: &str) -> Option<usize> {
+    #[cfg(test)]
+    return BARRIERS.lock().unwrap().get(_name).copied();
+
+    #[cfg(not(test))]
+    return None;
+}
+
+#[cfg(test)]
+pub fn set_barrier(name: &str, value: usize) {
+    BARRIERS.lock().unwrap().insert(name.into(), value);
+}
+
 pub(crate) struct FileInputEndpoint {
     config: FileInputConfig,
 }
@@ -35,7 +54,11 @@ impl FileInputEndpoint {
 
 impl InputEndpoint for FileInputEndpoint {
     fn fault_tolerance(&self) -> Option<FtModel> {
-        Some(FtModel::ExactlyOnce)
+        if get_barrier(&self.config.path).is_some() {
+            Some(FtModel::AtLeastOnce)
+        } else {
+            Some(FtModel::ExactlyOnce)
+        }
     }
 }
 
@@ -46,25 +69,22 @@ impl TransportInputEndpoint for FileInputEndpoint {
         parser: Box<dyn Parser>,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
-        Ok(Box::new(FileInputReader::new(
-            &self.config,
-            consumer,
-            parser,
-        )?))
+        Ok(Box::new(FileInputReader::new(self, consumer, parser)?))
     }
 }
 
-struct FileInputReader {
+pub struct FileInputReader {
     sender: UnboundedSender<InputReaderCommand>,
     thread: Thread,
 }
 
 impl FileInputReader {
     fn new(
-        config: &FileInputConfig,
+        endpoint: &FileInputEndpoint,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
+        let config = &endpoint.config;
         let file = File::open(&config.path).map_err(|e| {
             AnyError::msg(format!("Failed to open input file '{}': {e}", config.path))
         })?;
@@ -81,6 +101,7 @@ impl FileInputReader {
                 let _guard = info_span!("file_input", path).entered();
                 if let Err(error) = Self::worker_thread(
                     file,
+                    path,
                     buffer_size,
                     consumer.as_ref(),
                     parser,
@@ -100,6 +121,7 @@ impl FileInputReader {
 
     fn worker_thread(
         mut file: File,
+        path: String,
         buffer_size: usize,
         consumer: &dyn InputConsumer,
         mut parser: Box<dyn Parser>,
@@ -111,9 +133,11 @@ impl FileInputReader {
         let mut queue = VecDeque::<(Range<u64>, Box<dyn InputBuffer>)>::new();
         let mut extending = false;
         let mut eof = false;
+        let mut num_records = 0;
         loop {
             loop {
-                match receiver.try_recv() {
+                let msg = receiver.try_recv();
+                match msg {
                     Ok(InputReaderCommand::Extend) => {
                         extending = true;
                     }
@@ -139,16 +163,28 @@ impl FileInputReader {
                                 break;
                             }
                         }
-                        let resume = Resume::new_metadata_only(
-                            serde_json::to_value(Metadata {
-                                offsets: range.unwrap_or_else(|| {
-                                    let ofs = splitter.position();
-                                    ofs..ofs
-                                }),
-                            })
-                            .unwrap(),
-                            hasher,
-                        );
+
+                        let offsets = range.unwrap_or_else(|| {
+                            let ofs = splitter.position();
+                            ofs..ofs
+                        });
+                        let seek = serde_json::to_value(Metadata {
+                            offsets: offsets.clone(),
+                        })
+                        .unwrap();
+
+                        let resume = match get_barrier(&path) {
+                            None => Resume::new_metadata_only(seek, hasher),
+                            Some(barrier) => {
+                                num_records += total;
+                                if num_records < barrier {
+                                    Resume::Barrier
+                                } else {
+                                    Resume::Seek { seek }
+                                }
+                            }
+                        };
+
                         consumer.extended(total, Some(resume));
                     }
                     Ok(InputReaderCommand::Seek(metadata)) => {

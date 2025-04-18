@@ -3784,10 +3784,10 @@
       },
       "FtModel": {
         "type": "string",
-        "description": "Fault tolerance model.",
+        "description": "Fault tolerance model.\n\nThe ordering is significant: we consider [Self::ExactlyOnce] to be a \"higher\nlevel\" of fault tolerance than [Self::AtLeastOnce].",
         "enum": [
-          "exactly_once",
-          "at_least_once"
+          "at_least_once",
+          "exactly_once"
         ]
       },
       "GenerationPlan": {

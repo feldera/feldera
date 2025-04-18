@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
-use crate::{controller::journal::StepMetadata, transport::Step, ControllerError};
+use crate::{transport::Step, ControllerError};
 
 /// Initial offsets for the input endpoints in a [Checkpoint].
 ///
@@ -22,32 +22,8 @@ pub struct CheckpointOffsets(
     pub HashMap<String, JsonValue>,
 );
 
-impl From<StepMetadata> for CheckpointOffsets {
-    fn from(value: StepMetadata) -> Self {
-        Self(
-            value
-                .input_logs
-                .into_iter()
-                .map(|(name, log)| (name, log.metadata))
-                .collect(),
-        )
-    }
-}
-
-impl From<&StepMetadata> for CheckpointOffsets {
-    fn from(value: &StepMetadata) -> Self {
-        Self(
-            value
-                .input_logs
-                .iter()
-                .map(|(name, log)| (name.clone(), log.metadata.clone()))
-                .collect(),
-        )
-    }
-}
-
 /// Checkpoint for a pipeline.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Checkpoint {
     /// The circuit's checkpoint.
     pub circuit: Option<CheckpointMetadata>,

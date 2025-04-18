@@ -27,6 +27,7 @@ num-derive = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 datafusion = { workspace = true }
+thiserror = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]
