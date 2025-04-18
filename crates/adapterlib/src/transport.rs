@@ -67,7 +67,7 @@ pub trait IntegratedInputEndpoint: InputEndpoint {
 /// The following diagram shows the possible order in which the controller can
 /// issue commands to [InputReader]s:
 ///
-/// ```
+/// ```text
 ///   ┌─⯇─ (start) ─⯈──┐
 ///   │      │         │
 ///   │      ▼         │
