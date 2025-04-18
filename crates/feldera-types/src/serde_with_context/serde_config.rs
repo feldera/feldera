@@ -110,6 +110,8 @@ pub enum BinaryFormat {
     Base64,
     /// Serialize as a byte slice (`&[u8]``)
     Bytes,
+    /// Serialize as a hexadecimal-encoded string, beginning with `\x`.
+    PgHex,
 }
 
 impl Default for BinaryFormat {
@@ -258,6 +260,17 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Base64,
+                uuid_format: UuidFormat::String,
+            },
+            JsonFlavor::Postgres => Self {
+                time_format: TimeFormat::default(), // H-M-S
+                date_format: DateFormat::default(), // Y-m-d
+                timestamp_format: TimestampFormat::default(),
+                decimal_format: DecimalFormat::String,
+                variant_format: VariantFormat::Json,
+                // We need [`BinaryFormat::PgHex`] only because we serialize
+                // as JSON and let Postgres parse it.
+                binary_format: BinaryFormat::PgHex,
                 uuid_format: UuidFormat::String,
             },
         }

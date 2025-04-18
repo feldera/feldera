@@ -4977,7 +4977,7 @@
           },
           "uri": {
             "type": "string",
-            "description": "Postgres URI."
+            "description": "Postgres URI.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
           }
         }
       },
@@ -6207,6 +6207,24 @@
                 "type": "string",
                 "enum": [
                   "postgres_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/PostgresWriterConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "postgres_output"
                 ]
               }
             }

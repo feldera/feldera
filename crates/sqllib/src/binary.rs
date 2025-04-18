@@ -57,6 +57,9 @@ impl SerializeWithContext<SqlSerdeConfig> for ByteArray {
             BinaryFormat::Array => self.data.serialize(serializer),
             BinaryFormat::Base64 => serializer.serialize_str(&BASE64_STANDARD.encode(&self.data)),
             BinaryFormat::Bytes => serializer.serialize_bytes(&self.data),
+            BinaryFormat::PgHex => {
+                serializer.serialize_str(&format!("\\x{}", hex::encode(&self.data)))
+            }
         }
     }
 }
@@ -99,6 +102,9 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
                 Ok(Self { data })
             }
             BinaryFormat::Bytes => deserializer.deserialize_bytes(ByteVisitor),
+            BinaryFormat::PgHex => Err(D::Error::custom(
+                "binary format Postgres Hexadecimal is not supported for input",
+            )),
         }
     }
 }
