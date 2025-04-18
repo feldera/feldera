@@ -45,19 +45,23 @@ use dbsp::{
     profile::GraphProfile,
     DBSPHandle,
 };
+use enum_map::EnumMap;
+use feldera_adapterlib::errors::controller::{
+    PermanentSuspendError, SuspendError, TemporarySuspendError,
+};
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_types::format::json::JsonLines;
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
-use journal::{InputChecksums, InputLog, StepInputChecksums, StepMetadata};
+use journal::StepMetadata;
 use metrics_exporter_prometheus::PrometheusHandle;
 use metrics_util::debugging::Snapshotter;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
-use stats::{CanSuspend, StepResults};
+use stats::StepResults;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -128,10 +132,10 @@ pub struct Controller {
 pub type GraphProfileCallbackFn = Box<dyn FnOnce(Result<GraphProfile, ControllerError>) + Send>;
 
 /// Type of the callback argument to [`Controller::start_checkpoint`].
-pub type CheckpointCallbackFn = Box<dyn FnOnce(Result<Checkpoint, ControllerError>) + Send>;
+pub type CheckpointCallbackFn = Box<dyn FnOnce(Result<Checkpoint, Arc<ControllerError>>) + Send>;
 
 /// Type of the callback argument to [`Controller::start_suspend`].
-pub type SuspendCallbackFn = Box<dyn FnOnce(Result<(), ControllerError>) + Send>;
+pub type SuspendCallbackFn = Box<dyn FnOnce(Result<(), Arc<ControllerError>>) + Send>;
 
 /// A command that [Controller] can send to [Controller::circuit_thread].
 ///
@@ -401,7 +405,7 @@ impl Controller {
     /// Returns controller status.
     pub fn status(&self) -> &ControllerStatus {
         // Update pipeline stats computed on-demand.
-        self.inner.status.update(self.can_suspend());
+        self.inner.status.update(self.can_suspend().err());
         &self.inner.status
     }
 
@@ -445,16 +449,13 @@ impl Controller {
     /// The callback-based nature of this function makes it useful in
     /// asynchronous contexts.
     pub fn start_checkpoint(&self, cb: CheckpointCallbackFn) {
-        match self.inner.fail_if_bootstrapping_or_restoring() {
-            Err(error) => cb(Err(error)),
-            Ok(()) => self.inner.checkpoint(cb),
-        }
+        self.inner.checkpoint(cb)
     }
 
     /// Checkpoints the pipeline.
     ///
     /// This is a blocking wrapper around [Self::start_checkpoint].
-    pub fn checkpoint(&self) -> Result<Checkpoint, ControllerError> {
+    pub fn checkpoint(&self) -> Result<Checkpoint, Arc<ControllerError>> {
         let (sender, receiver) = oneshot::channel();
         self.start_checkpoint(Box::new(move |result| sender.send(result).unwrap()));
         receiver.blocking_recv().unwrap()
@@ -465,23 +466,21 @@ impl Controller {
     /// The callback-based nature of this function makes it useful in
     /// asynchronous contexts.
     pub fn start_suspend(&self, cb: SuspendCallbackFn) {
-        match self.inner.fail_if_bootstrapping_or_restoring() {
-            Err(error) => cb(Err(error)),
-            Ok(()) => self.inner.suspend(cb),
-        }
+        self.inner.suspend(cb)
     }
 
     /// Suspends the pipeline.
     ///
     /// This is a blocking wrapper around [Self::start_suspend].
-    pub fn suspend(&self) -> Result<(), ControllerError> {
+    pub fn suspend(&self) -> Result<(), Arc<ControllerError>> {
         let (sender, receiver) = oneshot::channel();
         self.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
         receiver.blocking_recv().unwrap()
     }
 
-    /// Returns whether this pipeline supports suspend-and-resume.
-    pub fn can_suspend(&self) -> CanSuspend {
+    /// Returns whether this pipeline supports suspend-and-resume.  The result
+    /// can change over time; see [SuspendError] for details.
+    pub fn can_suspend(&self) -> Result<(), SuspendError> {
         self.inner.can_suspend()
     }
 
@@ -546,6 +545,9 @@ struct CircuitThread {
     parker: Parker,
     last_checkpoint: Instant,
 
+    checkpoint_delay_warning: Option<LongOperationWarning>,
+    checkpoint_requests: Vec<CheckpointRequest>,
+
     /// Storage backend for writing checkpoints.
     storage: Option<Arc<dyn StorageBackend>>,
 
@@ -556,8 +558,10 @@ struct CircuitThread {
     /// [Checkpoint] for `step`, to allow the input endpoints to seek to the
     /// starting point for reading data for `step`.
     ///
-    /// This is only `None` if `step` is 0.
-    input_metadata: Option<CheckpointOffsets>,
+    /// This is empty if `step` is 0, which means that we can't checkpoint at
+    /// step 0 if there is going to be a journal, because to replay a journal
+    /// record into an endpoint we first need to seek that endpoint.
+    input_metadata: HashMap<String, Option<Resume>>,
 }
 
 impl CircuitThread {
@@ -596,8 +600,8 @@ impl CircuitThread {
         //
         // If we're not restoring from a checkpoint, `input_metadata` will be empty so
         // this will do nothing.
-        if let Some(input_metadata) = &input_metadata {
-            for (endpoint_name, metadata) in &input_metadata.0 {
+        let input_metadata = if let Some(input_metadata) = input_metadata {
+            for (endpoint_name, metadata) in &input_metadata {
                 let Ok(endpoint_id) = controller.input_endpoint_id_by_name(endpoint_name) else {
                     info!("Found checkpointed state for input connector '{endpoint_name}', but the connector is not present in the new pipeline configuration; this connector will not be added to the pipeline");
                     continue;
@@ -620,7 +624,15 @@ impl CircuitThread {
 
                 endpoint.reader.seek(metadata.clone());
             }
-        }
+            Some(
+                input_metadata
+                    .into_iter()
+                    .map(|(name, seek)| (name, Some(Resume::Seek { seek })))
+                    .collect(),
+            )
+        } else {
+            None
+        };
 
         let ft = match ft_model {
             Some(FtModel::ExactlyOnce) => {
@@ -683,8 +695,10 @@ impl CircuitThread {
             storage,
             parker,
             last_checkpoint: Instant::now(),
+            checkpoint_delay_warning: None,
+            checkpoint_requests: Vec::new(),
             step,
-            input_metadata,
+            input_metadata: input_metadata.unwrap_or_default(),
         })
     }
 
@@ -701,9 +715,13 @@ impl CircuitThread {
         self.finish_replaying();
 
         loop {
-            if !self.run_commands() {
+            // Run received commands.  Commands can initiate checkpoint
+            // requests, so attempt to execute those afterward.
+            self.run_commands();
+            if !self.checkpoint_requests.is_empty() && self.checkpoint() {
                 break;
             }
+
             let running = match self.controller.state() {
                 PipelineState::Running => true,
                 PipelineState::Paused => false,
@@ -724,36 +742,19 @@ impl CircuitThread {
                 self.replaying(),
                 self.circuit.bootstrap_in_progress(),
                 running,
+                !self.checkpoint_requests.is_empty(),
             ) {
                 Action::Step => {
-                    let done = !self.step()?;
-                    self.controller
-                        .status
-                        .global_metrics
-                        .runtime_elapsed_msecs
-                        .store(
-                            self.circuit.runtime_elapsed().as_millis() as u64,
-                            Ordering::Relaxed,
-                        );
-
-                    if done {
+                    if !self.step()? {
                         break;
                     }
                 }
-                Action::Checkpoint => {
-                    drop(self.checkpoint());
-
-                    // We may have disabled FT during backfill. Re-enable it after
-                    // reaching a checkpoint.
-                    if let Some(ft) = &mut self.ft {
-                        ft.enable();
-                    }
-                }
+                Action::Checkpoint => self.checkpoint_requests.push(CheckpointRequest::Scheduled),
                 Action::Park(Some(deadline)) => self.parker.park_deadline(deadline),
                 Action::Park(None) => self.parker.park(),
             }
         }
-        self.flush_commands();
+        self.flush_commands_and_requests();
         self.circuit
             .kill()
             .map_err(|_| ControllerError::dbsp_panic())
@@ -767,23 +768,11 @@ impl CircuitThread {
     }
 
     fn step(&mut self) -> Result<bool, ControllerError> {
-        let Ok(FlushedInput {
-            total_consumed,
-            step_metadata,
-        }) = self.flush_input_to_circuit()
-        else {
-            return Ok(false);
+        let total_consumed = match self.input_step()? {
+            Some(total_consumed) => total_consumed,
+            None => return Ok(false),
         };
 
-        self.input_metadata = Some(CheckpointOffsets(
-            step_metadata
-                .iter()
-                .map(|(name, log)| (name.clone(), log.metadata.clone()))
-                .collect(),
-        ));
-        if let Some(ft) = self.ft.as_mut() {
-            ft.write_step(step_metadata, self.step)?;
-        }
         self.step += 1;
 
         // Wake up the backpressure thread to unpause endpoints blocked due to
@@ -823,6 +812,15 @@ impl CircuitThread {
         }
         self.controller.unpark_backpressure();
 
+        self.controller
+            .status
+            .global_metrics
+            .runtime_elapsed_msecs
+            .store(
+                self.circuit.runtime_elapsed().as_millis() as u64,
+                Ordering::Relaxed,
+            );
+
         Ok(true)
     }
 
@@ -838,15 +836,9 @@ impl CircuitThread {
         }
     }
 
-    fn checkpoint(&mut self) -> Result<Checkpoint, ControllerError> {
+    fn checkpoint(&mut self) -> bool {
         fn inner(this: &mut CircuitThread) -> Result<Checkpoint, ControllerError> {
-            match this.controller.can_suspend() {
-                CanSuspend::No => Err(ControllerError::not_supported(
-                    "suspend requires storage and fault-tolerant input endpoints",
-                )),
-                CanSuspend::NotNow => Err(ControllerInner::warn_restoring()),
-                CanSuspend::Yes => Ok(()),
-            }?;
+            this.controller.can_suspend()?;
 
             // Replace the input adapter configuration in the pipeline configuration
             // by the current inputs. (HTTP input adapters might have been added or
@@ -867,6 +859,16 @@ impl CircuitThread {
                 ..this.controller.status.pipeline_config.clone()
             };
 
+            let input_metadata = this
+                .input_metadata
+                .iter()
+                .map(|(name, resume)| {
+                    (
+                        name.clone(),
+                        resume.as_ref().unwrap().seek().unwrap().clone(),
+                    )
+                })
+                .collect();
             let checkpoint = this
                 .circuit
                 .commit()
@@ -881,7 +883,7 @@ impl CircuitThread {
                             .status
                             .global_metrics
                             .num_total_processed_records(),
-                        input_metadata: this.input_metadata.clone().unwrap_or_default(),
+                        input_metadata: CheckpointOffsets(input_metadata),
                     };
                     checkpoint
                         .write(
@@ -896,10 +898,25 @@ impl CircuitThread {
             Ok(checkpoint)
         }
 
-        let result = inner(self);
-        if let Err(error) = result.as_ref() {
-            warn!("checkpoint failed: {error}");
-        }
+        let result = match inner(self) {
+            Err(ControllerError::SuspendError(error @ SuspendError::Temporary(_))) => {
+                self.checkpoint_delay_warning
+                    .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)))
+                    .check(|elapsed| {
+                        info!(
+                            "checkpoint delayed {} seconds because of: {error}",
+                            elapsed.as_secs()
+                        )
+                    });
+                return false;
+            }
+            Err(error) => {
+                warn!("checkpoint failed: {error}");
+                Err(Arc::new(error))
+            }
+            Ok(checkpoint) => Ok(checkpoint),
+        };
+        self.checkpoint_delay_warning = None;
 
         // Update the last checkpoint time *after* executing the checkpoint, so
         // that if the checkpoint takes a long time and we have a short
@@ -910,12 +927,30 @@ impl CircuitThread {
         // a problem and a short checkpoint interval.
         self.last_checkpoint = Instant::now();
 
-        result
+        let mut suspend = false;
+        for request in self.checkpoint_requests.drain(..) {
+            match request {
+                CheckpointRequest::Scheduled => (),
+                CheckpointRequest::CheckpointCommand(callback) => callback(result.clone()),
+                CheckpointRequest::SuspendCommand(callback) => {
+                    suspend = true;
+                    callback(result.clone().map(|_| ()))
+                }
+            }
+        }
+
+        // We may have disabled FT during backfill. Re-enable it after
+        // reaching a checkpoint.
+        if let Some(ft) = &mut self.ft {
+            ft.enable();
+        }
+
+        suspend
     }
 
     /// Reads and executes all the commands pending from
     /// `self.command_receiver`.
-    fn run_commands(&mut self) -> bool {
+    fn run_commands(&mut self) {
         while let Ok(command) = self.command_receiver.try_recv() {
             match command {
                 Command::GraphProfile(reply_callback) => reply_callback(
@@ -924,25 +959,41 @@ impl CircuitThread {
                         .map_err(ControllerError::dbsp_error),
                 ),
                 Command::Checkpoint(reply_callback) => {
-                    reply_callback(self.checkpoint());
+                    self.checkpoint_requests
+                        .push(CheckpointRequest::CheckpointCommand(reply_callback));
                 }
                 Command::Suspend(reply_callback) => {
-                    reply_callback(self.checkpoint().map(|_| ()));
-                    return false;
+                    self.checkpoint_requests
+                        .push(CheckpointRequest::SuspendCommand(reply_callback));
                 }
             }
         }
-        true
     }
 
     /// Reads and replies to all of the commands pending from
-    /// `self.command_receiver` without executing them.
-    fn flush_commands(&mut self) {
+    /// `self.command_receiver` and all of the pending checkpoints in
+    /// `self.checkpoint_requests`, without executing them.
+    fn flush_commands_and_requests(&mut self) {
+        for request in self.checkpoint_requests.drain(..) {
+            match request {
+                CheckpointRequest::Scheduled => (),
+                CheckpointRequest::CheckpointCommand(callback) => {
+                    callback(Err(Arc::new(ControllerError::ControllerExit)))
+                }
+                CheckpointRequest::SuspendCommand(callback) => {
+                    callback(Err(Arc::new(ControllerError::ControllerExit)))
+                }
+            }
+        }
         for command in self.command_receiver.try_iter() {
             match command {
                 Command::GraphProfile(callback) => callback(Err(ControllerError::ControllerExit)),
-                Command::Checkpoint(callback) => callback(Err(ControllerError::ControllerExit)),
-                Command::Suspend(callback) => callback(Err(ControllerError::ControllerExit)),
+                Command::Checkpoint(callback) => {
+                    callback(Err(Arc::new(ControllerError::ControllerExit)))
+                }
+                Command::Suspend(callback) => {
+                    callback(Err(Arc::new(ControllerError::ControllerExit)))
+                }
             }
         }
     }
@@ -950,16 +1001,62 @@ impl CircuitThread {
     /// Requests all of the input adapters to flush their input to the circuit,
     /// and waits for them to finish doing it.
     ///
-    /// Returns information about the input that was flushed, or `Err(())` if
-    /// the pipeline should shut down.
-    fn flush_input_to_circuit(&mut self) -> Result<FlushedInput, ()> {
+    /// Returns:
+    ///
+    /// - `Ok(Some(total_consumed))` if successful.
+    /// - `Ok(None)` if the pipeline was terminated before all the input could
+    ///   be flushed.  The pipeline is in an inconsistent state (some input
+    ///   adapters are still flushing data to the circuit) that can't be
+    ///   recovered, so the pipeline process should exit as soon as it can.
+    /// - `Err(error)` if there was an error.
+    fn input_step(&mut self) -> Result<Option<u64>, ControllerError> {
         // No ingestion during bootstrap.
         if self.controller.status.bootstrap_in_progress() {
-            return Ok(FlushedInput {
-                total_consumed: 0,
-                step_metadata: HashMap::new(),
-            });
+            return Ok(Some(0));
         }
+        let mut step_metadata = HashMap::new();
+        if let Some(replay_step) = self.ft.as_ref().and_then(|ft| ft.replay_step.as_ref()) {
+            // Reuse input logs from the original step.  Usually, these logs are
+            // not used for anything, since we're replaying, but in the corner
+            // case where this is the final step to replay and we immediately
+            // checkpoint, the checkpoint must have the log records so that, on
+            // resume, it can seek the input connectors to the proper location.
+            for (name, log) in replay_step.input_logs.iter() {
+                let endpoint_id = self.controller.input_endpoint_id_by_name(name).unwrap();
+                step_metadata.insert(
+                    endpoint_id,
+                    (
+                        name.clone(),
+                        StepResults {
+                            resume: Some(Resume::Replay {
+                                seek: log.metadata.clone(),
+                                replay: log.data.clone(),
+                                hash: log.checksums.hash,
+                            }),
+                            num_records: log.checksums.num_records,
+                        },
+                    ),
+                );
+            }
+        }
+
+        // If `checkpoint_requests` is nonempty, then a client has requested a
+        // checkpoint, but we haven't been able to write that checkpoint yet.
+        // The reasons we haven't written depends on whether exactly-once fault
+        // tolerance is enabled:
+        //
+        // - If exactly once fault tolerance is enabled, then replay has to
+        //   complete before we can write the checkpoint
+        //   ([TemporarySuspendError::Replaying]).  No special action is needed.
+        //
+        // - If exactly once fault tolerance is not enabled, then some input
+        //   endpoint is presenting a checkpoint barrier because it is between
+        //   possible checkpoint steps
+        //   ([TemporarySuspendError::InputEndpointBarrier]).  In that case, we
+        //   will only flush input for the barrier endpoints (otherwise, it's
+        //   possible non-barrier endpoints will become barriers and we
+        //   definitely don't want that).
+        let barriers_only = !self.checkpoint_requests.is_empty() && self.ft.is_none();
 
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //
@@ -970,29 +1067,42 @@ impl CircuitThread {
         // future steps.
         let statuses = self.controller.status.input_status();
         let mut waiting = HashSet::with_capacity(statuses.len());
-        for (endpoint_id, status) in statuses.iter() {
-            if !self.replaying() {
-                status.reader.queue();
+        for (&endpoint_id, status) in statuses.iter() {
+            if barriers_only && !status.is_barrier() {
+                if let Some(resume) = self.input_metadata.remove(&status.endpoint_name) {
+                    step_metadata.insert(
+                        endpoint_id,
+                        (
+                            status.endpoint_name.clone(),
+                            StepResults {
+                                num_records: 0,
+                                resume,
+                            },
+                        ),
+                    );
+                }
             } else {
-                // We already started the input adapters replaying. The set of
-                // input adapters can't change during replay (because we disable
-                // the APIs that could do that during replay).
+                if !self.replaying() {
+                    status.reader.queue();
+                } else {
+                    // We already started the input adapters replaying. The set of
+                    // input adapters can't change during replay (because we disable
+                    // the APIs that could do that during replay).
+                }
+                waiting.insert(endpoint_id);
             }
-            waiting.insert(*endpoint_id);
         }
         drop(statuses);
 
         let mut total_consumed = 0;
-        let mut step_metadata = HashMap::new();
 
-        let start_time = Instant::now();
-        let mut warn_threshold = Duration::from_secs(10);
+        let mut long_op_warning = LongOperationWarning::new(Duration::from_secs(10));
         loop {
             // Process input and check for failed input adapters.
             let statuses = self.controller.status.input_status();
             let mut failed = Vec::new();
-            waiting.retain(|endpoint_id| {
-                let Some(status) = statuses.get(endpoint_id) else {
+            waiting.retain(|&endpoint_id| {
+                let Some(status) = statuses.get(&endpoint_id) else {
                     // Input adapter was deleted without yielding any input.
                     return false;
                 };
@@ -1008,32 +1118,16 @@ impl CircuitThread {
                         } else {
                             warn!("Input endpoint {} failed", status.endpoint_name);
                         }
-                        failed.push(*endpoint_id);
+                        failed.push(endpoint_id);
                         return false;
                     } else {
                         return true;
                     }
                 };
 
-                let (metadata, data, hash) = match results.resume {
-                    Some(Resume::Seek { seek }) => (seek, RmpValue::Nil, 0),
-                    Some(Resume::Replay { seek, replay, hash }) => (seek, replay, hash),
-                    None => (JsonValue::Null, RmpValue::Nil, 0),
-                };
-
                 // Input received.
                 total_consumed += results.num_records;
-                step_metadata.insert(
-                    status.endpoint_name.clone(),
-                    InputLog {
-                        data,
-                        metadata,
-                        checksums: InputChecksums {
-                            num_records: results.num_records,
-                            hash,
-                        },
-                    },
-                );
+                step_metadata.insert(endpoint_id, (status.endpoint_name.clone(), results));
                 false
             });
             drop(statuses);
@@ -1043,48 +1137,49 @@ impl CircuitThread {
 
             // Are we done?
             if waiting.is_empty() {
-                let step_metadata = if let Some(ft) = &self.ft {
-                    if let Some(replay_step) = &ft.replay_step {
-                        // Reuse input logs from the original step.  (The ones
-                        // just produced are empty, because replay doesn't
-                        // produce logs, since they'd be identical to the
-                        // original ones.)
-                        //
-                        // Usually, these logs are not used for anything, since
-                        // we're replaying, but in the corner case where this is
-                        // the final step to replay and we immediately
-                        // checkpoint, the checkpoint must have the log records
-                        // so that, on resume, it can seek the input connectors
-                        // to the proper location.
-                        replay_step.input_logs.clone()
-                    } else {
-                        step_metadata
-                    }
-                } else {
-                    step_metadata
-                };
-
-                return Ok(FlushedInput {
-                    total_consumed,
-                    step_metadata,
-                });
+                break;
             }
 
             // Warn if we've waited a long time.
-            if start_time.elapsed() >= warn_threshold {
+            long_op_warning.check(|elapsed| {
                 warn!(
                     "still waiting to complete input step after {} seconds",
-                    warn_threshold.as_secs()
-                );
-                warn_threshold *= 2;
-            }
+                    elapsed.as_secs()
+                )
+            });
 
             // Wait for something to change.
             self.parker.park_timeout(Duration::from_secs(1));
             if self.controller.state() == PipelineState::Terminated {
-                return Err(());
+                return Ok(None);
             }
         }
+
+        let mut input_metadata = HashMap::new();
+
+        let statuses = self.controller.status.input_status();
+        for (&endpoint_id, (_name, results)) in step_metadata.iter() {
+            let Some(endpoint) = statuses.get(&endpoint_id) else {
+                // The endpoint has been removed, so there's nothing to record
+                // in the checkpoint.
+                continue;
+            };
+            input_metadata.insert(endpoint.endpoint_name.clone(), results.resume.clone());
+            let barrier = results
+                .resume
+                .as_ref()
+                .is_some_and(|resume| resume.is_barrier());
+            endpoint.set_barrier(barrier);
+        }
+        drop(statuses);
+
+        self.input_metadata = input_metadata;
+
+        if let Some(ft) = &mut self.ft {
+            ft.write_step(step_metadata, self.step)?;
+        }
+
+        Ok(Some(total_consumed))
     }
 
     /// Reports that `total_consumed` records have been consumed.
@@ -1139,12 +1234,10 @@ impl CircuitThread {
     }
 }
 
-struct FlushedInput {
-    /// Number of records consumed by the circuit.
-    total_consumed: u64,
-
-    /// Metadata to write to the steps log.
-    step_metadata: HashMap<String, InputLog>,
+enum CheckpointRequest {
+    Scheduled,
+    CheckpointCommand(CheckpointCallbackFn),
+    SuspendCommand(SuspendCallbackFn),
 }
 
 /// Tracks fault-tolerant state in a controller [CircuitThread].
@@ -1275,7 +1368,7 @@ impl FtState {
     /// Writes `step_metadata` to the step writer.
     fn write_step(
         &mut self,
-        input_logs: HashMap<String, InputLog>,
+        step_metadata: HashMap<u64, (String, StepResults)>,
         step: Step,
     ) -> Result<(), ControllerError> {
         if !self.enabled {
@@ -1304,6 +1397,10 @@ impl FtState {
                 }
                 drop(inputs);
 
+                let input_logs = step_metadata
+                    .into_values()
+                    .map(|(name, result)| (name, result.try_into().unwrap()))
+                    .collect();
                 let step_metadata = StepMetadata {
                     step,
                     remove_inputs,
@@ -1313,8 +1410,16 @@ impl FtState {
                 self.journal.write(&step_metadata)?;
             }
             Some(record) => {
-                let logged = StepInputChecksums::from(&record.input_logs);
-                let replayed = StepInputChecksums::from(&input_logs);
+                let mut logged = HashMap::new();
+                for (name, log) in &record.input_logs {
+                    logged.insert(name, log.checksums);
+                }
+
+                let mut replayed = HashMap::new();
+                for (name, results) in step_metadata.values() {
+                    replayed.insert(name, results.checksums().unwrap());
+                }
+
                 if replayed != logged {
                     let error = format!("Logged and replayed step {step} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}");
                     error!("{error}");
@@ -1394,6 +1499,7 @@ struct StepTrigger {
 }
 
 /// Action for the controller to take.
+#[derive(Debug)]
 enum Action {
     /// Park until time `.0`, or forever if `None`.
     Park(Option<Instant>),
@@ -1424,18 +1530,38 @@ impl StepTrigger {
         }
     }
 
-    /// Determines when to trigger the next step, given whether we're currently
-    /// `replaying` from a checkpoint, `bootstrapping` modified parts of the circuit,
-    /// and whether the pipeline is currently `running`.  Returns
-    /// `Action::Step` to trigger a step right away, and otherwise how long to wait.
+    /// Determines when to trigger the next step, given:
+    ///
+    /// - The time of the last checkpoint.
+    /// - Whether we're currently `replaying`.
+    /// - Whether the pipeline is currently `bootstrapping`.
+    /// - Whether the pipeline is currently `running`.
+    /// - Whether a checkpoint has already been requested.
+    ///
+    /// Returns the action for the controller to take.
     fn trigger(
         &mut self,
         last_checkpoint: Instant,
         replaying: bool,
         bootstrapping: bool,
         running: bool,
+        checkpoint_requested: bool,
     ) -> Action {
-        let buffered_records = self.controller.status.num_buffered_input_records();
+        // If any input endpoints are blocking suspend, then those are the only
+        // ones that we count; otherwise, count all of them.
+        //
+        // An input endpoint is blocking suspend if it has a barrier and a
+        // checkpoint has been requested.
+        let mut buffered_records = EnumMap::<bool, u64>::default();
+        for status in self.controller.status.input_status().values() {
+            buffered_records[checkpoint_requested && status.is_barrier()] +=
+                status.metrics.buffered_records.load(Ordering::Relaxed);
+        }
+        let buffered_records = if buffered_records[true] > 0 {
+            buffered_records[true]
+        } else {
+            buffered_records[false]
+        };
 
         // `self.tick` but `None` if we're not running.
         let tick = running.then_some(self.tick).flatten();
@@ -1454,7 +1580,7 @@ impl StepTrigger {
         let now = Instant::now();
         if replaying || bootstrapping {
             step(self, now)
-        } else if checkpoint.is_some_and(|t| now >= t) {
+        } else if checkpoint.is_some_and(|t| now >= t) && !checkpoint_requested {
             Action::Checkpoint
         } else if self.controller.status.unset_step_requested()
             || buffered_records > self.min_batch_size_records
@@ -1506,7 +1632,7 @@ struct ControllerInit {
     /// Metadata for seeking to input endpoint initial positions.
     ///
     /// This is `Some` iff we read a checkpoint.
-    input_metadata: Option<CheckpointOffsets>,
+    input_metadata: Option<HashMap<String, JsonValue>>,
 }
 
 pub const STATE_FILE: &str = "state.json";
@@ -1626,7 +1752,7 @@ impl ControllerInit {
             circuit_config: Self::circuit_config(&config, Some(storage))?,
             pipeline_config: config,
             step,
-            input_metadata: Some(input_metadata),
+            input_metadata: Some(input_metadata.0),
             processed_records,
         })
     }
@@ -2815,11 +2941,11 @@ impl ControllerInner {
     ///
     /// See [ControllerStatus::input_batch].
     pub fn input_batch(&self, endpoint_id: Option<(EndpointId, usize)>, num_records: usize) {
-        if num_records > 0 {
-            self.status
-                .input_batch_global(num_records, &self.circuit_thread_unparker);
-        }
-
+        // We update the individual endpoint metrics, then the global metrics.
+        // The order is important because global metrics updates can unpark the
+        // circuit thread, and the circuit thread reads the endpoint metrics.
+        // Updating in the wrong order can cause the circuit thread to park
+        // itself indefinitely.
         if let Some((endpoint_id, num_bytes)) = endpoint_id {
             self.status.input_batch_from_endpoint(
                 endpoint_id,
@@ -2827,6 +2953,11 @@ impl ControllerInner {
                 num_records,
                 &self.backpressure_thread_unparker,
             )
+        }
+
+        if num_records > 0 {
+            self.status
+                .input_batch_global(num_records, &self.circuit_thread_unparker);
         }
     }
 
@@ -2889,21 +3020,45 @@ impl ControllerInner {
     }
 
     /// Returns whether this pipeline supports suspend-and-resume.
-    pub fn can_suspend(&self) -> CanSuspend {
-        if self
-            .status
-            .input_status()
-            .values()
-            .all(|endpoint_stats| endpoint_stats.fault_tolerance.is_some())
-            && self.status.pipeline_config.global.storage.is_some()
-        {
-            if self.restoring.load(Ordering::Acquire) {
-                CanSuspend::NotNow
-            } else {
-                CanSuspend::Yes
+    pub fn can_suspend(&self) -> Result<(), SuspendError> {
+        // First, check for reasons we can't suspend.
+        let mut permanent = Vec::new();
+        #[cfg(not(feature = "feldera-enterprise"))]
+        #[cfg(not(test))]
+        permanent.push(PermanentSuspendError::EnterpriseFeature);
+        if self.status.pipeline_config.global.storage.is_none() {
+            permanent.push(PermanentSuspendError::StorageRequired);
+        }
+        for endpoint_stats in self.status.input_status().values() {
+            if endpoint_stats.fault_tolerance.is_none() {
+                permanent.push(PermanentSuspendError::UnsupportedInputEndpoint(
+                    endpoint_stats.endpoint_name.clone(),
+                ));
             }
+        }
+        if !permanent.is_empty() {
+            return Err(SuspendError::Permanent(permanent));
+        }
+
+        // Second, check for reasons for suspend to be delayed.
+        let mut temporary = Vec::new();
+        if self.restoring.load(Ordering::Acquire) {
+            temporary.push(TemporarySuspendError::Replaying);
+        }
+        if self.status.bootstrap_in_progress() {
+            temporary.push(TemporarySuspendError::Bootstrapping);
+        }
+        for endpoint_stats in self.status.input_status().values() {
+            if endpoint_stats.is_barrier() {
+                temporary.push(TemporarySuspendError::InputEndpointBarrier(
+                    endpoint_stats.endpoint_name.clone(),
+                ));
+            }
+        }
+        if !temporary.is_empty() {
+            Err(SuspendError::Temporary(temporary))
         } else {
-            CanSuspend::No
+            Ok(())
         }
     }
 }
@@ -2947,7 +3102,11 @@ impl InputConsumer for InputProbe {
     }
 
     fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
-        self.controller.fault_tolerance
+        Some(
+            self.controller
+                .fault_tolerance
+                .unwrap_or(FtModel::AtLeastOnce),
+        )
     }
 
     fn parse_errors(&self, errors: Vec<ParseError>) {
@@ -3101,6 +3260,28 @@ impl OutputConsumer for OutputProbe {
     }
 }
 
+struct LongOperationWarning {
+    start: Instant,
+    warn_threshold: Duration,
+}
+
+impl LongOperationWarning {
+    fn new(warn_threshold: Duration) -> Self {
+        Self {
+            start: Instant::now(),
+            warn_threshold,
+        }
+    }
+
+    fn check(&mut self, warn: impl FnOnce(Duration)) {
+        let elapsed = self.start.elapsed();
+        if elapsed >= self.warn_threshold {
+            warn(elapsed);
+            self.warn_threshold *= 2;
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
@@ -3108,13 +3289,19 @@ mod test {
             generate_test_batch, init_test_logger, test_circuit, wait, TestStruct,
             DEFAULT_TIMEOUT_MS,
         },
+        transport::set_barrier,
         Controller, PipelineConfig,
     };
     use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
     use std::{
+        cmp::min,
+        fmt::Write as _,
         fs::{create_dir, remove_file, File},
         io::Write,
-        path::Path,
+        iter::repeat_n,
+        ops::Range,
+        path::{Path, PathBuf},
+        sync::mpsc,
         thread::sleep,
         time::Duration,
     };
@@ -3168,7 +3355,7 @@ inputs:
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
                     &TestStruct::schema(),
-                    None,
+                    &[None],
                 ))
             },
             &config,
@@ -3240,7 +3427,7 @@ inputs:
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
                     &TestStruct::schema(),
-                    None,
+                    &[None],
                 ))
             },
             &config,
@@ -3327,7 +3514,7 @@ outputs:
             info!("output file: {output_path}");
             let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
             let controller = Controller::with_config(
-                    |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], None)),
+                    |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
                     &config,
                     Box::new(|e| panic!("error: {e}")),
                 )
@@ -3393,6 +3580,81 @@ outputs:
                 do_checkpoint: false,
             }
         }
+    }
+
+    /// Reads `path` and ensures that it contains the [TestStruct] records in
+    /// `expect`.
+    #[track_caller]
+    fn check_file_contents(path: &Path, expect: Range<usize>) {
+        let mut actual = CsvReaderBuilder::new()
+            .has_headers(false)
+            .from_path(path)
+            .unwrap()
+            .deserialize::<(TestStruct, i32)>()
+            .map(|res| {
+                let (val, weight) = res.unwrap();
+                assert_eq!(weight, 1);
+                val
+            })
+            .collect::<Vec<_>>();
+        actual.sort();
+
+        assert_eq!(actual.len(), expect.len());
+        for (record, expect_record) in actual
+            .into_iter()
+            .zip(expect.map(|id| TestStruct::for_id(id as u32)))
+        {
+            assert_eq!(record, expect_record);
+        }
+    }
+
+    fn count_endpoint_records(controller: &Controller, output_index: usize) -> u64 {
+        let endpoint_id = controller
+            .inner
+            .output_endpoint_id_by_name(&format!("test_output{}", output_index + 1))
+            .unwrap();
+        controller
+            .status()
+            .output_status()
+            .get(&endpoint_id)
+            .unwrap()
+            .transmitted_records()
+    }
+
+    fn collect_endpoint_records(controller: &Controller, n: usize) -> Vec<usize> {
+        (0..n)
+            .map(|i| count_endpoint_records(controller, i) as usize)
+            .collect()
+    }
+
+    #[track_caller]
+    fn wait_for_records(controller: &Controller, expect_n: &[usize]) {
+        let n = expect_n.len();
+        let mut last_n = repeat_n(0, n).collect::<Vec<_>>();
+        wait(
+            || {
+                let new_n = collect_endpoint_records(controller, n);
+                for i in 0..n {
+                    if new_n[i] > last_n[i] {
+                        println!("received {n} records on test_output{}", i + 1);
+                    }
+                }
+                last_n = new_n;
+                last_n
+                    .iter()
+                    .zip(expect_n.iter())
+                    .all(|(&last, &expect)| last >= expect)
+            },
+            10_000,
+        )
+        .unwrap();
+
+        // No more records should arrive, but give the controller some time
+        // to send some more in case there's a bug.
+        sleep(Duration::from_millis(100));
+
+        // Then verify that the number is as expected.
+        assert_eq!(&collect_endpoint_records(controller, n), expect_n);
     }
 
     /// Runs a basic test of fault tolerance.
@@ -3501,7 +3763,7 @@ outputs:
                     Ok(test_circuit::<TestStruct>(
                         circuit_config,
                         &[],
-                        Some("output"),
+                        &[Some("output")],
                     ))
                 },
                 &config,
@@ -3517,39 +3779,7 @@ outputs:
                 "wait for {} records {checkpointed_records}..{total_records}",
                 expect_n
             );
-            let mut last_n = 0;
-            wait(
-                || {
-                    let n = controller
-                        .status()
-                        .output_status()
-                        .get(&0)
-                        .unwrap()
-                        .transmitted_records() as usize;
-                    if n > last_n {
-                        println!("received {n} records");
-                        last_n = n;
-                    }
-                    n >= expect_n
-                },
-                10_000,
-            )
-            .unwrap();
-
-            // No more records should arrive, but give the controller some time
-            // to send some more in case there's a bug.
-            sleep(Duration::from_millis(100));
-
-            // Then verify that the number is as expected.
-            assert_eq!(
-                controller
-                    .status()
-                    .output_status()
-                    .get(&0)
-                    .unwrap()
-                    .transmitted_records(),
-                expect_n as u64
-            );
+            wait_for_records(&controller, &[expect_n]);
 
             // Checkpoint, if requested.
             if do_checkpoint {
@@ -3565,26 +3795,7 @@ outputs:
             // fault-tolerant, truncates the output file to length 0 each
             // time. Therefore, the output file should contain all the records
             // in `checkpointed_records..total_records`.
-            let mut actual = CsvReaderBuilder::new()
-                .has_headers(false)
-                .from_path(&output_path)
-                .unwrap()
-                .deserialize::<(TestStruct, i32)>()
-                .map(|res| {
-                    let (val, weight) = res.unwrap();
-                    assert_eq!(weight, 1);
-                    val
-                })
-                .collect::<Vec<_>>();
-            actual.sort();
-
-            assert_eq!(actual.len(), expect_n);
-            for (record, expect_record) in actual
-                .into_iter()
-                .zip((checkpointed_records..).map(|id| TestStruct::for_id(id as u32)))
-            {
-                assert_eq!(record, expect_record);
-            }
+            check_file_contents(&output_path, checkpointed_records..total_records);
 
             if do_checkpoint {
                 checkpointed_records = total_records;
@@ -3643,7 +3854,7 @@ inputs:
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
                     &TestStruct::schema(),
-                    None,
+                    &[None],
                 ))
             },
             &config,
@@ -3737,7 +3948,7 @@ inputs:
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
                     &TestStruct::schema(),
-                    None,
+                    &[None],
                 ))
             },
             &config,
@@ -3903,7 +4114,7 @@ outputs:
                     Ok(test_circuit::<TestStruct>(
                         circuit_config,
                         &[],
-                        Some("output"),
+                        &[Some("output")],
                     ))
                 },
                 &config,
@@ -3929,6 +4140,12 @@ outputs:
             // Stop controller.
             println!("stop controller");
             controller.stop().unwrap();
+
+            // Read output and compare. Our output adapter, which is not
+            // fault-tolerant, truncates the output file to length 0 each
+            // time. Therefore, the output file should contain all the records
+            // in `checkpointed_records..total_records`.
+            check_file_contents(&output_path, checkpointed_records..total_records);
 
             checkpointed_records = total_records;
             println!();
@@ -4006,7 +4223,13 @@ outputs:
         // Start pipeline.
         println!("start pipeline");
         let mut controller = Controller::with_config(
-            |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], Some("v0"))),
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &[],
+                    &[Some("v0")],
+                ))
+            },
             &config,
             Box::new(|e| panic!("error: {e}")),
         )
@@ -4052,7 +4275,7 @@ outputs:
                     Ok(test_circuit::<TestStruct>(
                         circuit_config,
                         &[],
-                        Some(&format!("v{}", round + 1)),
+                        &[Some(&format!("v{}", round + 1))],
                     ))
                 },
                 &config,
@@ -4145,6 +4368,379 @@ outputs:
     #[test]
     fn suspend() {
         test_suspend(&[2500, 2500, 2500, 2500, 2500]);
+    }
+
+    #[test]
+    fn suspend_empty() {
+        test_suspend(&[0, 2500, 0, 2500, 0, 0, 0, 2500, 2500, 2500, 0]);
+    }
+
+    fn input_path(storage_dir: &Path, i: usize) -> PathBuf {
+        storage_dir.join(format!("input{}.csv", i + 1))
+    }
+
+    fn output_path(storage_dir: &Path, i: usize) -> PathBuf {
+        storage_dir.join(format!("output{}.csv", i + 1))
+    }
+
+    fn start_controller(storage_dir: &Path, barriers: &[usize]) -> Controller {
+        let n = barriers.len();
+        for (i, barrier) in barriers.iter().copied().enumerate() {
+            set_barrier(input_path(storage_dir, i).to_str().unwrap(), barrier);
+        }
+
+        let mut config_str = format!(
+            "\
+name: test
+workers: 4
+storage_config:
+    path: {storage_dir:?}
+storage: true
+clock_resolution_usecs: null
+inputs:
+"
+        )
+        .to_string();
+
+        for i in 0..n {
+            writeln!(
+                &mut config_str,
+                "    test_input{}:
+        stream: test_input{}
+        transport:
+            name: file_input
+            config:
+                path: {:?}
+                follow: true
+        format:
+            name: csv",
+                i + 1,
+                i + 1,
+                input_path(storage_dir, i).to_str().unwrap()
+            )
+            .unwrap();
+        }
+
+        writeln!(&mut config_str, "outputs:").unwrap();
+        for i in 0..n {
+            let output_path = output_path(storage_dir, i);
+            let _ = std::fs::remove_file(&output_path);
+            writeln!(
+                &mut config_str,
+                "    test_output{}:
+        stream: test_output{}
+        transport:
+            name: file_output
+            config:
+                path: {:?}
+        format:
+            name: csv
+            config:",
+                i + 1,
+                i + 1,
+                output_path.to_str().unwrap()
+            )
+            .unwrap();
+        }
+        println!("{config_str}");
+
+        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+        let controller = Controller::with_config(
+            move |circuit_config| {
+                let persistent_output_ids =
+                    (1..=n).map(|i| format!("output{i}")).collect::<Vec<_>>();
+                let persistent_strs = persistent_output_ids
+                    .iter()
+                    .map(|s| Some(s.as_str()))
+                    .collect::<Vec<_>>();
+
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &[],
+                    &persistent_strs,
+                ))
+            },
+            &config,
+            Box::new(|e| panic!("error: {e}")),
+        )
+        .unwrap();
+
+        controller.start();
+        controller
+    }
+
+    /// Test suspend when barriers are involved, with one input
+    ///
+    /// An input endpoint that supports suspend and resume can emit a barrier,
+    /// specifically [feldera_adapterlib::transport::Resume::Barrier], when it
+    /// can't suspend after a particular step.  When a suspend is requested and
+    /// there's a barrier, the controller advances the input endpoints with
+    /// barriers (and only those input endpoints) until past the barrier.
+    ///
+    /// This tests:
+    ///
+    /// - A barrier on one input that is released after one step.
+    ///
+    /// - A barrier on one input that is released after multiple steps.
+    #[test]
+    fn suspend_barrier() {
+        init_test_logger();
+        let tempdir = TempDir::new().unwrap();
+
+        // This allows the temporary directory to be deleted when we finish.  If
+        // you want to keep it for inspection instead, comment out the following
+        // line and then remove the comment markers on the two lines after that.
+        let tempdir_path = tempdir.path();
+        //let tempdir_path = tempdir.into_path();
+        //println!("{}", tempdir_path.display());
+
+        let storage_dir = tempdir_path.join("storage");
+        create_dir(&storage_dir).unwrap();
+        let input_file = File::create(input_path(&storage_dir, 0)).unwrap();
+
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(&input_file);
+
+        // Write records to the input file.
+        println!("Writing records 0..4000");
+        for id in 0..4000 {
+            writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+        }
+        writer.flush().unwrap();
+
+        // Start pipeline.
+        println!("start pipeline");
+
+        let controller = start_controller(&storage_dir, &[5000]);
+
+        // Wait for the records that are not in the checkpoint to be
+        // processed or replayed.
+        println!("wait for 4000 records 0..4000");
+        wait_for_records(&controller, &[4000]);
+
+        // Suspend.
+        let (sender, receiver) = mpsc::channel();
+        println!("start suspend");
+        controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+
+        // Suspend should not succeed, because of the barrier.
+        sleep(Duration::from_millis(1000));
+        receiver.try_recv().unwrap_err();
+
+        // Write 1000 more records.
+        for id in 4000..5000 {
+            writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+        }
+        writer.flush().unwrap();
+
+        // Suspend should now succeed, because we crossed the barrier.
+        receiver
+            .recv_timeout(Duration::from_millis(1000))
+            .unwrap()
+            .unwrap();
+
+        // Stop controller.
+        println!("stop controller");
+        controller.stop().unwrap();
+
+        // Read output and compare. Our output adapter, which is not
+        // fault-tolerant, truncates the output file to length 0 each
+        // time. Therefore, the output file should contain all the records
+        // in `0..5000`
+        check_file_contents(&output_path(&storage_dir, 0), 0..5000);
+
+        // Restart the controller.  It should output no records initially
+        // because the checkpoint covered all of them.
+        let controller = start_controller(&storage_dir, &[5000]);
+        wait_for_records(&controller, &[0]);
+
+        println!("start suspend");
+        let (sender, receiver) = mpsc::channel();
+        let mut sender = Some(sender);
+
+        for i in 0..5 {
+            // Make sure suspend hasn't completed yet.
+            receiver.try_recv().unwrap_err();
+
+            let start = (i + 5) * 1000;
+            let end = start + 1000;
+            println!("writing records {start}..{end}");
+            for id in start..end {
+                writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+            }
+            writer.flush().unwrap();
+            println!("waiting for {} records", (i + 1) * 1000);
+            wait_for_records(&controller, &[(i + 1) * 1000]);
+            check_file_contents(&(output_path(&storage_dir, 0)), 5000..end);
+
+            if let Some(sender) = sender.take() {
+                // Start suspend.  It should not succeed, because of the barrier.
+                //
+                // (We need to output some records before we do this, otherwise
+                // it would succeed immediately because we haven't stepped past
+                // the checkpoint.)
+                controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+            }
+        }
+
+        // Suspend should now succeed, because we crossed the barrier.
+        receiver
+            .recv_timeout(Duration::from_millis(1000))
+            .unwrap()
+            .unwrap();
+    }
+
+    /// Test suspend when barriers are involved, with multiple inputs.
+    ///
+    /// An input endpoint that supports suspend and resume can emit a barrier,
+    /// specifically [feldera_adapterlib::transport::Resume::Barrier], when it
+    /// can't suspend after a particular step.  When a suspend is requested and
+    /// there's a barrier, the controller advances the input endpoints with
+    /// barriers (and only those input endpoints) until past the barrier.
+    ///
+    /// This tests writing to multiple inputs that all have different barriers,
+    /// and ensures that suspend occurs as soon as all the barriers are
+    /// released, and that the other inputs don't advance further than needed
+    /// for their barriers.
+    fn suspend_multiple_barriers(n_inputs: usize) {
+        init_test_logger();
+        let tempdir = TempDir::new().unwrap();
+
+        // This allows the temporary directory to be deleted when we finish.  If
+        // you want to keep it for inspection instead, comment out the following
+        // line and then remove the comment markers on the two lines after that.
+        let tempdir_path = tempdir.path();
+        //let tempdir_path = tempdir.into_path();
+        //println!("{}", tempdir_path.display());
+
+        let storage_dir = tempdir_path.join("storage");
+        create_dir(&storage_dir).unwrap();
+
+        let input_files = (0..n_inputs)
+            .map(|i| File::create(input_path(&storage_dir, i)).unwrap())
+            .collect::<Vec<_>>();
+
+        let mut writers = (0..n_inputs)
+            .map(|i| {
+                CsvWriterBuilder::new()
+                    .has_headers(false)
+                    .from_writer(&input_files[i])
+            })
+            .collect::<Vec<_>>();
+
+        // Write records to the input files.
+        println!("Writing 1000 records to each of {n_inputs} files");
+        for i in 0..n_inputs {
+            for id in 0..1000 {
+                writers[i].serialize(TestStruct::for_id(id as u32)).unwrap();
+            }
+            writers[i].flush().unwrap();
+        }
+
+        // Start pipeline.
+        println!("start pipeline");
+
+        let barriers = (0..n_inputs).map(|i| i * 1000).collect::<Vec<_>>();
+        let controller = start_controller(&storage_dir, &barriers);
+
+        // Wait for the records that are not in the checkpoint to be
+        // processed or replayed.
+        println!("wait for 1000 records in each file");
+        let mut written = repeat_n(1000, n_inputs).collect::<Vec<_>>();
+        wait_for_records(&controller, &written);
+
+        // Suspend.
+        let (sender, receiver) = mpsc::channel();
+        println!("start suspend");
+        controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+
+        // Iterate as long as we shouldn't have reached the barrier, adding
+        // records round-robin to one input at a time.
+        fn expectations(written: &[usize], barriers: &[usize]) -> Vec<usize> {
+            written
+                .iter()
+                .zip(barriers.iter())
+                .map(|(&written, &barrier)| min(written, barrier).max(1000))
+                .collect()
+        }
+        let mut next = 0;
+        while written
+            .iter()
+            .zip(barriers.iter())
+            .any(|(&written, &barrier)| written < barrier)
+        {
+            // Suspend shouldn't have succeeded; check.
+            sleep(Duration::from_millis(1000));
+            receiver.try_recv().unwrap_err();
+
+            // Write 1000 more records to the `next` input.
+            for id in written[next]..written[next] + 1000 {
+                writers[next]
+                    .serialize(TestStruct::for_id(id as u32))
+                    .unwrap();
+            }
+            writers[next].flush().unwrap();
+            written[next] += 1000;
+            next = (next + 1) % n_inputs;
+
+            // Wait for the records to be written to the output, then check that
+            // we got exactly what we expect on output.
+            let expect = expectations(&written, &barriers);
+            wait_for_records(&controller, &expect);
+            for i in 0..n_inputs {
+                check_file_contents(&output_path(&storage_dir, i), 0..expect[i]);
+            }
+        }
+
+        // Suspend should now succeed, because we crossed the barrier.
+        receiver
+            .recv_timeout(Duration::from_millis(1000))
+            .unwrap()
+            .unwrap();
+
+        // Stop controller.
+        println!("stop controller");
+        controller.stop().unwrap();
+
+        // Check output one more time.
+        let expect = expectations(&written, &barriers);
+        for i in 0..n_inputs {
+            check_file_contents(&output_path(&storage_dir, i), 0..expect[i]);
+        }
+
+        // Now restart the controller and wait for all the records that we wrote
+        // beyond the barriers get copied to output (and nothing else).
+        let controller = start_controller(&storage_dir, &barriers);
+        let remaining = expect
+            .iter()
+            .zip(written.iter())
+            .map(|(&expect, &written)| written - expect)
+            .collect::<Vec<_>>();
+        wait_for_records(&controller, &remaining);
+        for i in 0..n_inputs {
+            check_file_contents(&output_path(&storage_dir, i), expect[i]..written[i]);
+        }
+    }
+
+    #[test]
+    fn suspend_barrier2() {
+        suspend_multiple_barriers(2);
+    }
+
+    #[test]
+    fn suspend_barrier3() {
+        suspend_multiple_barriers(3);
+    }
+
+    #[test]
+    fn suspend_barrier4() {
+        suspend_multiple_barriers(4);
+    }
+
+    #[test]
+    fn suspend_barrier5() {
+        suspend_multiple_barriers(5);
     }
 
     #[test]

@@ -100,7 +100,7 @@ outputs:
             Ok(test_circuit::<TestStruct>(
                 workers,
                 &TestStruct::schema(),
-                None,
+                &[None],
             ))
         },
         &config,
@@ -522,7 +522,9 @@ impl InputConsumer for DummyInputConsumer {
     fn extended(&self, num_records: usize, resume: Option<Resume>) {
         self.called(ConsumerCall::Extended {
             num_records,
-            metadata: resume.map(Resume::into_seek).unwrap_or_default(),
+            metadata: resume
+                .map(|resume| resume.into_seek().unwrap())
+                .unwrap_or_default(),
         });
     }
 
@@ -923,7 +925,7 @@ outputs:
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
                     &[],
-                    Some("output"),
+                    &[Some("output")],
                 ))
             },
             &config,
@@ -1164,7 +1166,7 @@ fn test_offset(
     }
 
     let (endpoint, consumer, _parser, zset) =
-        mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty(), ).unwrap();
+        mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap();
 
     if expected.is_none() {
         consumer.on_error(Some(Box::new(|_, _| ())));
@@ -1357,7 +1359,7 @@ outputs:
     let test_name_clone = test_name.to_string();
 
     let controller = Controller::with_config(
-        |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema(), None)),
+        |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema(), &[None])),
         &config,
         Box::new(move |e| if running_clone.load(Ordering::Acquire) {
             panic!("{test_name_clone}: error: {e}")
@@ -1590,7 +1592,7 @@ outputs:
     let running_clone = running.clone();
 
     let controller = Controller::with_config(
-        |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema(), None)),
+        |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema(), &[None])),
         &config,
         Box::new(move |e| if running_clone.load(Ordering::Acquire) {
             panic!("buffer_test: error: {e}")

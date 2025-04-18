@@ -183,6 +183,12 @@ impl From<ControllerError> for PipelineError {
     }
 }
 
+impl From<Arc<ControllerError>> for PipelineError {
+    fn from(error: Arc<ControllerError>) -> Self {
+        Self::ControllerError { error }
+    }
+}
+
 impl From<DataFusionError> for PipelineError {
     fn from(error: DataFusionError) -> Self {
         Self::AdHocQueryError {

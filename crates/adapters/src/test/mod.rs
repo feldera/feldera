@@ -182,11 +182,8 @@ where
             .unwrap_or(&default_format),
     )?;
 
-    let endpoint = input_transport_config_to_endpoint(
-        config.connector_config.transport.clone(),
-        "",
-    )?
-    .unwrap();
+    let endpoint =
+        input_transport_config_to_endpoint(config.connector_config.transport.clone(), "")?.unwrap();
 
     let reader = endpoint.open(
         Box::new(consumer.clone()),
@@ -197,13 +194,13 @@ where
     Ok((reader, consumer, parser, input_handle))
 }
 
-/// Create a simple test circuit that passes the input stream right through to
-/// the output.
-// TODO: parameterize with the number (and types?) of input and output streams.
+/// Create a simple test circuit that passes each of a number of streams right
+/// through to the corresponding output.  The number of streams is the length of
+/// `persistent_output_ids`, which also specifies optional persistent output ids.
 pub fn test_circuit<T>(
     config: CircuitConfig,
     schema: &[Field],
-    persistent_output_id: Option<&str>,
+    persistent_output_ids: &[Option<&str>],
 ) -> (DBSPHandle, Box<dyn CircuitCatalog>)
 where
     T: DBData
@@ -212,38 +209,47 @@ where
         + Sync,
 {
     let schema = schema.to_vec();
-    let persistent_output_id = persistent_output_id.map(|id| id.to_string());
+    let persistent_output_ids = persistent_output_ids
+        .iter()
+        .map(|id| id.map(|s| s.to_string()))
+        .collect::<Vec<_>>();
 
     let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
         let mut catalog = Catalog::new();
-        let (input, hinput) = circuit.add_input_zset::<T>();
-        input.set_persistent_id(Some("input"));
+        let n = persistent_output_ids.len();
 
-        let input_schema = serde_json::to_string(&Relation::new(
-            "test_input1".into(),
-            schema.clone(),
-            false,
-            BTreeMap::new(),
-        ))
-        .unwrap();
+        for (persistent_output_id, i) in persistent_output_ids.iter().zip(1..) {
+            let (input, hinput) = circuit.add_input_zset::<T>();
+            if n > 1 {
+                input.set_persistent_id(Some(&format!("input{i}")));
+            } else {
+                input.set_persistent_id(Some("input"));
+            }
 
-        let output_schema = serde_json::to_string(&Relation::new(
-            "test_output1".into(),
-            schema,
-            false,
-            BTreeMap::new(),
-        ))
-        .unwrap();
+            let input_schema = serde_json::to_string(&Relation::new(
+                format!("test_input{i}").into(),
+                schema.clone(),
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap();
 
-        catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
+            let output_schema = serde_json::to_string(&Relation::new(
+                format!("test_output{i}").into(),
+                schema.clone(),
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap();
 
-        let persistent_output_id = persistent_output_id.as_deref();
-        catalog.register_materialized_output_zset_persistent(
-            persistent_output_id,
-            input,
-            &output_schema,
-        );
+            catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
 
+            catalog.register_materialized_output_zset_persistent(
+                persistent_output_id.as_ref().map(|s| s.as_str()),
+                input,
+                &output_schema,
+            );
+        }
         Ok(catalog)
     })
     .unwrap();

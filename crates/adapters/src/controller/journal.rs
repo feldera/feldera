@@ -158,40 +158,13 @@ mod as_json_string {
 ///
 /// This allows checking that an input step replayed the same data as the
 /// original run.
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Copy, Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct InputChecksums {
     /// Number of records.
     pub num_records: u64,
 
     /// Hash of the records.
     pub hash: u64,
-}
-
-/// Checksums for the input endpoints in a step.
-///
-/// This is a subset of [StepMetadata] that is useful for verifying that an
-/// input step replayed the same data as the original run.
-#[derive(Serialize, Deserialize, Debug, Default, PartialEq)]
-pub struct StepInputChecksums(
-    /// Maps from an input endpoint name to its checksums.
-    pub HashMap<String, InputChecksums>,
-);
-
-impl From<&HashMap<String, InputLog>> for StepInputChecksums {
-    fn from(input_logs: &HashMap<String, InputLog>) -> Self {
-        Self(
-            input_logs
-                .iter()
-                .map(|(name, log)| (name.clone(), log.checksums.clone()))
-                .collect(),
-        )
-    }
-}
-
-impl From<&StepMetadata> for StepInputChecksums {
-    fn from(value: &StepMetadata) -> Self {
-        Self::from(&value.input_logs)
-    }
 }
 
 #[cfg(test)]
