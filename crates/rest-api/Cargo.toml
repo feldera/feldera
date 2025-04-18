@@ -1,0 +1,29 @@
+[package]
+name = "feldera-rest-api"
+version = "0.45.0"
+edition = "2021"
+license = "MIT"
+description = "REST API bindings for Feldera"
+homepage = "https://github.com/feldera/feldera"
+repository = "https://github.com/feldera/feldera"
+keywords = ["incremental", "api", "rest", "database", "sql"]
+categories = ["database", "api-bindings", "network-programming"]
+publish = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+uuid = { workspace = true, features = ["serde", "v7"] }
+reqwest = { workspace = true, features = ["json", "stream"] }
+feldera-types = { workspace = true }
+progenitor-client = { workspace = true }
+
+[build-dependencies]
+prettyplease = { workspace = true }
+progenitor = { workspace = true }
+serde_json = { workspace = true }
+syn = { workspace = true }
+
+[package.metadata.cargo-machete]
+ignored = ["progenitor-client", "chrono", "prettytable-rs", "serde", "serde_json", "uuid"]

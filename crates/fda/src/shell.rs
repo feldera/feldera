@@ -1,8 +1,8 @@
-use crate::cd::Client;
 use crate::cli::{Cli, Commands, OutputFormat};
 use crate::{handle_errors_fatal, pipeline, UGPRADE_NOTICE};
 use clap::Parser;
 use directories::ProjectDirs;
+use feldera_rest_api::Client;
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
 use progenitor_client::Error;
@@ -46,8 +46,8 @@ pub async fn shell(format: OutputFormat, name: String, client: Client) {
         .send()
         .await
         .map_err(handle_errors_fatal(
-            client.baseurl.clone(),
-            format!("Failed to connect to {}", client.baseurl.clone()).leak(),
+            client.baseurl().clone(),
+            format!("Failed to connect to {}", client.baseurl().clone()).leak(),
             1,
         ))
         .unwrap()
@@ -82,7 +82,7 @@ pub async fn shell(format: OutputFormat, name: String, client: Client) {
     }
 
     let hostname = client
-        .baseurl
+        .baseurl()
         .trim_start_matches("http://")
         .trim_start_matches("https://");
     let prompt = format!("{}/{}> ", hostname, name);

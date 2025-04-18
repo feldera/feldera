@@ -10,6 +10,8 @@ use arrow::util::pretty::pretty_format_batches;
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use env_logger::Env;
+use feldera_rest_api::types::*;
+use feldera_rest_api::*;
 use feldera_types::config::{FtModel, RuntimeConfig, StorageOptions};
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
@@ -28,16 +30,9 @@ use tokio::time::{sleep, timeout, Duration};
 mod cli;
 mod shell;
 
-#[allow(clippy::all, unused)]
-mod cd {
-    include!(concat!(env!("OUT_DIR"), "/codegen.rs"));
-}
-
 pub(crate) const UGPRADE_NOTICE: &str =
     "Try upgrading to the latest CLI version to resolve this issue or report it on github.com/feldera/feldera if you're already on the latest version.";
 
-use crate::cd::types::*;
-use crate::cd::*;
 use crate::cli::*;
 use crate::shell::shell;
 
@@ -152,7 +147,7 @@ impl TemporaryCacheDisable {
             .send()
             .await
             .map_err(handle_errors_fatal(
-                client.baseurl.clone(),
+                client.baseurl().clone(),
                 "Failed to enable/disable compilation cache",
                 1,
             ))
@@ -283,7 +278,7 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to create API key",
                     1,
                 ))
@@ -313,7 +308,7 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to delete API key",
                     1,
                 ))
@@ -327,7 +322,7 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to list API keys",
                     1,
                 ))
@@ -367,7 +362,7 @@ async fn pipelines(format: OutputFormat, client: Client) {
         .send()
         .await
         .map_err(handle_errors_fatal(
-            client.baseurl,
+            client.baseurl().clone(),
             "Failed to list pipelines",
             1,
         ))
@@ -527,7 +522,7 @@ async fn wait_for_status(
             .send()
             .await
             .map_err(handle_errors_fatal(
-                client.baseurl.clone(),
+                client.baseurl().clone(),
                 "Failed to get program config",
                 1,
             ))
@@ -594,7 +589,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl,
+                        client.baseurl().clone(),
                         "Failed to create pipeline",
                         1,
                     ))
@@ -634,7 +629,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl.clone(),
+                    client.baseurl().clone(),
                     "Failed to get program config",
                     1,
                 ))
@@ -673,7 +668,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl.clone(),
+                        client.baseurl().clone(),
                         "Failed to recompile pipeline",
                         1,
                     ))
@@ -693,7 +688,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl.clone(),
+                        client.baseurl().clone(),
                         "Failed to get program config",
                         1,
                     ))
@@ -717,7 +712,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl.clone(),
+                    client.baseurl().clone(),
                     "Failed to start pipeline",
                     1,
                 ))
@@ -743,7 +738,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl.clone(),
+                    client.baseurl().clone(),
                     "Failed to checkpoint pipeline",
                     1,
                 ))
@@ -758,7 +753,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl.clone(),
+                    client.baseurl().clone(),
                     "Failed to pause pipeline",
                     1,
                 ))
@@ -787,7 +782,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl.clone(),
+                    client.baseurl().clone(),
                     "Failed to get pipeline status",
                     1,
                 ))
@@ -800,7 +795,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl.clone(),
+                    client.baseurl().clone(),
                     "Failed to stop pipeline",
                     1,
                 ))
@@ -836,7 +831,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl.clone(),
+                    client.baseurl().clone(),
                     "Failed to stop pipeline",
                     1,
                 ))
@@ -862,7 +857,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to get pipeline stats",
                     1,
                 ))
@@ -940,7 +935,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to delete the pipeline",
                     1,
                 ))
@@ -955,7 +950,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to get pipeline status",
                     1,
                 ))
@@ -997,7 +992,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to get pipeline config",
                     1,
                 ))
@@ -1028,7 +1023,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl.clone(),
+                    client.baseurl().clone(),
                     "Failed to get pipeline config",
                     1,
                 ))
@@ -1059,7 +1054,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl.clone(),
+                    client.baseurl().clone(),
                     "Failed to set runtime config",
                     1,
                 ))
@@ -1112,7 +1107,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl.clone(),
+                    client.baseurl().clone(),
                     "Failed to obtain heap profile",
                     1,
                 ))
@@ -1212,7 +1207,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to execute SQL query",
                     1,
                 ))
@@ -1288,7 +1283,7 @@ async fn connector(
         .send()
         .await
         .map_err(handle_errors_fatal(
-            client.baseurl.clone(),
+            client.baseurl().clone(),
             "Failed to get pipeline config",
             1,
         ))
@@ -1325,7 +1320,7 @@ async fn connector(
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to start table connector",
                     1,
                 ))
@@ -1346,7 +1341,7 @@ async fn connector(
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to pause table connector",
                     1,
                 ))
@@ -1363,7 +1358,7 @@ async fn connector(
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl,
+                        client.baseurl().clone(),
                         "Failed to get table connector stats",
                         1,
                     ))
@@ -1377,7 +1372,7 @@ async fn connector(
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl,
+                        client.baseurl().clone(),
                         "Failed to get view connector stats",
                         1,
                     ))
@@ -1421,7 +1416,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to get program",
                     1,
                 ))
@@ -1459,7 +1454,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to get program config",
                     1,
                 ))
@@ -1503,7 +1498,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to set program config",
                     1,
                 ))
@@ -1535,7 +1530,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl().clone(),
                     "Failed to get program status",
                     1,
                 ))
@@ -1591,7 +1586,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl,
+                        client.baseurl().clone(),
                         "Failed to set program code",
                         1,
                     ))

@@ -4536,30 +4536,25 @@ name = "fda"
 version = "0.45.0"
 dependencies = [
  "arrow",
- "chrono",
  "clap",
  "clap_complete",
  "directories",
  "env_logger",
+ "feldera-rest-api",
  "feldera-types",
  "futures",
  "futures-util",
  "json_to_table",
  "log",
- "prettyplease",
- "progenitor",
  "progenitor-client 0.9.1",
  "reqwest 0.12.12",
  "rmpv",
  "rustyline",
- "serde",
  "serde_json",
- "syn 2.0.98",
  "tabled",
  "tempfile",
  "tokio",
  "tokio-util",
- "uuid",
 ]
 
 [[package]]
@@ -4655,6 +4650,22 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "feldera-rest-api"
+version = "0.45.0"
+dependencies = [
+ "chrono",
+ "feldera-types",
+ "prettyplease",
+ "progenitor",
+ "progenitor-client 0.9.1",
+ "reqwest 0.12.12",
+ "serde",
+ "serde_json",
+ "syn 2.0.98",
+ "uuid",
 ]
 
 [[package]]

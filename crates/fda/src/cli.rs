@@ -3,8 +3,8 @@ use clap_complete::engine::{ArgValueCompleter, CompletionCandidate};
 use std::fmt::Display;
 use std::path::PathBuf;
 
-use crate::cd::types::{CompilationProfile, ProgramConfig};
 use crate::make_client;
+use feldera_rest_api::types::{CompilationProfile, ProgramConfig};
 
 /// Autocompletion for pipeline names by trying to fetch them from the server.
 fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
