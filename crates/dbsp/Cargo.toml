@@ -44,7 +44,12 @@ mimalloc-rust-sys = { workspace = true }
 rand = { workspace = true }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
 rkyv = { workspace = true, features = ["std", "size_64", "validation", "uuid"] }
-size-of = { workspace = true, features = ["hashbrown", "xxhash-xxh3", "arcstr", "chrono"] }
+size-of = { workspace = true, features = [
+    "hashbrown",
+    "xxhash-xxh3",
+    "arcstr",
+    "chrono",
+] }
 tarpc = { workspace = true, features = ["full"] }
 futures = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
@@ -79,7 +84,12 @@ core_affinity = { workspace = true }
 indexmap = { workspace = true }
 feldera-storage = { workspace = true }
 inventory = { workspace = true }
-time = { workspace = true, features = ["formatting", "macros", "serde", "serde-human-readable"] }
+time = { workspace = true, features = [
+    "formatting",
+    "macros",
+    "serde",
+    "serde-human-readable",
+] }
 
 [target.'cfg(target_family = "unix")'.dependencies]
 nix = { version = "0.27.1", features = ["uio", "feature", "fs"] }
@@ -172,6 +182,10 @@ path = "examples/tutorial/tutorial8.rs"
 [[example]]
 name = "tutorial9"
 path = "examples/tutorial/tutorial9.rs"
+
+[[example]]
+name = "tutorial10"
+path = "examples/tutorial/tutorial10.rs"
 
 [[example]]
 name = "coord"
