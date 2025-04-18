@@ -338,6 +338,13 @@ impl KafkaOutputConfig {
     /// adapter.
     pub fn validate(&mut self) -> AnyResult<()> {
         self.set_option_if_missing("bootstrap.servers", &default_redpanda_server());
+
+        // We link with openssl statically, which means that the default OPENSSLDIR location
+        // baked into openssl is not correct (see https://github.com/fede1024/rust-rdkafka/issues/594).
+        // We set the ssl.ca.location to "probe" so that librdkafka can find the CA certificates in a
+        // standard location (e.g., /etc/ssl/).
+        self.set_option_if_missing("ssl.ca.location", "probe");
+
         Ok(())
     }
 }
