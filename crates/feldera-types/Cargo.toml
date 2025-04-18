@@ -26,7 +26,7 @@ rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" 
 actix-web = { workspace = true }
 enum-map = { workspace = true }
 erased-serde = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
 
 [dev-dependencies]
 rust_decimal_macros = { workspace = true }
