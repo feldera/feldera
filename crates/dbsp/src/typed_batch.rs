@@ -574,7 +574,7 @@ where
 #[cfg(test)]
 #[test]
 fn test_typedbox_rkyv() {
-    use rkyv::{archived_value, de::deserializers::SharedDeserializeMap, AlignedVec};
+    use rkyv::{archived_value, de::deserializers::SharedDeserializeMap};
 
     let tbox = TypedBox::<u64, DynData>::new(12345u64);
 
