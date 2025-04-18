@@ -62,17 +62,19 @@ use feldera_types::transport::delta_table::{DeltaTableIngestMode, DeltaTableRead
 use feldera_types::transport::s3::S3InputConfig;
 use futures::TryFutureExt;
 use futures_util::StreamExt;
+use rkyv::with::Atomic;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::error::Error;
 use std::fmt::format;
 use std::future::Future;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 use tokio::select;
-use tokio::sync::mpsc;
 use tokio::sync::watch::{channel, Receiver, Sender};
+use tokio::sync::{mpsc, Semaphore};
 use tokio::time::sleep;
 use tokio_util::time;
 use tracing::{debug, error, info, trace};
@@ -94,6 +96,16 @@ const DEFAULT_OBJECT_STORE_TIMEOUT: &str = "120s";
 
 const REPORT_ERROR: &str =
     "please report this error to developers (https://github.com/feldera/feldera/issues)";
+
+/// Semaphore used to control the number of concurrent reads to the object store
+/// as a workaround for https://github.com/apache/arrow-rs-object-store/issues/14.
+/// (see `max_concurrent_readers` in `DeltaTableReaderConfig`).
+static DELTA_READER_SEMAPHORE: std::sync::LazyLock<Semaphore> =
+    std::sync::LazyLock::new(|| Semaphore::new(6));
+
+/// True if the `max_concurrent_readers` attribute was set by one of the connectors.
+/// Used to detect conflicting values of `max_concurrent_readers`.
+static MAX_CONCURRENT_READERS_SET: AtomicBool = AtomicBool::new(false);
 
 /// Takes a column name from a DeltaLake schema and returns a qouted string
 /// that can be used in datafusion queries like `select "foo""bar" from my_table`.
@@ -165,6 +177,36 @@ impl DeltaTableInputReader {
         if config.num_parsers == 0 {
             bail!("invalid 'num_parsers' value: 'num_parsers' must be greater than 0");
         }
+
+        // If the config specifies max_concurrent_connectors, adjust the number of tokens
+        // in the semaphore.
+        if let Some(max_concurrent_readers) = config.max_concurrent_readers {
+            let max_concurrent_readers = max_concurrent_readers as usize;
+            let available_permits = DELTA_READER_SEMAPHORE.available_permits();
+
+            if max_concurrent_readers == 0 {
+                bail!("invalid 'max_concurrent_readers' value: 'max_concurrent_readers' must be greater than 0");
+            }
+
+            if MAX_CONCURRENT_READERS_SET.load(Ordering::Acquire)
+                && max_concurrent_readers != available_permits
+            {
+                bail!("found conflicting values of the `max_concurrent_readers` attribute: this is a global setting that affects all Delta Lake connectors, and not just the connector where it is specified; if multiple connectors specify `max_concurrent_readers`, they must all use the same value.");
+            }
+
+            MAX_CONCURRENT_READERS_SET.store(true, Ordering::Release);
+
+            info!("delta_table {endpoint_name}: adjusting the number of concurrent readers to {max_concurrent_readers}");
+
+            // The semaphore doesn't allow changing the total token count directly, but at this point,
+            // while initializing connectors, none of the tokens have been acquired, so we can adjust
+            // the total number of tokens by adjusting currently available tokens.
+            if max_concurrent_readers > available_permits {
+                DELTA_READER_SEMAPHORE.add_permits(max_concurrent_readers - available_permits);
+            } else {
+                DELTA_READER_SEMAPHORE.forget_permits(available_permits - max_concurrent_readers);
+            }
+        };
 
         if !config.object_store_config.contains_key("timeout") {
             config.object_store_config.insert(
@@ -959,6 +1001,9 @@ impl DeltaTableInputEndpointInner {
         receiver: &mut Receiver<PipelineState>,
     ) {
         wait_running(receiver).await;
+
+        // Limit the number of connectors simultaneously reading from Delta Lake.
+        let token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
 
         let mut stream = match dataframe.execute_stream().await {
             Err(e) => {
