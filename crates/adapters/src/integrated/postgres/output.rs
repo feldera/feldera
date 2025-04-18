@@ -43,7 +43,6 @@ pub struct PostgresOutputEndpoint {
     delete: Statement,
     key_schema: Relation,
     value_schema: Relation,
-    keys: HashSet<String>,
     controller: Weak<ControllerInner>,
     num_bytes: usize,
     num_rows: usize,
@@ -87,7 +86,7 @@ impl PostgresOutputEndpoint {
                 "Postgres output connector requires the view to have a unique key. Please specify the `index` property in the connector configuration. For more details, see: https://docs.feldera.com/connectors/unique_keys"
             ))?;
 
-        let keys: HashSet<String> = key_schema
+        let keys: Vec<String> = key_schema
             .fields
             .iter()
             .map(|f| f.name.to_string())
@@ -177,7 +176,6 @@ impl PostgresOutputEndpoint {
             insert,
             delete,
             upsert,
-            keys,
             key_schema,
             num_rows: 0,
             num_bytes: 0,
@@ -408,7 +406,7 @@ impl Encoder for PostgresOutputEndpoint {
                         if buf.last() != Some(&b'[') {
                             new_buf.push(b',');
                         }
-                        cursor.serialize_key_fields(&self.keys, &mut new_buf)?;
+                        cursor.serialize_key(&mut new_buf)?;
                         if new_buf.len() + buf.len() > max_buffer_size {
                             self.delete(buf)?;
                         }
