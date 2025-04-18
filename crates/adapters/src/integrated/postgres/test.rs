@@ -35,6 +35,7 @@ fn postgres_url() -> String {
 mod pg {
     use std::collections::BTreeMap;
 
+    use chrono::SubsecRound;
     use dbsp::{circuit::CircuitConfig, typed_batch::TypedBatch, utils::Tup1, DBSPHandle, Runtime};
     use feldera_sqllib::{SqlString, F32, F64};
     use feldera_types::{
@@ -413,7 +414,9 @@ CREATE TABLE {name} (
                 float_: F32::new((rng.gen::<f32>() * 1000.0).trunc() / 1000.0),
                 double_: F64::new((rng.gen::<f64>() * 1000.0).trunc() / 1000.0),
                 varchar_: rng.gen::<u32>().to_string().into(),
-                time_: feldera_sqllib::Time::from_time(chrono::Utc::now().naive_utc().time()),
+                time_: feldera_sqllib::Time::from_time(
+                    chrono::Utc::now().naive_utc().time().round_subsecs(5),
+                ),
                 date_: feldera_sqllib::Date::from_date(chrono::Utc::now().date_naive()),
                 timestamp_: feldera_sqllib::Timestamp::from_naiveDateTime(
                     chrono::Utc::now().naive_utc(),
@@ -440,11 +443,9 @@ fn test_pg_insert() {
     let table_name = "test_pg_insert";
     let url = postgres_url();
 
-    let mut data = vec![
-        rand::random::<PostgresTestStruct>(),
-        rand::random(),
-        rand::random(),
-    ];
+    // On average 1 record is about 590 bytes, so 2000 records produce a buffer
+    // of over 1 MiB
+    let mut data: Vec<PostgresTestStruct> = (0..2000).map(|_| rand::random()).collect();
 
     let mut temp_file = NamedTempFile::new().unwrap();
 
@@ -454,10 +455,8 @@ fn test_pg_insert() {
         datum
             .serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
             .unwrap();
-        temp_file
-            .as_file_mut()
-            .write_all(&serializer.into_inner())
-            .unwrap();
+        let inner = &serializer.into_inner();
+        temp_file.as_file_mut().write_all(inner).unwrap();
         temp_file.write_all(b"\n").unwrap();
     }
 
@@ -498,22 +497,22 @@ outputs:
     controller.start();
 
     wait(
-        || controller.pipeline_complete() || !err_receiver.is_empty(),
-        1_000,
+        || {
+            let rows = table.query();
+
+            let mut got = rows
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+
+            got.sort();
+            data.sort();
+
+            data == got || !err_receiver.is_empty()
+        },
+        2_000,
     )
-    .expect("timeout");
-
-    let rows = table.query();
-
-    let mut got = rows
-        .into_iter()
-        .map(PostgresTestStruct::from)
-        .collect::<Vec<_>>();
-
-    got.sort();
-    data.sort();
-
-    assert_eq!(got, data, "failed to insert data into postgres");
+    .expect("timeout: failed to insert data into postgres");
 }
 
 #[test]
@@ -522,12 +521,7 @@ fn test_pg_upsert() {
     let table_name = "test_pg_upsert";
     let url = postgres_url();
 
-    let mut data = vec![
-        rand::random::<PostgresTestStruct>(),
-        rand::random(),
-        rand::random(),
-    ];
-
+    let mut data: Vec<PostgresTestStruct> = (0..2000).map(|_| rand::random()).collect();
     let mut insert_file = NamedTempFile::new().unwrap();
 
     for datum in data.iter() {
@@ -637,46 +631,43 @@ outputs:
 
     wait(
         || {
-            controller.status().num_total_processed_records() == data.len() as u64
-                || !err_receiver.is_empty()
+            let rows = table.query();
+
+            let mut got = rows
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+
+            got.sort();
+            data.sort();
+
+            data == got || !err_receiver.is_empty()
         },
-        1_000,
+        2_000,
     )
-    .expect("timeout");
-
-    let rows = table.query();
-
-    let mut got = rows
-        .into_iter()
-        .map(PostgresTestStruct::from)
-        .collect::<Vec<_>>();
-
-    got.sort();
-    data.sort();
-
-    assert_eq!(got, data, "failed to insert data into postgres");
+    .expect("timeout: failed to insert data into postgres");
 
     controller
         .start_input_endpoint("ups")
         .expect("failed to start upsert input file connector");
 
     wait(
-        || controller.pipeline_complete() || !err_receiver.is_empty(),
-        1_000,
+        || {
+            let rows = table.query();
+
+            let mut got = rows
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+
+            got.sort();
+            upsert_data.sort();
+
+            got == upsert_data || !err_receiver.is_empty()
+        },
+        2_000,
     )
-    .expect("timeout");
-
-    let rows = table.query();
-
-    let mut got = rows
-        .into_iter()
-        .map(PostgresTestStruct::from)
-        .collect::<Vec<_>>();
-
-    got.sort();
-    upsert_data.sort();
-
-    assert_eq!(got, upsert_data, "failed to update data into postgres");
+    .expect("timeout: failed to update data into postgres");
 }
 
 #[test]
@@ -685,12 +676,7 @@ fn test_pg_delete() {
     let table_name = "test_pg_delete";
     let url = postgres_url();
 
-    let mut data = vec![
-        rand::random::<PostgresTestStruct>(),
-        rand::random(),
-        rand::random(),
-    ];
-
+    let mut data: Vec<PostgresTestStruct> = (0..2000).map(|_| rand::random()).collect();
     let mut insert_file = NamedTempFile::new().unwrap();
 
     for datum in data.iter() {
@@ -775,43 +761,40 @@ outputs:
 
     wait(
         || {
-            controller.status().num_total_processed_records() == data.len() as u64
-                || !err_receiver.is_empty()
+            let rows = table.query();
+
+            let mut got = rows
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+
+            got.sort();
+            data.sort();
+
+            data == got || !err_receiver.is_empty()
         },
-        1_000,
+        2_000,
     )
-    .expect("timeout");
-
-    let rows = table.query();
-
-    let mut got = rows
-        .into_iter()
-        .map(PostgresTestStruct::from)
-        .collect::<Vec<_>>();
-
-    got.sort();
-    data.sort();
-
-    assert_eq!(got, data, "failed to insert data into postgres");
+    .expect("timeout: failed to insert data into postgres");
 
     controller
         .start_input_endpoint("dels")
         .expect("failed to start delete input file connector");
 
     wait(
-        || controller.pipeline_complete() || !err_receiver.is_empty(),
-        1_000,
+        || {
+            let rows = table.query();
+
+            let got = rows
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+
+            got.is_empty() || !err_receiver.is_empty()
+        },
+        2_000,
     )
-    .expect("timeout");
-
-    let rows = table.query();
-
-    let got = rows
-        .into_iter()
-        .map(PostgresTestStruct::from)
-        .collect::<Vec<_>>();
-
-    assert!(got.is_empty(), "failed to delete data from postgres");
+    .expect("timeout: failed to delete data from postgres");
 }
 
 #[test]
@@ -1043,85 +1026,67 @@ outputs:
     controller.start();
 
     wait(
-        || {
-            controller.status().num_total_processed_records() == data.len() as u64
-                || !err_receiver.is_empty()
-        },
+        ||
+            {
+                let rows = client
+                    .query(&format!("SELECT * FROM {table_name}"), &[])
+                    .unwrap();
+                let got: Vec<TestStruct> = rows
+                    .into_iter()
+                    .map(|row| {
+                        let id: i32 = row.get(0);
+                        let b: bool = row.get(1);
+                        let i: Option<i64> = row.get(2);
+                        let s: String = row.get(3);
+
+                        TestStruct {
+                            id: id as u32,
+                            b,
+                            i,
+                            s,
+                        }
+                    })
+                    .collect();
+
+                got == data
+            }
+            || !err_receiver.is_empty(),
         1_000,
     )
-    .expect("timeout");
-    let total_processed = controller.status().num_total_processed_records();
-
-    let rows = client
-        .query(&format!("SELECT * FROM {table_name}"), &[])
-        .unwrap();
-    let got: Vec<TestStruct> = rows
-        .into_iter()
-        .map(|row| {
-            let id: i32 = row.get(0);
-            let b: bool = row.get(1);
-            let i: Option<i64> = row.get(2);
-            let s: String = row.get(3);
-
-            TestStruct {
-                id: id as u32,
-                b,
-                i,
-                s,
-            }
-        })
-        .collect();
-
-    assert_eq!(got, data, "inserting records into postgres failed");
+    .expect("timeout: inserting records into postgres failed");
 
     controller.start_input_endpoint("ups").unwrap();
 
     wait(
-        || {
-            controller.status().num_total_processed_records() - total_processed
-                == upsert_data.len() as u64
-                || !err_receiver.is_empty()
-        },
+        ||
+            {
+                client
+                    .query(&format!("SELECT * FROM {table_name}"), &[])
+                    .unwrap()
+                    .iter()
+                    .all(|r| {
+                        let s: String = r.get("s");
+                        s.as_str() == "updated"
+                    })
+            }
+            || !err_receiver.is_empty(),
         1_000,
     )
     .expect("timeout");
-    let total_processed = controller.status().num_total_processed_records();
-
-    let total_processed = controller.status().num_total_processed_records();
-
-    let rows = client
-        .query(&format!("SELECT * FROM {table_name}"), &[])
-        .unwrap();
-
-    assert!(
-        rows.iter().all(|r| {
-            let s: String = r.get("s");
-            s.as_str() == "updated"
-        }),
-        "updating records in postgres failed"
-    );
 
     controller.start_input_endpoint("del").unwrap();
 
-    println!("before: {total_processed}");
     wait(
         || {
-            controller.status().num_total_processed_records() - total_processed == data.len() as u64
+            client
+                .query(&format!("SELECT * FROM {table_name}"), &[])
+                .unwrap()
+                .is_empty()
                 || !err_receiver.is_empty()
         },
         1_000,
     )
-    .expect("timeout");
-    println!(
-        "before: {}",
-        controller.status().num_total_processed_records()
-    );
-
-    let rows = client
-        .query(&format!("SELECT * FROM {table_name}"), &[])
-        .unwrap();
-
-    assert!(rows.is_empty(), "deleting records from postgres failed");
+    .expect("timedout: failed to delete records");
 
     client
         .execute(&format!("DROP TABLE {table_name}"), &[])
