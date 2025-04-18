@@ -22,6 +22,7 @@
 //!     vaccinations](#finding-months-with-the-most-vaccinations)
 //!   * [Vaccination rates](#vaccination-rates)
 //! * [Incremental computation](#incremental-computation)
+//! * [Fixed-point computation](#fixed-point-computation)
 //! * [Next steps](#next-steps)
 //!
 //! # Introduction
@@ -1949,6 +1950,177 @@
 //!    Northern Ireland 2021-03     328990: -1
 //!    Northern Ireland 2021-12     489059: +1
 //! ```
+//!
+//! # Fixed-point computation
+//!
+//! Fixed-point computations are useful if you want to repeat a query until
+//! its result does not change anymore. Then, a fixed-point is reached and
+//! the query processing terminates, yielding the result. SQL provides this
+//! mechanism through recursive common table expressions (CTEs).
+//!
+//! A classical use case for a fixed-point computation is the [transitive closure
+//! of a graph](https://en.wikipedia.org/wiki/Transitive_closure#In_graph_theory).
+//! We demonstrate how to compute it for a weighted, directed (acyclic) graph
+//! with DBSP. We assume that the graph's edges are stored in `(from, to, weight)`
+//! triples, and are interested to find out (1) which other nodes are reachable
+//! from any node of the graph, (2) at what cost (by cumulating the paths'
+//! weights), and (3) how many hops are required for that path (through counting
+//! the paths' edges). Hence, the query's output schema is
+//! `(start_node, end_node, cumulated_weight, hop_count)` quadruples.
+//!
+//! Next to [joins](#joins), the code also shows how to use _nested circuits_.
+//! We have two execution contexts: a [root circuit](`RootCircuit`)
+//! and a [child circuit](`crate::NestedCircuit`).
+//! The root circuit is the one that is built by the parameter to the
+//! [`RootCircuit::build`] function. The child circuit is defined by the parameter to
+//! the [`ChildCircuit<()>::recursive`](`crate::ChildCircuit::recursive`) function.
+//! We also make use of the [`delta0`](`crate::operator::Delta0`) operator to
+//! import streams from a parent circuit into a child circuit.
+//! Finally, we pick up the [incremental computation](#incremental-computation)
+//! aspect from the previous section by feeding in data in two steps.
+//! The first step inserts this toy graph:
+//!
+//! ```text
+//! |0| -1-> |1| -1-> |2| -2-> |3| -2-> |4|
+//! ```
+//!
+//! In the second step, we remove the edge from `|1| -1-> |2|` and are left
+//! with this graph containing two connected components:
+//!
+//! ```text
+//! |0| -1-> |1|      |2| -2-> |3| -2-> |4|
+//! ```
+//!
+//! DBSP then tells us how the transitive closure computed in the first step
+//! changes in response to this input change in the second step.
+//!
+//! ```
+//! use anyhow::Result;
+//! use dbsp::{
+//!     operator::Generator,
+//!     utils::{Tup3, Tup4},
+//!     zset, zset_set, Circuit, OrdZSet, RootCircuit, Stream,
+//! };
+//!
+//! fn main() -> Result<()> {
+//!     const STEPS: usize = 2;
+//!
+//!     let (circuit_handle, output_handle) = RootCircuit::build(move |root_circuit| {
+//!         let mut edges_data = ([
+//!             zset_set! { Tup3(0_usize, 1_usize, 1_usize), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
+//!             zset! { Tup3(1, 2, 1) => -1 },
+//!         ] as [_; STEPS])
+//!         .into_iter();
+//!
+//!         let edges = root_circuit.add_source(Generator::new(move || edges_data.next().unwrap()));
+//!
+//!         // Create a base stream with all paths of length 1.
+//!         let len_1 = edges.map(|Tup3(from, to, weight)| Tup4(*from, *to, *weight, 1));
+//!
+//!         let closure = root_circuit.recursive(
+//!             |child_circuit, len_n_minus_1: Stream<_, OrdZSet<Tup4<usize, usize, usize, usize>>>| {
+//!                 // Import the `edges` and `len_1` stream from the parent circuit
+//!                 // through the `delta0` operator.
+//!                 let edges = edges.delta0(child_circuit);
+//!                 let len_1 = len_1.delta0(child_circuit);
+//!
+//!                 // Perform an iterative step (n-1 to n) through joining the
+//!                 // paths of length n-1 with the edges.
+//!                 let len_n = len_n_minus_1
+//!                     .map_index(|Tup4(start, end, cum_weight, hopcnt)| {
+//!                         (*end, Tup4(*start, *end, *cum_weight, *hopcnt))
+//!                     })
+//!                     .join(
+//!                         &edges
+//!                             .map_index(|Tup3(from, to, weight)| (*from, Tup3(*from, *to, *weight))),
+//!                         |_end_from,
+//!                          Tup4(start, _end, cum_weight, hopcnt),
+//!                          Tup3(_from, to, weight)| {
+//!                             Tup4(*start, *to, cum_weight + weight, hopcnt + 1)
+//!                         },
+//!                     )
+//!                     // You can think of the `plus` operator to something
+//!                     // similar to the `union` operator in SQL.
+//!                     .plus(&len_1);
+//!
+//!                 Ok(len_n)
+//!             },
+//!         )?;
+//!
+//!         let mut expected_outputs = ([
+//!             // We expect the full transitive closure in the first step.
+//!             zset! {
+//!                 Tup4(0, 1, 1, 1) => 1,
+//!                 Tup4(0, 2, 2, 2) => 1,
+//!                 Tup4(0, 3, 4, 3) => 1,
+//!                 Tup4(0, 4, 6, 4) => 1,
+//!                 Tup4(1, 2, 1, 1) => 1,
+//!                 Tup4(1, 3, 3, 2) => 1,
+//!                 Tup4(1, 4, 5, 3) => 1,
+//!                 Tup4(2, 3, 2, 1) => 1,
+//!                 Tup4(2, 4, 4, 2) => 1,
+//!                 Tup4(3, 4, 2, 1) => 1,
+//!             },
+//!             // These paths are removed in the second step.
+//!             zset! {
+//!                 Tup4(0, 2, 2, 2) => -1,
+//!                 Tup4(0, 3, 4, 3) => -1,
+//!                 Tup4(0, 4, 6, 4) => -1,
+//!                 Tup4(1, 2, 1, 1) => -1,
+//!                 Tup4(1, 3, 3, 2) => -1,
+//!                 Tup4(1, 4, 5, 3) => -1,
+//!             },
+//!         ] as [_; STEPS])
+//!             .into_iter();
+//!
+//!         closure.inspect(move |output| {
+//!             assert_eq!(*output, expected_outputs.next().unwrap());
+//!         });
+//!
+//!         Ok(closure.output())
+//!     })?;
+//!
+//!     for i in 0..STEPS {
+//!         let iteration = i + 1;
+//!         println!("Iteration {} starts...", iteration);
+//!         circuit_handle.step()?;
+//!         output_handle.consolidate().iter().for_each(
+//!             |(Tup4(start, end, cum_weight, hopcnt), _, z_weight)| {
+//!                 println!(
+//!                     "{start} -> {end} (cum weight: {cum_weight}, hops: {hopcnt}) => {z_weight}"
+//!                 );
+//!             },
+//!         );
+//!         println!("Iteration {} finished.", iteration);
+//!     }
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! Finally, we point out that introducing a cycle to the graph prevents
+//! this fixed-point computation to stop terminating because then
+//! there is no fixed-point anymore. So pay attention to your data and
+//! your queries, if using more powerful (but somewhat more dangerous) iterative
+//! queries.
+//!
+//! To demonstrate this, we introduce a third step which feeds back in the
+//! previously removed edge `|1| -1-> |2|` and additionally introduces
+//! the edge `|4| -3-> |0|`, forming a cyclic graph. In total,
+//! we obtain the following graph:
+//!
+//! ```text
+//! |0| -1-> |1| -1-> |2| -2-> |3| -2-> |4|
+//!  ^                                   |
+//!  |                                   |
+//!  ------------------3------------------
+//! ```
+//!
+//! The code remains unchanged except for the changes in input data. Yet, we
+//! do not find a fixed-point anymore because we can endlessly walk cycles,
+//! due to ever growing cumulated weights and hop counts for already discovered
+//! pairs of reachable nodes. If you want to see this in action,
+//! we invite you to play around with `tutorial10.rs`.
 //!
 //! # Next steps
 //!
