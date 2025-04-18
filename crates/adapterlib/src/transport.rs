@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 use anyhow::{Error as AnyError, Result as AnyResult};
 use dyn_clone::DynClone;
+use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use rmpv::{ext::Error as RmpDecodeError, Value as RmpValue};
 use serde::Deserialize;
@@ -30,13 +31,23 @@ use crate::PipelineState;
 pub type Step = u64;
 
 /// A configured input endpoint.
-///
 pub trait InputEndpoint: Send {
-    /// Whether this endpoint is [fault tolerant](crate#fault-tolerance).
+    /// This endpoint's level of fault tolerance, if any:
     ///
-    /// A fault-tolerant endpoint must support [InputReaderCommand::Seek] and
-    /// [InputReaderCommand::Replay].
-    fn is_fault_tolerant(&self) -> bool;
+    /// - An endpoint that returns `None` does not support suspend and resume or
+    ///   any kind of fault tolerance and has no further constraints.
+    ///
+    /// - An endpoint that returns `Some(FtModel::AtLeastOnce)` can support
+    ///   suspend and resume and at-least-once fault tolerance.  Such an
+    ///   endpoint must pass `Some(Resume::*)` to [InputConsumer::extended] for
+    ///   every step (see [Resume] for details).
+    ///
+    /// - An endpoint that returns `Some(FtModel::ExactlyOnce)` can support
+    ///   suspend and resume, at-least-once fault tolerance, and exactly once
+    ///   fault tolerance.  Such an endpoint must pass `Some(Resume::Replay
+    ///   {..})` to [InputConsumer::extended] for every step (see [Resume] for
+    ///   details).
+    fn fault_tolerance(&self) -> Option<FtModel>;
 }
 
 pub trait TransportInputEndpoint: InputEndpoint {
@@ -310,12 +321,9 @@ impl<A> InputQueue<A> {
     /// since auxiliary data is associated with a whole buffer rather than with
     /// individual records. If the auxiliary data type `A` is `()`, then
     /// [InputQueue<()>::flush] avoids that and so is a better choice.
-    pub fn flush_with_aux(&self) -> (usize, u64, Vec<A>) {
+    pub fn flush_with_aux(&self) -> (usize, Option<Xxh3Default>, Vec<A>) {
         let mut total = 0;
-        let mut hasher = self
-            .consumer
-            .is_pipeline_fault_tolerant()
-            .then(Xxh3Default::new);
+        let mut hasher = self.consumer.hasher();
         let n = self.consumer.max_batch_size();
         let mut consumed_aux = Vec::new();
         while total < n {
@@ -329,11 +337,7 @@ impl<A> InputQueue<A> {
             buffer.flush();
             consumed_aux.push(aux);
         }
-        (
-            total,
-            hasher.map_or(0, |hasher| hasher.finish()),
-            consumed_aux,
-        )
+        (total, hasher, consumed_aux)
     }
 
     pub fn len(&self) -> usize {
@@ -359,6 +363,8 @@ impl InputQueue<()> {
 
     /// Flushes a batch of records to the circuit and reports to the consumer
     /// that it was done.
+    ///
+    /// Only non-fault-tolerant input adapters can use this.
     pub fn queue(&self) {
         let mut total = 0;
         let n = self.consumer.max_batch_size();
@@ -375,8 +381,7 @@ impl InputQueue<()> {
                 break;
             }
         }
-        self.consumer
-            .extended(total, 0, JsonValue::Null, RmpValue::Nil);
+        self.consumer.extended(total, None);
     }
 }
 
@@ -435,10 +440,27 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// number of records together).
     fn max_batch_size(&self) -> usize;
 
-    /// Returns whether the input endpoint is running within a fault-tolerant
-    /// pipeline. If the endpoint is one where fault tolerance is expensive,
-    /// then a `false` return value can allow it to skip that expense.
-    fn is_pipeline_fault_tolerant(&self) -> bool;
+    /// Returns the level of fault tolerance that the pipeline supports, if any.
+    ///
+    /// An endpoint only needs to implement `min(endpoint_ft, pipeline_ft)`
+    /// fault tolerance, where `endpoint_ft` is what the endpoint returns from
+    /// `InputEndpoint::fault_tolerance` and `pipeline_ft` is what this function
+    /// returns.  For example, if an input adapter supports
+    /// `Some(FtModel::ExactlyOnce)`, but the pipeline's fault tolerance level
+    /// is `None`, then the input adapter can simply pass `None` as `resume` to
+    /// [InputConsumer::extended].  This optimization is, probably, worthwhile
+    /// only to input adapters that log a copy of all of their data, instead of
+    /// just metadata.
+    fn pipeline_fault_tolerance(&self) -> Option<FtModel>;
+
+    /// Returns a hasher, if the fault tolerance model calls for hashing, and
+    /// `None` otherwise.
+    fn hasher(&self) -> Option<Xxh3Default> {
+        match self.pipeline_fault_tolerance() {
+            Some(FtModel::ExactlyOnce) => Some(Xxh3Default::new()),
+            _ => None,
+        }
+    }
 
     /// Reports `errors` as parse errors.
     fn parse_errors(&self, errors: Vec<ParseError>);
@@ -461,13 +483,9 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// records to the circuit, that hash to `hash`, in response to an
     /// [InputReaderCommand::Queue] request.
     ///
-    /// For a fault-tolerant input adapter, `metadata` must be sufficient to
-    /// support [InputReaderCommand::Seek], and `metadata` and `data` together
-    /// must be sufficient to support [InputReaderCommand::Replay].
-    ///
-    /// If [InputConsumer::is_pipeline_fault_tolerant] returns false, then the
-    /// value of `hash` doesn't matter.
-    fn extended(&self, num_records: usize, hash: u64, metadata: JsonValue, data: RmpValue);
+    /// If the step is one that the input adapter can restart after, or replay,
+    /// then it should supply that as `resume` (see [Resume] for details).
+    fn extended(&self, num_records: usize, resume: Option<Resume>);
 
     /// Reports that the endpoint has reached end of input and that no more data
     /// will be received from the endpoint.
@@ -483,6 +501,96 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// Reports that the endpoint failed and that it will not queue any more
     /// data.
     fn error(&self, fatal: bool, error: AnyError);
+}
+
+/// Information needed to restart after or replay input.
+///
+/// Feldera supports a few ways to checkpoint and resume a pipeline.  These
+/// operations in turn require support from the pipeline's input adapters:
+///
+/// 1. To support suspend and resume, or at-least-once fault tolerance, the
+///    input adapter must indicate, per step, how to restart from just after
+///    that step, by passing `Some(Resume::*)` to [InputConsumer::extended].
+///
+/// 2. To additionally support exactly once fault tolerance, the input adapter
+///    must indicate, per step, both how to restart after the step and how to
+///    replay exactly that step, by passing `Some(Resume::Replay { .. })` to
+///    [InputConsumer::extended].
+pub enum Resume {
+    Seek {
+        /// Metadata needed for the controller to restart the input adapter from
+        /// just after this input step using [InputReaderCommand::Seek].
+        seek: JsonValue,
+    },
+
+    Replay {
+        /// Metadata needed for the controller to restart the input adapter from
+        /// just after this input step using [InputReaderCommand::Seek].
+        seek: JsonValue,
+
+        /// The data needed for the controller to replay exactly this input step
+        /// using [InputReaderCommand::Replay].
+        replay: RmpValue,
+
+        /// Hash of the input records in this step, for verification on replay.
+        hash: u64,
+    },
+}
+
+impl Resume {
+    /// Consumes this [Resume] and returns just the `seek` value.
+    pub fn into_seek(self) -> JsonValue {
+        match self {
+            Resume::Seek { seek } => seek,
+            Resume::Replay { seek, .. } => seek,
+        }
+    }
+
+    /// Returns the maximum fault tolerance level that this [Resume] can
+    /// support.
+    pub fn fault_tolerance(&self) -> FtModel {
+        match self {
+            Resume::Seek { .. } => FtModel::AtLeastOnce,
+            Resume::Replay { .. } => FtModel::ExactlyOnce,
+        }
+    }
+
+    /// If `hasher` is provided, returns `Resume::Replay` with its hash value
+    /// and `seek`; otherwise, returns `Resume::Seek` with `seek`.
+    ///
+    /// This is convenient for endpoints that only need to use metadata to
+    /// support journaling.  Use [InputConsumer::hasher] to get the hasher.
+    pub fn new_metadata_only(seek: JsonValue, hasher: Option<Xxh3Default>) -> Self {
+        match hasher {
+            Some(hasher) => Self::Replay {
+                seek,
+                replay: RmpValue::Nil,
+                hash: hasher.finish(),
+            },
+            None => Self::Seek { seek },
+        }
+    }
+
+    /// If `hasher` is provided, returns `Resume::Replay` with its hash value
+    /// and whatever `replay` returns; otherwise, returns `Resume::Seek`.
+    ///
+    /// This is convenient for endpoints that support journaling by journaling
+    /// all the data (and that don't need to journal any metadata).  Use
+    /// [InputConsumer::hasher] to get the hasher.
+    pub fn new_data_only<F>(replay: F, hasher: Option<Xxh3Default>) -> Self
+    where
+        F: FnOnce() -> RmpValue,
+    {
+        let seek = JsonValue::Null;
+        match hasher {
+            Some(hasher) => Self::Replay {
+                seek,
+                replay: replay(),
+                hash: hasher.finish(),
+            },
+            None => Self::Seek { seek },
+        }
+    }
 }
 
 dyn_clone::clone_trait_object!(InputConsumer);

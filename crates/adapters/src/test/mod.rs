@@ -140,7 +140,6 @@ where
 pub fn mock_input_pipeline<T, U>(
     config: InputEndpointConfig,
     relation: Relation,
-    fault_tolerant: bool,
 ) -> AnyResult<(
     Box<dyn InputReader>,
     MockInputConsumer,
@@ -186,7 +185,6 @@ where
     let endpoint = input_transport_config_to_endpoint(
         config.connector_config.transport.clone(),
         "",
-        fault_tolerant,
     )?
     .unwrap();
 

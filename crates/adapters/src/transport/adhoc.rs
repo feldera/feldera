@@ -11,6 +11,8 @@ use arrow::datatypes::Schema;
 use atomic::Atomic;
 use bytes::Bytes;
 use datafusion::execution::SendableRecordBatchStream;
+use feldera_adapterlib::transport::Resume;
+use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::adhoc::AdHocInputConfig;
 use futures::future::{BoxFuture, FutureExt};
@@ -19,7 +21,6 @@ use parquet::arrow::async_writer::AsyncFileWriter;
 use parquet::arrow::AsyncArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
-use rmpv::Value as RmpValue;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{
@@ -112,10 +113,10 @@ impl AdHocInputEndpoint {
         self.inner.status_notifier.send_replace(());
     }
 
-    fn is_ft(&self) -> bool {
+    fn fault_tolerance(&self) -> Option<FtModel> {
         let mut guard = self.inner.details.lock().unwrap();
         let details = guard.as_mut().unwrap();
-        details.consumer.is_pipeline_fault_tolerant()
+        details.consumer.pipeline_fault_tolerance()
     }
 
     async fn push(
@@ -129,7 +130,7 @@ impl AdHocInputEndpoint {
         let num_records = buffer.len();
         if !buffer.is_empty() {
             let mut aux = Vec::new();
-            if self.is_ft() {
+            if self.fault_tolerance() == Some(FtModel::ExactlyOnce) {
                 let mut writer = AsyncArrowWriter::try_new(
                     BufferWriter { buffer: &mut aux },
                     schema.clone(),
@@ -237,8 +238,8 @@ impl AdHocInputEndpoint {
 }
 
 impl InputEndpoint for AdHocInputEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        true
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::ExactlyOnce)
     }
 }
 
@@ -284,18 +285,17 @@ impl InputReader for AdHocInputEndpoint {
             InputReaderCommand::Queue => {
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
-                let (num_records, hash, batches) = details.queue.flush_with_aux();
-                let data = if details.consumer.is_pipeline_fault_tolerant() {
-                    rmpv::ext::to_value(Metadata {
-                        batches: batches.into_iter().map(ByteBuf::from).collect(),
-                    })
-                    .unwrap()
-                } else {
-                    RmpValue::Nil
-                };
-                details
-                    .consumer
-                    .extended(num_records, hash, serde_json::Value::Null, data);
+                let (num_records, hasher, batches) = details.queue.flush_with_aux();
+                let resume = Resume::new_data_only(
+                    || {
+                        rmpv::ext::to_value(Metadata {
+                            batches: batches.into_iter().map(ByteBuf::from).collect(),
+                        })
+                        .unwrap()
+                    },
+                    hasher,
+                );
+                details.consumer.extended(num_records, Some(resume));
             }
             InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
         }

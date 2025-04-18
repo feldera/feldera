@@ -21,6 +21,7 @@ use feldera_adapterlib::{
     PipelineState,
 };
 use feldera_types::{
+    config::FtModel,
     program_schema::Relation,
     transport::iceberg::{IcebergCatalogType, IcebergReaderConfig},
 };
@@ -73,8 +74,8 @@ impl IcebergInputEndpoint {
 }
 
 impl InputEndpoint for IcebergInputEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        false
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
     }
 }
 

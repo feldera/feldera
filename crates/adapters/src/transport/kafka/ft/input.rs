@@ -12,7 +12,8 @@ use crate::{InputBuffer, ParseError, Parser};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
-use feldera_adapterlib::transport::{InputEndpoint, InputReaderCommand};
+use feldera_adapterlib::transport::{InputEndpoint, InputReaderCommand, Resume};
+use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{KafkaInputConfig, KafkaStartFromConfig};
 use rdkafka::config::RDKafkaLogLevel;
@@ -385,9 +386,11 @@ impl KafkaFtInputReaderInner {
                         }
                         consumer.extended(
                             total,
-                            hasher.finish(),
-                            serde_json::to_value(&Metadata { offsets }).unwrap(),
-                            rmpv::Value::Nil,
+                            Some(Resume::Replay {
+                                hash: hasher.finish(),
+                                seek: serde_json::to_value(&Metadata { offsets }).unwrap(),
+                                replay: rmpv::Value::Nil,
+                            }),
                         );
                     }
                     InputReaderCommand::Disconnect => return Ok(()),
@@ -550,8 +553,8 @@ impl KafkaFtInputReader {
 }
 
 impl InputEndpoint for KafkaFtInputEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        true
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::ExactlyOnce)
     }
 }
 

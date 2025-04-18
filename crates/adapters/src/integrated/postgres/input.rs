@@ -13,7 +13,7 @@ use dbsp::InputHandle;
 
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
 use feldera_adapterlib::format::ParseError;
-use feldera_types::config::InputEndpointConfig;
+use feldera_types::config::{FtModel, InputEndpointConfig};
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
 use feldera_types::transport::postgres::PostgresReaderConfig;
@@ -65,8 +65,8 @@ impl PostgresInputEndpoint {
 }
 
 impl InputEndpoint for PostgresInputEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        false
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
     }
 }
 impl IntegratedInputEndpoint for PostgresInputEndpoint {

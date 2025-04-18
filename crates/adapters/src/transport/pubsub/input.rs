@@ -5,7 +5,9 @@ use crate::{
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use chrono::DateTime;
 use dbsp::circuit::tokio::TOKIO;
-use feldera_types::{program_schema::Relation, transport::pubsub::PubSubInputConfig};
+use feldera_types::{
+    config::FtModel, program_schema::Relation, transport::pubsub::PubSubInputConfig,
+};
 use futures::StreamExt;
 use google_cloud_gax::conn::Environment;
 use google_cloud_pubsub::{
@@ -41,8 +43,8 @@ impl PubSubInputEndpoint {
 }
 
 impl InputEndpoint for PubSubInputEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        false
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
     }
 }
 

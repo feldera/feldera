@@ -92,7 +92,6 @@ format:
     let (endpoint, consumer, parser, zset) = mock_input_pipeline::<TestStruct2, TestStruct2>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::new("test".into(), TestStruct2::schema(), false, BTreeMap::new()),
-        false,
     )
     .unwrap();
     sleep(Duration::from_millis(10));
