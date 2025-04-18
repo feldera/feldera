@@ -27,6 +27,8 @@ actix-web = { workspace = true }
 enum-map = { workspace = true }
 erased-serde = { workspace = true }
 uuid = { workspace = true }
+thiserror = { workspace = true }
+regex = "1.11.1"
 
 [dev-dependencies]
 rust_decimal_macros = { workspace = true }

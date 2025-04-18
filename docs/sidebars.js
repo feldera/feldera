@@ -54,8 +54,7 @@ const installation = {
                                 'get-started/enterprise/kubernetes-guides/eks/cluster',
                                 'get-started/enterprise/kubernetes-guides/eks/ingress'
                             ]
-                        },
-                        'get-started/enterprise/kubernetes-guides/secret-management'
+                        }
                     ]
                 }
             ]
@@ -219,6 +218,7 @@ const connectors = {
     items: [
         'connectors/unique_keys',
         'connectors/orchestration',
+        'connectors/secret-references',
         {
             type: 'category',
             label: 'Input',

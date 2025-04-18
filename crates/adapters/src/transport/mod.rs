@@ -33,7 +33,6 @@ pub mod http;
 pub mod url;
 
 mod s3;
-mod secret_resolver;
 
 #[cfg(feature = "with-kafka")]
 pub(crate) mod kafka;

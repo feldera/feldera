@@ -120,7 +120,7 @@ curl -i -X \
 ```
 
 :::tip
-Refer to the [secret management](/get-started/enterprise/kubernetes-guides/secret-management) guide
+Refer to the [secret references](/connectors/secret-references) guide
 to externalize secrets such as DBMS passwords via Kubernetes.
 :::
 

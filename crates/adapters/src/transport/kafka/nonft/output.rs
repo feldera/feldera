@@ -1,7 +1,6 @@
 use crate::transport::kafka::{
     build_headers, kafka_send, rdkafka_loglevel_from, DeferredLogging, PemToLocation,
 };
-use crate::transport::secret_resolver::resolve_secret;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use feldera_types::transport::kafka::KafkaOutputConfig;
@@ -99,10 +98,6 @@ impl KafkaOutputEndpoint {
         debug!("Starting Kafka output endpoint: {config:?}");
 
         let mut client_config = ClientConfig::new();
-
-        for (key, value) in config.kafka_options.iter() {
-            client_config.set(key, resolve_secret(value)?);
-        }
 
         client_config.pem_to_location(endpoint_name)?;
 
