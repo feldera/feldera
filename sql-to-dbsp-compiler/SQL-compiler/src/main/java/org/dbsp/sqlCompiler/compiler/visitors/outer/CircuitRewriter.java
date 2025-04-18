@@ -23,10 +23,11 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
@@ -438,7 +439,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPAsofJoinOperator operator) {
+    public void postorder(DBSPConcreteAsofJoinOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         DBSPExpression function = this.transform(operator.getFunction());
         DBSPExpression comparator = this.transform(operator.comparator);
@@ -452,9 +453,30 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || leftTimestamp != operator.leftTimestamp
                 || rightTimestamp != operator.rightTimestamp
                 || Linq.different(sources, operator.inputs)) {
-            result = new DBSPAsofJoinOperator(operator.getRelNode(),
+            result = new DBSPConcreteAsofJoinOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeZSet.class), function,
                     leftTimestamp, rightTimestamp, comparator,
+                    operator.isMultiset, operator.isLeft,
+                    sources.get(0), sources.get(1))
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPAsofJoinOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPExpression comparator = this.transform(operator.comparator);
+        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPSimpleOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || function != operator.function
+                || comparator != operator.comparator
+                || Linq.different(sources, operator.inputs)) {
+            result = new DBSPAsofJoinOperator(operator.getRelNode(),
+                    outputType.to(DBSPTypeZSet.class), function,
+                    operator.leftTimestampIndex, operator.rightTimestampIndex, comparator,
                     operator.isMultiset, operator.isLeft,
                     sources.get(0), sources.get(1))
                     .copyAnnotations(operator);

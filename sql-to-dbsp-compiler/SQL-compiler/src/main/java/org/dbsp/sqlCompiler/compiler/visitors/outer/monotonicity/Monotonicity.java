@@ -1,9 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
@@ -63,7 +63,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -650,23 +649,17 @@ public class Monotonicity extends CircuitVisitor {
         Projection.IOMap ioMap = projection.getIoMap();
         DBSPTypeTupleBase keyType = node.getKeyType().to(DBSPTypeTupleBase.class);
 
-        int leftTsIndex = node.getLeftTimestampIndex();
-        int rightTsIndex = node.getRightTimestampIndex();
-
-        // The function associated with an ASOF join has a funny shape, since:
-        // - the parameters are wrapped DBSPCustomOrdExpression
-        // - the third parameter is a nullable tuple.
-        // Instead of analyzing node.function, we make up a simpler function with
-        // non-nullable tuple arguments, and we analyze that one, making this ASOF join
-        // look more like a regular join.
+        // We don't directly analyze the ASOF JOIN function; we make up
+        // a function that is similar:
+        // - we treat timestamp fields specially
+        // - we use the type from the input, and not from the function parameter
+        //   (the parameter fields may be nullable)
         DBSPVariablePath k = keyType.ref().var();
         DBSPVariablePath l = function.parameters[1].getType().var();
-        DBSPVariablePath r = function.parameters[2].getType().withMayBeNull(false).var();
+        DBSPVariablePath r = node.right().getOutputIndexedZSetType().elementType.ref().var();
 
-        DBSPExpression leftTsField = new DBSPUnwrapCustomOrdExpression(
-                l.deepCopy().deref()).field(leftTsIndex);
-        DBSPExpression rightTsField = new DBSPUnwrapCustomOrdExpression(
-                r.deepCopy().deref()).field(rightTsIndex);
+        DBSPExpression leftTsField = l.deepCopy().deref().field(node.leftTimestampIndex);
+        DBSPExpression rightTsField = r.deepCopy().deref().field(node.rightTimestampIndex);
         DBSPExpression min = ExpressionCompiler.makeBinaryExpression(node.getNode(), rightTsField.getType(),
                 DBSPOpcode.MIN, leftTsField, rightTsField);
 
@@ -680,8 +673,8 @@ public class Monotonicity extends CircuitVisitor {
                     expr = k.field(index);
                     break;
                 case 1:
-                    expr = new DBSPUnwrapCustomOrdExpression(l.deepCopy().deref()).field(index);
-                    if (index != leftTsIndex) {
+                    expr = l.deepCopy().deref().field(index);
+                    if (index != node.leftTimestampIndex) {
                         // Since this is not a streaming join, we can't say anything about
                         // non-timestamp fields
                         expr = new NoExpression(expr.getType());
@@ -690,8 +683,8 @@ public class Monotonicity extends CircuitVisitor {
                     }
                     break;
                 case 2:
-                    expr = new DBSPUnwrapCustomOrdExpression(r.deepCopy().deref()).field(index).castToNullable();
-                    if (index != rightTsIndex) {
+                    expr = r.deepCopy().deref().field(index).castToNullable();
+                    if (index != node.rightTimestampIndex) {
                         // Since this is not a streaming join, we can't say anything about
                         // non-timestamp fields
                         expr = new NoExpression(expr.getType());

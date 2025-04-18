@@ -1,12 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
@@ -64,7 +64,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
-import org.dbsp.sqlCompiler.compiler.visitors.monotone.CustomOrdMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.CommonJoinExpansion;
@@ -102,7 +101,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.NullableFunction;
@@ -836,8 +834,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     OutputPort extractTimestamp(PartiallyMonotoneTuple sourceType, int tsIndex, OutputPort source) {
         // First index to apply to the limiter
         int outerIndex = sourceType.getField(0).mayBeMonotone() ? 1 : 0;
-        PartiallyMonotoneTuple sourceTypeValue = sourceType.getField(1)
-                .to(CustomOrdMonotoneType.class).getWrappedType();
+        PartiallyMonotoneTuple sourceTypeValue = sourceType.getField(1).to(PartiallyMonotoneTuple.class);
         // Second index to apply to the limiter
         int innerIndex = 0;
         for (int i = 0; i < tsIndex; i++) {
@@ -874,10 +871,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        int leftTSIndex = join.getLeftTimestampIndex();
-        int rightTSIndex = join.getRightTimestampIndex();
-        // Check if the timestamps are monotone
-
         PartiallyMonotoneTuple leftMono = null;
         MonotoneExpression lm = this.expansionMonotoneValues.get(expanded.left());
         if (lm != null) {
@@ -904,10 +897,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        PartiallyMonotoneTuple leftValueTuple = leftValue.to(CustomOrdMonotoneType.class).getWrappedType();
-        PartiallyMonotoneTuple rightValueTuple = rightValue.to(CustomOrdMonotoneType.class).getWrappedType();
-        IMaybeMonotoneType leftTS = leftValueTuple.getField(leftTSIndex);
-        IMaybeMonotoneType rightTS = rightValueTuple.getField(rightTSIndex);
+        PartiallyMonotoneTuple leftValueTuple = leftValue.to(PartiallyMonotoneTuple.class);
+        PartiallyMonotoneTuple rightValueTuple = rightValue.to(PartiallyMonotoneTuple.class);
+        IMaybeMonotoneType leftTS = leftValueTuple.getField(join.leftTimestampIndex);
+        IMaybeMonotoneType rightTS = rightValueTuple.getField(join.rightTimestampIndex);
         if (!leftTS.mayBeMonotone() || !rightTS.mayBeMonotone()) {
             super.postorder(join);
             this.nonMonotone(join);
@@ -915,8 +908,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         // Extract the timestamps from the limiters
-        OutputPort extractLeftTS = this.extractTimestamp(leftMono, leftTSIndex, leftLimiter);
-        OutputPort extractRightTS = this.extractTimestamp(rightMono, rightTSIndex, rightLimiter);
+        OutputPort extractLeftTS = this.extractTimestamp(leftMono, join.leftTimestampIndex, leftLimiter);
+        OutputPort extractRightTS = this.extractTimestamp(rightMono, join.rightTimestampIndex, rightLimiter);
 
         // Compute the min of the timestamps
         DBSPVariablePath leftVar = this.getLimiterDataOutputType(extractLeftTS).ref().var();
@@ -927,12 +920,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPTypeTuple keyType = join.getKeyType().to(DBSPTypeTuple.class);
         PartiallyMonotoneTuple keyPart = PartiallyMonotoneTuple.noMonotoneFields(keyType);
 
-        DBSPTypeWithCustomOrd leftValueType = join.getLeftInputValueType().to(DBSPTypeWithCustomOrd.class);
+        DBSPTypeTupleBase leftValueType = join.getLeftInputValueType().to(DBSPTypeTupleBase.class);
         List<IMaybeMonotoneType> value = new ArrayList<>();
         for (int i = 0; i < leftValueType.size(); i++) {
-            DBSPType field = leftValueType.getDataType().getFieldType(i);
+            DBSPType field = leftValueType.getFieldType(i);
             IMaybeMonotoneType mono;
-            if (i == leftTSIndex) {
+            if (i == join.leftTimestampIndex) {
                 mono = new MonotoneType(field);
             } else {
                 mono = NonMonotoneType.nonMonotone(field);
@@ -941,7 +934,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
         PartiallyMonotoneTuple valuePart = new PartiallyMonotoneTuple(value, false, false);
         PartiallyMonotoneTuple dataProjection = new PartiallyMonotoneTuple(
-                Linq.list(keyPart, new CustomOrdMonotoneType(valuePart, leftValueType)), true, false);
+                Linq.list(keyPart, valuePart), true, false);
 
         if (INSERT_RETAIN_VALUES) {
             DBSPSimpleOperator retain = DBSPIntegrateTraceRetainValuesOperator.create(

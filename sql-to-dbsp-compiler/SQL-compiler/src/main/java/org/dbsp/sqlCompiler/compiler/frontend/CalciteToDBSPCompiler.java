@@ -77,10 +77,10 @@ import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
@@ -161,8 +161,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -176,7 +174,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -218,7 +215,6 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.ExplicitShuffle;
 import org.dbsp.util.ICastable;
@@ -1911,7 +1907,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // This shares a lot of code with the LogicalJoin
         IntermediateRel node = CalciteObject.create(join);
         JoinRelType joinType = join.getJoinType();
-        if (joinType != JoinRelType.LEFT_ASOF)
+        boolean isLeft = joinType == JoinRelType.LEFT_ASOF;
+        if (!isLeft)
             throw new UnimplementedException("Currently only LEFT ASOF joins are supported.", 2212, node);
 
         DBSPTypeTuple resultType = this.convertType(join.getRowType(), false).to(DBSPTypeTuple.class);
@@ -2027,7 +2024,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPSimpleOperator rightIndex, leftIndex;
         DBSPTypeTuple keyType;
-        DBSPComparatorType leftComparatorType, rightComparatorType;
         {
             // Index both inputs
             DBSPVariablePath l = leftElementType.ref().var();
@@ -2044,31 +2040,21 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             // Index left input
             DBSPTupleExpression tuple = DBSPTupleExpression.flatten(l.deref());
-            DBSPComparatorExpression leftComparator =
-                    new DBSPNoComparatorExpression(node, leftElementType)
-                            .field(leftTsIndex, true);
-            leftComparatorType = leftComparator.getComparatorType();
-            DBSPExpression wrapper = new DBSPCustomOrdExpression(node, tuple, leftComparator);
             DBSPClosureExpression toLeftKey =
-                    new DBSPRawTupleExpression(leftKey, wrapper)
+                    new DBSPRawTupleExpression(leftKey, tuple)
                     .closure(l);
             leftIndex = new DBSPMapIndexOperator(
                     node, toLeftKey,
-                    makeIndexedZSet(leftKey.getType(), wrapper.getType()), false, left.outputPort());
+                    makeIndexedZSet(leftKey.getType(), tuple.getType()), false, left.outputPort());
             this.addOperator(leftIndex);
 
             // Index right input
-            DBSPComparatorExpression rightComparator =
-                    new DBSPNoComparatorExpression(node, rightElementType)
-                            .field(rightTsIndex, true);
-            rightComparatorType = rightComparator.getComparatorType();
-            wrapper = new DBSPCustomOrdExpression(node,
-                    DBSPTupleExpression.flatten(r.deref()), rightComparator);
-            DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(rightKey, wrapper)
+            tuple = DBSPTupleExpression.flatten(r.deref());
+            DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(rightKey, tuple)
                     .closure(r);
             rightIndex = new DBSPMapIndexOperator(
                     node, toRightKey,
-                    makeIndexedZSet(rightKey.getType(), wrapper.getType()),
+                    makeIndexedZSet(rightKey.getType(), tuple.getType()),
                     false, filteredRight.outputPort());
             this.addOperator(rightIndex);
 
@@ -2079,29 +2065,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.addOperator(leftIndex);
         }
 
-        DBSPType wrappedLeftType = new DBSPTypeWithCustomOrd(node, leftElementType, leftComparatorType);
-        DBSPType wrappedRightType = new DBSPTypeWithCustomOrd(node, rightElementType, rightComparatorType);
-
-        DBSPVariablePath leftVar = wrappedLeftType.ref().var();
-        DBSPVariablePath rightVar = wrappedRightType.ref().var();
-
-        DBSPExpression leftTS = new DBSPUnwrapCustomOrdExpression(leftVar.deref())
-                .field(leftTsIndex);
-        DBSPExpression rightTS = new DBSPUnwrapCustomOrdExpression(rightVar.deref())
-                .field(rightTsIndex);
-
+        DBSPVariablePath leftVar = leftElementType.ref().var();
+        DBSPExpression leftTS = leftVar.deref().field(leftTsIndex);
         DBSPType leftTSType = leftTS.getType();
-        DBSPType rightTSType = rightTS.getType();
-        // Rust expects both timestamps to have the same type
-        boolean nullable = leftTSType.mayBeNull || rightTSType.mayBeNull;
-        DBSPType commonTSType = leftTSType.withMayBeNull(nullable);
-        assert commonTSType.sameType(rightTSType.withMayBeNull(nullable));
-
-        DBSPClosureExpression leftTimestamp = leftTS.cast(commonTSType, false).closure(leftVar);
-        DBSPClosureExpression rightTimestamp = rightTS.cast(commonTSType, false).closure(rightVar);
 
         // Currently not used
-        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, leftTimestamp.getResultType());
+        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, leftTSType);
         boolean ascending = comparison == SqlKind.GREATER_THAN || comparison == SqlKind.GREATER_THAN_OR_EQUAL;
         if (comparison != SqlKind.GREATER_THAN_OR_EQUAL) {
             // Not yet supported by DBSP
@@ -2111,20 +2080,24 @@ public class CalciteToDBSPCompiler extends RelVisitor
         comparator = new DBSPDirectComparatorExpression(node, comparator, ascending);
 
         DBSPVariablePath k = keyType.ref().var();
-        DBSPVariablePath l0 = wrappedLeftType.ref().var();
-        // Signature of the function is (k: &K, l: &L, r: Option<&R>)
-        DBSPVariablePath r0 = wrappedRightType.ref().withMayBeNull(true).var();
+        DBSPVariablePath l0 = leftElementType.ref().var();
+        DBSPType rightArgumentType = rightElementType;
+        if (isLeft)
+            rightArgumentType = new DBSPTypeTuple(
+                    Linq.map(rightElementType.tupFields, t -> t.withMayBeNull(true), DBSPType.class));
+
+        DBSPVariablePath r0 = rightArgumentType.ref().var();
         List<DBSPExpression> lrFields = new ArrayList<>();
         // Don't forget to drop the added field
         for (int i = 0; i < leftElementType.size() - (needsLeftCast ? 1 : 0); i++)
-            lrFields.add(new DBSPUnwrapCustomOrdExpression(l0.deref()).field(i));
+            lrFields.add(l0.deref().field(i));
         for (int i = 0; i < rightElementType.size() - (needsRightCast ? 1 : 0); i++)
-            lrFields.add(new DBSPCustomOrdField(r0, i));
+            lrFields.add(r0.deref().field(i));
         DBSPTupleExpression lr = new DBSPTupleExpression(lrFields, false);
         DBSPClosureExpression makeTuple = lr.closure(k, l0, r0);
         DBSPSimpleOperator result = new DBSPAsofJoinOperator(node, this.makeZSet(resultType),
-                makeTuple, leftTimestamp, rightTimestamp, comparator,
-                left.isMultiset || right.isMultiset, join.getJoinType().isOuterJoin(),
+                makeTuple, leftTsIndex, rightTsIndex, comparator,
+                left.isMultiset || right.isMultiset, isLeft,
                 leftIndex.outputPort(), rightIndex.outputPort());
         this.addOperator(result);
 

@@ -53,6 +53,8 @@ public class TranslateVisitor<T> extends InnerVisitor {
                 stream.append(node)
                         .append(" ")
                         .append(node.getId())
+                        .append(" ")
+                        .append(node)
                         .append("=>")
                         .append(e.getValue().toString())
                         .newline();
