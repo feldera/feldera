@@ -42,6 +42,7 @@ jobs:
           cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p feldera-types
           cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p feldera-storage
           cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p dbsp
+          cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p feldera-rest-api
           cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p fda
           cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p pipeline-manager
           cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p feldera-sqllib
