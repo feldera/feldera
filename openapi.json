@@ -3490,6 +3490,13 @@
             "description": "Optional row filter.\n\nWhen specified, only rows that satisfy the filter condition are read from the delta table.\nThe condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from my_table where ...` query.",
             "nullable": true
           },
+          "max_concurrent_readers": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum number of concurrent object store reads performed by all Delta Lake connectors.\n\nThis setting is used to limit the number of concurrent reads of the object store in a\npipeline with a large number of Delta Lake connectors. When multiple connectors are simultaneously\nreading from the object store, this can lead to transport timeouts.\n\nWhen enabled, this setting limits the number of concurrent reads across all connectors.\nThis is a global setting that affects all Delta Lake connectors, and not just the connector\nwhere it is specified. It should therefore be used at most once in a pipeline.  If multiple\nconnectors specify this setting, they must all use the same value.\n\nThe default value is 6.",
+            "nullable": true,
+            "minimum": 0
+          },
           "mode": {
             "$ref": "#/components/schemas/DeltaTableIngestMode"
           },
