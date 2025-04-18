@@ -55,7 +55,7 @@ use feldera_adapterlib::utils::datafusion::{
     execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
     validate_sql_expression, validate_timestamp_column,
 };
-use feldera_types::config::InputEndpointConfig;
+use feldera_types::config::{FtModel, InputEndpointConfig};
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
 use feldera_types::transport::delta_table::{DeltaTableIngestMode, DeltaTableReaderConfig};
@@ -137,8 +137,8 @@ impl DeltaTableInputEndpoint {
 }
 
 impl InputEndpoint for DeltaTableInputEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        false
+    fn fault_tolerance(&self) -> std::option::Option<FtModel> {
+        None
     }
 }
 impl IntegratedInputEndpoint for DeltaTableInputEndpoint {

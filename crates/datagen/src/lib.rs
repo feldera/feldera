@@ -14,6 +14,7 @@ use anyhow::{anyhow, bail, Result as AnyResult};
 use async_channel::Receiver as AsyncReceiver;
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike};
+use feldera_types::config::FtModel;
 use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
 use governor::state::{InMemoryState, NotKeyed};
@@ -32,7 +33,7 @@ use tokio::{sync::mpsc::UnboundedSender, time::Instant as TokioInstant};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::{InputBuffer, Parser};
 use feldera_adapterlib::transport::{
-    InputCommandReceiver, InputConsumer, InputEndpoint, InputReader, InputReaderCommand,
+    InputCommandReceiver, InputConsumer, InputEndpoint, InputReader, InputReaderCommand, Resume,
     TransportInputEndpoint,
 };
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
@@ -301,8 +302,8 @@ impl GeneratorEndpoint {
 }
 
 impl InputEndpoint for GeneratorEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        true
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::ExactlyOnce)
     }
 }
 
@@ -510,7 +511,7 @@ impl InputGenerator {
                 Some(InputReaderCommand::Pause) => running = false,
                 Some(InputReaderCommand::Queue) => {
                     let mut num_records = 0;
-                    let mut hasher = consumer.is_pipeline_fault_tolerant().then(Xxh3Default::new);
+                    let mut hasher = consumer.hasher();
                     let n = consumer.max_batch_size();
                     let mut consumed = vec![RowRangeSet::new(); config.plan.len()];
                     while num_records < n {
@@ -561,12 +562,9 @@ impl InputGenerator {
                         seed,
                     }
                     .into();
-                    consumer.extended(
-                        num_records,
-                        hasher.map_or(0, |hasher| hasher.finish()),
-                        serde_json::to_value(metadata).unwrap(),
-                        rmpv::Value::Nil,
-                    );
+                    let resume =
+                        Resume::new_metadata_only(serde_json::to_value(metadata).unwrap(), hasher);
+                    consumer.extended(num_records, Some(resume));
                 }
                 Some(InputReaderCommand::Disconnect) => break,
                 None => (),

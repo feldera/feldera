@@ -11,10 +11,11 @@ use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use circular_queue::CircularQueue;
 use dbsp::circuit::tokio::TOKIO;
+use feldera_adapterlib::transport::Resume;
+use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::http::HttpInputConfig;
 use futures_util::StreamExt;
-use rmpv::Value as RmpValue;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{
@@ -115,18 +116,17 @@ impl HttpInputEndpointInner {
                 InputReaderCommand::Queue => {
                     let mut guard = self.details.lock().unwrap();
                     let details = guard.as_mut().unwrap();
-                    let (num_records, hash, chunks) = details.queue.flush_with_aux();
-                    let data = if details.consumer.is_pipeline_fault_tolerant() {
-                        rmpv::ext::to_value(Data {
-                            chunks: chunks.into_iter().map(ByteBuf::from).collect(),
-                        })
-                        .unwrap()
-                    } else {
-                        RmpValue::Nil
-                    };
-                    details
-                        .consumer
-                        .extended(num_records, hash, serde_json::Value::Null, data);
+                    let (num_records, hasher, chunks) = details.queue.flush_with_aux();
+                    let resume = Resume::new_data_only(
+                        || {
+                            rmpv::ext::to_value(Data {
+                                chunks: chunks.into_iter().map(ByteBuf::from).collect(),
+                            })
+                            .unwrap()
+                        },
+                        hasher,
+                    );
+                    details.consumer.extended(num_records, Some(resume));
                 }
                 InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
             });
@@ -176,7 +176,7 @@ impl HttpInputEndpoint {
         let mut total_errors = 0;
         while let Some(chunk) = details.splitter.next(bytes.is_none()) {
             let (buffer, new_errors) = details.parser.parse(chunk);
-            let aux = if details.consumer.is_pipeline_fault_tolerant() {
+            let aux = if details.consumer.pipeline_fault_tolerance() == Some(FtModel::ExactlyOnce) {
                 Vec::from(chunk)
             } else {
                 Vec::new()
@@ -286,8 +286,8 @@ impl HttpInputEndpoint {
 }
 
 impl InputEndpoint for HttpInputEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        true
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::ExactlyOnce)
     }
 }
 

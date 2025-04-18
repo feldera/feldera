@@ -17,8 +17,9 @@ use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use csv::ReaderBuilder as CsvReaderBuilder;
+use feldera_adapterlib::transport::Resume;
 use feldera_types::config::{
-    default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig,
+    default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig, FtModel,
     InputEndpointConfig, OutputBufferConfig, TransportConfig,
 };
 use feldera_types::program_schema::Relation;
@@ -128,10 +129,10 @@ config:
     );
 
     let endpoint =
-        input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "", true)
+        input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "")
             .unwrap()
             .unwrap();
-    assert!(endpoint.is_fault_tolerant());
+    assert!(endpoint.fault_tolerance() == Some(FtModel::ExactlyOnce));
 
     let receiver = DummyInputReceiver::new();
     let reader = endpoint
@@ -487,8 +488,8 @@ impl InputConsumer for DummyInputConsumer {
         usize::MAX
     }
 
-    fn is_pipeline_fault_tolerant(&self) -> bool {
-        true
+    fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::ExactlyOnce)
     }
 
     fn parse_errors(&self, errors: Vec<ParseError>) {
@@ -518,10 +519,10 @@ impl InputConsumer for DummyInputConsumer {
         self.called(ConsumerCall::Replayed { num_records });
     }
 
-    fn extended(&self, num_records: usize, _hash: u64, metadata: JsonValue, _data: RmpValue) {
+    fn extended(&self, num_records: usize, resume: Option<Resume>) {
         self.called(ConsumerCall::Extended {
             num_records,
-            metadata,
+            metadata: resume.map(Resume::into_seek).unwrap_or_default(),
         });
     }
 
@@ -1163,7 +1164,7 @@ fn test_offset(
     }
 
     let (endpoint, consumer, _parser, zset) =
-        mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty(), false).unwrap();
+        mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty(), ).unwrap();
 
     if expected.is_none() {
         consumer.on_error(Some(Box::new(|_, _| ())));
@@ -1417,7 +1418,6 @@ format:
     match mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
-        false,
     ) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
@@ -1440,7 +1440,6 @@ format:
     match mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(config_str).unwrap(),
         Relation::empty(),
-        false,
     ) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
@@ -1471,7 +1470,6 @@ max_batch_size: 10000000
     let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
-        false,
     )
     .unwrap();
 

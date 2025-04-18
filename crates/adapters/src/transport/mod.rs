@@ -21,7 +21,7 @@
 //! let reader = endpoint.open(consumer, 0);
 //! ```
 use adhoc::AdHocInputEndpoint;
-use anyhow::{anyhow, Result as AnyResult};
+use anyhow::{Result as AnyResult};
 use http::HttpInputEndpoint;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
@@ -65,16 +65,12 @@ pub use feldera_adapterlib::transport::*;
 
 /// Creates an input transport endpoint instance using an input transport configuration.
 ///
-/// If `fault_tolerant` is true, this function succeeds only if it can create a
-/// fault-tolerant endpoint.
-///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an input endpoint.
 #[allow(unused_variables)]
 pub fn input_transport_config_to_endpoint(
     config: TransportConfig,
     endpoint_name: &str,
-    fault_tolerant: bool,
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
     let endpoint: Box<dyn TransportInputEndpoint> = match config {
         TransportConfig::FileInput(config) => Box::new(FileInputEndpoint::new(config)),
@@ -105,11 +101,6 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::RedisOutput(_)
         | TransportConfig::IcebergInput(_) => return Ok(None),
     };
-    if fault_tolerant && !endpoint.is_fault_tolerant() {
-        return Err(anyhow!(
-            "fault tolerance for endpoint could not be configured"
-        ));
-    }
     Ok(Some(endpoint))
 }
 

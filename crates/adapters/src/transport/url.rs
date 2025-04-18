@@ -12,7 +12,8 @@ use anyhow::{anyhow, bail, Result as AnyResult};
 use awc::error::HeaderValue;
 use awc::{http::header::HeaderMap, Client, ClientResponse, Connector};
 use bytes::Bytes;
-use feldera_adapterlib::transport::InputCommandReceiver;
+use feldera_adapterlib::transport::{InputCommandReceiver, Resume};
+use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::url::UrlInputConfig;
 use futures::{future::OptionFuture, StreamExt};
@@ -48,8 +49,8 @@ impl UrlInputEndpoint {
 }
 
 impl InputEndpoint for UrlInputEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        true
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::ExactlyOnce)
     }
 }
 
@@ -350,7 +351,7 @@ impl UrlInputReader {
                         }
                         InputReaderCommand::Queue => {
                             let mut total = 0;
-                            let mut hasher = consumer.is_pipeline_fault_tolerant().then(Xxh3Default::new);
+                            let mut hasher = consumer.hasher();
                             let limit = consumer.max_batch_size();
                             let mut range: Option<Range<u64>> = None;
                             while let Some((offsets, mut buffer)) = queue.pop_front() {
@@ -367,17 +368,13 @@ impl UrlInputReader {
                                     break;
                                 }
                             }
-                            consumer.extended(
-                                total,
-                                hasher.map_or(0, |hasher| hasher.finish()),
-                                serde_json::to_value(Metadata {
+                            let seek = serde_json::to_value(Metadata {
                                     offsets: range.unwrap_or_else(|| {
                                         let ofs = splitter.position();
                                         ofs..ofs
                                     }),
-                                }).unwrap(),
-                                rmpv::Value::Nil,
-                            );
+                            }).unwrap();
+                            consumer.extended(total, Some(Resume::new_metadata_only(seek, hasher)));
                         }
                         InputReaderCommand::Disconnect => return Ok(()),
                     }
@@ -529,7 +526,6 @@ format:
         mock_input_pipeline::<TestStruct, TestStruct>(
             serde_yaml::from_str(&config_str).unwrap(),
             Relation::empty(),
-            true,
         )
         .unwrap()
     }

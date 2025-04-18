@@ -708,17 +708,35 @@ mod none_as_string {
 }
 
 /// Fault tolerance model.
-#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+///
+/// The ordering is significant: we consider [Self::ExactlyOnce] to be a "higher
+/// level" of fault tolerance than [Self::AtLeastOnce].
+#[derive(
+    Debug, Copy, Clone, Default, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize, ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum FtModel {
+    /// Each record is output at least once.  Crashes may duplicate output, but
+    /// no input or output is dropped.
+    AtLeastOnce,
+
     /// Each record is output exactly once.  Crashes do not drop or duplicate
     /// input or output.
     #[default]
     ExactlyOnce,
+}
 
-    /// Each record is output at least once.  Crashes may duplicate output, but
-    /// no input or output is dropped.
-    AtLeastOnce,
+impl FtModel {
+    pub fn option_as_str(value: Option<FtModel>) -> &'static str {
+        value.map_or("no", |model| model.as_str())
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FtModel::AtLeastOnce => "at_least_once",
+            FtModel::ExactlyOnce => "exactly_once",
+        }
+    }
 }
 
 pub struct FtModelUnknown;

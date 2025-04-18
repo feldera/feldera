@@ -5,6 +5,8 @@ use super::{
 use crate::format::StreamSplitter;
 use crate::{InputBuffer, Parser};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
+use feldera_adapterlib::transport::Resume;
+use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
 use serde::{Deserialize, Serialize};
@@ -32,8 +34,8 @@ impl FileInputEndpoint {
 }
 
 impl InputEndpoint for FileInputEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        true
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::ExactlyOnce)
     }
 }
 
@@ -120,8 +122,7 @@ impl FileInputReader {
                     }
                     Ok(InputReaderCommand::Queue) => {
                         let mut total = 0;
-                        let mut hasher =
-                            consumer.is_pipeline_fault_tolerant().then(Xxh3Default::new);
+                        let mut hasher = consumer.hasher();
                         let limit = consumer.max_batch_size();
                         let mut range: Option<Range<u64>> = None;
                         while let Some((offsets, mut buffer)) = queue.pop_front() {
@@ -138,17 +139,17 @@ impl FileInputReader {
                                 break;
                             }
                         }
-                        consumer.extended(
-                            total,
-                            hasher.map_or(0, |hasher| hasher.finish()),
+                        let resume = Resume::new_metadata_only(
                             serde_json::to_value(Metadata {
                                 offsets: range.unwrap_or_else(|| {
                                     let ofs = splitter.position();
                                     ofs..ofs
                                 }),
-                            })?,
-                            rmpv::Value::Nil,
+                            })
+                            .unwrap(),
+                            hasher,
                         );
+                        consumer.extended(total, Some(resume));
                     }
                     Ok(InputReaderCommand::Seek(metadata)) => {
                         let Metadata { offsets } = serde_json::from_value(metadata)?;
@@ -356,7 +357,6 @@ format:
         let (endpoint, consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
             serde_yaml::from_str(&config_str).unwrap(),
             Relation::empty(),
-            true,
         )
         .unwrap();
 
@@ -414,7 +414,6 @@ format:
         let (endpoint, consumer, parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
             serde_yaml::from_str(&config_str).unwrap(),
             Relation::empty(),
-            true,
         )
         .unwrap();
 

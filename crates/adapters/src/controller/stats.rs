@@ -38,17 +38,15 @@ use bytemuck::NoUninit;
 use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
-use feldera_adapterlib::transport::InputReader;
-use feldera_types::config::PipelineConfig;
+use feldera_adapterlib::transport::{InputReader, Resume};
+use feldera_types::config::{FtModel, PipelineConfig};
 use memory_stats::memory_stats;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
 use metrics_util::{debugging::DebugValue, CompositeKey};
 use num_derive::FromPrimitive;
 use ordered_float::OrderedFloat;
 use rand::{seq::index::sample, thread_rng};
-use rmpv::Value as RmpValue;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
-use serde_json::Value as JsonValue;
 use std::{
     cmp::min,
     collections::{BTreeMap, BTreeSet},
@@ -919,9 +917,7 @@ pub struct InputEndpointMetrics {
 
 pub struct StepResults {
     pub num_records: u64,
-    pub hash: u64,
-    pub metadata: Option<JsonValue>,
-    pub data: Option<RmpValue>,
+    pub resume: Option<Resume>,
 }
 
 /// Input endpoint status information.
@@ -945,9 +941,9 @@ pub struct InputEndpointStatus {
     #[serde(skip)]
     pub reader: Box<dyn InputReader>,
 
-    /// Is this a fault-tolerant endpoint?
+    /// Endpoint support for fault tolerance.
     #[serde(skip)]
-    pub is_fault_tolerant: bool,
+    pub fault_tolerance: Option<FtModel>,
 
     /// Endpoint has been paused by the user.
     ///
@@ -966,7 +962,7 @@ impl InputEndpointStatus {
         endpoint_name: &str,
         config: InputEndpointConfig,
         reader: Box<dyn InputReader>,
-        is_fault_tolerant: bool,
+        fault_tolerance: Option<FtModel>,
     ) -> Self {
         let paused_by_user =
             config.connector_config.paused || config.connector_config.start_after.is_some();
@@ -979,7 +975,7 @@ impl InputEndpointStatus {
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
             reader,
-            is_fault_tolerant,
+            fault_tolerance,
         }
     }
 

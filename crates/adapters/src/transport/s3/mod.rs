@@ -5,6 +5,7 @@ use std::{
 };
 
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
+use feldera_adapterlib::transport::Resume;
 use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver, UnboundedSender};
 use xxhash_rust::xxh3::Xxh3Default;
 
@@ -13,7 +14,7 @@ use crate::{
 };
 use anyhow::{bail, Result as AnyResult};
 use dbsp::circuit::tokio::TOKIO;
-use feldera_types::program_schema::Relation;
+use feldera_types::{config::FtModel, program_schema::Relation};
 #[cfg(test)]
 use mockall::automock;
 use tracing::{error, info_span, Instrument};
@@ -55,8 +56,8 @@ impl S3InputEndpoint {
 }
 
 impl InputEndpoint for S3InputEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        true
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::ExactlyOnce)
     }
 }
 
@@ -363,7 +364,7 @@ impl S3InputReader {
                         Some(InputReaderCommand::Pause) => running = false,
                         Some(InputReaderCommand::Queue) => {
                             let mut total = 0;
-                            let mut hasher = consumer.is_pipeline_fault_tolerant().then(Xxh3Default::new);
+                            let mut hasher = consumer.hasher();
                             let mut offsets = BTreeMap::<String, (u64, Option<u64>)>::new();
                             while total < consumer.max_batch_size() {
                                 let Some(QueuedBuffer { key, start_offset, end_offset, mut buffer }) = queue.pop_front() else {
@@ -378,10 +379,7 @@ impl S3InputReader {
                                     .and_modify(|value| value.1 = end_offset)
                                     .or_insert((start_offset, end_offset));
                             }
-                            consumer.extended(total,
-                                              hasher.map_or(0, |hasher| hasher.finish()),
-                                              serde_json::to_value(&Metadata { offsets }).unwrap(),
-                                              rmpv::Value::Nil);
+                            consumer.extended(total, Some(Resume::new_metadata_only(serde_json::to_value(&Metadata { offsets }).unwrap(), hasher)));
                         }
                         Some(InputReaderCommand::Disconnect) | None => {
                             return Ok(())

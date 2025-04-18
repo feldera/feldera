@@ -2,8 +2,8 @@ use crate::catalog::InputCollectionHandle;
 use crate::format::{get_input_format, InputBuffer, Splitter};
 use crate::{controller::FormatConfig, InputConsumer, ParseError, Parser};
 use anyhow::{anyhow, Error as AnyError};
-use rmpv::Value as RmpValue;
-use serde_json::Value as JsonValue;
+use feldera_adapterlib::transport::Resume;
+use feldera_types::config::FtModel;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub type ErrorCallback = Box<dyn FnMut(bool, &AnyError) + Send>;
@@ -99,8 +99,8 @@ impl InputConsumer for MockInputConsumer {
         usize::MAX
     }
 
-    fn is_pipeline_fault_tolerant(&self) -> bool {
-        true
+    fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::ExactlyOnce)
     }
 
     fn parse_errors(&self, _errors: Vec<ParseError>) {}
@@ -109,7 +109,7 @@ impl InputConsumer for MockInputConsumer {
 
     fn replayed(&self, _num_records: usize, _hash: u64) {}
 
-    fn extended(&self, _num_records: usize, _hash: u64, _metadata: JsonValue, _data: RmpValue) {
+    fn extended(&self, _num_records: usize, _resume: Option<Resume>) {
         self.state().n_extended += 1;
     }
 }

@@ -1,6 +1,7 @@
 //! An input adapter that generates Nexmark event input data.
 
-use feldera_adapterlib::transport::InputReaderCommand;
+use feldera_adapterlib::transport::{InputReaderCommand, Resume};
+use feldera_types::config::FtModel;
 use std::cmp::min;
 use std::collections::VecDeque;
 use std::hash::Hasher;
@@ -40,8 +41,8 @@ impl NexmarkEndpoint {
 }
 
 impl InputEndpoint for NexmarkEndpoint {
-    fn is_fault_tolerant(&self) -> bool {
-        true
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::ExactlyOnce)
     }
 }
 
@@ -102,8 +103,14 @@ impl InputReader for InputGenerator {
                 InputReaderCommand::Extend => (),
                 InputReaderCommand::Pause => (),
                 InputReaderCommand::Queue => {
-                    self.consumer
-                        .extended(0, 0, serde_json::Value::Null, rmpv::Value::Nil)
+                    self.consumer.extended(
+                        0,
+                        Some(Resume::Replay {
+                            seek: serde_json::Value::Null,
+                            replay: rmpv::Value::Nil,
+                            hash: 0,
+                        }),
+                    );
                 }
                 InputReaderCommand::Disconnect => (),
             },
@@ -332,9 +339,7 @@ fn worker_thread(
             Some(InputReaderCommand::Pause) => running = false,
             Some(InputReaderCommand::Queue) => {
                 let mut total = 0;
-                let mut hasher = consumers[NexmarkTable::Bid]
-                    .is_pipeline_fault_tolerant()
-                    .then(Xxh3Default::new);
+                let mut hasher = consumers[NexmarkTable::Bid].hasher();
                 let n = options.max_step_size_per_thread as usize * options.threads;
                 let mut events: Option<Range<u64>> = None;
                 while total < n {
@@ -355,15 +360,14 @@ fn worker_thread(
                         buffer.flush();
                     }
                 }
-                consumers[NexmarkTable::Bid].extended(
-                    total,
-                    hasher.map_or(0, |hasher| hasher.finish()),
+                let resume = Resume::new_metadata_only(
                     serde_json::to_value(Metadata {
                         event_ids: events.unwrap_or_else(|| next_event_id..next_event_id),
                     })
                     .unwrap(),
-                    rmpv::Value::Nil,
+                    hasher,
                 );
+                consumers[NexmarkTable::Bid].extended(total, Some(resume));
             }
             Some(InputReaderCommand::Disconnect) => break,
             None => (),

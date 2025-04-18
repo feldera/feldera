@@ -28,7 +28,7 @@ use crate::{
     catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint,
     ParseError, PipelineState, TransportInputEndpoint,
 };
-use anyhow::Error as AnyError;
+use anyhow::{anyhow, Error as AnyError};
 use arrow::datatypes::Schema;
 use atomic::Atomic;
 use checkpoint::Checkpoint;
@@ -45,6 +45,7 @@ use dbsp::{
     profile::GraphProfile,
     DBSPHandle,
 };
+use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_types::format::json::JsonLines;
 use governor::DefaultDirectRateLimiter;
@@ -1014,16 +1015,22 @@ impl CircuitThread {
                     }
                 };
 
+                let (metadata, data, hash) = match results.resume {
+                    Some(Resume::Seek { seek }) => (seek, RmpValue::Nil, 0),
+                    Some(Resume::Replay { seek, replay, hash }) => (seek, replay, hash),
+                    None => (JsonValue::Null, RmpValue::Nil, 0),
+                };
+
                 // Input received.
                 total_consumed += results.num_records;
                 step_metadata.insert(
                     status.endpoint_name.clone(),
                     InputLog {
-                        data: results.data.unwrap_or(RmpValue::Nil),
-                        metadata: results.metadata.unwrap_or(JsonValue::Null),
+                        data,
+                        metadata,
                         checksums: InputChecksums {
                             num_records: results.num_records,
-                            hash: results.hash,
+                            hash,
                         },
                     },
                 );
@@ -2040,9 +2047,7 @@ pub struct ControllerInner {
     backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     session_ctxt: SessionContext,
-
-    /// Is fault tolerance enabled?
-    fault_tolerant: bool,
+    fault_tolerance: Option<FtModel>,
 
     /// Is the circuit thread still restoring from a checkpoint (this includes the journal replay phase)?
     restoring: AtomicBool,
@@ -2073,7 +2078,7 @@ impl ControllerInner {
             backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
             error_cb,
             session_ctxt,
-            fault_tolerant: config.global.fault_tolerance.is_enabled(),
+            fault_tolerance: config.global.fault_tolerance.model,
             restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
         });
         controller.initialize_adhoc_queries();
@@ -2197,7 +2202,6 @@ impl ControllerInner {
         let endpoint = input_transport_config_to_endpoint(
             endpoint_config.connector_config.transport.clone(),
             endpoint_name,
-            self.fault_tolerant,
         )
         .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
@@ -2260,7 +2264,7 @@ impl ControllerInner {
             &endpoint_config.connector_config,
             self.clone(),
         ));
-        let (reader, is_fault_tolerant) = match endpoint {
+        let (reader, fault_tolerance) = match endpoint {
             Some(endpoint) => {
                 // Create parser.
                 let format_config = if endpoint_config.connector_config.transport.name()
@@ -2301,23 +2305,33 @@ impl ControllerInner {
                 let reader = endpoint
                     .open(probe, parser, input_handle.schema.clone())
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
-                (reader, endpoint.is_fault_tolerant())
+                (reader, endpoint.fault_tolerance())
             }
             None => {
                 let endpoint =
                     create_integrated_input_endpoint(endpoint_name, &endpoint_config, probe)?;
 
-                let is_fault_tolerant = endpoint.is_fault_tolerant();
+                let fault_tolerance = endpoint.fault_tolerance();
                 let reader = endpoint
                     .open(input_handle)
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
-                (reader, is_fault_tolerant)
+                (reader, fault_tolerance)
             }
         };
 
+        if fault_tolerance < self.fault_tolerance {
+            return Err(ControllerError::input_transport_error(
+                endpoint_name,
+                true,
+                anyhow!("pipeline requires {} fault tolerance but endpoint only supplies {} fault tolerance",
+                        FtModel::option_as_str(self.fault_tolerance),
+                        FtModel::option_as_str(fault_tolerance)
+                )));
+        }
+
         self.status.inputs.write().unwrap().insert(
             endpoint_id,
-            InputEndpointStatus::new(endpoint_name, endpoint_config, reader, is_fault_tolerant),
+            InputEndpointStatus::new(endpoint_name, endpoint_config, reader, fault_tolerance),
         );
 
         self.unpark_backpressure();
@@ -2366,7 +2380,7 @@ impl ControllerInner {
         let endpoint = output_transport_config_to_endpoint(
             endpoint_config.connector_config.transport.clone(),
             endpoint_name,
-            self.fault_tolerant,
+            self.fault_tolerance == Some(FtModel::ExactlyOnce),
         )
         .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
 
@@ -2880,7 +2894,7 @@ impl ControllerInner {
             .status
             .input_status()
             .values()
-            .all(|endpoint_stats| endpoint_stats.is_fault_tolerant)
+            .all(|endpoint_stats| endpoint_stats.fault_tolerance.is_some())
             && self.status.pipeline_config.global.storage.is_some()
         {
             if self.restoring.load(Ordering::Acquire) {
@@ -2932,8 +2946,8 @@ impl InputConsumer for InputProbe {
         self.max_batch_size
     }
 
-    fn is_pipeline_fault_tolerant(&self) -> bool {
-        self.controller.fault_tolerant
+    fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
+        self.controller.fault_tolerance
     }
 
     fn parse_errors(&self, errors: Vec<ParseError>) {
@@ -2953,23 +2967,32 @@ impl InputConsumer for InputProbe {
             self.endpoint_id,
             StepResults {
                 num_records: num_records as u64,
-                hash,
-                metadata: None,
-                data: None,
+                resume: Some(Resume::Replay {
+                    // These values for `seek` and `replay` are bogus, but they
+                    // will not be written to the journal (because they were
+                    // read from the journal).
+                    seek: JsonValue::Null,
+                    replay: RmpValue::Nil,
+                    hash,
+                }),
             },
             &self.controller.backpressure_thread_unparker,
         );
         self.controller.unpark_circuit();
     }
 
-    fn extended(&self, num_records: usize, hash: u64, metadata: JsonValue, data: RmpValue) {
+    fn extended(&self, num_records: usize, resume: Option<Resume>) {
+        #[cfg(debug_assertions)]
+        {
+            let resume_ft = resume.as_ref().map(Resume::fault_tolerance);
+            let pipeline_ft = self.controller.fault_tolerance;
+            debug_assert!(resume_ft >= self.controller.fault_tolerance, "endpoint {} produced input at fault tolerance level {resume_ft:?} in pipeline with fault tolerance level {pipeline_ft:?}", &self.endpoint_name);
+        }
         self.controller.status.completed(
             self.endpoint_id,
             StepResults {
                 num_records: num_records as u64,
-                hash,
-                metadata: Some(metadata),
-                data: Some(data),
+                resume,
             },
             &self.controller.backpressure_thread_unparker,
         );
