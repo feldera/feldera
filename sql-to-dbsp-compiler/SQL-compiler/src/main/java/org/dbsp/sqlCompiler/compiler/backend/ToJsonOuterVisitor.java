@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
@@ -273,11 +274,24 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPConcreteAsofJoinOperator operator) {
+        if (this.preorder(operator.to(DBSPJoinBaseOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("isLeft");
+        this.stream.append(operator.isLeft);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPAsofJoinOperator operator) {
         if (this.preorder(operator.to(DBSPJoinBaseOperator.class)).stop())
             return VisitDecision.STOP;
         this.property("isLeft");
         this.stream.append(operator.isLeft);
+        this.property("leftTimestampindex");
+        this.stream.append(operator.leftTimestampIndex);
+        this.property("rightTimestampindex");
+        this.stream.append(operator.rightTimestampIndex);
         return VisitDecision.CONTINUE;
     }
 

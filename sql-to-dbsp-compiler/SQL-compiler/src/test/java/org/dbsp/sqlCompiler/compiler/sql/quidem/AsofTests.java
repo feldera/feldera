@@ -191,6 +191,21 @@ public class AsofTests extends StreamingTestBase {
                 (9 rows)""");
     }
 
+    @Test
+    public void issue3435() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT, y INT, z INT);
+                CREATE TABLE S(x INT, y INT, v INT);
+                
+                CREATE VIEW V AS
+                SELECT
+                    T.y, T.z
+                FROM
+                    T LEFT ASOF JOIN S
+                    MATCH_CONDITION ( T.x >= S.x )
+                    ON T.y = S.y;""");
+    }
+
     // This test should eventually be deleted once ASOF join supports more variants.
     @Test
     public void issue2549() {

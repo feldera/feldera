@@ -12,7 +12,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 
 import java.util.List;
 
-/** Maps to the Rust type WithCustomOrd, which is used to wrap
+/** Represents to the Rust type WithCustomOrd, which is used to wrap
  * values together with a comparator. */
 public class DBSPTypeWithCustomOrd extends DBSPTypeUser {
     public DBSPTypeWithCustomOrd(CalciteObject node, DBSPType dataType, DBSPType comparatorType) {

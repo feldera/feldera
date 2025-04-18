@@ -36,8 +36,6 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
-import java.util.List;
-
 /** Tuple field reference expression. */
 public final class DBSPFieldExpression extends DBSPExpression {
     public final DBSPExpression expression;

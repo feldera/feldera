@@ -33,8 +33,7 @@ public class NonMonotoneType extends ScalarMonotoneType {
     public static IMaybeMonotoneType nonMonotone(DBSPType type) {
         if (type.is(DBSPTypeBaseType.class) || type.is(DBSPTypeArray.class) ||
                 type.is(DBSPTypeMap.class) || type.is(DBSPTypeAny.class) ||
-                type.is(DBSPComparatorType.class) || (type.is(DBSPTypeFunction.class)) ||
-                type.is(DBSPTypeWithCustomOrd.class)) {
+                type.is(DBSPComparatorType.class) || (type.is(DBSPTypeFunction.class))) {
             return new NonMonotoneType(type);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             return nonMonotoneTuple(type.to(DBSPTypeTupleBase.class));
@@ -47,8 +46,6 @@ public class NonMonotoneType extends ScalarMonotoneType {
     @Override
     @Nullable
     public DBSPType getProjectedType() {
-        if (this.type.is(DBSPTypeWithCustomOrd.class))
-            return new DBSPTypeTuple();
         return null;
     }
 

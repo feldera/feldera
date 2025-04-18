@@ -132,8 +132,9 @@ public class CircuitOptimizer extends Passes {
         this.add(new Simplify(compiler).circuitRewriter(true));
         this.add(new CSE(compiler));
         this.add(new RecursiveComponents.ValidateRecursiveOperators(compiler));
-        // Lowering implements aggregates and inlines some calls.
         this.add(new LowerCircuitVisitor(compiler));
+        this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
+        this.add(new ImplementChains(compiler));
         // Lowering may surface additional casts that need to be expanded
         this.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         // Beta reduction after implementing aggregates.

@@ -21,7 +21,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -110,6 +109,11 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     }
 
     @Override
+    public void set(IDBSPInnerNode node, FieldUseMap translation) {
+        super.set(node, translation);
+    }
+
+    @Override
     public void postorder(DBSPParameter param) {
         // Create an empty FieldUseMap for each parameter of the closure analyzed
         FieldUseMap map = new FieldUseMap(param.getType(), false);
@@ -173,11 +177,6 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
         this.used(expression.function);
         for (DBSPExpression e: expression.arguments)
             this.used(e);
-    }
-
-    @Override
-    public void postorder(DBSPCustomOrdExpression expression) {
-        this.used(expression.source);
     }
 
     @Override

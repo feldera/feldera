@@ -8,10 +8,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -21,12 +18,14 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** This operator is purely incremental, it does not have a non-incremental form */
+/** A high-level representation of the ASOF JOIN.  Converted to a pair of
+ * {@link DBSPMapIndexOperator} and one {@link DBSPConcreteAsofJoinOperator}. */
 public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
-    // Usually a DBSPComparatorExpression
+    // Usually a DBSPComparatorExpression; currently not used
+    // https://github.com/feldera/feldera/issues/2212
     public final DBSPExpression comparator;
-    public final DBSPClosureExpression leftTimestamp;
-    public final DBSPClosureExpression rightTimestamp;
+    public final int leftTimestampIndex;
+    public final int rightTimestampIndex;
     public final boolean isLeft;
 
     /**
@@ -34,10 +33,10 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
      *
      * @param node            Calcite node
      * @param outputType      Output type of operator
-     * @param function        Closure from key, valueLeft, valueRight to result type
-     * @param leftTimestamp   Function that extracts a "timestamp" from the left input
-     * @param rightTimestamp  Function that extracts a "timestamp" from the right input
-     * @param comparator      Function that compares two timestamps.  Not yet used - hardwired.
+     * @param function        Closure from key, valueLeft, valueRight.nullableCast()  to result type
+     * @param leftTimestampIndex Index of left timestamp in left tuple.
+     * @param rightTimestampIndex Index of right timestamp in right tuple
+     * @param comparator      Function that compares two timestamps.
      * @param isMultiset      True if output is a multiset
      * @param isLeft          True if this is a left join
      * @param left            Left input
@@ -45,37 +44,23 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
      */
     public DBSPAsofJoinOperator(CalciteRelNode node, DBSPTypeZSet outputType,
                                 DBSPExpression function,
-                                DBSPClosureExpression leftTimestamp,
-                                DBSPClosureExpression rightTimestamp,
+                                int leftTimestampIndex,
+                                int rightTimestampIndex,
                                 DBSPExpression comparator,
                                 boolean isMultiset, boolean isLeft,
                                 OutputPort left, OutputPort right) {
-        super(node, "asof_join", function, outputType, isMultiset, left, right);
+        super(node, "asof_join_abstract", function, outputType, isMultiset, left, right);
         this.isLeft = isLeft;
         this.comparator = comparator;
-        this.leftTimestamp = leftTimestamp;
-        this.rightTimestamp = rightTimestamp;
-        //   pub fn asof_join<TS, F, TSF1, TSF2, V2, V>(
-        //        &self,
-        //        other: &Stream<RootCircuit, OrdIndexedZSet<K1, V2>>,
-        //        join: F,
-        //        ts_func1: TSF1,
-        //        ts_func2: TSF2,
-        //    ) -> Stream<RootCircuit, OrdZSet<V>>
-        //    where
-        //        TS: DBData,
-        //        V2: DBData,
-        //        V: DBData,
-        //        F: Fn(&K1, &V1, Option<&V2>) -> V + Clone + 'static,
-        //        TSF1: Fn(&V1) -> TS + Clone + 'static,
-        //        TSF2: Fn(&V2) -> TS + 'static,
+        this.leftTimestampIndex = leftTimestampIndex;
+        this.rightTimestampIndex = rightTimestampIndex;
         DBSPType elementResultType = this.getOutputZSetElementType();
         this.checkResultType(function, elementResultType);
-        assert leftTimestamp.getResultType().sameType(rightTimestamp.getResultType());
+
+        // Note that the third argument of the function may not match in type the right join input:
+        // if the join is left join, the argument is always nullable, even if the input is not.
         DBSPType[] argumentTypes = function.getType().to(DBSPTypeFunction.class).parameterTypes;
         assert argumentTypes.length == 3;
-        assert argumentTypes[1].sameType(leftTimestamp.parameters[0].getType());
-        assert argumentTypes[2].sameType(rightTimestamp.parameters[0].getType().withMayBeNull(true));
     }
 
     @Override
@@ -90,10 +75,6 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
     @Override
     public void accept(InnerVisitor visitor) {
         super.accept(visitor);
-        visitor.property("leftTimestamp");
-        this.leftTimestamp.accept(visitor);
-        visitor.property("rightTimestamp");
-        this.rightTimestamp.accept(visitor);
         visitor.property("comparator");
         this.comparator.accept(visitor);
     }
@@ -102,7 +83,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPAsofJoinOperator(this.getRelNode(),
                 outputType.to(DBSPTypeZSet.class), Objects.requireNonNull(expression),
-                this.leftTimestamp, this.rightTimestamp,
+                this.leftTimestampIndex, this.rightTimestampIndex,
                 this.comparator, this.isMultiset, this.isLeft, this.left(), this.right());
     }
 
@@ -112,33 +93,18 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAsofJoinOperator(
                     this.getRelNode(), this.getOutputZSetType(),
-                    this.getFunction(), this.leftTimestamp, this.rightTimestamp,
+                    this.getFunction(), this.leftTimestampIndex, this.rightTimestampIndex,
                     this.comparator, this.isMultiset, this.isLeft,
                     newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         return this;
     }
 
-    public int getLeftTimestampIndex() {
-        // This relies on the leftTimestamp function having a very specific shape
-        DBSPExpression body = this.leftTimestamp.body;
-        if (body.is(DBSPCastExpression.class))
-            body = body.to(DBSPCastExpression.class).source;
-        return body.to(DBSPFieldExpression.class).fieldNo;
-    }
-
-    public int getRightTimestampIndex() {
-        // This relies on the rightTimestamp function having a very specific shape
-        DBSPExpression body = this.rightTimestamp.body;
-        if (body.is(DBSPCastExpression.class))
-            body = body.to(DBSPCastExpression.class).source;
-        return body.to(DBSPFieldExpression.class).fieldNo;
-    }
-
     @Override
     public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
         return new DBSPAsofJoinOperator(this.getRelNode(), this.getOutputZSetType(), function,
-                this.leftTimestamp, this.rightTimestamp, this.comparator, this.isMultiset, this.isLeft, left, right);
+                this.leftTimestampIndex, this.rightTimestampIndex,
+                this.comparator, this.isMultiset, this.isLeft, left, right);
     }
 
     @Override
@@ -148,21 +114,21 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
         DBSPAsofJoinOperator otherOperator = other.as(DBSPAsofJoinOperator.class);
         if (otherOperator == null)
             return false;
-        return this.leftTimestamp.equivalent(otherOperator.leftTimestamp) &&
-                this.rightTimestamp.equivalent(otherOperator.rightTimestamp) &&
+        return this.leftTimestampIndex == otherOperator.leftTimestampIndex &&
+                this.rightTimestampIndex == otherOperator.rightTimestampIndex &&
                 this.comparator.equivalent(otherOperator.comparator);
     }
 
     @SuppressWarnings("unused")
     public static DBSPAsofJoinOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        DBSPClosureExpression leftTimestamp = fromJsonInner(node, "leftTimestamp", decoder, DBSPClosureExpression.class);
-        DBSPClosureExpression rightTimestamp = fromJsonInner(node, "rightTimestamp", decoder, DBSPClosureExpression.class);
+        int leftTimestampIndex = Utilities.getIntProperty(node, "leftTimestampIndex");
+        int rightTimestampIndex = Utilities.getIntProperty(node, "rightTimestampIndex");
         DBSPExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPExpression.class);
         boolean isLeft = Utilities.getBooleanProperty(node, "isLeft");
         return new DBSPAsofJoinOperator(
                 CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getFunction(),
-                leftTimestamp, rightTimestamp, comparator,
+                leftTimestampIndex, rightTimestampIndex, comparator,
                 info.isMultiset(), isLeft, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPAsofJoinOperator.class);
     }

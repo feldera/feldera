@@ -22,7 +22,8 @@ public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
         assert closure.parameters[1].getType().deref().sameType(leftType.elementType) :
                 "Type of parameter 1 of join function " + closure.parameters[1].getType() + 
                         " does not match left input element type " + leftType.elementType;
-        assert closure.parameters[2].getType().deref().sameType(rightType.elementType) :
+        assert this.is(DBSPAsofJoinOperator.class) || // Not always true
+                closure.parameters[2].getType().deref().sameType(rightType.elementType) :
                 "Type of parameter 2 of join function " + closure.parameters[2].getType() +
                         " does not match right input element type " + rightType.elementType;
         assert closure.parameters[0].getType().deref().sameType(leftType.keyType)  :
