@@ -31,6 +31,7 @@ where
 
         self.inner()
             .dyn_weighted_count_generic(
+                None,
                 &factories,
                 Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
             )
@@ -48,6 +49,7 @@ where
 
         self.inner()
             .dyn_weighted_count_generic(
+                None,
                 &factories,
                 Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
             )
@@ -69,6 +71,7 @@ where
 
         self.inner()
             .dyn_distinct_count_generic(
+                None,
                 &factories,
                 Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
             )
@@ -86,6 +89,7 @@ where
 
         self.inner()
             .dyn_distinct_count_generic(
+                None,
                 &factories,
                 Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
             )

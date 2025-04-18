@@ -44,7 +44,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
             // the current IR, so this type is a lie.
             DBSPTypeIndexedZSet outputType,
             OutputPort input) {
-        super(node, "partitioned_rolling_aggregate", outputType, function, aggregate, true, input);
+        super(node, "partitioned_rolling_aggregate", outputType, function, aggregate, true, input, true);
         this.lower = lower;
         this.upper = upper;
         this.partitioningFunction = partitioningFunction;

@@ -26,7 +26,7 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
             DBSPTypeIndexedZSet outputType,
             DBSPExpression function,
             DBSPClosureExpression postProcess, OutputPort input) {
-        super(node, "aggregate_linear_postprocess", function, outputType, false, input);
+        super(node, "aggregate_linear_postprocess", function, outputType, false, input, true);
         this.postProcess = postProcess;
     }
 

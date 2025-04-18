@@ -38,7 +38,7 @@ use crossbeam::{
 };
 use datafusion::prelude::*;
 use dbsp::circuit::tokio::TOKIO;
-use dbsp::circuit::CircuitStorageConfig;
+use dbsp::circuit::{CircuitStorageConfig, Mode};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
 use dbsp::{
     circuit::{CircuitConfig, Layout},
@@ -1543,6 +1543,7 @@ impl ControllerInit {
             layout: Layout::new_solo(pipeline_config.global.workers as usize),
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             storage,
+            mode: Mode::Ephemeral,
         })
     }
 }

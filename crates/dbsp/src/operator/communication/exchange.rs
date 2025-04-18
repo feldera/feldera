@@ -20,7 +20,6 @@ use crate::{
 };
 use crossbeam_utils::CachePadded;
 use futures::{future, prelude::*};
-use once_cell::sync::OnceCell;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -28,7 +27,7 @@ use std::{
     net::SocketAddr,
     ops::Range,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicPtr, AtomicUsize, Ordering},
         Arc, Mutex, RwLock,
     },
 };
@@ -129,6 +128,50 @@ impl Clients {
     }
 }
 
+struct CallbackInner {
+    cb: Option<Box<dyn Fn() + Send + Sync>>,
+}
+
+impl CallbackInner {
+    fn empty() -> Self {
+        Self { cb: None }
+    }
+
+    fn new<F>(cb: F) -> Self
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        let cb = Box::new(cb) as Box<dyn Fn() + Send + Sync>;
+        Self { cb: Some(cb) }
+    }
+}
+
+struct Callback(AtomicPtr<CallbackInner>);
+
+impl Callback {
+    fn empty() -> Self {
+        Self(AtomicPtr::new(Box::into_raw(Box::new(
+            CallbackInner::empty(),
+        ))))
+    }
+
+    fn set_callback(&self, cb: impl Fn() + Send + Sync + 'static) {
+        let old_callback = self.0.swap(
+            Box::into_raw(Box::new(CallbackInner::new(cb))),
+            Ordering::AcqRel,
+        );
+
+        let old_callback = unsafe { Box::from_raw(old_callback) };
+        drop(old_callback);
+    }
+
+    fn call(&self) {
+        if let Some(cb) = &unsafe { &*self.0.load(Ordering::Acquire) }.cb {
+            cb()
+        }
+    }
+}
+
 struct InnerExchange {
     exchange_id: ExchangeId,
     /// The number of communicating peers.
@@ -141,13 +184,13 @@ struct InnerExchange {
     /// pass.
     receiver_counters: Vec<AtomicUsize>,
     /// Callback invoked when all `npeers` messages are ready for a receiver.
-    receiver_callbacks: Vec<OnceCell<Box<dyn Fn() + Send + Sync>>>,
+    receiver_callbacks: Vec<Callback>,
     /// Counts the number of empty mailboxes ready to accept new data per
     /// sender. The sender waits until it has `npeers` available mailboxes
     /// before writing all of them in one pass.
     sender_counters: Vec<CachePadded<AtomicUsize>>,
     /// Callback invoked when all `npeers` mailboxes are available.
-    sender_callbacks: Vec<OnceCell<Box<dyn Fn() + Send + Sync>>>,
+    sender_callbacks: Vec<Callback>,
     /// The number of workers that have already sent their messages in the
     /// current round.
     sent: AtomicUsize,
@@ -179,14 +222,14 @@ impl InnerExchange {
             local_workers,
             clients,
             receiver_counters: (0..npeers).map(|_| AtomicUsize::new(0)).collect(),
-            receiver_callbacks: (0..npeers).map(|_| OnceCell::new()).collect(),
+            receiver_callbacks: (0..npeers).map(|_| Callback::empty()).collect(),
             sender_notifies: (0..n_local_workers * n_remote_workers)
                 .map(|_| Notify::new())
                 .collect(),
             sender_counters: (0..npeers)
                 .map(|_| CachePadded::new(AtomicUsize::new(npeers)))
                 .collect(),
-            sender_callbacks: (0..npeers).map(|_| OnceCell::new()).collect(),
+            sender_callbacks: (0..npeers).map(|_| Callback::empty()).collect(),
             deliver: Box::new(deliver),
             sent: AtomicUsize::new(0),
         }
@@ -227,9 +270,7 @@ impl InnerExchange {
             let n = senders.len();
             let old_counter = self.receiver_counters[receiver].fetch_add(n, Ordering::AcqRel);
             if old_counter >= self.npeers - n {
-                if let Some(cb) = self.receiver_callbacks[receiver].get() {
-                    cb()
-                }
+                self.receiver_callbacks[receiver].call();
             }
         }
 
@@ -263,9 +304,7 @@ impl InnerExchange {
         F: Fn() + Send + Sync + 'static,
     {
         debug_assert!(sender < self.npeers);
-        debug_assert!(self.sender_callbacks[sender].get().is_none());
-        let res = self.sender_callbacks[sender].set(Box::new(cb) as Box<dyn Fn() + Send + Sync>);
-        debug_assert!(res.is_ok());
+        self.sender_callbacks[sender].set_callback(cb);
     }
 
     fn register_receiver_callback<F>(&self, receiver: usize, cb: F)
@@ -273,10 +312,8 @@ impl InnerExchange {
         F: Fn() + Send + Sync + 'static,
     {
         debug_assert!(receiver < self.npeers);
-        debug_assert!(self.receiver_callbacks[receiver].get().is_none());
-        let res =
-            self.receiver_callbacks[receiver].set(Box::new(cb) as Box<dyn Fn() + Send + Sync>);
-        debug_assert!(res.is_ok());
+
+        self.receiver_callbacks[receiver].set_callback(cb);
     }
 }
 
@@ -330,7 +367,7 @@ pub(crate) struct Exchange<T> {
     mailboxes: Arc<Vec<Mutex<Option<T>>>>,
 }
 
-// Stop Rust from complaining about unused field.s
+// Stop Rust from complaining about unused field.
 #[allow(dead_code)]
 struct ExchangeListener(DropGuard);
 
@@ -471,9 +508,7 @@ where
                 let old_counter =
                     self.inner.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel);
                 if old_counter >= npeers - 1 {
-                    if let Some(cb) = self.inner.receiver_callbacks[receiver].get() {
-                        cb()
-                    }
+                    self.inner.receiver_callbacks[receiver].call();
                 }
             }
         }
@@ -539,9 +574,7 @@ where
             for sender in senders.clone() {
                 let old_counter = this.inner.sender_counters[sender].fetch_add(n, Ordering::AcqRel);
                 if old_counter >= npeers - n {
-                    if let Some(cb) = this.inner.sender_callbacks[sender].get() {
-                        cb()
-                    }
+                    this.inner.sender_callbacks[sender].call();
                 }
             }
         });
@@ -587,9 +620,7 @@ where
             if self.inner.local_workers.contains(&sender) {
                 let old_counter = self.inner.sender_counters[sender].fetch_add(1, Ordering::AcqRel);
                 if old_counter >= self.inner.npeers - 1 {
-                    if let Some(cb) = self.inner.sender_callbacks[sender].get() {
-                        cb()
-                    }
+                    self.inner.sender_callbacks[sender].call();
                 }
             } else {
                 self.inner.sender_notify(sender, receiver).notify_one();

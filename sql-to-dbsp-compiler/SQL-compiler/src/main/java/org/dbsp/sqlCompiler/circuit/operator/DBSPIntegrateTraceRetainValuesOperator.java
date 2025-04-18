@@ -29,7 +29,7 @@ public final class DBSPIntegrateTraceRetainValuesOperator
             CalciteRelNode node, DBSPExpression function,
             OutputPort data, OutputPort control) {
         super(node, "integrate_trace_retain_values",
-                function, data.outputType(), data.isMultiset(), data, control);
+                function, data.outputType(), data.isMultiset(), data, control, false);
     }
 
     public static DBSPIntegrateTraceRetainValuesOperator create(

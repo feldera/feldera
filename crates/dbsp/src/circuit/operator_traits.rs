@@ -211,8 +211,11 @@ pub trait Operator: 'static {
     /// `persistent_id` in their names to keep them unique.
     ///
     /// For most operators this method is a no-op.
+    ///
+    /// Fails if the operator is stateful, i.e., expects a checkpoint, by
+    /// `persistent_id` is `None`
     #[allow(unused_variables)]
-    fn commit(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
+    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         Ok(())
     }
 
@@ -221,8 +224,34 @@ pub trait Operator: 'static {
     ///
     /// For most operators this method is a no-op.
     #[allow(unused_variables)]
-    fn restore(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
+    fn restore(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         Ok(())
+    }
+
+    /// Clear the operator's state.
+    fn clear_state(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// Start replaying the operator's state to the replay stream.
+    ///
+    /// Only defined for operators that support replay.
+    fn start_replay(&mut self) -> Result<(), Error> {
+        panic!("start_replay() is not implemented for this operator")
+    }
+
+    /// Check if the operator has finished replaying its state.
+    ///
+    /// Only defined for operators that support replay.
+    fn is_replay_complete(&self) -> bool {
+        panic!("is_replay_complete() is not implemented for this operator")
+    }
+
+    /// Cleanup any state needed for replay and prepare the operator for normal operation.
+    ///
+    /// Only defined for operators that support replay.
+    fn end_replay(&mut self) -> Result<(), Error> {
+        panic!("end_replay() is not implemented for this operator")
     }
 }
 

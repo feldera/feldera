@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -14,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
+import org.dbsp.util.HashString;
 
 import java.io.IOException;
 import java.util.HashSet;
@@ -33,6 +35,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         DBSPOperator op = node.to(DBSPOperator.class);
         String name = op.getNodeName(false);
         String hash = op.getNodeName(true);
+        HashString merkle = OperatorHash.getHash(node, true);
         if (!node.is(DBSPViewBaseOperator.class)) {
             this.builder().append("let ");
             if (node.is(DBSPSimpleOperator.class)) {
@@ -50,6 +53,13 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         this.builder().append("create_")
                 .append(hash)
                 .append("(&circuit, ");
+        if (merkle != null) {
+            this.builder().append("Some(\"")
+                    .append(merkle.toString())
+                    .append("\"), ");
+        } else {
+            this.builder().append("None, ");
+        }
         for (var input: op.inputs) {
             name = "";
             int index = 0;

@@ -1,11 +1,12 @@
 //! The scheduling framework controls the execution of a circuit at runtime.
 
-use super::{trace::SchedulerEvent, Circuit, GlobalNodeId};
+use super::{trace::SchedulerEvent, Circuit, GlobalNodeId, NodeId};
 use crate::DetailedError;
 use itertools::Itertools;
 use serde::Serialize;
 use std::{
     borrow::Cow,
+    collections::BTreeSet,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     future::Future,
@@ -37,6 +38,14 @@ pub enum Error {
     TokioError {
         error: String,
     },
+    /// Replay info conflict.
+    ///
+    /// All workers should enter the replay mode with identical sets of replay and
+    /// backfill nodes. If this is not the case, this indicates a bug or a corrupted
+    /// checkpoint.
+    ReplayInfoConflict {
+        error: String,
+    },
 }
 
 impl DetailedError for Error {
@@ -46,6 +55,7 @@ impl DetailedError for Error {
             Self::CyclicCircuit { .. } => Cow::from("CyclicCircuit"),
             Self::Killed => Cow::from("Killed"),
             Self::TokioError { .. } => Cow::from("TokioError"),
+            Self::ReplayInfoConflict { .. } => Cow::from("ReplayInfoConflict"),
         }
     }
 }
@@ -62,6 +72,9 @@ impl Display for Error {
             }
             Self::Killed => f.write_str("circuit has been killed by the user"),
             Self::TokioError { error } => write!(f, "tokio error: {error}"),
+            Self::ReplayInfoConflict { error } => {
+                write!(f, "replay info conflict: {error}")
+            }
         }
     }
 }
@@ -88,12 +101,22 @@ pub trait Scheduler
 where
     Self: Sized,
 {
-    /// Create a scheduler for a circuit.
+    fn new() -> Self;
+
+    /// Initialize the scheduler for the circuit.
     ///
-    /// This method is invoked at circuit construction time to perform any
-    /// required preparatory computation, e.g., compute a complete static
-    /// schedule or build data structures needed for dynamic scheduling.
-    fn prepare<C>(circuit: &C) -> Result<Self, Error>
+    /// Invoked before running the circuit to validate that the circuit is schedulable,
+    /// e.g., doesn't contain circular scheduling dependencies, and to initialize any
+    /// internal scheduler state.
+    ///
+    /// This function can be invoked multiple times, e.g., once before running the circuit
+    /// in the backfill mode, and once before running the circuit in the normal mode.
+    ///
+    /// # Arguments
+    ///
+    /// * `nodes` - when specified, only the nodes in this set must be scheduled. All
+    ///   other nodes remain idle.
+    fn prepare<C>(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>
     where
         C: Circuit;
 
@@ -117,6 +140,8 @@ where
 /// `Scheduler`. It can run the circuit exactly once or multiple times, until
 /// some termination condition is reached.
 pub trait Executor<C>: 'static {
+    fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>;
+
     fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 }
 
@@ -131,15 +156,14 @@ pub(crate) struct IterativeExecutor<F, S> {
 }
 
 impl<F, S> IterativeExecutor<F, S> {
-    pub(crate) fn new<C>(circuit: &C, termination_check: F) -> Result<Self, Error>
+    pub(crate) fn new(termination_check: F) -> Self
     where
-        C: Circuit,
         S: Scheduler,
     {
-        Ok(Self {
+        Self {
             termination_check,
-            scheduler: <S as Scheduler>::prepare(circuit)?,
-        })
+            scheduler: <S as Scheduler>::new(),
+        }
     }
 }
 
@@ -167,6 +191,10 @@ where
             Ok(())
         })
     }
+
+    fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error> {
+        self.scheduler.prepare(circuit, nodes)
+    }
 }
 
 /// An executor that evaluates the circuit exactly once every time it is
@@ -180,13 +208,10 @@ where
     S: Scheduler,
     Self: Sized,
 {
-    pub(crate) fn new<C>(circuit: &C) -> Result<Self, Error>
-    where
-        C: Circuit,
-    {
-        Ok(Self {
-            scheduler: <S as Scheduler>::prepare(circuit)?,
-        })
+    pub(crate) fn new() -> Self {
+        Self {
+            scheduler: <S as Scheduler>::new(),
+        }
     }
 }
 
@@ -198,12 +223,19 @@ where
     fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
         Box::pin(async { self.scheduler.step(circuit).await })
     }
+
+    fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error> {
+        self.scheduler.prepare(circuit, nodes)
+    }
 }
 
 /// Some useful tools for developing schedulers.
 mod util {
 
-    use crate::circuit::{schedule::Error, Circuit, GlobalNodeId, NodeId, OwnershipPreference};
+    use crate::circuit::{
+        circuit_builder::StreamId, schedule::Error, Circuit, GlobalNodeId, NodeId,
+        OwnershipPreference,
+    };
     use petgraph::graphmap::DiGraphMap;
     use std::{collections::HashMap, ops::Deref};
 
@@ -228,7 +260,7 @@ mod util {
     /// Helper function used by schedulers to enforce ownership preferences.
     ///
     /// Individual schedulers can implement their own algorithms to enforce (or
-    /// ignore) ownership preferences.  This helper function can optionally
+    /// ignore) ownership preferences.  This helper function can optionally be
     /// used by schedulers that wish to implement one particular approach.
     /// The idea is to treat **strong** ownership preferences
     /// (`OwnershipPreference::STRONGLY_PREFER_OWNED` and above) as scheduling
@@ -262,19 +294,26 @@ mod util {
         // stream, but the latter doesn't, since a subcircuit node can have
         // multiple output streams.
         let num_nodes = circuit.num_nodes();
-        let mut successors: HashMap<GlobalNodeId, Vec<(NodeId, Option<OwnershipPreference>)>> =
-            HashMap::with_capacity(num_nodes);
+        let mut successors: HashMap<
+            (GlobalNodeId, StreamId),
+            Vec<(NodeId, Option<OwnershipPreference>)>,
+        > = HashMap::with_capacity(num_nodes);
 
         for edge in circuit.edges().deref().iter() {
+            let Some(stream_id) = edge.stream_id() else {
+                continue;
+            };
+            let origin = edge.origin.clone();
+
             successors
-                .entry(edge.origin.clone())
+                .entry((origin, stream_id))
                 .or_default()
                 .push((edge.to, edge.ownership_preference));
         }
 
         let mut constraints = Vec::new();
 
-        for (origin, succ) in successors.into_iter() {
+        for ((origin, _), succ) in successors.into_iter() {
             // Find all strong successors of a node.
             let strong_successors: Vec<_> = succ
                 .iter()

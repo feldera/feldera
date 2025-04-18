@@ -17,7 +17,7 @@ import java.util.List;
  * in the right stream. */
 public final class DBSPAntiJoinOperator extends DBSPBinaryOperator {
     public DBSPAntiJoinOperator(CalciteRelNode node, OutputPort left, OutputPort right) {
-        super(node, "antijoin", null, left.outputType(), left.isMultiset(), left, right);
+        super(node, "antijoin", null, left.outputType(), left.isMultiset(), left, right, true);
         // Inputs must be indexed
         left.getOutputIndexedZSetType();
         right.getOutputIndexedZSetType();
