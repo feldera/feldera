@@ -916,7 +916,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     void generateStructDeclaration(DBSPTypeStruct struct) {
-        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default)]")
+        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default, PartialOrd, Ord)]")
                 .newline();
         builder.append("pub struct ")
                 .append(Objects.requireNonNull(struct.sanitizedName))

@@ -613,4 +613,16 @@ public class CatalogTests extends BaseSQLTests {
                 create materialized view V as SELECT * FROM T;""";
         this.getCCS(sql);
     }
+
+    @Test
+    public void issue3892() {
+        String sql = """
+                create type ty0 as (
+                    id int,
+                    v varchar
+                );
+                create table t0 (id int, s MAP<ty0, int>);
+                create materialized view v1 as select id, s from t0;""";
+        this.getCCS(sql);
+    }
 }
