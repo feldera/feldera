@@ -38,6 +38,17 @@ fda() {
 
 cargo build
 
+EDITION=`curl "${FELDERA_HOST%/}/v0/config" | jq .edition | sed s/\"//g`
+echo "Edition: $EDITION"
+case $EDITION in
+    Enterprise) enterprise=true ;;
+    "Open source") enterprise=false ;;
+    *)
+	echo "Unknown edition '$EDITION'" >&2
+	exit 1
+	;;
+esac
+
 fda pipelines
 
 # Cleanup, these commands might fail if the resources do not exist yet
@@ -95,11 +106,16 @@ fda connector p1 example c start
 fda connector p1 example unknown start || true
 fda shutdown p1
 
-fda set-config p1 fault_tolerance true
+if $enterprise; then
+    enterprise_only=
+else
+    enterprise_only=fail_on_success
+fi
+$enterprise_only fda set-config p1 fault_tolerance true
 fda set-config p1 fault_tolerance false
 fda set-config p1 fault_tolerance none
-fda set-config p1 fault_tolerance at_least_once
-fda set-config p1 fault_tolerance exactly_once
+$enterprise_only fda set-config p1 fault_tolerance at_least_once
+$enterprise_only fda set-config p1 fault_tolerance exactly_once
 fail_on_success fda set-config p1 fault_tolerance exactly_one
 
 fda delete p1
