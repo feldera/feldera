@@ -357,6 +357,7 @@ pub(crate) async fn perform_sql_compilation(
 
     // Outputs
     let output_json_schema_file_path = working_dir.join("schema.json");
+    let output_dataflow_file_path = working_dir.join("dataflow.json");
     let output_rust_directory_path = working_dir.join("rust");
     recreate_dir(&output_rust_directory_path)
         .await
@@ -383,6 +384,8 @@ pub(crate) async fn perform_sql_compilation(
         .arg(output_json_schema_file_path.as_os_str())
         .arg("-o")
         .arg(output_rust_directory_path.as_os_str())
+        .arg("--dataflow")
+        .arg(output_dataflow_file_path.as_os_str())
         .arg("-i")
         .arg("-je")
         .arg("--alltables")
@@ -503,6 +506,18 @@ pub(crate) async fn perform_sql_compilation(
             )
         })?;
 
+        // Read dataflow.json
+        let dataflow_str = read_file_content(&output_dataflow_file_path).await?;
+        let dataflow: serde_json::Value = serde_json::from_str(&dataflow_str).map_err(|e| {
+            SqlCompilationError::SystemError(
+                CommonError::json_deserialization_error(
+                    "dataflow.json from SQL compiler into JSON".to_string(),
+                    e,
+                )
+                .to_string(),
+            )
+        })?;
+
         // The base64-encoded gzipped tar archive of the Rust output directory
         let main_rust = encode_dir_as_string(&output_rust_directory_path)?;
 
@@ -510,7 +525,7 @@ pub(crate) async fn perform_sql_compilation(
         let stubs = read_file_content(&output_rust_udf_stubs_file_path).await?;
 
         // Generate the program information
-        match generate_program_info(schema, main_rust, stubs) {
+        match generate_program_info(schema, main_rust, stubs, dataflow) {
             Ok(program_info) => {
                 let program_info = match serde_json::to_value(program_info) {
                     Ok(value) => value,
