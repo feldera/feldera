@@ -166,6 +166,7 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "OutputEndpointConfig",
             "feldera_types::config::OutputEndpointConfig",
         ),
+        ("FtConfig", "feldera_types::config::FtConfig"),
     ]
 }
 
