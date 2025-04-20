@@ -47,11 +47,12 @@ pub struct PartialProgramInfo {
 }
 
 /// Removes the `main_rust` field from the JSON of `program_info`.
-fn remove_main_rust_from_program_info(
+fn remove_large_fields_from_program_info(
     mut program_info: Option<serde_json::Value>,
 ) -> Option<serde_json::Value> {
     if let Some(serde_json::Value::Object(m)) = &mut program_info {
         let _ = m.shift_remove("main_rust");
+        let _ = m.shift_remove("dataflow");
     }
     program_info
 }
@@ -135,7 +136,7 @@ impl PipelineInfoInternal {
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
             program_error: extended_pipeline.program_error,
-            program_info: remove_main_rust_from_program_info(extended_pipeline.program_info),
+            program_info: remove_large_fields_from_program_info(extended_pipeline.program_info),
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
             deployment_desired_status: extended_pipeline.deployment_desired_status,
@@ -235,7 +236,7 @@ impl PipelineSelectedInfoInternal {
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
             program_error: extended_pipeline.program_error,
-            program_info: Some(remove_main_rust_from_program_info(
+            program_info: Some(remove_large_fields_from_program_info(
                 extended_pipeline.program_info,
             )),
             deployment_status: extended_pipeline.deployment_status,
@@ -518,6 +519,45 @@ pub(crate) async fn get_pipeline(
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&returned_pipeline))
+}
+
+/// Retrieve the program info of a pipeline.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Pipeline retrieved successfully"
+            , body = ProgramInfo
+            , example = json!(examples::pipeline_1_selected_info())),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline management"
+)]
+#[get("/pipelines/{pipeline_name}/program_info")]
+pub(crate) async fn get_program_info(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    log::error!("pipeline_name {:?}", pipeline_name);
+    let pipeline = state
+        .db
+        .lock()
+        .await
+        .get_pipeline(*tenant_id, &pipeline_name)
+        .await?;
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&pipeline.program_info))
 }
 
 /// Create a new pipeline.

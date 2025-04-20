@@ -293,6 +293,7 @@ fn map_val_to_limited_program_info(val: ProgramInfoPropVal) -> serde_json::Value
             udf_stubs: format!("udf-stubs-{}", val.2),
             input_connectors: BTreeMap::new(),
             output_connectors: BTreeMap::new(),
+            dataflow: serde_json::Value::Null,
         })
         .unwrap()
     }
@@ -1142,6 +1143,7 @@ async fn pipeline_program_compilation() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
+                dataflow: serde_json::Value::Null,
             })
             .unwrap(),
         )
@@ -1259,6 +1261,7 @@ async fn pipeline_deployment() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
+                dataflow: serde_json::Value::Null,
             })
             .unwrap(),
         )
@@ -1398,6 +1401,7 @@ async fn pipeline_provision_version_guard() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
+                dataflow: serde_json::Value::Null,
             })
             .unwrap(),
         )

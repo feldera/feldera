@@ -531,6 +531,12 @@ pub enum ProgramAction {
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
     },
+    /// Return compile-time information about the program.
+    Info {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]

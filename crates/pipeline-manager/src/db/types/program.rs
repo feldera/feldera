@@ -491,7 +491,7 @@ fn convert_connectors_with_unique_names(
 ///
 /// It includes information needed for Rust compilation (e.g., generated Rust code)
 /// as well as only for runtime (e.g., schema, input/output connectors).
-#[derive(Deserialize, Serialize, Eq, PartialEq, Debug, Clone)]
+#[derive(Deserialize, Serialize, Eq, PartialEq, Debug, Clone, ToSchema)]
 pub struct ProgramInfo {
     /// Schema of the compiled SQL.
     pub schema: ProgramSchema,
@@ -505,7 +505,7 @@ pub struct ProgramInfo {
     pub udf_stubs: String,
 
     /// Dataflow graph of the program.
-    #[serde(default)] // TODO: when a breaking migration can happen, remove this default
+    #[serde(default)]
     pub dataflow: serde_json::Value,
 
     /// Input connectors derived from the schema.

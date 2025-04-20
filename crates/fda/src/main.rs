@@ -1613,6 +1613,40 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 std::process::exit(1);
             }
         }
+        ProgramAction::Info { name } => {
+            let response = client
+                .get_program_info()
+                .pipeline_name(name)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get program information",
+                    1,
+                ))
+                .unwrap();
+
+            match format {
+                OutputFormat::Text => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize program information")
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize program information")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }
 

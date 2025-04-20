@@ -71,6 +71,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_management::patch_pipeline,
         endpoints::pipeline_management::delete_pipeline,
         endpoints::pipeline_management::post_pipeline_action,
+        endpoints::pipeline_management::get_program_info,
 
         // Pipeline interaction endpoints
         endpoints::pipeline_interaction::http_input,
@@ -135,6 +136,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         crate::db::types::program::SqlCompilationInfo,
         crate::db::types::program::RustCompilationInfo,
         crate::db::types::program::ProgramConfig,
+        crate::db::types::program::ProgramInfo,
         crate::api::endpoints::pipeline_management::PartialProgramInfo,
 
         // API key
@@ -250,6 +252,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::put_pipeline)
         .service(endpoints::pipeline_management::patch_pipeline)
         .service(endpoints::pipeline_management::delete_pipeline)
+        .service(endpoints::pipeline_management::get_program_info)
         // Pipeline interaction endpoints
         .service(endpoints::pipeline_interaction::http_input)
         .service(endpoints::pipeline_interaction::http_output)
