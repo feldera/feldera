@@ -2260,6 +2260,131 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/program_info": {
+      "get": {
+        "tags": [
+          "Pipeline management"
+        ],
+        "summary": "Retrieve the program info of a pipeline.",
+        "operationId": "get_program_info",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgramInfo"
+                },
+                "example": {
+                  "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                  "name": "example1",
+                  "description": "Description of the pipeline example1",
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "version": 4,
+                  "platform_version": "v0",
+                  "runtime_config": {
+                    "workers": 16,
+                    "storage": {
+                      "backend": {
+                        "name": "default"
+                      },
+                      "min_storage_bytes": null,
+                      "compression": "default",
+                      "cache_mib": null
+                    },
+                    "fault_tolerance": {
+                      "model": "none",
+                      "checkpoint_interval_secs": 60
+                    },
+                    "cpu_profiler": true,
+                    "tracing": false,
+                    "tracing_endpoint_jaeger": "",
+                    "min_batch_size_records": 0,
+                    "max_buffering_delay_usecs": 0,
+                    "resources": {
+                      "cpu_cores_min": null,
+                      "cpu_cores_max": null,
+                      "memory_mb_min": null,
+                      "memory_mb_max": null,
+                      "storage_mb_max": null,
+                      "storage_class": null
+                    },
+                    "clock_resolution_usecs": 100000,
+                    "pin_cpus": [],
+                    "provisioning_timeout_secs": null,
+                    "max_parallel_connector_init": null
+                  },
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
+                  "udf_rust": "",
+                  "udf_toml": "",
+                  "program_config": {
+                    "profile": "optimized",
+                    "cache": true
+                  },
+                  "program_version": 2,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_error": {
+                    "sql_compilation": null,
+                    "rust_compilation": null,
+                    "system_error": null
+                  },
+                  "program_info": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null,
+                  "refresh_version": 4
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/query": {
       "get": {
         "tags": [
@@ -5032,6 +5157,45 @@
             "type": "string",
             "description": "System error that occurred.\n- Set `Some(...)` upon transition to `SystemError`\n- Set `None` upon transition to `Pending`",
             "nullable": true
+          }
+        }
+      },
+      "ProgramInfo": {
+        "type": "object",
+        "description": "Program information is the output of the SQL compiler.\n\nIt includes information needed for Rust compilation (e.g., generated Rust code)\nas well as only for runtime (e.g., schema, input/output connectors).",
+        "required": [
+          "schema",
+          "input_connectors",
+          "output_connectors"
+        ],
+        "properties": {
+          "dataflow": {
+            "description": "Dataflow graph of the program."
+          },
+          "input_connectors": {
+            "type": "object",
+            "description": "Input connectors derived from the schema.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InputEndpointConfig"
+            }
+          },
+          "main_rust": {
+            "type": "string",
+            "description": "Generated main program Rust code: main.rs"
+          },
+          "output_connectors": {
+            "type": "object",
+            "description": "Output connectors derived from the schema.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OutputEndpointConfig"
+            }
+          },
+          "schema": {
+            "$ref": "#/components/schemas/ProgramSchema"
+          },
+          "udf_stubs": {
+            "type": "string",
+            "description": "Generated user defined function (UDF) stubs Rust code: stubs.rs"
           }
         }
       },
