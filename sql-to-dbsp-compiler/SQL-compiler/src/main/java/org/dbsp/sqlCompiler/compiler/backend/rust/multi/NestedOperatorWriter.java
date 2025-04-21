@@ -92,7 +92,6 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         ToRustVisitor visitor = new ToRustVisitor(
                 compiler, this.builder(), this.circuit.metadata, new HashSet<>())
                 .withPreferHash(true);
-        final String name = this.operator.getNodeName(false);
         final String hash = this.operator.getNodeName(true);
         this.builder().newline();
         for (String dep : this.dependencies)
@@ -118,9 +117,11 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         this.builder().append(" -> ");
         this.builder().append("(");
         for (int i = 0; i < this.operator.outputCount(); i++) {
-            DBSPType streamType = this.operator.outputStreamType(i, true);
-            streamType.accept(visitor.innerVisitor);
-            this.builder().append(",");
+            if (this.operator.hasOutput(i)) {
+                DBSPType streamType = this.operator.outputStreamType(i, true);
+                streamType.accept(visitor.innerVisitor);
+                this.builder().append(",");
+            }
         }
         this.builder().append(")");
         this.builder().append("{").increase();
@@ -176,11 +177,10 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         this.builder().append("return (");
         for (int i = 0; i < this.operator.outputCount(); i++) {
             OutputPort port = this.operator.internalOutputs.get(i);
-            if (port != null)
+            if (port != null) {
                 this.builder().append(port.getName(false));
-            else
-                this.builder().append("()");
-            this.builder().append(", ");
+                this.builder().append(", ");
+            }
         }
         this.builder().append(");").newline();
         this.builder().decrease().append("}");

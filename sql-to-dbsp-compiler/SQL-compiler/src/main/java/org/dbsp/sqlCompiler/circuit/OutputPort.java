@@ -30,6 +30,10 @@ public class OutputPort {
         this.outputNumber = port;
     }
 
+    public boolean exists() {
+        return this.operator.hasOutput(this.outputNumber);
+    }
+
     public OutputPort(Port<DBSPOperator> dest) {
         this(dest.node(), dest.port());
     }

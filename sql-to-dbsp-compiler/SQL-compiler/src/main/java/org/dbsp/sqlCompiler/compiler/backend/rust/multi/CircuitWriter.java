@@ -28,9 +28,11 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
             } else {
                 this.builder().append("(");
                 for (int i = 0; i < node.outputCount(); i++) {
-                    String portName = node.getOutput(i).getName(false);
-                    this.builder().append(portName)
-                            .append(",");
+                    if (node.hasOutput(i)) {
+                        String portName = node.getOutput(i).getName(false);
+                        this.builder().append(portName)
+                                .append(",");
+                    }
                 }
                 this.builder().append(")");
             }

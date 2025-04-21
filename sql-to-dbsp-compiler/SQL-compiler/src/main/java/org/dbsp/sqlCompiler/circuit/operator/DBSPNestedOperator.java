@@ -49,6 +49,13 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         this.declarationByName = new HashMap<>();
     }
 
+    @Override
+    public boolean hasOutput(int outputNumber) {
+        if (outputNumber < 0 || outputNumber >= this.internalOutputs.size())
+            return false;
+        return this.internalOutputs.get(outputNumber) != null;
+    }
+
     public boolean contains(DBSPOperator operator) {
         return this.operators.contains(operator);
     }
@@ -146,7 +153,8 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     @Override
     public DBSPType outputType(int outputNo) {
         OutputPort port = this.internalOutputs.get(outputNo);
-        assert port != null;
+        if (port == null)
+            throw new RuntimeException("Getting type from port that does not exist");
         return port.outputType();
     }
 
