@@ -3453,6 +3453,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else {
             tuple = elemType.to(DBSPTypeTupleBase.class);
         }
+        IntermediateRel node = CalciteObject.create(root.rel);
         if (root.fields.size() != tuple.size()) {
             DBSPVariablePath t = tuple.ref().var();
             List<DBSPExpression> resultFields = new ArrayList<>();
@@ -3468,7 +3469,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 closure = new DBSPApplyExpression("map", outputElementType, v, closure)
                         .closure(v);
             }
-            op = new DBSPMapOperator(CalciteEmptyRel.INSTANCE, closure, this.makeZSet(outputElementType), op.outputPort());
+            op = new DBSPMapOperator(node, closure, this.makeZSet(outputElementType), op.outputPort());
             this.addOperator(op);
         }
 
@@ -3496,7 +3497,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPVariablePath var = viewType.ref().var();
                 DBSPExpression cast = new DBSPTupleExpression(DBSPTypeTuple.flatten(var.deref()), false)
                         .pointwiseCast(sinkType);
-                op = new DBSPMapOperator(CalciteEmptyRel.INSTANCE, cast.closure(var), op.outputPort());
+                op = new DBSPMapOperator(node, cast.closure(var), op.outputPort());
                 this.addOperator(op);
                 view.replaceColumns(declare.columns);
             }
@@ -3505,7 +3506,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 columnMetadata, view.getViewKind(), emitFinalIndex,
                 // The view is a system view if it's not visible
                 declare != null, !view.isVisible(), view.getProperties());
-        IntermediateRel node = CalciteObject.create(root.rel);
         if (view.getViewKind() != SqlCreateView.ViewKind.LOCAL) {
             this.metadata.addView(view);
             // Create two operators chained, a ViewOperator and a SinkOperator.

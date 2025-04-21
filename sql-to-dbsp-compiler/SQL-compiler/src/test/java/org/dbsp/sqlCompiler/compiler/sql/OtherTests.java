@@ -304,7 +304,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         createEmptyStubs();
     }
 
-
     @Test
     public void testProjectFiles() throws IOException, InterruptedException, SQLException {
         // Compiles all the programs in the tests directory
@@ -526,7 +525,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         File file = createInputScript(sql);
         File png = File.createTempFile("out", ".png", new File("."));
         png.deleteOnExit();
-        CompilerMessages message = CompilerMain.execute("-png", "-o", png.getPath(), file.getPath());
+        CompilerMessages message = CompilerMain.execute("--png", "-o", png.getPath(), file.getPath());
         Assert.assertEquals(0, message.exitCode);
         Assert.assertTrue(file.exists());
         ImageIO.read(new File(png.getPath()));

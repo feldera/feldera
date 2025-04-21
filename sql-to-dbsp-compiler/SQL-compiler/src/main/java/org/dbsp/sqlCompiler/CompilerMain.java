@@ -29,6 +29,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
+import org.apache.commons.io.output.NullPrintStream;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -110,6 +111,9 @@ public class CompilerMain {
     }
 
     PrintStream getOutputStream() throws IOException {
+        if (this.options.ioOptions.noRust)
+            return NullPrintStream.INSTANCE;
+
         PrintStream outputStream;
         @Nullable String outputFile = this.options.ioOptions.outputFile;
         if (outputFile.isEmpty()) {
@@ -242,7 +246,7 @@ public class CompilerMain {
         try {
             // Generate stubs.rs file
             String outputFile = this.options.ioOptions.outputFile;
-            if (!outputFile.isEmpty()) {
+            if (!outputFile.isEmpty() && !this.options.ioOptions.noRust) {
                 Path stubs;
                 String outputPath = new File(outputFile).getAbsolutePath();
                 if (options.ioOptions.multiCrates()) {

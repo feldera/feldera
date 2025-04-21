@@ -16,6 +16,10 @@ public abstract class CalciteRelNode extends CalciteObject {
     public static final SqlDialect DIALECT = SqlDialect.DatabaseProduct.UNKNOWN.getDialect();
     static final RelToSqlConverter CONVERTER = new RelToSqlConverter(DIALECT);
 
+    protected CalciteRelNode() {
+        super();
+    }
+
     @Override
     public boolean isEmpty() {
         return false;
