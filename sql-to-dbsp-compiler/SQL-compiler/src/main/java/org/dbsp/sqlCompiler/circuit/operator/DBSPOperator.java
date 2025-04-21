@@ -55,6 +55,8 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         this.derivedFrom = this.id;
     }
 
+    public abstract boolean hasOutput(int outputNumber);
+
     public DBSPOperator copyAnnotations(DBSPOperator source) {
         if (source != this)
             this.annotations.replace(source.annotations);

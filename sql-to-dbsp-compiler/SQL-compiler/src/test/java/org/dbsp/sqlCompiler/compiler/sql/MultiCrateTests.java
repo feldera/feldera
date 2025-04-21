@@ -10,6 +10,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -19,13 +20,14 @@ import java.nio.file.Paths;
 import java.sql.SQLException;
 
 public class MultiCrateTests extends BaseSQLTests {
-    void compileMultiCrate(String file) throws SQLException, IOException, InterruptedException {
+    void compileToMultiCrate(String file, boolean check) throws SQLException, IOException, InterruptedException {
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "-q", "--ignoreOrder", "--crates", "x",
                 "-o", BaseSQLTests.RUST_CRATES_DIRECTORY, file);
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
+        if (check)
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
     }
 
     @Test
@@ -35,7 +37,7 @@ public class MultiCrateTests extends BaseSQLTests {
                  CREATE VIEW V0 AS SELECT 'x', STDDEV(C1) FROM T;
                  CREATE VIEW V1 AS SELECT * FROM T JOIN T AS R ON T.C0 = R.C3;""";
         File file = createInputScript(sql);
-        this.compileMultiCrate(file.getAbsolutePath());
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
 
     @Test
@@ -60,7 +62,7 @@ public class MultiCrateTests extends BaseSQLTests {
                 ARRAY_AGG(c1) FILTER(WHERE (c5+C6)> 3) AS f_c1, ARRAY_AGG(c2) FILTER(WHERE (c5+C6)> 3) AS f_c2, ARRAY_AGG(c3) FILTER(WHERE (c5+C6)> 3) AS f_c3, ARRAY_AGG(c4) FILTER(WHERE (c5+C6)> 3) AS f_c4, ARRAY_AGG(c5) FILTER(WHERE (c5+C6)> 3) AS f_c5, ARRAY_AGG(c6) FILTER(WHERE (c5+C6)> 3) AS f_c6,  ARRAY_AGG(c7) FILTER(WHERE (c5+C6)> 3) AS f_c7,  ARRAY_AGG(c8) FILTER(WHERE (c5+C6)> 3) AS f_c8
                 FROM int0_tbl;""";
         File file = createInputScript(sql);
-        this.compileMultiCrate(file.getAbsolutePath());
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
 
     @Test
@@ -69,7 +71,7 @@ public class MultiCrateTests extends BaseSQLTests {
                 DECLARE RECURSIVE VIEW V(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT 1;""";
         File file = createInputScript(sql);
-        this.compileMultiCrate(file.getAbsolutePath());
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
 
     @Test
@@ -84,19 +86,19 @@ public class MultiCrateTests extends BaseSQLTests {
             , COL6 DECIMAL(6, 2));
             CREATE VIEW V AS SELECT T.COL1, LAG(T.COL1) OVER (ORDER BY T.COL1) FROM T;""";
         File file = createInputScript(sql);
-        this.compileMultiCrate(file.getAbsolutePath());
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
 
     @Test @Ignore
     public void testMultiCrateLarge() throws IOException, SQLException, InterruptedException {
         File file = new File("../extra/current_pipeline.sql");
-        this.compileMultiCrate(file.getAbsolutePath());
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
 
     @Test @Ignore
     public void testMultiCrateLarge2() throws IOException, SQLException, InterruptedException {
         File file = new File("../extra/slicer-q1.sql");
-        this.compileMultiCrate(file.getAbsolutePath());
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
 
     @Test
@@ -128,7 +130,7 @@ public class MultiCrateTests extends BaseSQLTests {
                     LEFT JOIN t1 AS t20 ON t19.val=t20.val
                     LEFT JOIN t1 AS t21 ON t20.val=t21.val;""";
         File file = createInputScript(sql);
-        this.compileMultiCrate(file.getAbsolutePath());
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
 
     @Test
@@ -144,8 +146,41 @@ public class MultiCrateTests extends BaseSQLTests {
             String udf = basename + ".udf.rs";
             File udfFile = new File(dir.getPath() + "/" + udf);
             if (!udfFile.exists())
-                this.compileMultiCrate(dir.getPath() + "/" + sqlFile);
+                this.compileToMultiCrate(dir.getPath() + "/" + sqlFile, true);
         }
+    }
+
+    @Test
+    public void issue3903() throws IOException, SQLException, InterruptedException {
+        String url = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/program.sql";
+        String sql = Utilities.readFileFromUrl(url);
+        File file = createInputScript(sql);
+
+        String url0 = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/udf/src/lib.rs";
+        String rs = Utilities.readFileFromUrl(url0);
+        File udf = this.createUdfFile(rs);
+        udf.deleteOnExit();
+
+        this.compileToMultiCrate(file.getAbsolutePath(), false);
+
+        Path dir = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals");
+        File cargo = new File(dir.toFile(), "Cargo.toml");
+        String url1 = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/udf/Cargo.toml";
+        String cargoContents = Utilities.readFileFromUrl(url1);
+        String[] lines = cargoContents.split("\n");
+        FileWriter writer = new FileWriter(cargo, true);
+        boolean append = false;
+        for (String line: lines) {
+            if (append) {
+                writer.append(line);
+                writer.append(System.lineSeparator());
+            }
+            if (line.equals("[dependencies]"))
+                append = true;
+        }
+        writer.close();
+
+        Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
     }
 
     @Test
@@ -170,15 +205,10 @@ public class MultiCrateTests extends BaseSQLTests {
                     ON transaction.id = feedback.id;
                 """;
         File file = createInputScript(sql);
-        this.compileMultiCrate(file.getAbsolutePath());
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
 
-    @Test
-    public void testMultiUdf() throws IOException, InterruptedException, SQLException {
-        File file = createInputScript("""
-                CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL;
-                CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5);""");
-
+    File createUdfFile(String contents) throws IOException {
         // "x" is the name for the pipeline used by compileMultiCrate
         Path dir = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals", "src");
         File dirFile = dir.toFile();
@@ -190,7 +220,18 @@ public class MultiCrateTests extends BaseSQLTests {
         }
         File udf = new File(dir.toFile(), "udf.rs");
         PrintWriter udfFile = new PrintWriter(udf, StandardCharsets.UTF_8);
-        udfFile.println("""
+        udfFile.println(contents);
+        udfFile.close();
+        return udf;
+    }
+
+    @Test
+    public void testMultiUdf() throws IOException, InterruptedException, SQLException {
+        File file = createInputScript("""
+                CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL;
+                CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5);""");
+
+        File udf = this.createUdfFile("""
                 use feldera_sqllib::*;
                 pub fn contains_number(str: SqlString, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
                    match value {
@@ -198,8 +239,7 @@ public class MultiCrateTests extends BaseSQLTests {
                        Some(value) => Ok(str.str().contains(&format!("{}", value).to_string())),
                    }
                 }""");
-        udfFile.close();
-        this.compileMultiCrate(file.getAbsolutePath());
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
         //noinspection ResultOfMethodCallIgnored
         udf.delete();
     }
@@ -243,7 +283,7 @@ public class MultiCrateTests extends BaseSQLTests {
                    Ok(Tup2::new(x-1, x+1))
                 }""");
         udfFile.close();
-        this.compileMultiCrate(file.getAbsolutePath());
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
         //noinspection ResultOfMethodCallIgnored
         udf.delete();
     }

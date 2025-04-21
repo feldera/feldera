@@ -34,6 +34,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
+import org.apache.commons.io.IOUtils;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 
 import javax.annotation.Nullable;
@@ -41,6 +42,8 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -196,6 +199,11 @@ public class Utilities {
 
     public static String readFile(String filename) throws IOException {
         return readFile(Paths.get(filename));
+    }
+
+    public static String readFileFromUrl(String url) throws IOException {
+        URL path = new URL(url);
+        return IOUtils.toString(path, StandardCharsets.UTF_8);
     }
 
     public static String readFile(Path filename) throws IOException {

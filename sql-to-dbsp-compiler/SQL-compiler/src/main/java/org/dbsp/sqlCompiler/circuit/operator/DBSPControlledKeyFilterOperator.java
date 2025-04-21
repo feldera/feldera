@@ -60,6 +60,10 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
         return this.inputs.get(1);
     }
 
+    public boolean hasOutput(int outputNumber) {
+        return outputNumber >= 0 && outputNumber <= 1;
+    }
+
     static DBSPExpression compareRecursive(
             DBSPExpression compare, DBSPOpcode opcode, DBSPExpression left, DBSPExpression right) {
         DBSPType leftType = left.getType();

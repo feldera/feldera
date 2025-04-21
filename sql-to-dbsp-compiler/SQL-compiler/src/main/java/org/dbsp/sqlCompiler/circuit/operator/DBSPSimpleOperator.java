@@ -82,6 +82,11 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
         }
     }
 
+    @Override
+    public boolean hasOutput(int outputNumber) {
+        return outputNumber == 0;
+    }
+
     public DBSPType outputType() {
         return this.outputType;
     }

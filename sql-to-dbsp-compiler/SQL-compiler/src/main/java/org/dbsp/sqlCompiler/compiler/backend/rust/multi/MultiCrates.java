@@ -175,7 +175,8 @@ public class MultiCrates {
         }
         for (int i = 0; i < operator.outputCount(); i++) {
             var out = operator.getOutput(i);
-            out.outputType().accept(finder);
+            if (out.exists())
+                out.outputType().accept(finder);
         }
         for (int i : locallyUsed.tupleSizesUsed) {
             if (locallyUsed.isPredefined(i)) continue;
