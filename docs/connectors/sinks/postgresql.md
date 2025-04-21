@@ -35,9 +35,6 @@ Please [let us know](https://github.com/feldera/feldera/issues) if you need TLS 
 
 ## Data type mapping
 
-We currently serialize Feldera SQL view records to JSON before sending them to PostgreSQL.
-This means that the ingestion rules are dictated by [`jsonb_populate_recordset`](https://www.postgresql.org/docs/current/functions-json.html#FUNCTIONS-JSON-PROCESSING-TABLE).
-
 :::info
 The following table lists supported PostgreSQL data types.
 Please [let us know](https://github.com/feldera/feldera/issues) if you need support for a specific type.
