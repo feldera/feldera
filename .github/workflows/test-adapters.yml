@@ -16,6 +16,19 @@ jobs:
     #  image: ghcr.io/feldera/feldera-dev:0a775f772b2ebde13708744d3e6a219ca4a492d2
     #  options: --user=ubuntu
     services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       redpanda:
         image: redpandadata/redpanda:v24.2.20
         ports:
@@ -82,6 +95,7 @@ jobs:
         env:
           RUST_BACKTRACE: 1
           REDIS_URL: redis://localhost:6379/0
+          POSTGRES_URL: postgres://postgres:password@localhost:5432
           REDPANDA_BROKERS: localhost
           # This thing can't resolve `localhost` (?), needs to be an IP address
           PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
