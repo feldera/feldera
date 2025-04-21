@@ -1,0 +1,7826 @@
+{
+  "calcite_plan": {
+    "error_view": {
+      "rels": [
+        {
+          "id": 0,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "error_table"
+          ]
+        }
+      ]
+    },
+    "q1": {
+      "rels": [
+        {
+          "id": 1,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "lineitem"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "LESS_THAN_OR_EQUAL",
+              "name": "<=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 10,
+                "name": "$10"
+              },
+              {
+                "literal": 10471,
+                "type": {
+                  "nullable": false,
+                  "type": "DATE"
+                }
+              }
+            ]
+          },
+          "id": 2,
+          "inputs": [
+            1
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "exprs": [
+            {
+              "input": 8,
+              "name": "$8"
+            },
+            {
+              "input": 9,
+              "name": "$9"
+            },
+            {
+              "input": 4,
+              "name": "$4"
+            },
+            {
+              "input": 5,
+              "name": "$5"
+            },
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "TIMES",
+                    "name": "*",
+                    "syntax": "BINARY"
+                  },
+                  "operands": [
+                    {
+                      "input": 5,
+                      "name": "$5"
+                    },
+                    {
+                      "op": {
+                        "kind": "MINUS",
+                        "name": "-",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "literal": 1,
+                          "type": {
+                            "nullable": false,
+                            "type": "INTEGER"
+                          }
+                        },
+                        {
+                          "input": 6,
+                          "name": "$6"
+                        }
+                      ],
+                      "type": {
+                        "nullable": false,
+                        "precision": 16,
+                        "scale": 2,
+                        "type": "DECIMAL"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "TIMES",
+                    "name": "*",
+                    "syntax": "BINARY"
+                  },
+                  "operands": [
+                    {
+                      "op": {
+                        "kind": "TIMES",
+                        "name": "*",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "input": 5,
+                          "name": "$5"
+                        },
+                        {
+                          "op": {
+                            "kind": "MINUS",
+                            "name": "-",
+                            "syntax": "BINARY"
+                          },
+                          "operands": [
+                            {
+                              "literal": 1,
+                              "type": {
+                                "nullable": false,
+                                "type": "INTEGER"
+                              }
+                            },
+                            {
+                              "input": 6,
+                              "name": "$6"
+                            }
+                          ],
+                          "type": {
+                            "nullable": false,
+                            "precision": 16,
+                            "scale": 2,
+                            "type": "DECIMAL"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "op": {
+                        "kind": "PLUS",
+                        "name": "+",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "literal": 1,
+                          "type": {
+                            "nullable": false,
+                            "type": "INTEGER"
+                          }
+                        },
+                        {
+                          "input": 7,
+                          "name": "$7"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 6,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "input": 6,
+              "name": "$6"
+            }
+          ],
+          "fields": [
+            "l_returnflag",
+            "l_linestatus",
+            "l_quantity",
+            "l_extendedprice",
+            "$f4",
+            "$f5",
+            "l_discount"
+          ],
+          "id": 3,
+          "inputs": [
+            2
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "sum_qty",
+              "operands": [
+                2
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 2,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "sum_base_price",
+              "operands": [
+                3
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 2,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "sum_disc_price",
+              "operands": [
+                4
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "sum_charge",
+              "operands": [
+                5
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 6,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "agg": {
+                "kind": "AVG",
+                "name": "AVG",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "avg_qty",
+              "operands": [
+                2
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 15,
+                "scale": 2,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "agg": {
+                "kind": "AVG",
+                "name": "AVG",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "avg_price",
+              "operands": [
+                3
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 15,
+                "scale": 2,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "agg": {
+                "kind": "AVG",
+                "name": "AVG",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "avg_disc",
+              "operands": [
+                6
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 15,
+                "scale": 2,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "agg": {
+                "kind": "COUNT",
+                "name": "COUNT",
+                "syntax": "FUNCTION_STAR"
+              },
+              "distinct": false,
+              "name": "count_order",
+              "operands": [],
+              "type": {
+                "nullable": false,
+                "type": "BIGINT"
+              }
+            }
+          ],
+          "group": [
+            0,
+            1
+          ],
+          "id": 4,
+          "inputs": [
+            3
+          ],
+          "relOp": "LogicalAggregate"
+        },
+        {
+          "collation": [
+            {
+              "direction": "ASCENDING",
+              "field": 0,
+              "nulls": "LAST"
+            },
+            {
+              "direction": "ASCENDING",
+              "field": 1,
+              "nulls": "LAST"
+            }
+          ],
+          "id": 5,
+          "inputs": [
+            4
+          ],
+          "relOp": "LogicalSort"
+        }
+      ]
+    },
+    "q10": {
+      "rels": [
+        {
+          "id": 6,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "orders"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "SEARCH",
+              "name": "SEARCH",
+              "syntax": "INTERNAL"
+            },
+            "operands": [
+              {
+                "input": 4,
+                "name": "$4"
+              },
+              {
+                "literal": {
+                  "nullAs": "UNKNOWN",
+                  "rangeSet": [
+                    [
+                      "closedOpen",
+                      "{\"daysSinceEpoch\":8674}",
+                      "{\"daysSinceEpoch\":8766}"
+                    ]
+                  ]
+                },
+                "type": {
+                  "nullable": false,
+                  "type": "DATE"
+                }
+              }
+            ]
+          },
+          "id": 7,
+          "inputs": [
+            6
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "id": 8,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "customer"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 9,
+                "name": "$9"
+              },
+              {
+                "input": 1,
+                "name": "$1"
+              }
+            ]
+          },
+          "id": 9,
+          "inputs": [
+            7,
+            8
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 9,
+              "name": "$9"
+            },
+            {
+              "input": 10,
+              "name": "$10"
+            },
+            {
+              "input": 11,
+              "name": "$11"
+            },
+            {
+              "input": 12,
+              "name": "$12"
+            },
+            {
+              "input": 13,
+              "name": "$13"
+            },
+            {
+              "input": 14,
+              "name": "$14"
+            },
+            {
+              "input": 15,
+              "name": "$15"
+            },
+            {
+              "input": 16,
+              "name": "$16"
+            },
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            },
+            {
+              "input": 3,
+              "name": "$3"
+            },
+            {
+              "input": 4,
+              "name": "$4"
+            },
+            {
+              "input": 5,
+              "name": "$5"
+            },
+            {
+              "input": 6,
+              "name": "$6"
+            },
+            {
+              "input": 7,
+              "name": "$7"
+            },
+            {
+              "input": 8,
+              "name": "$8"
+            }
+          ],
+          "fields": [
+            "c_custkey",
+            "c_name",
+            "c_address",
+            "c_nationkey",
+            "c_phone",
+            "c_acctbal",
+            "c_mktsegment",
+            "c_comment",
+            "o_orderkey",
+            "o_custkey",
+            "o_orderstatus",
+            "o_totalprice",
+            "o_orderdate",
+            "o_orderpriority",
+            "o_clerk",
+            "o_shippriority",
+            "o_comment"
+          ],
+          "id": 10,
+          "inputs": [
+            9
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "id": 11,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "lineitem"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 8,
+                "name": "$8"
+              },
+              {
+                "literal": "R",
+                "type": {
+                  "nullable": false,
+                  "precision": 1,
+                  "type": "CHAR"
+                }
+              }
+            ]
+          },
+          "id": 12,
+          "inputs": [
+            11
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 17,
+                "name": "$17"
+              },
+              {
+                "input": 8,
+                "name": "$8"
+              }
+            ]
+          },
+          "id": 13,
+          "inputs": [
+            10,
+            12
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 14,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "nation"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 3,
+                "name": "$3"
+              },
+              {
+                "input": 33,
+                "name": "$33"
+              }
+            ]
+          },
+          "id": 15,
+          "inputs": [
+            13,
+            14
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            },
+            {
+              "input": 5,
+              "name": "$5"
+            },
+            {
+              "input": 4,
+              "name": "$4"
+            },
+            {
+              "input": 34,
+              "name": "$34"
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            },
+            {
+              "input": 7,
+              "name": "$7"
+            },
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "TIMES",
+                    "name": "*",
+                    "syntax": "BINARY"
+                  },
+                  "operands": [
+                    {
+                      "input": 22,
+                      "name": "$22"
+                    },
+                    {
+                      "op": {
+                        "kind": "MINUS",
+                        "name": "-",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "literal": 1,
+                          "type": {
+                            "nullable": false,
+                            "type": "INTEGER"
+                          }
+                        },
+                        {
+                          "input": 23,
+                          "name": "$23"
+                        }
+                      ],
+                      "type": {
+                        "nullable": false,
+                        "precision": 16,
+                        "scale": 2,
+                        "type": "DECIMAL"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "fields": [
+            "c_custkey",
+            "c_name",
+            "c_acctbal",
+            "c_phone",
+            "n_name",
+            "c_address",
+            "c_comment",
+            "$f7"
+          ],
+          "id": 16,
+          "inputs": [
+            15
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "revenue",
+              "operands": [
+                7
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "group": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "id": 17,
+          "inputs": [
+            16
+          ],
+          "relOp": "LogicalAggregate"
+        },
+        {
+          "exprs": [
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            },
+            {
+              "input": 7,
+              "name": "$7"
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            },
+            {
+              "input": 4,
+              "name": "$4"
+            },
+            {
+              "input": 5,
+              "name": "$5"
+            },
+            {
+              "input": 3,
+              "name": "$3"
+            },
+            {
+              "input": 6,
+              "name": "$6"
+            }
+          ],
+          "fields": [
+            "c_custkey",
+            "c_name",
+            "revenue",
+            "c_acctbal",
+            "n_name",
+            "c_address",
+            "c_phone",
+            "c_comment"
+          ],
+          "id": 18,
+          "inputs": [
+            17
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "collation": [
+            {
+              "direction": "DESCENDING",
+              "field": 2,
+              "nulls": "FIRST"
+            }
+          ],
+          "fetch": {
+            "literal": 20,
+            "type": {
+              "nullable": false,
+              "type": "INTEGER"
+            }
+          },
+          "id": 19,
+          "inputs": [
+            18
+          ],
+          "relOp": "LogicalSort"
+        }
+      ]
+    },
+    "q2": {
+      "rels": [
+        {
+          "id": 20,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "part"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "AND",
+              "name": "AND",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 5,
+                    "name": "$5"
+                  },
+                  {
+                    "literal": 15,
+                    "type": {
+                      "nullable": false,
+                      "type": "INTEGER"
+                    }
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "kind": "LIKE",
+                  "name": "LIKE",
+                  "syntax": "SPECIAL"
+                },
+                "operands": [
+                  {
+                    "input": 4,
+                    "name": "$4"
+                  },
+                  {
+                    "literal": "%BRASS",
+                    "type": {
+                      "nullable": false,
+                      "precision": 6,
+                      "type": "CHAR"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 21,
+          "inputs": [
+            20
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "id": 22,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "supplier"
+          ]
+        },
+        {
+          "condition": {
+            "literal": true,
+            "type": {
+              "nullable": false,
+              "type": "BOOLEAN"
+            }
+          },
+          "id": 23,
+          "inputs": [
+            21,
+            22
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 24,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "partsupp"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "AND",
+              "name": "AND",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 0,
+                    "name": "$0"
+                  },
+                  {
+                    "input": 16,
+                    "name": "$16"
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 9,
+                    "name": "$9"
+                  },
+                  {
+                    "input": 17,
+                    "name": "$17"
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 25,
+          "inputs": [
+            23,
+            24
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 26,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "nation"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 12,
+                "name": "$12"
+              },
+              {
+                "input": 21,
+                "name": "$21"
+              }
+            ]
+          },
+          "id": 27,
+          "inputs": [
+            25,
+            26
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 28,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "region"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "CAST",
+                  "name": "CAST",
+                  "syntax": "SPECIAL"
+                },
+                "operands": [
+                  {
+                    "input": 1,
+                    "name": "$1"
+                  }
+                ],
+                "type": {
+                  "nullable": false,
+                  "precision": 25,
+                  "type": "VARCHAR"
+                }
+              },
+              {
+                "literal": "EUROPE",
+                "type": {
+                  "nullable": false,
+                  "precision": 25,
+                  "type": "VARCHAR"
+                }
+              }
+            ]
+          },
+          "id": 29,
+          "inputs": [
+            28
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 23,
+                "name": "$23"
+              },
+              {
+                "input": 25,
+                "name": "$25"
+              }
+            ]
+          },
+          "id": 30,
+          "inputs": [
+            27,
+            29
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 5,
+                "name": "$5"
+              },
+              {
+                "input": 1,
+                "name": "$1"
+              }
+            ]
+          },
+          "id": 31,
+          "inputs": [
+            24,
+            22
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 8,
+                "name": "$8"
+              },
+              {
+                "input": 12,
+                "name": "$12"
+              }
+            ]
+          },
+          "id": 32,
+          "inputs": [
+            31,
+            26
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 14,
+                "name": "$14"
+              },
+              {
+                "input": 16,
+                "name": "$16"
+              }
+            ]
+          },
+          "id": 33,
+          "inputs": [
+            32,
+            29
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 3,
+              "name": "$3"
+            }
+          ],
+          "fields": [
+            "ps_partkey",
+            "ps_supplycost"
+          ],
+          "id": 34,
+          "inputs": [
+            33
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "MIN",
+                "name": "MIN",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "EXPR$0",
+              "operands": [
+                1
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 15,
+                "scale": 2,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "group": [
+            0
+          ],
+          "id": 35,
+          "inputs": [
+            34
+          ],
+          "relOp": "LogicalAggregate"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "AND",
+              "name": "AND",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 0,
+                    "name": "$0"
+                  },
+                  {
+                    "input": 28,
+                    "name": "$28"
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 19,
+                    "name": "$19"
+                  },
+                  {
+                    "input": 29,
+                    "name": "$29"
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 36,
+          "inputs": [
+            30,
+            35
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 14,
+              "name": "$14"
+            },
+            {
+              "input": 10,
+              "name": "$10"
+            },
+            {
+              "input": 22,
+              "name": "$22"
+            },
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            },
+            {
+              "input": 11,
+              "name": "$11"
+            },
+            {
+              "input": 13,
+              "name": "$13"
+            },
+            {
+              "input": 15,
+              "name": "$15"
+            }
+          ],
+          "fields": [
+            "s_acctbal",
+            "s_name",
+            "n_name",
+            "p_partkey",
+            "p_mfgr",
+            "s_address",
+            "s_phone",
+            "s_comment"
+          ],
+          "id": 37,
+          "inputs": [
+            36
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "collation": [
+            {
+              "direction": "DESCENDING",
+              "field": 0,
+              "nulls": "FIRST"
+            },
+            {
+              "direction": "ASCENDING",
+              "field": 2,
+              "nulls": "LAST"
+            },
+            {
+              "direction": "ASCENDING",
+              "field": 1,
+              "nulls": "LAST"
+            },
+            {
+              "direction": "ASCENDING",
+              "field": 3,
+              "nulls": "LAST"
+            }
+          ],
+          "fetch": {
+            "literal": 100,
+            "type": {
+              "nullable": false,
+              "type": "INTEGER"
+            }
+          },
+          "id": 38,
+          "inputs": [
+            37
+          ],
+          "relOp": "LogicalSort"
+        }
+      ]
+    },
+    "q3": {
+      "rels": [
+        {
+          "id": 39,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "customer"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "CAST",
+                  "name": "CAST",
+                  "syntax": "SPECIAL"
+                },
+                "operands": [
+                  {
+                    "input": 6,
+                    "name": "$6"
+                  }
+                ],
+                "type": {
+                  "nullable": false,
+                  "precision": 10,
+                  "type": "VARCHAR"
+                }
+              },
+              {
+                "literal": "BUILDING",
+                "type": {
+                  "nullable": false,
+                  "precision": 10,
+                  "type": "VARCHAR"
+                }
+              }
+            ]
+          },
+          "id": 40,
+          "inputs": [
+            39
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "id": 41,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "orders"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "LESS_THAN",
+              "name": "<",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 4,
+                "name": "$4"
+              },
+              {
+                "literal": 9204,
+                "type": {
+                  "nullable": false,
+                  "type": "DATE"
+                }
+              }
+            ]
+          },
+          "id": 42,
+          "inputs": [
+            41
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 0,
+                "name": "$0"
+              },
+              {
+                "input": 9,
+                "name": "$9"
+              }
+            ]
+          },
+          "id": 43,
+          "inputs": [
+            40,
+            42
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 44,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "lineitem"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "GREATER_THAN",
+              "name": ">",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 10,
+                "name": "$10"
+              },
+              {
+                "literal": 9204,
+                "type": {
+                  "nullable": false,
+                  "type": "DATE"
+                }
+              }
+            ]
+          },
+          "id": 45,
+          "inputs": [
+            44
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 17,
+                "name": "$17"
+              },
+              {
+                "input": 8,
+                "name": "$8"
+              }
+            ]
+          },
+          "id": 46,
+          "inputs": [
+            43,
+            45
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 17,
+              "name": "$17"
+            },
+            {
+              "input": 12,
+              "name": "$12"
+            },
+            {
+              "input": 15,
+              "name": "$15"
+            },
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "TIMES",
+                    "name": "*",
+                    "syntax": "BINARY"
+                  },
+                  "operands": [
+                    {
+                      "input": 22,
+                      "name": "$22"
+                    },
+                    {
+                      "op": {
+                        "kind": "MINUS",
+                        "name": "-",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "literal": 1,
+                          "type": {
+                            "nullable": false,
+                            "type": "INTEGER"
+                          }
+                        },
+                        {
+                          "input": 23,
+                          "name": "$23"
+                        }
+                      ],
+                      "type": {
+                        "nullable": false,
+                        "precision": 16,
+                        "scale": 2,
+                        "type": "DECIMAL"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "fields": [
+            "l_orderkey",
+            "o_orderdate",
+            "o_shippriority",
+            "$f3"
+          ],
+          "id": 47,
+          "inputs": [
+            46
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "revenue",
+              "operands": [
+                3
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "group": [
+            0,
+            1,
+            2
+          ],
+          "id": 48,
+          "inputs": [
+            47
+          ],
+          "relOp": "LogicalAggregate"
+        },
+        {
+          "exprs": [
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 3,
+              "name": "$3"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            }
+          ],
+          "fields": [
+            "l_orderkey",
+            "revenue",
+            "o_orderdate",
+            "o_shippriority"
+          ],
+          "id": 49,
+          "inputs": [
+            48
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "collation": [
+            {
+              "direction": "DESCENDING",
+              "field": 1,
+              "nulls": "FIRST"
+            },
+            {
+              "direction": "ASCENDING",
+              "field": 2,
+              "nulls": "LAST"
+            }
+          ],
+          "fetch": {
+            "literal": 10,
+            "type": {
+              "nullable": false,
+              "type": "INTEGER"
+            }
+          },
+          "id": 50,
+          "inputs": [
+            49
+          ],
+          "relOp": "LogicalSort"
+        }
+      ]
+    },
+    "q4": {
+      "rels": [
+        {
+          "id": 51,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "orders"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "SEARCH",
+              "name": "SEARCH",
+              "syntax": "INTERNAL"
+            },
+            "operands": [
+              {
+                "input": 4,
+                "name": "$4"
+              },
+              {
+                "literal": {
+                  "nullAs": "UNKNOWN",
+                  "rangeSet": [
+                    [
+                      "closedOpen",
+                      "{\"daysSinceEpoch\":8582}",
+                      "{\"daysSinceEpoch\":8674}"
+                    ]
+                  ]
+                },
+                "type": {
+                  "nullable": false,
+                  "type": "DATE"
+                }
+              }
+            ]
+          },
+          "id": 52,
+          "inputs": [
+            51
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "id": 53,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "lineitem"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "LESS_THAN",
+              "name": "<",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 11,
+                "name": "$11"
+              },
+              {
+                "input": 12,
+                "name": "$12"
+              }
+            ]
+          },
+          "id": 54,
+          "inputs": [
+            53
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "exprs": [
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "literal": true,
+              "type": {
+                "nullable": false,
+                "type": "BOOLEAN"
+              }
+            }
+          ],
+          "fields": [
+            "l_orderkey",
+            "$f0"
+          ],
+          "id": 55,
+          "inputs": [
+            54
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "MIN",
+                "name": "MIN",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": null,
+              "operands": [
+                1
+              ],
+              "type": {
+                "nullable": false,
+                "type": "BOOLEAN"
+              }
+            }
+          ],
+          "group": [
+            0
+          ],
+          "id": 56,
+          "inputs": [
+            55
+          ],
+          "relOp": "LogicalAggregate"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 0,
+                "name": "$0"
+              },
+              {
+                "input": 9,
+                "name": "$9"
+              }
+            ]
+          },
+          "id": 57,
+          "inputs": [
+            52,
+            56
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 5,
+              "name": "$5"
+            }
+          ],
+          "fields": [
+            "o_orderpriority"
+          ],
+          "id": 58,
+          "inputs": [
+            57
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "COUNT",
+                "name": "COUNT",
+                "syntax": "FUNCTION_STAR"
+              },
+              "distinct": false,
+              "name": "order_count",
+              "operands": [],
+              "type": {
+                "nullable": false,
+                "type": "BIGINT"
+              }
+            }
+          ],
+          "group": [
+            0
+          ],
+          "id": 59,
+          "inputs": [
+            58
+          ],
+          "relOp": "LogicalAggregate"
+        },
+        {
+          "collation": [
+            {
+              "direction": "ASCENDING",
+              "field": 0,
+              "nulls": "LAST"
+            }
+          ],
+          "id": 60,
+          "inputs": [
+            59
+          ],
+          "relOp": "LogicalSort"
+        }
+      ]
+    },
+    "q5": {
+      "rels": [
+        {
+          "id": 61,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "orders"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "SEARCH",
+              "name": "SEARCH",
+              "syntax": "INTERNAL"
+            },
+            "operands": [
+              {
+                "input": 4,
+                "name": "$4"
+              },
+              {
+                "literal": {
+                  "nullAs": "UNKNOWN",
+                  "rangeSet": [
+                    [
+                      "closedOpen",
+                      "{\"daysSinceEpoch\":8766}",
+                      "{\"daysSinceEpoch\":9131}"
+                    ]
+                  ]
+                },
+                "type": {
+                  "nullable": false,
+                  "type": "DATE"
+                }
+              }
+            ]
+          },
+          "id": 62,
+          "inputs": [
+            61
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "id": 63,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "customer"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 9,
+                "name": "$9"
+              },
+              {
+                "input": 1,
+                "name": "$1"
+              }
+            ]
+          },
+          "id": 64,
+          "inputs": [
+            62,
+            63
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 9,
+              "name": "$9"
+            },
+            {
+              "input": 10,
+              "name": "$10"
+            },
+            {
+              "input": 11,
+              "name": "$11"
+            },
+            {
+              "input": 12,
+              "name": "$12"
+            },
+            {
+              "input": 13,
+              "name": "$13"
+            },
+            {
+              "input": 14,
+              "name": "$14"
+            },
+            {
+              "input": 15,
+              "name": "$15"
+            },
+            {
+              "input": 16,
+              "name": "$16"
+            },
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            },
+            {
+              "input": 3,
+              "name": "$3"
+            },
+            {
+              "input": 4,
+              "name": "$4"
+            },
+            {
+              "input": 5,
+              "name": "$5"
+            },
+            {
+              "input": 6,
+              "name": "$6"
+            },
+            {
+              "input": 7,
+              "name": "$7"
+            },
+            {
+              "input": 8,
+              "name": "$8"
+            }
+          ],
+          "fields": [
+            "c_custkey",
+            "c_name",
+            "c_address",
+            "c_nationkey",
+            "c_phone",
+            "c_acctbal",
+            "c_mktsegment",
+            "c_comment",
+            "o_orderkey",
+            "o_custkey",
+            "o_orderstatus",
+            "o_totalprice",
+            "o_orderdate",
+            "o_orderpriority",
+            "o_clerk",
+            "o_shippriority",
+            "o_comment"
+          ],
+          "id": 65,
+          "inputs": [
+            64
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "id": 66,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "lineitem"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 17,
+                "name": "$17"
+              },
+              {
+                "input": 8,
+                "name": "$8"
+              }
+            ]
+          },
+          "id": 67,
+          "inputs": [
+            65,
+            66
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 68,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "supplier"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "AND",
+              "name": "AND",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 19,
+                    "name": "$19"
+                  },
+                  {
+                    "input": 33,
+                    "name": "$33"
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 3,
+                    "name": "$3"
+                  },
+                  {
+                    "input": 36,
+                    "name": "$36"
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 69,
+          "inputs": [
+            67,
+            68
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 70,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "nation"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 36,
+                "name": "$36"
+              },
+              {
+                "input": 40,
+                "name": "$40"
+              }
+            ]
+          },
+          "id": 71,
+          "inputs": [
+            69,
+            70
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 72,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "region"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "CAST",
+                  "name": "CAST",
+                  "syntax": "SPECIAL"
+                },
+                "operands": [
+                  {
+                    "input": 1,
+                    "name": "$1"
+                  }
+                ],
+                "type": {
+                  "nullable": false,
+                  "precision": 25,
+                  "type": "VARCHAR"
+                }
+              },
+              {
+                "literal": "ASIA",
+                "type": {
+                  "nullable": false,
+                  "precision": 25,
+                  "type": "VARCHAR"
+                }
+              }
+            ]
+          },
+          "id": 73,
+          "inputs": [
+            72
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 42,
+                "name": "$42"
+              },
+              {
+                "input": 44,
+                "name": "$44"
+              }
+            ]
+          },
+          "id": 74,
+          "inputs": [
+            71,
+            73
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 41,
+              "name": "$41"
+            },
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "TIMES",
+                    "name": "*",
+                    "syntax": "BINARY"
+                  },
+                  "operands": [
+                    {
+                      "input": 22,
+                      "name": "$22"
+                    },
+                    {
+                      "op": {
+                        "kind": "MINUS",
+                        "name": "-",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "literal": 1,
+                          "type": {
+                            "nullable": false,
+                            "type": "INTEGER"
+                          }
+                        },
+                        {
+                          "input": 23,
+                          "name": "$23"
+                        }
+                      ],
+                      "type": {
+                        "nullable": false,
+                        "precision": 16,
+                        "scale": 2,
+                        "type": "DECIMAL"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "fields": [
+            "n_name",
+            "$f1"
+          ],
+          "id": 75,
+          "inputs": [
+            74
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "revenue",
+              "operands": [
+                1
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "group": [
+            0
+          ],
+          "id": 76,
+          "inputs": [
+            75
+          ],
+          "relOp": "LogicalAggregate"
+        },
+        {
+          "collation": [
+            {
+              "direction": "DESCENDING",
+              "field": 1,
+              "nulls": "FIRST"
+            }
+          ],
+          "id": 77,
+          "inputs": [
+            76
+          ],
+          "relOp": "LogicalSort"
+        }
+      ]
+    },
+    "q6": {
+      "rels": [
+        {
+          "id": 78,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "lineitem"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "AND",
+              "name": "AND",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "SEARCH",
+                  "name": "SEARCH",
+                  "syntax": "INTERNAL"
+                },
+                "operands": [
+                  {
+                    "input": 10,
+                    "name": "$10"
+                  },
+                  {
+                    "literal": {
+                      "nullAs": "UNKNOWN",
+                      "rangeSet": [
+                        [
+                          "closedOpen",
+                          "{\"daysSinceEpoch\":8766}",
+                          "{\"daysSinceEpoch\":9131}"
+                        ]
+                      ]
+                    },
+                    "type": {
+                      "nullable": false,
+                      "type": "DATE"
+                    }
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "kind": "SEARCH",
+                  "name": "SEARCH",
+                  "syntax": "INTERNAL"
+                },
+                "operands": [
+                  {
+                    "input": 6,
+                    "name": "$6"
+                  },
+                  {
+                    "literal": {
+                      "nullAs": "UNKNOWN",
+                      "rangeSet": [
+                        [
+                          "closed",
+                          "0.05",
+                          "0.07"
+                        ]
+                      ]
+                    },
+                    "type": {
+                      "nullable": false,
+                      "precision": 4,
+                      "scale": 2,
+                      "type": "DECIMAL"
+                    }
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "kind": "LESS_THAN",
+                  "name": "<",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 4,
+                    "name": "$4"
+                  },
+                  {
+                    "literal": 24,
+                    "type": {
+                      "nullable": false,
+                      "precision": 15,
+                      "scale": 2,
+                      "type": "DECIMAL"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 79,
+          "inputs": [
+            78
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "exprs": [
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "TIMES",
+                    "name": "*",
+                    "syntax": "BINARY"
+                  },
+                  "operands": [
+                    {
+                      "input": 5,
+                      "name": "$5"
+                    },
+                    {
+                      "input": 6,
+                      "name": "$6"
+                    }
+                  ]
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "fields": [
+            "$f0"
+          ],
+          "id": 80,
+          "inputs": [
+            79
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "revenue",
+              "operands": [
+                0
+              ],
+              "type": {
+                "nullable": true,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "group": [],
+          "id": 81,
+          "inputs": [
+            80
+          ],
+          "relOp": "LogicalAggregate"
+        }
+      ]
+    },
+    "q7": {
+      "rels": [
+        {
+          "id": 82,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "lineitem"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "SEARCH",
+              "name": "SEARCH",
+              "syntax": "INTERNAL"
+            },
+            "operands": [
+              {
+                "input": 10,
+                "name": "$10"
+              },
+              {
+                "literal": {
+                  "nullAs": "UNKNOWN",
+                  "rangeSet": [
+                    [
+                      "closed",
+                      "{\"daysSinceEpoch\":9131}",
+                      "{\"daysSinceEpoch\":9861}"
+                    ]
+                  ]
+                },
+                "type": {
+                  "nullable": false,
+                  "type": "DATE"
+                }
+              }
+            ]
+          },
+          "id": 83,
+          "inputs": [
+            82
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "id": 84,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "supplier"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 16,
+                "name": "$16"
+              },
+              {
+                "input": 2,
+                "name": "$2"
+              }
+            ]
+          },
+          "id": 85,
+          "inputs": [
+            83,
+            84
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 16,
+              "name": "$16"
+            },
+            {
+              "input": 17,
+              "name": "$17"
+            },
+            {
+              "input": 18,
+              "name": "$18"
+            },
+            {
+              "input": 19,
+              "name": "$19"
+            },
+            {
+              "input": 20,
+              "name": "$20"
+            },
+            {
+              "input": 21,
+              "name": "$21"
+            },
+            {
+              "input": 22,
+              "name": "$22"
+            },
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            },
+            {
+              "input": 3,
+              "name": "$3"
+            },
+            {
+              "input": 4,
+              "name": "$4"
+            },
+            {
+              "input": 5,
+              "name": "$5"
+            },
+            {
+              "input": 6,
+              "name": "$6"
+            },
+            {
+              "input": 7,
+              "name": "$7"
+            },
+            {
+              "input": 8,
+              "name": "$8"
+            },
+            {
+              "input": 9,
+              "name": "$9"
+            },
+            {
+              "input": 10,
+              "name": "$10"
+            },
+            {
+              "input": 11,
+              "name": "$11"
+            },
+            {
+              "input": 12,
+              "name": "$12"
+            },
+            {
+              "input": 13,
+              "name": "$13"
+            },
+            {
+              "input": 14,
+              "name": "$14"
+            },
+            {
+              "input": 15,
+              "name": "$15"
+            }
+          ],
+          "fields": [
+            "s_suppkey",
+            "s_name",
+            "s_address",
+            "s_nationkey",
+            "s_phone",
+            "s_acctbal",
+            "s_comment",
+            "l_orderkey",
+            "l_partkey",
+            "l_suppkey",
+            "l_linenumber",
+            "l_quantity",
+            "l_extendedprice",
+            "l_discount",
+            "l_tax",
+            "l_returnflag",
+            "l_linestatus",
+            "l_shipdate",
+            "l_commitdate",
+            "l_receiptdate",
+            "l_shipinstruct",
+            "l_shipmode",
+            "l_comment"
+          ],
+          "id": 86,
+          "inputs": [
+            85
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "id": 87,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "orders"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 23,
+                "name": "$23"
+              },
+              {
+                "input": 7,
+                "name": "$7"
+              }
+            ]
+          },
+          "id": 88,
+          "inputs": [
+            86,
+            87
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 89,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "customer"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 32,
+                "name": "$32"
+              },
+              {
+                "input": 24,
+                "name": "$24"
+              }
+            ]
+          },
+          "id": 90,
+          "inputs": [
+            88,
+            89
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 91,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "nation"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 3,
+                "name": "$3"
+              },
+              {
+                "input": 40,
+                "name": "$40"
+              }
+            ]
+          },
+          "id": 92,
+          "inputs": [
+            90,
+            91
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "AND",
+              "name": "AND",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 35,
+                    "name": "$35"
+                  },
+                  {
+                    "input": 44,
+                    "name": "$44"
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "kind": "OR",
+                  "name": "OR",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "op": {
+                      "kind": "AND",
+                      "name": "AND",
+                      "syntax": "BINARY"
+                    },
+                    "operands": [
+                      {
+                        "op": {
+                          "kind": "EQUALS",
+                          "name": "=",
+                          "syntax": "BINARY"
+                        },
+                        "operands": [
+                          {
+                            "op": {
+                              "kind": "CAST",
+                              "name": "CAST",
+                              "syntax": "SPECIAL"
+                            },
+                            "operands": [
+                              {
+                                "input": 41,
+                                "name": "$41"
+                              }
+                            ],
+                            "type": {
+                              "nullable": false,
+                              "precision": 25,
+                              "type": "VARCHAR"
+                            }
+                          },
+                          {
+                            "literal": "FRANCE",
+                            "type": {
+                              "nullable": false,
+                              "precision": 25,
+                              "type": "VARCHAR"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "op": {
+                          "kind": "EQUALS",
+                          "name": "=",
+                          "syntax": "BINARY"
+                        },
+                        "operands": [
+                          {
+                            "op": {
+                              "kind": "CAST",
+                              "name": "CAST",
+                              "syntax": "SPECIAL"
+                            },
+                            "operands": [
+                              {
+                                "input": 45,
+                                "name": "$45"
+                              }
+                            ],
+                            "type": {
+                              "nullable": false,
+                              "precision": 25,
+                              "type": "VARCHAR"
+                            }
+                          },
+                          {
+                            "literal": "GERMANY",
+                            "type": {
+                              "nullable": false,
+                              "precision": 25,
+                              "type": "VARCHAR"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "op": {
+                      "kind": "AND",
+                      "name": "AND",
+                      "syntax": "BINARY"
+                    },
+                    "operands": [
+                      {
+                        "op": {
+                          "kind": "EQUALS",
+                          "name": "=",
+                          "syntax": "BINARY"
+                        },
+                        "operands": [
+                          {
+                            "op": {
+                              "kind": "CAST",
+                              "name": "CAST",
+                              "syntax": "SPECIAL"
+                            },
+                            "operands": [
+                              {
+                                "input": 41,
+                                "name": "$41"
+                              }
+                            ],
+                            "type": {
+                              "nullable": false,
+                              "precision": 25,
+                              "type": "VARCHAR"
+                            }
+                          },
+                          {
+                            "literal": "GERMANY",
+                            "type": {
+                              "nullable": false,
+                              "precision": 25,
+                              "type": "VARCHAR"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "op": {
+                          "kind": "EQUALS",
+                          "name": "=",
+                          "syntax": "BINARY"
+                        },
+                        "operands": [
+                          {
+                            "op": {
+                              "kind": "CAST",
+                              "name": "CAST",
+                              "syntax": "SPECIAL"
+                            },
+                            "operands": [
+                              {
+                                "input": 45,
+                                "name": "$45"
+                              }
+                            ],
+                            "type": {
+                              "nullable": false,
+                              "precision": 25,
+                              "type": "VARCHAR"
+                            }
+                          },
+                          {
+                            "literal": "FRANCE",
+                            "type": {
+                              "nullable": false,
+                              "precision": 25,
+                              "type": "VARCHAR"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 93,
+          "inputs": [
+            92,
+            91
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 41,
+              "name": "$41"
+            },
+            {
+              "input": 45,
+              "name": "$45"
+            },
+            {
+              "op": {
+                "kind": "EXTRACT",
+                "name": "EXTRACT",
+                "syntax": "FUNCTION"
+              },
+              "operands": [
+                {
+                  "literal": "YEAR",
+                  "type": {
+                    "nullable": false,
+                    "type": "SYMBOL"
+                  }
+                },
+                {
+                  "input": 17,
+                  "name": "$17"
+                }
+              ]
+            },
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "TIMES",
+                    "name": "*",
+                    "syntax": "BINARY"
+                  },
+                  "operands": [
+                    {
+                      "input": 12,
+                      "name": "$12"
+                    },
+                    {
+                      "op": {
+                        "kind": "MINUS",
+                        "name": "-",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "literal": 1,
+                          "type": {
+                            "nullable": false,
+                            "type": "INTEGER"
+                          }
+                        },
+                        {
+                          "input": 13,
+                          "name": "$13"
+                        }
+                      ],
+                      "type": {
+                        "nullable": false,
+                        "precision": 16,
+                        "scale": 2,
+                        "type": "DECIMAL"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "fields": [
+            "supp_nation",
+            "cust_nation",
+            "l_year",
+            "volume"
+          ],
+          "id": 94,
+          "inputs": [
+            93
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "revenue",
+              "operands": [
+                3
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "group": [
+            0,
+            1,
+            2
+          ],
+          "id": 95,
+          "inputs": [
+            94
+          ],
+          "relOp": "LogicalAggregate"
+        },
+        {
+          "collation": [
+            {
+              "direction": "ASCENDING",
+              "field": 0,
+              "nulls": "LAST"
+            },
+            {
+              "direction": "ASCENDING",
+              "field": 1,
+              "nulls": "LAST"
+            },
+            {
+              "direction": "ASCENDING",
+              "field": 2,
+              "nulls": "LAST"
+            }
+          ],
+          "id": 96,
+          "inputs": [
+            95
+          ],
+          "relOp": "LogicalSort"
+        }
+      ]
+    },
+    "q8": {
+      "rels": [
+        {
+          "id": 97,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "part"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 4,
+                "name": "$4"
+              },
+              {
+                "literal": "ECONOMY ANODIZED STEEL",
+                "type": {
+                  "nullable": false,
+                  "precision": 25,
+                  "type": "VARCHAR"
+                }
+              }
+            ]
+          },
+          "id": 98,
+          "inputs": [
+            97
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "id": 99,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "supplier"
+          ]
+        },
+        {
+          "condition": {
+            "literal": true,
+            "type": {
+              "nullable": false,
+              "type": "BOOLEAN"
+            }
+          },
+          "id": 100,
+          "inputs": [
+            98,
+            99
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 101,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "lineitem"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "AND",
+              "name": "AND",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 0,
+                    "name": "$0"
+                  },
+                  {
+                    "input": 17,
+                    "name": "$17"
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 9,
+                    "name": "$9"
+                  },
+                  {
+                    "input": 18,
+                    "name": "$18"
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 102,
+          "inputs": [
+            100,
+            101
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 103,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "orders"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "SEARCH",
+              "name": "SEARCH",
+              "syntax": "INTERNAL"
+            },
+            "operands": [
+              {
+                "input": 4,
+                "name": "$4"
+              },
+              {
+                "literal": {
+                  "nullAs": "UNKNOWN",
+                  "rangeSet": [
+                    [
+                      "closed",
+                      "{\"daysSinceEpoch\":9131}",
+                      "{\"daysSinceEpoch\":9861}"
+                    ]
+                  ]
+                },
+                "type": {
+                  "nullable": false,
+                  "type": "DATE"
+                }
+              }
+            ]
+          },
+          "id": 104,
+          "inputs": [
+            103
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 16,
+                "name": "$16"
+              },
+              {
+                "input": 32,
+                "name": "$32"
+              }
+            ]
+          },
+          "id": 105,
+          "inputs": [
+            102,
+            104
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 106,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "customer"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 33,
+                "name": "$33"
+              },
+              {
+                "input": 41,
+                "name": "$41"
+              }
+            ]
+          },
+          "id": 107,
+          "inputs": [
+            105,
+            106
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 108,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "nation"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 44,
+                "name": "$44"
+              },
+              {
+                "input": 49,
+                "name": "$49"
+              }
+            ]
+          },
+          "id": 109,
+          "inputs": [
+            107,
+            108
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 12,
+                "name": "$12"
+              },
+              {
+                "input": 53,
+                "name": "$53"
+              }
+            ]
+          },
+          "id": 110,
+          "inputs": [
+            109,
+            108
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 111,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "region"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "CAST",
+                  "name": "CAST",
+                  "syntax": "SPECIAL"
+                },
+                "operands": [
+                  {
+                    "input": 1,
+                    "name": "$1"
+                  }
+                ],
+                "type": {
+                  "nullable": false,
+                  "precision": 25,
+                  "type": "VARCHAR"
+                }
+              },
+              {
+                "literal": "AMERICA",
+                "type": {
+                  "nullable": false,
+                  "precision": 25,
+                  "type": "VARCHAR"
+                }
+              }
+            ]
+          },
+          "id": 112,
+          "inputs": [
+            111
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 51,
+                "name": "$51"
+              },
+              {
+                "input": 57,
+                "name": "$57"
+              }
+            ]
+          },
+          "id": 113,
+          "inputs": [
+            110,
+            112
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "op": {
+                "kind": "EXTRACT",
+                "name": "EXTRACT",
+                "syntax": "FUNCTION"
+              },
+              "operands": [
+                {
+                  "literal": "YEAR",
+                  "type": {
+                    "nullable": false,
+                    "type": "SYMBOL"
+                  }
+                },
+                {
+                  "input": 36,
+                  "name": "$36"
+                }
+              ]
+            },
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "CASE",
+                    "name": "CASE",
+                    "syntax": "SPECIAL"
+                  },
+                  "operands": [
+                    {
+                      "op": {
+                        "kind": "EQUALS",
+                        "name": "=",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "op": {
+                            "kind": "CAST",
+                            "name": "CAST",
+                            "syntax": "SPECIAL"
+                          },
+                          "operands": [
+                            {
+                              "input": 54,
+                              "name": "$54"
+                            }
+                          ],
+                          "type": {
+                            "nullable": false,
+                            "precision": 25,
+                            "type": "VARCHAR"
+                          }
+                        },
+                        {
+                          "literal": "BRAZIL",
+                          "type": {
+                            "nullable": false,
+                            "precision": 25,
+                            "type": "VARCHAR"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "op": {
+                        "kind": "CAST",
+                        "name": "CAST",
+                        "syntax": "SPECIAL"
+                      },
+                      "operands": [
+                        {
+                          "op": {
+                            "kind": "TIMES",
+                            "name": "*",
+                            "syntax": "BINARY"
+                          },
+                          "operands": [
+                            {
+                              "input": 21,
+                              "name": "$21"
+                            },
+                            {
+                              "op": {
+                                "kind": "MINUS",
+                                "name": "-",
+                                "syntax": "BINARY"
+                              },
+                              "operands": [
+                                {
+                                  "literal": 1,
+                                  "type": {
+                                    "nullable": false,
+                                    "type": "INTEGER"
+                                  }
+                                },
+                                {
+                                  "input": 22,
+                                  "name": "$22"
+                                }
+                              ],
+                              "type": {
+                                "nullable": false,
+                                "precision": 16,
+                                "scale": 2,
+                                "type": "DECIMAL"
+                              }
+                            }
+                          ]
+                        }
+                      ],
+                      "type": {
+                        "nullable": false,
+                        "precision": 28,
+                        "scale": 4,
+                        "type": "DECIMAL"
+                      }
+                    },
+                    {
+                      "literal": 0,
+                      "type": {
+                        "nullable": false,
+                        "precision": 28,
+                        "scale": 4,
+                        "type": "DECIMAL"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "TIMES",
+                    "name": "*",
+                    "syntax": "BINARY"
+                  },
+                  "operands": [
+                    {
+                      "input": 21,
+                      "name": "$21"
+                    },
+                    {
+                      "op": {
+                        "kind": "MINUS",
+                        "name": "-",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "literal": 1,
+                          "type": {
+                            "nullable": false,
+                            "type": "INTEGER"
+                          }
+                        },
+                        {
+                          "input": 22,
+                          "name": "$22"
+                        }
+                      ],
+                      "type": {
+                        "nullable": false,
+                        "precision": 16,
+                        "scale": 2,
+                        "type": "DECIMAL"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "fields": [
+            "o_year",
+            "$f1",
+            "volume"
+          ],
+          "id": 114,
+          "inputs": [
+            113
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": null,
+              "operands": [
+                1
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            },
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": null,
+              "operands": [
+                2
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "group": [
+            0
+          ],
+          "id": 115,
+          "inputs": [
+            114
+          ],
+          "relOp": "LogicalAggregate"
+        },
+        {
+          "exprs": [
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "DIVIDE",
+                    "name": "/",
+                    "syntax": "BINARY"
+                  },
+                  "operands": [
+                    {
+                      "input": 1,
+                      "name": "$1"
+                    },
+                    {
+                      "input": 2,
+                      "name": "$2"
+                    }
+                  ]
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 6,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "fields": [
+            "o_year",
+            "mkt_share"
+          ],
+          "id": 116,
+          "inputs": [
+            115
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "collation": [
+            {
+              "direction": "ASCENDING",
+              "field": 0,
+              "nulls": "LAST"
+            }
+          ],
+          "id": 117,
+          "inputs": [
+            116
+          ],
+          "relOp": "LogicalSort"
+        }
+      ]
+    },
+    "q9": {
+      "rels": [
+        {
+          "id": 118,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "part"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "LIKE",
+              "name": "LIKE",
+              "syntax": "SPECIAL"
+            },
+            "operands": [
+              {
+                "input": 1,
+                "name": "$1"
+              },
+              {
+                "literal": "%green%",
+                "type": {
+                  "nullable": false,
+                  "precision": 7,
+                  "type": "CHAR"
+                }
+              }
+            ]
+          },
+          "id": 119,
+          "inputs": [
+            118
+          ],
+          "relOp": "LogicalFilter"
+        },
+        {
+          "id": 120,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "supplier"
+          ]
+        },
+        {
+          "condition": {
+            "literal": true,
+            "type": {
+              "nullable": false,
+              "type": "BOOLEAN"
+            }
+          },
+          "id": 121,
+          "inputs": [
+            119,
+            120
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 122,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "lineitem"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "AND",
+              "name": "AND",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 9,
+                    "name": "$9"
+                  },
+                  {
+                    "input": 18,
+                    "name": "$18"
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 0,
+                    "name": "$0"
+                  },
+                  {
+                    "input": 17,
+                    "name": "$17"
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 123,
+          "inputs": [
+            121,
+            122
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 124,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "partsupp"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "AND",
+              "name": "AND",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 33,
+                    "name": "$33"
+                  },
+                  {
+                    "input": 18,
+                    "name": "$18"
+                  }
+                ]
+              },
+              {
+                "op": {
+                  "kind": "EQUALS",
+                  "name": "=",
+                  "syntax": "BINARY"
+                },
+                "operands": [
+                  {
+                    "input": 32,
+                    "name": "$32"
+                  },
+                  {
+                    "input": 17,
+                    "name": "$17"
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 125,
+          "inputs": [
+            123,
+            124
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 126,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "orders"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 37,
+                "name": "$37"
+              },
+              {
+                "input": 16,
+                "name": "$16"
+              }
+            ]
+          },
+          "id": 127,
+          "inputs": [
+            125,
+            126
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "id": 128,
+          "inputs": [],
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "nation"
+          ]
+        },
+        {
+          "condition": {
+            "op": {
+              "kind": "EQUALS",
+              "name": "=",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 12,
+                "name": "$12"
+              },
+              {
+                "input": 46,
+                "name": "$46"
+              }
+            ]
+          },
+          "id": 129,
+          "inputs": [
+            127,
+            128
+          ],
+          "joinType": "inner",
+          "relOp": "LogicalJoin"
+        },
+        {
+          "exprs": [
+            {
+              "input": 47,
+              "name": "$47"
+            },
+            {
+              "op": {
+                "kind": "EXTRACT",
+                "name": "EXTRACT",
+                "syntax": "FUNCTION"
+              },
+              "operands": [
+                {
+                  "literal": "YEAR",
+                  "type": {
+                    "nullable": false,
+                    "type": "SYMBOL"
+                  }
+                },
+                {
+                  "input": 41,
+                  "name": "$41"
+                }
+              ]
+            },
+            {
+              "op": {
+                "kind": "CAST",
+                "name": "CAST",
+                "syntax": "SPECIAL"
+              },
+              "operands": [
+                {
+                  "op": {
+                    "kind": "MINUS",
+                    "name": "-",
+                    "syntax": "BINARY"
+                  },
+                  "operands": [
+                    {
+                      "op": {
+                        "kind": "TIMES",
+                        "name": "*",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "input": 21,
+                          "name": "$21"
+                        },
+                        {
+                          "op": {
+                            "kind": "MINUS",
+                            "name": "-",
+                            "syntax": "BINARY"
+                          },
+                          "operands": [
+                            {
+                              "literal": 1,
+                              "type": {
+                                "nullable": false,
+                                "type": "INTEGER"
+                              }
+                            },
+                            {
+                              "input": 22,
+                              "name": "$22"
+                            }
+                          ],
+                          "type": {
+                            "nullable": false,
+                            "precision": 16,
+                            "scale": 2,
+                            "type": "DECIMAL"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "op": {
+                        "kind": "TIMES",
+                        "name": "*",
+                        "syntax": "BINARY"
+                      },
+                      "operands": [
+                        {
+                          "input": 35,
+                          "name": "$35"
+                        },
+                        {
+                          "input": 20,
+                          "name": "$20"
+                        }
+                      ]
+                    }
+                  ],
+                  "type": {
+                    "nullable": false,
+                    "precision": 28,
+                    "scale": 4,
+                    "type": "DECIMAL"
+                  }
+                }
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "fields": [
+            "nation",
+            "o_year",
+            "amount"
+          ],
+          "id": 130,
+          "inputs": [
+            129
+          ],
+          "relOp": "LogicalProject"
+        },
+        {
+          "aggs": [
+            {
+              "agg": {
+                "kind": "SUM",
+                "name": "SUM",
+                "syntax": "FUNCTION"
+              },
+              "distinct": false,
+              "name": "sum_profit",
+              "operands": [
+                2
+              ],
+              "type": {
+                "nullable": false,
+                "precision": 28,
+                "scale": 4,
+                "type": "DECIMAL"
+              }
+            }
+          ],
+          "group": [
+            0,
+            1
+          ],
+          "id": 131,
+          "inputs": [
+            130
+          ],
+          "relOp": "LogicalAggregate"
+        },
+        {
+          "collation": [
+            {
+              "direction": "ASCENDING",
+              "field": 0,
+              "nulls": "LAST"
+            },
+            {
+              "direction": "DESCENDING",
+              "field": 1,
+              "nulls": "FIRST"
+            }
+          ],
+          "id": 132,
+          "inputs": [
+            131
+          ],
+          "relOp": "LogicalSort"
+        }
+      ]
+    }
+  },
+  "mir": {
+    "s0": {
+      "calcite": {
+        "partial": 0
+      },
+      "inputs": [],
+      "operation": "constant",
+      "persistent_id": "8b384059bdb44ad811ab341cc5e2a59697f39aac7b463cab027b185db8105e73",
+      "positions": []
+    },
+    "s1": {
+      "calcite": {
+        "partial": 81
+      },
+      "inputs": [],
+      "operation": "constant",
+      "persistent_id": "a413e5432ec1620b92143555febc232fa54184eb32bb4031972bc9b5f789e0ed",
+      "positions": []
+    },
+    "s10": {
+      "calcite": {
+        "and": [
+          {
+            "final": 28
+          },
+          {
+            "final": 72
+          },
+          {
+            "final": 111
+          }
+        ]
+      },
+      "inputs": [],
+      "operation": "source_multiset",
+      "persistent_id": "bf30f42539d7717258ced78edaab9d74b6b4ace372e8c74ee5574a3e1d4341ca",
+      "positions": [],
+      "table": "region"
+    },
+    "s100": {
+      "calcite": {
+        "partial": 81
+      },
+      "inputs": [
+        {
+          "node": "s2",
+          "output": 0
+        },
+        {
+          "node": "s99",
+          "output": 0
+        },
+        {
+          "node": "s97",
+          "output": 0
+        }
+      ],
+      "operation": "sum",
+      "persistent_id": "2e85c5ee472080d770ee719a6908682a4c2f99bfc7882e48fd3079eaf475be4a",
+      "positions": []
+    },
+    "s101": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 67
+          },
+          {
+            "partial": 69
+          },
+          {
+            "partial": 71
+          },
+          {
+            "partial": 74
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s62",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "3d2ae5dfddbb556eb5001ba998c8ae4ceef5e958d1fb559c4293553acae83e65",
+      "positions": []
+    },
+    "s102": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 67
+          },
+          {
+            "partial": 69
+          },
+          {
+            "partial": 71
+          },
+          {
+            "partial": 74
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s58",
+          "output": 0
+        },
+        {
+          "node": "s101",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "64f60535108e45e24b40125bf557211ca6fef875044c45534d84ab62982869ae",
+      "positions": []
+    },
+    "s103": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 69
+          },
+          {
+            "partial": 71
+          },
+          {
+            "partial": 74
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s102",
+          "output": 0
+        },
+        {
+          "node": "s24",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "948e4d294b25ecd08236a9f18db65da86d038da6a06a09456acf844c90dafe29",
+      "positions": []
+    },
+    "s104": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 71
+          },
+          {
+            "partial": 74
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s103",
+          "output": 0
+        },
+        {
+          "node": "s15",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "f3f42f4bf273afa8acdbdcfeb0145fdea369679c52cc8733d28c6761e8f634b2",
+      "positions": []
+    },
+    "s105": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 74
+          },
+          {
+            "final": 75
+          },
+          {
+            "partial": 76
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s104",
+          "output": 0
+        },
+        {
+          "node": "s13",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "44f336b1717d7cda24a96f4aa690b3db4854df53c143f58bf1d9474a051b272c",
+      "positions": [
+        {
+          "end_column": 39,
+          "end_line_number": 341,
+          "start_column": 6,
+          "start_line_number": 341
+        },
+        {
+          "end_column": 39,
+          "end_line_number": 341,
+          "start_column": 24,
+          "start_line_number": 341
+        }
+      ]
+    },
+    "s106": {
+      "calcite": {
+        "partial": 76
+      },
+      "inputs": [
+        {
+          "node": "s105",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate_linear_postprocess",
+      "persistent_id": "69858af94af90cfd6d35099acd824b70302d03b02d72980c52c23dd3188b007e",
+      "positions": [
+        {
+          "end_column": 40,
+          "end_line_number": 341,
+          "start_column": 2,
+          "start_line_number": 341
+        }
+      ]
+    },
+    "s107": {
+      "calcite": {
+        "partial": 76
+      },
+      "inputs": [
+        {
+          "node": "s106",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "ebce2e8d2bd95b44e2925c2180dbce28e89ec0246af18d28ec01262ea27f7474",
+      "positions": []
+    },
+    "s108": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 54
+          },
+          {
+            "final": 55
+          },
+          {
+            "partial": 56
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s62",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "867134c3d44546c2a0631eb09b3883be5365bccfd334a076b23eafb51d6505b1",
+      "positions": [
+        {
+          "end_column": 35,
+          "end_line_number": 330,
+          "start_column": 8,
+          "start_line_number": 330
+        }
+      ]
+    },
+    "s109": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 55
+          },
+          {
+            "partial": 56
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s108",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate",
+      "persistent_id": "520031b57d1dd56f2e95b37a617591574c72d3fe88c68e4dc9acb93265bc6011",
+      "positions": []
+    },
+    "s11": {
+      "calcite": {
+        "final": 29
+      },
+      "inputs": [
+        {
+          "node": "s10",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "5a8228c916caaf25f851d9f264a7ff49e42252f20ed69fe29bdb273a1d953a85",
+      "positions": [
+        {
+          "end_column": 1,
+          "end_line_number": 214,
+          "start_column": 1,
+          "start_line_number": 198
+        }
+      ]
+    },
+    "s110": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 56
+          },
+          {
+            "partial": 57
+          },
+          {
+            "partial": 59
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s109",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "2d0eb6776916a8ceb05d6830a8c475eeea9f442a08866db3a15a91304e88ad0b",
+      "positions": []
+    },
+    "s111": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 57
+          },
+          {
+            "partial": 59
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s59",
+          "output": 0
+        },
+        {
+          "node": "s110",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "13025952bea3113c3858cb4a742167e3ba29b19880b2e5d95ce85f876f575014",
+      "positions": []
+    },
+    "s112": {
+      "calcite": {
+        "partial": 59
+      },
+      "inputs": [
+        {
+          "node": "s111",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate_linear_postprocess",
+      "persistent_id": "8f212d87b0dcc59e35cfad8b1137b0564e60f7f3265bb3e42c75f1bb783805fe",
+      "positions": []
+    },
+    "s113": {
+      "calcite": {
+        "partial": 59
+      },
+      "inputs": [
+        {
+          "node": "s112",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "4af5ef6049bb011be3c151d15a6a68d817292ee24d89613244c28b89a09f8049",
+      "positions": []
+    },
+    "s114": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 45
+          },
+          {
+            "partial": 46
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s62",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "1861dfb4bc4ab1ccf032cd5df74d323a99033523ba78f1b7142255c05c32a07e",
+      "positions": [
+        {
+          "end_column": 35,
+          "end_line_number": 303,
+          "start_column": 6,
+          "start_line_number": 303
+        }
+      ]
+    },
+    "s115": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 46
+          },
+          {
+            "final": 47
+          },
+          {
+            "partial": 48
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s61",
+          "output": 0
+        },
+        {
+          "node": "s114",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "8e77e5aa98e7e878a8e4f7502d8c6e79c58e5ee0a50c91e6eccc213a76350971",
+      "positions": [
+        {
+          "end_column": 39,
+          "end_line_number": 291,
+          "start_column": 6,
+          "start_line_number": 291
+        },
+        {
+          "end_column": 39,
+          "end_line_number": 291,
+          "start_column": 24,
+          "start_line_number": 291
+        }
+      ]
+    },
+    "s116": {
+      "calcite": {
+        "partial": 48
+      },
+      "inputs": [
+        {
+          "node": "s115",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate_linear_postprocess",
+      "persistent_id": "a693f1bc3fb7ea08bceb9cdf01f0b2420a1d475ee9bff7193618bc6ecfa1a01e",
+      "positions": [
+        {
+          "end_column": 40,
+          "end_line_number": 291,
+          "start_column": 2,
+          "start_line_number": 291
+        }
+      ]
+    },
+    "s117": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 48
+          },
+          {
+            "partial": 50
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s116",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "3754fccae75400df3b4fff6a2515bf08a5914fe34c669f6f6ff19675320ad5e6",
+      "positions": []
+    },
+    "s118": {
+      "calcite": {
+        "partial": 50
+      },
+      "inputs": [
+        {
+          "node": "s117",
+          "output": 0
+        }
+      ],
+      "operation": "topK",
+      "persistent_id": "95f5ed2901d4137bf900fb3c33db1b3dc9f6efbba9e8e057874d4c327544f4f3",
+      "positions": []
+    },
+    "s119": {
+      "calcite": {
+        "final": 50
+      },
+      "inputs": [
+        {
+          "node": "s118",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "e945bfe32785140e573d24c14dfffe28275328139281d45538b23d9fde885c15",
+      "positions": []
+    },
+    "s12": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 112
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s11",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "ced004be4d92014ef1a1f7435e4430d8e921e9556b9ef29f30b3f76cc7b5a36e",
+      "positions": []
+    },
+    "s120": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 2
+          },
+          {
+            "final": 3
+          },
+          {
+            "partial": 4
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s62",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "9dce67b879c8e00dedab857f4cf98092a7719a08e54bd36ef5cdc0e3d72ddde2",
+      "positions": [
+        {
+          "end_column": 52,
+          "end_line_number": 232,
+          "start_column": 2,
+          "start_line_number": 232
+        },
+        {
+          "end_column": 39,
+          "end_line_number": 223,
+          "start_column": 6,
+          "start_line_number": 223
+        },
+        {
+          "end_column": 53,
+          "end_line_number": 224,
+          "start_column": 43,
+          "start_line_number": 224
+        },
+        {
+          "end_column": 39,
+          "end_line_number": 223,
+          "start_column": 24,
+          "start_line_number": 223
+        },
+        {
+          "end_column": 53,
+          "end_line_number": 224,
+          "start_column": 6,
+          "start_line_number": 224
+        }
+      ]
+    },
+    "s121": {
+      "calcite": {
+        "partial": 4
+      },
+      "inputs": [
+        {
+          "node": "s120",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate_linear_postprocess",
+      "persistent_id": "7fe4e9511392cc946b8259c40e7c4d3712859b030b3554c886cc7fe30c0eb4c0",
+      "positions": [
+        {
+          "end_column": 21,
+          "end_line_number": 222,
+          "start_column": 2,
+          "start_line_number": 222
+        },
+        {
+          "end_column": 21,
+          "end_line_number": 226,
+          "start_column": 2,
+          "start_line_number": 226
+        },
+        {
+          "end_column": 40,
+          "end_line_number": 223,
+          "start_column": 2,
+          "start_line_number": 223
+        },
+        {
+          "end_column": 54,
+          "end_line_number": 224,
+          "start_column": 2,
+          "start_line_number": 224
+        },
+        {
+          "end_column": 16,
+          "end_line_number": 221,
+          "start_column": 2,
+          "start_line_number": 221
+        },
+        {
+          "end_column": 16,
+          "end_line_number": 225,
+          "start_column": 2,
+          "start_line_number": 225
+        },
+        {
+          "end_column": 16,
+          "end_line_number": 227,
+          "start_column": 2,
+          "start_line_number": 227
+        }
+      ]
+    },
+    "s122": {
+      "calcite": {
+        "partial": 4
+      },
+      "inputs": [
+        {
+          "node": "s121",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "7c713e959a391e67d1ff91cbf881cc5b78139e4bb4e3c95b4baa285f7ef82898",
+      "positions": []
+    },
+    "s123": {
+      "calcite": {
+        "final": 5
+      },
+      "inputs": [
+        {
+          "node": "s122",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "c228263cc5168ae45b3c49349801a1314e75cd5571f2af569c94fab8422d4740",
+      "positions": []
+    },
+    "s124": {
+      "calcite": {
+        "final": 38
+      },
+      "inputs": [
+        {
+          "node": "s48",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "86ae6729831089021ebf1c71c4150cd911d2b57e88d1849316be1b1eb34185c3",
+      "positions": []
+    },
+    "s125": {
+      "calcite": {
+        "final": 50
+      },
+      "inputs": [
+        {
+          "node": "s119",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "9835ec053f060c9a626edc0850d756dfb40de23bd249e720940b4f8784b1e601",
+      "positions": []
+    },
+    "s126": {
+      "calcite": {
+        "final": 60
+      },
+      "inputs": [
+        {
+          "node": "s113",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "5b70a7ba6ca5e20d4d80164abd67eaabdd48a99cfa35020ec739f1c5fa0c9d54",
+      "positions": []
+    },
+    "s127": {
+      "calcite": {
+        "final": 77
+      },
+      "inputs": [
+        {
+          "node": "s107",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "d1f7b1eb99af6a8aa6f9a2431b050bf30e3681490bc6ac443bb04b7c88d850f8",
+      "positions": []
+    },
+    "s128": {
+      "calcite": {
+        "final": 81
+      },
+      "inputs": [
+        {
+          "node": "s100",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "d58a2a8737cd77bf875915588b2abe994af8108640c40b0db99426015f9e6822",
+      "positions": []
+    },
+    "s129": {
+      "calcite": {
+        "final": 96
+      },
+      "inputs": [
+        {
+          "node": "s94",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "4667dbb4496fd904f6d585e598a6704f82e2415f45f76fbbc602b472b1d62d41",
+      "positions": []
+    },
+    "s13": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 73
+          },
+          {
+            "partial": 74
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s11",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "e76a2868d51b5d97c7e57886ecb69520cb9b8d7c44ce175e0fc06323c76e59eb",
+      "positions": []
+    },
+    "s130": {
+      "calcite": {
+        "final": 117
+      },
+      "inputs": [
+        {
+          "node": "s85",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "dcbb3eede6832cf3ca7827b437db18f39bafc3f4346d50dd01582f75638e345d",
+      "positions": []
+    },
+    "s131": {
+      "calcite": {
+        "final": 132
+      },
+      "inputs": [
+        {
+          "node": "s76",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "04f5e7f36a34aa9056564f265aa7e9ab80d60db6abcccda22dea4cceccf95dcd",
+      "positions": []
+    },
+    "s132": {
+      "calcite": {
+        "final": 19
+      },
+      "inputs": [
+        {
+          "node": "s69",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "670e2aa1d57d286a2b530909f527b2cc822d5be437d2162992d59c23bc777f31",
+      "positions": []
+    },
+    "s133": {
+      "calcite": {
+        "final": 0
+      },
+      "inputs": [
+        {
+          "node": "s0",
+          "output": 0
+        }
+      ],
+      "operation": "inspect",
+      "persistent_id": "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9",
+      "positions": []
+    },
+    "s14": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 29
+          },
+          {
+            "partial": 33
+          },
+          {
+            "partial": 35
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s11",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "c740df6e92a10f887e66733360d18840841e86fdadadc60b02e01c824236ede3",
+      "positions": [
+        {
+          "end_column": 22,
+          "end_line_number": 264,
+          "start_column": 6,
+          "start_line_number": 264
+        }
+      ]
+    },
+    "s15": {
+      "calcite": {
+        "partial": 27
+      },
+      "inputs": [
+        {
+          "node": "s9",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "c1e4b66d3e0c31af7fea0d9df81319777e1f2e6b0beeb29a52261e8cd3a0a545",
+      "positions": [
+        {
+          "end_column": 1,
+          "end_line_number": 195,
+          "start_column": 1,
+          "start_line_number": 178
+        }
+      ]
+    },
+    "s16": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 92
+          },
+          {
+            "partial": 93
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s15",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "cbdda0c8726c80d4228ceb6c175ec592fac6df2431ab57b4906895589810ffa1",
+      "positions": []
+    },
+    "s17": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 32
+          },
+          {
+            "partial": 33
+          },
+          {
+            "partial": 35
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s15",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "b066ed47141dd6348372fe09a9ed5182ceabb3369139ac2871700bb237dd4ffc",
+      "positions": []
+    },
+    "s18": {
+      "calcite": null,
+      "inputs": [
+        {
+          "node": "s8",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "885b52f5a8b370793de71d8c96ec4fd4c56eb22a998443816980d8fe10e08259",
+      "positions": [
+        {
+          "end_column": 1,
+          "end_line_number": 175,
+          "start_column": 1,
+          "start_line_number": 157
+        }
+      ]
+    },
+    "s19": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 25
+          },
+          {
+            "partial": 27
+          },
+          {
+            "partial": 30
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s18",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "d23d1ad4afc4cae31f80ed13e5e6fc18a5c380051f628d92a9ca5046eea8f3b0",
+      "positions": []
+    },
+    "s2": {
+      "calcite": {
+        "partial": 81
+      },
+      "inputs": [
+        {
+          "node": "s1",
+          "output": 0
+        }
+      ],
+      "operation": "differentiate",
+      "persistent_id": "d14ea974fe796f0906ea4db3b46200b7b6ce7407f79dbdcb694c8e25182b0ab1",
+      "positions": []
+    },
+    "s20": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 31
+          },
+          {
+            "partial": 32
+          },
+          {
+            "partial": 33
+          },
+          {
+            "partial": 35
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s18",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "3f78803fe2c5e4990e81dadb8bfb62600068d081b0b72c207c703c4dfa9668b8",
+      "positions": []
+    },
+    "s21": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 125
+          },
+          {
+            "partial": 127
+          },
+          {
+            "partial": 129
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s20",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "5c86578369ae1f848520ae58bb44819344c92c1c82f6d67d52d6268494850f51",
+      "positions": []
+    },
+    "s22": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 31
+          },
+          {
+            "partial": 32
+          },
+          {
+            "partial": 33
+          },
+          {
+            "partial": 35
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s20",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "840cd8bbc62fe9619f7df494cb9464af15740cbb037d5c9156c38b09a02fd220",
+      "positions": []
+    },
+    "s23": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 31
+          },
+          {
+            "partial": 32
+          },
+          {
+            "partial": 33
+          },
+          {
+            "partial": 35
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s7",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "bd7d0b1a117ec71822d4805c165efef478b121163223c10b0643f88191f41a7d",
+      "positions": [
+        {
+          "end_column": 1,
+          "end_line_number": 154,
+          "start_column": 1,
+          "start_line_number": 134
+        }
+      ]
+    },
+    "s24": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 69
+          },
+          {
+            "partial": 71
+          },
+          {
+            "partial": 74
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s23",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "1c04f38103384fd6375dbf319bbfbf846fe351ca989940162563fcce729ed8a5",
+      "positions": []
+    },
+    "s25": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 31
+          },
+          {
+            "partial": 32
+          },
+          {
+            "partial": 33
+          },
+          {
+            "partial": 35
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s23",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "d20ec5004b8374840dc9f6056e86c9a28403413a9f2da4b7ad84e66eac7c1f57",
+      "positions": []
+    },
+    "s26": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 31
+          },
+          {
+            "partial": 32
+          },
+          {
+            "partial": 33
+          },
+          {
+            "partial": 35
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s22",
+          "output": 0
+        },
+        {
+          "node": "s25",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "5a59f5195758786b04965820f4da341f111e5286b32730b3e62f22ce4efca573",
+      "positions": []
+    },
+    "s27": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 32
+          },
+          {
+            "partial": 33
+          },
+          {
+            "partial": 35
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s26",
+          "output": 0
+        },
+        {
+          "node": "s17",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "496a02eb60aee94bc67aacfc8f1da49b15d2de08907ca74f5a01485d26c925fc",
+      "positions": []
+    },
+    "s28": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 33
+          },
+          {
+            "partial": 35
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s27",
+          "output": 0
+        },
+        {
+          "node": "s14",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "18618057d9beec377e9a0c43d53eb2fc258a269f97ac2c55ffb3ebf66a4003e8",
+      "positions": []
+    },
+    "s29": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 33
+          },
+          {
+            "partial": 35
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s28",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate",
+      "persistent_id": "ec53b54cd0857fef7c6ff1751a5875c6c98655fa6c2bc927b0780f149950bb13",
+      "positions": [
+        {
+          "end_column": 21,
+          "end_line_number": 267,
+          "start_column": 4,
+          "start_line_number": 267
+        }
+      ]
+    },
+    "s3": {
+      "calcite": {
+        "and": [
+          {
+            "final": 11
+          },
+          {
+            "final": 82
+          },
+          {
+            "final": 122
+          },
+          {
+            "final": 66
+          },
+          {
+            "final": 101
+          },
+          {
+            "final": 44
+          },
+          {
+            "final": 78
+          },
+          {
+            "final": 1
+          },
+          {
+            "final": 53
+          }
+        ]
+      },
+      "inputs": [],
+      "operation": "source_multiset",
+      "persistent_id": "7ef840ba792c6e229c8e722dbe3e85756c2d520909d361ae2a1b0ac7145aa99c",
+      "positions": [],
+      "table": "lineitem"
+    },
+    "s30": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 35
+          },
+          {
+            "partial": 36
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s29",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "8eacf3cebea56b82c2ae14c7160e11c521ca02cf7dae0ae83fafb5bf56203b49",
+      "positions": []
+    },
+    "s31": {
+      "calcite": {
+        "partial": 23
+      },
+      "inputs": [
+        {
+          "node": "s7",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "60bd0e397796bd8ef27ca5b9ba151071438f694138fd4cab9e3d28fcdfb20f24",
+      "positions": [
+        {
+          "end_column": 1,
+          "end_line_number": 154,
+          "start_column": 1,
+          "start_line_number": 134
+        }
+      ]
+    },
+    "s32": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 100
+          },
+          {
+            "partial": 102
+          },
+          {
+            "partial": 105
+          },
+          {
+            "partial": 107
+          },
+          {
+            "partial": 109
+          },
+          {
+            "partial": 110
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s31",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "ff0c5f5bd088628187b0ef795b4df14c9d7d4b5178feb50657f64b40ef862cb7",
+      "positions": []
+    },
+    "s33": {
+      "calcite": {
+        "partial": 64
+      },
+      "inputs": [
+        {
+          "node": "s6",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "86a27fe946ff093f1ede8ad63ed853ede93759753eeb83eb194f1196b063f18e",
+      "positions": [
+        {
+          "end_column": 1,
+          "end_line_number": 131,
+          "start_column": 1,
+          "start_line_number": 110
+        }
+      ]
+    },
+    "s34": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 64
+          },
+          {
+            "partial": 67
+          },
+          {
+            "partial": 69
+          },
+          {
+            "partial": 71
+          },
+          {
+            "partial": 74
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s33",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "e4e383f4d85cf8245509625a7588decd56e811f1a523a8280b1a48f680237356",
+      "positions": []
+    },
+    "s35": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 40
+          },
+          {
+            "partial": 43
+          },
+          {
+            "partial": 46
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s6",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "9f4cea8eabe6431ad651f8a4f22057adfc233258e04c6dfdd7bc9c25ef71e2ad",
+      "positions": [
+        {
+          "end_column": 1,
+          "end_line_number": 131,
+          "start_column": 1,
+          "start_line_number": 110
+        },
+        {
+          "end_column": 26,
+          "end_line_number": 299,
+          "start_column": 2,
+          "start_line_number": 299
+        }
+      ]
+    },
+    "s36": {
+      "calcite": null,
+      "inputs": [
+        {
+          "node": "s5",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "fb3bc2880c5309f01509863661d858afe54ca59155e4ee727c75ba8098165273",
+      "positions": [
+        {
+          "end_column": 1,
+          "end_line_number": 107,
+          "start_column": 1,
+          "start_line_number": 85
+        }
+      ]
+    },
+    "s37": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 119
+          },
+          {
+            "partial": 121
+          },
+          {
+            "partial": 123
+          },
+          {
+            "partial": 125
+          },
+          {
+            "partial": 127
+          },
+          {
+            "partial": 129
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s36",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "4684a562c67f5505906fa7ae00cfef8fe0b1fd379e5134b3c6c957adfdf54cf8",
+      "positions": []
+    },
+    "s38": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 121
+          },
+          {
+            "partial": 123
+          },
+          {
+            "partial": 125
+          },
+          {
+            "partial": 127
+          },
+          {
+            "partial": 129
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s37",
+          "output": 0
+        },
+        {
+          "node": "s32",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "7ed115a90052f5e8ede207452468340437cad66f586565148972b2cecf260169",
+      "positions": []
+    },
+    "s39": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 98
+          },
+          {
+            "partial": 100
+          },
+          {
+            "partial": 102
+          },
+          {
+            "partial": 105
+          },
+          {
+            "partial": 107
+          },
+          {
+            "partial": 109
+          },
+          {
+            "partial": 110
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s36",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "978493476c62ef709c044263c89f7361748b36caf7667ff744eefd7877dd530c",
+      "positions": []
+    },
+    "s4": {
+      "calcite": {
+        "and": [
+          {
+            "final": 6
+          },
+          {
+            "final": 126
+          },
+          {
+            "final": 41
+          },
+          {
+            "final": 51
+          },
+          {
+            "final": 87
+          },
+          {
+            "final": 103
+          },
+          {
+            "final": 61
+          }
+        ]
+      },
+      "inputs": [],
+      "operation": "source_multiset",
+      "persistent_id": "71828bd90b6b8ad4bfb0a0e3b59ef0dedcdae395f20d9838ee5789309b507038",
+      "positions": [],
+      "table": "orders"
+    },
+    "s40": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 100
+          },
+          {
+            "partial": 102
+          },
+          {
+            "partial": 105
+          },
+          {
+            "partial": 107
+          },
+          {
+            "partial": 109
+          },
+          {
+            "partial": 110
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s39",
+          "output": 0
+        },
+        {
+          "node": "s32",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "76a21e6618728c80212eebf0a01801e75f4c9291fe542086d7d9ee44f91caf62",
+      "positions": []
+    },
+    "s41": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 21
+          },
+          {
+            "partial": 23
+          },
+          {
+            "partial": 25
+          },
+          {
+            "partial": 27
+          },
+          {
+            "partial": 30
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s36",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "f3ed8eae37521989a37aca069a6bc5fe6323e8f42bc0a01472a1d1e003bfae12",
+      "positions": [
+        {
+          "end_column": 16,
+          "end_line_number": 260,
+          "start_column": 6,
+          "start_line_number": 260
+        }
+      ]
+    },
+    "s42": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 23
+          },
+          {
+            "partial": 25
+          },
+          {
+            "partial": 27
+          },
+          {
+            "partial": 30
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s41",
+          "output": 0
+        },
+        {
+          "node": "s31",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "5b874a3053ce0e1da355b585cf394d45d5bae50d9e2bb1ad8cf53771c4abe3f3",
+      "positions": []
+    },
+    "s43": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 25
+          },
+          {
+            "partial": 27
+          },
+          {
+            "partial": 30
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s42",
+          "output": 0
+        },
+        {
+          "node": "s19",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "f427db45ac9d2153a701c24218a3d8ec4f19eb72f99ba53cbad8c369f8aaaf66",
+      "positions": []
+    },
+    "s44": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 27
+          },
+          {
+            "partial": 30
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s43",
+          "output": 0
+        },
+        {
+          "node": "s15",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "055a69f730553aa40ee7a67fa4f29491de76aea18821bcf04f1d1e7ef850aec1",
+      "positions": []
+    },
+    "s45": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 30
+          },
+          {
+            "partial": 36
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s44",
+          "output": 0
+        },
+        {
+          "node": "s14",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "1b5b1764bd620783233b0f9dc9ff3f1ad690a8b143252f500dfc1fae7c5df899",
+      "positions": []
+    },
+    "s46": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 36
+          },
+          {
+            "partial": 38
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s45",
+          "output": 0
+        },
+        {
+          "node": "s30",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "b89740774674505cadacc26e8138173b7342bb8ba4c481bfc018f05b01c39261",
+      "positions": []
+    },
+    "s47": {
+      "calcite": {
+        "partial": 38
+      },
+      "inputs": [
+        {
+          "node": "s46",
+          "output": 0
+        }
+      ],
+      "operation": "topK",
+      "persistent_id": "d6c7b30c755b1ff902663a10c27358b048fbb0f06f6a1adab1b248be9c14a739",
+      "positions": []
+    },
+    "s48": {
+      "calcite": {
+        "final": 38
+      },
+      "inputs": [
+        {
+          "node": "s47",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "48c6f8d234ab50e9b838a81c0fea8ce8691bd521a0de8d8910d25d15ca4305e4",
+      "positions": []
+    },
+    "s49": {
+      "calcite": null,
+      "inputs": [
+        {
+          "node": "s4",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "77e3d01687b1596dedfb95d4632e1abfd75d77d5236f5893975f3e7ee9a7d998",
+      "positions": [
+        {
+          "end_column": 1,
+          "end_line_number": 82,
+          "start_column": 1,
+          "start_line_number": 60
+        }
+      ]
+    },
+    "s5": {
+      "calcite": {
+        "and": [
+          {
+            "final": 20
+          },
+          {
+            "final": 97
+          },
+          {
+            "final": 118
+          }
+        ]
+      },
+      "inputs": [],
+      "operation": "source_multiset",
+      "persistent_id": "2c12e00c588e38e51963053e4ee028fad4abece58c79bb473fcd4ccbe0359663",
+      "positions": [],
+      "table": "part"
+    },
+    "s50": {
+      "calcite": {
+        "partial": 88
+      },
+      "inputs": [
+        {
+          "node": "s49",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "abe2dfbfef9f8366176877e89a0cc4cfa6cf2dd8e47f9a586770f6760e82ae1e",
+      "positions": []
+    },
+    "s51": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 127
+          },
+          {
+            "partial": 129
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s50",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "1323677f5865aa219070db27ce562cec5b3cbd3f9343eef300b9df8e91f4546c",
+      "positions": []
+    },
+    "s52": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 88
+          },
+          {
+            "partial": 90
+          },
+          {
+            "partial": 92
+          },
+          {
+            "partial": 93
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s50",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "0ab84da9b4ae5e73fe890af54b723881e8be50476e0613eb2b940dab3343de30",
+      "positions": []
+    },
+    "s53": {
+      "calcite": {
+        "final": 62
+      },
+      "inputs": [
+        {
+          "node": "s49",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "8ea2579793468764a3c3d0c2545f8adf94c99336bb8ad3bc205d6fa9d5d21da3",
+      "positions": []
+    },
+    "s54": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 7
+          },
+          {
+            "partial": 9
+          },
+          {
+            "partial": 13
+          },
+          {
+            "partial": 15
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s53",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "f0ea7e3a3e76787c7bee0a192ef957bd6041802582e3a54dd405c236b0853d1f",
+      "positions": []
+    },
+    "s55": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 9
+          },
+          {
+            "partial": 13
+          },
+          {
+            "partial": 15
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s54",
+          "output": 0
+        },
+        {
+          "node": "s33",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "fd3e50197de9f41c3e437aff946f821c23d1b2a8f5b67391aa05130df89b2398",
+      "positions": []
+    },
+    "s56": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 104
+          },
+          {
+            "partial": 105
+          },
+          {
+            "partial": 107
+          },
+          {
+            "partial": 109
+          },
+          {
+            "partial": 110
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s53",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "d6972152f76081350cd33457b3cecd34e06dd74655e4c442f2ee3a24dd9bf626",
+      "positions": []
+    },
+    "s57": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 62
+          },
+          {
+            "partial": 64
+          },
+          {
+            "partial": 67
+          },
+          {
+            "partial": 69
+          },
+          {
+            "partial": 71
+          },
+          {
+            "partial": 74
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s53",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "e3672d3e7aac2ebb2a506e8c21b7cfc3a5c6338c3edd6e450cad70102777c257",
+      "positions": []
+    },
+    "s58": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 64
+          },
+          {
+            "partial": 67
+          },
+          {
+            "partial": 69
+          },
+          {
+            "partial": 71
+          },
+          {
+            "partial": 74
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s57",
+          "output": 0
+        },
+        {
+          "node": "s34",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "aa0a2c612d96149a6581fc5749c64528c23dafc0544b022584ce39975e0a5555",
+      "positions": []
+    },
+    "s59": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 52
+          },
+          {
+            "partial": 57
+          },
+          {
+            "partial": 59
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s49",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "bcb538c4eacac698c575b509b92dd853d056edefd12ff46ff906b99de0ef2ce4",
+      "positions": []
+    },
+    "s6": {
+      "calcite": {
+        "and": [
+          {
+            "final": 106
+          },
+          {
+            "final": 39
+          },
+          {
+            "final": 63
+          },
+          {
+            "final": 8
+          },
+          {
+            "final": 89
+          }
+        ]
+      },
+      "inputs": [],
+      "operation": "source_multiset",
+      "persistent_id": "447e139fdfa0bbfdd54420fad488297ffa1d76df57834b1a18b450e532fd2541",
+      "positions": [],
+      "table": "customer"
+    },
+    "s60": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 42
+          },
+          {
+            "partial": 43
+          },
+          {
+            "partial": 46
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s49",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "8959a1e91b02686012ac67f0a3cdd5560654f1fa0f6d38663790b11415f84b81",
+      "positions": [
+        {
+          "end_column": 36,
+          "end_line_number": 302,
+          "start_column": 6,
+          "start_line_number": 302
+        }
+      ]
+    },
+    "s61": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 43
+          },
+          {
+            "partial": 46
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s35",
+          "output": 0
+        },
+        {
+          "node": "s60",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "e197f56672daf74ccfb7aae4ef0245f3a834d16657c83355801da1a843f118e3",
+      "positions": []
+    },
+    "s62": {
+      "calcite": null,
+      "inputs": [
+        {
+          "node": "s3",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "800780269f8d4280589283a6f097998bc89fafcf57e136a6af53c5818d979524",
+      "positions": []
+    },
+    "s63": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 12
+          },
+          {
+            "partial": 13
+          },
+          {
+            "partial": 15
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s62",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "1f59767290e7c42474e9156b6fcc433ecb2d77d10449722e9ab81bed94f42de1",
+      "positions": []
+    },
+    "s64": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 13
+          },
+          {
+            "partial": 15
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s55",
+          "output": 0
+        },
+        {
+          "node": "s63",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "d0638844e0db3d92eee488b46aef73ed4ab45e3fb5f3423321913c83fe612a63",
+      "positions": []
+    },
+    "s65": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 15
+          },
+          {
+            "final": 16
+          },
+          {
+            "partial": 17
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s64",
+          "output": 0
+        },
+        {
+          "node": "s16",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "4354cefc3bfcf3134016eed264b072aeaeacbb8ff65993b1b19bd11ed6d212e5",
+      "positions": [
+        {
+          "end_column": 39,
+          "end_line_number": 498,
+          "start_column": 6,
+          "start_line_number": 498
+        },
+        {
+          "end_column": 39,
+          "end_line_number": 498,
+          "start_column": 24,
+          "start_line_number": 498
+        }
+      ]
+    },
+    "s66": {
+      "calcite": {
+        "partial": 17
+      },
+      "inputs": [
+        {
+          "node": "s65",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate_linear_postprocess",
+      "persistent_id": "54b84ad975ac30ca712616e7f37e16e690eee4cbc3a47f932b3294a5057465f9",
+      "positions": [
+        {
+          "end_column": 40,
+          "end_line_number": 498,
+          "start_column": 2,
+          "start_line_number": 498
+        }
+      ]
+    },
+    "s67": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 17
+          },
+          {
+            "partial": 19
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s66",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "fee6e00ab56e798fe92c2a374a9222e9d9ce9b3b8f4e8930989032a01e72b0ea",
+      "positions": []
+    },
+    "s68": {
+      "calcite": {
+        "partial": 19
+      },
+      "inputs": [
+        {
+          "node": "s67",
+          "output": 0
+        }
+      ],
+      "operation": "topK",
+      "persistent_id": "fdefc8518275b7ba743467431d42b3fc004edc7504b9c2fcc68feab971b909f2",
+      "positions": []
+    },
+    "s69": {
+      "calcite": {
+        "final": 19
+      },
+      "inputs": [
+        {
+          "node": "s68",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "2d2c4fb1b855f327aedc9a793101a62d1a1d88f4cc14be6589ccdd354248e8f3",
+      "positions": []
+    },
+    "s7": {
+      "calcite": {
+        "and": [
+          {
+            "final": 68
+          },
+          {
+            "final": 120
+          },
+          {
+            "final": 22
+          },
+          {
+            "final": 99
+          },
+          {
+            "final": 84
+          }
+        ]
+      },
+      "inputs": [],
+      "operation": "source_multiset",
+      "persistent_id": "636dbb587c0e77895c2bbaaca11558dce03950fe07086640102d537a7526f055",
+      "positions": [],
+      "table": "supplier"
+    },
+    "s70": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 123
+          },
+          {
+            "partial": 125
+          },
+          {
+            "partial": 127
+          },
+          {
+            "partial": 129
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s62",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "cb4704c48ed9dee48f1e8405287189685e6c01a0696b4f804cd4ef7715831b67",
+      "positions": []
+    },
+    "s71": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 123
+          },
+          {
+            "partial": 125
+          },
+          {
+            "partial": 127
+          },
+          {
+            "partial": 129
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s38",
+          "output": 0
+        },
+        {
+          "node": "s70",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "f5f27e22c7ec7ba16ae793eb987a92838415b72e286b05ea448ba396434dee57",
+      "positions": []
+    },
+    "s72": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 125
+          },
+          {
+            "partial": 127
+          },
+          {
+            "partial": 129
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s71",
+          "output": 0
+        },
+        {
+          "node": "s21",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "7289b8613e7b234a7d16c2f2f0c854869beb867fa6cce3755a8a6164742cd275",
+      "positions": []
+    },
+    "s73": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 127
+          },
+          {
+            "partial": 129
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s72",
+          "output": 0
+        },
+        {
+          "node": "s51",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "cb51504aefbbb97237273ea47f0d4a8dc25369deaf1bc0a29ab0634a0f7b13c2",
+      "positions": []
+    },
+    "s74": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 129
+          },
+          {
+            "final": 130
+          },
+          {
+            "partial": 131
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s73",
+          "output": 0
+        },
+        {
+          "node": "s16",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "288efbc17feedcfda96c623925804e48a43471755608a527ddbf469585d8b631",
+      "positions": [
+        {
+          "end_column": 37,
+          "end_line_number": 469,
+          "start_column": 4,
+          "start_line_number": 469
+        },
+        {
+          "end_column": 37,
+          "end_line_number": 469,
+          "start_column": 22,
+          "start_line_number": 469
+        },
+        {
+          "end_column": 66,
+          "end_line_number": 469,
+          "start_column": 4,
+          "start_line_number": 469
+        },
+        {
+          "end_column": 66,
+          "end_line_number": 469,
+          "start_column": 41,
+          "start_line_number": 469
+        }
+      ]
+    },
+    "s75": {
+      "calcite": {
+        "partial": 131
+      },
+      "inputs": [
+        {
+          "node": "s74",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate_linear_postprocess",
+      "persistent_id": "3bbf74604718393b92ff36162adf19875df0081a8c725af4ec985fcccece0e1e",
+      "positions": [
+        {
+          "end_column": 12,
+          "end_line_number": 463,
+          "start_column": 2,
+          "start_line_number": 463
+        }
+      ]
+    },
+    "s76": {
+      "calcite": {
+        "partial": 131
+      },
+      "inputs": [
+        {
+          "node": "s75",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "23ff99ba8fb58e761bd902daf84aca802b9b454bbecff1c92ee7fa275eb50550",
+      "positions": []
+    },
+    "s77": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 102
+          },
+          {
+            "partial": 105
+          },
+          {
+            "partial": 107
+          },
+          {
+            "partial": 109
+          },
+          {
+            "partial": 110
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s62",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "15e6f5b068649883a59f8c288d3fcd8a741b378a496aebea16f1ca713d445365",
+      "positions": []
+    },
+    "s78": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 102
+          },
+          {
+            "partial": 105
+          },
+          {
+            "partial": 107
+          },
+          {
+            "partial": 109
+          },
+          {
+            "partial": 110
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s40",
+          "output": 0
+        },
+        {
+          "node": "s77",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "95e8d957bcca695f3e667a54132d468c3b68393bef34ef8ba0c1eab0f6a377ae",
+      "positions": []
+    },
+    "s79": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 105
+          },
+          {
+            "partial": 107
+          },
+          {
+            "partial": 109
+          },
+          {
+            "partial": 110
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s78",
+          "output": 0
+        },
+        {
+          "node": "s56",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "ea29ce04e34722e0c9c6b5107d503147f8d18e1cf2110c6c8673c648e0bd292d",
+      "positions": []
+    },
+    "s8": {
+      "calcite": {
+        "and": [
+          {
+            "final": 124
+          },
+          {
+            "final": 24
+          }
+        ]
+      },
+      "inputs": [],
+      "operation": "source_multiset",
+      "persistent_id": "2d1aaf1bd5d81699a05a8b63df2935eae0f11facc8720956e3c1accf4a61ef46",
+      "positions": [],
+      "table": "partsupp"
+    },
+    "s80": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 107
+          },
+          {
+            "partial": 109
+          },
+          {
+            "partial": 110
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s79",
+          "output": 0
+        },
+        {
+          "node": "s34",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "e2869fecaffc6f7cdeec38d6d65adf5d44449524545be6a2e450d042d681cf13",
+      "positions": []
+    },
+    "s81": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 109
+          },
+          {
+            "partial": 110
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s80",
+          "output": 0
+        },
+        {
+          "node": "s17",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "1e32393b94ad05d0af079da84f8f0a2aa3ac3a5150d1f4e60ee2d9bae5fdd21d",
+      "positions": []
+    },
+    "s82": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 110
+          },
+          {
+            "partial": 113
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s81",
+          "output": 0
+        },
+        {
+          "node": "s16",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "4360ff5e565ec7ffbe6e639626cce05e03773e31f7787aea57175634eea60b58",
+      "positions": []
+    },
+    "s83": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 113
+          },
+          {
+            "final": 114
+          },
+          {
+            "partial": 115
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s82",
+          "output": 0
+        },
+        {
+          "node": "s12",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "7e832b20ddda86396f8b24e9c28482e800413987934e864fbad7c699e492e8a9",
+      "positions": [
+        {
+          "end_column": 24,
+          "end_line_number": 423,
+          "start_column": 8,
+          "start_line_number": 423
+        },
+        {
+          "end_column": 37,
+          "end_line_number": 430,
+          "start_column": 4,
+          "start_line_number": 430
+        },
+        {
+          "end_column": 37,
+          "end_line_number": 430,
+          "start_column": 22,
+          "start_line_number": 430
+        },
+        {
+          "end_column": 4,
+          "end_line_number": 425,
+          "start_column": 6,
+          "start_line_number": 422
+        }
+      ]
+    },
+    "s84": {
+      "calcite": {
+        "partial": 115
+      },
+      "inputs": [
+        {
+          "node": "s83",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate_linear_postprocess",
+      "persistent_id": "6dc72cd83691f2e91634ed5732af327daf753d4c0dc1c4e300c000de9e973f24",
+      "positions": [
+        {
+          "end_column": 5,
+          "end_line_number": 425,
+          "start_column": 2,
+          "start_line_number": 422
+        },
+        {
+          "end_column": 19,
+          "end_line_number": 425,
+          "start_column": 9,
+          "start_line_number": 425
+        }
+      ]
+    },
+    "s85": {
+      "calcite": {
+        "partial": 115
+      },
+      "inputs": [
+        {
+          "node": "s84",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "2df4e60ce903573a67446f62037079e9081a479563272decb02d3349e26211c2",
+      "positions": [
+        {
+          "end_column": 19,
+          "end_line_number": 425,
+          "start_column": 2,
+          "start_line_number": 422
+        }
+      ]
+    },
+    "s86": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 83
+          },
+          {
+            "partial": 85
+          },
+          {
+            "partial": 88
+          },
+          {
+            "partial": 90
+          },
+          {
+            "partial": 92
+          },
+          {
+            "partial": 93
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s62",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "d8fa0312fc709d72f0d4209bb8d0c95f5d457cd94d1e0150233032ce7cb6b1f1",
+      "positions": []
+    },
+    "s87": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 85
+          },
+          {
+            "partial": 88
+          },
+          {
+            "partial": 90
+          },
+          {
+            "partial": 92
+          },
+          {
+            "partial": 93
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s86",
+          "output": 0
+        },
+        {
+          "node": "s25",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "f4ef5353430de9379d0e2b5f771819bcc7b55d88ded88f6d6185cc4160293e20",
+      "positions": []
+    },
+    "s88": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 88
+          },
+          {
+            "partial": 90
+          },
+          {
+            "partial": 92
+          },
+          {
+            "partial": 93
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s87",
+          "output": 0
+        },
+        {
+          "node": "s52",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "61db777adfe0b51e58a4f79bc616ce01157cacfd310640f511df7e282e75d1b7",
+      "positions": []
+    },
+    "s89": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 90
+          },
+          {
+            "partial": 92
+          },
+          {
+            "partial": 93
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s88",
+          "output": 0
+        },
+        {
+          "node": "s34",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "86548ffa27c776db6c040ea42f06fc13f14534249aaa6a61efbcb06be693a956",
+      "positions": []
+    },
+    "s9": {
+      "calcite": {
+        "and": [
+          {
+            "final": 70
+          },
+          {
+            "final": 26
+          },
+          {
+            "final": 108
+          },
+          {
+            "final": 91
+          },
+          {
+            "final": 128
+          },
+          {
+            "final": 14
+          }
+        ]
+      },
+      "inputs": [],
+      "operation": "source_multiset",
+      "persistent_id": "99b9fdd3b2c6f36fcaf3b0cdf965330ea9c93479cb1b08079e44c0895492aa4f",
+      "positions": [],
+      "table": "nation"
+    },
+    "s90": {
+      "calcite": {
+        "seq": [
+          {
+            "partial": 92
+          },
+          {
+            "partial": 93
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s89",
+          "output": 0
+        },
+        {
+          "node": "s16",
+          "output": 0
+        }
+      ],
+      "operation": "join_index",
+      "persistent_id": "aee98ac7a876947b83d18ddd3392e8f49a7b92876372a96355972f86bd1fdd18",
+      "positions": []
+    },
+    "s91": {
+      "calcite": {
+        "partial": 93
+      },
+      "inputs": [
+        {
+          "node": "s90",
+          "output": 0
+        },
+        {
+          "node": "s16",
+          "output": 0
+        }
+      ],
+      "operation": "join_flatmap",
+      "persistent_id": "e4dceb91462636794cacb76633b7beab6f61cab3b14ed738a41c370595fdf546",
+      "positions": [
+        {
+          "end_column": 51,
+          "end_line_number": 404,
+          "start_column": 31,
+          "start_line_number": 404
+        },
+        {
+          "end_column": 29,
+          "end_line_number": 405,
+          "start_column": 9,
+          "start_line_number": 405
+        },
+        {
+          "end_column": 25,
+          "end_line_number": 404,
+          "start_column": 6,
+          "start_line_number": 404
+        },
+        {
+          "end_column": 54,
+          "end_line_number": 405,
+          "start_column": 35,
+          "start_line_number": 405
+        }
+      ]
+    },
+    "s92": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 94
+          },
+          {
+            "partial": 95
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s91",
+          "output": 0
+        }
+      ],
+      "operation": "map_index",
+      "persistent_id": "cac38d7d6c6dc4c306fa8b646080a4f59ef28b322e0c700fedb9941e66df0c71",
+      "positions": [
+        {
+          "end_column": 37,
+          "end_line_number": 389,
+          "start_column": 4,
+          "start_line_number": 389
+        },
+        {
+          "end_column": 37,
+          "end_line_number": 389,
+          "start_column": 22,
+          "start_line_number": 389
+        }
+      ]
+    },
+    "s93": {
+      "calcite": {
+        "partial": 95
+      },
+      "inputs": [
+        {
+          "node": "s92",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate_linear_postprocess",
+      "persistent_id": "f2b48bb2facb7a085d839858ec081e7e70aa56c4c395b441b3f3ff5bde36a82b",
+      "positions": [
+        {
+          "end_column": 12,
+          "end_line_number": 382,
+          "start_column": 2,
+          "start_line_number": 382
+        }
+      ]
+    },
+    "s94": {
+      "calcite": {
+        "partial": 95
+      },
+      "inputs": [
+        {
+          "node": "s93",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "c9e1423c8d7671aa59c18af5e1e9dc290c5cacdeac016b704b16cc7c1abe6ec9",
+      "positions": []
+    },
+    "s95": {
+      "calcite": {
+        "seq": [
+          {
+            "final": 79
+          },
+          {
+            "final": 80
+          },
+          {
+            "partial": 81
+          }
+        ]
+      },
+      "inputs": [
+        {
+          "node": "s62",
+          "output": 0
+        }
+      ],
+      "operation": "flat_map_index",
+      "persistent_id": "a16c20102ec6f8caeed62cf00eb89b2ebd3288832386d656c76a03849896ea4b",
+      "positions": [
+        {
+          "end_column": 33,
+          "end_line_number": 367,
+          "start_column": 6,
+          "start_line_number": 367
+        }
+      ]
+    },
+    "s96": {
+      "calcite": {
+        "partial": 81
+      },
+      "inputs": [
+        {
+          "node": "s95",
+          "output": 0
+        }
+      ],
+      "operation": "aggregate_linear_postprocess",
+      "persistent_id": "e0f8a928fb2f59e88efd9dc24e5019fce7c8a61ec2b1955c79ce42249cab5486",
+      "positions": [
+        {
+          "end_column": 34,
+          "end_line_number": 367,
+          "start_column": 2,
+          "start_line_number": 367
+        }
+      ]
+    },
+    "s97": {
+      "calcite": {
+        "partial": 81
+      },
+      "inputs": [
+        {
+          "node": "s96",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "85d09b432d835a72b741e50877ce16302b5e1d8d76cd1ccd23de0dd16d366503",
+      "positions": []
+    },
+    "s98": {
+      "calcite": {
+        "partial": 81
+      },
+      "inputs": [
+        {
+          "node": "s97",
+          "output": 0
+        }
+      ],
+      "operation": "map",
+      "persistent_id": "6d2670d12993d5e29094e8fadc509a7b692936e545d4647d4b940f4787f3ff5f",
+      "positions": []
+    },
+    "s99": {
+      "calcite": {
+        "partial": 81
+      },
+      "inputs": [
+        {
+          "node": "s98",
+          "output": 0
+        }
+      ],
+      "operation": "neg",
+      "persistent_id": "825eae3c56902cfb13860a3142eb0530592c77e5c89623d12cc17e96d1df8ff7",
+      "positions": []
+    }
+  }
+}
