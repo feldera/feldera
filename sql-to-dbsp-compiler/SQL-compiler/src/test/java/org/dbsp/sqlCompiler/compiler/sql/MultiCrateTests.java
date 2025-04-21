@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.util.Utilities;
-import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -18,14 +17,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.SQLException;
+import java.util.Arrays;
 
 public class MultiCrateTests extends BaseSQLTests {
     void compileToMultiCrate(String file, boolean check) throws SQLException, IOException, InterruptedException {
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "-q", "--ignoreOrder", "--crates", "x",
                 "-o", BaseSQLTests.RUST_CRATES_DIRECTORY, file);
-        messages.print();
-        Assert.assertEquals(0, messages.errorCount());
+        if (messages.errorCount() > 0) {
+            messages.print();
+            throw new RuntimeException("Error during compilation");
+        }
         if (check)
             Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
     }
@@ -140,34 +142,38 @@ public class MultiCrateTests extends BaseSQLTests {
         FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
         String[] sqlFiles = dir.list(filter);
         assert sqlFiles != null;
+        Arrays.sort(sqlFiles);
+
         for (String sqlFile: sqlFiles) {
             // System.out.println(sqlFile);
             String basename = Utilities.getBaseName(sqlFile);
-            String udf = basename + ".udf.rs";
-            File udfFile = new File(dir.getPath() + "/" + udf);
-            if (!udfFile.exists())
-                this.compileToMultiCrate(dir.getPath() + "/" + sqlFile, true);
+            String originalUdf = basename + ".udf.rs";
+            this.compileToMultiCrate(dir.getPath() + "/" + sqlFile, false);
+
+            File udfFile = new File(dir.getPath() + "/" + originalUdf);
+            File udf = null;
+            if (udfFile.exists()) {
+                String rs = Utilities.readFile(udfFile.getPath());
+                udf = this.createUdfFile(rs);
+
+                File cargo = new File(dir.getPath() + "/" + basename + ".udf.toml");
+                if (cargo.exists()) {
+                    String cargoContents = Utilities.readFile(cargo.getPath());
+                    this.appendCargoDependencies(cargoContents);
+                }
+            }
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
+            if (udf != null) {
+                //noinspection ResultOfMethodCallIgnored
+                udf.delete();
+            }
         }
     }
 
-    @Test
-    public void issue3903() throws IOException, SQLException, InterruptedException {
-        String url = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/program.sql";
-        String sql = Utilities.readFileFromUrl(url);
-        File file = createInputScript(sql);
-
-        String url0 = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/udf/src/lib.rs";
-        String rs = Utilities.readFileFromUrl(url0);
-        File udf = this.createUdfFile(rs);
-        udf.deleteOnExit();
-
-        this.compileToMultiCrate(file.getAbsolutePath(), false);
-
+    void appendCargoDependencies(String source) throws IOException {
         Path dir = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals");
         File cargo = new File(dir.toFile(), "Cargo.toml");
-        String url1 = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/udf/Cargo.toml";
-        String cargoContents = Utilities.readFileFromUrl(url1);
-        String[] lines = cargoContents.split("\n");
+        String[] lines = source.split("\n");
         FileWriter writer = new FileWriter(cargo, true);
         boolean append = false;
         for (String line: lines) {
@@ -179,8 +185,27 @@ public class MultiCrateTests extends BaseSQLTests {
                 append = true;
         }
         writer.close();
+    }
+
+    @Test
+    public void issue3903() throws IOException, SQLException, InterruptedException {
+        String url = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/program.sql";
+        String sql = Utilities.readFileFromUrl(url);
+        File file = createInputScript(sql);
+
+        String url0 = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/udf/src/lib.rs";
+        String rs = Utilities.readFileFromUrl(url0);
+        File udf = this.createUdfFile(rs);
+
+        this.compileToMultiCrate(file.getAbsolutePath(), false);
+
+        String url1 = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/udf/Cargo.toml";
+        String cargoContents = Utilities.readFileFromUrl(url1);
+        this.appendCargoDependencies(cargoContents);
 
         Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
+        //noinspection ResultOfMethodCallIgnored
+        udf.delete();
     }
 
     @Test
