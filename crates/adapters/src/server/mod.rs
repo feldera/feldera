@@ -173,18 +173,20 @@ where
 {
     let args = ServerArgs::try_parse().map_err(|e| ControllerError::cli_args_error(&e))?;
 
-    run_server(args, circuit_factory).map_err(|e| {
+    run_server(args, Box::new(circuit_factory)).map_err(|e| {
         error!("{e}");
         e
     })
 }
 
-pub fn run_server<F>(args: ServerArgs, circuit_factory: F) -> Result<(), ControllerError>
-where
-    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
-        + Send
-        + 'static,
-{
+pub fn run_server(
+    args: ServerArgs,
+    circuit_factory: Box<
+        dyn FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
+            + Send
+            + 'static,
+    >,
+) -> Result<(), ControllerError> {
     ensure_default_crypto_provider();
 
     let bind_address = args.bind_address.clone();
@@ -306,16 +308,16 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
 }
 
 // Initialization thread function.
-fn bootstrap<F>(
+fn bootstrap(
     args: ServerArgs,
-    circuit_factory: F,
+    circuit_factory: Box<
+        dyn FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
+            + Send
+            + 'static,
+    >,
     state: WebData<ServerState>,
     loginit_sender: StdSender<()>,
-) where
-    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
-        + Send
-        + 'static,
-{
+) {
     do_bootstrap(args, circuit_factory, &state, loginit_sender).unwrap_or_else(|e| {
         // Store error in `state.phase`, so that it can be
         // reported by the server.
@@ -393,17 +395,16 @@ where
     }
 }
 
-fn do_bootstrap<F>(
+fn do_bootstrap(
     args: ServerArgs,
-    circuit_factory: F,
+    circuit_factory: Box<
+        dyn FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
+            + Send
+            + 'static,
+    >,
     state: &WebData<ServerState>,
     loginit_sender: StdSender<()>,
-) -> Result<(), ControllerError>
-where
-    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
-        + Send
-        + 'static,
-{
+) -> Result<(), ControllerError> {
     // Print error directly to stdout until we've initialized the logger.
     let config = parse_config(&args.config_file).map_err(|e| {
         let _ = loginit_sender.send(());
@@ -1207,7 +1208,7 @@ outputs:
         thread::spawn(move || {
             bootstrap(
                 args,
-                |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
+                Box::new(|workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema()))),
                 state_clone,
                 std::sync::mpsc::channel().0,
             )
