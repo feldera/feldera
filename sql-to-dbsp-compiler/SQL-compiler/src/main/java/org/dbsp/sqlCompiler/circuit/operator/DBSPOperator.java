@@ -55,6 +55,11 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         this.derivedFrom = this.id;
     }
 
+    /** True if the operator has a port with such an output number.
+     * Most useful for {@link DBSPNestedOperator}, where some ports
+     * may exist but have no internal operator attached (because they
+     * have been deleted by optimizations).
+     * @param outputNumber port number. */
     public abstract boolean hasOutput(int outputNumber);
 
     public DBSPOperator copyAnnotations(DBSPOperator source) {
