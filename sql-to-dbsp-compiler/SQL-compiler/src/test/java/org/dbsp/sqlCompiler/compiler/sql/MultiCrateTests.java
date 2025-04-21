@@ -137,6 +137,7 @@ public class MultiCrateTests extends BaseSQLTests {
 
     @Test
     public void testPackagedDemos() throws SQLException, IOException, InterruptedException {
+        // Also tests issue 3903
         final String projectsDirectory = "../../demo/packaged/sql";
         final File dir = new File(projectsDirectory);
         FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
@@ -173,39 +174,9 @@ public class MultiCrateTests extends BaseSQLTests {
     void appendCargoDependencies(String source) throws IOException {
         Path dir = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals");
         File cargo = new File(dir.toFile(), "Cargo.toml");
-        String[] lines = source.split("\n");
         FileWriter writer = new FileWriter(cargo, true);
-        boolean append = false;
-        for (String line: lines) {
-            if (append) {
-                writer.append(line);
-                writer.append(System.lineSeparator());
-            }
-            if (line.equals("[dependencies]"))
-                append = true;
-        }
+        writer.append(source);
         writer.close();
-    }
-
-    @Test
-    public void issue3903() throws IOException, SQLException, InterruptedException {
-        String url = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/program.sql";
-        String sql = Utilities.readFileFromUrl(url);
-        File file = createInputScript(sql);
-
-        String url0 = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/udf/src/lib.rs";
-        String rs = Utilities.readFileFromUrl(url0);
-        File udf = this.createUdfFile(rs);
-
-        this.compileToMultiCrate(file.getAbsolutePath(), false);
-
-        String url1 = "https://raw.githubusercontent.com/feldera/techdemo-spreadsheet/refs/heads/main/feldera/udf/Cargo.toml";
-        String cargoContents = Utilities.readFileFromUrl(url1);
-        this.appendCargoDependencies(cargoContents);
-
-        Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
-        //noinspection ResultOfMethodCallIgnored
-        udf.delete();
     }
 
     @Test
