@@ -96,7 +96,8 @@ const guides = {
             items: [
                 'use_cases/batch/part1',
                 'use_cases/batch/part2',
-                'use_cases/batch/part3'
+                'use_cases/batch/part3',
+                'use_cases/batch/part4'
             ]
         },
         {

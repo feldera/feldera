@@ -39,7 +39,7 @@ incremental Feldera pipelines:
 * [Part 2: Convert the Spark SQL job into a Feldera pipeline](part2).
 * [Part 3: Input connector orchestration: ingest historical and real-time data
   from multiple sources](part3).
-* Part 4 (under construction): Send outputs of the pipelne to multiple destinations.
+* [Part 4: Send outputs of the pipelne to multiple destinations](part4).
 
 By the end of the tutorial we will build the pipeline shown below:
 
