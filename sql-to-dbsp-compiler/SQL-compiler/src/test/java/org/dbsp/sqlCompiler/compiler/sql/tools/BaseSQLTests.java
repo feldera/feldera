@@ -293,7 +293,6 @@ public class BaseSQLTests {
         ccs.compiler.messages.show(System.err);
         if (ccs.compiler.messages.exitCode != 0)
             throw new RuntimeException("Compilation failed");
-        ccs.compiler.messages.clear();
         TestCase test = new TestCase(this.currentTestInformation, this.currentTestInformation, ccs, null);
         testsToRun.add(test);
     }

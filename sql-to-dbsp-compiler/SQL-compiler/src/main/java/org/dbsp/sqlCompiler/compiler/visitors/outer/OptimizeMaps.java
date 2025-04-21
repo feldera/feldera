@@ -114,6 +114,21 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
             this.map(operator, result);
             return;
+        } else if ((source.node().is(DBSPIntegrateOperator.class)) ||
+                source.node().is(DBSPDifferentiateOperator.class) ||
+                source.node().is(DBSPDelayOperator.class) ||
+                source.node().is(DBSPNegateOperator.class) ||
+                source.node().is(DBSPNoopOperator.class)) {
+            // For all such operators we can swap them with the mapindex
+            List<OutputPort> newSources = new ArrayList<>();
+            for (OutputPort sourceSource: source.node().inputs) {
+                DBSPSimpleOperator newProjection = operator.withInputs(Linq.list(sourceSource), true);
+                newSources.add(newProjection.outputPort());
+                this.addOperator(newProjection);
+            }
+            DBSPSimpleOperator result = source.simpleNode().withInputs(newSources, true);
+            this.map(operator, result, operator != result);
+            return;
         } else {
             Projection projection = new Projection(this.compiler());
             projection.apply(operator.getFunction());

@@ -121,22 +121,6 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator {
         return this;
     }
 
-    public int getLeftTimestampIndex() {
-        // This relies on the leftTimestamp function having a very specific shape
-        DBSPExpression body = this.leftTimestamp.body;
-        if (body.is(DBSPCastExpression.class))
-            body = body.to(DBSPCastExpression.class).source;
-        return body.to(DBSPFieldExpression.class).fieldNo;
-    }
-
-    public int getRightTimestampIndex() {
-        // This relies on the rightTimestamp function having a very specific shape
-        DBSPExpression body = this.rightTimestamp.body;
-        if (body.is(DBSPCastExpression.class))
-            body = body.to(DBSPCastExpression.class).source;
-        return body.to(DBSPFieldExpression.class).fieldNo;
-    }
-
     @Override
     public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
         return new DBSPConcreteAsofJoinOperator(this.getRelNode(), this.getOutputZSetType(), function,
