@@ -46,19 +46,10 @@ import java.util.List;
 
 /** Tests about table and view metadata */
 public class MetadataTests extends BaseSQLTests {
-    File createTempOutputFile() throws IOException {
-        return File.createTempFile("out", ".rs", new File(RUST_DIRECTORY));
-    }
-
     File createTempJsonFile() throws IOException {
         File file = File.createTempFile("out", ".json", new File("."));
         file.deleteOnExit();
         return file;
-    }
-
-    void deleteTempFile(File file) {
-        //noinspection ResultOfMethodCallIgnored
-        file.delete();
     }
 
     @Test
@@ -118,13 +109,9 @@ public class MetadataTests extends BaseSQLTests {
                 FROM t""";
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
-        File tmp = this.createTempOutputFile();
         CompilerMessages message = CompilerMain.execute(
-                "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
-        this.deleteTempFile(tmp);
+                "-js", json.getPath(), "--noRust", file.getPath());
         Assert.assertEquals(0, message.exitCode);
-        //noinspection ResultOfMethodCallIgnored
-        tmp.delete();
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         for (JsonNode out: parsed.get("outputs")) {
@@ -133,6 +120,24 @@ public class MetadataTests extends BaseSQLTests {
                 String type = fields.get(1).get("columnType").get("type").asText();
                 Assert.assertEquals("VARCHAR", type);
             }
+        }
+    }
+
+    @Test
+    public void lineageTest() throws SQLException, IOException {
+        // Check that the calcite property in the dataflow graph is never "null" for this program
+        final String file = "../../demo/packaged/sql/08-fine-grained-authorization.sql";
+        File json = this.createTempJsonFile();
+        CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file);
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        System.out.println(Utilities.readFile(json.getPath()));
+        JsonNode parsed = mapper.readTree(json);
+        ObjectNode df = (ObjectNode)parsed.get("dataflow");
+        for (var prop: df.properties()) {
+            JsonNode calcite = prop.getValue().get("calcite");
+            if (calcite != null)
+                // Nested nodes do not have this property
+                Assert.assertFalse(calcite.isNull());
         }
     }
 
@@ -597,7 +602,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript("""
                 CREATE FUNCTION myfunction(d DATE, i INTEGER) RETURNS VARCHAR NOT NULL;
                 CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', '5');""");
-        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("--noRust", file.getPath());
         Assert.assertEquals(1, messages.errorCount());
         Assert.assertTrue(messages.toString().contains(
                 "Cannot apply 'myfunction' to arguments of type 'myfunction(<DATE>, <CHAR(1)>)'. " +
@@ -709,12 +714,24 @@ public class MetadataTests extends BaseSQLTests {
                     --jdbcSource
                       Connection string to a database that contains table metadata
                       Default: <empty string>
+                    --je, -je
+                      Emit error messages as a JSON array to stderr
+                      Default: false
+                    --jpg, -jpg
+                      Emit a jpg image of the circuit instead of Rust
+                      Default: false
+                    --js, -js
+                      Emit a JSON file containing the schema of all views and tables in the\s
+                      specified file.
                     --lenient
                       Lenient SQL validation.  If true it allows duplicate column names in a\s
                       view.\s
                       Default: false
                     --no-restrict-io
                       Do not restrict the types of columns allowed in tables and views
+                      Default: false
+                    --noRust
+                      Do not generate Rust output files
                       Default: false
                     --nowstream
                       Implement NOW as a stream (true) or as an internal operator (false)
@@ -724,6 +741,9 @@ public class MetadataTests extends BaseSQLTests {
                       Default: false
                     --plan
                       Emit the Calcite plan of the program in the specified JSON file
+                    --png, -png
+                      Emit a png image of the circuit instead of Rust
+                      Default: false
                     --streaming
                       Compiling a streaming program, where only inserts are allowed
                       Default: false
@@ -740,21 +760,9 @@ public class MetadataTests extends BaseSQLTests {
                     -i
                       Generate an incremental circuit
                       Default: false
-                    -je
-                      Emit error messages as a JSON array to stderr
-                      Default: false
-                    -jpg
-                      Emit a jpg image of the circuit instead of Rust
-                      Default: false
-                    -js
-                      Emit a JSON file containing the schema of all views and tables in the\s
-                      specified file.
                     -o
                       Output file; stdout if null
                       Default: <empty string>
-                    -png
-                      Emit a png image of the circuit instead of Rust
-                      Default: false
                     -q
                       Quiet: do not print warnings
                       Default: false
@@ -773,9 +781,7 @@ public class MetadataTests extends BaseSQLTests {
             CREATE VIEW V2 AS SELECT SUM(COL1) FROM T;""";
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
-        File out = this.createTempOutputFile();
-        CompilerMain.execute("--plan", json.getPath(), "-o", out.getPath(), file.getPath());
-        this.deleteTempFile(out);
+        CompilerMain.execute("--plan", json.getPath(), "--noRust", file.getPath());
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generatePlan.json");
         Assert.assertEquals(expected, jsonContents);
@@ -791,11 +797,9 @@ public class MetadataTests extends BaseSQLTests {
             CREATE VIEW V AS SELECT SUM(COL1) FROM T;""";
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
-        File out = this.createTempOutputFile();
         CompilerMessages msg = CompilerMain.execute(
-                "--dataflow", json.getPath(), "-o", out.getPath(), file.getPath());
+                "--dataflow", json.getPath(), "--noRust", file.getPath());
         assert msg.exitCode == 0;
-        this.deleteTempFile(out);
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDF.json");
         Assert.assertEquals(expected, jsonContents);
@@ -811,16 +815,15 @@ public class MetadataTests extends BaseSQLTests {
             CREATE VIEW V AS SELECT SUM(COL1) FROM T;""";
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
-        File out = this.createTempOutputFile();
-        CompilerMessages msg = CompilerMain.execute("--dataflow", json.getPath(), file.getPath(), "-o", out.getPath());
+        CompilerMessages msg = CompilerMain.execute(
+                "--dataflow", json.getPath(), file.getPath(), "--noRust");
         assert msg.exitCode == 0;
         Assert.assertTrue(json.exists());
-        Assert.assertTrue(out.exists());
-        this.deleteTempFile(out);
     }
 
     @Test
     public void generateDFRecursiveTest() throws IOException, SQLException {
+        // input table currently unused
         String sql = """
                 DECLARE RECURSIVE view fibonacci(n INT, value INT);
                 create table input (x int);
@@ -845,11 +848,9 @@ public class MetadataTests extends BaseSQLTests {
                 );""";
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
-        File out = this.createTempOutputFile();
         CompilerMessages msg = CompilerMain.execute(
-                "--dataflow", json.getPath(), "-o", out.getPath(), file.getPath());
+                "--dataflow", json.getPath(), "--noRust", file.getPath());
         assert msg.exitCode == 0;
-        this.deleteTempFile(out);
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDFRecursive.json");
         Assert.assertEquals(expected, jsonContents);
@@ -886,10 +887,8 @@ public class MetadataTests extends BaseSQLTests {
                 create view fib_outputs as select * from fibonacci;""";
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
-        File out = this.createTempOutputFile();
         CompilerMessages message = CompilerMain.execute(
-                "-js", json.getPath(), "-o", out.getPath(), file.getPath());
-        this.deleteTempFile(out);
+                "-js", json.getPath(), "--noRust", file.getPath());
         assert message.exitCode == 0;
         String js = Utilities.readFile(json.toPath());
         Assert.assertFalse(js.contains("fibonacci" + DeclareViewStatement.declSuffix));
@@ -910,10 +909,8 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE VIEW V1 ("yCol") AS SELECT COL1 FROM T;""";
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
-        File out = this.createTempOutputFile();
         CompilerMessages message = CompilerMain.execute(
-                "-js", json.getPath(), "-o", out.getPath(), file.getPath());
-        this.deleteTempFile(out);
+                "-js", json.getPath(), "--noRust", file.getPath());
         if (message.exitCode != 0)
             System.err.println(message);
         Assert.assertEquals(0, message.exitCode);
@@ -1076,6 +1073,25 @@ public class MetadataTests extends BaseSQLTests {
         JsonNode jsonNode = mapper.readTree(json);
         Assert.assertNotNull(jsonNode);
         Assert.assertNotNull(jsonNode.get(0).get("snippet").asText());
+    }
+
+    @Test
+    public void unusedTable() throws IOException, SQLException {
+        String sql = """
+                CREATE TABLE T(x INT);
+                CREATE TABLE S(x INT);
+                CREATE VIEW V AS SELECT * FROM s;""";
+        File file = createInputScript(sql);
+        File json = this.createTempJsonFile();
+        CompilerMain.execute("--alltables", "--dataflow", json.getPath(), "--noRust", file.getPath());
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode jsonNode = mapper.readTree(json);
+        // table t is not used in the calcite plan, so the lineage is an empty "AND" node.
+        Assert.assertEquals("source_multiset",
+                jsonNode.get("dataflow").get("s1").get("operation").asText());
+        JsonNode node = jsonNode.get("dataflow").get("s1").get("calcite").get("and");
+        Assert.assertTrue(node.isArray());
+        Assert.assertTrue(node.isEmpty());
     }
 
     @Test
@@ -1244,13 +1260,11 @@ public class MetadataTests extends BaseSQLTests {
                     ts >= NOW() - INTERVAL 7 DAYS;""";
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
-        File out = this.createTempOutputFile();
         CompilerMessages msg = CompilerMain.execute("-i",
-                "--dataflow", json.getPath(), "-o", out.getPath(), file.getPath());
+                "--dataflow", json.getPath(), "--noRust", file.getPath());
         System.out.println(msg);
         Assert.assertEquals(0, msg.exitCode);
         String jsonContents = Utilities.readFile(json.toPath());
-        this.deleteTempFile(out);
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(jsonContents);
         Assert.assertNotNull(parsed);

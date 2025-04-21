@@ -161,21 +161,23 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                 description = "Specify logging level for a class (can be repeated)")
         public Map<String, String> loggingLevel = new HashMap<>();
          */
+        @Parameter(names = "--noRust", description = "Do not generate Rust output files")
+        public boolean noRust = false;
         @Parameter(names = "--enterprise", description = "Generate code supporting enterprise features")
         public boolean enterprise = false;
         @Parameter(names="-o", description = "Output file; stdout if null")
         public String outputFile = "";
-        @Parameter(names = "-jpg", description = "Emit a jpg image of the circuit instead of Rust")
+        @Parameter(names = {"--jpg", "-jpg"}, description = "Emit a jpg image of the circuit instead of Rust")
         public boolean emitJpeg = false;
-        @Parameter(names = "-png", description = "Emit a png image of the circuit instead of Rust")
+        @Parameter(names = {"--png", "-png"}, description = "Emit a png image of the circuit instead of Rust")
         public boolean emitPng = false;
         @Nullable @Parameter(names = "--plan", description = "Emit the Calcite plan of the program in the specified JSON file")
         public String emitPlan = null;
         @Nullable @Parameter(names = "--dataflow", description = "Emit the Dataflow graph of the program in the specified JSON file")
         public String emitDataflow = null;
-        @Parameter(names = "-je", description = "Emit error messages as a JSON array to stderr")
+        @Parameter(names = {"--je", "-je"}, description = "Emit error messages as a JSON array to stderr")
         public boolean emitJsonErrors = false;
-        @Parameter(names = "-js",
+        @Parameter(names = {"--js", "-js"},
                 description = "Emit a JSON file containing the schema of all views and tables in the specified file.")
         @Nullable
         public String emitJsonSchema = null;
@@ -221,8 +223,12 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         public boolean validate(IErrorReporter reporter) {
             if (this.emitJpeg && this.emitPng) {
                 reporter.reportError(SourcePositionRange.INVALID, "Invalid options",
-                        "Options -png and -jpg exclusive");
+                        "Options -png and -jpg cannot be used at the same time");
                 return false;
+            }
+            if (this.noRust && !this.outputFile.isEmpty()) {
+                reporter.reportWarning(SourcePositionRange.INVALID, "Invalid options",
+                        "Options --nooutput and -o used at the same time");
             }
             return true;
         }
@@ -241,6 +247,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ", inputFile=" + Utilities.singleQuote(this.inputFile) +
                     ", trimInputs=" + this.trimInputs +
                     ", verbosity=" + this.verbosity +
+                    ", noRust=" + this.noRust +
                     '}';
         }
 

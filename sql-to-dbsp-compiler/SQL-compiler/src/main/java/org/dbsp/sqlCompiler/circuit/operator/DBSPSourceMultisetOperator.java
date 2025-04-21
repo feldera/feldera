@@ -37,7 +37,7 @@ public final class DBSPSourceMultisetOperator
             CalciteRelNode node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
-        super(node, "multiset", sourceName, outputType, originalRowType, true,
+        super(node, "source_multiset", sourceName, outputType, originalRowType, true,
                 metadata, name, comment);
         assert metadata.getColumnCount() == originalRowType.fields.size();
         assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();

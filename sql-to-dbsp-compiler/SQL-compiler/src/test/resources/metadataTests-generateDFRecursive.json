@@ -348,7 +348,9 @@
         "inputs": [
           { "node": "s6", "output": 0 }
         ],
-        "calcite": null,
+        "calcite": {
+          "partial": 8
+        },
         "positions": [
           {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
         ],

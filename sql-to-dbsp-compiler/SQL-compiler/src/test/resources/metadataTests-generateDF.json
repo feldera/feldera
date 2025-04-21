@@ -87,8 +87,9 @@
       "positions": [],
       "persistent_id": "8acabcd0cc1e2a8cb6978f135ddc32f6fbe9367639eae13ef3224540393d9708"
     }, "s2": {
-      "operation": "multiset t",
+      "operation": "source_multiset",
       "inputs": [],
+      "table": "t",
       "calcite": {
         "final": 1
       },

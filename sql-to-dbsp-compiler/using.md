@@ -65,12 +65,24 @@ Usage: sql-to-dbsp [options] Input file to compile
     --jdbcSource
       Connection string to a database that contains table metadata
       Default: <empty string>
+    --je, -je
+      Emit error messages as a JSON array to stderr
+      Default: false
+    --jpg, -jpg
+      Emit a jpg image of the circuit instead of Rust
+      Default: false
+    --js, -js
+      Emit a JSON file containing the schema of all views and tables in thes
+      specified file.
     --lenient
       Lenient SQL validation.  If true it allows duplicate column names in a
       view
       Default: false
     --no-restrict-io
       Do not restrict the types of columns allowed in tables and views
+      Default: false
+    --noRust
+      Do not generate Rust output files
       Default: false
     --nowstream
       Implement NOW as a stream (true) or as an internal operator (false)
@@ -80,6 +92,9 @@ Usage: sql-to-dbsp [options] Input file to compile
       Default: false
     --plan
       Emit the Calcite plan of the program in the specified JSON file
+    --png, -png
+      Emit a png image of the circuit instead of Rust
+      Default: false
     --streaming
       Compiling a streaming program, where only inserts are allowed
       Default: false
@@ -96,21 +111,9 @@ Usage: sql-to-dbsp [options] Input file to compile
     -i
       Generate an incremental circuit
       Default: false
-    -je
-      Emit error messages as a JSON array to stderr
-      Default: false
-    -jpg
-      Emit a jpg image of the circuit instead of Rust
-      Default: false
-    -js
-      Emit a JSON file containing the schema of all views and tables
-      in the specified file.
     -o
       Output file; stdout if null
       Default: <empty string>
-    -png
-      Emit a png image of the circuit instead of Rust
-      Default: false
     -q
       Quiet: do not print warnings
       Default: false
