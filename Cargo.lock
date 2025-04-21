@@ -4656,6 +4656,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "feldera-ir"
+version = "0.45.0"
+dependencies = [
+ "feldera-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "feldera-rest-api"
 version = "0.46.0"
 dependencies = [

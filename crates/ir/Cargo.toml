@@ -1,0 +1,15 @@
+[package]
+name = "feldera-ir"
+version = "0.45.0"
+edition = "2021"
+license = "MIT"
+description = "Intermediate representation types for Feldera Programs"
+homepage = "https://github.com/feldera/feldera"
+repository = "https://github.com/feldera/feldera"
+keywords = ["DBSP", "calcite", "compiler", "ir"]
+categories = ["database"]
+
+[dependencies]
+serde_json = { workspace = true, features = ["raw_value"] }
+serde = { workspace = true, features = ["derive"] }
+feldera-types = { workspace = true }
