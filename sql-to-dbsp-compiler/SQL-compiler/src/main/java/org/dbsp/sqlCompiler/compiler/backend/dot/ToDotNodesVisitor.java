@@ -249,7 +249,9 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPOperatorWithError node) {
         this.stream.append(node.getNodeName(false))
                 .append(" [ shape=record")
-                .append(" label=\"<p0>")
+                .append(" label=\"<pN>")
+                .append(node.getIdString())
+                .append("|<p0>")
                 .append(shorten(node.operation))
                 .append(annotations(node))
                 .append("|<p1> E");

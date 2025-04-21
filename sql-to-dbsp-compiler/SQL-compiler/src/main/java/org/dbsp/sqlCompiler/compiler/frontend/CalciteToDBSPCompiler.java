@@ -3479,7 +3479,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // Synthesize the metadata for the view's columns.
         for (RelColumnMetadata meta: view.columns) {
             InputColumnMetadata colMeta = this.convertMetadata(meta);
-            ViewColumnMetadata cm = new ViewColumnMetadata(view.getCalciteObject(), view.relationName,
+            ViewColumnMetadata cm = new ViewColumnMetadata(meta.getNode(), view.relationName,
                         meta.getName(), colMeta.type, colMeta.lateness);
             columnMetadata.add(cm);
         }

@@ -4,10 +4,14 @@ import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 
 public class CalciteSqlParserPos extends CalciteObject {
-    final SqlParserPos pos;
+    final SourcePositionRange pos;
+
+    CalciteSqlParserPos(SourcePositionRange pos) {
+        this.pos = pos;
+    }
 
     CalciteSqlParserPos(SqlParserPos pos) {
-        this.pos = pos;
+        this.pos = new SourcePositionRange(pos);
     }
 
     @Override
@@ -22,6 +26,6 @@ public class CalciteSqlParserPos extends CalciteObject {
 
     @Override
     public SourcePositionRange getPositionRange() {
-        return new SourcePositionRange(this.pos);
+        return this.pos;
     }
 }
