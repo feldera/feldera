@@ -1041,8 +1041,8 @@ fn rolling_circuit1(
         .set_persistent_id(Some("rolling1"));
 
     let rolling1_flat = rolling1
-        .map_index(|(k, v)| (k.clone(), v.clone()))
-        .map(|(_k, v)| v.clone())
+        .map_index(|(k, v)| (*k, *v))
+        .map(|(_k, v)| *v)
         .set_persistent_id(Some("rolling1_flat"));
 
     let output_handle1 = rolling1_flat.output_persistent(Some("output1"));
@@ -1057,8 +1057,8 @@ fn rolling_circuit1(
         .set_persistent_id(Some("rolling2"));
 
     let rolling2_flat = rolling2
-        .map_index(|(k, v)| (k.clone(), v.clone()))
-        .map(|(_k, v)| v.clone())
+        .map_index(|(k, v)| (*k, *v))
+        .map(|(_k, v)| *v)
         .set_persistent_id(Some("rolling2_flat"));
 
     let output_handle2 = rolling2_flat.output_persistent(Some("output2"));
@@ -1096,8 +1096,8 @@ fn rolling_circuit2(
         .set_persistent_id(Some("rolling2"));
 
     let rolling2_flat = rolling2
-        .map_index(|(k, v)| (k.clone(), v.clone()))
-        .map(|(_k, v)| v.clone())
+        .map_index(|(k, v)| (*k, *v))
+        .map(|(_k, v)| *v)
         .set_persistent_id(Some("rolling2_flat"));
 
     let output_handle2 = rolling2_flat.output_persistent(Some("output2"));
@@ -1106,15 +1106,15 @@ fn rolling_circuit2(
         .map_index(|Tup2(x, y)| (*x, Tup2(*x, *y)))
         .partitioned_rolling_aggregate_persistent(
             Some("rolling3"),
-            |x| (x.0 % 7, x.0.clone()),
+            |x| (x.0 % 7, x.0),
             Min,
             RelRange::new(RelOffset::Before(10), RelOffset::After(0)),
         )
         .set_persistent_id(Some("rolling3"));
 
     let rolling3_flat = rolling3
-        .map_index(|(k, v)| (k.clone(), v.clone()))
-        .map(|(_k, v)| v.clone())
+        .map_index(|(k, v)| (*k, *v))
+        .map(|(_k, v)| *v)
         .set_persistent_id(Some("rolling3_flat"));
 
     let output_handle3 = rolling3_flat.output_persistent(Some("output3"));
@@ -1129,8 +1129,8 @@ fn rolling_circuit2(
         .set_persistent_id(Some("rolling4"));
 
     let rolling4_flat = rolling4
-        .map_index(|(k, v)| (k.clone(), v.clone()))
-        .map(|(_k, v)| v.clone())
+        .map_index(|(k, v)| (*k, *v))
+        .map(|(_k, v)| *v)
         .set_persistent_id(Some("rolling4_flat"));
 
     let output_handle4 = rolling4_flat.output_persistent(Some("output4"));
