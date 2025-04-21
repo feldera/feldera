@@ -1707,10 +1707,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     assert bodyType.mayBeMonotone();
                     PartiallyMonotoneTuple tuple = bodyType.to(PartiallyMonotoneTuple.class);
                     if (!tuple.getField(monotoneFieldIndex).mayBeMonotone()) {
+                        var col = operator.metadata.columns.get(monotoneFieldIndex);
                         throw new CompilationError("Compiler could not infer a waterline for column " +
                                 operator.viewName.singleQuote() + "." +
-                                operator.metadata.columns.get(monotoneFieldIndex).columnName.singleQuote(),
-                                operator.getRelNode());
+                                col.columnName.singleQuote(),
+                                col.getPositionRange());
                     }
                     int controlFieldIndex = 0;
                     assert monotoneFieldIndex < tuple.size();
@@ -1779,10 +1780,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     return;
                 }
             }
+            var col = operator.metadata.columns.get(monotoneFieldIndex);
             throw new CompilationError("Could not infer a waterline for column " +
                     operator.viewName.singleQuote() + "." +
                     operator.metadata.columns.get(monotoneFieldIndex).columnName.singleQuote() +
-                    " which has an 'emit_final' annotation", operator.getRelNode());
+                    " which has an 'emit_final' annotation",
+                    col.getPositionRange());
         }
         super.postorder(operator);
     }

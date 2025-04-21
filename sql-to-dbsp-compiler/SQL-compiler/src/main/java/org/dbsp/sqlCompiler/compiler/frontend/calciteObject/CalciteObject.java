@@ -64,4 +64,6 @@ public class CalciteObject implements ICastable, IHasSourcePositionRange {
     }
 
     public static CalciteObject create(SqlParserPos pos) { return new CalciteSqlParserPos(pos); }
+
+    public static CalciteObject create(SourcePositionRange pos) { return new CalciteSqlParserPos(pos); }
 }

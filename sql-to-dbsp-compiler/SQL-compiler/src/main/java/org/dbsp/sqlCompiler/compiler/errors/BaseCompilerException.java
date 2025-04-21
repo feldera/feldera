@@ -16,6 +16,10 @@ public abstract class BaseCompilerException
         this.calciteObject = calciteObject;
     }
 
+    protected BaseCompilerException(String message, SourcePositionRange range) {
+        this(message, CalciteObject.create(range), null);
+    }
+
     protected BaseCompilerException(String message, CalciteObject calciteObject) {
         this(message, calciteObject, null);
     }

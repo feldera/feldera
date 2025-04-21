@@ -11,6 +11,10 @@ public final class CompilationError extends BaseCompilerException {
         super(message, object);
     }
 
+    public CompilationError(String message, SourcePositionRange range) {
+        super(message, range);
+    }
+
     @Override
     public String getErrorKind() {
         return "Compilation error";
