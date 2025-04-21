@@ -342,6 +342,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
         String[] sqlFiles = dir.list(filter);
         assert sqlFiles != null;
+        Arrays.sort(sqlFiles);
         for (String sqlFile: sqlFiles) {
             // System.out.println(sqlFile);
             String basename = Utilities.getBaseName(sqlFile);

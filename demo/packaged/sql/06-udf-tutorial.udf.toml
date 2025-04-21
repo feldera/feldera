@@ -1,4 +1,3 @@
-[dependencies]
 # Declare any external crates that are used in udf.rs
 # in the same way as in the [dependencies] section of a Cargo.toml
 base64 = "0.22.1"

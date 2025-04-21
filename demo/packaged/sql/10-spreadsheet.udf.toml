@@ -1,0 +1,4 @@
+xlformula_engine = "0.1.18"
+chrono = "0.4"
+log = "0.4"
+env_logger = "0.11.5"

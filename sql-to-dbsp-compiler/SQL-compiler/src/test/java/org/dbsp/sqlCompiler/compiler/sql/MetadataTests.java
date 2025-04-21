@@ -130,7 +130,6 @@ public class MetadataTests extends BaseSQLTests {
         File json = this.createTempJsonFile();
         CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file);
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
-        System.out.println(Utilities.readFile(json.getPath()));
         JsonNode parsed = mapper.readTree(json);
         ObjectNode df = (ObjectNode)parsed.get("dataflow");
         for (var prop: df.properties()) {

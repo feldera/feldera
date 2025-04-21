@@ -3,7 +3,7 @@ import sys
 
 # Format the SQL must adhere to
 SQL_FORMAT_REGEX_PATTERN = re.compile(
-    "^-- (.+) \(([a-zA-Z0-9_-]+)\)[ \t]*\r?\n--[ \t]*\r?\n((-- .+\r?\n)+)--[ \t]*\r?\n"
+    "^-- (.+) \\(([a-zA-Z0-9_-]+)\\)[ \t]*\r?\n--[ \t]*\r?\n((-- .+\r?\n)+)--[ \t]*\r?\n"
 )
 
 # Format of each description line
