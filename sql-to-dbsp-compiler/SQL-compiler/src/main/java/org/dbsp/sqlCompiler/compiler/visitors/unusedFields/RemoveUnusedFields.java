@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
@@ -102,41 +103,38 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         return true;
     }
 
-    /*
     @Override
-    public void postorder(DBSPAbstractAsofJoinOperator join) {
+    public void postorder(DBSPAsofJoinOperator join) {
         boolean done = false;
         DBSPClosureExpression joinFunction = join.getClosureFunction();
-        // Make up a new function which combines the ASOF join comparator and the timestamp selection functions
-        DBSPExpression leftTs = join.leftTimestamp
-                .call(joinFunction.parameters[1].asVariable())
-                .reduce(this.compiler);
-        // Second param is always Option
-        DBSPExpression rightTs = join.rightTimestamp
-                .call(joinFunction.parameters[2].asVariable().unwrap())
-                .reduce(this.compiler);
-        DBSPClosureExpression combined = new DBSPTupleExpression(
-            joinFunction.body,
-            ExpressionCompiler.makeBinaryExpression(
-                    CalciteObject.EMPTY, DBSPTypeBool.create(leftTs.type.mayBeNull || rightTs.type.mayBeNull),
-                    DBSPOpcode.AND, leftTs, rightTs)).closure(joinFunction.parameters);
-
         if (!this.done(joinFunction)) {
-            joinFunction = this.find.findUnusedFields(combined);
+            // Make up a new function which always uses the timestamp fields
             assert joinFunction.parameters.length == 3;
             DBSPParameter left = joinFunction.parameters[1];
             DBSPParameter right = joinFunction.parameters[2];
+            DBSPTupleExpression tuple = joinFunction.body.to(DBSPTupleExpression.class);
+            assert tuple.fields != null;
+            DBSPExpression[] extra = new DBSPExpression[tuple.size() + 2];
+            System.arraycopy(tuple.fields, 0, extra, 0, tuple.size());
+            extra[tuple.size()] = left.asVariable().deref().field(join.leftTimestampIndex);
+            extra[tuple.size() + 1] = right.asVariable().deref().field(join.rightTimestampIndex);
+            DBSPClosureExpression fakeFunction = new DBSPTupleExpression(extra).closure(joinFunction.parameters);
+            this.find.findUnusedFields(fakeFunction);
             RewriteFields rw = this.find.getFieldRewriter(1);
             FieldUseMap leftRemap = rw.getUseMap(left);
             FieldUseMap rightRemap = rw.getUseMap(right);
             if (leftRemap.hasUnusedFields(1) || rightRemap.hasUnusedFields(1)) {
-                OutputPort leftMap = getProjection(join.getRelNode(), leftRemap, join.left());
-                OutputPort rightMap = getProjection(join.getRelNode(), rightRemap, join.right());
                 // Parameter 0 does not emit fields in the body of the function, leave it unchanged
                 rw.parameterFullyUsed(joinFunction.parameters[0]);
+                OutputPort leftMap = getProjection(join.getRelNode(), leftRemap, join.left());
+                OutputPort rightMap = getProjection(join.getRelNode(), rightRemap, join.right());
                 DBSPClosureExpression newJoinFunction = rw.rewriteClosure(joinFunction);
+                int leftTimestampIndex = leftRemap.deref().getNewIndex(join.leftTimestampIndex);
+                int rightTimestampIndex = rightRemap.deref().getNewIndex(join.rightTimestampIndex);
                 DBSPSimpleOperator replacement =
-                        join.withFunctionAndInputs(newJoinFunction, leftMap, rightMap);
+                        new DBSPAsofJoinOperator(join.getRelNode(), join.getOutputZSetType(),
+                                newJoinFunction, leftTimestampIndex, rightTimestampIndex,
+                                join.comparator, join.isMultiset, join.isLeft, leftMap, rightMap);
                 this.map(join, replacement);
                 done = true;
             }
@@ -145,7 +143,6 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         if (!done)
             super.postorder(join);
     }
-     */
 
     @Override
     public void postorder(DBSPJoinIndexOperator join) {

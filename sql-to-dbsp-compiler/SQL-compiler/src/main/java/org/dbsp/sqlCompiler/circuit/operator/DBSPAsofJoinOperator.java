@@ -11,6 +11,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Utilities;
 
@@ -61,6 +63,10 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
         // if the join is left join, the argument is always nullable, even if the input is not.
         DBSPType[] argumentTypes = function.getType().to(DBSPTypeFunction.class).parameterTypes;
         assert argumentTypes.length == 3;
+        assert leftTimestampIndex >= 0 &&
+                leftTimestampIndex <= argumentTypes[1].to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class).size();
+        assert rightTimestampIndex >= 0 &&
+                rightTimestampIndex <= argumentTypes[2].to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class).size();
     }
 
     @Override

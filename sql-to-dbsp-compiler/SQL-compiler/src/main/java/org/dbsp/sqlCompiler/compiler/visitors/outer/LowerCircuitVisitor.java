@@ -46,7 +46,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -385,6 +385,11 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPAsofJoinOperator join) {
+        // Convert AsofJoinOperator to ConcreteAsofJoinOperator
+        // The new operator has two MapIndex operators in front of its
+        // inputs, producing DBSPCustomOrdExpressions.
+        // Internally the new operator also has a function which converts
+        // back to normal types.
         CalciteRelNode node = join.getRelNode();
         DBSPTypeTuple leftElementType = join.getLeftInputValueType()
                 .to(DBSPTypeTuple.class);
@@ -399,7 +404,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPComparatorExpression leftComparator =
                 new DBSPNoComparatorExpression(node, leftElementType)
                         .field(join.leftTimestampIndex, true);
-        DBSPTypeComparator leftComparatorType = leftComparator.getComparatorType();
+        DBSPComparatorType leftComparatorType = leftComparator.getComparatorType();
         DBSPExpression wrapper = new DBSPCustomOrdExpression(node, tuple, leftComparator);
         DBSPClosureExpression toLeftKey =
                 new DBSPRawTupleExpression(DBSPTupleExpression.flatten(l.field(0).deref()), wrapper)

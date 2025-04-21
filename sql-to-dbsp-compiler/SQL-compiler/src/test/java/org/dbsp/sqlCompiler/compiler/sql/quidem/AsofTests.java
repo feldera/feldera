@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -204,6 +205,9 @@ public class AsofTests extends StreamingTestBase {
                     T LEFT ASOF JOIN S
                     MATCH_CONDITION ( T.x >= S.x )
                     ON T.y = S.y;""");
+        Assert.assertTrue(ccs.compiler.hasWarnings());
+        Assert.assertEquals("Unused column",
+                ccs.compiler.messages.getMessage(0).errorType);
     }
 
     // This test should eventually be deleted once ASOF join supports more variants.
