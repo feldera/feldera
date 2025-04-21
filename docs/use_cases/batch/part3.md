@@ -1,6 +1,6 @@
 # Part 3. Working with Historical and Real Time Data
 
-![Architecture Diagram showing Historical and Live Data Ingestion](./main-arch.png)
+![Architecture Diagram showing Historical and Live Data Ingestion](./part3-arch.png)
 
 When a Feldera pipeline starts running, it often needs to ingest historical data
 accumulated in the source database over an extended period (months or years)
@@ -119,7 +119,7 @@ connectors (see: [Input Connector Orchestration](https://docs.feldera.com/connec
 
 ### Start Reading Kafka Messages from a Specific Point
 
-![Architecture Diagram showing Kafka Messages Ingestion from a Specific Point](./part3-arch.png)
+![Architecture Diagram showing Kafka Messages Ingestion from a Specific Point](./part3-kafka-offset.png)
 
 The Kafka input connector can be configured to start reading messages from a specific offset in the Kafka topic.
 To this end, the user specifies the **start_from** property with a list of topics,
