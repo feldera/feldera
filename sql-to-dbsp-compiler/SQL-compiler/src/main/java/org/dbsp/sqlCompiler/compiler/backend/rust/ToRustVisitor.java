@@ -142,7 +142,7 @@ public class ToRustVisitor extends CircuitVisitor {
      *     let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
      *         let mut catalog = Catalog::new();
      *         let (input, handle0) = circuit.add_input_zset::<TestStruct, i32>();
-     *         catalog.register_input_zset_persistent(hash, input, handles.0, input0_metadata);
+     *         catalog.register_input_zset(hash, input, handles.0, input0_metadata);
      *         catalog.register_output_zset_persistent(hash, input, output0_metadata);
      *         Ok(catalog)
      *     }).unwrap();
@@ -522,11 +522,11 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(";")
                     .newline();
         }
+        this.computeHash(operator);
         if (!this.useHandles) {
-            this.computeHash(operator);
             this.generateStructHelpers(operator.originalRowType, operator.metadata);
             String registerFunction = operator.metadata.materialized ?
-                    "register_materialized_input_zset_persistent" : "register_input_zset_persistent";
+                    "register_materialized_input_zset" : "register_input_zset";
             this.builder.append("catalog.")
                     .append(registerFunction)
                     .append("::<_, ");
@@ -535,7 +535,7 @@ public class ToRustVisitor extends CircuitVisitor {
             j = this.stripConnectors(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
             operator.originalRowType.accept(this.innerVisitor);
-            this.builder.append(">(hash, ")
+            this.builder.append(">(")
                     .append(operator.getNodeName(this.preferHash))
                     .append(".clone(), ")
                     .append(this.handleName(operator))
@@ -544,6 +544,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(");")
                     .newline();
         }
+        this.tagStream(operator);
         return VisitDecision.STOP;
     }
 
@@ -612,8 +613,8 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(";")
                     .newline();
         }
+        this.computeHash(operator);
         if (!this.useHandles) {
-            this.computeHash(operator);
             this.generateStructHelpers(type, operator.metadata);
             this.generateStructHelpers(keyStructType, operator.metadata);
             this.generateStructHelpers(upsertStruct, operator.metadata);
@@ -623,7 +624,7 @@ public class ToRustVisitor extends CircuitVisitor {
             j = this.stripConnectors(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
             String registerFunction = operator.metadata.materialized ?
-                    "register_materialized_input_map_persistent" : "register_input_map_persistent";
+                    "register_materialized_input_map" : "register_input_map";
             this.builder.append("catalog.")
                     .append(registerFunction)
                     .append("::<");
@@ -638,7 +639,7 @@ public class ToRustVisitor extends CircuitVisitor {
             upsertStruct.toTupleDeep().accept(this.innerVisitor);
             this.builder.append(", ");
             upsertStruct.accept(this.innerVisitor);
-            this.builder.append(", _, _>(hash, ")
+            this.builder.append(", _, _>(")
                     .append(operator.getNodeName(this.preferHash))
                     .append(".clone(), ")
                     .append(this.handleName(operator))
@@ -651,6 +652,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(");")
                     .newline();
         }
+        this.tagStream(operator);
         return VisitDecision.STOP;
     }
 

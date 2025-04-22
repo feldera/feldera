@@ -289,7 +289,7 @@
           "final": 2
         },
         "positions": [],
-        "persistent_id": "f760e73e7ed394ea9ce4a311c3b97958ab15a13bb2f360a259e45f6984ff7ac5"
+        "persistent_id": "1e2457b8fe4b330049c5987e07bca2651eff848afac67f6f115c21ab079c7b3f"
       },
       "s4": {
         "operation": "flat_map_index",
@@ -308,7 +308,7 @@
           {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50},
           {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
         ],
-        "persistent_id": "c1c5233542d6daeb994aa33dcf954af8a5df15c2e5879b4d9e52a64c557fa144"
+        "persistent_id": "e792295a71de546b843e15787e0f6ffa8c368c20ee4cc6a090e14822c5fa642b"
       },
       "s5": {
         "operation": "flat_map_index",
@@ -330,7 +330,7 @@
           {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
-        "persistent_id": "83809e87c5f3080f95a60dccd59210486fabab0d0cff6f6212bd628a8281bda4"
+        "persistent_id": "1763ad26d5bfc9ec3fcb9e6441bfcaa8abeaa719e0e84864d5a0139a9905df5d"
       },
       "s6": {
         "operation": "delta0",
@@ -369,7 +369,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":15,"start_column":9,"end_line_number":15,"end_column":18}
         ],
-        "persistent_id": "87e06cf7a2cafb547f1832b80cda3a373d93a74ba60797ea2ef78d4d1cd24b68"
+        "persistent_id": "101eaea4beb94e1643bb0442df1c72cf5418ac33dfa65d055f6a86a28fc652ed"
       },
       "s9": {
         "operation": "sum",
@@ -381,7 +381,7 @@
           "final": 8
         },
         "positions": [],
-        "persistent_id": "662552a13949639939a6cb7b9a34e1b99a5e106f65544446cd3bda636f517f27"
+        "persistent_id": "852714b86adb94788b54ff1ff19142fc974a771ab4e103006b9332c78d8f987f"
       }
     }, "s10": {
       "operation": "inspect",
@@ -392,7 +392,7 @@
         "final": 8
       },
       "positions": [],
-      "persistent_id": "79e9e16c49264531840e6128f9bb18cb9633098f56199c923c7083a93508fe57"
+      "persistent_id": "52cfeb75247c4ca459ccb2e1e33496ec57d9854b0a45e45f5462877a12477080"
     }, "s11": {
       "operation": "inspect",
       "inputs": [
