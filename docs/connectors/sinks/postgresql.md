@@ -247,7 +247,7 @@ SELECT count(*) FROM all_types_example;
 (1 row)
 ```
 
-### Outputing multi-dimentional arrays
+### Outputing multi-dimensional arrays
 
 When working with multi-dementional arrays, like `BYTEA ARRAY`, PostgreSQL
 expects the sub arrays to be of the same length. If not, the following error is
@@ -258,6 +258,6 @@ Multidimensional arrays must have sub-arrays with matching dimensions.
 ```
 
 :::danger
-If the sub-arrays are not of the same dimention, the transaction will fail and
+If the sub-arrays are not of the same dimension, the transaction will fail and
 the data will be lost.
 :::
