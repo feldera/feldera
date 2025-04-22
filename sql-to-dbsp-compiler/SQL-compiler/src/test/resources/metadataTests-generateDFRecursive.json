@@ -289,7 +289,7 @@
           "final": 2
         },
         "positions": [],
-        "persistent_id": "78c73d7673ad511b1472b1f145df83c836ab6f3963b7d61f873d8217e0374610"
+        "persistent_id": "f760e73e7ed394ea9ce4a311c3b97958ab15a13bb2f360a259e45f6984ff7ac5"
       },
       "s4": {
         "operation": "flat_map_index",
@@ -308,7 +308,7 @@
           {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50},
           {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
         ],
-        "persistent_id": "a05d1bb2948240003bb8d8bc03c31fa7427e559b587c47d9633d3f65016b56a2"
+        "persistent_id": "c1c5233542d6daeb994aa33dcf954af8a5df15c2e5879b4d9e52a64c557fa144"
       },
       "s5": {
         "operation": "flat_map_index",
@@ -330,7 +330,7 @@
           {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
-        "persistent_id": "cf57508bf361b88abcf8f94f2f9f7f3439fe69d013abb32d8a778508059d5937"
+        "persistent_id": "83809e87c5f3080f95a60dccd59210486fabab0d0cff6f6212bd628a8281bda4"
       },
       "s6": {
         "operation": "delta0",
@@ -369,7 +369,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":15,"start_column":9,"end_line_number":15,"end_column":18}
         ],
-        "persistent_id": "ee036b6dcd0e5861401629b33db28974f61cebef835167fa623b7423912c5e18"
+        "persistent_id": "87e06cf7a2cafb547f1832b80cda3a373d93a74ba60797ea2ef78d4d1cd24b68"
       },
       "s9": {
         "operation": "sum",
@@ -381,7 +381,7 @@
           "final": 8
         },
         "positions": [],
-        "persistent_id": "5f95174f92c888c6d419209df06d0a3a787a9b4b46475bec95f68bd0e69dec4d"
+        "persistent_id": "662552a13949639939a6cb7b9a34e1b99a5e106f65544446cd3bda636f517f27"
       }
     }, "s10": {
       "operation": "inspect",
@@ -392,7 +392,7 @@
         "final": 8
       },
       "positions": [],
-      "persistent_id": "6f527753e537a606f7cfedd98c33037c3a3d14b8574c5dfffa21329863925147"
+      "persistent_id": "79e9e16c49264531840e6128f9bb18cb9633098f56199c923c7083a93508fe57"
     }, "s11": {
       "operation": "inspect",
       "inputs": [
@@ -402,7 +402,7 @@
         "final": 0
       },
       "positions": [],
-      "persistent_id": "6f993c13fc9c17553263ce8f613ccd7335ef057c1d05214ea4fdc4f6a1218793"
+      "persistent_id": "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9"
     }
   },
   "sources": "DECLARE RECURSIVE view fibonacci(n INT, value INT);\ncreate table input (x int);\n\ncreate view fibonacci AS\n(\n    -- Base case: first two Fibonacci numbers\n    select 0 as n, 0 as value\n    union all\n    select 1 as n, 1 as value\n)\nunion all\n(\n    -- Compute F(n)=F(n-1)+F(n-2)\n    select\n        prev.n + 1 as n,\n        (prev.value + curr.value) as value\n    from fibonacci as curr\n    join fibonacci as prev\n    on prev.n = curr.n - 1\n    where curr.n < 10 and prev.n < 10\n);\n"

@@ -123,7 +123,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         builder.append(typeName);
         builder.append("[");
         for (var field: fields) {
-            builder.append(field.getSanitizedName())
+            builder.append(field.getName())
                     .append(":")
                     .append(field.getType())
                     .append(",");
