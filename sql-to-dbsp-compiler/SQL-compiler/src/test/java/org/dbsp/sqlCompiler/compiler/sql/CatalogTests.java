@@ -7,14 +7,20 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Test;
+
+import java.util.List;
 
 /** Tests that emit Rust code using the catalog. */
 public class CatalogTests extends BaseSQLTests {
@@ -25,6 +31,27 @@ public class CatalogTests extends BaseSQLTests {
         result.ioOptions.emitHandles = false;
         result.languageOptions.unrestrictedIOTypes = false;
         return result;
+    }
+
+    @Test
+    public void issue3902() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(row_row ROW(v1 ROW(v11 VARCHAR NULL), v2 ROW(v21 VARCHAR NULL)));
+                CREATE MATERIALIZED VIEW v AS SELECT *  FROM tbl;""");
+        InnerVisitor checkStruct = new InnerVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPTypeStruct type) {
+                if (type.fields.size() == 2) {
+                    // Before the bug was fixes the two fields had the same type
+                    List<ProgramIdentifier> names = Linq.list(type.getFieldNames());
+                    assert names.size() == 2;
+                    DBSPType f0 = type.getFieldType(names.get(0));
+                    DBSPType f1 = type.getFieldType(names.get(1));
+                    Assert.assertFalse(f0.sameType(f1));
+                }
+            }
+        };
+        ccs.visit(checkStruct.getCircuitVisitor(false));
     }
 
     @Test
