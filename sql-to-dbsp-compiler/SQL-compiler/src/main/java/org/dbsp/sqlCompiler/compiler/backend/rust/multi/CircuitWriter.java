@@ -77,7 +77,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                 .append("(cconf: CircuitConfig) -> Result<(DBSPHandle, Catalog), Error> {")
                 .increase()
                 .newline()
-                .append("let (circuit, streams) = Runtime::init_circuit(cconf, |circuit| {")
+                .append("let (circuit, streams) = dbsp_adapters::server::init_circuit(cconf, Box::new(|circuit| {")
                 .increase();
         this.builder().append("let mut catalog = Catalog::new();").newline();
 
@@ -93,7 +93,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
         this.builder().append("Ok(catalog)");
         this.builder().newline()
                 .decrease()
-                .append("})?;")
+                .append("}))?;")
                 .newline();
         this.builder()
                 .append("Ok((circuit, streams))")

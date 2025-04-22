@@ -121,6 +121,7 @@ bytemuck = { workspace = true }
 num-derive = { workspace = true }
 num-traits = { workspace = true } # Used by num-derive derive macro, which cargo-machete can't see
 postgres = { workspace = true }
+dyn-clone = { workspace = true }
 cpu-time = "1.0.0"
 memory-stats = "1.2.0"
 
