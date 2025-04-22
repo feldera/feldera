@@ -8,14 +8,14 @@ destinations.
 Common use cases include:
 
 - Writing **aggregated and enriched data to PostgreSQL**
-- Publishing **real-time changes to a Kafka**
+- Publishing **real-time changes to a Kafka topic**
 - Sending updates to **web applications via HTTP**
 
 ![Architecture Diagram with output to PostgreSQL, Kafka and Web Apps](./part4-arch.jpg)
 
 ## PostgreSQL: Real-Time Materialized Views
 
-Feldera can be used to maintain automatically updating materialized views in
+Feldera can be used to incrementally maintain materialized views in
 PostgreSQL. Unlike traditional materialized views, which must be manually
 refreshed, these views stay in sync with Feldera as changes happen.
 
@@ -50,7 +50,10 @@ CREATE TABLE q1 (
 
 ### Step 2: Configure Output Connector in Feldera
 
-Next, we define the output connector for the view to send updates to PostgreSQL:
+Next, we define the output connector for the view to send updates to PostgreSQL.
+Note the `index` attribute that links this PostreSQL connector to the `q1_idx` index
+declared above. This enables the connector to group changes to the same unique key
+in the output stream as described [here](/connectors/unique_keys#views-with-unique-keys).
 
 ```sql
 -- Feldera SQL
@@ -94,7 +97,7 @@ In the next step, we define this `index`.
 ### Step 3: Define an Index for Output View
 
 Create an [index](/connectors/unique_keys#views-with-unique-keys) on the
-grouping columns so that updates and deletions in PostgreSQL can be tracked
+unique key columns so that updates and deletions in PostgreSQL can be tracked
 correctly:
 
 ```sql
@@ -122,7 +125,9 @@ SELECT * FROM Q1;
 
 ## Kafka
 
-Feldera can also publish the output of the views to a Kafka topic.
+A pipeline can have multiple output connectors sending data to a variety of destinations.
+These connectors can be attached to the same or different SQL views.
+For example, we can publish the output of `q2` to a Kafka topic:
 
 ```sql
 -- Feldera SQL
@@ -163,9 +168,9 @@ command:
 curl -i -X 'POST' http://127.0.0.1:8080/v0/pipelines/batch/egress/q2?format=json
 ```
 
-### Streaming in python
+### Streaming in Python
 
-Feldera's [Python SDK](https://docs.feldera.com/python) provides a high-level API subscribing to view
+Feldera's [Python SDK](https://docs.feldera.com/python) provides a high-level API to subscribe to view
 updates in Python applications.
 
 The following snippet demonstrates how to register a callback that runs for
@@ -199,4 +204,4 @@ This is useful for:
 
 - Feldera allows streaming data directly to popular data sinks like
   **PostgreSQL**, **Kafka**, **Delta Lake** and **Redis**.
-- The same view can be streamed to multiple destinations.
+- By connecting Feldera's incremental SQL engine to different sources and destinations, you can query data from multiple independent sources and materialize the results in multiple independent destinations in real-time.
