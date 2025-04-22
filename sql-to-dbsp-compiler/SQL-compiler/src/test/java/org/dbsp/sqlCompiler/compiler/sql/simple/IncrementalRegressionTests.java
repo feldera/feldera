@@ -690,10 +690,16 @@ public class IncrementalRegressionTests extends SqlIoTest {
         Assert.assertEquals(2, calls[0]);
     }
 
+    @Test
+    public void illegalDecimalTest() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(c DECIMAL(38, 18));""",
+                "Maximum precision supported for DECIMAL");
+    }
+
     // Tests that are not in the repository
     @Test @Ignore
     public void extraTests() throws IOException {
-        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         String dir = "../extra";
         File file = new File(dir);
         if (file.exists()) {
