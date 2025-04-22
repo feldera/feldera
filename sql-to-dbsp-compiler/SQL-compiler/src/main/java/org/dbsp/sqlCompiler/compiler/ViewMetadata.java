@@ -48,8 +48,7 @@ public class ViewMetadata implements IJson {
         return Linq.any(this.columns, m -> m.lateness != null);
     }
 
-    @Override
-    public void asJson(ToJsonInnerVisitor visitor) {
+    public void asJson(ToJsonInnerVisitor visitor, boolean ignoreProperties) {
         JsonStream stream = visitor.stream;
         stream.beginObject();
         stream.label("viewName");
@@ -63,11 +62,18 @@ public class ViewMetadata implements IJson {
         stream.endArray();
         stream.label("recursive").append(this.recursive);
         stream.label("system").append(this.system);
-        if (this.properties != null) {
-            stream.label("properties");
-            this.properties.asJson(visitor);
+        if (!ignoreProperties) {
+            if (this.properties != null) {
+                stream.label("properties");
+                this.properties.asJson(visitor);
+            }
         }
         stream.endObject();
+    }
+
+    @Override
+    public void asJson(ToJsonInnerVisitor visitor) {
+        this.asJson(visitor, false);
     }
 
     public static ViewMetadata fromJson(JsonNode node, JsonDecoder decoder) {

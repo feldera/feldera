@@ -4,7 +4,8 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -113,6 +114,17 @@ public class MerkleOuter extends CircuitVisitor {
         }
 
         @Override
+        public VisitDecision preorder(DBSPViewBaseOperator operator) {
+            if (this.preorder(operator.to(DBSPUnaryOperator.class)).stop())
+                return VisitDecision.STOP;
+            this.property("viewName");
+            this.asJsonInner(operator.viewName);
+            this.property("metadata");
+            operator.metadata.asJson(this.innerVisitor, true);
+            return VisitDecision.CONTINUE;
+        }
+
+        @Override
         public VisitDecision preorder(DBSPOperator operator) {
             this.stream.beginObject();
             if (MerkleOuter.this.operatorHash.containsKey(operator.getId())) {
@@ -126,10 +138,6 @@ public class MerkleOuter extends CircuitVisitor {
 
             operator.accept(this.innerVisitor);
             this.stream.appendClass(operator);
-            if (operator.is(DBSPSourceTableOperator.class)) {
-                this.label("metadata");
-                operator.to(DBSPSourceTableOperator.class).metadata.asJson(this.innerVisitor);
-            }
             // Identical operators at different depths are NOT equivalent
             this.label("depth");
             this.stream.append(this.context.size());
