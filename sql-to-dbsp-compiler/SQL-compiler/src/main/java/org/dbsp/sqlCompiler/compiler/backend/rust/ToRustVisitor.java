@@ -142,8 +142,8 @@ public class ToRustVisitor extends CircuitVisitor {
      *     let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
      *         let mut catalog = Catalog::new();
      *         let (input, handle0) = circuit.add_input_zset::<TestStruct, i32>();
-     *         catalog.register_input_zset(input, handles.0, input0_metadata);
-     *         catalog.register_output_zset(input, output0_metadata);
+     *         catalog.register_input_zset_persistent(hash, input, handles.0, input0_metadata);
+     *         catalog.register_output_zset_persistent(hash, input, output0_metadata);
      *         Ok(catalog)
      *     }).unwrap();
      *     (circuit, catalog)
@@ -523,9 +523,10 @@ public class ToRustVisitor extends CircuitVisitor {
                     .newline();
         }
         if (!this.useHandles) {
+            this.computeHash(operator);
             this.generateStructHelpers(operator.originalRowType, operator.metadata);
             String registerFunction = operator.metadata.materialized ?
-                    "register_materialized_input_zset" : "register_input_zset";
+                    "register_materialized_input_zset_persistent" : "register_input_zset_persistent";
             this.builder.append("catalog.")
                     .append(registerFunction)
                     .append("::<_, ");
@@ -534,7 +535,7 @@ public class ToRustVisitor extends CircuitVisitor {
             j = this.stripConnectors(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
             operator.originalRowType.accept(this.innerVisitor);
-            this.builder.append(">(")
+            this.builder.append(">(hash, ")
                     .append(operator.getNodeName(this.preferHash))
                     .append(".clone(), ")
                     .append(this.handleName(operator))
@@ -612,6 +613,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .newline();
         }
         if (!this.useHandles) {
+            this.computeHash(operator);
             this.generateStructHelpers(type, operator.metadata);
             this.generateStructHelpers(keyStructType, operator.metadata);
             this.generateStructHelpers(upsertStruct, operator.metadata);
@@ -621,7 +623,7 @@ public class ToRustVisitor extends CircuitVisitor {
             j = this.stripConnectors(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
             String registerFunction = operator.metadata.materialized ?
-                    "register_materialized_input_map" : "register_input_map";
+                    "register_materialized_input_map_persistent" : "register_input_map_persistent";
             this.builder.append("catalog.")
                     .append(registerFunction)
                     .append("::<");
@@ -636,7 +638,7 @@ public class ToRustVisitor extends CircuitVisitor {
             upsertStruct.toTupleDeep().accept(this.innerVisitor);
             this.builder.append(", ");
             upsertStruct.accept(this.innerVisitor);
-            this.builder.append(", _, _>(")
+            this.builder.append(", _, _>(hash, ")
                     .append(operator.getNodeName(this.preferHash))
                     .append(".clone(), ")
                     .append(this.handleName(operator))
@@ -824,20 +826,21 @@ public class ToRustVisitor extends CircuitVisitor {
                 this.builder.append("));")
                         .newline();
             } else {
+                this.computeHash(operator);
                 IHasSchema description = this.metadata.getViewDescription(operator.viewName);
                 JsonNode j = description.asJson();
                 j = this.stripConnectors(j);
                 DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
                 String registerFunction = switch (operator.metadata.viewKind) {
-                    case MATERIALIZED -> "register_materialized_output_zset";
+                    case MATERIALIZED -> "register_materialized_output_zset_persistent";
                     case LOCAL -> throw new InternalCompilerError("Sink operator for local view " + operator);
-                    case STANDARD -> "register_output_zset";
+                    case STANDARD -> "register_output_zset_persistent";
                 };
                 this.builder.append("catalog.")
                         .append(registerFunction)
                         .append("::<_, ");
                 operator.originalRowType.accept(this.innerVisitor);
-                this.builder.append(">(")
+                this.builder.append(">(hash, ")
                         .append(this.getInputName(operator, 0))
                         .append(".clone()")
                         .append(", ");
