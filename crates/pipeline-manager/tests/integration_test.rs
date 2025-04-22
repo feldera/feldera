@@ -9,7 +9,7 @@
 //! the following command line:
 //!
 //! ```text
-//! cargo run --bin=pipeline-manager --features pg-embed
+//! cargo run --bin=pipeline-manager
 //! ```
 //!
 //! or as a container

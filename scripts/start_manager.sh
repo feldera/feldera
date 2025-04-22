@@ -25,7 +25,6 @@ set -ex
 # If $WITH_POSTGRES is defined, manager should use a real Postgres server
 # instead of pg-embed.
 if [ -z "$WITH_POSTGRES" ]; then
-    PG_EMBED="--features pg-embed"
     DB_CONNECTION_STRING="--db-connection-string=postgres-embed"
 else
     DB_CONNECTION_STRING="--db-connection-string=postgresql://${PGUSER}@localhost"
@@ -38,7 +37,7 @@ if [ -n "$manager_pid" ]; then
     exit 1
 fi
 
-cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build $RUST_BUILD_PROFILE $PG_EMBED
+cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build $RUST_BUILD_PROFILE
 cd "${ROOT_DIR}" && ~/.cargo/bin/cargo run --bin pipeline-manager $RUST_BUILD_PROFILE $PG_EMBED -- \
     --bind-address="${BIND_ADDRESS}" \
     ${DB_CONNECTION_STRING}

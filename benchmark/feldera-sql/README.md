@@ -10,7 +10,7 @@ To run the SQL version of the benchmark, first bring up a Feldera
 instance, e.g. by running (in a separate terminal):
 
 ```
-cargo run -p pipeline-manager --features pg-embed
+cargo run -p pipeline-manager
 ```
 
 Once you've done that, you can run the benchmark itself with a command
