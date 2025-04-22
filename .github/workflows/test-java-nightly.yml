@@ -1,11 +1,12 @@
-name: Test Java Sources
+name: Java SLT Nightly
 
 on:
-  workflow_call:
+  schedule:
+    - cron: "30 11 * * *" # 11:30 AM UTC daily
 
 jobs:
   java-tests:
-    name: Execute Java Tests
+    name: Execute Java SLT
     runs-on: [self-hosted, skylake40]
     container:
       image: ghcr.io/feldera/feldera-dev:f4797ad926773a38483275405728a9eb3b9005b5
@@ -36,6 +37,6 @@ jobs:
         run: ./build.sh
         working-directory: ./sql-to-dbsp-compiler
 
-      - name: Run mvn test
-        run: mvn test --no-transfer-progress -q -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false -Dtest=!OtherTests.rustFmt
+      - name: Run SLT tests
+        run: mvn test --no-transfer-progress -q -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RotateTests
         working-directory: ./sql-to-dbsp-compiler
