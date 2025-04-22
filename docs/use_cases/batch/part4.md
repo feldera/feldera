@@ -2,7 +2,7 @@
 
 Once data has been processed, the next step is to deliver it to downstream
 systems. Feldera supports this through [output connectors](/connectors/sinks),
-which can continuously push the output of the views to a variety of
+which can continuously push the contents of the views to a variety of
 destinations.
 
 Common use cases include:
@@ -17,7 +17,8 @@ Common use cases include:
 
 Feldera can be used to incrementally maintain materialized views in
 PostgreSQL. Unlike traditional materialized views, which must be manually
-refreshed, these views stay in sync with Feldera as changes happen.
+refreshed (by running the query `REFRESH MATERIALIZED VIEW q1`), these views
+stay in sync with Feldera as changes happen.
 
 ### Step 1: Create the Target Table in PostgreSQL
 
@@ -48,12 +49,24 @@ CREATE TABLE q1 (
 );
 ```
 
-### Step 2: Configure Output Connector in Feldera
+### Step 2: Define an Index for Output View
+
+Create an [index](/connectors/unique_keys#views-with-unique-keys) on the
+unique key columns so that updates and deletions in PostgreSQL can be tracked
+correctly:
+
+```sql
+create index q1_idx on q1(l_returnflag, l_linestatus);
+```
+
+:::important
+This index needs to be defined after the view definition.
+:::
+
+### Step 3: Configure Output Connector in Feldera
 
 Next, we define the output connector for the view to send updates to PostgreSQL.
-Note the `index` attribute that links this PostreSQL connector to the `q1_idx` index
-declared above. This enables the connector to group changes to the same unique key
-in the output stream as described [here](/connectors/unique_keys#views-with-unique-keys).
+See docs: [PostgreSQL output connector](/connectors/sinks/postgresql).
 
 ```sql
 -- Feldera SQL
@@ -91,18 +104,10 @@ order by
 	l_linestatus;
 ```
 
-Here, in the connector configuration, we set the `index` to be `q1_idx`.
-In the next step, we define this `index`.
-
-### Step 3: Define an Index for Output View
-
-Create an [index](/connectors/unique_keys#views-with-unique-keys) on the
-unique key columns so that updates and deletions in PostgreSQL can be tracked
-correctly:
-
-```sql
-create index q1_idx on q1(l_returnflag, l_linestatus);
-```
+Note the `index` attribute that links this PostreSQL connector to the `q1_idx`
+index declared above. This enables the connector to group changes to the same
+unique key in the output stream as described
+[here](/connectors/unique_keys#views-with-unique-keys).
 
 ### Step 4: Verifying the Output in PostgreSQL
 
@@ -167,6 +172,9 @@ command:
 ```sh
 curl -i -X 'POST' http://127.0.0.1:8080/v0/pipelines/batch/egress/q2?format=json
 ```
+
+As the contents of the view change, the changes will be
+**streamed continuously**.
 
 ### Streaming in Python
 
