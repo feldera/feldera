@@ -20,7 +20,7 @@ cd ./sql-to-dbsp-compiler && ./build.sh && cd ..
 Build and start the Pipeline Manager (that also serves the Feldera Web Console):
 
 ```bash
-RUST_LOG=info RUST_BACKTRACE=1 cargo run --bin pipeline-manager --features pg-embed -- --pg-embed-working-directory ~/.feldera/data --db-connection-string postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.feldera --runner-working-directory ~/.feldera
+RUST_LOG=info RUST_BACKTRACE=1 cargo run --bin pipeline-manager -- --pg-embed-working-directory ~/.feldera/data --db-connection-string postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.feldera --runner-working-directory ~/.feldera
 ```
 
 > Here, `~/.feldera` is the directory that will host compilation artifacts of SQL Compiler and other state of the Pipeline Manager and the pipelines. It will be created if it doesn't exist, and you can use a different directory.
@@ -45,7 +45,7 @@ In Authenticated mode, you need to login via the Web Console using one of the su
 Start the Pipeline Manager in authenticated mode, substituting values from your environment:
 ```bash
 AUTH_CLIENT_ID=<client-id> AUTH_ISSUER=<issuer> <see below for additional environment variables> \
- cargo run --bin pipeline-manager --features pg-embed -- --auth-provider=aws-cognito
+ cargo run --bin pipeline-manager -- --auth-provider=aws-cognito
 ```
 
 ##### AWS Cognito
@@ -69,7 +69,7 @@ Additional variables for AWS Cognito:
 
 Example:
 ```bash
-AUTH_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx AUTH_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_xxxxxxxxx AWS_COGNITO_LOGIN_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/login\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" AWS_COGNITO_LOGOUT_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/logout\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --dev-mode --auth-provider aws-cognito
+AUTH_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx AUTH_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_xxxxxxxxx AWS_COGNITO_LOGIN_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/login\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" AWS_COGNITO_LOGOUT_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/logout\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager -- --dev-mode --auth-provider aws-cognito
 ```
 
 ##### Google Identity Platform
@@ -77,7 +77,7 @@ Additional variables for Google Identity Platform: none
 
 Example:
 ```bash
-AUTH_CLIENT_ID=xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com AUTH_ISSUER="https://accounts.google.com" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --dev-mode --auth-provider google-identity
+AUTH_CLIENT_ID=xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com AUTH_ISSUER="https://accounts.google.com" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager -- --dev-mode --auth-provider google-identity
 ```
 
 ## Run benchmarks

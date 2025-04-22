@@ -127,7 +127,7 @@ cd sql-to-dbsp-compiler
 Next, from the repository root, run the pipeline-manager:
 
 ```
-cargo run --bin=pipeline-manager --features pg-embed
+cargo run --bin=pipeline-manager
 ```
 
 As with the Docker instructions above, you can now visit

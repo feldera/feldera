@@ -11,7 +11,7 @@ pip install feldera/ # from the base directory of this repo
 1. Run feldera with redpanda
 
 ```sh
-cargo run --bin=pipeline-manager --features pg-embed
+cargo run --bin=pipeline-manager
 docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v24.2.4 redpanda start --smp 2
 export KAFKA_SERVER=localhost:9092
 export KAFKA_SERVER_FROM_PIPELINE=$KAFKA_SERVER
@@ -55,4 +55,3 @@ This demo has two generators:
 1. The python version that is the original generator.
 2. The rust version (`tiktok-gen`) that is much faster but the distribution of
    the data generated may be different.
-

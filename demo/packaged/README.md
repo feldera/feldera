@@ -13,7 +13,7 @@ All the SQL files in `sql/` are packaged demos with every Feldera release.
 
 - **Cargo run with demos:**
   ```bash
-  cargo run --features pg-embed --bin pipeline-manager \
+  cargo run --bin pipeline-manager \
             -- --demos-dir demo/packaged/sql
   ```
 

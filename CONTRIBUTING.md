@@ -248,7 +248,7 @@ For example, the following would be the same as the default with additionally
 backtrace enabled:
 
 ```bash
-RUST_BACKTRACE=1 RUST_LOG=warn,pipeline_manager=info,feldera_types=info,project=info,dbsp=info,dbsp_adapters=info,dbsp_nexmark=info cargo run --package=pipeline-manager --features pg-embed --bin pipeline-manager -- --dev-mode
+RUST_BACKTRACE=1 RUST_LOG=warn,pipeline_manager=info,feldera_types=info,project=info,dbsp=info,dbsp_adapters=info,dbsp_nexmark=info cargo run --package=pipeline-manager --bin pipeline-manager -- --dev-mode
 ```
 
 ## Release process

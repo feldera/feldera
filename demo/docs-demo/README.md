@@ -17,7 +17,7 @@ To use the demo to regenerate the GIFs:
 2. Start the pipeline manager locally, e.g.:
 
    ```
-   cargo run -p pipeline-manager --features pg-embed
+   cargo run -p pipeline-manager
    ```
 
 3. Create a pipeline named `secops` and paste in the secops SQL code
