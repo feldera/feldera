@@ -131,7 +131,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file);
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
-        ObjectNode df = (ObjectNode)parsed.get("dataflow");
+        ObjectNode df = (ObjectNode)parsed.get("mir");
         for (var prop: df.properties()) {
             JsonNode calcite = prop.getValue().get("calcite");
             if (calcite != null)
@@ -1087,8 +1087,8 @@ public class MetadataTests extends BaseSQLTests {
         JsonNode jsonNode = mapper.readTree(json);
         // table t is not used in the calcite plan, so the lineage is an empty "AND" node.
         Assert.assertEquals("source_multiset",
-                jsonNode.get("dataflow").get("s1").get("operation").asText());
-        JsonNode node = jsonNode.get("dataflow").get("s1").get("calcite").get("and");
+                jsonNode.get("mir").get("s1").get("operation").asText());
+        JsonNode node = jsonNode.get("mir").get("s1").get("calcite").get("and");
         Assert.assertTrue(node.isArray());
         Assert.assertTrue(node.isEmpty());
     }
