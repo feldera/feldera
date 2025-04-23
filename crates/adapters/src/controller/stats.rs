@@ -1166,8 +1166,8 @@ impl OutputEndpointStatus {
     /// # Arguments
     ///
     /// * `total_processed_input_records` - the output of the endpoint is now
-    ///    up to speed with the output of the circuit after processing this
-    ///    many records.
+    ///   up to speed with the output of the circuit after processing this
+    ///   many records.
     fn output_buffered_batches(&self, total_processed_input_records: u64) {
         self.metrics.buffered_records.store(0, Ordering::Release);
         self.metrics.buffered_batches.store(0, Ordering::Release);

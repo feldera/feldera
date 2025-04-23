@@ -152,7 +152,7 @@ pub trait Splitter: Send {
     ///
     /// - `None`, if `data` does not necessarily complete a record.
     ///
-    ///- `Some(n)`, if the first `n` bytes of data, plus any data previously
+    /// - `Some(n)`, if the first `n` bytes of data, plus any data previously
     ///   presented for which `None` was returned, form one or more complete
     ///   records. If `n < data.len()`, then the caller should re-present
     ///   `data[n..]` for further splitting.
