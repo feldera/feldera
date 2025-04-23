@@ -41,10 +41,8 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     public final TopKNumbering numbering;
     /** Limit K used by TopK.  Expected to be a constant */
     public final DBSPExpression limit;
-    /** Optional closure which produces the output tuple.  The signature is
-     * (i64, sorted_tuple) -> output_tuple.  i64 is the rank of the current row.
-     * If this closure is missing it is assumed to produce just the sorted_tuple. */
-    @Nullable
+    /** Closure which produces the output tuple.  The signature is
+     * (i64, sorted_tuple) -> output_tuple.  i64 is the rank of the current row. */
     public final DBSPClosureExpression outputProducer;
     /** Only used when numbering != ROW_NUMBER.
      * In general if the function of the operator is a DBSPComparatorExpression x,
@@ -74,7 +72,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     public DBSPIndexedTopKOperator(CalciteRelNode node, TopKNumbering numbering,
                                    DBSPExpression comparator, DBSPExpression limit,
                                    DBSPEqualityComparatorExpression equalityComparator,
-                                   @Nullable DBSPClosureExpression outputProducer, OutputPort source) {
+                                   DBSPClosureExpression outputProducer, OutputPort source) {
         super(node, "topK", comparator,
                 outputType(source.getOutputIndexedZSetType(), outputProducer), source.isMultiset(), source, true);
         assert comparator.is(DBSPComparatorExpression.class) || comparator.is(DBSPPathExpression.class);
@@ -92,10 +90,8 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
         super.accept(visitor);
         visitor.property("limit");
         this.limit.accept(visitor);
-        if (this.outputProducer != null) {
-            visitor.property("outputProducer");
-            this.outputProducer.accept(visitor);
-        }
+        visitor.property("outputProducer");
+        this.outputProducer.accept(visitor);
         visitor.property("equalityComparator");
         this.equalityComparator.accept(visitor);
     }
@@ -142,10 +138,9 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
         CommonInfo info = commonInfoFromJson(node, decoder);
         DBSPExpression limit = fromJsonInner(node, "limit", decoder, DBSPExpression.class);
         TopKNumbering numbering = TopKNumbering.valueOf(Utilities.getStringProperty(node, "numbering"));
-        DBSPClosureExpression outputProducer = null;
-        if (node.has("outputProducer"))
-            outputProducer = fromJsonInner(node, "outputProducer", decoder, DBSPClosureExpression.class);
-        DBSPEqualityComparatorExpression equalityComparator = fromJsonInner(node, "equalityComparator", decoder, DBSPEqualityComparatorExpression.class);
+        DBSPClosureExpression outputProducer = fromJsonInner(node, "outputProducer", decoder, DBSPClosureExpression.class);
+        DBSPEqualityComparatorExpression equalityComparator =
+                fromJsonInner(node, "equalityComparator", decoder, DBSPEqualityComparatorExpression.class);
         return new DBSPIndexedTopKOperator(CalciteEmptyRel.INSTANCE, numbering,
                 info.getFunction(),
                 limit, equalityComparator, outputProducer, info.getInput(0))

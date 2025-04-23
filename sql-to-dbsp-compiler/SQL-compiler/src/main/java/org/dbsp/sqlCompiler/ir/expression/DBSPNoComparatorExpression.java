@@ -31,7 +31,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.util.IIndentStream;
 
 /** A comparator that does not compare any fields. */
@@ -39,7 +39,7 @@ public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     public final DBSPType tupleType;
 
     public DBSPNoComparatorExpression(CalciteObject node, DBSPType tupleType) {
-        super(node, DBSPTypeComparator.generateType(tupleType));
+        super(node, DBSPComparatorType.generateType(tupleType));
         this.tupleType = tupleType;
     }
 
@@ -50,7 +50,10 @@ public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        return other.is(DBSPNoComparatorExpression.class);
+        if (!other.is(DBSPNoComparatorExpression.class))
+            return false;
+        DBSPNoComparatorExpression otherComparator = other.to(DBSPNoComparatorExpression.class);
+        return this.tupleType.sameType(otherComparator.tupleType);
     }
 
     @Override

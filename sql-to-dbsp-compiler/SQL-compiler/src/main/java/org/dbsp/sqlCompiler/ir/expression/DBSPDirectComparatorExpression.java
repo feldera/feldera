@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -20,7 +20,7 @@ public final class DBSPDirectComparatorExpression extends DBSPComparatorExpressi
 
     public DBSPDirectComparatorExpression(
             CalciteObject node, DBSPComparatorExpression source, boolean ascending) {
-        super(node, DBSPTypeComparator.generateType(source.getComparatorType(), ascending));
+        super(node, DBSPComparatorType.generateType(source.getComparatorType(), ascending));
         this.source = source;
         this.ascending = ascending;
     }

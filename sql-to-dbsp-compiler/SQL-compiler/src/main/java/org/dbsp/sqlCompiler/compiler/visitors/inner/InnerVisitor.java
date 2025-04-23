@@ -117,7 +117,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeBTreeMap;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeLazy;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -466,7 +466,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPTypeUser) node);
     }
 
-    public VisitDecision preorder(DBSPTypeComparator node) {
+    public VisitDecision preorder(DBSPComparatorType node) {
         return this.preorder((DBSPTypeUser) node);
     }
 
@@ -1082,7 +1082,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPTypeUser) node);
     }
 
-    public void postorder(DBSPTypeComparator node) {
+    public void postorder(DBSPComparatorType node) {
         this.postorder((DBSPTypeUser) node);
     }
 

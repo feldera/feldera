@@ -31,7 +31,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -41,13 +41,18 @@ import org.dbsp.util.Utilities;
 public final class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
     public final DBSPComparatorExpression source;
     public final boolean ascending;
+    /** This is considered after ascending */
+    public final boolean nullsFirst;
     public final int fieldNo;
 
-    public DBSPFieldComparatorExpression(CalciteObject node, DBSPComparatorExpression source, int fieldNo, boolean ascending) {
-        super(node, DBSPTypeComparator.generateType(source.getComparatorType(), fieldNo, ascending));
+    public DBSPFieldComparatorExpression(
+            CalciteObject node, DBSPComparatorExpression source, int fieldNo,
+            boolean ascending, boolean nullsFirst) {
+        super(node, DBSPComparatorType.generateType(source.getComparatorType(), fieldNo, ascending, nullsFirst));
         this.source = source;
         this.fieldNo = fieldNo;
         this.ascending = ascending;
+        this.nullsFirst = nullsFirst;
     }
 
     @Override
@@ -72,7 +77,8 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
             return false;
         return this.source == o.source &&
                 this.ascending == o.ascending &&
-                this.fieldNo == o.fieldNo;
+                this.fieldNo == o.fieldNo &&
+                this.nullsFirst == o.nullsFirst;
     }
 
     @Override
@@ -88,7 +94,7 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
     @Override
     public DBSPExpression deepCopy() {
         return this.source.deepCopy().to(DBSPComparatorExpression.class)
-                .field(this.fieldNo, this.ascending);
+                .field(this.fieldNo, this.ascending, this.nullsFirst);
     }
 
     @Override
@@ -98,6 +104,7 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
             return false;
         return this.ascending == otherExpression.ascending &&
                 this.fieldNo == otherExpression.fieldNo &&
+                this.nullsFirst == otherExpression.nullsFirst &&
                 this.source.equivalent(context, otherExpression.source);
     }
 
@@ -106,6 +113,7 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
         DBSPComparatorExpression source = fromJsonInner(node, "source", decoder, DBSPComparatorExpression.class);
         int fieldNo = Utilities.getIntProperty(node, "fieldNo");
         boolean ascending = Utilities.getBooleanProperty(node, "ascending");
-        return new DBSPFieldComparatorExpression(CalciteObject.EMPTY, source, fieldNo, ascending);
+        boolean nullsFirst = Utilities.getBooleanProperty(node, "nullsFirst");
+        return new DBSPFieldComparatorExpression(CalciteObject.EMPTY, source, fieldNo, ascending, nullsFirst);
     }
 }

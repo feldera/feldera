@@ -18,7 +18,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -115,7 +115,7 @@ public class MultiCrates {
             super(compiler);
         }
 
-        public VisitDecision preorder(DBSPTypeComparator type) {
+        public VisitDecision preorder(DBSPComparatorType type) {
             this.found = true;
             return VisitDecision.STOP;
         }

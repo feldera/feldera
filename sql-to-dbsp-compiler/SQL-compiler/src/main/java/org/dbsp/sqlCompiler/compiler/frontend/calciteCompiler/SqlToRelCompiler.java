@@ -27,6 +27,7 @@ import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
 import org.apache.calcite.config.CalciteConnectionProperty;
+import org.apache.calcite.config.NullCollation;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptPlanner;
@@ -216,6 +217,9 @@ public class SqlToRelCompiler implements IWritesLogs {
     private final Set<ProgramIdentifier> definedViews;
     // Changing this may break all sorts of things.  Calcite is very brittle to this kind of stuff.
     public static final Casing UNQUOTED_CASING = Casing.TO_LOWER;
+    // Other databases that have this null collation:
+    // Spark, SQL Server, MySQL, SQLite
+    public static final NullCollation NULL_COLLATION = NullCollation.LOW;
 
     public SqlToRelCompiler(CompilerOptions options, IErrorReporter errorReporter) {
         this.options = options;
@@ -229,6 +233,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         // Notice that this does NOT affect the parser, only the validator.
         java.util.Properties connConfigProp = new java.util.Properties();
         connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), String.valueOf(true));
+        connConfigProp.put(CalciteConnectionProperty.DEFAULT_NULL_COLLATION.camelName(), NULL_COLLATION);
         this.udt = new HashMap<>();
         this.connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
         this.parserConfig = SqlParser.config()
@@ -569,7 +574,8 @@ public class SqlToRelCompiler implements IWritesLogs {
             newOperatorTable = operatorTable;
         }
         SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT
-                .withIdentifierExpansion(true);
+                .withIdentifierExpansion(true)
+                .withDefaultNullCollation(NULL_COLLATION);
         validatorConfig = validatorConfig.withConformance(new Conformance(validatorConfig.conformance()));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
                 CalciteSchema.from(this.rootSchema),

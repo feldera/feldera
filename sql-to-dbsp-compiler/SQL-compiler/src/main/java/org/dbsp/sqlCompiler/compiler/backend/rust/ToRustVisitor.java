@@ -946,14 +946,11 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPIndexedTopKOperator operator) {
         this.computeHash(operator);
         DBSPExpression comparator = operator.getFunction();
-        String streamOperation = "topk_custom_order";
-        if (operator.outputProducer != null) {
-            streamOperation = switch (operator.numbering) {
-                case ROW_NUMBER -> "topk_row_number_custom_order";
-                case RANK -> "topk_rank_custom_order";
-                case DENSE_RANK -> "topk_dense_rank_custom_order";
-            };
-        }
+        String streamOperation = switch (operator.numbering) {
+            case ROW_NUMBER -> "topk_row_number_custom_order";
+            case RANK -> "topk_rank_custom_order";
+            case DENSE_RANK -> "topk_dense_rank_custom_order";
+        };
 
         DBSPType streamType = this.streamType(operator);
         this.writeComments(operator)
@@ -968,16 +965,13 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("_persistent");
         this.builder.append("::<");
         this.builder.append(comparator.to(DBSPComparatorExpression.class).getComparatorStructName());
-        if (operator.outputProducer != null) {
-            this.builder.append(", _, _");
-            if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER)
-                this.builder.append(", _");
-        }
+        this.builder.append(", _, _");
+        if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER)
+            this.builder.append(", _");
         this.builder.append(">(hash, ");
         DBSPExpression cast = operator.limit.cast(
                 DBSPTypeUSize.create(operator.limit.getType().mayBeNull), false);
         cast.accept(this.innerVisitor);
-        if (operator.outputProducer != null) {
             if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER) {
                 this.builder.append(", ");
                 DBSPExpression comp2 = operator.equalityComparator.comparator;
@@ -986,7 +980,6 @@ public class ToRustVisitor extends CircuitVisitor {
             }
             this.builder.append(", ");
             operator.outputProducer.accept(this.innerVisitor);
-        }
         this.builder.append(")")
                 .append(this.markDistinct(operator))
                 .append(";");

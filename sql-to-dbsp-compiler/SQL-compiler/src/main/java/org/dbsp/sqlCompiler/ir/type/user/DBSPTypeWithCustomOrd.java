@@ -27,8 +27,8 @@ public class DBSPTypeWithCustomOrd extends DBSPTypeUser {
     }
 
     /** The type of the data that is wrapped.  Always a tuple type */
-    public DBSPTypeComparator getComparatorType() {
-        return this.typeArgs[1].to(DBSPTypeComparator.class);
+    public DBSPComparatorType getComparatorType() {
+        return this.typeArgs[1].to(DBSPComparatorType.class);
     }
 
     @Override
