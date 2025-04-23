@@ -3,6 +3,7 @@ use std::ops::{Add, Div, Mul, Sub};
 use dbsp::algebra::{HasZero, F32, F64};
 use num::PrimInt;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
+use std::cmp::Ordering;
 
 use crate::{for_all_int_operator, some_existing_operator, some_operator};
 
@@ -96,6 +97,52 @@ where
 }
 
 for_all_compare!(neq, bool, T where Eq);
+
+#[doc(hidden)]
+pub fn compareN<T>(
+    left: &Option<T>,
+    right: &Option<T>,
+    ascending: bool,
+    nullsFirst: bool,
+) -> std::cmp::Ordering
+where
+    T: Ord,
+{
+    if nullsFirst {
+        match (left, right) {
+            (&None, &None) => Ordering::Equal,
+            (&None, _) => Ordering::Less,
+            (_, &None) => Ordering::Greater,
+            (Some(left), Some(right)) => compare_(left, right, ascending, nullsFirst),
+        }
+    } else {
+        match (left, right) {
+            (&None, &None) => Ordering::Equal,
+            (&None, _) => Ordering::Greater,
+            (_, &None) => Ordering::Less,
+            (Some(left), Some(right)) => compare_(left, right, ascending, nullsFirst),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub fn compare_<T>(
+    left: &T,
+    right: &T,
+    ascending: bool,
+    // There can be no nulls
+    _nullsFirst: bool,
+) -> std::cmp::Ordering
+where
+    T: Ord,
+{
+    let result = left.cmp(right);
+    if ascending {
+        result
+    } else {
+        result.reverse()
+    }
+}
 
 #[doc(hidden)]
 #[inline(always)]
@@ -499,6 +546,7 @@ where
 for_all_compare!(min, T, Ord + Clone);
 */
 
+#[doc(hidden)]
 pub fn blackbox<T>(value: T) -> T {
     value
 }

@@ -200,73 +200,54 @@ public class WinAggPostTests extends PostBaseTests {
                 (9 rows)""");
     }
 
-    @Test @Ignore("First_value aggregate")
+    @Test
     public void test2() {
+        // These tests are non-deterministic in SQL; they are
+        // deterministic in our implementation, but they give a different result
+        // than other SQL dialects.
+        // Here the sorting is implicit on ename, deptno, gender
         this.qs("""
                 select *, first_value(deptno) over () from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
-                 Jane  |     10 | F      |          10
-                 Bob   |     10 | M      |          10
-                 Eric  |     20 | M      |          10
-                 Susan |     30 | F      |          10
-                 Alice |     30 | F      |          10
-                 Adam  |     50 | M      |          10
-                 Eve   |     50 | F      |          10
-                 Grace |     60 | F      |          10
-                (8 rows)
-
+                 Jane  |     10 | F|                50
+                 Bob   |     10 | M|                50
+                 Eric  |     20 | M|                50
+                 Susan |     30 | F|                50
+                 Alice |     30 | F|                50
+                 Adam  |     50 | M|                50
+                 Eve   |     50 | F|                50
+                 Grace |     60 | F|                50
+                 Wilma |        | F|                50
+                (9 rows)""");
+        this.qs("""
                 select *, first_value(ename) over () from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
-                 Jane  |     10 | F      | Jane
-                 Bob   |     10 | M      | Jane
-                 Eric  |     20 | M      | Jane
-                 Susan |     30 | F      | Jane
-                 Alice |     30 | F      | Jane
-                 Adam  |     50 | M      | Jane
-                 Eve   |     50 | F      | Jane
-                 Grace |     60 | F      | Jane
-                (8 rows)
+                 Jane  |     10 | F| Adam
+                 Bob   |     10 | M| Adam
+                 Eric  |     20 | M| Adam
+                 Susan |     30 | F| Adam
+                 Alice |     30 | F| Adam
+                 Adam  |     50 | M| Adam
+                 Eve   |     50 | F| Adam
+                 Grace |     60 | F| Adam
+                 Wilma |        | F| Adam
+                (9 rows)
 
                 select *, first_value(ename) over (partition by deptno) from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
-                 Jane  |     10 | F      | Jane
-                 Bob   |     10 | M      | Jane
-                 Eric  |     20 | M      | Eric
-                 Susan |     30 | F      | Susan
-                 Alice |     30 | F      | Susan
-                 Adam  |     50 | M      | Adam
-                 Eve   |     50 | F      | Adam
-                 Grace |     60 | F      | Grace
-                (8 rows)
-
-                select *, first_value(ename) over (partition by deptno range current row) from emp;
-                 ename | deptno | gender | first_value
-                -------+--------+--------+-------------
-                 Jane  |     10 | F      | Jane
-                 Bob   |     10 | M      | Jane
-                 Eric  |     20 | M      | Eric
-                 Susan |     30 | F      | Susan
-                 Alice |     30 | F      | Susan
-                 Adam  |     50 | M      | Adam
-                 Eve   |     50 | F      | Adam
-                 Grace |     60 | F      | Grace
-                (8 rows)
-
-                select *, first_value(ename) over (partition by deptno range unbounded preceding) from emp;
-                 ename | deptno | gender | first_value
-                -------+--------+--------+-------------
-                 Jane  |     10 | F      | Jane
-                 Bob   |     10 | M      | Jane
-                 Eric  |     20 | M      | Eric
-                 Susan |     30 | F      | Susan
-                 Alice |     30 | F      | Susan
-                 Adam  |     50 | M      | Adam
-                 Eve   |     50 | F      | Adam
-                 Grace |     60 | F      | Grace
-                (8 rows)""");
+                 Jane  |     10 | F| Bob
+                 Bob   |     10 | M| Bob
+                 Eric  |     20 | M| Eric
+                 Susan |     30 | F| Alice
+                 Alice |     30 | F| Alice
+                 Adam  |     50 | M| Adam
+                 Eve   |     50 | F| Adam
+                 Grace |     60 | F| Grace
+                 Wilma |        | F| Wilma
+                (9 rows)""");
     }
 
     @Test
@@ -499,19 +480,20 @@ public class WinAggPostTests extends PostBaseTests {
 
     @Test
     public void testWindows1() {
+        // Adjusted and validated using MySQL
         this.qs("""
                 select *, count(*) over (order by deptno) as c from emp;
                  ENAME | DEPTNO | GENDER | C
                 -------+--------+--------+---
-                 Jane  |     10 | F| 2
-                 Bob   |     10 | M| 2
-                 Eric  |     20 | M| 3
-                 Susan |     30 | F| 5
-                 Alice |     30 | F| 5
-                 Adam  |     50 | M| 7
-                 Eve   |     50 | F| 7
-                 Grace |     60 | F| 8
-                 Wilma |        | F| 9
+                 Jane  |     10 | F| 3
+                 Bob   |     10 | M| 3
+                 Eric  |     20 | M| 4
+                 Susan |     30 | F| 6
+                 Alice |     30 | F| 6
+                 Adam  |     50 | M| 8
+                 Eve   |     50 | F| 8
+                 Grace |     60 | F| 9
+                 Wilma |        | F| 1
                 (9 rows)""");
     }
 

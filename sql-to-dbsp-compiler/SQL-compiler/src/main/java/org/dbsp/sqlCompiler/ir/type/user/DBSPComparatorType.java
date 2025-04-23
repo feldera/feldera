@@ -10,12 +10,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.Utilities;
 
-import java.util.List;
-
-/** The type of a comparator.  In Rust it's just a struct,
+/** The type of a comparator.  In Rust, it's just a struct,
  * but which implements a CmpFun trait. */
-public class DBSPTypeComparator extends DBSPTypeUser {
-    DBSPTypeComparator(String name) {
+public class DBSPComparatorType extends DBSPTypeUser {
+    DBSPComparatorType(String name) {
         super(CalciteObject.EMPTY, DBSPTypeCode.COMPARATOR, name, false);
     }
 
@@ -26,31 +24,31 @@ public class DBSPTypeComparator extends DBSPTypeUser {
         return MerkleInner.hash(tuple.toString()).makeIdentifier("CMP");
     }
 
-    public static DBSPTypeComparator
+    public static DBSPComparatorType
     generateType(DBSPType tuple) {
-        return new DBSPTypeComparator(generateName(tuple));
+        return new DBSPComparatorType(generateName(tuple));
     }
 
     /** The name of a comparator that compares an extra field in addition to
      * another comparator.  This is the name of a
      * {@link org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression}. */
     static String generateName(
-            DBSPTypeComparator comparator,
-            int field, boolean ascending) {
-        return MerkleInner.hash(comparator.name + "." + field + " " + ascending)
+            DBSPComparatorType comparator,
+            int field, boolean ascending, boolean nullsFirst) {
+        return MerkleInner.hash(comparator.name + "." + field + " " + ascending + " " + nullsFirst)
                 .makeIdentifier("CMP");
     }
 
-    public static DBSPTypeComparator
-    generateType(DBSPTypeComparator type, int field, boolean ascending) {
-        return new DBSPTypeComparator(generateName(type, field, ascending));
+    public static DBSPComparatorType
+    generateType(DBSPComparatorType type, int field, boolean ascending, boolean nullsFirst) {
+        return new DBSPComparatorType(generateName(type, field, ascending, nullsFirst));
     }
 
     /** The name of a comparator that compares an extra field in addition to
      * another comparator.  This is the name of a
      * {@link org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression}. */
     static String generateName(
-            DBSPTypeComparator comparator,
+            DBSPComparatorType comparator,
             boolean ascending) {
         return MerkleInner.hash(comparator.name + " " + ascending)
                 .makeIdentifier("CMP");
@@ -65,15 +63,15 @@ public class DBSPTypeComparator extends DBSPTypeUser {
         visitor.postorder(this);
     }
 
-    public static DBSPTypeComparator
-    generateType(DBSPTypeComparator type, boolean ascending) {
-        return new DBSPTypeComparator(generateName(type, ascending));
+    public static DBSPComparatorType
+    generateType(DBSPComparatorType type, boolean ascending) {
+        return new DBSPComparatorType(generateName(type, ascending));
     }
 
     @SuppressWarnings("unused")
-    public static DBSPTypeComparator fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPComparatorType fromJson(JsonNode node, JsonDecoder decoder) {
         String name = Utilities.getStringProperty(node, "name");
         DBSPTypeCode code = DBSPTypeCode.valueOf(Utilities.getStringProperty(node, "code"));
-        return new DBSPTypeComparator(name);
+        return new DBSPComparatorType(name);
     }
 }

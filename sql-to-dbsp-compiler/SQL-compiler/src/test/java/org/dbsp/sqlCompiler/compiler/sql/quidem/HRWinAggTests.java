@@ -35,11 +35,11 @@ public class HRWinAggTests extends HrBaseTests {
                 select a."empid", a."deptno", a."commission", a.r as ar, b.r as br
                 from (
                   select "empid", "deptno", "commission", first_value("empid") over w as r
-                  from "hr"."emps"
+                  from "emps"
                   window w as (partition by "deptno" order by "commission")) a
                 join (
                   select "empid", "deptno", "commission", last_value("empid") over w as r
-                  from "hr"."emps"
+                  from "emps"
                   window w as (partition by "deptno" order by "commission")) b
                 on a."empid" = b."empid"
                 limit 5;

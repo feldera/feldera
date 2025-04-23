@@ -640,6 +640,8 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     public void postorder(DBSPFieldComparatorExpression node) {
         this.property("ascending");
         this.stream.append(node.ascending);
+        this.property("nullsFirst");
+        this.stream.append(node.nullsFirst);
         this.property("fieldNo");
         this.stream.append(node.fieldNo);
         super.postorder(node);

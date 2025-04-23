@@ -223,19 +223,27 @@ public class ToRustInnerVisitor extends InnerVisitor {
     /**
      * Helper function for {@link ToRustInnerVisitor#generateComparator} and
      * {@link ToRustInnerVisitor#generateCmpFunc}.
+     * @param nullable True if the field is nullable (or the tuple itself).
      * @param fieldNo  Field index that is compared.
      * @param ascending Comparison direction.
+     * @param nullsFirst How nulls are compared
      */
-    void emitCompareField(int fieldNo, boolean ascending) {
-        this.builder.append("let ord = left.")
+    void emitCompareField(boolean nullable, int fieldNo, boolean ascending, boolean nullsFirst) {
+        String name = "compare" + (nullable ? "N" : "_");
+        this.builder.append("let ord = ")
+                .append(name)
+                .append("(&left.")
                 .append(fieldNo)
-                .append(".cmp(&right.")
+                .append(", ")
+                .append("&right.")
                 .append(fieldNo)
+                .append(", ")
+                .append(ascending)
+                .append(", ")
+                .append(nullsFirst)
                 .append(");")
                 .newline();
         this.builder.append("if ord != Ordering::Equal { return ord");
-        if (!ascending)
-            this.builder.append(".reverse()");
         this.builder.append(" };")
                 .newline();
     }
@@ -268,11 +276,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return;
         if (comparator.is(DBSPFieldComparatorExpression.class)) {
             DBSPFieldComparatorExpression fieldComparator = comparator.to(DBSPFieldComparatorExpression.class);
+            boolean nullable = comparator.comparedValueType()
+                    .to(DBSPTypeTupleBase.class)
+                    .getFieldType(fieldComparator.fieldNo)
+                    .mayBeNull;
             this.generateComparator(fieldComparator.source, fieldsCompared);
             if (fieldsCompared.contains(fieldComparator.fieldNo))
                 throw new InternalCompilerError("Field " + fieldComparator.fieldNo + " used twice in sorting");
             fieldsCompared.add(fieldComparator.fieldNo);
-            this.emitCompareField(fieldComparator.fieldNo, fieldComparator.ascending);
+            this.emitCompareField(nullable, fieldComparator.fieldNo, fieldComparator.ascending, fieldComparator.nullsFirst);
         } else {
             DBSPDirectComparatorExpression direct = comparator.to(DBSPDirectComparatorExpression.class);
             this.generateComparator(direct.source, fieldsCompared);
@@ -284,12 +296,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
     void generateCmpFunc(DBSPComparatorExpression comparator) {
         // impl CmpFunc<(String, i32, i32)> for CmpXX {
         //     fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
-        //         let ord = left.1.cmp(&right.1);
+        //         let ord = compare(&left.0, &right.0, true, true); // last value is nullsLast
         //         if ord != Ordering::Equal { return ord; }
-        //         let ord = right.2.cmp(&left.2);
+        //         let ord = compare(&right.1, &left.1, true, true);
         //         if ord != Ordering::Equal { return ord; }
-        //         let ord = left.3.cmp(&right.3);
-        //         if ord != Ordering::Equal { return ord; }
+        //         let ord = compare(&left.2, &right.2, true, false);
+        //         if ord != Ordering::Equal { return ord.reverse(); }
         //         return Ordering::Equal;
         //     }
         // }
@@ -322,7 +334,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (type.is(DBSPTypeTuple.class)) {
             for (int i = 0; i < type.to(DBSPTypeTuple.class).size(); i++) {
                 if (fieldsCompared.contains(i)) continue;
-                this.emitCompareField(i, true);
+                this.emitCompareField(false, i, true, true);
             }
         }
         this.builder.append("return Ordering::Equal;")

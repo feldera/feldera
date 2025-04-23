@@ -217,7 +217,8 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     public void postorder(DBSPFieldComparatorExpression node) {
         DBSPExpression source = this.getE(node.source);
         this.map(node, new DBSPFieldComparatorExpression(
-                node.getNode(), source.to(DBSPComparatorExpression.class), node.fieldNo, node.ascending));
+                node.getNode(), source.to(DBSPComparatorExpression.class),
+                node.fieldNo, node.ascending, node.nullsFirst));
     }
 
     @Override

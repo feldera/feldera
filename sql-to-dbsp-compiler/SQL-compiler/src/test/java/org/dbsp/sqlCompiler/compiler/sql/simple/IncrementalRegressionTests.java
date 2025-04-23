@@ -11,7 +11,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
-import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -695,6 +694,32 @@ public class IncrementalRegressionTests extends SqlIoTest {
         this.statementsFailingInCompilation("""
                 CREATE TABLE T(c DECIMAL(38, 18));""",
                 "Maximum precision supported for DECIMAL");
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6978")
+    public void calciteIssue6978() {
+        String sql = """
+                CREATE TABLE T(x DECIMAL(6, 2), z INT);
+                CREATE TABLE S(y INT);
+                CREATE VIEW V AS SELECT
+                   y,
+                   coalesce((select sum(X) from T
+                             where y = T.z limit 1), 0) as w
+                FROM S;""";
+        this.getCCS(sql);
+    }
+
+    @Test
+    public void issue3918() {
+        String sql = """
+                CREATE TABLE T(x DECIMAL(6, 2), z INT);
+                CREATE TABLE S(y INT);
+                CREATE VIEW V AS SELECT
+                   y,
+                   (select sum(X) from T
+                             where y = T.z limit 1) as w
+                FROM S;""";
+        this.getCCS(sql);
     }
 
     // Tests that are not in the repository

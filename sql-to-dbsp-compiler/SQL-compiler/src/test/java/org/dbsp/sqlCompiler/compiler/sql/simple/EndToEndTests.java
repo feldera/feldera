@@ -232,7 +232,6 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetExpression(t, t));
     }
 
-
     @Test
     public void overAvgTest() {
         String query = "SELECT T.COL1, AVG(T.COL6) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";

@@ -243,9 +243,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPIndexedTopKOperator operator) {
         DBSPExpression function = this.transform(operator.getFunction());
-        @Nullable DBSPClosureExpression outputProducer = null;
-        if (operator.outputProducer != null)
-            outputProducer = this.transform(operator.outputProducer)
+        DBSPClosureExpression outputProducer = this.transform(operator.outputProducer)
                     .to(DBSPClosureExpression.class);
         DBSPExpression limit = this.transform(operator.limit);
         DBSPEqualityComparatorExpression equalityComparator =

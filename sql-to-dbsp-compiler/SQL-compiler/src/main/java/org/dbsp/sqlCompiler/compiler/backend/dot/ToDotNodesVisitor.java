@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.backend.dot;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -217,6 +218,34 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                     .append("(")
                     .append(this.getFunction(node))
                     .append(")\\l");
+        }
+        this.stream.append("\" ]")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIndexedTopKOperator node) {
+        this.stream.append(node.getNodeName(false))
+                .append(" [ shape=box")
+                .append(this.getColor(node))
+                .append(" label=\"")
+                .append(node.getIdString())
+                .append(isMultiset(node))
+                .append(annotations(node))
+                .append(" ")
+                .append(shorten(node.operation))
+                .append(node.comment != null ? node.comment : "");
+        if (this.details > 3) {
+            this.stream
+                    .append("(")
+                    .append(this.getFunction(node));
+            if (node.outputProducer != null) {
+                this.stream
+                        .append(", ")
+                        .append(this.convertFunction(node.outputProducer));
+            }
+            this.stream.append(")\\l");
         }
         this.stream.append("\" ]")
                 .newline();

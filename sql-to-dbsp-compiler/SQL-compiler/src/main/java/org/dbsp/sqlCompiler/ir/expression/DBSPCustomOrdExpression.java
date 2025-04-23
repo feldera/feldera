@@ -7,7 +7,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.IIndentStream;
 
@@ -21,7 +21,7 @@ public final class DBSPCustomOrdExpression extends DBSPExpression {
             CalciteObject node, DBSPExpression source,
             DBSPExpression comparator) {
         super(node, new DBSPTypeWithCustomOrd(
-                node, source.getType(), comparator.getType().to(DBSPTypeComparator.class)));
+                node, source.getType(), comparator.getType().to(DBSPComparatorType.class)));
         this.source = source;
         this.comparator = comparator;
     }
