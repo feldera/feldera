@@ -21,6 +21,10 @@ Feldera replaces traditional batch jobs with **always-on**, incremental
 pipelines that continuously update their outputs in real-time as new data
 arrives.
 
+- Watch the Webinar accompanying this series on Youtube:
+
+<LiteYouTubeEmbed id="rcq3vqcSLeY" />
+
 ## How it works
 
 * **Initial backfill.** On startup, Feldera ingests historical data from a
