@@ -14,8 +14,8 @@
 //!   variants, it embeds:
 //!
 //!    * [`controller::ControllerError`](ControllerError), for errors that arise
-//!       from operating a streaming pipeline consisting of input adapters, output adapters,
-//!       and a DBSP circuit, via the controller API.  In some variants, it embeds:
+//!      from operating a streaming pipeline consisting of input adapters, output adapters,
+//!      and a DBSP circuit, via the controller API.  In some variants, it embeds:
 //!
 //!      * [`dbsp::Error`], which indicates invalid pipeline or endpoint
 //!        configuration.

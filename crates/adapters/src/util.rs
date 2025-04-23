@@ -118,7 +118,7 @@ where
     ///
     /// * `num_workers` - the number of threads in the worker pool. Must be >0.
     /// * `worker_builder` - a closure that returns a closure that each worker will execute for each job.
-    ///    The outer closure is needed to allocate any resources needed by the worker.
+    ///   The outer closure is needed to allocate any resources needed by the worker.
     /// * `consumer_func` - closure that the consumer will execute for each completed job.
     pub(crate) fn new(
         num_workers: usize,

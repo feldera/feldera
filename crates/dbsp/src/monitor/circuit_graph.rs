@@ -83,7 +83,7 @@ impl Region {
     ///
     /// * `annotation` - annotation to attach to the region.
     /// * `annotate` - function used to annotate nodes inside the region.
-    ///                Returns a label and an "importance" (between 0 and 1) for the node
+    ///   Returns a label and an "importance" (between 0 and 1) for the node.
     fn visualize(
         &self,
         scope: &Node,
