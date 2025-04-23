@@ -62,7 +62,7 @@ fn main() -> Result<()> {
         )?;
 
         let mut expected_outputs = ([
-            // We expect the full transitive closure in the first clock cycle.
+            // We expect the full transitive closure in the first step.
             zset! {
                 Tup4(0, 1, 1, 1) => 1,
                 Tup4(0, 2, 2, 2) => 1,
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
                 Tup4(2, 4, 4, 2) => 1,
                 Tup4(3, 4, 2, 1) => 1,
             },
-            // These paths are removed in the second clock cycle.
+            // These paths are removed in the second step.
             zset! {
                 Tup4(0, 2, 2, 2) => -1,
                 Tup4(0, 3, 4, 3) => -1,

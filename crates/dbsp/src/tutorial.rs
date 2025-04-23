@@ -2122,6 +2122,127 @@
 //! pairs of reachable nodes. If you want to see this in action,
 //! we invite you to play around with `tutorial10.rs`.
 //!
+//! To fix this issue, we have to change the code to stop iterating once the
+//! shortest path for each pair of nodes has been discovered. One approach to
+//! achieve this is to group by each pair and use the
+//! [`Min`](`crate::operator::dynamic::aggregate::Min`) aggregation operator
+//! to only retain the shortest path for each pair.
+//! Aggregation requires to index the stream, so there are more code changes
+//! required than shown here. You can find the full code in `tutorial11.rs` but
+//! the important changes take place within the child circuit:
+//!
+//! ```
+//! # use anyhow::Result;
+//! # use dbsp::{
+//! #     indexed_zset,
+//! #     operator::{Generator, Min},
+//! #     utils::{Tup2, Tup3, Tup4},
+//! #     zset_set, Circuit, NestedCircuit, OrdIndexedZSet, RootCircuit, Stream,
+//! # };
+//! #
+//! type Accumulator =
+//!     Stream<NestedCircuit, OrdIndexedZSet<Tup2<usize, usize>, Tup4<usize, usize, usize, usize>>>;
+//! #
+//! # fn main() -> Result<()> {
+//! #     const STEPS: usize = 2;
+//! #
+//! #     let (circuit_handle, output_handle) = RootCircuit::build(move |root_circuit| {
+//! #         let mut edges_data = ([
+//! #             zset_set! { Tup3(0_usize, 1_usize, 1_usize), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
+//! #             zset_set! { Tup3(4, 0, 3)}
+//! #         ] as [_; STEPS])
+//! #         .into_iter();
+//! #
+//! #         let edges = root_circuit.add_source(Generator::new(move || edges_data.next().unwrap()));
+//! #
+//! #         let len_1 = edges
+//! #             .map_index(|Tup3(from, to, weight)| (Tup2(*from, *to), Tup4(*from, *to, *weight, 1)));
+//!
+//! let closure = root_circuit.recursive(|child_circuit, len_n_minus_1: Accumulator| {
+//!     // Import the `edges` and `len_1` stream from the parent circuit.
+//!     let edges = edges.delta0(child_circuit);
+//!     let len_1 = len_1.delta0(child_circuit);
+//!
+//!     // Perform an iterative step (n-1 to n) through joining the
+//!     // paths of length n-1 with the edges.
+//!     let len_n = len_n_minus_1
+//!         .map_index(
+//!             |(Tup2(_start, _end), Tup4(start, end, cum_weight, hopcnt))| {
+//!                 (*end, Tup4(*start, *end, *cum_weight, *hopcnt))
+//!             },
+//!         )
+//!         // We now use `join_index` instead of `join` to index the stream on node pairs.
+//!         .join_index(
+//!             &edges.map_index(|Tup3(from, to, weight)| (*from, Tup3(*from, *to, *weight))),
+//!             |_end_from, Tup4(start, _end, cum_weight, hopcnt), Tup3(_from, to, weight)| {
+//!                 Some((
+//!                     Tup2(*start, *to),
+//!                     Tup4(*start, *to, cum_weight + weight, hopcnt + 1),
+//!                 ))
+//!             },
+//!         )
+//!         .plus(&len_1)
+//!         // Here, we use the `aggregate` operator to only keep the shortest path.
+//!         .aggregate(Min);
+//!
+//!     Ok(len_n)
+//! })?;
+//!
+//! #         let mut expected_outputs = ([
+//! #             indexed_zset! { Tup2<usize, usize> => Tup4<usize, usize, usize, usize>:
+//! #                 Tup2(0, 1) => { Tup4(0, 1, 1, 1) => 1 },
+//! #                 Tup2(0, 2) => { Tup4(0, 2, 2, 2) => 1 },
+//! #                 Tup2(0, 3) => { Tup4(0, 3, 4, 3) => 1 },
+//! #                 Tup2(0, 4) => { Tup4(0, 4, 6, 4) => 1 },
+//! #                 Tup2(1, 2) => { Tup4(1, 2, 1, 1) => 1 },
+//! #                 Tup2(1, 3) => { Tup4(1, 3, 3, 2) => 1 },
+//! #                 Tup2(1, 4) => { Tup4(1, 4, 5, 3) => 1 },
+//! #                 Tup2(2, 3) => { Tup4(2, 3, 2, 1) => 1 },
+//! #                 Tup2(2, 4) => { Tup4(2, 4, 4, 2) => 1 },
+//! #                 Tup2(3, 4) => { Tup4(3, 4, 2, 1) => 1 },
+//! #             },
+//! #             indexed_zset! { Tup2<usize, usize> => Tup4<usize, usize, usize, usize>:
+//! #                 Tup2(0, 0) => { Tup4(0, 0, 9, 5) => 1 },
+//! #                 Tup2(1, 0) => { Tup4(1, 0, 8, 4) => 1 },
+//! #                 Tup2(1, 1) => { Tup4(1, 1, 9, 5) => 1 },
+//! #                 Tup2(2, 0) => { Tup4(2, 0, 7, 3) => 1 },
+//! #                 Tup2(2, 1) => { Tup4(2, 1, 8, 4) => 1 },
+//! #                 Tup2(2, 2) => { Tup4(2, 2, 9, 5) => 1 },
+//! #                 Tup2(3, 0) => { Tup4(3, 0, 5, 2) => 1 },
+//! #                 Tup2(3, 1) => { Tup4(3, 1, 6, 3) => 1 },
+//! #                 Tup2(3, 2) => { Tup4(3, 2, 7, 4) => 1 },
+//! #                 Tup2(3, 3) => { Tup4(3, 3, 9, 5) => 1 },
+//! #                 Tup2(4, 0) => { Tup4(4, 0, 3, 1) => 1 },
+//! #                 Tup2(4, 1) => { Tup4(4, 1, 4, 2) => 1 },
+//! #                 Tup2(4, 2) => { Tup4(4, 2, 5, 3) => 1 },
+//! #                 Tup2(4, 3) => { Tup4(4, 3, 7, 4) => 1 },
+//! #                 Tup2(4, 4) => { Tup4(4, 4, 9, 5) => 1 },
+//! #             },
+//! #         ] as [_; STEPS])
+//! #             .into_iter();
+//! #
+//! #         closure.inspect(move |output| {
+//! #             assert_eq!(*output, expected_outputs.next().unwrap());
+//! #         });
+//! #
+//! #         Ok(closure.output())
+//! #     })?;
+//! #
+//! #     for i in 0..STEPS {
+//! #         circuit_handle.step()?;
+//! #     }
+//! #
+//! #     Ok(())
+//! # }
+//! ```
+//!
+//! Keep in mind that this is just one way to fix the issue and that in general
+//! recursive queries with aggregates are not guaranteed to converge to the
+//! optimum of the aggregation function (here, the minimum function),
+//! even though there exists a finite solution.
+//! If the problem at hand is not _monotonic_, the computed fixed-point may
+//! not be the optimal solution to the aggregation function.
+//!
 //! # Next steps
 //!
 //! We've shown how input, computation, and output work in DBSP.  That's all
