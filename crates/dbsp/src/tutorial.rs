@@ -2098,14 +2098,10 @@
 //! }
 //! ```
 //!
-//! Finally, we point out that introducing a cycle to the graph prevents
-//! this fixed-point computation to stop terminating because then
-//! there is no fixed-point anymore. So pay attention to your data and
-//! your queries, if using more powerful (but somewhat more dangerous) iterative
-//! queries.
-//!
+//! We point out that introducing a cycle to the graph prevents this fixed-point
+//! computation from terminating because then there is no fixed-point anymore.
 //! To demonstrate this, we introduce a third step which feeds back in the
-//! previously removed edge `|1| -1-> |2|` and additionally introduces
+//! previously removed edge `|1| -1-> |2|` and, additionally, introduces
 //! the edge `|4| -3-> |0|`, forming a cyclic graph. In total,
 //! we obtain the following graph:
 //!
@@ -2240,8 +2236,6 @@
 //! recursive queries with aggregates are not guaranteed to converge to the
 //! optimum of the aggregation function (here, the minimum function),
 //! even though there exists a finite solution.
-//! If the problem at hand is not _monotonic_, the computed fixed-point may
-//! not be the optimal solution to the aggregation function.
 //!
 //! # Next steps
 //!
