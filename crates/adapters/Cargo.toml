@@ -129,7 +129,7 @@ memory-stats = "1.2.0"
 ignored = ["num-traits"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
-jemalloc_pprof = "0.1.0"
+jemalloc_pprof = { workspace = true, features = ["symbolize"] }
 
 [dev-dependencies]
 actix-test = { workspace = true }
