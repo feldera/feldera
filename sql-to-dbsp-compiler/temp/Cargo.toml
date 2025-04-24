@@ -24,7 +24,7 @@ rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_
 erased-serde = "0.3.31"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
+tikv-jemallocator = { version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 
 [dev-dependencies]
 hashing = { path = "../lib/hashing" }
