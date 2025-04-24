@@ -19,7 +19,7 @@ else
     # hasn't been merged yet
     CALCITE_REPO="https://github.com/mihaibudiu/calcite.git"
     CALCITE_BRANCH="issue6939"
-    CALCITE_NEXT_COMMIT="1f791726f428ef112b006e0b444bfaaa89627000"
+    CALCITE_NEXT_COMMIT="45bb5d58ddc56a7b3b336679e96826123bd32e0d"
 fi
 CALCITE_NEXT="1.40.0"
 CALCITE_CURRENT="1.39.0"
