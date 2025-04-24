@@ -470,16 +470,39 @@ impl ControllerStatus {
         self.global_metrics.state.store(state, Ordering::Release);
     }
 
-    pub fn pause_input_endpoint(&self, endpoint: &EndpointId) {
-        if let Some(ep) = self.inputs.read().unwrap().get(endpoint) {
-            ep.paused.store(true, Ordering::Release);
-        }
+    /// Sets `endpoint`'s paused state to `paused` and returns whether it was
+    /// previously paused.
+    pub fn set_input_endpoint_paused(&self, endpoint: &EndpointId, paused: bool) -> Option<bool> {
+        Some(
+            self.inputs
+                .read()
+                .unwrap()
+                .get(endpoint)?
+                .paused
+                .swap(paused, Ordering::Release),
+        )
     }
 
-    pub fn start_input_endpoint(&self, endpoint: &EndpointId) {
-        if let Some(ep) = self.inputs.read().unwrap().get(endpoint) {
-            ep.paused.store(false, Ordering::Release);
-        }
+    /// Pauses `endpoint` and returns whether the endpoint was previously
+    /// paused.
+    pub fn pause_input_endpoint(&self, endpoint: &EndpointId) -> Option<bool> {
+        self.set_input_endpoint_paused(endpoint, true)
+    }
+
+    /// Unpauses `endpoint` and returns whether the endpoint was previously
+    /// paused.
+    pub fn start_input_endpoint(&self, endpoint: &EndpointId) -> Option<bool> {
+        self.set_input_endpoint_paused(endpoint, false)
+    }
+
+    pub fn is_input_endpoint_paused(&self, endpoint: &EndpointId) -> Option<bool> {
+        Some(
+            self.inputs
+                .read()
+                .unwrap()
+                .get(endpoint)?
+                .is_paused_by_user(),
+        )
     }
 
     /// Invoked when one of the input endpoints has finished processing

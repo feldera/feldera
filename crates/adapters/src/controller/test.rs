@@ -14,7 +14,7 @@ use std::{
     iter::repeat_n,
     ops::Range,
     path::{Path, PathBuf},
-    sync::mpsc,
+    sync::{atomic::Ordering, mpsc},
     thread::sleep,
     time::Duration,
 };
@@ -278,6 +278,7 @@ outputs:
 struct FtTestRound {
     n_records: usize,
     do_checkpoint: bool,
+    pause_afterward: bool,
 }
 
 impl FtTestRound {
@@ -285,12 +286,20 @@ impl FtTestRound {
         Self {
             n_records,
             do_checkpoint: true,
+            pause_afterward: false,
         }
     }
     fn without_checkpoint(n_records: usize) -> Self {
         Self {
             n_records,
             do_checkpoint: false,
+            pause_afterward: false,
+        }
+    }
+    fn with_pause_afterward(self) -> Self {
+        Self {
+            pause_afterward: true,
+            ..self
         }
     }
 }
@@ -439,16 +448,25 @@ outputs:
     // total_records).
     let mut checkpointed_records = 0usize;
 
+    let mut paused = false;
+
     for (
         round,
         FtTestRound {
             n_records,
             do_checkpoint,
+            pause_afterward,
         },
     ) in rounds.iter().cloned().enumerate()
     {
         println!(
-            "--- round {round}: add {n_records} records, {} --- ",
+            "--- round {round}: {}add {n_records} records{}, {} --- ",
+            if paused { "unpause the input, " } else { "" },
+            if pause_afterward {
+                ", then pause the input"
+            } else {
+                ""
+            },
             if do_checkpoint {
                 "and checkpoint"
             } else {
@@ -485,14 +503,44 @@ outputs:
         .unwrap();
         controller.start();
 
+        // Wait for replay for finish and then check that the input endpoint's
+        // pause state matches what it should be.
+        wait(|| !controller.is_replaying(), 1000).unwrap();
+        assert_eq!(
+            controller.is_input_endpoint_paused("test_input1").unwrap(),
+            paused
+        );
+
         // Wait for the records that are not in the checkpoint to be
         // processed or replayed.
         let expect_n = total_records - checkpointed_records;
+        if paused && expect_n > 0 {
+            controller.start_input_endpoint("test_input1").unwrap();
+            paused = false;
+        }
         println!(
             "wait for {} records {checkpointed_records}..{total_records}",
             expect_n
         );
         wait_for_records(&controller, &[expect_n]);
+
+        if pause_afterward {
+            controller.pause_input_endpoint("test_input1").unwrap();
+            paused = true;
+
+            // Wait to journal the pause.
+            wait(
+                || {
+                    !controller
+                        .status()
+                        .global_metrics
+                        .step_requested
+                        .load(Ordering::Relaxed)
+                },
+                1000,
+            )
+            .unwrap();
+        }
 
         // Checkpoint, if requested.
         if do_checkpoint {
@@ -690,6 +738,28 @@ fn ft_without_checkpoints() {
         FtTestRound::without_checkpoint(2500),
         FtTestRound::without_checkpoint(2500),
         FtTestRound::without_checkpoint(2500),
+    ]);
+}
+
+#[test]
+fn ft_with_checkpoints_with_pauses() {
+    test_ft(&[
+        FtTestRound::with_checkpoint(2500).with_pause_afterward(),
+        FtTestRound::with_checkpoint(2500),
+        FtTestRound::with_checkpoint(2500).with_pause_afterward(),
+        FtTestRound::with_checkpoint(2500),
+        FtTestRound::with_checkpoint(2500).with_pause_afterward(),
+    ]);
+}
+
+#[test]
+fn ft_without_checkpoints_with_pauses() {
+    test_ft(&[
+        FtTestRound::without_checkpoint(2500).with_pause_afterward(),
+        FtTestRound::without_checkpoint(2500),
+        FtTestRound::without_checkpoint(2500).with_pause_afterward(),
+        FtTestRound::without_checkpoint(2500),
+        FtTestRound::without_checkpoint(2500).with_pause_afterward(),
     ]);
 }
 

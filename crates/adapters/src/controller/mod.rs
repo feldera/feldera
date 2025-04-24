@@ -384,8 +384,25 @@ impl Controller {
         self.inner.pause_input_endpoint(endpoint_name)
     }
 
+    // Start or resume specified input endpoint.
+    //
+    // Sets `paused_by_user` flag of the endpoint to `false`.
+    pub fn start_input_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.inner.start_input_endpoint(endpoint_name)
+    }
+
+    // Returns whether the specified input endpoint is paused by the user.
+    pub fn is_input_endpoint_paused(&self, endpoint_name: &str) -> Result<bool, ControllerError> {
+        self.inner.is_input_endpoint_paused(endpoint_name)
+    }
+
     pub fn input_endpoint_status(&self, endpoint_name: &str) -> Result<JsonValue, ControllerError> {
         self.inner.input_endpoint_status(endpoint_name)
+    }
+
+    /// Returns whether the controller is replaying a fault tolerance log.
+    pub fn is_replaying(&self) -> bool {
+        self.inner.restoring.load(Ordering::Relaxed)
     }
 
     pub fn output_endpoint_status(
@@ -393,13 +410,6 @@ impl Controller {
         endpoint_name: &str,
     ) -> Result<JsonValue, ControllerError> {
         self.inner.output_endpoint_status(endpoint_name)
-    }
-
-    // Start or resume specified input endpoint.
-    //
-    // Sets `paused_by_user` flag of the endpoint to `false`.
-    pub fn start_input_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
-        self.inner.start_input_endpoint(endpoint_name)
     }
 
     /// Returns controller status.
@@ -850,10 +860,11 @@ impl CircuitThread {
                     .input_status()
                     .iter()
                     .map(|(_id, status)| {
-                        (
-                            Cow::from(status.endpoint_name.clone()),
-                            status.config.clone(),
-                        )
+                        (Cow::from(status.endpoint_name.clone()), {
+                            let mut config = status.config.clone();
+                            config.connector_config.paused = status.is_paused_by_user();
+                            config
+                        })
                     })
                     .collect(),
                 ..this.controller.status.pipeline_config.clone()
@@ -1254,9 +1265,10 @@ struct FtState {
     /// The journal record that we're replaying, if we're replaying.
     replay_step: Option<StepMetadata>,
 
-    /// Input endpoint ids and names at the time we wrote the last step,
-    /// so that we can log changes for the replay log.
-    input_endpoints: HashMap<EndpointId, String>,
+    /// Input endpoint ids, names, and whether the endpoints are paused, at the
+    /// time we wrote the last step, so that we can log changes for the replay
+    /// log.
+    input_endpoints: HashMap<EndpointId, (String, bool)>,
 }
 
 impl FtState {
@@ -1326,14 +1338,21 @@ impl FtState {
         self.enabled = true;
     }
 
-    fn initial_input_endpoints(controller: &ControllerInner) -> HashMap<EndpointId, String> {
+    fn initial_input_endpoints(
+        controller: &ControllerInner,
+    ) -> HashMap<EndpointId, (String, bool)> {
         controller
             .status
             .inputs
             .read()
             .unwrap()
             .iter()
-            .map(|(id, status)| (*id, status.endpoint_name.clone()))
+            .map(|(id, status)| {
+                (
+                    *id,
+                    (status.endpoint_name.clone(), status.is_paused_by_user()),
+                )
+            })
             .collect()
     }
 
@@ -1355,6 +1374,13 @@ impl FtState {
         }
         for (endpoint_name, config) in &metadata.add_inputs {
             controller.connect_input(endpoint_name, config)?;
+        }
+        for (endpoint_name, pause) in &metadata.changed_inputs {
+            if *pause {
+                controller.pause_input_endpoint(endpoint_name)?;
+            } else {
+                controller.start_input_endpoint(endpoint_name)?;
+            }
         }
         for (endpoint_name, log) in &metadata.input_logs {
             let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
@@ -1378,22 +1404,27 @@ impl FtState {
             None => {
                 let mut remove_inputs = HashSet::new();
                 let mut add_inputs = HashMap::new();
+                let mut changed_inputs = HashMap::new();
                 let inputs = self.controller.status.inputs.read().unwrap();
-                for (endpoint_id, endpoint_name) in self.input_endpoints.iter() {
-                    if !inputs.contains_key(endpoint_id) {
-                        remove_inputs.insert(endpoint_name.clone());
-                    }
-                }
+                self.input_endpoints
+                    .retain(|endpoint_id, (endpoint_name, paused)| {
+                        if let Some(endpoint) = inputs.get(endpoint_id) {
+                            let now_paused = endpoint.is_paused_by_user();
+                            if *paused != now_paused {
+                                changed_inputs.insert(endpoint_name.clone(), now_paused);
+                                *paused = now_paused;
+                            }
+                            true
+                        } else {
+                            remove_inputs.insert(endpoint_name.clone());
+                            false
+                        }
+                    });
                 for (endpoint_id, status) in inputs.iter() {
-                    if !self.input_endpoints.contains_key(endpoint_id) {
+                    self.input_endpoints.entry(*endpoint_id).or_insert_with(|| {
                         add_inputs.insert(status.endpoint_name.clone(), status.config.clone());
-                    }
-                }
-                if !remove_inputs.is_empty() || !add_inputs.is_empty() {
-                    self.input_endpoints = inputs
-                        .iter()
-                        .map(|(id, status)| (*id, status.endpoint_name.clone()))
-                        .collect();
+                        (status.endpoint_name.clone(), status.is_paused_by_user())
+                    });
                 }
                 drop(inputs);
 
@@ -1405,6 +1436,7 @@ impl FtState {
                     step,
                     remove_inputs,
                     add_inputs,
+                    changed_inputs,
                     input_logs,
                 };
                 self.journal.write(&step_metadata)?;
@@ -2846,11 +2878,39 @@ impl ControllerInner {
         self.unpark_backpressure();
     }
 
-    fn pause_input_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
-        let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
-        self.status.pause_input_endpoint(&endpoint_id);
+    fn set_input_endpoint_paused(
+        &self,
+        endpoint_name: &str,
+        paused: bool,
+    ) -> Result<(), ControllerError> {
+        let was_paused = self
+            .status
+            .set_input_endpoint_paused(&self.input_endpoint_id_by_name(endpoint_name)?, paused)
+            .ok_or_else(|| ControllerError::unknown_input_endpoint(endpoint_name))?;
+
+        // If this was a real change, then we need to write this to the journal,
+        // if we have one.
+        if paused != was_paused && self.fault_tolerance == Some(FtModel::ExactlyOnce) {
+            self.request_step();
+        }
+
         self.unpark_backpressure();
+
         Ok(())
+    }
+
+    fn pause_input_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.set_input_endpoint_paused(endpoint_name, true)
+    }
+
+    fn start_input_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.set_input_endpoint_paused(endpoint_name, false)
+    }
+
+    fn is_input_endpoint_paused(&self, endpoint_name: &str) -> Result<bool, ControllerError> {
+        self.status
+            .is_input_endpoint_paused(&self.input_endpoint_id_by_name(endpoint_name)?)
+            .ok_or_else(|| ControllerError::unknown_input_endpoint(endpoint_name))
     }
 
     fn input_endpoint_status(&self, endpoint_name: &str) -> Result<JsonValue, ControllerError> {
@@ -2861,13 +2921,6 @@ impl ControllerInner {
     fn output_endpoint_status(&self, endpoint_name: &str) -> Result<JsonValue, ControllerError> {
         let endpoint_id = self.output_endpoint_id_by_name(endpoint_name)?;
         Ok(serde_json::to_value(&self.status.output_status()[&endpoint_id]).unwrap())
-    }
-
-    fn start_input_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
-        let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
-        self.status.start_input_endpoint(&endpoint_id);
-        self.unpark_backpressure();
-        Ok(())
     }
 
     fn graph_profile(&self, cb: GraphProfileCallbackFn) {

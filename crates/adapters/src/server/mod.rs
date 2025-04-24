@@ -1070,6 +1070,8 @@ async fn output_endpoint(
     Ok(response)
 }
 
+/// This service journals the paused state, but it does not wait for the journal
+/// record to commit before it returns success, so there is a small race.
 #[get("/input_endpoints/{endpoint_name}/pause")]
 async fn pause_input_endpoint(
     state: WebData<ServerState>,
@@ -1119,6 +1121,8 @@ async fn output_endpoint_status(
     }
 }
 
+/// This service journals the paused state, but it does not wait for the journal
+/// record to commit before it returns success, so there is a small race.
 #[get("/input_endpoints/{endpoint_name}/start")]
 async fn start_input_endpoint(
     state: WebData<ServerState>,
