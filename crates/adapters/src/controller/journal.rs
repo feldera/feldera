@@ -101,6 +101,11 @@ pub struct StepMetadata {
     /// unrelated endpoint.
     pub add_inputs: HashMap<String, InputEndpointConfig>,
 
+    /// Changes to existing input endpoints within the step.
+    ///
+    /// Currently we only log changes to the endpoint's paused state.
+    pub changed_inputs: HashMap<String, bool>,
+
     /// Logs for the endpoints included in the step.
     ///
     /// A given endpoint is included if it existed before the step and is not in
@@ -199,6 +204,7 @@ mod tests {
                 step,
                 remove_inputs: HashSet::new(),
                 add_inputs: HashMap::new(),
+                changed_inputs: HashMap::new(),
                 input_logs: HashMap::new(),
             })
             .collect::<Vec<_>>();
