@@ -141,8 +141,9 @@ public class ToRustVisitor extends CircuitVisitor {
      * pub fn circuit0(workers: usize) -> (DBSPHandle, Catalog) {
      *     let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
      *         let mut catalog = Catalog::new();
+     *         let hash = Some("10293481029348102934");
      *         let (input, handle0) = circuit.add_input_zset::<TestStruct, i32>();
-     *         catalog.register_input_zset(hash, input, handles.0, input0_metadata);
+     *         catalog.register_input_zset(input, handles.0, input0_metadata);
      *         catalog.register_output_zset_persistent(hash, input, output0_metadata);
      *         Ok(catalog)
      *     }).unwrap();
@@ -504,6 +505,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
+        this.computeHash(operator);
         this.writeComments(operator)
                 .append("let (")
                 .append(operator.getNodeName(this.preferHash))
@@ -522,7 +524,6 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(";")
                     .newline();
         }
-        this.computeHash(operator);
         if (!this.useHandles) {
             this.generateStructHelpers(operator.originalRowType, operator.metadata);
             String registerFunction = operator.metadata.materialized ?
@@ -556,6 +557,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSourceMapOperator operator) {
+        this.computeHash(operator);
         DBSPTypeStruct type = operator.originalRowType;
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
                 new ProgramIdentifier(operator.originalRowType.sanitizedName + "_key", false));
@@ -566,7 +568,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.getNodeName(this.preferHash))
                 .append(", ")
                 .append(this.handleName(operator))
-                .append(") = circuit.add_input_map::<");
+                .append(") = circuit.add_input_map_persistent::<");
 
         DBSPTypeIndexedZSet ix = operator.getOutputIndexedZSetType();
         ix.keyType.accept(this.innerVisitor);
@@ -575,7 +577,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ");
         DBSPType upsertTuple = upsertStruct.toTupleDeep();
         upsertTuple.accept(this.innerVisitor);
-        this.builder.append(", _>(").increase();
+        this.builder.append(", _>(hash, ").increase();
         {
             // Upsert update function
             this.builder.append("Box::new(|updated: &mut ");
@@ -613,7 +615,6 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(";")
                     .newline();
         }
-        this.computeHash(operator);
         if (!this.useHandles) {
             this.generateStructHelpers(type, operator.metadata);
             this.generateStructHelpers(keyStructType, operator.metadata);
