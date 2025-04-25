@@ -615,6 +615,9 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(";")
                     .newline();
         }
+
+        this.tagStream(operator);
+
         if (!this.useHandles) {
             this.generateStructHelpers(type, operator.metadata);
             this.generateStructHelpers(keyStructType, operator.metadata);
@@ -653,7 +656,6 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(");")
                     .newline();
         }
-        this.tagStream(operator);
         return VisitDecision.STOP;
     }
 
