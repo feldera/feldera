@@ -413,6 +413,26 @@ public class FunctionsTest extends SqlIoTest {
                 result
                 ------
                 5""");
+        this.q("""
+                SELECT COALESCE(5, NULL);
+                result
+                ------
+                5""");
+        this.q("""
+                SELECT COALESCE(NULL, 5, NULL);
+                result
+                ------
+                5""");
+        this.q("""
+                SELECT COALESCE(2, 3, 4);
+                result
+                ------
+                2""");
+        this.q("""
+                SELECT COALESCE(NULL, NULL);
+                result
+                ------
+                NULL""");
     }
 
     // Calcite rounds differently from Postgres and other databases

@@ -280,29 +280,4 @@ public class ProfilingTests extends StreamingTestBase {
                 """);
         this.measure(sql, main);
     }
-
-    @Test @Ignore
-    public void testInterning() throws SQLException, IOException, InterruptedException {
-        String sql = """
-                CREATE TABLE s(i INTEGER NOT NULL, s VARCHAR NOT NULL);
-                CREATE VIEW V AS
-                SELECT i, ARRAY_REPEAT(s, 1000)
-                FROM s
-                GROUP BY i, s;
-                """;
-        // Rust program which profiles the circuit.
-        String main = this.createMain("""
-                    for i in 0..1000000 {
-                        let data = zset!(Tup2::new(i, SqlString::from(format!("{i}-{i}-{i}"))) => 1);
-                        append_to_collection_handle(&data, &streams.0);
-                        if i % 10000 == 0 {
-                            let _ = circuit.step().expect("could not run circuit");
-                            let _ = &read_output_handle(&streams.1);
-                        }
-                    }""");
-        Long[] p = this.measure(sql, main);
-        System.out.println("Memory used simple=" + p[1]);
-        p = this.measure(sql, main/*"--features", "interned"*/);
-        System.out.println("Memory used interned=" + p[1]);
-    }
 }

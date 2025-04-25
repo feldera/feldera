@@ -131,6 +131,7 @@ import org.locationtech.jts.geom.Point;
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -388,6 +389,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // Use the inferred Calcite type for the output as the common type
                 commonBase = typeWithNull;
                 expressionResultType = commonBase;
+            } else if (opcode == DBSPOpcode.NULLIF) {
+                // use the Calcite type
+                expressionResultType = type;
+                assert type.mayBeNull;
             }
             if (opcode.isComparison()) {
                 expressionResultType = DBSPTypeBool.create(anyNull);
@@ -678,6 +683,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             ops.set(argument, arg.cast(node, expected, false));
     }
 
+    @SuppressWarnings("SameParameterValue")
     void ensureDecimal(CalciteObject node, List<DBSPExpression> ops, int argument) {
         DBSPExpression arg = ops.get(argument);
         DBSPType expected = new DBSPTypeRuntimeDecimal(arg.getType().getNode(), arg.getType().mayBeNull);
@@ -1309,39 +1315,20 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case OTHER: {
                 String opName = call.op.getName().toLowerCase();
-                //noinspection SwitchStatementWithTooFewBranches
                 return switch (opName) {
                     case "||" -> makeBinaryExpression(node, type, DBSPOpcode.CONCAT, ops);
+                    case "epoch", "millennium", "century", "decade", "year", "quarter", "month", "day",
+                         "hour", "minute", "second", "millisecond", "microsecond", "nanosecond", "isodow", "doy" ->
+                            this.handleExtract(call, type, opName, ops);
+                    case "dayofweek" -> this.handleExtract(call, type, "dow", ops);
+                    case "dayofmonth" -> this.handleExtract(call, type, "day", ops);
                     default -> throw new UnimplementedException("Support for operation/function " +
                             Utilities.singleQuote(opName) + " not yet implemented", 1265, node);
                 };
             }
             case EXTRACT: {
                 // This is also hit for "date_part", which is an alias for "extract".
-                String baseName = "extract";
-                validateArgCount(node, baseName, ops.size(), 2);
-                DBSPKeywordLiteral keyword = ops.get(0).to(DBSPKeywordLiteral.class);
-                StringBuilder name = new StringBuilder();
-                name.append(baseName)
-                        .append("_")
-                        .append(keyword);
-                DBSPExpression[] operands = new DBSPExpression[ops.size() - 1];
-                int index = 0;
-                for (int i = 0; i < ops.size(); i++) {
-                    DBSPExpression op = ops.get(i);
-                    if (i == 0)
-                        continue;
-                    operands[index] = op;
-                    index++;
-                    name.append("_");
-                    DBSPType operandType = op.getType();
-                    if (operandType.is(IsIntervalType.class))
-                        name.append(operandType.to(DBSPTypeBaseType.class).shortName())
-                                .append(operandType.nullableSuffix());
-                    else
-                        name.append(op.getType().baseTypeWithSuffix());
-                }
-                return new DBSPApplyExpression(node, name.toString(), type, operands);
+                return this.handleExtract(call, type, ops);
             }
             case DATE_TRUNC: {
                 return compileKeywordFunction(call, node, "date_trunc", type, ops, 1, 2);
@@ -1671,20 +1658,68 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             "Function " + Utilities.singleQuote(operationName) +
                                     " with 0 arguments is unknown", node);
                 }
-                DBSPExpression first = ops.get(0).cast(node, type, false);
-                for (int i = 1; i < ops.size(); i++) {
-                    first = new DBSPIfExpression(node, first.is_null(), ops.get(i).cast(node, type, false), first);
+                ops = Linq.where(ops, op -> !op.is(DBSPNullLiteral.class));
+                if (ops.isEmpty()) {
+                    if (!type.mayBeNull)
+                        throw new InternalCompilerError(
+                                "COALESCE of all-NULL values returning non-nullable result", node);
+                    return type.none();
                 }
-                return first;
+                DBSPExpression last = ops.get(ops.size() - 1).cast(node, type, false);
+                for (int i = 1; i < ops.size(); i++) {
+                    int index = ops.size() - i - 1;
+                    DBSPExpression op = ops.get(index);
+                    last = new DBSPIfExpression(
+                            node, op.is_null(), last, op.cast(node, type, false));
+                }
+                return last;
             case TIMESTAMP_ADD:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
                         + " not yet implemented", 1265,
                         "Perhaps you can use DATE_ADD or addition between a date and an interval?", node);
+            case NULLIF:
+                return makeBinaryExpression(node, type, DBSPOpcode.NULLIF, ops);
             case DOT:
             default:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
                         + " not yet implemented", 1265, node);
         }
+    }
+
+    DBSPExpression handleExtract(RexCall call, DBSPType type, String keyword, List<DBSPExpression> args) {
+        CalciteObject node = CalciteObject.create(this.context, call);
+        List<DBSPExpression> newArgs = new ArrayList<>(args.size() + 1);
+        newArgs.add(new DBSPKeywordLiteral(node, keyword));
+        newArgs.addAll(args);
+        return this.handleExtract(call, type, newArgs);
+    }
+
+    DBSPExpression handleExtract(RexCall call, DBSPType type, List<DBSPExpression> ops) {
+        CalciteObject node = CalciteObject.create(this.context, call);
+        String baseName = "extract";
+        validateArgCount(node, baseName, ops.size(), 2);
+        DBSPKeywordLiteral keyword = ops.get(0).to(DBSPKeywordLiteral.class);
+        StringBuilder name = new StringBuilder();
+        name.append(baseName)
+                .append("_")
+                .append(keyword);
+        DBSPExpression[] operands = new DBSPExpression[ops.size() - 1];
+        int index = 0;
+        for (int i = 0; i < ops.size(); i++) {
+            DBSPExpression op = ops.get(i);
+            if (i == 0)
+                continue;
+            operands[index] = op;
+            index++;
+            name.append("_");
+            DBSPType operandType = op.getType();
+            if (operandType.is(IsIntervalType.class))
+                name.append(operandType.to(DBSPTypeBaseType.class).shortName())
+                        .append(operandType.nullableSuffix());
+            else
+                name.append(op.getType().baseTypeWithSuffix());
+        }
+        return new DBSPApplyExpression(node, name.toString(), type, operands);
     }
 
     static DBSPExpression toPosition(SourcePosition pos) {

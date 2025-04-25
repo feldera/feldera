@@ -710,7 +710,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 "Maximum precision supported for DECIMAL");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6978")
+    @Test
     public void calciteIssue6978() {
         String sql = """
                 CREATE TABLE T(x DECIMAL(6, 2), z INT);
