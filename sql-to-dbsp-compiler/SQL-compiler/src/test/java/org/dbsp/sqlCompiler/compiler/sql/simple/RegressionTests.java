@@ -26,7 +26,7 @@ import org.junit.Test;
 import java.util.HashSet;
 
 public class RegressionTests extends SqlIoTest {
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6976")
+    @Test
     public void issue3913() {
         this.getCC("CREATE VIEW V AS SELECT SUBSTR(TIMESTAMP '2024-01-01 10:00:00', 10)");
     }

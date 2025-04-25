@@ -92,18 +92,6 @@ public class MultiCrateTests extends BaseSQLTests {
         this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
 
-    @Test @Ignore
-    public void testMultiCrateLarge() throws IOException, SQLException, InterruptedException {
-        File file = new File("../extra/current_pipeline.sql");
-        this.compileToMultiCrate(file.getAbsolutePath(), true);
-    }
-
-    @Test @Ignore
-    public void testMultiCrateLarge2() throws IOException, SQLException, InterruptedException {
-        File file = new File("../extra/slicer-q1.sql");
-        this.compileToMultiCrate(file.getAbsolutePath(), true);
-    }
-
     @Test
     public void testJoin() throws IOException, SQLException, InterruptedException {
         String sql = """

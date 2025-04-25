@@ -51,6 +51,7 @@ public class RustSqlRuntimeLibrary {
     public static final RustSqlRuntimeLibrary INSTANCE = new RustSqlRuntimeLibrary();
 
     protected RustSqlRuntimeLibrary() {
+        this.universalFunctions.put("nullif", DBSPOpcode.NULLIF);
         this.universalFunctions.put("eq", DBSPOpcode.EQ);
         this.universalFunctions.put("neq", DBSPOpcode.NEQ);
         this.universalFunctions.put("lt", DBSPOpcode.LT);
@@ -171,7 +172,7 @@ public class RustSqlRuntimeLibrary {
             opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN ||
             opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE ||
             opcode == DBSPOpcode.AGG_MIN || opcode == DBSPOpcode.AGG_MAX ||
-            opcode == DBSPOpcode.IS_DISTINCT) {
+            opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.NULLIF) {
             map = this.universalFunctions;
         } else if (ltype.as(DBSPTypeBool.class) != null) {
             map = this.booleanFunctions;
