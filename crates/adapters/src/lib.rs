@@ -135,8 +135,8 @@
 //!
 //! * A fault-tolerant input endpoint divides input into steps that can be
 //!   replayed repeatedly with the same content, despite crashes.
-//!   [`InputEndpoint::is_fault_tolerant`] reports whether an input endpoint is
-//!   fault tolerant.
+//!   [`InputEndpoint::fault_tolerance`] reports the exact FT level the
+//!   endpoint supports.
 //!
 //! * A fault-tolerant output endpoint divides its output into numbered
 //!   [`Step`]s such that, if a step with a given number is output more than
