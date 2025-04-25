@@ -2,7 +2,7 @@
 
 This article is the third part of our series on building a billion cell spreadsheet in three parts:
 
-1. **Part 1:** [Implement core spreadsheet logic using Feldera SQL](./part1.md).
+1. **Part 1:** [Implement core spreadsheet logic using Feldera SQL](./part1.mdx).
 2. **Part 2:** [Expose pipeline data to clients via a server](./part2.md).
 3. **Part 3 (this article):** Add a browser-based UI.
 
