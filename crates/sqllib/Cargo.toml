@@ -1,6 +1,6 @@
 [package]
 name = "feldera-sqllib"
-version = "0.46.0"
+version = "0.47.0"
 edition = "2021"
 license = "MIT"
 description = "SQL runtime library for Feldera"
