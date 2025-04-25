@@ -542,11 +542,30 @@ impl ControllerStatus {
     }
 
     pub fn state(&self) -> PipelineState {
-        self.global_metrics.state.load(Ordering::Acquire)
+        self.global_metrics.state.load(Ordering::Relaxed)
     }
 
-    pub fn set_state(&self, state: PipelineState) {
-        self.global_metrics.state.store(state, Ordering::Release);
+    /// Set the state to `desired`.
+    ///
+    /// Setting the state to [PipelineState::Terminated] is permanent; the state
+    /// can't be re-set to any other state after that.
+    pub fn set_state(&self, desired: PipelineState) {
+        if desired == PipelineState::Terminated {
+            self.global_metrics.state.store(desired, Ordering::Relaxed);
+        } else {
+            let mut current = self.state();
+            while current != desired && current != PipelineState::Terminated {
+                match self.global_metrics.state.compare_exchange(
+                    current,
+                    desired,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(changed) => current = changed,
+                }
+            }
+        }
     }
 
     /// Lookup input endpoint by name.
