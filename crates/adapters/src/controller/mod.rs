@@ -776,12 +776,13 @@ impl CircuitThread {
 
         loop {
             // Run received commands.  Commands can initiate checkpoint
-            // requests, so attempt to execute those afterward.
+            // requests, so attempt to execute those afterward.  Executing a
+            // checkpoint request can then terminate the pipeline, so check for
+            // that right afterward.
             self.run_commands();
-            if !self.checkpoint_requests.is_empty() && self.checkpoint() {
-                break;
+            if !self.checkpoint_requests.is_empty() {
+                self.checkpoint();
             }
-
             let running = match self.controller.state() {
                 PipelineState::Running => true,
                 PipelineState::Paused => false,
@@ -814,6 +815,7 @@ impl CircuitThread {
                 Action::Park(None) => self.parker.park(),
             }
         }
+        self.controller.status.set_state(PipelineState::Terminated);
         self.flush_commands_and_requests();
         self.circuit
             .kill()
@@ -896,7 +898,7 @@ impl CircuitThread {
         }
     }
 
-    fn checkpoint(&mut self) -> bool {
+    fn checkpoint(&mut self) {
         fn inner(this: &mut CircuitThread) -> Result<Checkpoint, ControllerError> {
             this.controller.can_suspend()?;
 
@@ -969,7 +971,7 @@ impl CircuitThread {
                             elapsed.as_secs()
                         )
                     });
-                return false;
+                return;
             }
             Err(error) => {
                 warn!("checkpoint failed: {error}");
@@ -988,13 +990,12 @@ impl CircuitThread {
         // a problem and a short checkpoint interval.
         self.last_checkpoint = Instant::now();
 
-        let mut suspend = false;
         for request in self.checkpoint_requests.drain(..) {
             match request {
                 CheckpointRequest::Scheduled => (),
                 CheckpointRequest::CheckpointCommand(callback) => callback(result.clone()),
                 CheckpointRequest::SuspendCommand(callback) => {
-                    suspend = true;
+                    self.controller.status.set_state(PipelineState::Terminated);
                     callback(result.clone().map(|_| ()))
                 }
             }
@@ -1005,8 +1006,6 @@ impl CircuitThread {
         if let Some(ft) = &mut self.ft {
             ft.enable();
         }
-
-        suspend
     }
 
     /// Reads and executes all the commands pending from

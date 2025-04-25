@@ -924,7 +924,7 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
         }
     };
     receiver.await.unwrap()?;
-    do_shutdown(state).await
+    Ok(HttpResponse::Ok().json("Pipeline suspended"))
 }
 
 #[get("/shutdown")]
