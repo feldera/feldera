@@ -33,6 +33,7 @@ release() {
           cargo set-version --bump $1 -p fda
           cargo set-version --bump $1 -p pipeline-manager
           cargo set-version --bump $1 -p feldera-sqllib
+          cargo set-version --bump $1 -p feldera-ir
         ;;
         *) echo >&2 "Argument must be 'major' or 'minor' or 'patch'"; exit 1 ;;
     esac
