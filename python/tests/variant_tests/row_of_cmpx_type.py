@@ -128,7 +128,7 @@ class varnttst_row_of_arr_field_access_varnt(TstView):
         self.sql = """CREATE MATERIALIZED VIEW row_of_arr_field_access_varnt AS SELECT
                       id,
                       varnt_row_of_cmpx_tbl.row_arr[1] AS row_arr1,
-                      varnt_row_of_cmpx_tbl.row_arr[2] AS row_arr2
+                      varnt_row_of_cmpx_tbl.row_arr.v2 AS row_arr2
                       FROM varnt_row_of_cmpx_tbl"""
 
 
@@ -143,7 +143,7 @@ class varnttst_row_of_arr_elmnt_access_varnt(TstView):
         self.sql = """CREATE MATERIALIZED VIEW row_of_arr_elmnt_access_varnt AS SELECT
                       id,
                       varnt_row_of_cmpx_tbl.row_arr[1][1] AS row_arr11,
-                      varnt_row_of_cmpx_tbl.row_arr[2][1] AS row_arr21
+                      varnt_row_of_cmpx_tbl.row_arr.v2[1] AS row_arr21
                       FROM varnt_row_of_cmpx_tbl"""
 
 
@@ -176,7 +176,7 @@ class varnttst_row_of_map_field_access_varnt(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_map_field_access_varnt AS SELECT
                       id,
-                      row_map[1] AS row_map1,
+                      varnt_row_of_cmpx_tbl.row_map.v1 AS row_map1,
                       row_map[2] AS row_map2
                       FROM varnt_row_of_cmpx_tbl"""
 
@@ -191,7 +191,7 @@ class varnttst_row_of_map_elmnt_access_varnt(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_map_elmnt_access_varnt AS SELECT
                       id,
-                      row_map[1][CAST('x' AS VARIANT)] AS x,
+                      varnt_row_of_cmpx_tbl.row_map.v1[CAST('x' AS VARIANT)] AS x,
                       row_map[2][CAST('a' AS VARIANT)] AS a
                       FROM varnt_row_of_cmpx_tbl"""
 
@@ -225,7 +225,7 @@ class varnttst_row_of_row_field_access_varnt(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_row_field_access_varnt AS SELECT
                       id,
-                      varnt_row_of_cmpx_tbl.row_row[1] AS row_row1,
+                      varnt_row_of_cmpx_tbl.row_row.v1 AS row_row1,
                       varnt_row_of_cmpx_tbl.row_row[2] AS row_row2
                       FROM varnt_row_of_cmpx_tbl"""
 
@@ -240,7 +240,7 @@ class varnttst_row_of_row_elmnt_access_varnt(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_row_elmnt_access_varnt AS SELECT
                       id,
-                      varnt_row_of_cmpx_tbl.row_row[1][2] AS row_row12,
+                      varnt_row_of_cmpx_tbl.row_row.v1.v12 AS row_row12,
                       varnt_row_of_cmpx_tbl.row_row[2][1] AS row_row21
                       FROM varnt_row_of_cmpx_tbl"""
 
@@ -264,7 +264,7 @@ class varnttst_row_of_udt_field_access_varnt(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_udt_field_access_varnt AS SELECT
                       id,
-                      varnt_row_of_cmpx_tbl.row_udt[1] AS row_udt1,
+                      varnt_row_of_cmpx_tbl.row_udt.var1 AS row_udt1,
                       varnt_row_of_cmpx_tbl.row_udt[2] AS row_udt2
                       FROM varnt_row_of_cmpx_tbl"""
 
@@ -279,6 +279,6 @@ class varnttst_row_of_udt_elmnt_access_varnt(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_udt_elmnt_access_varnt AS SELECT
                       id,
-                      varnt_row_of_cmpx_tbl.row_udt[1][2] AS row_udt12,
+                      varnt_row_of_cmpx_tbl.row_udt.var1.v2 AS row_udt12,
                       varnt_row_of_cmpx_tbl.row_udt[2][1] AS row_udt21
                       FROM varnt_row_of_cmpx_tbl"""
