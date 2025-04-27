@@ -37,7 +37,7 @@ public final class DBSPCustomOrdField extends DBSPExpression {
 
     public DBSPCustomOrdField(DBSPExpression expression, int field) {
         super(expression.getNode(), getFieldType(expression.getType(), field).withMayBeNull(true));
-        assert expression.getType().mayBeNull;
+        Utilities.enforce(expression.getType().mayBeNull);
         this.expression = expression;
         this.fieldNo = field;
     }

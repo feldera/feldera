@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -35,12 +36,12 @@ public final class DBSPIntegrateTraceRetainValuesOperator
     public static DBSPIntegrateTraceRetainValuesOperator create(
             CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
         DBSPType controlType = control.outputType();
-        assert controlType.is(DBSPTypeTupleBase.class) : "Control type is not a tuple: " + controlType;
+        Utilities.enforce(controlType.is(DBSPTypeTupleBase.class), "Control type is not a tuple: " + controlType);
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
-        assert controlTuple.size() == 2;
+        Utilities.enforce(controlTuple.size() == 2);
 
         DBSPVariablePath controlArg = controlType.ref().var();
-        assert data.outputType().is(DBSPTypeIndexedZSet.class);
+        Utilities.enforce(data.outputType().is(DBSPTypeIndexedZSet.class));
         DBSPType valueType = data.getOutputIndexedZSetType().elementType;
         DBSPVariablePath dataArg = valueType.ref().var();
         DBSPParameter param = new DBSPParameter(dataArg.variable, dataArg.getType());
@@ -66,7 +67,7 @@ public final class DBSPIntegrateTraceRetainValuesOperator
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
+        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateTraceRetainValuesOperator(
                     this.getRelNode(), this.getFunction(),

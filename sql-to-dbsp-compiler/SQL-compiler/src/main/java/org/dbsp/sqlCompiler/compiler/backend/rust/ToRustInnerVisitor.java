@@ -529,10 +529,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("Some(");
         this.builder.append("Uuid::from_bytes([");
         byte[] data = literal.getByteArray();
-        assert data != null;
-        assert literal.value != null;
+        Utilities.enforce(data != null);
+        Utilities.enforce(literal.value != null);
         boolean first = true;
-        for (byte b: data) {
+        for (byte b : data) {
             if (!first)
                 this.builder.append(",");
             first = false;
@@ -679,7 +679,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
         this.builder.append("Arc::new(BTreeMap::from([");
-        assert expression.values != null;
+        Utilities.enforce(expression.values != null);
         if (expression.values.size() > 1)
             this.builder.increase();
         for (int i = 0; i < Objects.requireNonNull(expression.keys).size(); i++) {
@@ -963,7 +963,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (targetType.is(DBSPTypeOption.class)) {
                 fieldType = targetType.to(DBSPTypeOption.class).typeArgs[0];
             } else {
-                assert targetType.mayBeNull;
+                Utilities.enforce(targetType.mayBeNull);
                 fieldType = targetType.withMayBeNull(false);
             }
             this.builder.append(field);
@@ -1903,7 +1903,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPAssignmentExpression expression) {
         this.push(expression);
-        assert !this.compilingAssignmentLHS;
+        Utilities.enforce(!this.compilingAssignmentLHS);
         this.compilingAssignmentLHS = true;
         expression.left.accept(this);
         this.compilingAssignmentLHS = false;
@@ -2130,7 +2130,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (!expression.getType().mayBeNull) {
                 // If the result is not null, we need to unwrap().
                 // This should really not happen.
-                assert false;
+                Utilities.enforce(false);
 
                 this.compiler.reportWarning(expression.getSourcePosition(), "Potential crash",
                         "Expecting a non-null field from a possibly nullable struct");

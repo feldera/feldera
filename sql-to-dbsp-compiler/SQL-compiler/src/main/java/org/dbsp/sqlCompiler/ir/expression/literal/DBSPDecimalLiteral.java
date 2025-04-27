@@ -124,7 +124,7 @@ public final class DBSPDecimalLiteral extends DBSPLiteral implements IsNumericLi
 
     @Override
     public boolean gt0() {
-        assert this.value != null;
+        Utilities.enforce(this.value != null);
         return this.value.compareTo(BigDecimal.ZERO) > 0;
     }
 

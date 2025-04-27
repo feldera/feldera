@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.junit.Assert;
 
 import java.io.IOException;
 import java.util.Map;
@@ -107,7 +108,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
             DBSPExpression row = entry.getKey();
             DBSPTupleExpression tuple = row.to(DBSPTupleExpression.class);
             DBSPExpression[] prefix = new DBSPExpression[rowSize - 1];
-            assert tuple.fields != null;
+            Assert.assertNotNull(tuple.fields);
             System.arraycopy(tuple.fields, 0, prefix, 0, prefix.length);
             DBSPExpression rowWeight = tuple.fields[rowSize - 1];
             weight *= rowWeight.to(DBSPI64Literal.class).value;

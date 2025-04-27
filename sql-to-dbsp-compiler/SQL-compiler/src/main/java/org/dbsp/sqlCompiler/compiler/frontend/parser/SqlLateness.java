@@ -14,6 +14,7 @@ import org.apache.calcite.sql.validate.SqlValidatorScope;
 import org.apache.calcite.util.ImmutableNullableList;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.dataflow.qual.Pure;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 import java.util.Objects;
@@ -66,11 +67,11 @@ public class SqlLateness extends SqlCall {
         Objects.requireNonNull(operand);
         switch (i) {
             case 0:
-                assert operand instanceof SqlIdentifier;
+                Utilities.enforce(operand instanceof SqlIdentifier);
                 this.view = (SqlIdentifier) operand;
                 break;
             case 1:
-                assert operand instanceof SqlIdentifier;
+                Utilities.enforce(operand instanceof SqlIdentifier);
                 this.column = (SqlIdentifier) operand;
                 break;
             case 3:

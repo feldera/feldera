@@ -16,6 +16,7 @@ import org.apache.calcite.sql.validate.SqlValidatorScope;
 import org.apache.calcite.util.ImmutableNullableList;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.dataflow.qual.Pure;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 import java.util.Objects;
@@ -70,7 +71,7 @@ public class SqlRemove extends SqlCall {
     @Override public void setOperand(int i, @Nullable SqlNode operand) {
         switch (i) {
             case 0:
-                assert operand instanceof SqlIdentifier;
+                Utilities.enforce(operand instanceof SqlIdentifier);
                 this.targetTable = operand;
                 break;
             case 1:

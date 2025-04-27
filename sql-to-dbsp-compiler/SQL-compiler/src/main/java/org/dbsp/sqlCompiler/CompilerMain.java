@@ -40,8 +40,10 @@ import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -167,7 +169,7 @@ public class CompilerMain {
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         if (compiler.hasErrors())
             return compiler.messages;
-        assert circuit != null;
+        Utilities.enforce(circuit != null);
         if (this.options.ioOptions.emitJsonSchema != null) {
             try {
                 PrintStream outputStream = new PrintStream(
@@ -251,7 +253,7 @@ public class CompilerMain {
                 String outputPath = new File(outputFile).getAbsolutePath();
                 if (options.ioOptions.multiCrates()) {
                     // Generate globals/src/stubs.rs
-                    assert multiWriter != null;
+                    Utilities.enforce(multiWriter != null);
                     String globals = multiWriter.getGlobalsName();
                     stubs = Paths.get(outputPath).resolve(globals).resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
                 } else {

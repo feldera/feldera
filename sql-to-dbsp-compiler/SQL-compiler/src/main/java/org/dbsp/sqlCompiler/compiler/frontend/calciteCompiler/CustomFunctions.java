@@ -184,7 +184,7 @@ public class CustomFunctions {
 
         private static RelDataType broundReturnType(SqlOperatorBinding opBinding) {
             List<RelDataType> operandTypes = opBinding.collectOperandTypes();
-            assert operandTypes.size() == 2;
+            Utilities.enforce(operandTypes.size() == 2);
             RelDataType type0 = operandTypes.get(0);
             boolean anyNull = type0.isNullable() || operandTypes.get(1).isNullable();
             if (type0.getSqlTypeName() == SqlTypeName.DECIMAL)
@@ -213,10 +213,10 @@ public class CustomFunctions {
 
         private static RelDataType arrayInsertReturnType(SqlOperatorBinding opBinding) {
             List<RelDataType> operandTypes = opBinding.collectOperandTypes();
-            assert operandTypes.size() == 3;
+            Utilities.enforce( operandTypes.size() == 3);
             final RelDataType arrayType = operandTypes.get(0);
             RelDataType elementType = arrayType.getComponentType();
-            assert elementType != null;
+            Utilities.enforce( elementType != null);
             // Result element type always nullable
             elementType = opBinding.getTypeFactory().createTypeWithNullability(elementType, true);
             return SqlTypeUtil.createArrayType(opBinding.getTypeFactory(), elementType,

@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.Linq;
+import org.junit.Assert;
 import org.junit.Test;
 
 import java.math.BigDecimal;
@@ -553,8 +554,8 @@ public class CastTests extends SqlIoTest {
         /* U */{ F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, N, N, N, F, F, F, T, T },
         };
 
-        assert types.length == legal.length;
-        assert types.length == legal[0].length;
+        Assert.assertEquals(types.length, legal.length);
+        Assert.assertEquals(types.length, legal[0].length);
         StringBuilder program = new StringBuilder();
         program.append("CREATE VIEW V AS SELECT ");
         boolean first = true;

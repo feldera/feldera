@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 import java.util.Objects;
@@ -81,7 +82,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return false;
         joinFunction = this.find.findUnusedFields(joinFunction);
 
-        assert joinFunction.parameters.length == 3;
+        Utilities.enforce(joinFunction.parameters.length == 3);
         DBSPParameter left = joinFunction.parameters[1];
         DBSPParameter right = joinFunction.parameters[2];
 
@@ -109,11 +110,11 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression joinFunction = join.getClosureFunction();
         if (!this.done(joinFunction)) {
             // Make up a new function which always uses the timestamp fields
-            assert joinFunction.parameters.length == 3;
+            Utilities.enforce(joinFunction.parameters.length == 3);
             DBSPParameter left = joinFunction.parameters[1];
             DBSPParameter right = joinFunction.parameters[2];
             DBSPTupleExpression tuple = joinFunction.body.to(DBSPTupleExpression.class);
-            assert tuple.fields != null;
+            Utilities.enforce(tuple.fields != null);
             DBSPExpression[] extra = new DBSPExpression[tuple.size() + 2];
             System.arraycopy(tuple.fields, 0, extra, 0, tuple.size());
             extra[tuple.size()] = left.asVariable().deref().field(join.leftTimestampIndex);
@@ -182,7 +183,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPMapOperator operator) {
         if (operator.hasAnnotation(a -> a.is(IsProjection.class))
-            || !operator.getFunction().is(DBSPClosureExpression.class)) {
+                || !operator.getFunction().is(DBSPClosureExpression.class)) {
             // avoid infinite recursion
             super.postorder(operator);
             return;
@@ -194,7 +195,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
 
-        assert closure.parameters.length == 1;
+        Utilities.enforce(closure.parameters.length == 1);
         closure = this.find.findUnusedFields(closure);
         if (!this.find.foundUnusedFields(1)) {
             super.postorder(operator);
@@ -254,7 +255,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         }
 
         DBSPClosureExpression closure = operator.getClosureFunction();
-        assert closure.parameters.length == 1;
+        Utilities.enforce(closure.parameters.length == 1);
         if (this.done(closure)) {
             super.postorder(operator);
             return;

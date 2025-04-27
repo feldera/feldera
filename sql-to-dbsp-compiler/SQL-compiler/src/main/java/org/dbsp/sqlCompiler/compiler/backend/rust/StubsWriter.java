@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -68,7 +69,7 @@ use feldera_sqllib::*;
 use crate::*;
 """);
         List<DBSPFunction> extern = new ArrayList<>();
-        assert this.circuit != null;
+        Utilities.enforce(this.circuit != null);
         for (DBSPDeclaration decl: this.circuit.declarations) {
             DBSPFunctionItem item = decl.item.as(DBSPFunctionItem.class);
             if (item == null)

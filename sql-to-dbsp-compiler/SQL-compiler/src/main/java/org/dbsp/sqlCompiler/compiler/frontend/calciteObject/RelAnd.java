@@ -5,6 +5,7 @@ import org.apache.calcite.rel.core.TableScan;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import java.util.HashSet;
 import java.util.Map;
@@ -40,7 +41,7 @@ public class RelAnd extends CalciteRelNode {
 
     public void add(LastRel rel) {
         this.nodes.add(rel);
-        assert rel.relNode instanceof TableScan;
+        Utilities.enforce(rel.relNode instanceof TableScan);
     }
 
     @Override

@@ -201,10 +201,11 @@ public class ProfilingTests extends StreamingTestBase {
             System.err.println("Profile statistics without and with lateness:");
             System.err.println(Arrays.toString(p0));
             System.err.println(Arrays.toString(p1));
-            assert false;
+            Assert.fail("Profiling test failed");
         }
         // No late records
-        assert p0[2] == 0 && p1[2] == 0;
+        Assert.assertEquals(0L, (long)p0[2]);
+        Assert.assertEquals(0L, (long)p1[2]);
     }
 
     @Test

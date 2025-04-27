@@ -44,8 +44,8 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
         super(CalciteObject.EMPTY);
         this.identifier = identifier;
         this.genericArgs = genericArgs;
-        for (DBSPType type: genericArgs)
-            assert type != null;
+        for (DBSPType type : genericArgs)
+            Utilities.enforce(type != null);
     }
 
     public String asString() {

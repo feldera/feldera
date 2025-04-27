@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -46,7 +47,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
                                        OutputPort input) {
         super(node, "stream_aggregate",
                 outputType, function, aggregate, false, input, false);
-        assert aggregate == null || !aggregate.isLinear();
+        Utilities.enforce(aggregate == null || !aggregate.isLinear());
     }
 
     @Override

@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -49,7 +50,7 @@ public final class DBSPNegateOperator extends DBSPUnaryOperator {
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 1;
+        Utilities.enforce(newInputs.size() == 1);
         if (force || this.inputsDiffer(newInputs))
             return new DBSPNegateOperator(
                     this.getRelNode(), newInputs.get(0)).copyAnnotations(this);

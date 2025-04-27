@@ -27,6 +27,7 @@ import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
 import org.apache.calcite.config.CalciteConnectionProperty;
+import org.apache.calcite.config.Lex;
 import org.apache.calcite.config.NullCollation;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.plan.RelOptCluster;
@@ -237,7 +238,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.udt = new HashMap<>();
         this.connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
         this.parserConfig = SqlParser.config()
-                .withLex(options.languageOptions.lexicalRules)
+                .withLex(Lex.ORACLE)
                 // Our own parser factory
                 .withParserFactory(DbspParserImpl.FACTORY)
                 .withUnquotedCasing(UNQUOTED_CASING)
@@ -441,9 +442,9 @@ public class SqlToRelCompiler implements IWritesLogs {
                 }
             }
             if (operator instanceof SqlDatetimeSubtractionOperator) {
-                assert call.operandCount() == 3;
+                Utilities.enforce(call.operandCount() == 3);
                 SqlNode interval = call.getOperandList().get(2);
-                assert interval instanceof SqlIntervalQualifier;
+                Utilities.enforce(interval instanceof SqlIntervalQualifier);
                 SqlIntervalQualifier qual = (SqlIntervalQualifier) interval;
                 switch (qual.timeUnitRange) {
                     case QUARTER:
@@ -868,12 +869,12 @@ public class SqlToRelCompiler implements IWritesLogs {
                     return false;
             }
         } else if (left.getComponentType() != null) {
-            assert right.getComponentType() != null;
+            Utilities.enforce(right.getComponentType() != null);
             return canBeTriviallyCastTo(typeFactory, left.getComponentType(), right.getComponentType());
         } else if (left.getKeyType() != null) {
-            assert right.getKeyType() != null;
-            assert left.getValueType() != null;
-            assert right.getValueType() != null;
+            Utilities.enforce(right.getKeyType() != null);
+            Utilities.enforce(left.getValueType() != null);
+            Utilities.enforce(right.getValueType() != null);
             return canBeTriviallyCastTo(typeFactory, left.getKeyType(), right.getKeyType()) &&
                     canBeTriviallyCastTo(typeFactory, left.getValueType(), right.getValueType());
         } else {
@@ -926,7 +927,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         if (list == null)
             return null;
         PropertyList result = new PropertyList();
-        assert list.size() % 2 == 0;
+        Utilities.enforce(list.size() % 2 == 0);
         for (int i = 0; i < list.size(); i += 2) {
             SqlNode inode = list.get(i);
             if (!(inode instanceof SqlCharStringLiteral key)) {
@@ -934,7 +935,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                         "Expected a simple string", "Found " + Utilities.singleQuote(inode.toString()));
                 continue;
             }
-            SqlNode iiNode = list.get(i+1);
+            SqlNode iiNode = list.get(i + 1);
             if (!(iiNode instanceof SqlCharStringLiteral value)) {
                 this.errorReporter.reportError(new SourcePositionRange(iiNode.getParserPosition()),
                         "Expected a simple string", "Found " + Utilities.singleQuote(iiNode.toString()));
@@ -970,13 +971,13 @@ public class SqlToRelCompiler implements IWritesLogs {
             for (ParsedStatement node : list) {
                 lastStatement = clone.compile(node, sources);
             }
-            assert lastStatement != null;
-            assert lastStatement instanceof CreateViewStatement;
+            Utilities.enforce(lastStatement != null);
+            Utilities.enforce(lastStatement instanceof CreateViewStatement);
             CreateViewStatement cv = (CreateViewStatement) lastStatement;
             RelNode node = cv.getRel();
             if (node instanceof LogicalTableScan) {
                 // This means that a subtraction with 0 was reduced to a simple value
-                assert this.converter != null;
+                Utilities.enforce(this.converter != null);
                 return this.converter.convertExpression(value);
             }
             if (node instanceof LogicalProject project) {
@@ -1026,12 +1027,12 @@ public class SqlToRelCompiler implements IWritesLogs {
             for (ParsedStatement node : list) {
                 lastStatement = clone.compile(node, sources);
             }
-            assert lastStatement != null;
-            assert lastStatement instanceof CreateViewStatement;
+            Utilities.enforce(lastStatement != null);
+            Utilities.enforce(lastStatement instanceof CreateViewStatement);
             CreateViewStatement cv = (CreateViewStatement) lastStatement;
             RelNode node = cv.getRel();
             if (node instanceof LogicalValues) {
-                assert this.converter != null;
+                Utilities.enforce(this.converter != null);
                 return this.converter.convertExpression(value);
             }
             if (node instanceof LogicalProject project) {
@@ -1336,7 +1337,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         void visitProject(LogicalProject project) {
             List<RexNode> fields = project.getProjects();
-            assert fields.size() == 1;
+            Utilities.enforce(fields.size() == 1);
             this.body = fields.get(0);
         }
 
@@ -1396,12 +1397,12 @@ public class SqlToRelCompiler implements IWritesLogs {
             SqlToRelCompiler clone = new SqlToRelCompiler(this);
             List<ParsedStatement> list = clone.parseStatements(sql, true);
             RelStatement statement = null;
-            for (ParsedStatement node: list) {
+            for (ParsedStatement node : list) {
                 statement = clone.compile(node, sources);
             }
 
             CreateViewStatement view = Objects.requireNonNull(statement).as(CreateViewStatement.class);
-            assert view != null;
+            Utilities.enforce(view != null);
             RelNode node = view.getRel();
             ProjectExtractor extractor = new ProjectExtractor();
             extractor.go(node);
@@ -1676,7 +1677,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
         boolean success = true;
         for (SqlNode col: ci.columns) {
-            assert col instanceof SqlIdentifier;
+            Utilities.enforce(col instanceof SqlIdentifier);
             SqlIdentifier id = (SqlIdentifier) col;
             ProgramIdentifier pid = Utilities.toIdentifier(id);
             if (columns.containsKey(pid)) {
@@ -2021,7 +2022,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     if (typeSpec.getNullable() != null && typeSpec.getNullable()) {
                         // This is tricky, because it is not using the typeFactory that is
                         // the lambda argument above, but hopefully it should be the same
-                        assert typeFactory == this.typeFactory;
+                        Utilities.enforce(typeFactory == this.typeFactory);
                         type = this.createNullableType(type);
                     }
                     builder.add(attributeDef.name.getSimple(), type);

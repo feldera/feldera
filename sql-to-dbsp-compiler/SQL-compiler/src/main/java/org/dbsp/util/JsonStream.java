@@ -84,7 +84,7 @@ public class JsonStream {
     }
 
     public JsonStream label(String label) {
-        assert !label.isEmpty();
+        Utilities.enforce(!label.isEmpty());
         Context last = Utilities.last(this.context);
         InObject io = last.to(InObject.class,
                 "Adding label but not within JsonObject");
@@ -107,7 +107,7 @@ public class JsonStream {
 
     public JsonStream endArray() {
         Context last = Utilities.removeLast(this.context);
-        assert last.is(InArray.class);
+        Utilities.enforce(last.is(InArray.class));
         if (last.index != 0)
             this.stream.newline().decrease();
         this.stream.append("]");
@@ -123,7 +123,7 @@ public class JsonStream {
 
     public void endObject() {
         Context last = Utilities.removeLast(this.context);
-        assert last.is(InObject.class);
+        Utilities.enforce(last.is(InObject.class));
         if (last.index != 0)
             this.stream.newline().decrease();
         this.stream.append("}");

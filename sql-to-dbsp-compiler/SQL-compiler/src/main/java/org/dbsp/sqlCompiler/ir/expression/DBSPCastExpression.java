@@ -46,11 +46,11 @@ public final class DBSPCastExpression extends DBSPExpression {
         super(node, to);
         this.source = source;
         this.safe = safe;
-        assert !safe || to.mayBeNull;
+        Utilities.enforce(!safe || to.mayBeNull);
     }
 
     public DBSPCastExpression replaceSource(DBSPExpression source) {
-        assert source.getType().sameType(this.source.getType());
+        Utilities.enforce(source.getType().sameType(this.source.getType()));
         return new DBSPCastExpression(this.getNode(), source, this.type, this.safe);
     }
 

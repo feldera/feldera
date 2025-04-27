@@ -319,8 +319,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      * This is used in the implementation of COUNT(a, b). */
     public static DBSPExpression makeIndicator(
             CalciteObject node, DBSPType resultType, DBSPExpression argument) {
-        assert !resultType.mayBeNull;
-        assert resultType.is(IsNumericType.class);
+        Utilities.enforce(!resultType.mayBeNull);
+        Utilities.enforce(resultType.is(IsNumericType.class));
         DBSPType argType = argument.getType();
         if (argType.is(DBSPTypeTuple.class) &&
                 argType.to(DBSPTypeTuple.class).originalStruct == null) {
@@ -332,7 +332,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 result = new DBSPBinaryExpression(node, resultType, DBSPOpcode.MUL, result, next);
             }
             return result;
-        } else  {
+        } else {
             // scalar types, but not only.  Nullable structs fall here too.
             if (!argType.mayBeNull) {
                 return resultType.to(IsNumericType.class).getOne();
@@ -429,7 +429,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             rightType = right.getType();
                         }
 
-                        assert rightType.is(IsNumericType.class);
+                        Utilities.enforce(rightType.is(IsNumericType.class));
                         // Canonicalize the type on the right without information loss
                         if (rightType.is(DBSPTypeInteger.class)) {
                             if (leftType.is(DBSPTypeMillisInterval.class)) {
@@ -770,7 +770,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         // If type is NULL we can skip the call altogether...
         if (type.is(DBSPTypeNull.class))
             return DBSPNullLiteral.INSTANCE;
-        assert !type.is(DBSPTypeStruct.class);
+        Utilities.enforce(!type.is(DBSPTypeStruct.class));
 
         final RexCall finalCall = call;
         Logger.INSTANCE.belowLevel(this, 2)
@@ -780,7 +780,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (call.op.kind == SqlKind.SEARCH) {
             // TODO: Ideally the optimizer should do this before handing the expression to us.
             // Then the rexBuilder won't be needed.
-            call = (RexCall)RexUtil.expandSearch(this.rexBuilder, null, call);
+            call = (RexCall) RexUtil.expandSearch(this.rexBuilder, null, call);
         }
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
         String operationName = call.op.kind.sql;
@@ -1239,9 +1239,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compileKeywordFunction(call, node, null, type, ops, 1, 2);
                     case "array_insert": {
                         validateArgCount(node, operationName, ops.size(), 3);
-                        assert type.is(DBSPTypeArray.class);
+                        Utilities.enforce(type.is(DBSPTypeArray.class));
                         // Element type must be always nullable in result
-                        assert type.to(DBSPTypeArray.class).getElementType().mayBeNull;
+                        Utilities.enforce(type.to(DBSPTypeArray.class).getElementType().mayBeNull);
                         this.ensureInteger(ops, 1);
                         DBSPExpression inserted = ops.get(2);
                         inserted = inserted.cast(type.to(DBSPTypeArray.class).getElementType(), false);
@@ -1364,7 +1364,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return compileFunction("array_to_string", node, type, ops, 2, 3);
             }
             case LIKE:
-            // ILIKE will also match LIKE in Calcite, it's just a special case for case-insensitive matching
+                // ILIKE will also match LIKE in Calcite, it's just a special case for case-insensitive matching
             case SIMILAR: {
                 validateArgCount(node, operationName, ops.size(), 2, 3);
                 for (int i = 0; i < ops.size(); i++)
@@ -1417,18 +1417,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     opcode = DBSPOpcode.VARIANT_INDEX;
                 } else if (collectionType.is(DBSPTypeTuple.class)) {
                     DBSPTypeTuple tuple = collectionType.to(DBSPTypeTuple.class);
-                    assert index.is(DBSPStringLiteral.class);
+                    Utilities.enforce(index.is(DBSPStringLiteral.class));
                     DBSPStringLiteral lit = index.to(DBSPStringLiteral.class);
-                    assert lit.value != null;
+                    Utilities.enforce(lit.value != null);
                     String fieldName = lit.value;
-                    assert tuple.originalStruct != null;
+                    Utilities.enforce(tuple.originalStruct != null);
                     DBSPTypeStruct.Field field = tuple.originalStruct.getField(
                             new ProgramIdentifier(fieldName, false));
-                    assert field != null;
+                    Utilities.enforce(field != null);
                     int fieldIndex = field.index;
                     return op0.field(fieldIndex).applyCloneIfNeeded();
                 } else {
-                    assert collectionType.is(DBSPTypeArray.class);
+                    Utilities.enforce(collectionType.is(DBSPTypeArray.class));
                 }
                 return new DBSPBinaryExpression(node, type, opcode, op0, index);
             }
@@ -1518,8 +1518,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return new DBSPApplyExpression(node, method, type, arg0, arg1);
             }
             case ARRAY_MAX:
-            case ARRAY_MIN:
-            {
+            case ARRAY_MIN: {
                 if (call.operands.size() != 1)
                     throw operandCountError(node, operationName, call.operandCount());
 

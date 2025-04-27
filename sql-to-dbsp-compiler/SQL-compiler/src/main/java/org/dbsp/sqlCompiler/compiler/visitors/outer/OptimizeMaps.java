@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Maybe;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -204,12 +205,12 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
      *                 The second one has signature (A, D) -> (C, D).  Second component is identity.
      */
     Pair<DBSPClosureExpression, DBSPClosureExpression> splitClosure(DBSPClosureExpression closure) {
-        assert closure.parameters.length == 1;
+        Utilities.enforce(closure.parameters.length == 1);
         DBSPParameter param = closure.parameters[0];
         DBSPTypeRawTuple paramType = param.getType().to(DBSPTypeRawTuple.class);
 
         DBSPRawTupleExpression tuple = closure.body.to(DBSPRawTupleExpression.class);
-        assert tuple.fields != null;
+        Utilities.enforce(tuple.fields != null);
         DBSPVariablePath var0 = param.asVariable();
         DBSPClosureExpression first =
                 new DBSPRawTupleExpression(

@@ -32,6 +32,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
 import org.dbsp.util.TableValue;
 import org.dbsp.util.Utilities;
+import org.junit.Assert;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -87,8 +88,7 @@ public class TestCase {
         Shuffle inputShuffle = new IdShuffle(this.ccs.circuit.getInputTables().size());
         if (!inputOrder.isEmpty()) {
             List<String> inputs = Linq.map(Linq.list(this.ccs.circuit.getInputTables()), ProgramIdentifier::name);
-            assert inputOrder.size() == inputs.size() :
-                "Change has " + inputOrder.size() + " inputs, but circuit has " + inputs.size();
+            Assert.assertEquals(inputOrder.size(), inputs.size());
             inputShuffle = ExplicitShuffle.computePermutation(inputOrder, inputs);
         }
         List<String> outputOrder = this.ccs.stream.outputTables;

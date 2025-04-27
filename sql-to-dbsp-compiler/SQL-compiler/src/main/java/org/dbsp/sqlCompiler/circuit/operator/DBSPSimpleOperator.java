@@ -126,7 +126,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
 
     protected void checkParameterCount(DBSPExpression function, int expected) {
         DBSPClosureExpression closure = function.to(DBSPClosureExpression.class);
-        assert closure.parameters.length == expected;
+        Utilities.enforce(closure.parameters.length == expected);
     }
 
     public DBSPTypeIndexedZSet getOutputIndexedZSetType() {
@@ -267,13 +267,13 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
 
     @Override
     public DBSPType outputType(int outputNo) {
-        assert outputNo == 0;
+        Utilities.enforce(outputNo == 0);
         return this.outputType;
     }
 
     @Override
     public boolean isMultiset(int outputNo) {
-        assert outputNo == 0;
+        Utilities.enforce(outputNo == 0);
         return this.isMultiset;
     }
 

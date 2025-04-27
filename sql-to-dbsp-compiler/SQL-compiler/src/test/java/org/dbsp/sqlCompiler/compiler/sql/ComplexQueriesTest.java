@@ -114,7 +114,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
             @Override
             public void postorder(DBSPTypeTupleBase type) {
                 // Without UnusedFields the width of the tuples can be 9
-                assert type.size() <= 5;
+                Assert.assertTrue(type.size() <= 5);
             }
         };
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {

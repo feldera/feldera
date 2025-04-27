@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -118,7 +119,7 @@ public class FieldUseMap {
 
         @Override
         public FieldInfo reduce(FieldInfo fieldInfo) {
-            assert this.type.sameType(fieldInfo.type);
+            Utilities.enforce(this.type.sameType(fieldInfo.type));
             return new Ref(this.type, this.field.reduce(fieldInfo.to(Ref.class).field));
         }
 
@@ -197,7 +198,7 @@ public class FieldUseMap {
 
         @Override
         public FieldInfo reduce(FieldInfo other) {
-            assert this.type.sameType(other.type);
+            Utilities.enforce(this.type.sameType(other.type));
             Atomic oa = other.to(Atomic.class);
             return new Atomic(this.type, this.used || oa.used);
         }
@@ -269,8 +270,8 @@ public class FieldUseMap {
 
         @Override
         public int getCompressedIndex(int originalIndex) {
-            assert originalIndex < this.size();
-            assert originalIndex >= 0;
+            Utilities.enforce(originalIndex < this.size());
+            Utilities.enforce(originalIndex >= 0);
             int index = originalIndex;
             for (int i = 0; i < originalIndex; i++) {
                 if (!this.fields.get(i).anyUsed() && !this.isRaw()) {
@@ -329,9 +330,9 @@ public class FieldUseMap {
 
         @Override
         public FieldInfo reduce(FieldInfo other) {
-            assert this.type.sameType(other.type);
+            Utilities.enforce(this.type.sameType(other.type));
             BitList ol = other.to(BitList.class);
-            assert this.size() == ol.size();
+            Utilities.enforce(this.size() == ol.size());
             List<FieldInfo> bits = Linq.zip(this.fields, ol.fields, FieldInfo::reduce);
             return new BitList(this.getTupleType(), bits);
         }
@@ -353,7 +354,7 @@ public class FieldUseMap {
         }
 
         public FieldInfo slice(int start, int endExclusive) {
-            assert (endExclusive >= start);
+            Utilities.enforce((endExclusive >= start));
             DBSPTypeTupleBase type = this.getTupleType().slice(start, endExclusive);
             List<FieldInfo> fields = this.fields.subList(start, endExclusive);
             return new BitList(type, fields);
@@ -460,7 +461,7 @@ public class FieldUseMap {
     }
 
     public static FieldUseMap reduce(List<FieldUseMap> maps) {
-        assert !maps.isEmpty();
+        Utilities.enforce(!maps.isEmpty());
         FieldUseMap current = maps.get(0);
         for (int i = 1; i < maps.size(); i++) {
             current = current.reduce(maps.get(i));

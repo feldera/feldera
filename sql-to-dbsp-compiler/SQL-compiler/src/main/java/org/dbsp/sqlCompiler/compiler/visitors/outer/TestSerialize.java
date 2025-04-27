@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.util.Utilities;
+import org.locationtech.jts.util.Assert;
 
 /** Tests serialization to Json and back */
 @SuppressWarnings("unused")
@@ -32,8 +33,8 @@ public class TestSerialize implements CircuitTransform {
             JsonNode node = Utilities.deterministicObjectMapper().readTree(str);
             JsonDecoder decoder = new JsonDecoder(this.compiler.sqlToRelCompiler.typeFactory);
             DBSPCircuit result = decoder.decodeOuter(node, DBSPCircuit.class);
-            assert circuit.declarations.size() == result.declarations.size();
-            assert circuit.allOperators.size() == result.allOperators.size();
+            Assert.equals(circuit.declarations.size(), result.declarations.size());
+            Assert.equals(circuit.allOperators.size(), result.allOperators.size());
             return result;
         } catch (JsonProcessingException ex) {
             System.out.println(str);

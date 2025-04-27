@@ -104,13 +104,13 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
 
     protected void map(OutputPort old, OutputPort newOp) {
         this.map(old, newOp, true);
-        assert old.node() == this.getCurrent();
+        Utilities.enforce(old.node() == this.getCurrent());
         if (!old.equals(newOp)) {
             long derivedFrom = old.node().derivedFrom;
             newOp.node().setDerivedFrom(derivedFrom);
-            assert old.outputType().sameType(newOp.outputType()) :
+            Utilities.enforce(old.outputType().sameType(newOp.outputType()),
                     "Replacing operator with type\n" + old.outputType() +
-                            " with new type\n" + newOp.outputType();
+                            " with new type\n" + newOp.outputType());
         }
     }
 
@@ -499,7 +499,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                 result.addOutput(operator.outputViews.get(i), newPort);
             this.map(new OutputPort(operator, i), new OutputPort(result, i), false);
         }
-        assert operator.outputCount() == result.outputCount();
+        Utilities.enforce(operator.outputCount() == result.outputCount());
         this.map(operator, result);
     }
 

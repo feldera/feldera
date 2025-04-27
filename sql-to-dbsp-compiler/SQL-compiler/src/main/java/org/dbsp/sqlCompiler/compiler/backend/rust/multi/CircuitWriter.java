@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.util.HashString;
+import org.dbsp.util.Utilities;
 
 import java.io.IOException;
 
@@ -70,7 +71,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                     .append(dep)
                     .append("::*;")
                     .newline();
-        assert this.toWrite.size() == 1 : "Found " + this.toWrite.size() + " operators";
+        Utilities.enforce(this.toWrite.size() == 1, "Found " + this.toWrite.size() + " operators");
         DBSPCircuit circuit = this.toWrite.get(0).to(DBSPCircuit.class);
         this.builder().append("pub fn ")
                 .append(circuit.getName());

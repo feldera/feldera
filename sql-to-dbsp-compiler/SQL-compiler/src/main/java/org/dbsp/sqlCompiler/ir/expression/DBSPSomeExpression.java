@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** Represents an expression of the form Some(e).
  * Does not really support arbitrary expressions for e:
@@ -17,7 +18,7 @@ public final class DBSPSomeExpression extends DBSPExpression {
 
     public DBSPSomeExpression(CalciteObject node, DBSPExpression expression) {
         super(node, expression.getType().withMayBeNull(true));
-        assert !expression.getType().mayBeNull;
+        Utilities.enforce(!expression.getType().mayBeNull);
         this.expression = expression;
     }
 

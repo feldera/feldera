@@ -63,7 +63,7 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     @Override
     public void addInput(OutputPort port) {
         super.addInput(port);
-        assert !this.contains(port.node());
+        Utilities.enforce(!this.contains(port.node()));
     }
 
     @Override
@@ -92,7 +92,7 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     public OutputPort addOutput(ProgramIdentifier view, @Nullable OutputPort port) {
         this.outputViews.add(view);
         this.internalOutputs.add(port);
-        assert port == null || this.operators.contains(port.node());
+        Utilities.enforce(port == null || this.operators.contains(port.node()));
         return new OutputPort(this, this.internalOutputs.size() - 1);
     }
 
@@ -202,7 +202,7 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         List<ProgramIdentifier> outputViews = Linq.list(Linq.map(
                 Utilities.getProperty(node, "outputViews").elements(),
                 ProgramIdentifier::fromJson));
-        assert internalOutputs.size() == outputViews.size();
+        Utilities.enforce(internalOutputs.size() == outputViews.size());
         for (int i = 0; i < internalOutputs.size(); i++) {
             result.addOutput(outputViews.get(i), internalOutputs.get(i));
         }

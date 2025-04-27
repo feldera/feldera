@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.ExplicitShuffle;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -232,7 +233,7 @@ public class Projection extends InnerVisitor {
     @Override
     public void postorder(DBSPFieldExpression field) {
         if (this.ioMap != null) {
-            assert this.currentParameterIndex >= 0;
+            Utilities.enforce(this.currentParameterIndex >= 0);
             this.ioMap.add(this.currentParameterIndex, field.fieldNo);
         }
     }
@@ -240,7 +241,7 @@ public class Projection extends InnerVisitor {
     @Override
     public void postorder(DBSPCustomOrdField field) {
         if (this.ioMap != null) {
-            assert this.currentParameterIndex >= 0;
+            Utilities.enforce(this.currentParameterIndex >= 0);
             this.ioMap.add(this.currentParameterIndex, field.fieldNo);
         }
     }
@@ -310,8 +311,8 @@ public class Projection extends InnerVisitor {
     }
 
     public Shuffle getShuffle() {
-        assert this.isProjection;
-        assert this.parameters != null;
+        Utilities.enforce(this.isProjection);
+        Utilities.enforce(this.parameters != null);
         DBSPType type = this.parameters[0].getType();
         int size = type.deref().to(DBSPTypeTupleBase.class).size();
         return new ExplicitShuffle(size, Objects.requireNonNull(this.shuffle));
@@ -354,7 +355,7 @@ public class Projection extends InnerVisitor {
             DBSPTypeTupleBase bodyType = this.expression.body.getType().to(DBSPTypeTupleBase.class);
             int iomapSize = this.ioMap.fields().size();
             if (bodyType.is(DBSPTypeRawTuple.class)) {
-                assert bodyType.tupFields.length == 2;
+                Utilities.enforce(bodyType.tupFields.length == 2);
                 int totalSize = bodyType.tupFields[0].to(DBSPTypeTupleBase.class).size() +
                         bodyType.tupFields[1].to(DBSPTypeTupleBase.class).size();
                 assert iomapSize == totalSize :
@@ -367,7 +368,7 @@ public class Projection extends InnerVisitor {
     }
 
     public boolean isShuffle() {
-        assert Objects.requireNonNull(this.parameters).length == 1;
+        Utilities.enforce(Objects.requireNonNull(this.parameters).length == 1);
         return this.shuffle != null;
     }
 

@@ -176,7 +176,7 @@ public final class DBSPZSetExpression extends DBSPExpression
             if (mapLit.values == null) {
                 return new DBSPMapExpression(map, null, null);
             }
-            assert mapLit.keys != null;
+            Utilities.enforce(mapLit.keys != null);
             List<DBSPExpression> keys = Linq.map(mapLit.keys, e -> this.castRecursive(e, map.getKeyType()));
             List<DBSPExpression> values = Linq.map(mapLit.values, e -> this.castRecursive(e, map.getValueType()));
             return new DBSPMapExpression(map, keys, values);
@@ -300,7 +300,7 @@ public final class DBSPZSetExpression extends DBSPExpression
         List<DBSPExpression> data = DBSPNode.fromJsonInnerList(node, "data", decoder, DBSPExpression.class);
         JsonNode w = Utilities.getProperty(node, "weights");
         List<Long> weights = Linq.list(Linq.map(w.elements(), JsonNode::asLong));
-        assert data.size() == weights.size();
+        Utilities.enforce(data.size() == weights.size());
         Map<DBSPExpression, Long> map = new HashMap<>();
         for (int i = 0; i < data.size(); i++)
             map.put(data.get(i), weights.get(i));

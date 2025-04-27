@@ -26,8 +26,8 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue 
         super(CalciteObject.EMPTY, type);
         this.value = value;
         this.isSqlNull = false;
-        assert type.is(DBSPTypeVariant.class);
-        assert value == null || value.is(ISameValue.class);
+        Utilities.enforce(type.is(DBSPTypeVariant.class));
+        Utilities.enforce(value == null || value.is(ISameValue.class));
     }
 
     public DBSPVariantExpression(boolean mayBeNull) {

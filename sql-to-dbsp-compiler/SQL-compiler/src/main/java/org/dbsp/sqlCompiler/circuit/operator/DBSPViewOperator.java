@@ -33,8 +33,8 @@ public final class DBSPViewOperator
             ViewMetadata metadata, OutputPort input) {
         super(node, "map", DBSPClosureExpression.id(), viewName, query,
                 originalRowType, metadata, input);
-        assert !originalRowType.is(DBSPTypeStruct.class) ||
-                metadata.size() == originalRowType.to(DBSPTypeStruct.class).fields.size();
+        Utilities.enforce(!originalRowType.is(DBSPTypeStruct.class) ||
+                metadata.size() == originalRowType.to(DBSPTypeStruct.class).fields.size());
     }
 
     /** True if any column has LATENESS information */

@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -23,7 +24,7 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
             DBSPExpression function, boolean isMultiset,
             OutputPort left, OutputPort right) {
         super(node, "stream_join_index", function, outputType, isMultiset, left, right);
-        assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType);
+        Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType));
     }
 
     @Override

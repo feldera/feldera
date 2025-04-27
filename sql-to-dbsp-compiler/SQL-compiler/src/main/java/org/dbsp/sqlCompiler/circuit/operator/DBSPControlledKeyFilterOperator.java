@@ -23,6 +23,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -45,9 +46,9 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
         this.addInput(data);
         this.addInput(control);
         data.getOutputZSetType();
-        assert function.getResultType().is(DBSPTypeBool.class);
-        assert function.parameters.length == 2;
-        assert error.parameters.length == 4;
+        Utilities.enforce(function.getResultType().is(DBSPTypeBool.class));
+        Utilities.enforce(function.parameters.length == 2);
+        Utilities.enforce(error.parameters.length == 4);
     }
 
     public static final String LATE_ERROR = "Late value";
@@ -69,9 +70,9 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
         DBSPType leftType = left.getType();
         if (leftType.is(DBSPTypeBaseType.class)) {
             DBSPType rightType = right.getType();
-            assert leftType.withMayBeNull(true)
-                    .sameType(rightType.withMayBeNull(true)):
-                    "Types differ: " + leftType + " vs " + rightType;
+            Utilities.enforce(leftType.withMayBeNull(true)
+                    .sameType(rightType.withMayBeNull(true)),
+                    "Types differ: " + leftType + " vs " + rightType);
             // Notice the comparison using AGG_GTE, which never returns NULL
             DBSPExpression comparison = new DBSPBinaryExpression(CalciteEmptyRel.INSTANCE,
                     DBSPTypeBool.create(false), opcode, left, right);
@@ -107,7 +108,7 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
 
     @Override
     public DBSPOperatorWithError withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
+        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
         if (force || this.inputsDiffer(newInputs))
             return new DBSPControlledKeyFilterOperator(
                     this.getRelNode(), this.function, this.error,

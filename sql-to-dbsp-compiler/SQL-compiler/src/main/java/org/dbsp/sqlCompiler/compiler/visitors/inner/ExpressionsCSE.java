@@ -43,7 +43,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
 
     record Assignment(DBSPVariablePath var, DBSPExpression expression, Set<IDBSPDeclaration> dependsOn) {
         Assignment {
-            assert var.getType().deref().sameType(expression.getType());
+            Utilities.enforce(var.getType().deref().sameType(expression.getType()));
         }
 
         @Override
@@ -66,7 +66,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
     @Override
     void map(DBSPExpression expression, DBSPExpression result) {
         ValueNumbering.CanonicalExpression canon = this.numbering.get(expression);
-        assert this.operatorContext != null;
+        Utilities.enforce(this.operatorContext != null);
         if (canon != null) {
             DBSPVariablePath var = null;
             if (this.cseVariables.containsKey(canon.expression)) {

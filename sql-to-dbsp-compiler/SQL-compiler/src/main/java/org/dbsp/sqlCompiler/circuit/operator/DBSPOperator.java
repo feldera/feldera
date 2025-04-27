@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -75,7 +76,7 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     public void setDerivedFrom(long id) {
         if (id != this.id) {
             this.derivedFrom = id;
-            assert id < this.id;
+            Utilities.enforce(id < this.id);
         }
     }
 

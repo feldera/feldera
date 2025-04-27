@@ -25,7 +25,7 @@ public final class DBSPUuidLiteral extends DBSPLiteral {
 
     public DBSPUuidLiteral(CalciteObject node, DBSPType type, @Nullable UUID value) {
         super(node, type, value == null);
-        assert type.is(DBSPTypeUuid.class);
+        Utilities.enforce(type.is(DBSPTypeUuid.class));
         this.value = value;
     }
 

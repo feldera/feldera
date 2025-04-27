@@ -53,7 +53,7 @@ public class IndentStream implements IIndentStream {
 
     /** Set the indent amount.  If less or equal to 0, newline will have no effect. */
     public IIndentStream setIndentAmount(int amount) {
-        assert amount >= 0;
+        Utilities.enforce(amount >= 0);
         this.amount = amount;
         this.indentAdd = " ".repeat(amount);
         return this;
@@ -105,7 +105,7 @@ public class IndentStream implements IIndentStream {
         } else {
             this.indentString += this.indentAdd;
             this.indentStringCache.put(this.spaces, this.indentString);
-            assert this.spaces == this.indentString.length();
+            Utilities.enforce(this.spaces == this.indentString.length());
         }
         return this.newline();
     }
@@ -120,7 +120,7 @@ public class IndentStream implements IIndentStream {
         } else {
             this.indentString = this.indentString.substring(0, this.spaces);
             this.indentStringCache.put(this.spaces, this.indentString);
-            assert this.spaces == this.indentString.length();
+            Utilities.enforce(this.spaces == this.indentString.length());
         }
         return this;
     }

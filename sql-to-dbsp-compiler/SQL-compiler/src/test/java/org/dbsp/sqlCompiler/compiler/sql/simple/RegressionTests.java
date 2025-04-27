@@ -371,7 +371,7 @@ public class RegressionTests extends SqlIoTest {
             }
         };
         cc.visit(visitor.getCircuitVisitor(false));
-        assert functionCalls[0] == 1;
+        Assert.assertEquals(1, functionCalls[0]);
     }
 
     @Test
@@ -2007,12 +2007,12 @@ public class RegressionTests extends SqlIoTest {
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPMapOperator operator) {
-                assert false;
+                Assert.fail();
             }
 
             @Override
             public void postorder(DBSPFilterOperator operator) {
-                assert false;
+                Assert.fail();
             }
         };
         ccs.visit(visitor);

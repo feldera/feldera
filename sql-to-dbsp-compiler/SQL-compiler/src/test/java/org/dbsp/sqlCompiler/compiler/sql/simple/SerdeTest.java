@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.junit.Assert;
 import org.junit.Test;
 
 public class SerdeTest extends SqlIoTest {
@@ -91,7 +92,7 @@ public class SerdeTest extends SqlIoTest {
         );
         DBSPZSetExpression input1 = new DBSPZSetExpression(addressIn1);
         DBSPZSetExpression output1 = new DBSPZSetExpression(addressOut0);
-        assert addressOut0.fields != null;
+        Assert.assertNotNull(addressOut0.fields);
         ccs.addPair(new Change(input1), new Change(new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPTupleExpression(true, 
                         new DBSPStringLiteral("Boston", true),

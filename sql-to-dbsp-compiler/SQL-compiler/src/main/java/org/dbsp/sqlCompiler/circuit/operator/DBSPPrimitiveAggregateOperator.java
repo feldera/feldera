@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -21,7 +22,7 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
             CalciteRelNode node, @Nullable DBSPExpression function, DBSPType outputType,
             OutputPort delta, OutputPort integral) {
         super(node, "AggregateIncremental", function, outputType, false, delta, integral, true);
-        assert delta.getOutputIndexedZSetType().sameType(integral.getOutputIndexedZSetType());
+        Utilities.enforce(delta.getOutputIndexedZSetType().sameType(integral.getOutputIndexedZSetType()));
     }
 
     @Override

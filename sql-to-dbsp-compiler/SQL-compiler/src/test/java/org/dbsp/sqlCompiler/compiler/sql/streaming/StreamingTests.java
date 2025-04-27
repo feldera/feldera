@@ -1671,7 +1671,7 @@ public class StreamingTests extends StreamingTestBase {
             }
         };
         ccs.visit(visitor);
-        assert fmi[0] == 3;
+        Assert.assertEquals(3, fmi[0]);
         ccs.step("""
                 INSERT INTO T1 VALUES(0, 1, 2);
                 INSERT INTO T2 VALUES(0, 1, 2);

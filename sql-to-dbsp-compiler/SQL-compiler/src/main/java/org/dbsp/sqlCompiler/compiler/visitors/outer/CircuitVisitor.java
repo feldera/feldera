@@ -79,7 +79,7 @@ public abstract class CircuitVisitor
     }
 
     public ICircuit getParent() {
-        assert this.context.size() > 1;
+        Utilities.enforce(this.context.size() > 1);
         return this.context.get(this.context.size() - 2).to(ICircuit.class);
     }
 
@@ -108,7 +108,7 @@ public abstract class CircuitVisitor
 
     /** Override to finish after visiting all nodes. */
     public void endVisit() {
-        assert this.circuit != null;
+        Utilities.enforce(this.circuit != null);
         this.circuit = null;
         profiles.stop(this);
     }

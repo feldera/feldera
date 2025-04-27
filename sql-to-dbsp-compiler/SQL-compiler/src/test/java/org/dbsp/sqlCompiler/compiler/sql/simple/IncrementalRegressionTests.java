@@ -33,6 +33,20 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3941() {
+        this.showPlan();
+        this.showFinal();
+        String sql = """
+                create table P(cik integer, pts integer);
+                CREATE VIEW V AS SELECT
+                  lead(pts) OVER (PARTITION BY cik ORDER BY pts ASC),
+                  lead(pts) OVER (PARTITION BY cik % 2 ORDER BY pts ASC),
+                  COUNT(*) OVER (ORDER BY cik RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS sk_companyid
+                FROM P;""";
+        this.getCC(sql);
+    }
+
+    @Test
     public void internalIssue126() {
         this.statementsFailingInCompilation("""
                 create table P(a varchar, ts TIMESTAMP);
@@ -732,6 +746,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
             if (toCompile == null)
                 return;
             for (File c: toCompile) {
+                if (!c.getName().equals("project.sql")) continue;
                 if (c.getName().contains("sql")) {
                     System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());

@@ -291,7 +291,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         compiler.submitStatementForCompilation(dbspQuery);
         compiler.throwIfErrorsOccurred();
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
-        assert circuit != null;
+        Utilities.enforce(circuit != null);
         circuit.setName("circuit" + suffix);
         DBSPNode.done();
 
@@ -304,7 +304,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             if (!sink.metadata.system)
                 break;
         }
-        assert sink != null;
+        Utilities.enforce(sink != null);
         DBSPTypeZSet outputType = sink.outputType.to(DBSPTypeZSet.class);
         DBSPZSetExpression expectedOutput = null;
         if (testQuery.outputDescription.hash == null) {

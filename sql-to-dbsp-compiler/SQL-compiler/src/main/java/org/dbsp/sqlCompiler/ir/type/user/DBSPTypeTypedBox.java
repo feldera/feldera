@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -73,7 +74,7 @@ public class DBSPTypeTypedBox extends DBSPTypeUser implements IsBoundedType {
     @SuppressWarnings("unused")
     public static DBSPTypeTypedBox fromJson(JsonNode node, JsonDecoder decoder) {
         List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
-        assert typeArgs.size() == 2;
+        Utilities.enforce(typeArgs.size() == 2);
         boolean typed = typeArgs.get(1).to(DBSPTypeUser.class).name.equals("DynDataTyped");
         return new DBSPTypeTypedBox(typeArgs.get(0), typed);
     }

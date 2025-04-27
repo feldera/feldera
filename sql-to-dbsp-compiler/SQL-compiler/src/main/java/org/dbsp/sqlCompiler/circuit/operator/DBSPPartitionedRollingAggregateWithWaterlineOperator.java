@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -75,7 +76,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         this.lower = lower;
         this.upper = upper;
         this.partitioningFunction = partitioningFunction;
-        assert partitioningFunction.is(DBSPClosureExpression.class);
+        Utilities.enforce(partitioningFunction.is(DBSPClosureExpression.class));
     }
 
     @Override
@@ -156,8 +157,8 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
 
     @Override
     public DBSPType outputStreamType(int outputNo, boolean outerCircuit) {
-        assert outputNo == 0;
-        assert outerCircuit;
+        Utilities.enforce(outputNo == 0);
+        Utilities.enforce(outerCircuit);
         DBSPType[] args = new DBSPType[3];
         DBSPTypeRawTuple pfOut = this.partitioningFunction.getResultType().to(DBSPTypeRawTuple.class);
         args[0] = pfOut.tupFields[0];

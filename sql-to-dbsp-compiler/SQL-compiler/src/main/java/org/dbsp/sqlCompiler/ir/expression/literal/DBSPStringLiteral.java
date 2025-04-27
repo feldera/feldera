@@ -119,7 +119,7 @@ public final class DBSPStringLiteral extends DBSPLiteral {
     }
 
     public DBSPStrLiteral toStr() {
-        assert this.value != null;
+        Utilities.enforce(this.value != null);
         return new DBSPStrLiteral(this.value);
     }
 

@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -65,8 +66,8 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
             this.keys = null;
         } else {
             this.keys = new ArrayList<>();
-            assert values != null;
-            assert keys.size() == values.size();
+            Utilities.enforce(values != null);
+            Utilities.enforce(keys.size() == values.size());
             for (DBSPExpression e : keys) {
                 if (!e.getType().sameType(this.getKeyType()))
                     throw new InternalCompilerError("Not all keys of map have the same type:" +
@@ -107,7 +108,7 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
         visitor.property("type");
         this.type.accept(visitor);
         if (this.keys != null) {
-            assert this.values != null;
+            Utilities.enforce(this.values != null);
             visitor.startArrayProperty("keys");
             for (int i = 0; i < this.keys.size(); i++) {
                 visitor.propertyIndex(i);
@@ -136,8 +137,8 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
             return otherMap.keys == null;
         if (otherMap.keys == null)
             return false;
-        assert this.values != null;
-        assert otherMap.values != null;
+        Utilities.enforce(this.values != null);
+        Utilities.enforce(otherMap.values != null);
         for (int i = 0; i < this.size(); i++) {
             if (this.keys.get(i) != otherMap.keys.get(i))
                 return false;
@@ -151,7 +152,7 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
         if (this.keys == null)
             return DBSPNullLiteral.NULL;
         StringBuilder builder = new StringBuilder();
-        assert this.values != null;
+        Utilities.enforce(this.values != null);
         builder.append("MAP[");
         boolean first = true;
         for (int i = 0; i < this.size(); i++) {
@@ -185,7 +186,7 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
                     .append("null");
         builder.append("Map::from([")
                 .increase();
-        assert this.values != null;
+        Utilities.enforce(this.values != null);
         for (int i = 0; i < keys.size(); i++) {
             builder.append(this.keys.get(i))
                     .append(" => ")

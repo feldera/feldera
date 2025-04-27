@@ -45,7 +45,7 @@ public final class DBSPVariablePath extends DBSPExpression {
     public DBSPVariablePath(String variable, DBSPType type) {
         super(type.getNode(), type);
         this.variable = variable;
-        assert Utilities.isLegalRustIdentifier(variable);
+        Utilities.enforce(Utilities.isLegalRustIdentifier(variable));
     }
 
     /** Allocate a likely new variable name */

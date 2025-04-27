@@ -93,7 +93,7 @@ public class UnusedFields extends Passes {
                 DBSPSourceMultisetOperator src = source.node().to(DBSPSourceMultisetOperator.class);
                 FindUnusedFields unused = new FindUnusedFields(this.compiler);
                 DBSPClosureExpression function = operator.getClosureFunction();
-                assert function.parameters.length == 1;
+                Utilities.enforce(function.parameters.length == 1);
                 unused.apply(function.ensureTree(this.compiler));
 
                 if (unused.foundUnusedFields(1) && !src.metadata.materialized) {
@@ -141,7 +141,7 @@ public class UnusedFields extends Passes {
                 super.postorder(source);
                 return;
             }
-            assert used.hasUnusedFields(1);
+            Utilities.enforce(used.hasUnusedFields(1));
 
             List<InputColumnMetadata> remainingColumns = new ArrayList<>();
             List<DBSPTypeStruct.Field> fields = new ArrayList<>();

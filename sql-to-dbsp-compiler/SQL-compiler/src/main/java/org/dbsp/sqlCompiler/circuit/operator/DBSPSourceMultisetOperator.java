@@ -39,8 +39,8 @@ public final class DBSPSourceMultisetOperator
             TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
         super(node, "source_multiset", sourceName, outputType, originalRowType, true,
                 metadata, name, comment);
-        assert metadata.getColumnCount() == originalRowType.fields.size();
-        assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();
+        Utilities.enforce(metadata.getColumnCount() == originalRowType.fields.size());
+        Utilities.enforce(metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size());
     }
 
     @Override
@@ -61,7 +61,7 @@ public final class DBSPSourceMultisetOperator
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.isEmpty();
+        Utilities.enforce(newInputs.isEmpty());
         if (force)
             return new DBSPSourceMultisetOperator(
                     this.getRelNode(), this.sourceName, this.getOutputZSetType(), this.originalRowType,

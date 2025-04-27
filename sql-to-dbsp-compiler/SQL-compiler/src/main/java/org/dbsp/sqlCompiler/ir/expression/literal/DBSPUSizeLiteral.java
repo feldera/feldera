@@ -68,7 +68,7 @@ public final class DBSPUSizeLiteral extends DBSPLiteral implements IsNumericLite
 
     @Override
     public boolean gt0() {
-        assert this.value != null;
+        Utilities.enforce(this.value != null);
         return this.value.compareTo(BigInteger.ZERO) > 0;
     }
 

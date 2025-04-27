@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -19,8 +20,9 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator {
     public DBSPDelayOperator(CalciteRelNode node, @Nullable DBSPExpression initial, OutputPort source) {
         super(node, initial == null ? "delay" : "delay_with_initial_value",
                 initial, source.outputType(), source.isMultiset(), source);
-        assert initial == null || initial.getType().sameType(source.outputType()) :
-                "Delay input has type " + source.outputType() + " but initial value has type " + initial.getType();
+        if (initial != null && !initial.getType().sameType(source.outputType()))
+            throw new InternalCompilerError("Delay input has type " + source.outputType() +
+                    " but initial value has type " + initial.getType());
     }
 
     @Override

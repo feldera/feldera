@@ -38,8 +38,8 @@ public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLi
         super(node, type, value == null);
         this.value = value;
         if (value != null) {
-            assert value.compareTo(MAX) <= 0;
-            assert value.compareTo(MIN) >= 0;
+            Utilities.enforce(value.compareTo(MAX) <= 0);
+            Utilities.enforce(value.compareTo(MIN) >= 0);
         }
     }
 
@@ -59,7 +59,7 @@ public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLi
 
     @Override
     public boolean gt0() {
-        assert this.value != null;
+        Utilities.enforce(this.value != null);
         return this.value.compareTo(BigInteger.ZERO) > 0;
     }
 

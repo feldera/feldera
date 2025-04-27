@@ -80,7 +80,7 @@ public final class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLit
 
     @Override
     public boolean gt0() {
-        assert this.value != null;
+        Utilities.enforce(this.value != null);
         return this.value.compareTo(BigInteger.ZERO) > 0;
     }
 

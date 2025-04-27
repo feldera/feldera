@@ -68,7 +68,7 @@ public final class DBSPI32Literal extends DBSPIntLiteral implements IsNumericLit
 
     @Override
     public boolean gt0() {
-        assert this.value != null;
+        Utilities.enforce(this.value != null);
         return this.value > 0;
     }
 

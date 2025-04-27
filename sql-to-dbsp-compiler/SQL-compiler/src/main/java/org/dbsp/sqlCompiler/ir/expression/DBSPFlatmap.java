@@ -92,13 +92,14 @@ public final class DBSPFlatmap extends DBSPExpression {
         this.rightProjections = rightProjections;
         this.collectionExpression = collectionExpression;
         this.leftInputIndexes = leftInputIndexes;
-        assert collectionExpression.parameters.length == 1;
-        assert collectionExpression.parameters[0].type.sameType(this.inputElementType.ref())
-                : "Collection expression expects " + collectionExpression.parameters[0].type
-                + " but input element type is " + this.inputElementType.ref();
-        assert resultElementType.resultType.is(DBSPTypeTuple.class);
+        Utilities.enforce(collectionExpression.parameters.length == 1);
+        Utilities.enforce(collectionExpression.parameters[0].type.sameType(this.inputElementType.ref()),
+                "Collection expression expects " + collectionExpression.parameters[0].type
+                + " but input element type is " + this.inputElementType.ref());
+        Utilities.enforce(resultElementType.resultType.is(DBSPTypeTuple.class));
         this.ordinalityIndexType = ordinalityIndexType;
-        assert this.ordinalityIndexType == null || this.ordinalityIndexType.is(DBSPTypeBaseType.class);
+        Utilities.enforce(this.ordinalityIndexType == null ||
+                this.ordinalityIndexType.is(DBSPTypeBaseType.class));
         this.shuffle = shuffle;
     }
 

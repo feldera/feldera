@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -65,7 +66,7 @@ public class NonLinearAggregate extends AggregateBase {
         super(origin, emptySetResult.getType());
         this.zero = zero;
         this.increment = increment;
-        assert increment.parameters.length == 3;
+        Utilities.enforce(increment.parameters.length == 3);
         this.postProcess = postProcess;
         this.emptySetResult = emptySetResult;
         this.semigroup = semigroup;
