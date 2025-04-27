@@ -26,13 +26,11 @@ package org.dbsp.sqlCompiler.compiler;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParametersDelegate;
 import org.apache.calcite.avatica.util.Casing;
-import org.apache.calcite.config.Lex;
 import org.apache.calcite.sql.parser.SqlParserUtil;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.util.IDiff;
 import org.dbsp.util.IValidate;
-import org.dbsp.util.SqlLexicalRulesConverter;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -62,9 +60,6 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--streaming",
                 description = "Compiling a streaming program, where only inserts are allowed")
         public boolean streaming = false;
-        @Parameter(names = "-d", description = "SQL syntax dialect used",
-                converter = SqlLexicalRulesConverter.class)
-        public Lex lexicalRules = Lex.ORACLE;
         @Parameter(names = "--lenient",
                 description = "Lenient SQL validation.  If true it allows duplicate column names in a view.")
         public boolean lenient = false;
@@ -76,8 +71,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
             // Only compare fields that matter.
             return this.incrementalize == language.incrementalize &&
                     this.ignoreOrderBy == language.ignoreOrderBy &&
-                    this.outputsAreSets == language.outputsAreSets &&
-                    this.lexicalRules.equals(language.lexicalRules);
+                    this.outputsAreSets == language.outputsAreSets;
         }
 
         @Override
@@ -90,7 +84,6 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ", throwOnError=" + this.throwOnError +
                     ", generateInputForEveryTable=" + this.generateInputForEveryTable +
                     ", unrestrictedIOTypes=" + this.unrestrictedIOTypes +
-                    ", lexicalRules=" + this.lexicalRules +
                     ", lenient=" + this.lenient +
                     '}';
         }
@@ -123,12 +116,6 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                         .append(this.outputsAreSets)
                         .append("!=")
                         .append(other.outputsAreSets)
-                        .append(System.lineSeparator());
-            if (this.lexicalRules != other.lexicalRules)
-                result.append(", lexicalRules=")
-                        .append(this.lexicalRules)
-                        .append("!=")
-                        .append(other.lexicalRules)
                         .append(System.lineSeparator());
             result.append("}")
                     .append(System.lineSeparator());

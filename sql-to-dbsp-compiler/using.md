@@ -104,10 +104,6 @@ Usage: sql-to-dbsp [options] Input file to compile
     -O
       Optimization level (0, 1, or 2)
       Default: 2
-    -d
-      SQL syntax dialect used
-      Default: ORACLE
-      Possible Values: [BIG_QUERY, ORACLE, MYSQL, MYSQL_ANSI, SQL_SERVER, JAVA]
     -i
       Generate an incremental circuit
       Default: false
