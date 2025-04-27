@@ -92,13 +92,18 @@ class varnttst_udt_of_arr_field_access_varnt(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "udt_arr1": ['"45, 62"', '"bye, bye, friends!!"']},
-            {"id": 1, "udt_arr1": None},
-            {"id": 2, "udt_arr1": [None]},
+            {
+                "id": 0,
+                "udt_arr1": ['"45, 62"', '"bye, bye, friends!!"'],
+                "arr_vnt": ['"45, 62"', '"bye, bye, friends!!"'],
+            },
+            {"id": 1, "udt_arr1": None, "arr_vnt": None},
+            {"id": 2, "udt_arr1": [None], "arr_vnt": [None]},
         ]
         self.sql = """CREATE MATERIALIZED VIEW udt_of_arr_field_access_varnt AS SELECT
                       id,
-                      varnt_udt_of_cmpx_tbl.udt_arr[1] AS udt_arr1
+                      varnt_udt_of_cmpx_tbl.udt_arr[1] AS udt_arr1,
+                      varnt_udt_of_cmpx_tbl.udt_arr.arr_vnt AS arr_vnt
                       FROM varnt_udt_of_cmpx_tbl"""
 
 
@@ -106,13 +111,14 @@ class varnttst_udt_of_arr_elmnt_access_varnt(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "udt_arr11": '"45, 62"'},
-            {"id": 1, "udt_arr11": None},
-            {"id": 2, "udt_arr11": None},
+            {"id": 0, "udt_arr11": '"45, 62"', "arr_vnt": '"45, 62"'},
+            {"id": 1, "udt_arr11": None, "arr_vnt": None},
+            {"id": 2, "udt_arr11": None, "arr_vnt": None},
         ]
         self.sql = """CREATE MATERIALIZED VIEW udt_of_arr_elmnt_access_varnt AS SELECT
                       id,
-                      varnt_udt_of_cmpx_tbl.udt_arr[1][1] AS udt_arr11
+                      varnt_udt_of_cmpx_tbl.udt_arr[1][1] AS udt_arr11,
+                      varnt_udt_of_cmpx_tbl.udt_arr.arr_vnt[1] AS arr_vnt
                       FROM varnt_udt_of_cmpx_tbl"""
 
 
@@ -135,13 +141,22 @@ class varnttst_udt_of_map_field_access_varnt(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "udt_map1": {'"c"': '"sayonara,"', '"d"': '"everyone!"'}},
-            {"id": 1, "udt_map1": None},
-            {"id": 2, "udt_map1": {'"c"': None, '"d"': None}},
+            {
+                "id": 0,
+                "udt_map1": {'"c"': '"sayonara,"', '"d"': '"everyone!"'},
+                "map_vnt": {'"c"': '"sayonara,"', '"d"': '"everyone!"'},
+            },
+            {"id": 1, "udt_map1": None, "map_vnt": None},
+            {
+                "id": 2,
+                "udt_map1": {'"c"': None, '"d"': None},
+                "map_vnt": {'"c"': None, '"d"': None},
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW udt_of_map_field_access_varnt AS SELECT
                       id,
-                      udt_map[1] AS udt_map1
+                      udt_map[1] AS udt_map1,
+                      varnt_udt_of_cmpx_tbl.udt_map.map_vnt AS map_vnt
                       FROM varnt_udt_of_cmpx_tbl"""
 
 
@@ -156,7 +171,7 @@ class varnttst_udt_of_map_elmnt_access_varnt(TstView):
         self.sql = """CREATE MATERIALIZED VIEW udt_of_map_elmnt_access_varnt AS SELECT
                       id,
                       udt_map[1][CAST('c' AS VARIANT)] AS c,
-                      udt_map[1][CAST('d' AS VARIANT)] AS d
+                      varnt_udt_of_cmpx_tbl.udt_map.map_vnt[CAST('d' AS VARIANT)] AS d
                       FROM varnt_udt_of_cmpx_tbl"""
 
 
@@ -175,13 +190,22 @@ class varnttst_udt_of_row_field_access_varnt(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "udt_row1": {"v1": '"24, 25"', "v2": '"adios"'}},
-            {"id": 1, "udt_row1": None},
-            {"id": 2, "udt_row1": {"v1": "null", "v2": "null"}},
+            {
+                "id": 0,
+                "udt_row1": {"v1": '"24, 25"', "v2": '"adios"'},
+                "row_vnt": {"v1": '"24, 25"', "v2": '"adios"'},
+            },
+            {"id": 1, "udt_row1": None, "row_vnt": None},
+            {
+                "id": 2,
+                "udt_row1": {"v1": "null", "v2": "null"},
+                "row_vnt": {"v1": "null", "v2": "null"},
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW udt_of_row_field_access_varnt AS SELECT
                       id,
-                      varnt_udt_of_cmpx_tbl.udt_row[1] AS udt_row1
+                      varnt_udt_of_cmpx_tbl.udt_row[1] AS udt_row1,
+                      varnt_udt_of_cmpx_tbl.udt_row.row_vnt AS row_vnt
                       FROM varnt_udt_of_cmpx_tbl"""
 
 
@@ -196,7 +220,7 @@ class varnttst_udt_of_row_elmnt_access_varnt(TstView):
         self.sql = """CREATE MATERIALIZED VIEW udt_of_row_elmnt_access_varnt AS SELECT
                       id,
                       varnt_udt_of_cmpx_tbl.udt_row[1][1] AS udt_row11,
-                      varnt_udt_of_cmpx_tbl.udt_row[1][2] AS udt_row12
+                      varnt_udt_of_cmpx_tbl.udt_row.row_vnt.v2 AS udt_row12
                       FROM varnt_udt_of_cmpx_tbl"""
 
 
@@ -205,13 +229,22 @@ class varnttst_udt_of_udt_field_access_varnt(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"id": 0, "udt_udt1": {"v1": '"are you"', "v2": '"alright, mate?"'}},
-            {"id": 1, "udt_udt1": None},
-            {"id": 2, "udt_udt1": {"v1": None, "v2": None}},
+            {
+                "id": 0,
+                "udt_udt1": {"v1": '"are you"', "v2": '"alright, mate?"'},
+                "udt_vnt": {"v1": '"are you"', "v2": '"alright, mate?"'},
+            },
+            {"id": 1, "udt_udt1": None, "udt_vnt": None},
+            {
+                "id": 2,
+                "udt_udt1": {"v1": None, "v2": None},
+                "udt_vnt": {"v1": None, "v2": None},
+            },
         ]
         self.sql = """CREATE MATERIALIZED VIEW udt_of_udt_field_access_varnt AS SELECT
                       id,
-                      varnt_udt_of_cmpx_tbl.udt_udt[1] AS udt_udt1
+                      varnt_udt_of_cmpx_tbl.udt_udt[1] AS udt_udt1,
+                      varnt_udt_of_cmpx_tbl.udt_udt.udt_vnt AS udt_vnt
                       FROM varnt_udt_of_cmpx_tbl"""
 
 
@@ -226,5 +259,5 @@ class varnttst_udt_of_udt_elmnt_access_varnt(TstView):
         self.sql = """CREATE MATERIALIZED VIEW udt_of_udt_elmnt_access_varnt AS SELECT
                       id,
                       varnt_udt_of_cmpx_tbl.udt_udt[1][1] AS udt_udt11,
-                      varnt_udt_of_cmpx_tbl.udt_udt[1][2] AS udt_udt12
+                      varnt_udt_of_cmpx_tbl.udt_udt.udt_vnt.v2 AS udt_udt12
                       FROM varnt_udt_of_cmpx_tbl"""
