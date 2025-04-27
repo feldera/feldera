@@ -69,6 +69,7 @@ clap = { workspace = true, features = ["wrap_help"] }
 fdlimit = { workspace = true }
 metrics = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 ptr_meta = { workspace = true }
 feldera-types = { workspace = true }
 libc = { workspace = true }
@@ -90,6 +91,7 @@ time = { workspace = true, features = [
     "serde",
     "serde-human-readable",
 ] }
+feldera-ir = { workspace = true }
 
 [target.'cfg(target_family = "unix")'.dependencies]
 nix = { version = "0.27.1", features = ["uio", "feature", "fs"] }
@@ -114,7 +116,6 @@ indicatif = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 chrono = { workspace = true, features = ["rkyv-64", "serde"] }
 env_logger = { workspace = true, features = ["color"] }
-serde_json = { workspace = true }
 ijson = { version = "0.1.4", package = "feldera-ijson" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 

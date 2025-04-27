@@ -3608,6 +3608,7 @@ dependencies = [
  "fastbloom",
  "fdlimit",
  "feldera-ijson",
+ "feldera-ir",
  "feldera-size-of",
  "feldera-storage",
  "feldera-types",
@@ -3707,6 +3708,7 @@ dependencies = [
  "feldera-adapterlib",
  "feldera-datagen",
  "feldera-iceberg",
+ "feldera-ir",
  "feldera-size-of",
  "feldera-sqllib",
  "feldera-types",
@@ -4658,11 +4660,12 @@ dependencies = [
 
 [[package]]
 name = "feldera-ir"
-version = "0.45.0"
+version = "0.47.0"
 dependencies = [
  "feldera-types",
  "serde",
  "serde_json",
+ "zip 0.6.6",
 ]
 
 [[package]]

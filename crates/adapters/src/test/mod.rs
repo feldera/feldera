@@ -221,9 +221,9 @@ where
         for (persistent_output_id, i) in persistent_output_ids.iter().zip(1..) {
             let (input, hinput) = circuit.add_input_zset::<T>();
             if n > 1 {
-                input.set_persistent_id(Some(&format!("input{i}")));
+                input.set_persistent_mir_id(&format!("input{i}"));
             } else {
-                input.set_persistent_id(Some("input"));
+                input.set_persistent_mir_id("input");
             }
 
             let input_schema = serde_json::to_string(&Relation::new(

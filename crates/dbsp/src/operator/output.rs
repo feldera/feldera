@@ -1,6 +1,7 @@
 use super::{require_persistent_id, Mailbox};
 use crate::{
     circuit::{
+        circuit_builder::CircuitBase,
         operator_traits::{BinarySinkOperator, Operator, SinkOperator},
         GlobalNodeId, LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
     },
@@ -37,11 +38,19 @@ where
 
     #[track_caller]
     pub fn output_persistent(&self, persistent_id: Option<&str>) -> OutputHandle<T> {
+        self.output_persistent_with_gid(persistent_id).0
+    }
+
+    #[track_caller]
+    pub fn output_persistent_with_gid(
+        &self,
+        persistent_id: Option<&str>,
+    ) -> (OutputHandle<T>, GlobalNodeId) {
         let (output, output_handle) = Output::new();
         let gid = self.circuit().add_sink(output, self);
         self.circuit().set_persistent_node_id(&gid, persistent_id);
 
-        output_handle
+        (output_handle, gid)
     }
 
     /// Create an output handle that makes the contents of `self` available

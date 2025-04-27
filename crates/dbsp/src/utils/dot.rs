@@ -2,10 +2,10 @@
 
 use crate::{
     circuit::{
-        circuit_builder::{Edge, Node, StreamId},
+        circuit_builder::{CircuitBase, Edge, Node, StreamId},
         WithClock,
     },
-    ChildCircuit, Circuit,
+    ChildCircuit,
 };
 
 pub struct DotNodeAttributes {
@@ -104,7 +104,7 @@ where
     {
         let mut nodes = Vec::new();
 
-        let _ = self.map_nodes(&mut |node| {
+        let _ = self.map_local_nodes(&mut |node| {
             if let Some(attributes) = node_function(node) {
                 let node_id = node.local_id();
                 nodes.push(format!("{} [{}];", node_id, attributes.to_string()));
