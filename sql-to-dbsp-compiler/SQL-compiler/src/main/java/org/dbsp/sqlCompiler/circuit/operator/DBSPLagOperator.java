@@ -16,7 +16,9 @@ import org.dbsp.util.Utilities;
 
 import java.util.List;
 
-/** Implements the LAG/LEAD operators for an SQL OVER Window */
+/** Implements the LAG/LEAD operators for an SQL OVER Window.  The LEAD/LAG operator
+ * is an interesting WINDOW operator, since it computes the entire content of the window.
+ * The output of other window aggregates need to be joined with the data, but this one doesn't. */
 public final class DBSPLagOperator extends DBSPUnaryOperator {
     // Usually a DBSPComparatorExpression, replaced with a PathExpression later.
     public final DBSPExpression comparator;
@@ -42,11 +44,12 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
         super(node, "lag_custom_order", function, outputType, source.isMultiset(), source, true);
         Utilities.enforce(comparator.is(DBSPComparatorExpression.class) ||
                 comparator.is(DBSPPathExpression.class));
-        //noinspection RedundantIfStatement
         if (comparator.is(DBSPComparatorExpression.class)) {
             Utilities.enforce(comparator.to(DBSPComparatorExpression.class)
                     .comparedValueType()
-                    .sameType(source.getOutputIndexedZSetType().elementType));
+                    .sameType(source.getOutputIndexedZSetType().elementType),
+                    "Comparator type " + comparator + " does not match element type for LAG " +
+                    source.getOutputIndexedZSetType().elementType);
         }
         this.comparator = comparator;
         this.projection = projection;

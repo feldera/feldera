@@ -60,18 +60,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Supplier;
 
 public class Utilities {
     private Utilities() {}
+
+    public static String getCurrentStackTrace() {
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+        StringBuilder stackTraceBuilder = new StringBuilder();
+        for (int i = 3; i < stackTrace.length; i++) {
+            stackTraceBuilder.append(stackTrace[i].toString()).append("\n");
+        }
+        return stackTraceBuilder.toString();
+    }
 
     /** A custom version of assert.  We would like to use assert,
      * but it is compiled out in release.
      * @param expression  When this expression is false, this function throws. */
     @Contract("false -> fail")
     public static void enforce(boolean expression) {
-        if (!expression)
-            throw new InternalCompilerError("Assertion failed");
+        if (!expression) {
+            throw new InternalCompilerError(
+                    "Assertion failed" + System.lineSeparator() + getCurrentStackTrace());
+        }
     }
 
     /** A custom version of assert.  We would like to use assert,
@@ -81,7 +91,7 @@ public class Utilities {
     @Contract("false, _ -> fail")
     public static void enforce(boolean expression, String message) {
         if (!expression)
-            throw new InternalCompilerError(message);
+            throw new InternalCompilerError(message + System.lineSeparator() + getCurrentStackTrace());
     }
 
     /** Delete a file/directory recursively

@@ -34,16 +34,14 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
     @Test
     public void issue3941() {
-        this.showPlan();
-        this.showFinal();
         String sql = """
                 create table P(cik integer, pts integer);
                 CREATE VIEW V AS SELECT
                   lead(pts) OVER (PARTITION BY cik ORDER BY pts ASC),
-                  lead(pts) OVER (PARTITION BY cik % 2 ORDER BY pts ASC),
-                  COUNT(*) OVER (ORDER BY cik RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS sk_companyid
+                  COUNT(*) OVER (ORDER BY cik RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS sk_companyid,
+                  lead(pts) OVER (PARTITION BY cik % 2 ORDER BY pts ASC)
                 FROM P;""";
-        this.getCC(sql);
+        this.getCCS(sql);
     }
 
     @Test
