@@ -8,10 +8,10 @@ class varnttst_row_of_cmpx_tbl(TstTable):
     def __init__(self):
         self.sql = """CREATE TABLE varnt_row_of_cmpx_tbl(
                       id INT,
-                      row_arr ROW(v1 VARIANT ARRAY NULL, v2 VARIANT ARRAY NULL) NULL,
-                      row_map ROW(v1 MAP<VARIANT, VARIANT> NULL, v2 MAP<VARIANT, VARIANT> NULL),
-                      row_row ROW(v1 ROW(v11 VARIANT NULL, v12 VARIANT NULL) NULL, v2 ROW(v21 VARIANT NULL, v22 VARIANT NULL) NULL),
-                      row_udt ROW(var1 varnt_type NULL, var2 varnt_type NULL)
+                      row_arr ROW(v1 VARIANT ARRAY NULL, v2 VARIANT ARRAY) NULL,
+                      row_map ROW(v1 MAP<VARIANT, VARIANT> NULL, v2 MAP<VARIANT, VARIANT>),
+                      row_row ROW(v1 ROW(v11 VARIANT NULL, v12 VARIANT NULL) NULL, v2 ROW(v21 VARIANT NULL, v22 VARIANT NULL)),
+                      row_udt ROW(var1 varnt_type NULL, var2 varnt_type)
                       )"""
         self.data = [
             {
@@ -39,13 +39,13 @@ class varnttst_row_of_cmpx_tbl(TstTable):
             },
             {
                 "id": 2,
-                "row_arr": {"v1": None, "v2": None},
-                "row_map": {"v1": None, "v2": None},
+                "row_arr": {"v1": None, "v2": ["check1"]},
+                "row_map": {"v1": None, "v2": {"c": "check2"}},
                 "row_row": {
                     "v1": {"v11": None, "v12": None},
-                    "v2": {"v21": None, "v22": None},
+                    "v2": {"v21": None, "v22": "check3"},
                 },
-                "row_udt": {"var1": (None, None), "var2": (None, None)},
+                "row_udt": {"var1": (None, None), "var2": (None, "check4")},
             },
         ]
 
@@ -82,15 +82,15 @@ class varnttst_read_row_of_cmpx(TstView):
             },
             {
                 "id": 2,
-                "row_arr": {"v1": None, "v2": None},
-                "row_map": {"v1": None, "v2": None},
+                "row_arr": {"v1": None, "v2": ['"check1"']},
+                "row_map": {"v1": None, "v2": {'"c"': '"check2"'}},
                 "row_row": {
                     "v1": {"v11": None, "v12": None},
-                    "v2": {"v21": None, "v22": None},
+                    "v2": {"v21": None, "v22": '"check3"'},
                 },
                 "row_udt": {
                     "var1": {"v1": None, "v2": None},
-                    "var2": {"v1": None, "v2": None},
+                    "var2": {"v1": None, "v2": '"check4"'},
                 },
             },
         ]
@@ -123,12 +123,12 @@ class varnttst_row_of_arr_field_access_varnt(TstView):
                 "row_arr2": ['"hi ,"', '"how are you?"'],
             },
             {"id": 1, "row_arr1": None, "row_arr2": None},
-            {"id": 2, "row_arr1": None, "row_arr2": None},
+            {"id": 2, "row_arr1": None, "row_arr2": ['"check1"']},
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_arr_field_access_varnt AS SELECT
                       id,
                       varnt_row_of_cmpx_tbl.row_arr[1] AS row_arr1,
-                      varnt_row_of_cmpx_tbl.row_arr[2] AS row_arr2
+                      varnt_row_of_cmpx_tbl.row_arr.v2 AS row_arr2
                       FROM varnt_row_of_cmpx_tbl"""
 
 
@@ -138,12 +138,12 @@ class varnttst_row_of_arr_elmnt_access_varnt(TstView):
         self.data = [
             {"id": 0, "row_arr11": '"12, 13, 10"', "row_arr21": '"hi ,"'},
             {"id": 1, "row_arr11": None, "row_arr21": None},
-            {"id": 2, "row_arr11": None, "row_arr21": None},
+            {"id": 2, "row_arr11": None, "row_arr21": '"check1"'},
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_arr_elmnt_access_varnt AS SELECT
                       id,
                       varnt_row_of_cmpx_tbl.row_arr[1][1] AS row_arr11,
-                      varnt_row_of_cmpx_tbl.row_arr[2][1] AS row_arr21
+                      varnt_row_of_cmpx_tbl.row_arr.v2[1] AS row_arr21
                       FROM varnt_row_of_cmpx_tbl"""
 
 
@@ -172,11 +172,11 @@ class varnttst_row_of_map_field_access_varnt(TstView):
                 "row_map2": {'"a"': '"good-bye"', '"b"': '"for now!"'},
             },
             {"id": 1, "row_map1": None, "row_map2": None},
-            {"id": 2, "row_map1": None, "row_map2": None},
+            {"id": 2, "row_map1": None, "row_map2": {'"c"': '"check2"'}},
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_map_field_access_varnt AS SELECT
                       id,
-                      row_map[1] AS row_map1,
+                      varnt_row_of_cmpx_tbl.row_map.v1 AS row_map1,
                       row_map[2] AS row_map2
                       FROM varnt_row_of_cmpx_tbl"""
 
@@ -191,7 +191,7 @@ class varnttst_row_of_map_elmnt_access_varnt(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_map_elmnt_access_varnt AS SELECT
                       id,
-                      row_map[1][CAST('x' AS VARIANT)] AS x,
+                      varnt_row_of_cmpx_tbl.row_map.v1[CAST('x' AS VARIANT)] AS x,
                       row_map[2][CAST('a' AS VARIANT)] AS a
                       FROM varnt_row_of_cmpx_tbl"""
 
@@ -220,12 +220,12 @@ class varnttst_row_of_row_field_access_varnt(TstView):
             {
                 "id": 2,
                 "row_row1": {"v11": None, "v12": None},
-                "row_row2": {"v21": None, "v22": None},
+                "row_row2": {"v21": None, "v22": '"check3"'},
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_row_field_access_varnt AS SELECT
                       id,
-                      varnt_row_of_cmpx_tbl.row_row[1] AS row_row1,
+                      varnt_row_of_cmpx_tbl.row_row.v1 AS row_row1,
                       varnt_row_of_cmpx_tbl.row_row[2] AS row_row2
                       FROM varnt_row_of_cmpx_tbl"""
 
@@ -240,7 +240,7 @@ class varnttst_row_of_row_elmnt_access_varnt(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_row_elmnt_access_varnt AS SELECT
                       id,
-                      varnt_row_of_cmpx_tbl.row_row[1][2] AS row_row12,
+                      varnt_row_of_cmpx_tbl.row_row.v1.v12 AS row_row12,
                       varnt_row_of_cmpx_tbl.row_row[2][1] AS row_row21
                       FROM varnt_row_of_cmpx_tbl"""
 
@@ -259,12 +259,12 @@ class varnttst_row_of_udt_field_access_varnt(TstView):
             {
                 "id": 2,
                 "row_udt1": {"v1": None, "v2": None},
-                "row_udt2": {"v1": None, "v2": None},
+                "row_udt2": {"v1": None, "v2": '"check4"'},
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_udt_field_access_varnt AS SELECT
                       id,
-                      varnt_row_of_cmpx_tbl.row_udt[1] AS row_udt1,
+                      varnt_row_of_cmpx_tbl.row_udt.var1 AS row_udt1,
                       varnt_row_of_cmpx_tbl.row_udt[2] AS row_udt2
                       FROM varnt_row_of_cmpx_tbl"""
 
@@ -279,6 +279,6 @@ class varnttst_row_of_udt_elmnt_access_varnt(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW row_of_udt_elmnt_access_varnt AS SELECT
                       id,
-                      varnt_row_of_cmpx_tbl.row_udt[1][2] AS row_udt12,
+                      varnt_row_of_cmpx_tbl.row_udt.var1.v2 AS row_udt12,
                       varnt_row_of_cmpx_tbl.row_udt[2][1] AS row_udt21
                       FROM varnt_row_of_cmpx_tbl"""
