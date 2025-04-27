@@ -3,7 +3,7 @@ use std::io::Write;
 use serde::{Deserialize, Serialize};
 use zip::{write::FileOptions, ZipWriter};
 
-pub type MirNodeId = String;
+use crate::MirNodeId;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[repr(transparent)]
