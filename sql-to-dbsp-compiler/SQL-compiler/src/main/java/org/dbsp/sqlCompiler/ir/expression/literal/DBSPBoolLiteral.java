@@ -45,7 +45,7 @@ public final class DBSPBoolLiteral extends DBSPLiteral {
 
     public DBSPBoolLiteral(CalciteObject node, DBSPType type, @Nullable Boolean value) {
         super(node, type, value == null);
-        assert type.is(DBSPTypeBool.class);
+        Utilities.enforce(type.is(DBSPTypeBool.class));
         this.value = value;
     }
 

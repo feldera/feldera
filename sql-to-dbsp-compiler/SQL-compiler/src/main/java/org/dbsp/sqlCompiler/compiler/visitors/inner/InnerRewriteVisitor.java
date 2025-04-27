@@ -72,6 +72,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -272,7 +273,7 @@ public abstract class InnerRewriteVisitor
     @Override
     public VisitDecision preorder(DBSPTypeOption type) {
         this.push(type);
-        assert type.typeArgs.length == 1;
+        Utilities.enforce(type.typeArgs.length == 1);
         DBSPType arg = this.transform(type.typeArgs[0]);
         this.pop(type);
         DBSPType result = new DBSPTypeOption(arg);
@@ -727,7 +728,7 @@ public abstract class InnerRewriteVisitor
         List<DBSPExpression> values = null;
         if (expression.keys != null) {
             keys = Linq.map(expression.keys, this::transform);
-            assert expression.values != null;
+            Utilities.enforce(expression.values != null);
             values = Linq.map(expression.values, this::transform);
         }
         this.pop(expression);

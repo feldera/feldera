@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
@@ -17,7 +18,7 @@ import javax.annotation.Nullable;
 public class DBSPVariantNullLiteral extends DBSPLiteral {
     private DBSPVariantNullLiteral() {
         super(CalciteObject.EMPTY, DBSPTypeVariant.INSTANCE, false);
-        assert type.is(DBSPTypeVariant.class);
+        Utilities.enforce(type.is(DBSPTypeVariant.class));
     }
 
     public static final DBSPVariantNullLiteral INSTANCE = new DBSPVariantNullLiteral();

@@ -344,7 +344,7 @@ public class TableParser {
                         if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
                             throw new UnimplementedException("Expected tuple constant to be bracketed: " + trimmed);
                         trimmed = trimmed.substring(1, trimmed.length() - 1);
-                        assert !trimmed.isEmpty();
+                        Utilities.enforce(!trimmed.isEmpty());
 
                         String[] parts = trimmed.split(",");
                         assert parts.length == tuple.size() :

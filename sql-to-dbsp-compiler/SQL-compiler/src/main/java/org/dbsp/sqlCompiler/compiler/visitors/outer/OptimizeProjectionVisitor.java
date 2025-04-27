@@ -24,6 +24,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.util.Maybe;
 import org.dbsp.util.Shuffle;
+import org.dbsp.util.Utilities;
 
 /** Optimizes patterns containing projections.
  * - constant followed by projection
@@ -145,7 +146,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right())
                     .copyAnnotations(source);
         } else {
-            assert source.is(DBSPStreamJoinIndexOperator.class);
+            Utilities.enforce(source.is(DBSPStreamJoinIndexOperator.class));
             return new DBSPStreamJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
                     newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right())
                     .copyAnnotations(source);
@@ -187,7 +188,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
             return new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
         } else {
-            assert source.is(DBSPStreamJoinIndexOperator.class);
+            Utilities.enforce(source.is(DBSPStreamJoinIndexOperator.class));
             return new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
         }

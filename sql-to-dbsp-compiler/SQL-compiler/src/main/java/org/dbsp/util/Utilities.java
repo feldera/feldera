@@ -35,7 +35,9 @@ import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
 import org.apache.commons.io.IOUtils;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.jetbrains.annotations.Contract;
 
 import javax.annotation.Nullable;
 import java.io.File;
@@ -58,9 +60,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 
 public class Utilities {
     private Utilities() {}
+
+    /** A custom version of assert.  We would like to use assert,
+     * but it is compiled out in release.
+     * @param expression  When this expression is false, this function throws. */
+    @Contract("false -> fail")
+    public static void enforce(boolean expression) {
+        if (!expression)
+            throw new InternalCompilerError("Assertion failed");
+    }
+
+    /** A custom version of assert.  We would like to use assert,
+     * but it is compiled out in release.
+     * @param expression  When this expression is false, this function throws.
+     * @param message     Message for exception when expression is false */
+    @Contract("false, _ -> fail")
+    public static void enforce(boolean expression, String message) {
+        if (!expression)
+            throw new InternalCompilerError(message);
+    }
 
     /** Delete a file/directory recursively
      *
@@ -268,8 +290,8 @@ public class Utilities {
 
     public static <T> void removeLast(List<T> data, T expected) {
         T removed = removeLast(data);
-        assert removed.equals(expected):
-                "Unexpected node popped " + removed + " expected " + expected;
+        Utilities.enforce(removed.equals(expected),
+                "Unexpected node popped " + removed + " expected " + expected);
     }
 
     public static <T> T[] arraySlice(T[] data, int start, int endExclusive) {
@@ -457,8 +479,9 @@ public class Utilities {
 
     public static JsonNode getProperty(JsonNode node, String property) {
         JsonNode prop = node.get(property);
-        assert prop != null: "Node does not have property " + Utilities.singleQuote(property) +
-                Utilities.toDepth(node, 1);
+        Utilities.enforce(prop != null,
+                "Node does not have property " + Utilities.singleQuote(property) +
+                Utilities.toDepth(node, 1));
         return prop;
     }
 

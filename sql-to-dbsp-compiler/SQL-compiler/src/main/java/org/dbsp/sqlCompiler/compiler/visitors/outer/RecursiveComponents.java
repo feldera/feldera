@@ -178,7 +178,7 @@ public class RecursiveComponents extends Passes {
             for (DBSPDeclaration node : circuit.declarations)
                 node.accept(this);
             // Do the nodes in the order of SCCs
-            assert this.scc != null;
+            Utilities.enforce(this.scc != null);
             Map<ProgramIdentifier, DBSPViewOperator> viewByName = new HashMap<>();
             Map<ProgramIdentifier, DBSPViewDeclarationOperator> declByName = new HashMap<>();
             for (int i = 0; i < this.scc.count; i++) {
@@ -187,14 +187,14 @@ public class RecursiveComponents extends Passes {
                 // Operators in the circuit in circuit order from the current SCC
                 List<DBSPOperator> operators = Linq.where(
                         circuit.allOperators, o -> this.scc.componentId.get(o) == sccId);
-                for (DBSPOperator operator: operators) {
+                for (DBSPOperator operator : operators) {
                     // We only have simple operators at this stage
                     DBSPSimpleOperator simple = operator.to(DBSPSimpleOperator.class);
                     List<OutputPort> newSources = new ArrayList<>(simple.inputs.size());
-                    for (OutputPort port: simple.inputs) {
+                    for (OutputPort port : simple.inputs) {
                         DBSPSimpleOperator source = port.simpleNode();
                         int sourceScc = Utilities.getExists(this.scc.componentId, source);
-                        assert sourceScc >= sccId;
+                        Utilities.enforce(sourceScc >= sccId);
                         OutputPort newPort = this.mapped(port);
                         if (source.is(DBSPViewDeclarationOperator.class)) {
                             DBSPViewDeclarationOperator decl = source.to(DBSPViewDeclarationOperator.class);
@@ -226,12 +226,12 @@ public class RecursiveComponents extends Passes {
                                 view.metadata.viewKind != SqlCreateView.ViewKind.LOCAL) {
                             List<DBSPOperator> recs =
                                     Linq.where(operators, o -> o.is(DBSPViewOperator.class) && o != view);
-                            assert !recs.isEmpty();
+                            Utilities.enforce(!recs.isEmpty());
                             throw new CompilationError(
                                     "View " + view.viewName.singleQuote() + " must be declared" +
                                             " either as LOCAL or as RECURSIVE\n" +
-                                    "since is is used in the computation of recursive view " +
-                                    recs.get(0).to(DBSPViewOperator.class).viewName.singleQuote(),
+                                            "since is is used in the computation of recursive view " +
+                                            recs.get(0).to(DBSPViewOperator.class).viewName.singleQuote(),
                                     view.getNode());
                         }
                         Utilities.putNew(viewByName, view.viewName, view);
@@ -275,7 +275,7 @@ public class RecursiveComponents extends Passes {
         @Override
         public void replace(DBSPSimpleOperator operator) {
             // Check if operator is in a larger connected component
-            assert this.scc != null;
+            Utilities.enforce(this.scc != null);
             int myComponent = Utilities.getExists(this.scc.componentId, operator);
             List<DBSPOperator> component = Utilities.getExists(this.scc.component, myComponent);
             if (component.size() == 1) {

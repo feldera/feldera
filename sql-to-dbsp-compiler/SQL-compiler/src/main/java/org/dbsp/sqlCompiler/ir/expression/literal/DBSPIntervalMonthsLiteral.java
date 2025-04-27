@@ -49,7 +49,7 @@ public final class DBSPIntervalMonthsLiteral
 
     public DBSPIntervalMonthsLiteral(CalciteObject node, DBSPType type, @Nullable Integer value) {
         super(node, type, value == null);
-        assert type.is(DBSPTypeMonthsInterval.class);
+        Utilities.enforce(type.is(DBSPTypeMonthsInterval.class));
         this.value = value;
     }
 
@@ -63,7 +63,7 @@ public final class DBSPIntervalMonthsLiteral
 
     @Override
     public boolean gt0() {
-        assert this.value != null;
+        Utilities.enforce(this.value != null);
         return this.value > 0;
     }
 

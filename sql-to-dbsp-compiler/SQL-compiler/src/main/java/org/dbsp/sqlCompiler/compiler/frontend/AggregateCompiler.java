@@ -77,6 +77,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -130,7 +131,7 @@ public class AggregateCompiler implements ICompilerComponent {
         this.result = null;
         this.v = v;
         // distinct aggregates should have been removed by preprocessing
-        assert !call.isDistinct();
+        Utilities.enforce(!call.isDistinct());
         this.aggFunction = call.getAggregation();
         this.filterArgument = call.filterArg;
         List<Integer> argList = call.getArgList();
@@ -293,7 +294,7 @@ public class AggregateCompiler implements ICompilerComponent {
 
     void processArrayAgg(SqlBasicAggFunction function) {
         SqlKind kind = function.getKind();
-        assert kind == SqlKind.ARRAY_AGG;
+        Utilities.enforce(kind == SqlKind.ARRAY_AGG);
 
         boolean ignoreNulls = this.call.ignoreNulls();
         boolean distinct = this.call.isDistinct();
@@ -351,7 +352,7 @@ public class AggregateCompiler implements ICompilerComponent {
         };
 
         DBSPTupleExpression tuple = Objects.requireNonNull(this.aggArgument).to(DBSPTupleExpression.class);
-        assert tuple.fields != null && tuple.fields.length == 2: "Expected 2 arguments for " + kind;
+        Utilities.enforce(tuple.fields != null && tuple.fields.length == 2, "Expected 2 arguments for " + kind);
         DBSPType currentType = tuple.fields[1].getType().withMayBeNull(true);
         DBSPType zeroType = new DBSPTypeTuple(this.resultType, currentType);
         DBSPExpression zero = new DBSPTupleExpression(
@@ -398,11 +399,11 @@ public class AggregateCompiler implements ICompilerComponent {
     public DBSPExpression aggregateOperation(
             CalciteObject node, DBSPOpcode op,
             DBSPType type, DBSPExpression left, DBSPExpression right, @Nullable DBSPExpression filter) {
-        assert op.isAggregate;
+        Utilities.enforce(op.isAggregate);
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
         DBSPType resultType = type.withMayBeNull(leftType.mayBeNull || rightType.mayBeNull);
-        assert type.sameType(leftType);
+        Utilities.enforce(type.sameType(leftType));
         // For all types the nullability of leftType and rightType may differ.
         // For recursive types the element types of leftType and rightType may be wrong from Calcite,
         // because Calcite sometimes assumes (but not always!) that field types are always nullable.
@@ -569,7 +570,7 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     AggregateBase doAverage(SqlAvgAggFunction function) {
-        assert function.getKind() == SqlKind.AVG;
+        Utilities.enforce(function.getKind() == SqlKind.AVG);
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
 
         if (this.linearAllowed) {
@@ -661,7 +662,7 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     NonLinearAggregate doStddev(SqlAvgAggFunction function) {
-        assert function.getKind() == SqlKind.STDDEV_POP || function.getKind() == SqlKind.STDDEV_SAMP;
+        Utilities.enforce(function.getKind() == SqlKind.STDDEV_POP || function.getKind() == SqlKind.STDDEV_SAMP);
         boolean isSamp = function.getKind() == SqlKind.STDDEV_SAMP;
         DBSPType aggregatedValueType = this.getAggregatedValueType();
         // TODO: linear implementation

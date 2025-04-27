@@ -316,7 +316,7 @@ public class ValueNumbering extends InnerVisitor {
 
     @Override public void postorder(DBSPVariablePath var) {
         IDBSPDeclaration decl = this.resolver.reference.get(var);
-        assert decl != null;
+        Utilities.enforce(decl != null);
         Representation repr = new Representation(
                 Long.toString(decl.getId()), Linq.set(decl), false, false);
         this.checkRepresentation(var, repr, false);

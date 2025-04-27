@@ -52,7 +52,7 @@ public final class DBSPU128Literal extends DBSPIntLiteral implements IsNumericLi
 
     @Override
     public boolean gt0() {
-        assert this.value != null;
+        Utilities.enforce(this.value != null);
         return this.value.compareTo(BigInteger.ZERO) > 0;
     }
 

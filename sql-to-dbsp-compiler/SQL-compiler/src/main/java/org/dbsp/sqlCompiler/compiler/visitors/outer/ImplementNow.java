@@ -169,8 +169,8 @@ public class ImplementNow extends Passes {
 
         @Override
         public VisitDecision preorder(DBSPClosureExpression closure) {
-            assert this.context.isEmpty();
-            assert closure.parameters.length == 1;
+            Utilities.enforce(this.context.isEmpty());
+            Utilities.enforce(closure.parameters.length == 1);
             DBSPParameter param = closure.parameters[0];
             DBSPTypeTuple paramType = param.getType().to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class);
             List<DBSPType> fields = Linq.list(paramType.tupFields);
@@ -247,9 +247,9 @@ public class ImplementNow extends Passes {
                     Linq.map(fields, DBSPExpression::getType)));
             DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
                     .closure(key, left, right);
-            assert nowIndexed != null;
+            Utilities.enforce(nowIndexed != null);
             DBSPSimpleOperator result = new DBSPStreamJoinOperator(operator.getRelNode(), joinType,
-                        joinFunction, operator.isMultiset, index.outputPort(), nowIndexed.outputPort());
+                    joinFunction, operator.isMultiset, index.outputPort(), nowIndexed.outputPort());
             this.addOperator(result);
             return result;
         }
@@ -273,7 +273,7 @@ public class ImplementNow extends Passes {
 
         record WindowBound(boolean inclusive, DBSPExpression expression) {
             WindowBound combine(WindowBound with, boolean lower) {
-                assert this.inclusive == with.inclusive;
+                Utilities.enforce(this.inclusive == with.inclusive);
                 DBSPOpcode opcode = lower ? DBSPOpcode.MIN : DBSPOpcode.MAX;
                 DBSPExpression expression = ExpressionCompiler.makeBinaryExpression(this.expression.getNode(),
                         this.expression.getType(), opcode, this.expression, with.expression);
@@ -466,9 +466,9 @@ public class ImplementNow extends Passes {
             public WindowBounds getWindowBounds(DBSPCompiler compiler) {
                 WindowBound lower = null;
                 WindowBound upper = null;
-                assert !this.comparisons.isEmpty();
+                Utilities.enforce(!this.comparisons.isEmpty());
                 DBSPExpression common = this.comparisons.get(0).noNow;
-                for (TemporalFilter comp: this.comparisons) {
+                for (TemporalFilter comp : this.comparisons) {
                     boolean inclusive = isInclusive(comp.opcode);
                     boolean toLower = isGreater(comp.opcode);
                     WindowBound result = new WindowBound(inclusive, comp.withNow);
@@ -514,7 +514,7 @@ public class ImplementNow extends Passes {
                 }};
 
                 DBSPClosureExpression clo = closure.to(DBSPClosureExpression.class);
-                assert clo.parameters.length == 1;
+                Utilities.enforce(clo.parameters.length == 1);
                 this.parameter = clo.parameters[0];
 
                 DBSPExpression expression = clo.body;
@@ -603,7 +603,7 @@ public class ImplementNow extends Passes {
          *         cannot be expressed as a list of such comparisons.
          */
         List<BooleanExpression> findTemporalFilters(DBSPFilterOperator operator, DBSPClosureExpression function) {
-            assert function.parameters.length == 1;
+            Utilities.enforce(function.parameters.length == 1);
             DBSPParameter param = function.parameters[0];
             IMaybeMonotoneType nonMonotone = NonMonotoneType.nonMonotone(param.getType().deref());
             MonotoneTransferFunctions mono = new MonotoneTransferFunctions(
@@ -615,7 +615,7 @@ public class ImplementNow extends Passes {
         }
 
         public DBSPSimpleOperator getNow() {
-            assert this.nowIndexed != null;
+            Utilities.enforce(this.nowIndexed != null);
             return this.nowIndexed.inputs.get(0).simpleNode();
         }
 
@@ -732,14 +732,14 @@ public class ImplementNow extends Passes {
         DBSPSimpleOperator implementTemporalFilters(DBSPFilterOperator operator,
                                                     List<BooleanExpression> filters) {
             int nonTemporal = Linq.where(filters, f -> f.is(NonTemporalFilter.class)).size();
-            assert nonTemporal <= 1;
+            Utilities.enforce(nonTemporal <= 1);
             if (nonTemporal == 1) {
                 // Only the last element may be a non-temporal filter
-                assert Utilities.last(filters).is(NonTemporalFilter.class);
+                Utilities.enforce(Utilities.last(filters).is(NonTemporalFilter.class));
             }
             OutputPort current = this.mapped(operator.input());
             DBSPParameter param = operator.getClosureFunction().parameters[0];
-            for (BooleanExpression expression: filters) {
+            for (BooleanExpression expression : filters) {
                 if (expression.is(NonTemporalFilter.class)) {
                     // must be the last in the list
                     return current.simpleNode();
@@ -776,7 +776,7 @@ public class ImplementNow extends Passes {
             closure = closure.ensureTree(compiler).to(DBSPClosureExpression.class);
             List<BooleanExpression> filters = this.findTemporalFilters(operator, closure);
             filters = combineExpressions(filters);
-            assert !filters.isEmpty();
+            Utilities.enforce(!filters.isEmpty());
             DBSPSimpleOperator result = this.implementTemporalFilters(operator, filters);
             // If the last value in the list is a NonTemporalFilter, implement that as well
             BooleanExpression leftOver = Utilities.last(filters);

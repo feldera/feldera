@@ -33,7 +33,7 @@ public class TranslateVisitor<T> extends InnerVisitor {
 
         public void update(IDBSPInnerNode node, T translation) {
             T old = this.translation.put(node.getId(), translation);
-            assert old != null;
+            Utilities.enforce(old != null);
         }
 
         public T get(IDBSPInnerNode node) {

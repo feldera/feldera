@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 public final class DBSPBinaryExpression extends DBSPExpression {
     public final DBSPExpression left;
@@ -47,8 +48,8 @@ public final class DBSPBinaryExpression extends DBSPExpression {
     }
 
     public DBSPBinaryExpression replaceSources(DBSPExpression left, DBSPExpression right) {
-        assert this.left.getType().sameType(left.getType());
-        assert this.right.getType().sameType(right.getType());
+        Utilities.enforce(this.left.getType().sameType(left.getType()));
+        Utilities.enforce(this.right.getType().sameType(right.getType()));
         return new DBSPBinaryExpression(this.getNode(), this.type, this.opcode, left, right);
     }
 

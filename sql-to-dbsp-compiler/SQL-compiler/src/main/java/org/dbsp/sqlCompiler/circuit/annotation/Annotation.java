@@ -26,10 +26,11 @@ public abstract class Annotation implements ICastable {
 
     @SuppressWarnings("unused")
     public static Annotation fromJson(JsonNode node) throws ClassNotFoundException {
-        assert node.isObject();
+        Utilities.enforce(node.isObject());
         ObjectNode object = (ObjectNode) node;
         JsonNode cls = object.get("class");
-        assert cls != null : "Node does not have 'class' field: " + Utilities.toDepth(node, 1);
+        Utilities.enforce(cls != null,
+                "Node does not have 'class' field: " + Utilities.toDepth(node, 1));
         try {
             Class<?> clazz = Class.forName("org.dbsp.sqlCompiler.circuit.annotation." + cls.asText());
             Method method = clazz.getMethod("fromJson", JsonNode.class);

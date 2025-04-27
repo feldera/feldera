@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -68,7 +69,7 @@ public class DBSPTypeArray extends DBSPTypeUser implements ICollectionType {
     @SuppressWarnings("unused")
     public static DBSPTypeArray fromJson(JsonNode node, JsonDecoder decoder) {
         List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
-        assert typeArgs.size() == 1;
+        Utilities.enforce(typeArgs.size() == 1);
         boolean mayBeNull = fromJsonMayBeNull(node);
         return new DBSPTypeArray(typeArgs.get(0), mayBeNull);
     }

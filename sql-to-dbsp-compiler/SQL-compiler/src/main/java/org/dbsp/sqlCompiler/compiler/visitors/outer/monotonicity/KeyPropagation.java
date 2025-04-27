@@ -234,7 +234,7 @@ public class KeyPropagation extends CircuitVisitor {
                     source = field.keyField.table;
                 else
                     // There is no way a stream could contain keys from multiple tables
-                    assert (source == field.keyField.table);
+                    Utilities.enforce((source == field.keyField.table));
                 keyFieldsFound.add(field.keyField.tableFieldIndex);
             }
         }
@@ -375,7 +375,7 @@ public class KeyPropagation extends CircuitVisitor {
     @Override
     public void postorder(DBSPJoinFilterMapOperator node) {
         // The analysis assumes that there is no map function in the join
-        assert node.map == null;
+        Utilities.enforce(node.map == null);
         this.processJoin(node);
     }
 
@@ -404,7 +404,7 @@ public class KeyPropagation extends CircuitVisitor {
             index++;
         }
         for (ForeignKey fk: operator.metadata.getForeignKeys()) {
-            assert fk.thisTable.tableName.toIdentifier().equals(operator.tableName);
+            Utilities.enforce(fk.thisTable.tableName.toIdentifier().equals(operator.tableName));
             DBSPSourceTableOperator other = this.getCircuit().getInput(fk.otherTable.tableName.toIdentifier());
             if (other == null)
                 // This can happen for foreign keys that refer to tables that are not in the program.

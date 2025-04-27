@@ -41,7 +41,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
     public DBSPChainOperator(CalciteRelNode node, ComputationChain chain, boolean isMultiset, OutputPort source) {
         super(node, "chain" + chain.summary(), null, chain.getOutputType(), isMultiset, source);
         this.chain = chain;
-        assert this.chain.size() > 1;
+        Utilities.enforce(this.chain.size() > 1);
     }
 
     public enum ComputationKind {
@@ -52,7 +52,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
 
     public record Computation(ComputationKind kind, DBSPClosureExpression closure) {
         public Computation {
-            assert closure.parameters.length == 1;
+            Utilities.enforce(closure.parameters.length == 1);
         }
 
         void checkInputType(DBSPType inputType) {
@@ -62,7 +62,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
             if (zSet != null) {
                 argType = zSet.elementType.ref();
             } else {
-                assert iZSet != null;
+                Utilities.enforce(iZSet != null);
                 argType = iZSet.getKVRefType();
             }
             DBSPType paramType = closure.parameters[0].getType();
@@ -136,7 +136,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
         }
 
         public DBSPClosureExpression collapse(DBSPCompiler compiler) {
-            assert this.computations.size() > 1;
+            Utilities.enforce(this.computations.size() > 1);
             DBSPVariablePath inputVar;
             DBSPExpression currentArg;
             if (this.inputType.is(DBSPTypeZSet.class)) {

@@ -28,7 +28,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
      *
      * @param node       Calcite object that is being compiled.
      * @param offset     Lead/lag offset.
-     * @param projection Projection that computes the delayed row from Option<input row>.
+     * @param projection Projection that computes the delayed row from Option[input row].
      * @param function   Expression that produces the output from two arguments:
      *                   the current row and the delayed row.
      * @param comparator Comparator used for sorting.
@@ -40,7 +40,14 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
                            DBSPExpression comparator,
                            DBSPTypeIndexedZSet outputType, OutputPort source) {
         super(node, "lag_custom_order", function, outputType, source.isMultiset(), source, true);
-        assert comparator.is(DBSPComparatorExpression.class) || comparator.is(DBSPPathExpression.class);
+        Utilities.enforce(comparator.is(DBSPComparatorExpression.class) ||
+                comparator.is(DBSPPathExpression.class));
+        //noinspection RedundantIfStatement
+        if (comparator.is(DBSPComparatorExpression.class)) {
+            Utilities.enforce(comparator.to(DBSPComparatorExpression.class)
+                    .comparedValueType()
+                    .sameType(source.getOutputIndexedZSetType().elementType));
+        }
         this.comparator = comparator;
         this.projection = projection;
         this.offset = offset;
@@ -60,7 +67,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 1: "Expected 1 input " + newInputs;
+        Utilities.enforce(newInputs.size() == 1, "Expected 1 input " + newInputs);
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPLagOperator(this.getRelNode(), this.offset,
                     this.projection, this.getFunction(), this.comparator,

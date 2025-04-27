@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** Describes an expression of the form e? */
 @NonCoreIR
@@ -18,8 +19,8 @@ public final class DBSPQuestionExpression extends DBSPExpression {
     DBSPQuestionExpression(DBSPExpression source) {
         super(source.getNode(), source.getType().withMayBeNull(false));
         this.source = source;
-        assert source.getType().is(DBSPTypeAny.class) ||
-                source.getType().mayBeNull;
+        Utilities.enforce(source.getType().is(DBSPTypeAny.class) ||
+                source.getType().mayBeNull);
     }
 
     @Override

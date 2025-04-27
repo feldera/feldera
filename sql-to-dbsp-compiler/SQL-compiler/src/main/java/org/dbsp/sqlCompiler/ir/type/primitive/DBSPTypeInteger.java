@@ -246,7 +246,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
                     DBSPI8Literal right = expression.right.as(DBSPI8Literal.class);
                     if (left == null || right == null)
                         return expression;
-                    assert left.value != null && right.value != null;
+                    Utilities.enforce(left.value != null && right.value != null);
                     return switch (expression.opcode) {
                         case SUB -> new DBSPI8Literal(left.getNode(), this, this.checkOverflowI8(left.value - right.value));
                         case ADD -> new DBSPI8Literal(left.getNode(), this, this.checkOverflowI8(left.value + right.value));
@@ -260,7 +260,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
                     DBSPI32Literal right = expression.right.as(DBSPI32Literal.class);
                     if (left == null || right == null)
                         return expression;
-                    assert left.value != null && right.value != null;
+                    Utilities.enforce(left.value != null && right.value != null);
                     return switch (expression.opcode) {
                         case SUB -> new DBSPI32Literal(left.getNode(), this, Math.subtractExact(left.value, right.value));
                         case ADD -> new DBSPI32Literal(left.getNode(), this, Math.addExact(left.value, right.value));

@@ -366,7 +366,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
 
             DBSPSourceTableOperator thisTable = circuit.getInput(thisTableName);
-            assert thisTable != null;
+            Utilities.enforce(thisTable != null);
 
             List<InputColumnMetadata> otherKeys = otherTable.metadata.getPrimaryKeys();
             if (otherKeys.size() != self.columnNames.size()) {

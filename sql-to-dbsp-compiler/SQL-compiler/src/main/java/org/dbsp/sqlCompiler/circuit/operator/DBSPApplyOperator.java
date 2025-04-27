@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -29,21 +30,21 @@ import java.util.Objects;
  * In the type system such inputs would show up as ZSets or IndexedZSets. */
 public final class DBSPApplyOperator extends DBSPUnaryOperator {
     public static void noZsets(DBSPType type) {
-        assert !type.is(DBSPTypeZSet.class);
-        assert !type.is(DBSPTypeIndexedZSet.class);
+        Utilities.enforce(!type.is(DBSPTypeZSet.class));
+        Utilities.enforce(!type.is(DBSPTypeIndexedZSet.class));
     }
 
     public DBSPApplyOperator(CalciteRelNode node, DBSPClosureExpression function,
                              DBSPType outputType, OutputPort input, @Nullable String comment) {
         super(node, "apply", function, outputType, false, input, comment, false);
-        assert function.parameters.length == 1: "Expected 1 parameter for function " + function;
+        Utilities.enforce(function.parameters.length == 1, "Expected 1 parameter for function " + function);
         DBSPType paramType = function.parameters[0].getType().deref();
-        assert input.outputType().sameType(paramType) :
-                "Parameter type " + paramType + " does not match input type " + input.outputType();
+        Utilities.enforce(input.outputType().sameType(paramType),
+                "Parameter type " + paramType + " does not match input type " + input.outputType());
         noZsets(input.outputType());
         noZsets(this.outputType());
-        assert function.getResultType().sameType(outputType) :
-                "Function return type " + function.getResultType() + " does not match output type " + outputType;
+        Utilities.enforce(function.getResultType().sameType(outputType),
+                "Function return type " + function.getResultType() + " does not match output type " + outputType);
     }
 
     public DBSPApplyOperator(CalciteRelNode node, DBSPClosureExpression function,
@@ -61,7 +62,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 1: "Expected 1 input " + newInputs;
+        Utilities.enforce(newInputs.size() == 1, "Expected 1 input " + newInputs);
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApplyOperator(
                     this.getRelNode(), this.getClosureFunction(),

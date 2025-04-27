@@ -209,7 +209,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
@@ -377,7 +376,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<Integer> indexes = new ArrayList<>(aggregates.size());
         for (var group: groups)
             indexes.addAll(group);
-        assert indexes.size() == aggregates.size();
+        Utilities.enforce(indexes.size() == aggregates.size());
         return new ExplicitShuffle(aggregates.size(), indexes);
     }
 
@@ -398,7 +397,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             RelNode node, List<AggregateCall> aggregates, DBSPTypeTuple resultType,
             DBSPType inputRowType, int groupCount, ImmutableBitSet groupKeys,
             boolean linearAllowed, boolean canReorder) {
-        assert !aggregates.isEmpty();
+        Utilities.enforce(!aggregates.isEmpty());
 
         CalciteObject obj = CalciteObject.create(node);
         List<AggregateBase> simple = new ArrayList<>();
@@ -548,12 +547,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
     /** Given a DESCRIPTOR RexCall, return the reference to the single colum
      * that is referred by the DESCRIPTOR. */
     int getDescriptor(RexNode descriptor) {
-        assert descriptor instanceof RexCall;
+        Utilities.enforce(descriptor instanceof RexCall);
         RexCall call = (RexCall) descriptor;
-        assert call.getKind() == SqlKind.DESCRIPTOR;
-        assert call.getOperands().size() == 1;
+        Utilities.enforce(call.getKind() == SqlKind.DESCRIPTOR);
+        Utilities.enforce(call.getOperands().size() == 1);
         RexNode operand = call.getOperands().get(0);
-        assert operand instanceof RexInputRef;
+        Utilities.enforce(operand instanceof RexInputRef);
         RexInputRef ref = (RexInputRef) operand;
         return ref.getIndex();
     }
@@ -561,7 +560,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     void compileTumble(LogicalTableFunctionScan scan, RexCall call) {
         IntermediateRel node = CalciteObject.create(scan);
         DBSPTypeTuple type = this.convertType(scan.getRowType(), false).to(DBSPTypeTuple.class);
-        assert scan.getInputs().size() == 1;
+        Utilities.enforce(scan.getInputs().size() == 1);
         RelNode input = scan.getInput(0);
         DBSPTypeTuple inputRowType = this.convertType(input.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPSimpleOperator opInput = this.getInputAs(input, true);
@@ -579,7 +578,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPVariablePath row = inputRowType.ref().var();
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(scan, row, this.compiler);
-        assert call.operandCount() == 2 || call.operandCount() == 3;
+        Utilities.enforce(call.operandCount() == 2 || call.operandCount() == 3);
         DBSPExpression interval = expressionCompiler.compile(operands.get(1));
         Simplify simplify = new Simplify(this.compiler.compiler());
         interval = simplify.apply(interval).to(DBSPExpression.class);
@@ -638,14 +637,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
     void compileHop(LogicalTableFunctionScan scan, RexCall call) {
         IntermediateRel node = CalciteObject.create(scan);
         DBSPTypeTuple type = this.convertType(scan.getRowType(), false).to(DBSPTypeTuple.class);
-        assert scan.getInputs().size() == 1;
+        Utilities.enforce(scan.getInputs().size() == 1);
         RelNode input = scan.getInput(0);
         DBSPTypeTuple inputRowType = this.convertType(input.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPSimpleOperator opInput = this.getInputAs(input, true);
         DBSPVariablePath row = inputRowType.ref().var();
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(scan, row, this.compiler);
         List<RexNode> operands = call.getOperands();
-        assert call.operandCount() == 3 || call.operandCount() == 4;
+        Utilities.enforce(call.operandCount() == 3 || call.operandCount() == 4);
         int timestampIndex = this.getDescriptor(operands.get(0));
         // Need to do a few more checks, Calcite should be doing these really.
         DBSPExpression interval = expressionCompiler.compile(operands.get(1));
@@ -672,7 +671,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     void visitTableFunction(LogicalTableFunctionScan tf) {
         CalciteObject node = CalciteObject.create(tf);
         RexNode operation = tf.getCall();
-        assert operation instanceof RexCall;
+        Utilities.enforce(operation instanceof RexCall);
         RexCall call = (RexCall) operation;
         switch (call.getOperator().getName()) {
             case "HOP":
@@ -751,7 +750,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     DBSPTupleExpression generateKeyExpression(
             ImmutableBitSet keyFields, ImmutableBitSet groupSet,
             DBSPVariablePath t, DBSPTypeTuple slice) {
-        assert groupSet.cardinality() == slice.size();
+        Utilities.enforce(groupSet.cardinality() == slice.size());
         DBSPExpression[] keys = new DBSPExpression[keyFields.cardinality()];
         int keyFieldIndex = 0;
         int groupSetIndex = 0;
@@ -903,8 +902,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             .applyCloneIfNeeded();
                     localIndex++;
                 } else {
-                    assert i < reindexFields.length;
-                    assert globalKeys.fields != null;
+                    Utilities.enforce(i < reindexFields.length);
+                    Utilities.enforce(globalKeys.fields != null);
                     reindexFields[i] = DBSPLiteral.none(globalKeys.fields[i].getType());
                 }
                 i++;
@@ -981,7 +980,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         var node = CalciteObject.create(scan);
 
         RelOptTable tbl = scan.getTable();
-        assert tbl != null;
+        Utilities.enforce(tbl != null);
         ProgramIdentifier tableName = null;
         if (tbl instanceof RelOptTableImpl impl) {
             CalciteTableDescription descr = impl.unwrap(CalciteTableDescription.class);
@@ -1031,8 +1030,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     void assignOperator(RelNode rel, DBSPSimpleOperator op) {
-        assert op.getNode().is(LastRel.class);
-        assert op.getNode().to(LastRel.class).relNode == rel;
+        Utilities.enforce(op.getNode().is(LastRel.class));
+        Utilities.enforce(op.getNode().to(LastRel.class).relNode == rel);
         Utilities.putNew(this.nodeOperator, rel, op);
         this.addOperator(op);
     }
@@ -1101,7 +1100,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // Turns out that types may not match in nullability...
         // so we need to check whether the field names are the same but the types differ
         Set<String> leftNames = new HashSet<>();
-        assert left.getFieldCount() == right.getFieldCount();
+        Utilities.enforce(left.getFieldCount() == right.getFieldCount());
         var leftFields = left.getFieldList();
         for (var field: leftFields) {
             String name = field.getName();
@@ -1345,7 +1344,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
          */
         DBSPTupleExpression nonKeyFields(DBSPExpression e, DBSPTypeTupleBase desiredType) {
             List<DBSPExpression> fields = new ArrayList<>();
-            assert e.getType().getToplevelFieldCount() >= desiredType.size();
+            Utilities.enforce(e.getType().getToplevelFieldCount() >= desiredType.size());
             for (int i = 0; i < desiredType.size(); i++) {
                 if (this.isKeyField(i))
                     continue;
@@ -1365,7 +1364,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
          */
         DBSPTupleExpression keyFields(DBSPExpression e, DBSPTypeTupleBase keyType) {
             List<DBSPExpression> fields = new ArrayList<>();
-            assert keyType.size() == this.size();
+            Utilities.enforce(keyType.size() == this.size());
             int index = 0;
             for (int kf: this.keyFields) {
                 fields.add(e.field(kf)
@@ -1395,7 +1394,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
          *                  (In this case we expect key.0 == key.2 always)
          */
         void unshuffleKeyAndDataFields(DBSPExpression key, DBSPExpression data, List<DBSPExpression> result) {
-            assert key.getType().getToplevelFieldCount() == this.size();
+            Utilities.enforce(key.getType().getToplevelFieldCount() == this.size());
             int size = this.keyFieldSet.size() + data.getType().getToplevelFieldCount();
             int skipped = 0;
             for (int i = 0; i < size; i++) {
@@ -1428,10 +1427,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
     /** Create the AND of a list of boolean expressions */
     DBSPExpression makeAnd(List<DBSPExpression> predicates) {
         DBSPExpression result = predicates.get(0);
-        assert result.getType().code == BOOL;
+        Utilities.enforce(result.getType().code == BOOL);
         for (int i = 1; i < predicates.size(); i++) {
             DBSPExpression next = predicates.get(i);
-            assert next.getType().code == BOOL;
+            Utilities.enforce(next.getType().code == BOOL);
             boolean nullable = result.getType().mayBeNull || next.getType().mayBeNull;
             result = ExpressionCompiler.makeBinaryExpression(
                     result.getNode(), DBSPTypeBool.create(nullable), DBSPOpcode.AND, result, next);
@@ -1923,11 +1922,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
         JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join, join.getCondition());
-        assert decomposition.rightPredicates.isEmpty();
-        assert decomposition.leftPredicates.isEmpty();
+        Utilities.enforce(decomposition.rightPredicates.isEmpty());
+        Utilities.enforce(decomposition.leftPredicates.isEmpty());
         @Nullable
         RexNode leftOver = decomposition.getLeftOver();
-        assert leftOver == null;
+        Utilities.enforce(leftOver == null);
 
         int leftTsIndex;  // Index of "timestamp" column in left input
         int rightTsIndex;
@@ -1939,30 +1938,30 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Analyze match condition.  We know it's always a simple comparison between
             // two columns (enforced by the Validator).
             RexNode matchCondition = join.getMatchCondition();
-            assert matchCondition instanceof RexCall;
+            Utilities.enforce(matchCondition instanceof RexCall);
             RexCall call = (RexCall) matchCondition;
             comparison = call.getOperator().getKind();
-            assert SqlKind.ORDER_COMPARISON.contains(comparison);
+            Utilities.enforce(SqlKind.ORDER_COMPARISON.contains(comparison));
             List<RexNode> operands = call.getOperands();
-            assert operands.size() == 2;
+            Utilities.enforce(operands.size() == 2);
             RexNode leftCompared = operands.get(0);
             RexNode rightCompared = operands.get(1);
             RexNode lc = leftCompared;
             RexNode rc = rightCompared;
 
             if (leftCompared instanceof RexCall lrc) {
-                assert lrc.getKind() == SqlKind.CAST;
+                Utilities.enforce(lrc.getKind() == SqlKind.CAST);
                 needsLeftCast = true;
                 lc = lrc.getOperands().get(0);
             }
 
             if (rightCompared instanceof RexCall rrc) {
-                assert rrc.getKind() == SqlKind.CAST;
+                Utilities.enforce(rrc.getKind() == SqlKind.CAST);
                 needsRightCast = true;
                 rc = rrc.getOperands().get(0);
             }
-            assert lc instanceof RexInputRef;
-            assert rc instanceof RexInputRef;
+            Utilities.enforce(lc instanceof RexInputRef);
+            Utilities.enforce(rc instanceof RexInputRef);
             RexInputRef li = (RexInputRef) lc;
             RexInputRef ri = (RexInputRef) rc;
 
@@ -2108,8 +2107,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
     private void visitCollect(Collect collect) {
         IntermediateRel node = CalciteObject.create(collect);
         DBSPTypeTuple type = this.convertType(collect.getRowType(), false).to(DBSPTypeTuple.class);
-        assert collect.getInputs().size() == 1;
-        assert type.size() == 1;
+        Utilities.enforce(collect.getInputs().size() == 1);
+        Utilities.enforce(type.size() == 1);
         RelNode input = collect.getInput(0);
         DBSPTypeTuple inputRowType = this.convertType(input.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPSimpleOperator opInput = this.getInputAs(input, true);
@@ -2128,10 +2127,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             case ARRAY: {
                 // specialized version of ARRAY_AGG
                 boolean flatten = inputRowType.size() == 1;
-                assert type.getFieldType(0).is(DBSPTypeArray.class);
+                Utilities.enforce(type.getFieldType(0).is(DBSPTypeArray.class));
                 DBSPTypeArray arrayType = type.getFieldType(0).to(DBSPTypeArray.class);
                 DBSPType elementType = arrayType.getElementType();
-                assert elementType.sameType(flatten ? inputRowType.getFieldType(0) : inputRowType);
+                Utilities.enforce(elementType.sameType(flatten ? inputRowType.getFieldType(0) : inputRowType));
                 DBSPType accumulatorType = arrayType.innerType();
 
                 row = inputRowType.ref().var();
@@ -2161,13 +2160,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 break;
             }
             case MAP: {
-                assert type.getFieldType(0).is(DBSPTypeMap.class);
+                Utilities.enforce(type.getFieldType(0).is(DBSPTypeMap.class));
                 DBSPTypeMap mapType = type.getFieldType(0).to(DBSPTypeMap.class);
                 DBSPType keyType = mapType.getKeyType();
                 DBSPType valueType = mapType.getValueType();
-                assert inputRowType.size() == 2;
-                assert keyType.sameType(inputRowType.getFieldType(0));
-                assert valueType.sameType(inputRowType.getFieldType(1));
+                Utilities.enforce(inputRowType.size() == 2);
+                Utilities.enforce(keyType.sameType(inputRowType.getFieldType(0)));
+                Utilities.enforce(valueType.sameType(inputRowType.getFieldType(1)));
                 DBSPTypeUser accumulatorType = mapType.innerType();
 
                 row = inputRowType.ref().var();
@@ -2597,7 +2596,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 inputIndexed = index.outputPort();
             } else {
                 // avoid a deindex->index chain which does nothing
-                assert lastOperator.is(DBSPDeindexOperator.class);
+                Utilities.enforce(lastOperator.is(DBSPDeindexOperator.class),
+                        "Last operator is not a Deindex, but it is " + lastOperator);
                 inputIndexed = lastOperator.inputs.get(0);
             }
 
@@ -2623,7 +2623,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 if (!amount.is(DBSPI32Literal.class)) {
                     throw new UnimplementedException("Currently LAG/LEAD amount must be a compile-time constant", 457, node);
                 }
-                assert amount.is(DBSPI32Literal.class);
+                Utilities.enforce(amount.is(DBSPI32Literal.class));
                 offset *= Objects.requireNonNull(amount.to(DBSPI32Literal.class).value);
             }
 
@@ -2661,7 +2661,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             int i = 0;
             for (AggregateCall call: this.aggregateCalls) {
                 List<Integer> args = call.getArgList();
-                assert lagTuple.fields != null;
+                Utilities.enforce(lagTuple.fields != null);
                 DBSPType resultType = lagTuple.fields[i].getType();
                 if (args.size() > 2) {
                     int defaultIndex = args.get(2);
@@ -2704,7 +2704,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         @Override
         boolean isCompatible(AggregateCall call) {
-            assert !this.aggregateCalls.isEmpty();
+            Utilities.enforce(!this.aggregateCalls.isEmpty());
             AggregateCall lastCall = Utilities.last(this.aggregateCalls);
             SqlKind kind = call.getAggregation().getKind();
             if (lastCall.getAggregation().getKind() != kind)
@@ -2774,7 +2774,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             // The field to aggregate is the single output we produce
             List<Integer> args = this.call.getArgList();
-            assert args.size() == 1;
+            Utilities.enforce(args.size() == 1);
             DBSPTupleExpression tuple = new DBSPTupleExpression(right.deref().field(args.get(0)).applyCloneIfNeeded());
             DBSPClosureExpression outputProducer = tuple.closure(ignored, right);
 
@@ -2837,8 +2837,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
     static class SimpleAggregates extends GroupAndAggregates {
         protected SimpleAggregates(CalciteToDBSPCompiler compiler, Window window, Window.Group group, int windowFieldIndex) {
             super(compiler, window, group, windowFieldIndex);
-            assert this.group.orderKeys.getFieldCollations().isEmpty();
-            assert isUnbounded(group);
+            Utilities.enforce(this.group.orderKeys.getFieldCollations().isEmpty());
+            Utilities.enforce(isUnbounded(group));
         }
 
         @Override
@@ -2852,7 +2852,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     this.compiler.compiler,
                     this.window, this.aggregateCalls, tuple, inputType,
                     0, this.group.keys, true, false);
-            assert aggregates.permutation.isIdentityPermutation();
+            Utilities.enforce(aggregates.permutation.isIdentityPermutation());
 
             // Index the previous input using the group keys
             DBSPTypeIndexedZSet localGroupAndInput = makeIndexedZSet(groupKeyType, inputType);
@@ -3046,8 +3046,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 AggregateList folds = CalciteToDBSPCompiler.createAggregates(this.compiler.compiler,
                         this.window, this.aggregateCalls, tuple, this.inputRowType, 0,
                         ImmutableBitSet.of(), false, false);
-                assert folds.permutation().isIdentityPermutation();
-                assert folds.aggregates.size() == 1;
+                Utilities.enforce(folds.permutation().isIdentityPermutation());
+                Utilities.enforce(folds.aggregates.size() == 1);
                 DBSPAggregate fd = folds.aggregates.get(0);
 
                 // This function is always the same: |Tup2(x, y)| (x, y)
@@ -3326,7 +3326,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             index++;
         }
 
-        assert lastOperator.getOutputZSetElementType().sameType(resultType);
+        Utilities.enforce(lastOperator.getOutputZSetElementType().sameType(resultType));
         this.assignOperator(window, lastOperator);
     }
 
@@ -3482,7 +3482,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // First process children
         super.visit(node, ordinal, parent);
         RelNode last = Utilities.removeLast(this.ancestors);
-        assert last == node: "Corrupted stack: got " + last + " expected " + node;
+        Utilities.enforce(last == node, "Corrupted stack: got " + last + " expected " + node);
 
         // Synthesize current node
         boolean success =
@@ -3650,7 +3650,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (modify.rel instanceof LogicalTableScan scan) {
             // Support for INSERT INTO table (SELECT * FROM otherTable)
             RelOptTable relTbl = scan.getTable();
-            assert relTbl != null;
+            Utilities.enforce(relTbl != null);
             ProgramIdentifier sourceTable = Utilities.toIdentifier(relTbl.getQualifiedName());
             result = this.tableContents.getTableContents(sourceTable);
         } else if (modify.rel instanceof LogicalValues) {
@@ -3674,7 +3674,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         result.add(lit);
                 }
             }
-            assert result != null;
+            Utilities.enforce(result != null);
         } else {
             throw new UnimplementedException("statement of this form not supported",
                     modify.getCalciteObject());
@@ -3738,7 +3738,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             /*
             This doesn't quite work, and it's probably not necessary.
 
-            assert ct.dataType != null;
+            Utilities.enforce(ct.dataType != null;
             var spec = ct.dataType.getTypeNameSpec();
             if (spec instanceof SqlRowTypeNameSpec row) {
                 List<SqlIdentifier> fieldNames = row.getFieldNames();
@@ -3831,7 +3831,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         int i = 0;
         for (ProgramIdentifier col: ci.columns) {
             DBSPTypeStruct.Field field = struct.getField(col);
-            assert field != null;
+            Utilities.enforce(field != null);
             DBSPTypeCode code = field.type.code;
             if (code == ARRAY || code == MAP || code == VARIANT || code == STRUCT) {
                 this.compiler.reportError(new SourcePositionRange(ci.columnParserPosition(i)),

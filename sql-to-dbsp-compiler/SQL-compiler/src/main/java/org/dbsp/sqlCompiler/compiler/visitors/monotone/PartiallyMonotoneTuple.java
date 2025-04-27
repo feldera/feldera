@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -32,7 +33,7 @@ public class PartiallyMonotoneTuple
         // An empty tuple is always monotone
         this.anyMonotone = Linq.any(fields, IMaybeMonotoneType::mayBeMonotone) || fields.isEmpty();
         if (raw) {
-            assert !mayBeNull;
+            Utilities.enforce(!mayBeNull);
             this.type = new DBSPTypeRawTuple(CalciteObject.EMPTY, fieldTypes);
         } else {
             this.type = new DBSPTypeTuple(CalciteObject.EMPTY, mayBeNull, fieldTypes);

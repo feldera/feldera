@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.util.Utilities;
 
 public class DBSPTypeIndexedZSet extends DBSPTypeUser {
     public final DBSPType keyType;
@@ -42,8 +43,8 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
         super(node, DBSPTypeCode.INDEXED_ZSET, "IndexedWSet", false, keyType, elementType);
         this.keyType = keyType;
         this.elementType = elementType;
-        assert !elementType.is(DBSPTypeZSet.class);
-        assert !elementType.is(DBSPTypeIndexedZSet.class);
+        Utilities.enforce(!elementType.is(DBSPTypeZSet.class));
+        Utilities.enforce(!elementType.is(DBSPTypeIndexedZSet.class));
     }
 
     @Override

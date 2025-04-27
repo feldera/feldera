@@ -179,7 +179,7 @@ public class RustSqlRuntimeLibrary {
             map = this.dateFunctions;
             if (opcode == DBSPOpcode.TS_SUB || opcode == DBSPOpcode.TS_ADD) {
                 if (ltype.is(IsTimeRelatedType.class)) {
-                    assert rtype != null;
+                    Utilities.enforce(rtype != null);
                     suffixReturn = "_" + expectedReturnType.to(DBSPTypeBaseType.class).shortName()
                             + expectedReturnType.nullableSuffix();
                     if (rtype.is(IsNumericType.class))
@@ -209,7 +209,7 @@ public class RustSqlRuntimeLibrary {
             tsuffixl = "";
             tsuffixr = "";
             suffixl = ltype.nullableSuffix();
-            assert rtype != null;
+            Utilities.enforce(rtype != null);
             suffixr = rtype.nullableSuffix();
         } else if (opcode == DBSPOpcode.CONTROLLED_FILTER_GTE) {
             tsuffixl = "";

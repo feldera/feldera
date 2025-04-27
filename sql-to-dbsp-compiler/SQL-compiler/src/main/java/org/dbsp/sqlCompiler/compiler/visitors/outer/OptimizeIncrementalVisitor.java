@@ -232,7 +232,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
         ICircuit parent = this.getParent();
         if (this.pushIntegators.contains(parent)) {
             OutputPort source = this.mapped(operator.input());
-            assert source.node().is(DBSPIntegrateOperator.class);
+            Utilities.enforce(source.node().is(DBSPIntegrateOperator.class));
             DBSPSimpleOperator result = operator.withInputs(
                     Linq.list(source.node().to(DBSPUnaryOperator.class).input()), true);
             this.map(operator, result);

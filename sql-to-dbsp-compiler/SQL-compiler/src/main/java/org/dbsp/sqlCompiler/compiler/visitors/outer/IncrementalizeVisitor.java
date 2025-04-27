@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.util.Utilities;
 
 /** This visitor converts a {@link DBSPCircuit} into a new circuit which
  * computes the incremental version of the same query.
@@ -84,7 +85,7 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
             this.addOperator(replacement);
         } else {
             // Switch to this implementation: https://github.com/feldera/feldera/issues/2302
-            assert !operator.incremental;
+            Utilities.enforce(!operator.incremental);
             replacement = new DBSPConstantOperator(operator.getRelNode(),
                     operator.function, true, operator.isMultiset);
         }

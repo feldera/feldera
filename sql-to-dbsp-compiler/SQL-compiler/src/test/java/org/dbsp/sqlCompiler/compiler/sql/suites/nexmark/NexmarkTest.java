@@ -566,7 +566,6 @@ SELECT
     @Override
     public DBSPCompiler testCompiler(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
-        options.languageOptions.lexicalRules = Lex.ORACLE;
         options.languageOptions.streaming = true;
         options.languageOptions.throwOnError = true;
         options.languageOptions.incrementalize = true;
@@ -576,7 +575,7 @@ SELECT
     }
 
     CompilerCircuitStream createTest(int query, String... scriptsAndTables) {
-        assert scriptsAndTables.length % 2 == 0;
+        Assert.assertEquals(0, scriptsAndTables.length % 2);
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
         compiler.submitStatementsForCompilation(queries[query]);
@@ -929,8 +928,8 @@ day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_
         CircuitVisitor v = new CircuitVisitor(ccs.compiler) {
             @Override
             public VisitDecision preorder(DBSPSimpleOperator node) {
-                assert !node.operation.contains("aggregate") ||
-                       node.operation.equals("aggregate_linear_postprocess_retain_keys");
+                Assert.assertTrue( !node.operation.contains("aggregate") ||
+                       node.operation.equals("aggregate_linear_postprocess_retain_keys"));
                 return super.preorder(node);
             }
         };

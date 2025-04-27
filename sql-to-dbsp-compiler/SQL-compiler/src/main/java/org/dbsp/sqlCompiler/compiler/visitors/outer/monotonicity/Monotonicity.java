@@ -123,7 +123,7 @@ public class Monotonicity extends CircuitVisitor {
         }
 
         void put(OutputPort operator, MonotoneExpression expression) {
-            assert this.expandedGraph.contains(operator.node());
+            Utilities.enforce(this.expandedGraph.contains(operator.node()));
             Utilities.putNew(this.monotonicity, operator, expression);
         }
 
@@ -596,7 +596,7 @@ public class Monotonicity extends CircuitVisitor {
         // Let's say the function of lag is |x, y| f(x, y).
         // We build a new function transfer = |kx| (*kx.0, f(kx.1, No)) and analyze this one.
         DBSPClosureExpression function = node.getClosureFunction();
-        assert function.parameters.length == 2;
+        Utilities.enforce(function.parameters.length == 2);
 
         DBSPTypeIndexedZSet inputType = node.input().getOutputIndexedZSetType();
         DBSPVariablePath kx = new DBSPTypeRawTuple(inputType.keyType.ref(), inputType.elementType.ref()).var();
@@ -645,7 +645,7 @@ public class Monotonicity extends CircuitVisitor {
         Projection projection = new Projection(this.compiler(), true);
         DBSPClosureExpression function = node.getClosureFunction();
         projection.apply(function);
-        assert projection.isProjection && projection.hasIoMap();
+        Utilities.enforce(projection.isProjection && projection.hasIoMap());
         Projection.IOMap ioMap = projection.getIoMap();
         DBSPTypeTupleBase keyType = node.getKeyType().to(DBSPTypeTupleBase.class);
 
@@ -664,7 +664,7 @@ public class Monotonicity extends CircuitVisitor {
                 DBSPOpcode.MIN, leftTsField, rightTsField);
 
         List<DBSPExpression> fields = new ArrayList<>();
-        for (var fai: ioMap.fields()) {
+        for (var fai : ioMap.fields()) {
             int input = fai.inputIndex();
             int index = fai.fieldIndex();
             DBSPExpression expr;
@@ -888,7 +888,7 @@ public class Monotonicity extends CircuitVisitor {
             final DBSPOpcode opcode;
 
             Comparison(int columnIndex, DBSPExpression comparedTo, DBSPOpcode opcode, DBSPParameter parameter) {
-                assert columnIndex >= 0;
+                Utilities.enforce(columnIndex >= 0);
                 this.opcode = opcode;
                 this.columnIndex = columnIndex;
                 this.comparedTo = comparedTo;
@@ -916,7 +916,7 @@ public class Monotonicity extends CircuitVisitor {
         /** Analyze the condition of a filter and decompose it into a conjunction of comparisons */
         public ComparisonsAnalyzer(DBSPExpression closure) {
             DBSPClosureExpression clo = closure.to(DBSPClosureExpression.class);
-            assert clo.parameters.length == 1;
+            Utilities.enforce(clo.parameters.length == 1);
             DBSPParameter param = clo.parameters[0];
             DBSPExpression expression = clo.body;
             if (expression.is(DBSPUnaryExpression.class)) {

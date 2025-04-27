@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 /** Base class for the many kinds of joins we have, some incremental,
  * some non-incremental. */
@@ -19,19 +20,19 @@ public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
         DBSPClosureExpression closure = this.getClosureFunction();
         DBSPTypeIndexedZSet leftType = left.getOutputIndexedZSetType();
         DBSPTypeIndexedZSet rightType = right.getOutputIndexedZSetType();
-        assert closure.parameters[1].getType().deref().sameType(leftType.elementType) :
+        Utilities.enforce(closure.parameters[1].getType().deref().sameType(leftType.elementType),
                 "Type of parameter 1 of join function " + closure.parameters[1].getType() + 
-                        " does not match left input element type " + leftType.elementType;
-        assert this.is(DBSPAsofJoinOperator.class) || // Not always true
-                closure.parameters[2].getType().deref().sameType(rightType.elementType) :
+                        " does not match left input element type " + leftType.elementType);
+        Utilities.enforce(this.is(DBSPAsofJoinOperator.class) || // Not always true
+                closure.parameters[2].getType().deref().sameType(rightType.elementType),
                 "Type of parameter 2 of join function " + closure.parameters[2].getType() +
-                        " does not match right input element type " + rightType.elementType;
-        assert closure.parameters[0].getType().deref().sameType(leftType.keyType)  :
+                        " does not match right input element type " + rightType.elementType);
+        Utilities.enforce(closure.parameters[0].getType().deref().sameType(leftType.keyType),
                 "Type of parameter 0 of join function " + closure.parameters[0].getType() +
-                        " does not match left input key type " + leftType.keyType;
-        assert closure.parameters[0].getType().deref().sameType(rightType.keyType) :
+                        " does not match left input key type " + leftType.keyType);
+        Utilities.enforce(closure.parameters[0].getType().deref().sameType(rightType.keyType),
                 "Type of parameter 0 of join function " + closure.parameters[0].getType() +
-                        " does not match right input element type " + rightType.keyType;
+                        " does not match right input element type " + rightType.keyType);
     }
 
     /** Replace inputs and function, preserve output type */

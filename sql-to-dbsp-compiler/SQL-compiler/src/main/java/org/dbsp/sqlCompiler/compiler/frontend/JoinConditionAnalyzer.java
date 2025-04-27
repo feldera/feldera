@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -156,7 +157,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                 if (checker.leftRef) {
                     this.leftPredicates.add(call);
                 } else {
-                    assert checker.rightRef;
+                    Utilities.enforce(checker.rightRef);
                     this.rightPredicates.add(call);
                 }
                 return true;

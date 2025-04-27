@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -355,7 +356,7 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     }
 
     public static FieldUseMap computeUsedFields(DBSPClosureExpression closure, DBSPCompiler compiler) {
-        assert closure.parameters.length == 1;
+        Utilities.enforce(closure.parameters.length == 1);
         FindUnusedFields fu = new FindUnusedFields(compiler);
         fu.findUnusedFields(closure);
         return fu.parameterFieldMap.get(closure.parameters[0]);

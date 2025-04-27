@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -52,7 +53,7 @@ public final class DBSPGeoPointConstructor
                                    @Nullable DBSPExpression left, @Nullable DBSPExpression right,
                                    DBSPType type) {
         super(node, type);
-        assert type.is(DBSPTypeGeoPoint.class);
+        Utilities.enforce(type.is(DBSPTypeGeoPoint.class));
         this.left = left;
         this.right = right;
     }

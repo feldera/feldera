@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Arrays;
@@ -48,7 +49,7 @@ public abstract class DBSPBaseTupleExpression
 
     public DBSPBaseTupleExpression(CalciteObject node, DBSPType type) {
         super(node, type);
-        assert type.mayBeNull;
+        Utilities.enforce(type.mayBeNull);
         this.fields = null;
     }
 

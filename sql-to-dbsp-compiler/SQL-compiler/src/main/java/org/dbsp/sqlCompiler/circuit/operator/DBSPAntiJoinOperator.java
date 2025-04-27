@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -21,10 +22,13 @@ public final class DBSPAntiJoinOperator extends DBSPBinaryOperator {
         // Inputs must be indexed
         left.getOutputIndexedZSetType();
         right.getOutputIndexedZSetType();
-        assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType) :
+        Utilities.enforce(left.getOutputIndexedZSetType()
+                .keyType
+                .sameType(right.getOutputIndexedZSetType()
+                        .keyType),
                 "Anti join key types to not match\n" +
                         left.getOutputIndexedZSetType().keyType + " and\n" +
-                        right.getOutputIndexedZSetType().keyType;
+                        right.getOutputIndexedZSetType().keyType);
     }
 
     @Override

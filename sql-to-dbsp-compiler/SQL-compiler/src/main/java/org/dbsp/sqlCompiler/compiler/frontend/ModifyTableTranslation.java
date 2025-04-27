@@ -106,7 +106,7 @@ class ModifyTableTranslation {
     }
 
     DBSPExpression permuteColumns(DBSPExpression expression) {
-        assert this.columnPermutation != null;
+        Utilities.enforce(this.columnPermutation != null);
         DBSPExpression[] columns = new DBSPExpression[this.columnPermutation.size()];
         DBSPTupleExpression tuple = expression.to(DBSPTupleExpression.class);
         for (Map.Entry<Integer, Integer> e : this.columnPermutation.entrySet()) {
@@ -116,7 +116,7 @@ class ModifyTableTranslation {
     }
 
     DBSPZSetExpression permuteColumns(DBSPZSetExpression source) {
-        assert this.resultType != null;
+        Utilities.enforce(this.resultType != null);
         if (this.columnPermutation == null)
             return source;
         DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(this.resultType);

@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -38,12 +39,12 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     public static DBSPIntegrateTraceRetainKeysOperator create(
             CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
         DBSPType controlType = control.outputType();
-        assert controlType.is(DBSPTypeTupleBase.class) : "Control type is not a tuple: " + controlType;
+        Utilities.enforce(controlType.is(DBSPTypeTupleBase.class), "Control type is not a tuple: " + controlType);
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
-        assert controlTuple.size() == 2;
+        Utilities.enforce(controlTuple.size() == 2);
         DBSPType leftSliceType = Objects.requireNonNull(dataProjection.getProjectedType());
-        assert leftSliceType.sameType(controlTuple.getFieldType(1)) :
-                "Projection type does not match control type " + leftSliceType + "/" + controlType;
+        Utilities.enforce(leftSliceType.sameType(controlTuple.getFieldType(1)),
+                "Projection type does not match control type " + leftSliceType + "/" + controlType);
 
         DBSPParameter param;
         DBSPExpression compare;
@@ -87,7 +88,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
+        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateTraceRetainKeysOperator(
                     this.getRelNode(), this.getFunction(),

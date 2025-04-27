@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.util.Utilities;
+import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -142,7 +143,7 @@ public class MultiCrateTests extends BaseSQLTests {
         final File dir = new File(projectsDirectory);
         FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
         String[] sqlFiles = dir.list(filter);
-        assert sqlFiles != null;
+        Assert.assertNotNull(sqlFiles);
         Arrays.sort(sqlFiles);
 
         for (String sqlFile: sqlFiles) {

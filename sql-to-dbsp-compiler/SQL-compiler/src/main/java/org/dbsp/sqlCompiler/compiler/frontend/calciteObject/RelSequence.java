@@ -4,6 +4,7 @@ import org.apache.calcite.rel.RelNode;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,12 +15,12 @@ public class RelSequence extends CalciteRelNode {
     final List<CalciteRelNode> nodes;
 
     public RelSequence(List<CalciteRelNode> nodes) {
-        assert !nodes.isEmpty();
+        Utilities.enforce(!nodes.isEmpty());
         List<CalciteRelNode> toUse = new ArrayList<>();
         CalciteRelNode previous = null;
         // Eliminate consecutive duplicates
-        for (CalciteRelNode node: nodes) {
-            assert !node.isEmpty();
+        for (CalciteRelNode node : nodes) {
+            Utilities.enforce(!node.isEmpty());
             if (previous != node)
                 toUse.add(node);
             previous = node;

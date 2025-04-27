@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -55,8 +56,8 @@ public class LinearAggregate extends AggregateBase {
         this.emptySetResult = emptySetResult;
 
         DBSPType mapType = this.map.body.getType();
-        assert postProcess.parameters.length == 1;
-        assert mapType.sameType(postProcess.parameters[0].getType());
+        Utilities.enforce(postProcess.parameters.length == 1);
+        Utilities.enforce(mapType.sameType(postProcess.parameters[0].getType()));
     }
 
     /** Given an DBSPAggregate where all Implementation objects have a linearFunction

@@ -141,7 +141,7 @@ public final class DBSPCircuit extends DBSPNode
     public DBSPType getSingleOutputType() {
         List<DBSPSinkOperator> sinks = Linq.where(
                 Linq.list(this.sinkOperators.values()), o -> !o.metadata.system);
-        assert sinks.size() == 1: "Expected a single output, got " + sinks.size();
+        Utilities.enforce(sinks.size() == 1, "Expected a single output, got " + sinks.size());
         return sinks.get(0).getType();
     }
 
@@ -165,8 +165,8 @@ public final class DBSPCircuit extends DBSPNode
                 .append("Adding ")
                 .appendSupplier(operator::toString)
                 .newline();
-        assert !this.operators.contains(operator):
-                "Operator " + operator + " already inserted";
+        Utilities.enforce(!this.operators.contains(operator),
+                "Operator " + operator + " already inserted");
         this.operators.add(operator);
         DBSPSourceTableOperator source = operator.as(DBSPSourceTableOperator.class);
         if (source != null)

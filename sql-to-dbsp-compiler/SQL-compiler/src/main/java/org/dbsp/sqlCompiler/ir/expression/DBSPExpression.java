@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
@@ -77,7 +78,7 @@ public abstract class DBSPExpression
 
     /** Generates an expression that calls clone() on this. */
     public DBSPExpression applyClone() {
-        assert !this.type.is(DBSPTypeRef.class): "Cloning a reference " + this;
+        Utilities.enforce(!this.type.is(DBSPTypeRef.class), "Cloning a reference " + this);
         if (this.is(DBSPCloneExpression.class))
             return this;
         return new DBSPCloneExpression(this.getNode(), this);
@@ -121,7 +122,7 @@ public abstract class DBSPExpression
 
     /** Unwrap an expression with a nullable type */
     public DBSPExpression unwrap() {
-        assert this.type.mayBeNull : "Unwrapping non-nullable type";
+        Utilities.enforce(this.type.mayBeNull, "Unwrapping non-nullable type");
         return new DBSPUnwrapExpression(this);
     }
 
@@ -225,7 +226,7 @@ public abstract class DBSPExpression
     /** Insert a cast which may only change nullability */
     public DBSPExpression nullabilityCast(DBSPType to, boolean safe) {
         DBSPType sourceType = this.getType();
-        assert sourceType.sameTypeIgnoringNullability(to);
+        Utilities.enforce(sourceType.sameTypeIgnoringNullability(to));
         return this.cast(to, safe);
     }
 
@@ -287,7 +288,7 @@ public abstract class DBSPExpression
     }
 
     public DBSPExpression not() {
-        assert this.getType().is(DBSPTypeBool.class);
+        Utilities.enforce(this.getType().is(DBSPTypeBool.class));
         return new DBSPUnaryExpression(this.getNode(), this.getType(), DBSPOpcode.NOT, this);
     }
 

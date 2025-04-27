@@ -22,6 +22,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -112,7 +113,7 @@ public class MinMaxOptimize extends Passes {
                 // conditional_aggregate(accumulator, aggregatedValue, null).closure(accumulator, inputRow, weight)
                 DBSPClosureExpression increment = mmAggregate.increment;
                 DBSPParameter[] parameters = increment.parameters;
-                assert parameters.length == 3;
+                Utilities.enforce(parameters.length == 3);
                 DBSPType resultType = mmAggregate.type;
 
                 // Need to index by (Key, Value), where Value is the value that is being aggregated.

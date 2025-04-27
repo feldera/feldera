@@ -45,7 +45,7 @@ public class CanonicalForm extends InnerRewriteVisitor {
         IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
         if (declaration.is(DBSPParameter.class)) {
             DBSPParameter replacement = this.newParam.get(declaration.to(DBSPParameter.class));
-            assert replacement.getType().sameType(var.getType());
+            Utilities.enforce(replacement.getType().sameType(var.getType()));
             this.map(var, replacement.asVariable());
             return VisitDecision.STOP;
         } else if (declaration.is(DBSPLetStatement.class)) {

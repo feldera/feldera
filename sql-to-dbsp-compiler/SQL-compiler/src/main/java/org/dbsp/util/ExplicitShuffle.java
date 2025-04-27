@@ -46,7 +46,7 @@ public class ExplicitShuffle implements Shuffle {
     public Shuffle invert() {
         // This implementation is correct only if the shuffle is a permutation,
         // something we don't check.
-        assert this.inputLength == this.indexes.size();
+        Utilities.enforce(this.inputLength == this.indexes.size());
         List<Integer> inverse = Linq.fill(this.inputLength, 0);
         for (int i = 0; i < this.inputLength; i++)
             inverse.set(this.indexes.get(i), i);

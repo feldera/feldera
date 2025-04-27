@@ -142,7 +142,7 @@ public class MultiCrates {
     }
 
     boolean usesGlobals(DBSPOperator operator) {
-        assert this.declarationMap != null;
+        Utilities.enforce(this.declarationMap != null);
         UsesGlobals finder = new UsesGlobals(this.compiler, this.declarationMap);
         CircuitVisitor visitor = finder.getCircuitVisitor(false);
         operator.accept(visitor);
@@ -150,7 +150,7 @@ public class MultiCrates {
             return true;
 
         UsesComparator uc = new UsesComparator(this.compiler);
-        for (var input: operator.inputs) {
+        for (var input : operator.inputs) {
             uc.apply(input.outputType());
         }
         return uc.found;

@@ -83,7 +83,7 @@ public class JsonDecoder {
     }
 
     IDBSPNode decode(JsonNode node, boolean outer) {
-        assert node.isObject();
+        Utilities.enforce(node.isObject());
         ObjectNode object = (ObjectNode) node;
         JsonNode nodeProp = object.get("node");
         if (nodeProp != null) {

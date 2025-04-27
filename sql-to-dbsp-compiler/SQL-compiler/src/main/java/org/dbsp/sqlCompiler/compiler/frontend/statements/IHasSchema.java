@@ -68,8 +68,8 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             this.name = name;
             this.columns = columns;
             this.properties = properties;
-            for (RelColumnMetadata c: columns)
-                assert c != null;
+            for (RelColumnMetadata c : columns)
+                Utilities.enforce(c != null);
         }
 
         @Override

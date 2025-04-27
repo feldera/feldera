@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.ProgramAndTester;
+import org.dbsp.util.Utilities;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -93,7 +94,7 @@ public class RustFileWriter extends RustWriter {
     }
 
     public void write(DBSPCompiler compiler) {
-        assert this.outputBuilder != null;
+        Utilities.enforce(this.outputBuilder != null);
         if (this.findUsed) {
             this.used = this.analyze(compiler);
         }
@@ -107,13 +108,13 @@ public class RustFileWriter extends RustWriter {
             this.generateUdfInclude();
         if (this.test)
             this.builder().append("""
-            #[cfg(test)]
-            use readers::*;""").newline();
+                    #[cfg(test)]
+                    use readers::*;""").newline();
 
-        for (String dep: this.dependencies)
+        for (String dep : this.dependencies)
             this.builder().append("use ").append(dep).append("::*;");
         Set<String> declarationsDone = new HashSet<>();
-        for (IDBSPNode node: this.toWrite) {
+        for (IDBSPNode node : this.toWrite) {
             String str;
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {

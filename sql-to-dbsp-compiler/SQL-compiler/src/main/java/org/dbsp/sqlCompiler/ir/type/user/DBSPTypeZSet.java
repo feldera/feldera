@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
+import org.dbsp.util.Utilities;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ZSET;
 
@@ -40,8 +41,8 @@ public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
     public DBSPTypeZSet(CalciteObject node, DBSPType elementType) {
         super(node, ZSET, "WSet", false, elementType);
         this.elementType = elementType;
-        assert !elementType.is(DBSPTypeZSet.class);
-        assert !elementType.is(DBSPTypeIndexedZSet.class);
+        Utilities.enforce(!elementType.is(DBSPTypeZSet.class));
+        Utilities.enforce(!elementType.is(DBSPTypeIndexedZSet.class));
     }
 
     public DBSPTypeZSet(DBSPType elementType) {

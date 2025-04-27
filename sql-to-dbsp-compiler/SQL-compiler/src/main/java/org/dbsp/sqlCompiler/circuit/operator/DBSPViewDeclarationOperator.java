@@ -35,8 +35,8 @@ public final class DBSPViewDeclarationOperator
             TableMetadata metadata, ProgramIdentifier name) {
         super(new RelAnd(), "Z " + name.name(), sourceName, outputType, originalRowType, true,
                 metadata, name, null);
-        assert metadata.getColumnCount() == originalRowType.fields.size();
-        assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();
+        Utilities.enforce(metadata.getColumnCount() == originalRowType.fields.size());
+        Utilities.enforce(metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size());
         this.viewDeclaration = node;
     }
 
@@ -58,7 +58,7 @@ public final class DBSPViewDeclarationOperator
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.isEmpty();
+        Utilities.enforce(newInputs.isEmpty());
         if (force)
             return new DBSPViewDeclarationOperator(
                     this.viewDeclaration, this.sourceName, this.getOutputZSetType(), this.originalRowType,

@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -36,13 +37,13 @@ public final class DBSPAggregate extends DBSPNode
     public DBSPAggregate(CalciteObject node, DBSPVariablePath rowVar,
                          List<AggregateBase> aggregates) {
         super(node);
-        assert !aggregates.isEmpty();
+        Utilities.enforce(!aggregates.isEmpty());
         this.rowVar = rowVar;
         this.aggregates = aggregates;
         this.isLinear = Linq.all(aggregates, AggregateBase::isLinear);
         this.emptySetResult = new DBSPTupleExpression(node, Linq.map(aggregates, AggregateBase::getEmptySetResult));
         for (AggregateBase b: this.aggregates)
-            assert b.isLinear() == this.isLinear;
+            Utilities.enforce(b.isLinear() == this.isLinear);
     }
 
     public boolean isLinear() {
@@ -82,7 +83,7 @@ public final class DBSPAggregate extends DBSPNode
     }
 
     public DBSPExpression asFold(DBSPCompiler compiler, boolean compact) {
-        assert !this.isLinear();
+        Utilities.enforce(!this.isLinear());
         NonLinearAggregate combined = NonLinearAggregate.combine(
                 this.getNode(), compiler, this.rowVar,
                 Linq.map(this.aggregates, a -> a.to(NonLinearAggregate.class)));
@@ -90,7 +91,7 @@ public final class DBSPAggregate extends DBSPNode
     }
 
     public LinearAggregate asLinear(DBSPCompiler compiler) {
-        assert this.isLinear();
+        Utilities.enforce(this.isLinear());
         return LinearAggregate.combine(
                 this.getNode(), compiler, this.rowVar,
                 Linq.map(this.aggregates, a -> a.to(LinearAggregate.class)));

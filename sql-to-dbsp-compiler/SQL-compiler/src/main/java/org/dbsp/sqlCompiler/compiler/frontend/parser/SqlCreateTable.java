@@ -12,6 +12,7 @@ import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.ImmutableNullableList;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 import java.util.Objects;
@@ -34,7 +35,7 @@ public class SqlCreateTable extends SqlCreate {
         this.name = Objects.requireNonNull(name, "name");
         this.columnsOrForeignKeys = columnsOrForeignKeys;
         this.tableProperties = tableProperties;
-        assert tableProperties == null || tableProperties.size() % 2 == 0;
+        Utilities.enforce(tableProperties == null || tableProperties.size() % 2 == 0);
     }
 
     @SuppressWarnings("nullness")

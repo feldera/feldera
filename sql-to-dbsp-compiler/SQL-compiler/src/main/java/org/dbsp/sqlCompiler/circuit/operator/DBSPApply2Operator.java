@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -23,13 +24,14 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
     public DBSPApply2Operator(CalciteRelNode node, DBSPClosureExpression function,
                               OutputPort left, OutputPort right) {
         super(node, "apply2", function, function.getResultType(), false, left, right, false);
-        assert function.parameters.length == 2: "Expected 2 parameters for function " + function;
+        Utilities.enforce(function.parameters.length == 2,
+                "Expected 2 parameters for function " + function);
         DBSPType param0Type = function.parameters[0].getType().deref();
-        assert left.outputType().sameType(param0Type):
-                "Parameter type " + param0Type + " does not match input type " + left.outputType();
+        Utilities.enforce(left.outputType().sameType(param0Type),
+                "Parameter type " + param0Type + " does not match input type " + left.outputType());
         DBSPType param1Type = function.parameters[1].getType().deref();
-        assert right.outputType().sameType(param1Type):
-                "Parameter type " + param1Type + " does not match input type " + right.outputType();
+        Utilities.enforce(right.outputType().sameType(param1Type),
+                "Parameter type " + param1Type + " does not match input type " + right.outputType());
         DBSPApplyOperator.noZsets(left.outputType());
         DBSPApplyOperator.noZsets(right.outputType());
         DBSPApplyOperator.noZsets(this.outputType());
@@ -45,7 +47,7 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 2: "Expected 2 inputs " + newInputs;
+        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs " + newInputs);
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApply2Operator(
                     this.getRelNode(), this.getClosureFunction(),

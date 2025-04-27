@@ -171,8 +171,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     void markBound(OutputPort operator, OutputPort bound) {
-        assert this.circuit != null;
-        assert this.circuit.contains(operator.node()) || this.expandedCircuit.contains(operator.node());
+        Utilities.enforce(this.circuit != null);
+        Utilities.enforce(this.circuit.contains(operator.node()) ||
+                this.expandedCircuit.contains(operator.node()));
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Bound for ")
                 .appendSupplier(operator::toString)
@@ -203,8 +204,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
     OutputPort createApply(OutputPort source, @Nullable DBSPSimpleOperator represented,
                            DBSPClosureExpression function) {
         if (represented != null) {
-            assert this.circuit != null;
-            assert this.circuit.contains(represented);
+            Utilities.enforce(this.circuit != null);
+            Utilities.enforce(this.circuit.contains(represented));
         }
         DBSPVariablePath var = source.outputType().ref().var();
         DBSPExpression v0 = var.deref().field(0);
@@ -270,10 +271,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
     @Nullable
     OutputPort addBounds(@Nullable DBSPSimpleOperator represented,
                          @Nullable DBSPOperator operatorFromExpansion, int input) {
-        assert this.circuit != null;
+        Utilities.enforce(this.circuit != null);
         if (operatorFromExpansion == null)
             return null;
-        assert !this.circuit.contains(operatorFromExpansion);
+        Utilities.enforce(!this.circuit.contains(operatorFromExpansion));
         MonotoneExpression monotone = this.expansionMonotoneValues.get(
                 operatorFromExpansion.to(DBSPSimpleOperator.class));
         if (monotone == null)
@@ -285,7 +286,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         OutputPort bound = this.createApply(boundSource, represented, function);
         this.markBound(operatorFromExpansion.to(DBSPSimpleOperator.class).outputPort(), bound);
         if (represented != null) {
-            assert this.circuit.contains(represented);
+            Utilities.enforce(this.circuit.contains(represented));
             this.markBound(represented.outputPort(), bound);
         }
         return bound;
@@ -606,7 +607,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         // Compute the waterline for the new rolling aggregate operator
         DBSPTypeTupleBase varType = projection.getType().to(DBSPTypeTupleBase.class);
-        assert varType.size() == 2 : "Expected a pair, got " + varType;
+        Utilities.enforce(varType.size() == 2, "Expected a pair, got " + varType);
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         final DBSPVariablePath var = varType.var();
         DBSPExpression body = var.field(0).deref();
@@ -981,7 +982,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         Projection proj = new Projection(this.compiler(), true);
         proj.apply(join.getFunction());
-        assert(proj.isProjection);
+        Utilities.enforce((proj.isProjection));
         Projection.IOMap iomap = proj.getIoMap();
         // This will look something like.  Ordered by output field number.
         // [input#, field#]
@@ -1006,7 +1007,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(monotone));
                 if (projection.mayBeMonotone()) {
                     PartiallyMonotoneTuple tuple = projection.to(PartiallyMonotoneTuple.class);
-                    assert tuple.size() == iomap.size();
+                    Utilities.enforce(tuple.size() == iomap.size());
 
                     List<IMaybeMonotoneType> value = new ArrayList<>();
                     DBSPVariablePath var = Objects.requireNonNull(tuple.getProjectedType()).ref().var();
@@ -1014,7 +1015,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     for (int index = 0, field = 0; field < leftValueSize; field++) {
                         int firstOutputField = iomap.firstOutputField(1, field);
                         // We assume that every left input field is used as an output
-                        assert firstOutputField >= 0;
+                        Utilities.enforce(firstOutputField >= 0);
                         IMaybeMonotoneType compareField = tuple.getField(firstOutputField);
                         value.add(compareField);
                         if (compareField.mayBeMonotone()) {
@@ -1048,7 +1049,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(monotone));
                 if (projection.mayBeMonotone()) {
                     PartiallyMonotoneTuple tuple = projection.to(PartiallyMonotoneTuple.class);
-                    assert tuple.size() == iomap.size();
+                    Utilities.enforce(tuple.size() == iomap.size());
 
                     List<IMaybeMonotoneType> value = new ArrayList<>();
                     DBSPVariablePath var = Objects.requireNonNull(tuple.getProjectedType()).ref().var();
@@ -1056,7 +1057,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     for (int field = 0, index = 0; field < rightValueSize; field++) {
                         int firstOutputField = iomap.firstOutputField(2, field);
                         // We assume that every left input field is used as an output
-                        assert firstOutputField >= 0;
+                        Utilities.enforce(firstOutputField >= 0);
                         IMaybeMonotoneType compareField = tuple.getField(firstOutputField);
                         value.add(compareField);
                         if (compareField.mayBeMonotone()) {
@@ -1107,7 +1108,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         } else if (leftProjection.is(PartiallyMonotoneTuple.class)) {
             PartiallyMonotoneTuple l = leftProjection.to(PartiallyMonotoneTuple.class);
             PartiallyMonotoneTuple r = rightProjection.to(PartiallyMonotoneTuple.class);
-            assert r.size() == l.size();
+            Utilities.enforce(r.size() == l.size());
             List<DBSPExpression> fields = new ArrayList<>();
             int leftIndex = 0;
             int rightIndex = 0;
@@ -1166,7 +1167,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         PartiallyMonotoneTuple out = Monotonicity.getBodyType(monotoneValue).to(PartiallyMonotoneTuple.class);
         DBSPType outputType = out.getProjectedType();
-        assert outputType != null;
+        Utilities.enforce(outputType != null);
         OutputPort merger;
         PartiallyMonotoneTuple leftMono = null;
         MonotoneExpression lm = this.expansionMonotoneValues.get(expanded.left());
@@ -1181,8 +1182,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         if (leftLimiter != null && rightLimiter != null) {
             // (kl, l), (kr, r) -> (union(kl, kr), l, r)
-            assert leftMono != null;
-            assert rightMono != null;
+            Utilities.enforce(leftMono != null);
+            Utilities.enforce(rightMono != null);
             DBSPVariablePath l = new DBSPVariablePath(this.getLimiterDataOutputType(leftLimiter).ref());
             DBSPVariablePath r = new DBSPVariablePath(this.getLimiterDataOutputType(rightLimiter).ref());
             DBSPExpression[] fields = new DBSPExpression[3];
@@ -1225,7 +1226,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             merger = this.createApply2(leftLimiter, rightLimiter, closure);
         } else if (leftLimiter != null) {
             // (k, l) -> (k, l, Tup0<>)
-            assert leftMono != null;
+            Utilities.enforce(leftMono != null);
             DBSPVariablePath var = new DBSPVariablePath(this.getLimiterDataOutputType(leftLimiter).ref());
             DBSPExpression k = new DBSPTupleExpression();
             int currentField = 0;
@@ -1244,7 +1245,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             merger = this.createApply(leftLimiter, null, closure);
         } else {
             // (k, r) -> (k, Tup0<>, r)
-            assert rightMono != null;
+            Utilities.enforce(rightMono != null);
             DBSPVariablePath var = new DBSPVariablePath(this.getLimiterDataOutputType(rightLimiter).ref());
             DBSPExpression k = new DBSPTupleExpression();
             DBSPExpression r = new DBSPTupleExpression();
@@ -1374,8 +1375,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPType controlType = control.outputType();
 
         DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
-        assert leftSliceType.sameType(controlType):
-                "Projection type does not match control type " + leftSliceType + "/" + controlType;
+        Utilities.enforce(leftSliceType.sameType(controlType),
+                "Projection type does not match control type " + leftSliceType + "/" + controlType);
 
         DBSPType rowType = data.getOutputRowType();
         DBSPVariablePath dataVar = rowType.ref().var();
@@ -1445,7 +1446,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         if (!minimums.isEmpty()) {
-            assert fields.size() == 1;
+            Utilities.enforce(fields.size() == 1);
             this.addOperator(replacement);
 
             DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
@@ -1532,13 +1533,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
                            IMaybeMonotoneType sourceProjection,
                            IMaybeMonotoneType destinationProjection) {
         if (destinationProjection.is(ScalarMonotoneType.class)) {
-            assert sourceProjection.is(ScalarMonotoneType.class);
+            Utilities.enforce(sourceProjection.is(ScalarMonotoneType.class));
             return source;
         } else if (destinationProjection.is(PartiallyMonotoneTuple.class)) {
-            assert sourceProjection.is(PartiallyMonotoneTuple.class);
+            Utilities.enforce(sourceProjection.is(PartiallyMonotoneTuple.class));
             PartiallyMonotoneTuple src = sourceProjection.to(PartiallyMonotoneTuple.class);
             PartiallyMonotoneTuple dest = destinationProjection.to(PartiallyMonotoneTuple.class);
-            assert src.size() == dest.size();
+            Utilities.enforce(src.size() == dest.size());
             List<DBSPExpression> fields = new ArrayList<>();
             int currentIndex = 0;
             for (int i = 0; i < dest.size(); i++) {
@@ -1560,7 +1561,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Apply MIN pointwise to two expressions */
     DBSPExpression min(DBSPExpression left,
                        DBSPExpression right) {
-        assert left.getType().sameTypeIgnoringNullability(right.getType());
+        Utilities.enforce(left.getType().sameTypeIgnoringNullability(right.getType()));
         if (left.getType().is(DBSPTypeBaseType.class)) {
             return ExpressionCompiler.makeBinaryExpression(
                     left.getNode(), left.getType(), DBSPOpcode.AGG_MIN, left, right);
@@ -1619,7 +1620,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         IMaybeMonotoneType out = Monotonicity.getBodyType(monotoneValue);
         DBSPType outputType = out.getProjectedType();
-        assert outputType != null;
+        Utilities.enforce(outputType != null);
 
         // Same function everywhere
         DBSPVariablePath l = new DBSPVariablePath(outputType.ref());
@@ -1697,7 +1698,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
                     MonotoneClosureType monoClosure = monotone.getMonotoneType().to(MonotoneClosureType.class);
                     IMaybeMonotoneType bodyType = monoClosure.getBodyType();
-                    assert bodyType.mayBeMonotone();
+                    Utilities.enforce(bodyType.mayBeMonotone());
                     PartiallyMonotoneTuple tuple = bodyType.to(PartiallyMonotoneTuple.class);
                     if (!tuple.getField(monotoneFieldIndex).mayBeMonotone()) {
                         var col = operator.metadata.columns.get(monotoneFieldIndex);
@@ -1707,7 +1708,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                                 col.getPositionRange());
                     }
                     int controlFieldIndex = 0;
-                    assert monotoneFieldIndex < tuple.size();
+                    Utilities.enforce(monotoneFieldIndex < tuple.size());
                     for (int i = 0; i < monotoneFieldIndex; i++) {
                         IMaybeMonotoneType field = tuple.getField(i);
                         if (field.mayBeMonotone())

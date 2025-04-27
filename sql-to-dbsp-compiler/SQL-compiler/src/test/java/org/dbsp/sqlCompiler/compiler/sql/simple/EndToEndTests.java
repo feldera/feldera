@@ -52,6 +52,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.junit.Assert;
 import org.junit.Test;
 
 import java.math.BigDecimal;
@@ -155,8 +156,8 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testAbs() {
         String query = "SELECT ABS(T.COL2) FROM T";
-        assert E0.fields != null;
-        assert E1.fields != null;
+        Assert.assertNotNull(E0.fields);
+        Assert.assertNotNull(E1.fields);
         this.testQuery(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(E0.fields[1]),
                 new DBSPTupleExpression(E1.fields[1])));

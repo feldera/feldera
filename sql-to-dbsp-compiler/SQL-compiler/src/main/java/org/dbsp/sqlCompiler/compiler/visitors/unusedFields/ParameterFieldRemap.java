@@ -21,7 +21,7 @@ public class ParameterFieldRemap {
 
     public void add(DBSPParameter param, FieldUseMap map) {
         Utilities.putNew(this.remap, param, map);
-        assert param.getType().sameType(map.getType());
+        Utilities.enforce(param.getType().sameType(map.getType()));
     }
 
     @Nullable
@@ -38,7 +38,7 @@ public class ParameterFieldRemap {
     }
 
     public void changeMap(DBSPParameter parameter, FieldUseMap map) {
-        assert parameter.getType().sameType(map.getType());
+        Utilities.enforce(parameter.getType().sameType(map.getType()));
         this.remap.put(parameter, map);
     }
 

@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** Represents an unwrap() method call in Rust, as applied to
  * an expression with a nullable type.
@@ -19,7 +20,7 @@ public final class DBSPUnwrapExpression extends DBSPExpression {
     public DBSPUnwrapExpression(DBSPExpression expression) {
         super(expression.getNode(), expression.getType().withMayBeNull(false));
         this.expression = expression;
-        assert expression.getType().mayBeNull;
+        Utilities.enforce(expression.getType().mayBeNull);
     }
 
     @Override

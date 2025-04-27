@@ -316,7 +316,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 continue;
             FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
             String[] sqlFiles = subdir.list(filter);
-            assert sqlFiles != null;
+            Assert.assertNotNull(sqlFiles);
             for (String sqlFile: sqlFiles) {
                 String path = subdir.getPath() + "/" + sqlFile;
                 this.compileFile(path, true);
@@ -341,7 +341,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         final File dir = new File(projectsDirectory);
         FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
         String[] sqlFiles = dir.list(filter);
-        assert sqlFiles != null;
+        Assert.assertNotNull(sqlFiles);
         Arrays.sort(sqlFiles);
         for (String sqlFile: sqlFiles) {
             // System.out.println(sqlFile);
@@ -612,7 +612,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Set<HashString> common = new HashSet<>(c0);
         // All nodes in circuit0 must be in circuit1
         common.retainAll(c1);
-        assert common.size() == c0.size();
+        Assert.assertEquals(common.size(), c0.size());
     }
 
     @Test

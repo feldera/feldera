@@ -313,7 +313,7 @@ public class ToRustVisitor extends CircuitVisitor {
         // Hack: if a view has a 'rust' property, emit the attached code here
         for (ProgramIdentifier view: circuit.getOutputViews()) {
             DBSPSinkOperator sink = circuit.getSink(view);
-            assert sink != null;
+            Utilities.enforce(sink != null);
             if (sink.metadata.properties != null) {
                 String rust = sink.metadata.properties.getPropertyValue("rust");
                 if (rust != null) {
@@ -615,7 +615,6 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(";")
                     .newline();
         }
-
         this.tagStream(operator);
 
         if (!this.useHandles) {
@@ -796,7 +795,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.generateStructHelpers(type, null);
             if (operator.isIndex()) {
                 DBSPTypeRawTuple raw = operator.originalRowType.to(DBSPTypeRawTuple.class);
-                assert raw.size() == 2;
+                Utilities.enforce(raw.size() == 2);
 
                 this.builder.append("catalog.register_index");
                 this.builder.append("::<").increase();
@@ -1340,7 +1339,7 @@ public class ToRustVisitor extends CircuitVisitor {
     VisitDecision constantLike(DBSPSimpleOperator operator) {
         this.computeHash(operator);
         DBSPType streamType = this.streamType(operator);
-        assert operator.function != null;
+        Utilities.enforce(operator.function != null);
         this.builder.append("let ")
                 .append(operator.getNodeName(this.preferHash))
                 .append(": ");
@@ -1355,7 +1354,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     operator.getOutputZSetElementType());
             empty.accept(this.innerVisitor);
         } else {
-            assert operator.function.to(DBSPIndexedZSetExpression.class).isEmpty();
+            Utilities.enforce(operator.function.to(DBSPIndexedZSetExpression.class).isEmpty());
             operator.function.accept(this.innerVisitor);
         }
         this.builder.append("}));");
@@ -1365,7 +1364,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPConstantOperator operator) {
-        assert !operator.incremental; // TODO
+        Utilities.enforce(!operator.incremental);
         return this.constantLike(operator);
     }
 

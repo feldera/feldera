@@ -8,10 +8,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -73,11 +71,11 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator {
         //        TSF2: Fn(&V2) -> TS + 'static,
         DBSPType elementResultType = this.getOutputZSetElementType();
         this.checkResultType(function, elementResultType);
-        assert leftTimestamp.getResultType().sameType(rightTimestamp.getResultType());
+        Utilities.enforce(leftTimestamp.getResultType().sameType(rightTimestamp.getResultType()));
         DBSPType[] argumentTypes = function.getType().to(DBSPTypeFunction.class).parameterTypes;
-        assert argumentTypes.length == 3;
-        assert argumentTypes[1].sameType(leftTimestamp.parameters[0].getType());
-        assert argumentTypes[2].sameType(rightTimestamp.parameters[0].getType().withMayBeNull(true));
+        Utilities.enforce(argumentTypes.length == 3);
+        Utilities.enforce(argumentTypes[1].sameType(leftTimestamp.parameters[0].getType()));
+        Utilities.enforce(argumentTypes[2].sameType(rightTimestamp.parameters[0].getType().withMayBeNull(true)));
     }
 
     @Override
@@ -110,7 +108,7 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator {
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 2;
+        Utilities.enforce(newInputs.size() == 2);
         if (force || this.inputsDiffer(newInputs))
             return new DBSPConcreteAsofJoinOperator(
                     this.getRelNode(), this.getOutputZSetType(),

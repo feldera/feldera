@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.TriFunction;
+import org.dbsp.util.Utilities;
 
 /** Trim unused fields from filters.
  * This is harder than it looks.
@@ -37,16 +38,16 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
         OutputPort source = this.mapped(operator.input());
         int inputFanout = this.getGraph().getFanout(operator.input().node());
         if (!operator.getFunction().is(DBSPClosureExpression.class) ||
-            this.functionsAnalyzed.done(operator.getFunction()))
+                this.functionsAnalyzed.done(operator.getFunction()))
             return false;
 
         DBSPClosureExpression mapFunction = operator.getClosureFunction();
-        assert mapFunction.parameters.length == 1;
+        Utilities.enforce(mapFunction.parameters.length == 1);
         DBSPParameter mapParam = mapFunction.parameters[0];
         if (source.node().is(DBSPFilterOperator.class) && inputFanout == 1) {
             DBSPFilterOperator filter = source.node().to(DBSPFilterOperator.class);
             DBSPClosureExpression filterFunction = filter.getClosureFunction();
-            assert filterFunction.parameters.length == 1;
+            Utilities.enforce(filterFunction.parameters.length == 1);
             DBSPParameter filterParam = filterFunction.parameters[0];
             FindUnusedFields mapFinder = new FindUnusedFields(this.compiler);
             mapFinder.findUnusedFields(mapFunction);
@@ -64,7 +65,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
                         DBSPClosureExpression newFilterFunc = filterRewriter.apply(filterFunction)
                                 .to(DBSPClosureExpression.class);
                         DBSPClosureExpression preProjection = reduced.getProjection(depth);
-                        assert preProjection != null;
+                        Utilities.enforce(preProjection != null);
 
                         mapFinder.setParameterUseMap(mapParam, reduced);
                         RewriteFields mapRewriter = mapFinder.getFieldRewriter(depth);
@@ -80,7 +81,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
 
                         DBSPUnaryOperator postProj = constructor.apply(
                                 operator.getRelNode(), post, newFilter.outputPort());
-                        assert postProj != null;
+                        Utilities.enforce(postProj != null);
                         this.map(operator, postProj);
                         return true;
                     }

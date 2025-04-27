@@ -253,7 +253,7 @@ public class BaseSQLTests {
                 // if (pt.program() != null && !pt.program().toString().contains("join")) continue;
                 writer.add(pt);
             }
-            assert firstCompiler != null;
+            Utilities.enforce(firstCompiler != null);
             writer.write(firstCompiler);
             outputStream.close();
             Utilities.compileAndTestRust(RUST_DIRECTORY, true);
@@ -281,7 +281,7 @@ public class BaseSQLTests {
                 // if (pt.program() != null && !pt.program().toString().contains(".flatmap")) continue;
                 writer.add(pt);
             }
-            assert firstCompiler != null;
+            Utilities.enforce(firstCompiler != null);
             writer.write(firstCompiler);
             outputStream.close();
             Utilities.compileAndCheckRust(RUST_DIRECTORY, true);

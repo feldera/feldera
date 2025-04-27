@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -23,12 +24,12 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
                                       DBSPClosureExpression function, DBSPType outputType, OutputPort source) {
         super(node, "chain_aggregate", function, outputType, false, source, true);
         this.init = init;
-        assert init.parameters.length == 2;
-        assert function.parameters.length == 3;
-        assert init.getResultType().sameType(function.getResultType());
-        assert outputType.is(DBSPTypeIndexedZSet.class);
-        assert source.outputType().is(DBSPTypeIndexedZSet.class);
-        assert source.getOutputIndexedZSetType().keyType.sameType(this.getOutputIndexedZSetType().keyType);
+        Utilities.enforce(init.parameters.length == 2);
+        Utilities.enforce(function.parameters.length == 3);
+        Utilities.enforce(init.getResultType().sameType(function.getResultType()));
+        Utilities.enforce(outputType.is(DBSPTypeIndexedZSet.class));
+        Utilities.enforce(source.outputType().is(DBSPTypeIndexedZSet.class));
+        Utilities.enforce(source.getOutputIndexedZSetType().keyType.sameType(this.getOutputIndexedZSetType().keyType));
         this.checkResultType(function, this.getOutputIndexedZSetType().elementType);
     }
 

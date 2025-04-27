@@ -334,7 +334,7 @@ public class Simplify extends ExpressionTranslator {
                 }
             }
         }
-        assert expression.getType().sameType(result.getType());
+        Utilities.enforce(expression.getType().sameType(result.getType()));
         this.map(expression, result);
     }
 
@@ -346,7 +346,7 @@ public class Simplify extends ExpressionTranslator {
             result = source.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
         } if (source.is(DBSPBlockExpression.class)) {
             DBSPBlockExpression block = source.to(DBSPBlockExpression.class);
-            assert block.lastExpression != null;
+            Utilities.enforce(block.lastExpression != null);
             result = new DBSPBlockExpression(block.contents,
                     block.lastExpression.field(expression.fieldNo).simplify());
         } else if (source.is(DBSPIfExpression.class)) {

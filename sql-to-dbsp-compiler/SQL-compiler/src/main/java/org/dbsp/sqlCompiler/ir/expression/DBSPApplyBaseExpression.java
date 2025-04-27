@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
@@ -18,9 +19,9 @@ public abstract class DBSPApplyBaseExpression extends DBSPExpression {
         if (method) return;  // TODO
         if (this.function.getType().is(DBSPTypeFunction.class)) {
             DBSPTypeFunction funcType = this.function.getType().to(DBSPTypeFunction.class);
-            assert funcType.parameterTypes.length == this.arguments.length:
+            Utilities.enforce(funcType.parameterTypes.length == this.arguments.length,
                     "Has " + funcType.parameterTypes.length + " parameters, but " +
-                            this.arguments.length + " arguments";
+                            this.arguments.length + " arguments");
             parameterTypes = funcType.parameterTypes;
         }
         int index = 0;
@@ -28,17 +29,11 @@ public abstract class DBSPApplyBaseExpression extends DBSPExpression {
             if (arg == null) {
                 throw new InternalCompilerError("Null arg", this);
             }
-            assert parameterTypes == null || parameterTypes[index].sameType(arg.getType()) :
-                    "Argument " + arg + " type " +
-                    arg.getType() + " does not match parameter type " + parameterTypes[index];
+            if (parameterTypes != null && !parameterTypes[index].sameType(arg.getType()))
+                    throw new InternalCompilerError("Argument " + arg + " type " +
+                    arg.getType() + " does not match parameter type " + parameterTypes[index]);
             index++;
         }
-    }
-
-    /** True if the function is given by name.
-     * (It could be e.g., a lambda). */
-    public boolean functionIsNamed() {
-        return this.function.is(DBSPPathExpression.class);
     }
 
     /** Return the function name if the function is given by name,

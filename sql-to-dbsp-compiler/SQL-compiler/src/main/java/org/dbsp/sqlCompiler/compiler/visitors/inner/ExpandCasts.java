@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -99,7 +100,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
 
     DBSPExpression convertToStruct(DBSPExpression source, DBSPTypeTuple type) {
         List<DBSPExpression> fields = new ArrayList<>();
-        assert type.originalStruct != null;
+        Utilities.enforce(type.originalStruct != null);
         DBSPType sourceType = source.getType();
         List<ProgramIdentifier> names = Linq.list(type.originalStruct.getFieldNames());
         for (int i = 0; i < type.size(); i++) {
@@ -232,7 +233,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             // Default implementation
             result = source.cast(type, expression.safe);
         this.pop(expression);
-        assert expression.hasSameType(result);
+        Utilities.enforce(expression.hasSameType(result));
         this.map(expression, result);
         return VisitDecision.STOP;
     }

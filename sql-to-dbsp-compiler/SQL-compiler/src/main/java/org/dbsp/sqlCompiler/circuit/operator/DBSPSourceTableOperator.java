@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.LastRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
@@ -45,7 +46,7 @@ public abstract class DBSPSourceTableOperator
             DBSPType outputType, DBSPTypeStruct originalRowType, boolean isMultiset,
             TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
         super(node, operation, outputType, isMultiset, name, comment);
-        assert node.is(RelAnd.class) || node.is(CalciteEmptyRel.class);
+        Utilities.enforce(node.is(RelAnd.class) || node.is(CalciteEmptyRel.class));
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;
         this.metadata = metadata;

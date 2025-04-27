@@ -69,7 +69,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.isEmpty();
+        Utilities.enforce(newInputs.isEmpty());
         if (force)
             return new DBSPSourceMapOperator(this.getRelNode(), this.sourceName,
                     this.keyFields, this.getOutputIndexedZSetType(), this.originalRowType,

@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -33,9 +34,9 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
                 false, input);
         this.init = init;
         this.extractTs = extractTs;
-        assert init.parameters.length == 0;
-        assert extractTs.parameters.length == 2;
-        assert function.parameters.length == 2;
+        Utilities.enforce(init.parameters.length == 0);
+        Utilities.enforce(extractTs.parameters.length == 2);
+        Utilities.enforce(function.parameters.length == 2);
     }
 
     @Override

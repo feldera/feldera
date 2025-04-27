@@ -11,6 +11,7 @@ import org.dbsp.util.graph.DFSOrder;
 import org.dbsp.util.graph.DiGraph;
 import org.dbsp.util.graph.Port;
 import org.dbsp.util.Utilities;
+import org.locationtech.jts.util.Assert;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -46,7 +47,7 @@ public class CircuitGraph implements DiGraph<DBSPOperator>, IHasId, ToIndentable
         this.nodes.add(node);
         this.nodeSet.add(node);
         this.edges.put(node, new ArrayList<>());
-        assert this.circuit.contains(node);
+        Utilities.enforce(this.circuit.contains(node));
     }
 
     public void addEdge(DBSPOperator source, DBSPOperator dest, int input) {

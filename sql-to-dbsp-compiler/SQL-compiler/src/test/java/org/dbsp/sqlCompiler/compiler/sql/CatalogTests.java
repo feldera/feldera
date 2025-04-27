@@ -44,7 +44,7 @@ public class CatalogTests extends BaseSQLTests {
                 if (type.fields.size() == 2) {
                     // Before the bug was fixes the two fields had the same type
                     List<ProgramIdentifier> names = Linq.list(type.getFieldNames());
-                    assert names.size() == 2;
+                    Assert.assertEquals(2, names.size());
                     DBSPType f0 = type.getFieldType(names.get(0));
                     DBSPType f1 = type.getFieldType(names.get(1));
                     Assert.assertFalse(f0.sameType(f1));
@@ -202,7 +202,7 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE TABLE T(id int);
                 CREATE VIEW V(x, y) AS SELECT id, id FROM T;""";
         var ccs = this.getCCS(sql);
-        assert ccs.compiler.messages.messages.isEmpty();
+        Assert.assertTrue(ccs.compiler.messages.messages.isEmpty());
     }
 
     @Test
@@ -211,7 +211,7 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE TABLE T(id int);
                 CREATE VIEW V AS SELECT id as col0, cast(id AS BIGINT) as col0 FROM T;""";
         var ccs = this.getCCS(sql);
-        assert ccs.compiler.messages.messages.isEmpty();
+        Assert.assertTrue(ccs.compiler.messages.messages.isEmpty());
     }
 
     @Test
@@ -221,8 +221,8 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE MATERIALIZED VIEW v1(c0, c1, c2) AS (SELECT t4.c2, t4.c0, t4.c0 FROM t4 WHERE t4.c0);""";
         var cc = this.getCC(sql);
         // TestUtil.assertMessagesContain does not work for warnings is 'quiet' = true.
-        assert cc.compiler.messages.messages.toString()
-                .contains("Column 'c1' of table 't4' is unused");
+        Assert.assertTrue(cc.compiler.messages.messages.toString()
+                .contains("Column 'c1' of table 't4' is unused"));
     }
 
     @Test

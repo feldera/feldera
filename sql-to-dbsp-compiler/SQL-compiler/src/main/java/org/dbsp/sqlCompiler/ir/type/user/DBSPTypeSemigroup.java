@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -69,7 +70,7 @@ public class DBSPTypeSemigroup extends DBSPTypeUser {
     @SuppressWarnings("unused")
     public static DBSPTypeSemigroup fromJson(JsonNode node, JsonDecoder decoder) {
         List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
-        assert typeArgs.size() % 2 == 0;
+        Utilities.enforce(typeArgs.size() % 2 == 0);
         DBSPType[] elementTypes = typeArgs.subList(0, typeArgs.size() / 2).toArray(new DBSPType[0]);
         DBSPType[] semigroupTypes = typeArgs.subList(typeArgs.size() / 2, typeArgs.size()).toArray(new DBSPType[0]);
         return new DBSPTypeSemigroup(semigroupTypes, elementTypes);

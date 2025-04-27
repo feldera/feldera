@@ -209,7 +209,7 @@ public class RecursiveTests extends BaseSQLTests {
         CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
             @Override
             public void postorder(DBSPSinkOperator operator) {
-                assert !operator.viewName.name().endsWith(DeclareViewStatement.declSuffix);
+                Assert.assertFalse(operator.viewName.name().endsWith(DeclareViewStatement.declSuffix));
             }
         };
         cc.visit(visitor);

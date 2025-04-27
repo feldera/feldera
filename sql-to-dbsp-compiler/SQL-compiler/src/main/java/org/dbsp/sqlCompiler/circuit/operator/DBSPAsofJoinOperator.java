@@ -62,11 +62,11 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
         // Note that the third argument of the function may not match in type the right join input:
         // if the join is left join, the argument is always nullable, even if the input is not.
         DBSPType[] argumentTypes = function.getType().to(DBSPTypeFunction.class).parameterTypes;
-        assert argumentTypes.length == 3;
-        assert leftTimestampIndex >= 0 &&
-                leftTimestampIndex <= argumentTypes[1].to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class).size();
-        assert rightTimestampIndex >= 0 &&
-                rightTimestampIndex <= argumentTypes[2].to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class).size();
+        Utilities.enforce(argumentTypes.length == 3);
+        Utilities.enforce(leftTimestampIndex >= 0 &&
+                leftTimestampIndex <= argumentTypes[1].to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class).size());
+        Utilities.enforce(rightTimestampIndex >= 0 &&
+                rightTimestampIndex <= argumentTypes[2].to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class).size());
     }
 
     @Override
@@ -95,7 +95,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 2;
+        Utilities.enforce(newInputs.size() == 2);
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAsofJoinOperator(
                     this.getRelNode(), this.getOutputZSetType(),

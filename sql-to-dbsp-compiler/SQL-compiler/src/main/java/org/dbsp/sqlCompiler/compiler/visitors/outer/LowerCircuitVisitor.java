@@ -51,6 +51,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -423,7 +424,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 DBSPTupleExpression.flatten(r.field(1).deref()), rightComparator);
         DBSPClosureExpression toRightKey =
                 new DBSPRawTupleExpression(r.field(0).deref(), wrapper)
-                .closure(r);
+                        .closure(r);
         DBSPMapIndexOperator rightIndex = new DBSPMapIndexOperator(
                 node, toRightKey,
                 TypeCompiler.makeIndexedZSet(keyType, wrapper.getType()),
@@ -446,7 +447,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         // Rust expects both timestamps to have the same type
         boolean nullable = leftTSType.mayBeNull || rightTSType.mayBeNull;
         DBSPType commonTSType = leftTSType.withMayBeNull(nullable);
-        assert commonTSType.sameType(rightTSType.withMayBeNull(nullable));
+        Utilities.enforce(commonTSType.sameType(rightTSType.withMayBeNull(nullable)));
 
         DBSPClosureExpression leftTimestamp = leftTS.cast(commonTSType, false).closure(leftVar);
         DBSPClosureExpression rightTimestamp = rightTS.cast(commonTSType, false).closure(rightVar);
