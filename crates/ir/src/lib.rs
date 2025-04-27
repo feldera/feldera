@@ -6,6 +6,10 @@ use feldera_types::program_schema::SourcePosition;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod lir;
+
+pub use lir::{LirCircuit, LirEdge, LirNode, LirNodeId, LirStreamId, MirNodeId};
+
 /// Indicates what relations (views and tables) of a dataflow graph
 /// are different when compared with another dataflow graph.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Hash)]

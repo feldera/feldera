@@ -4,6 +4,7 @@ use crate::{
     catalog::{OutputCollectionHandles, SerCollectionHandle},
     Catalog, ControllerError,
 };
+use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::{
     operator::{MapHandle, SetHandle, ZSetHandle},
@@ -359,7 +360,8 @@ impl Catalog {
         let name = schema.name.clone();
 
         // Create handle for the stream itself.
-        let delta_handle = stream.output_persistent(persistent_id);
+        let (delta_handle, delta_gid) = stream.output_persistent_with_gid(persistent_id);
+        stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
             key_schema: None,
@@ -422,12 +424,18 @@ impl Catalog {
         let stream = stream.shard();
 
         // Create handle for the stream itself.
-        let delta_handle = stream.output_persistent(persistent_id);
+        let (delta_handle, delta_gid) = stream.output_persistent_with_gid(persistent_id);
+        stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
-        let integrate_handle = stream
+        let (integrate_handle, integrate_gid) = stream
             .integrate_trace()
             .apply(|t| TypedBatch::<Z::Key, (), ZWeight, _>::new(t.ro_snapshot()))
-            .output_persistent(persistent_id.map(|id| format!("{id}.integral")).as_deref());
+            .output_persistent_with_gid(
+                persistent_id.map(|id| format!("{id}.integral")).as_deref(),
+            );
+        stream
+            .circuit()
+            .set_mir_node_id(&integrate_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
             key_schema: None,
@@ -499,9 +507,10 @@ impl Catalog {
         let name = schema.name.clone();
 
         // Create handle for the stream itself.
-        let delta_handle = stream
+        let (delta_handle, delta_gid) = stream
             .map(|(_k, v)| v.clone())
-            .output_persistent(persistent_id);
+            .output_persistent_with_gid(persistent_id);
+        stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
             key_schema: None,
@@ -572,12 +581,18 @@ impl Catalog {
                 .as_deref(),
         );
 
-        let delta_handle = delta.output_persistent(persistent_id);
+        let (delta_handle, delta_gid) = delta.output_persistent_with_gid(persistent_id);
+        stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
-        let integrate_handle = delta
+        let (integrate_handle, integral_gid) = delta
             .integrate_trace()
             .apply(|s| TypedBatch::<V, (), ZWeight, _>::new(s.ro_snapshot()))
-            .output_persistent(persistent_id.map(|id| format!("{id}.integral")).as_deref());
+            .output_persistent_with_gid(
+                persistent_id.map(|id| format!("{id}.integral")).as_deref(),
+            );
+        stream
+            .circuit()
+            .set_mir_node_id(&integral_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
             key_schema: None,
@@ -654,7 +669,8 @@ impl Catalog {
 
         let view_handles = self.output_handles(view_name)?;
 
-        let stream_handle = stream.output_persistent(persistent_id);
+        let (stream_handle, stream_gid) = stream.output_persistent_with_gid(persistent_id);
+        stream.circuit().set_mir_node_id(&stream_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
             key_schema: Some(index_schema(

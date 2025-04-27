@@ -46,14 +46,16 @@ use crate::{
         trace::{CircuitEvent, SchedulerEvent},
     },
     circuit_cache_key,
+    ir::LABEL_MIR_NODE_ID,
     operator::communication::Exchange,
     time::{Timestamp, UnitTimestamp},
     Error as DbspError, Runtime,
 };
 use anyhow::Error as AnyError;
 use dyn_clone::{clone_box, DynClone};
+use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_storage::StoragePath;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     any::{type_name_of_val, Any, TypeId},
     borrow::Cow,
@@ -929,7 +931,7 @@ pub type Scope = u16;
 
 /// Node in a circuit.  A node wraps an operator with strongly typed
 /// input and output streams.
-pub trait Node {
+pub trait Node: Any {
     /// Node id unique within its parent circuit.
     fn local_id(&self) -> NodeId;
 
@@ -964,6 +966,10 @@ pub trait Node {
 
     /// Operator name, e.g., "Map", "Join", etc.
     fn name(&self) -> Cow<'static, str>;
+
+    fn is_circuit(&self) -> bool {
+        false
+    }
 
     /// `true` if the node encapsulates an asynchronous operator (see
     /// [`Operator::is_async()`](super::operator_traits::Operator::is_async)).
@@ -1092,10 +1098,16 @@ pub trait Node {
     fn map_child_mut(&self, _path: &[NodeId], _f: &mut dyn FnMut(&mut dyn Node)) {
         panic!("map_child_mut: not a circuit node")
     }
+
+    fn as_circuit(&self) -> Option<&dyn CircuitBase> {
+        None
+    }
+
+    fn as_any(&self) -> &dyn Any;
 }
 
 /// Globally unique id of a stream.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[repr(transparent)]
 pub struct StreamId(usize);
 
@@ -1245,6 +1257,11 @@ impl GlobalNodeId {
             .map(|node_id| node_id.0.to_string())
             .collect::<Vec<_>>()
             .join("-")
+    }
+
+    /// Format global node id as LIR node id.
+    pub fn lir_node_id(&self) -> LirNodeId {
+        LirNodeId::new(&self.path_as_string())
     }
 
     pub(crate) fn metrics_id(&self) -> String {
@@ -1480,28 +1497,8 @@ where
     }
 }
 
-/// The circuit interface.  All DBSP computation takes place within a circuit.
-///
-/// Circuits can nest.  The nesting hierarchy must be known statically at
-/// compile time via the `Parent` associated type, which must be `()` for a root
-/// circuit and otherwise the parent circuit's type.
-///
-/// A circuit has a clock represented by the `Time` associated type obtained via
-/// the `WithClock` supertrait.  For a root circuit, this is a trivial
-/// zero-dimensional clock that doesn't need to count ticks.
-///
-/// There is only one implementation, [`ChildCircuit<P>`], whose `Parent` type
-/// is `P`.  [`RootCircuit`] is a synonym for `ChildCircuit<()>`.
-pub trait Circuit: WithClock + Clone + 'static {
-    /// Parent circuit type or `()` for the root circuit.
-    type Parent;
-
-    /// Returns the parent circuit of `self`.
-    fn parent(&self) -> Self::Parent;
-
-    /// Return the root of the circuit tree.
-    fn root_circuit(&self) -> RootCircuit;
-
+/// An object-safe subset of the circuit API.
+pub trait CircuitBase: 'static {
     fn edges(&self) -> Ref<'_, Edges>;
 
     fn edges_mut(&self) -> RefMut<'_, Edges>;
@@ -1533,6 +1530,110 @@ pub trait Circuit: WithClock + Clone + 'static {
     /// Circuit's node id within the parent circuit.
     fn node_id(&self) -> NodeId;
 
+    /// Circuit's global node id.
+    fn global_node_id(&self) -> GlobalNodeId;
+
+    /// Recursively apply `f` to all nodes in `self` and its children.
+    ///
+    /// Stop at the first error.
+    fn map_nodes_recursive(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError>;
+
+    /// Recursively apply `f` to all nodes in `self` and its children mutably.
+    ///
+    /// Stop at the first error.
+    fn map_nodes_recursive_mut(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError>;
+
+    /// Apply `f` to all immediate children of `self`.
+    ///
+    /// Stop at the first error.
+    fn map_local_nodes(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError>;
+
+    /// Apply `f` to all immedite children of `self`.
+    fn map_local_nodes_mut(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError>;
+
+    /// Apply closure `f` to a node with specified node id.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self`.
+    fn apply_local_node_mut(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node));
+
+    /// Apply `f` to all immediate subcricuits of `self`.
+    ///
+    /// Stop at the first error.
+    fn map_subcircuits(
+        &self,
+        f: &mut dyn FnMut(&dyn CircuitBase) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError>;
+
+    /// Tag the node with a text label.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
+    /// if there is another mutable or immutable reference to the node.
+    fn set_node_label(&self, id: &GlobalNodeId, key: &str, val: &str);
+
+    fn set_persistent_node_id(&self, id: &GlobalNodeId, persistent_id: Option<&str>) {
+        if let Some(persistent_id) = persistent_id {
+            self.set_node_label(id, LABEL_PERSISTENT_OPERATOR_ID, persistent_id);
+        }
+    }
+
+    fn set_mir_node_id(&self, id: &GlobalNodeId, mir_id: Option<&str>) {
+        if let Some(mir_id) = mir_id {
+            self.set_node_label(id, LABEL_MIR_NODE_ID, mir_id);
+        }
+    }
+
+    /// Get node label.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
+    /// if there is another mutable or immutable reference to the node.
+    fn get_node_label(&self, id: &GlobalNodeId, key: &str) -> Option<String>;
+
+    /// Node label for persistent operator id.
+    fn get_persistent_node_id(&self, id: &GlobalNodeId) -> Option<String> {
+        self.get_node_label(id, LABEL_PERSISTENT_OPERATOR_ID)
+    }
+}
+
+/// The circuit interface.  All DBSP computation takes place within a circuit.
+///
+/// Circuits can nest.  The nesting hierarchy must be known statically at
+/// compile time via the `Parent` associated type, which must be `()` for a root
+/// circuit and otherwise the parent circuit's type.
+///
+/// A circuit has a clock represented by the `Time` associated type obtained via
+/// the `WithClock` supertrait.  For a root circuit, this is a trivial
+/// zero-dimensional clock that doesn't need to count ticks.
+///
+/// There is only one implementation, [`ChildCircuit<P>`], whose `Parent` type
+/// is `P`.  [`RootCircuit`] is a synonym for `ChildCircuit<()>`.
+pub trait Circuit: CircuitBase + Clone + WithClock {
+    /// Parent circuit type or `()` for the root circuit.
+    type Parent;
+
+    /// Returns the parent circuit of `self`.
+    fn parent(&self) -> Self::Parent;
+
+    /// Return the root of the circuit tree.
+    fn root_circuit(&self) -> RootCircuit;
+
     /// Check if `this` and `other` refer to the same circuit instance.
     fn ptr_eq(this: &Self, other: &Self) -> bool;
 
@@ -1547,9 +1648,6 @@ pub trait Circuit: WithClock + Clone + 'static {
 
     /// Deliver `event` to all scheduler event handlers.
     fn log_scheduler_event(&self, event: &SchedulerEvent<'_>);
-
-    /// Circuit's global node id.
-    fn global_node_id(&self) -> GlobalNodeId;
 
     /// Apply closure `f` to a node with specified global id.
     ///
@@ -1573,37 +1671,6 @@ pub trait Circuit: WithClock + Clone + 'static {
     ///
     /// Panics if `id` is not a valid Id of a node in `self`.
     fn map_local_node_mut<T>(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T;
-
-    /// Tag the node with a text label.
-    ///
-    /// # Panic
-    ///
-    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
-    /// if there is another mutable or immutable reference to the node.
-    fn set_node_label(&self, id: &GlobalNodeId, key: &str, val: &str) {
-        self.map_node_mut(id, &mut |node| node.set_label(key, val));
-    }
-
-    fn set_persistent_node_id(&self, id: &GlobalNodeId, persistent_id: Option<&str>) {
-        if let Some(persistent_id) = persistent_id {
-            self.set_node_label(id, LABEL_PERSISTENT_OPERATOR_ID, persistent_id);
-        }
-    }
-
-    /// Get node label.
-    ///
-    /// # Panic
-    ///
-    /// Panics if `id` is not a valid Id of a node in `self` or one of its children or
-    /// if there is another mutable or immutable reference to the node.
-    fn get_node_label(&self, id: &GlobalNodeId, key: &str) -> Option<String> {
-        self.map_node(id, &mut |node| node.get_label(key).map(str::to_string))
-    }
-
-    /// Node label for persistent operator id.
-    fn get_persistent_node_id(&self, id: &GlobalNodeId) -> Option<String> {
-        self.get_node_label(id, LABEL_PERSISTENT_OPERATOR_ID)
-    }
 
     /// Lookup a value in the circuit cache or create and insert a new value
     /// if it does not exist.
@@ -2308,6 +2375,14 @@ impl Edges {
         }
     }
 
+    pub(crate) fn inputs_of(&self, node_id: NodeId) -> impl Iterator<Item = &Edge> {
+        self.by_destination
+            .get(&node_id)
+            .into_iter()
+            .flatten()
+            .map(|edge| edge.as_ref())
+    }
+
     /// Nodes that depend on node_id directly.
     ///
     /// Nodes that have an incoming _dependency_ edge from `node_id`.
@@ -2806,61 +2881,6 @@ where
         Ok(res)
     }
 
-    /// Recursively apply `f` to all nodes in `self` and its children.
-    ///
-    /// Stop at the first error.
-    pub(crate) fn map_nodes_recursive(
-        &self,
-        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
-    ) -> Result<(), DbspError> {
-        for node in self.inner().nodes.borrow().iter() {
-            f(node.borrow().as_ref())?;
-            node.borrow().map_nodes_recursive(f)?;
-        }
-        Ok(())
-    }
-
-    /// Recursively apply `f` to all nodes in `self` and its children mutably.
-    ///
-    /// Stop at the first error.
-    pub(crate) fn map_nodes_recursive_mut(
-        &mut self,
-        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
-    ) -> Result<(), DbspError> {
-        for node in self.inner().nodes.borrow_mut().iter_mut() {
-            f(node.borrow_mut().as_mut())?;
-            node.borrow_mut().map_nodes_recursive_mut(f)?;
-        }
-
-        Ok(())
-    }
-
-    /// Apply `f` to all immediate children of `self`.
-    ///
-    /// Stop at the first error.
-    #[allow(dead_code)]
-    pub(crate) fn map_nodes(
-        &self,
-        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
-    ) -> Result<(), DbspError> {
-        for node in self.inner().nodes.borrow().iter() {
-            f(node.borrow().as_ref())?;
-        }
-        Ok(())
-    }
-
-    /// Apply `f` to all immedite children of `self`.
-    pub(crate) fn map_nodes_mut(
-        &mut self,
-        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
-    ) -> Result<(), DbspError> {
-        for node in self.inner().nodes.borrow_mut().iter_mut() {
-            f(node.borrow_mut().as_mut())?;
-        }
-
-        Ok(())
-    }
-
     fn clear(&mut self) {
         self.inner().clear();
     }
@@ -2900,6 +2920,129 @@ where
     }
 }
 
+impl<P> CircuitBase for ChildCircuit<P>
+where
+    P: WithClock + Clone + 'static,
+{
+    fn edges(&self) -> Ref<'_, Edges> {
+        self.inner().edges.borrow()
+    }
+
+    fn edges_mut(&self) -> RefMut<'_, Edges> {
+        self.inner().edges.borrow_mut()
+    }
+
+    fn num_nodes(&self) -> usize {
+        self.inner().nodes.borrow().len()
+    }
+
+    fn map_nodes_recursive(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        for node in self.inner().nodes.borrow().iter() {
+            f(node.borrow().as_ref())?;
+            node.borrow().map_nodes_recursive(f)?;
+        }
+        Ok(())
+    }
+
+    fn map_nodes_recursive_mut(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        for node in self.inner().nodes.borrow_mut().iter_mut() {
+            f(node.borrow_mut().as_mut())?;
+            node.borrow_mut().map_nodes_recursive_mut(f)?;
+        }
+
+        Ok(())
+    }
+
+    fn map_local_nodes(
+        &self,
+        f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        for node in self.inner().nodes.borrow().iter() {
+            f(node.borrow().as_ref())?;
+        }
+        Ok(())
+    }
+
+    fn map_local_nodes_mut(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        for node in self.inner().nodes.borrow_mut().iter_mut() {
+            f(node.borrow_mut().as_mut())?;
+        }
+
+        Ok(())
+    }
+
+    fn apply_local_node_mut(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node)) {
+        self.map_node_mut_inner(&[id], &mut |node| f(node));
+    }
+
+    fn map_subcircuits(
+        &self,
+        f: &mut dyn FnMut(&dyn CircuitBase) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        for node in self.inner().nodes.borrow().iter() {
+            let node = node.borrow();
+            if let Some(child_circuit) = node.as_circuit() {
+                f(child_circuit)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn set_node_label(&self, id: &GlobalNodeId, key: &str, val: &str) {
+        self.map_node_mut(id, &mut |node| node.set_label(key, val));
+    }
+
+    fn get_node_label(&self, id: &GlobalNodeId, key: &str) -> Option<String> {
+        self.map_node(id, &mut |node| node.get_label(key).map(str::to_string))
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.inner().global_node_id
+    }
+
+    /// Returns vector of local node ids in the circuit.
+    fn node_ids(&self) -> Vec<NodeId> {
+        self.inner()
+            .nodes
+            .borrow()
+            .iter()
+            .map(|node| node.borrow().local_id())
+            .collect()
+    }
+
+    fn allocate_stream_id(&self) -> StreamId {
+        let circuit = self.inner();
+        let mut last_stream_id = circuit.last_stream_id.borrow_mut();
+        last_stream_id.0 += 1;
+        *last_stream_id
+    }
+
+    fn last_stream_id(&self) -> RefCell<StreamId> {
+        self.inner().last_stream_id.clone()
+    }
+
+    fn root_scope(&self) -> Scope {
+        self.inner().root_scope
+    }
+
+    fn node_id(&self) -> NodeId {
+        self.inner().node_id
+    }
+
+    fn global_node_id(&self) -> GlobalNodeId {
+        self.inner().global_node_id.clone()
+    }
+}
+
 impl<P> Circuit for ChildCircuit<P>
 where
     P: WithClock + Clone + 'static,
@@ -2916,32 +3059,6 @@ where
         } else {
             self.inner().root.as_ref().unwrap().clone()
         }
-    }
-
-    fn edges(&self) -> Ref<'_, Edges> {
-        self.inner().edges.borrow()
-    }
-
-    fn edges_mut(&self) -> RefMut<'_, Edges> {
-        self.inner().edges.borrow_mut()
-    }
-
-    fn num_nodes(&self) -> usize {
-        self.inner().nodes.borrow().len()
-    }
-
-    fn global_id(&self) -> &GlobalNodeId {
-        &self.inner().global_node_id
-    }
-
-    /// Returns vector of local node ids in the circuit.
-    fn node_ids(&self) -> Vec<NodeId> {
-        self.inner()
-            .nodes
-            .borrow()
-            .iter()
-            .map(|node| node.borrow().local_id())
-            .collect()
     }
 
     fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T {
@@ -2975,29 +3092,6 @@ where
 
         self.map_node_mut_inner(&[id], &mut |node| result = Some(f(node)));
         result.unwrap()
-    }
-
-    fn allocate_stream_id(&self) -> StreamId {
-        let circuit = self.inner();
-        let mut last_stream_id = circuit.last_stream_id.borrow_mut();
-        last_stream_id.0 += 1;
-        *last_stream_id
-    }
-
-    fn last_stream_id(&self) -> RefCell<StreamId> {
-        self.inner().last_stream_id.clone()
-    }
-
-    fn root_scope(&self) -> Scope {
-        self.inner().root_scope
-    }
-
-    fn node_id(&self) -> NodeId {
-        self.inner().node_id
-    }
-
-    fn global_node_id(&self) -> GlobalNodeId {
-        self.inner().global_node_id.clone()
     }
 
     fn ptr_eq(this: &Self, other: &Self) -> bool {
@@ -3948,7 +4042,7 @@ where
     C: Circuit,
     C::Parent: Circuit,
     I: Clone + 'static,
-    O: Clone,
+    O: Clone + 'static,
     Op: ImportOperator<I, O>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -4047,6 +4141,10 @@ where
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 struct SourceNode<C, O, Op> {
@@ -4078,7 +4176,7 @@ where
 impl<C, O, Op> Node for SourceNode<C, O, Op>
 where
     C: Circuit,
-    O: Clone,
+    O: Clone + 'static,
     Op: SourceOperator<O>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -4167,6 +4265,10 @@ where
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 struct UnaryNode<C, I, O, Op> {
@@ -4201,7 +4303,7 @@ impl<C, I, O, Op> Node for UnaryNode<C, I, O, Op>
 where
     C: Circuit,
     I: Clone + 'static,
-    O: Clone,
+    O: Clone + 'static,
     Op: UnaryOperator<I, O>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -4300,6 +4402,10 @@ where
 
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -4426,6 +4532,10 @@ where
 
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -4611,6 +4721,10 @@ where
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 struct BinaryNode<C, I1, I2, O, Op> {
@@ -4658,7 +4772,7 @@ where
     C: Circuit,
     I1: Clone + 'static,
     I2: Clone + 'static,
-    O: Clone,
+    O: Clone + 'static,
     Op: BinaryOperator<I1, I2, O>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -4795,6 +4909,10 @@ where
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 struct TernaryNode<C, I1, I2, I3, O, Op> {
@@ -4847,7 +4965,7 @@ where
     I1: Clone + 'static,
     I2: Clone + 'static,
     I3: Clone + 'static,
-    O: Clone,
+    O: Clone + 'static,
     Op: TernaryOperator<I1, I2, I3, O>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -4953,6 +5071,10 @@ where
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 struct QuaternaryNode<C, I1, I2, I3, I4, O, Op> {
@@ -5024,7 +5146,7 @@ where
     I2: Clone + 'static,
     I3: Clone + 'static,
     I4: Clone + 'static,
-    O: Clone,
+    O: Clone + 'static,
     Op: QuaternaryOperator<I1, I2, I3, I4, O>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -5132,6 +5254,10 @@ where
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 struct NaryNode<C, I, O, Op>
@@ -5191,7 +5317,7 @@ impl<C, I, O, Op> Node for NaryNode<C, I, O, Op>
 where
     C: Circuit,
     I: Clone,
-    O: Clone,
+    O: Clone + 'static,
     Op: NaryOperator<I, O>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -5296,6 +5422,10 @@ where
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 // The output half of a feedback node.  We implement a feedback node using a
@@ -5351,7 +5481,7 @@ impl<C, I, O, Op> Node for FeedbackOutputNode<C, I, O, Op>
 where
     C: Circuit,
     I: Data,
-    O: Clone,
+    O: Clone + 'static,
     Op: StrictUnaryOperator<I, O>,
 {
     fn local_id(&self) -> NodeId {
@@ -5450,6 +5580,10 @@ where
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 /// The input half of a feedback node
@@ -5482,6 +5616,7 @@ impl<C, I, O, Op> Node for FeedbackInputNode<C, I, O, Op>
 where
     Op: StrictUnaryOperator<I, O>,
     I: Data,
+    O: 'static,
     C: Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -5586,6 +5721,10 @@ where
 
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -5707,6 +5846,10 @@ where
         &self.id
     }
 
+    fn is_circuit(&self) -> bool {
+        true
+    }
+
     fn is_async(&self) -> bool {
         false
     }
@@ -5749,7 +5892,8 @@ where
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
-        self.circuit.map_nodes_mut(&mut |node| node.clear_state())
+        self.circuit
+            .map_local_nodes_mut(&mut |node| node.clear_state())
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
@@ -5778,6 +5922,14 @@ where
 
     fn map_child_mut(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
         self.circuit.map_node_mut_inner(path, f);
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_circuit(&self) -> Option<&dyn CircuitBase> {
+        Some(&self.circuit)
     }
 }
 
@@ -6241,6 +6393,11 @@ impl CircuitHandle {
     /// at runtime, after the circuit has been fully constructed.
     pub fn unregister_scheduler_event_handler(&self, name: &str) -> bool {
         self.circuit.unregister_scheduler_event_handler(name)
+    }
+
+    /// Export circuit in LIR format.
+    pub fn lir(&self) -> LirCircuit {
+        (&self.circuit as &dyn CircuitBase).to_lir()
     }
 }
 

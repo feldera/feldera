@@ -51,6 +51,7 @@ use feldera_adapterlib::errors::controller::{
 };
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
+use feldera_ir::LirCircuit;
 use feldera_types::format::json::JsonLines;
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
@@ -222,6 +223,7 @@ impl Controller {
             let inner = init_status_receiver
                 .recv()
                 .map_err(|_| ControllerError::dbsp_panic())??;
+
             (handle, inner)
         };
 
@@ -229,6 +231,10 @@ impl Controller {
             inner,
             circuit_thread_handle,
         })
+    }
+
+    pub fn lir(&self) -> &LirCircuit {
+        &self.inner.lir
     }
 
     /// Connect a new input endpoint with specified name and configuration.
@@ -598,9 +604,10 @@ impl CircuitThread {
             .storage
             .as_ref()
             .map(|storage| storage.backend.clone());
-        let (circuit, catalog) = circuit_factory(circuit_config)?;
+        let (mut circuit, catalog) = circuit_factory(circuit_config)?;
+        let lir = circuit.lir()?;
         let (parker, backpressure_thread, command_receiver, controller) =
-            ControllerInner::new(pipeline_config, catalog, error_cb, processed_records)?;
+            ControllerInner::new(pipeline_config, catalog, lir, error_cb, processed_records)?;
 
         controller
             .status
@@ -2196,6 +2203,7 @@ pub struct ControllerInner {
     num_api_connections: AtomicU64,
     command_sender: Sender<Command>,
     catalog: Arc<Box<dyn CircuitCatalog>>,
+    lir: LirCircuit,
     // Always lock this after the catalog is locked to avoid deadlocks
     trace_snapshot: ConsistentSnapshots,
     next_input_id: Atomic<EndpointId>,
@@ -2215,6 +2223,7 @@ impl ControllerInner {
     fn new(
         config: PipelineConfig,
         catalog: Box<dyn CircuitCatalog>,
+        lir: LirCircuit,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
         processed_records: u64,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
@@ -2228,6 +2237,7 @@ impl ControllerInner {
             num_api_connections: AtomicU64::new(0),
             command_sender,
             catalog: Arc::new(catalog),
+            lir,
             trace_snapshot: Arc::new(TokioMutex::new(BTreeMap::new())),
             next_input_id: Atomic::new(0),
             outputs: ShardedLock::new(OutputEndpoints::new()),

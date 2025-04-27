@@ -2,7 +2,7 @@
 
 use crate::{
     circuit::{
-        circuit_builder::Node,
+        circuit_builder::{CircuitBase, Node},
         metadata::{MetaItem, OperatorMeta},
         runtime::ThreadType,
         GlobalNodeId,

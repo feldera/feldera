@@ -543,6 +543,7 @@ where
         .service(metadata)
         .service(heap_profile)
         .service(dump_profile)
+        .service(lir)
         .service(checkpoint)
         .service(suspend)
         .service(input_endpoint)
@@ -840,6 +841,20 @@ async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.zip"))
         .body(profile.as_zip()))
+}
+
+/// Dump the low-level IR of the circuit.
+#[get("/lir")]
+async fn lir(state: WebData<ServerState>) -> impl Responder {
+    let lir = match &*state.controller.lock().unwrap() {
+        None => return Err(missing_controller_error(&state)),
+        Some(controller) => controller.lir().clone(),
+    };
+
+    Ok(HttpResponse::Ok()
+        .insert_header(header::ContentType("application/zip".parse().unwrap()))
+        .insert_header(header::ContentDisposition::attachment("lir.zip"))
+        .body(lir.as_zip()))
 }
 
 #[post("/checkpoint")]

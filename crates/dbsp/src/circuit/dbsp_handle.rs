@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
+use feldera_ir::LirCircuit;
 use feldera_storage::{StorageBackend, StoragePath};
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
@@ -502,6 +503,12 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::GetLir) => {
+                        let lir = circuit.lir();
+                        if status_sender.send(Ok(Response::Lir(lir))).is_err() {
+                            return;
+                        }
+                    }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
                     Err(TryRecvError::Empty) => std::thread::park(),
@@ -579,6 +586,7 @@ enum Command {
     RetrieveProfile {
         runtime_elapsed: Duration,
     },
+    GetLir,
     Commit(StoragePath),
     Restore(StoragePath),
 }
@@ -591,6 +599,7 @@ enum Response {
     Profile(WorkerProfile),
     CheckpointCreated,
     CheckpointRestored(Option<BootstrapInfo>),
+    Lir(LirCircuit),
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -980,6 +989,18 @@ impl DBSPHandle {
         )?;
 
         Ok(DbspProfile::new(profiles))
+    }
+
+    pub fn lir(&mut self) -> Result<LirCircuit, DbspError> {
+        let mut lirs = vec![Default::default(); self.status_receivers.len()];
+
+        self.broadcast_command(Command::GetLir, |worker, resp| {
+            if let Response::Lir(lir) = resp {
+                lirs[worker] = lir;
+            }
+        })?;
+
+        Ok(lirs.remove(0))
     }
 
     /// Terminate the execution of the circuit, exiting all worker threads.

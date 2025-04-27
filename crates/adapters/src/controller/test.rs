@@ -1525,3 +1525,228 @@ fn suspend_barrier5() {
 fn bootstrap() {
     test_bootstrap(&[2500, 2500, 2500, 2500, 2500]);
 }
+
+#[test]
+fn lir() {
+    init_test_logger();
+
+    let config_str = r#"
+name: test
+workers: 4
+storage_config: null
+storage: null
+clock_resolution_usecs: null
+inputs:
+    test_input1:
+        stream: test_input1
+        transport:
+            name: file_input
+            config:
+                path: "path"
+                follow: true
+        format:
+            name: csv
+outputs:
+    test_output1:
+        stream: test_output1
+        transport:
+            name: file_output
+            config:
+                path: "path"
+        format:
+            name: csv
+            config:
+        "#
+    .to_string();
+
+    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+
+    let controller = Controller::with_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &[],
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    let lir = controller.lir().as_json().clone();
+    let actual: serde_json::Value = serde_json::from_str(&lir).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(
+        r#"{
+  "nodes": [
+    {
+      "id": "0",
+      "operation": "Input",
+      "implements": [
+        "input"
+      ]
+    },
+    {
+      "id": "1",
+      "operation": "ExchangeSender",
+      "implements": [
+        "input.output",
+        "output"
+      ]
+    },
+    {
+      "id": "2",
+      "operation": "ExchangeReceiver",
+      "implements": [
+        "input.output",
+        "output"
+      ]
+    },
+    {
+      "id": "3",
+      "operation": "merge shards",
+      "implements": [
+        "input.output",
+        "output"
+      ]
+    },
+    {
+      "id": "4",
+      "operation": "Output",
+      "implements": [
+        "input.output"
+      ]
+    },
+    {
+      "id": "5",
+      "operation": "Z1 (trace)",
+      "implements": [
+        "input.output",
+        "output"
+      ]
+    },
+    {
+      "id": "6",
+      "operation": "UntimedTraceAppend",
+      "implements": [
+        "input.output",
+        "output"
+      ]
+    },
+    {
+      "id": "7",
+      "operation": "Z1 (trace)",
+      "implements": [
+        "input.output",
+        "output"
+      ]
+    },
+    {
+      "id": "8",
+      "operation": "Apply",
+      "implements": [
+        "input.output"
+      ]
+    },
+    {
+      "id": "9",
+      "operation": "Output",
+      "implements": [
+        "input.output"
+      ]
+    },
+    {
+      "id": "10",
+      "operation": "Output",
+      "implements": [
+        "output"
+      ]
+    },
+    {
+      "id": "11",
+      "operation": "Apply",
+      "implements": [
+        "output"
+      ]
+    },
+    {
+      "id": "12",
+      "operation": "Output",
+      "implements": [
+        "output"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "stream_id": 1,
+      "from": "0",
+      "to": "1"
+    },
+    {
+      "stream_id": null,
+      "from": "1",
+      "to": "2"
+    },
+    {
+      "stream_id": 2,
+      "from": "2",
+      "to": "3"
+    },
+    {
+      "stream_id": 3,
+      "from": "3",
+      "to": "4"
+    },
+    {
+      "stream_id": 3,
+      "from": "3",
+      "to": "6"
+    },
+    {
+      "stream_id": 3,
+      "from": "3",
+      "to": "10"
+    },
+    {
+      "stream_id": 4,
+      "from": "5",
+      "to": "6"
+    },
+    {
+      "stream_id": null,
+      "from": "5",
+      "to": "7"
+    },
+    {
+      "stream_id": 7,
+      "from": "6",
+      "to": "7"
+    },
+    {
+      "stream_id": 7,
+      "from": "6",
+      "to": "8"
+    },
+    {
+      "stream_id": 7,
+      "from": "6",
+      "to": "11"
+    },
+    {
+      "stream_id": 8,
+      "from": "8",
+      "to": "9"
+    },
+    {
+      "stream_id": 9,
+      "from": "11",
+      "to": "12"
+    }
+  ]
+}"#,
+    )
+    .unwrap();
+
+    assert_eq!(actual, expected);
+}

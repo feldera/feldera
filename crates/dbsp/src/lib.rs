@@ -72,6 +72,7 @@ pub mod typed_batch;
 #[macro_use]
 pub mod circuit;
 pub mod algebra;
+pub mod ir;
 pub mod mimalloc;
 pub mod monitor;
 pub mod operator;
