@@ -752,10 +752,6 @@ public class MetadataTests extends BaseSQLTests {
                     -O
                       Optimization level (0, 1, or 2)
                       Default: 2
-                    -d
-                      SQL syntax dialect used
-                      Default: ORACLE
-                      Possible Values: [BIG_QUERY, ORACLE, MYSQL, MYSQL_ANSI, SQL_SERVER, JAVA]
                     -i
                       Generate an incremental circuit
                       Default: false
@@ -798,7 +794,7 @@ public class MetadataTests extends BaseSQLTests {
         File json = this.createTempJsonFile();
         CompilerMessages msg = CompilerMain.execute(
                 "--dataflow", json.getPath(), "--noRust", file.getPath());
-        assert msg.exitCode == 0;
+        Assert.assertEquals(0, msg.exitCode);
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDF.json");
         Assert.assertEquals(expected, jsonContents);
@@ -816,7 +812,7 @@ public class MetadataTests extends BaseSQLTests {
         File json = this.createTempJsonFile();
         CompilerMessages msg = CompilerMain.execute(
                 "--dataflow", json.getPath(), file.getPath(), "--noRust");
-        assert msg.exitCode == 0;
+        Assert.assertEquals(0, msg.exitCode);
         Assert.assertTrue(json.exists());
     }
 
@@ -849,7 +845,7 @@ public class MetadataTests extends BaseSQLTests {
         File json = this.createTempJsonFile();
         CompilerMessages msg = CompilerMain.execute(
                 "--dataflow", json.getPath(), "--noRust", file.getPath());
-        assert msg.exitCode == 0;
+        Assert.assertEquals(0, msg.exitCode);
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDFRecursive.json");
         Assert.assertEquals(expected, jsonContents);
@@ -886,9 +882,9 @@ public class MetadataTests extends BaseSQLTests {
                 create view fib_outputs as select * from fibonacci;""";
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
-        CompilerMessages message = CompilerMain.execute(
+        CompilerMessages msg = CompilerMain.execute(
                 "-js", json.getPath(), "--noRust", file.getPath());
-        assert message.exitCode == 0;
+        Assert.assertEquals(0, msg.exitCode);
         String js = Utilities.readFile(json.toPath());
         Assert.assertFalse(js.contains("fibonacci" + DeclareViewStatement.declSuffix));
     }
