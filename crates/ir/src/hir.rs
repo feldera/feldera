@@ -3,9 +3,11 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::Value;
 
+pub type Hir = HashMap<String, CalciteRels>;
+
 /// The Calcite plan representation of a dataflow graph.
 #[derive(Debug, Deserialize)]
-pub struct CalcitePlan {
+pub struct CalciteRels {
     pub rels: Vec<Rel>,
 }
 

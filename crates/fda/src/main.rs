@@ -28,6 +28,7 @@ use tokio::time::{sleep, timeout, Duration};
 mod adhoc;
 mod bench;
 mod cli;
+mod profiler;
 mod shell;
 
 pub(crate) const UPGRADE_NOTICE: &str =
@@ -1824,5 +1825,6 @@ async fn main() {
         Commands::Pipelines => pipelines(cli.format, client()).await,
         Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
         Commands::Debug { action } => debug(cli.format, action),
+        Commands::Profile { action } => profiler::profile(cli.format, action, client()).await,
     }
 }

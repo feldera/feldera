@@ -5,7 +5,7 @@ use zip::{write::FileOptions, ZipWriter};
 
 use crate::MirNodeId;
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Eq, Hash, PartialEq, Debug, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct LirNodeId(String);
 
@@ -37,6 +37,16 @@ pub struct LirNode {
     pub implements: Vec<MirNodeId>,
 }
 
+impl LirNode {
+    pub fn new(id: LirNodeId, operation: String, implements: Vec<MirNodeId>) -> Self {
+        LirNode {
+            id,
+            operation,
+            implements,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LirEdge {
     /// Stream id if this edge is a stream edge. None if this is a dependency edge.
@@ -47,13 +57,27 @@ pub struct LirEdge {
     pub to: LirNodeId,
 }
 
+impl LirEdge {
+    pub fn new(stream_id: Option<LirStreamId>, from: LirNodeId, to: LirNodeId) -> Self {
+        LirEdge {
+            stream_id,
+            from,
+            to,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct LirCircuit {
+pub struct Lir {
     pub nodes: Vec<LirNode>,
     pub edges: Vec<LirEdge>,
 }
 
-impl LirCircuit {
+impl Lir {
+    pub fn new(nodes: Vec<LirNode>, edges: Vec<LirEdge>) -> Self {
+        Lir { nodes, edges }
+    }
+
     pub fn as_json(&self) -> String {
         serde_json::to_string(self).unwrap()
     }

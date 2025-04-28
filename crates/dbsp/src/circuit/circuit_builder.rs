@@ -53,7 +53,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use dyn_clone::{clone_box, DynClone};
-use feldera_ir::{LirCircuit, LirNodeId};
+use feldera_ir::{Lir, LirNodeId};
 use feldera_storage::StoragePath;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -6552,7 +6552,7 @@ impl CircuitHandle {
     }
 
     /// Export circuit in LIR format.
-    pub fn lir(&self) -> LirCircuit {
+    pub fn lir(&self) -> Lir {
         (&self.circuit as &dyn CircuitBase).to_lir()
     }
 }

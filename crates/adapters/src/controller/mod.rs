@@ -49,7 +49,7 @@ use dbsp::{
 use enum_map::EnumMap;
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
-use feldera_ir::LirCircuit;
+use feldera_ir::Lir;
 use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::format::json::JsonLines;
@@ -256,7 +256,7 @@ impl Controller {
         })
     }
 
-    pub fn lir(&self) -> &LirCircuit {
+    pub fn lir(&self) -> &Lir {
         &self.inner.lir
     }
 
@@ -2438,7 +2438,7 @@ pub struct ControllerInner {
     num_api_connections: AtomicU64,
     command_sender: Sender<Command>,
     catalog: Arc<Box<dyn CircuitCatalog>>,
-    lir: LirCircuit,
+    lir: Lir,
     // Always lock this after the catalog is locked to avoid deadlocks
     trace_snapshot: ConsistentSnapshots,
     next_input_id: Atomic<EndpointId>,
@@ -2458,7 +2458,7 @@ impl ControllerInner {
     fn new(
         config: PipelineConfig,
         catalog: Box<dyn CircuitCatalog>,
-        lir: LirCircuit,
+        lir: Lir,
         error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
         processed_records: u64,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {

@@ -7,10 +7,11 @@ use serde::{Deserialize, Serialize};
 mod hir;
 mod lir;
 mod mir;
+mod profile;
 
-pub use hir::{CalciteId, CalcitePlan};
-pub use lir::{LirCircuit, LirEdge, LirNode, LirNodeId, LirStreamId};
-pub use mir::{MirInput, MirNode, MirNodeId};
+pub use hir::{CalciteId, Hir};
+pub use lir::{Lir, LirEdge, LirNode, LirNodeId, LirStreamId};
+pub use mir::{Mir, MirInput, MirNode, MirNodeId};
 
 /// Indicates what relations (views and tables) of a dataflow graph
 /// are different when compared with another dataflow graph.
@@ -24,8 +25,8 @@ pub enum Changes {
 /// The JSON representation of a dataflow graph.
 #[derive(Debug, Deserialize)]
 pub struct Dataflow {
-    pub calcite_plan: HashMap<String, CalcitePlan>,
-    pub mir: HashMap<MirNodeId, MirNode>,
+    pub calcite_plan: Hir,
+    pub mir: Mir,
 }
 
 impl Dataflow {

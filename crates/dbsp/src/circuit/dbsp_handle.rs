@@ -8,7 +8,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
-use feldera_ir::LirCircuit;
+use feldera_ir::Lir;
 use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
@@ -647,7 +647,7 @@ enum Response {
     Profile(WorkerProfile),
     CheckpointCreated,
     CheckpointRestored(Option<BootstrapInfo>),
-    Lir(LirCircuit),
+    Lir(Lir),
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -1037,7 +1037,7 @@ impl DBSPHandle {
         Ok(DbspProfile::new(profiles))
     }
 
-    pub fn lir(&mut self) -> Result<LirCircuit, DbspError> {
+    pub fn lir(&mut self) -> Result<Lir, DbspError> {
         let mut lirs = vec![Default::default(); self.status_receivers.len()];
 
         self.broadcast_command(Command::GetLir, |worker, resp| {

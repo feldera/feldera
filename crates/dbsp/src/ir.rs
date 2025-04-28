@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use feldera_ir::{LirCircuit, LirEdge, LirNode, LirStreamId, MirNodeId};
+use feldera_ir::{Lir, LirEdge, LirNode, LirStreamId, MirNodeId};
 
 use crate::{
     circuit::{circuit_builder::CircuitBase, GlobalNodeId, NodeId},
@@ -151,7 +151,7 @@ impl dyn CircuitBase {
     }
 
     /// Export circuit in lir format.
-    pub fn to_lir(&self) -> LirCircuit {
+    pub fn to_lir(&self) -> Lir {
         let mut refinement_map = BTreeMap::new();
         self.mir_refinement_map(&mut refinement_map);
 
@@ -174,6 +174,6 @@ impl dyn CircuitBase {
         .unwrap();
 
         let edges = self.lir_edges_recursive();
-        LirCircuit { nodes, edges }
+        Lir { nodes, edges }
     }
 }

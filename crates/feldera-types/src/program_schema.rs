@@ -177,6 +177,22 @@ pub struct SourcePosition {
     pub end_column: usize,
 }
 
+impl SourcePosition {
+    pub fn new(
+        start_line_number: usize,
+        start_column: usize,
+        end_line_number: usize,
+        end_column: usize,
+    ) -> Self {
+        Self {
+            start_line_number,
+            start_column,
+            end_line_number,
+            end_column,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct PropertyValue {

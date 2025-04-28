@@ -6,6 +6,8 @@ use serde_json::Value;
 
 use crate::CalciteId;
 
+pub type Mir = HashMap<MirNodeId, MirNode>;
+
 pub type MirNodeId = String;
 
 #[derive(Debug, Deserialize)]
@@ -17,7 +19,7 @@ pub struct MirInput {
     pub extra: HashMap<String, Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct MirNode {
     #[serde(default)]
     pub calcite: Option<CalciteId>,

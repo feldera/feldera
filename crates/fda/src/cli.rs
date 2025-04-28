@@ -146,6 +146,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: DebugActions,
     },
+    /// Profiler actions.
+    Profile {
+        #[command(subcommand)]
+        action: ProfilerAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -692,4 +697,16 @@ pub enum ConnectorAction {
     Pause,
     #[clap(aliases = &["status"])]
     Stats,
+}
+
+#[derive(Subcommand)]
+pub enum ProfilerAction {
+    /// Record profiling information.
+    Record {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
+    /// View profiling information.
+    Report {},
 }

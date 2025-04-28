@@ -37,6 +37,7 @@ arrow = { workspace = true, features = ["ipc", "prettyprint"] }
 serde = { workspace = true, features = ["derive"] }
 uuid = { workspace = true, features = ["serde", "v4"] }
 chrono = { workspace = true, features = ["serde"] }
+ratatui = { version = "0.28.0", features = ["all-widgets"] }
 
 [build-dependencies]
 prettyplease = { workspace = true }
