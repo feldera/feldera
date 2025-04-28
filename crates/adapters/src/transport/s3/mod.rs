@@ -362,7 +362,7 @@ impl S3InputReader {
                             }
                         Some(InputReaderCommand::Extend) => running = true,
                         Some(InputReaderCommand::Pause) => running = false,
-                        Some(InputReaderCommand::Queue) => {
+                        Some(InputReaderCommand::Queue{..}) => {
                             let mut total = 0;
                             let mut hasher = consumer.hasher();
                             let mut offsets = BTreeMap::<String, (u64, Option<u64>)>::new();
@@ -600,7 +600,7 @@ format:
         reader.extend();
         wait(
             || {
-                reader.queue();
+                reader.queue(false);
                 input_handle.state().flushed.len() == test_data.len()
             },
             10000,
@@ -703,7 +703,7 @@ format:
         reader.extend();
         wait(
             || {
-                reader.queue();
+                reader.queue(false);
                 input_handle.state().flushed.len() == test_data.len()
             },
             10000,

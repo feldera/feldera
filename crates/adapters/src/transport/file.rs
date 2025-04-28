@@ -144,7 +144,7 @@ impl FileInputReader {
                     Ok(InputReaderCommand::Pause) => {
                         extending = false;
                     }
-                    Ok(InputReaderCommand::Queue) => {
+                    Ok(InputReaderCommand::Queue { .. }) => {
                         let mut total = 0;
                         let mut hasher = consumer.hasher();
                         let limit = consumer.max_batch_size();
@@ -405,7 +405,7 @@ format:
         endpoint.extend();
         wait(
             || {
-                endpoint.queue();
+                endpoint.queue(false);
                 zset.state().flushed.len() == test_data.len()
             },
             DEFAULT_TIMEOUT_MS,
@@ -469,7 +469,7 @@ format:
             // Unpause the endpoint, wait for the data to appear at the output.
             wait(
                 || {
-                    endpoint.queue();
+                    endpoint.queue(false);
                     zset.state().flushed.len() == test_data.len()
                 },
                 DEFAULT_TIMEOUT_MS,
@@ -492,7 +492,7 @@ format:
 
         wait(
             || {
-                endpoint.queue();
+                endpoint.queue(false);
                 let state = parser.state();
                 // println!("result: {:?}", state.parser_result);
                 state.parser_result.is_some() && !state.parser_result.as_ref().unwrap().is_empty()

@@ -102,7 +102,7 @@ impl InputReader for InputGenerator {
                 InputReaderCommand::Replay { .. } => self.consumer.replayed(0, 0),
                 InputReaderCommand::Extend => (),
                 InputReaderCommand::Pause => (),
-                InputReaderCommand::Queue => {
+                InputReaderCommand::Queue { .. } => {
                     self.consumer.extended(
                         0,
                         Some(Resume::Replay {
@@ -337,7 +337,7 @@ fn worker_thread(
             }
             Some(InputReaderCommand::Extend) => running = true,
             Some(InputReaderCommand::Pause) => running = false,
-            Some(InputReaderCommand::Queue) => {
+            Some(InputReaderCommand::Queue { .. }) => {
                 let mut total = 0;
                 let mut hasher = consumers[NexmarkTable::Bid].hasher();
                 let n = options.max_step_size_per_thread as usize * options.threads;
