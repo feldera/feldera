@@ -329,6 +329,24 @@ impl<A> InputQueue<A> {
     /// individual records. If the auxiliary data type `A` is `()`, then
     /// [InputQueue<()>::flush] avoids that and so is a better choice.
     pub fn flush_with_aux(&self) -> (usize, Option<Xxh3Default>, Vec<A>) {
+        self.flush_with_aux_until(&|_| false)
+    }
+
+    /// Flushes a batch of records to the circuit and returns the auxiliary data
+    /// that was associated with those records.
+    ///
+    /// Stops after flushing at least `max_batch_size` records or after flushing a
+    /// buffer whose auxiliary data satisfies the `stop_at` predicate, whichever
+    /// happens first.
+    ///
+    /// This always flushes whole buffers to the circuit (with `flush`),
+    /// since auxiliary data is associated with a whole buffer rather than with
+    /// individual records. If the auxiliary data type `A` is `()`, then
+    /// [InputQueue<()>::flush] avoids that and so is a better choice.
+    pub fn flush_with_aux_until(
+        &self,
+        stop_at: &dyn Fn(&A) -> bool,
+    ) -> (usize, Option<Xxh3Default>, Vec<A>) {
         let mut total = 0;
         let mut hasher = self.consumer.hasher();
         let n = self.consumer.max_batch_size();
@@ -342,7 +360,13 @@ impl<A> InputQueue<A> {
                 buffer.hash(hasher);
             }
             buffer.flush();
+            
+            let stop = stop_at(&aux);
             consumed_aux.push(aux);
+
+            if stop {
+                break;
+            }
         }
         (total, hasher, consumed_aux)
     }
