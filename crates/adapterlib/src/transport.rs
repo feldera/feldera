@@ -283,6 +283,7 @@ pub enum NonFtInputReaderCommand {
 /// Commonly used by `InputReader` implementations for staging buffers from
 /// worker threads.
 pub struct InputQueue<A = ()> {
+    #[allow(clippy::type_complexity)]
     pub queue: Mutex<VecDeque<(Option<Box<dyn InputBuffer>>, A)>>,
     pub consumer: Box<dyn InputConsumer>,
 }
