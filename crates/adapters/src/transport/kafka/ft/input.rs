@@ -350,7 +350,7 @@ impl KafkaFtInputReaderInner {
                     }
                     InputReaderCommand::Extend => running = true,
                     InputReaderCommand::Pause => running = false,
-                    InputReaderCommand::Queue => {
+                    InputReaderCommand::Queue { .. } => {
                         let mut total = 0;
                         let mut hasher = KafkaFtHasher::new(n_partitions);
                         let mut offsets = receivers

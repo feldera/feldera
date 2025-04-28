@@ -780,8 +780,9 @@ impl CircuitThread {
             // checkpoint request can then terminate the pipeline, so check for
             // that right afterward.
             self.run_commands();
-            if !self.checkpoint_requests.is_empty() {
+            if self.checkpoint_requested() {
                 self.checkpoint();
+                break;
             }
             let running = match self.controller.state() {
                 PipelineState::Running => true,
@@ -803,7 +804,7 @@ impl CircuitThread {
                 self.replaying(),
                 self.circuit.bootstrap_in_progress(),
                 running,
-                !self.checkpoint_requests.is_empty(),
+                self.checkpoint_requested(),
             ) {
                 Action::Step => {
                     if !self.step()? {
@@ -896,6 +897,10 @@ impl CircuitThread {
                 consistent_snapshot.insert(name.clone(), ih.take_from_all());
             }
         }
+    }
+
+    fn checkpoint_requested(&self) -> bool {
+        !self.checkpoint_requests.is_empty()
     }
 
     fn checkpoint(&mut self) {
@@ -1100,7 +1105,7 @@ impl CircuitThread {
         //   will only flush input for the barrier endpoints (otherwise, it's
         //   possible non-barrier endpoints will become barriers and we
         //   definitely don't want that).
-        let barriers_only = !self.checkpoint_requests.is_empty() && self.ft.is_none();
+        let barriers_only = self.checkpoint_requested() && self.ft.is_none();
 
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //
@@ -1127,7 +1132,7 @@ impl CircuitThread {
                 }
             } else {
                 if !self.replaying() {
-                    status.reader.queue();
+                    status.reader.queue(self.checkpoint_requested());
                 } else {
                     // We already started the input adapters replaying. The set of
                     // input adapters can't change during replay (because we disable

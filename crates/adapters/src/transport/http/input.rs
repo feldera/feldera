@@ -113,7 +113,7 @@ impl HttpInputEndpointInner {
                 }
                 InputReaderCommand::Extend => self.set_state(PipelineState::Running),
                 InputReaderCommand::Pause => self.set_state(PipelineState::Paused),
-                InputReaderCommand::Queue => {
+                InputReaderCommand::Queue { .. } => {
                     let mut guard = self.details.lock().unwrap();
                     let details = guard.as_mut().unwrap();
                     let (num_records, hasher, chunks) = details.queue.flush_with_aux();

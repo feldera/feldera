@@ -100,7 +100,7 @@ format:
     endpoint.extend();
     wait(
         || {
-            endpoint.queue();
+            endpoint.queue(false);
             zset.state().flushed.len() == test_data.len()
         },
         DEFAULT_TIMEOUT_MS,
