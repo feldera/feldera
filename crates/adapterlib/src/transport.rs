@@ -153,7 +153,7 @@ pub enum InputReaderCommand {
     /// Tells a fault-tolerant input reader to seek past the data already read
     /// in the step whose metadata is given by the value.
     ///
-    /// # Contraints
+    /// # Constraints
     ///
     /// Only fault-tolerant input readers need to accept this. If it is given,
     /// it will be issued only once and before any of the other commands.
@@ -169,7 +169,7 @@ pub enum InputReaderCommand {
     /// The input reader doesn't have to process other commands while it does
     /// the replay.
     ///
-    /// # Contraints
+    /// # Constraints
     ///
     /// Only fault-tolerant input readers need to accept this. It will be issued
     /// zero or more times, after [InputReaderCommand::Seek] but before any
