@@ -782,7 +782,6 @@ impl CircuitThread {
             self.run_commands();
             if self.checkpoint_requested() {
                 self.checkpoint();
-                break;
             }
             let running = match self.controller.state() {
                 PipelineState::Running => true,
