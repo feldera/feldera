@@ -703,6 +703,11 @@ pub enum ControllerError {
 
     /// Cannot checkpoint or suspend.
     SuspendError(SuspendError),
+
+    /// An unexpected JSON serialized structure was encountered while processing the /stats endpoint.
+    UnexpectedJsonStructure {
+        reason: String,
+    },
 }
 
 impl ResponseError for ControllerError {
@@ -847,6 +852,7 @@ impl DbspDetailedError for ControllerError {
             Self::EnterpriseFeature(_) => Cow::from("EnterpriseFeature"),
             Self::StorageError { .. } => Cow::from("StorageError"),
             Self::SuspendError(_) => Cow::from("SuspendError"),
+            Self::UnexpectedJsonStructure { .. } => Cow::from("UnexpectedJsonStructure"),
         }
     }
 }
@@ -981,6 +987,9 @@ impl Display for ControllerError {
                 write!(f, "I/O error {context}: {error}")
             }
             Self::SuspendError(error) => write!(f, "{error}"),
+            Self::UnexpectedJsonStructure { reason } => {
+                write!(f, "An unexpected JSON structure was detected: {reason}")
+            }
         }
     }
 }
@@ -1283,7 +1292,8 @@ impl ControllerError {
             | Self::DbspPanic
             | Self::ControllerPanic
             | Self::ControllerExit
-            | Self::EnterpriseFeature(_) => ErrorKind::Other,
+            | Self::EnterpriseFeature(_)
+            | Self::UnexpectedJsonStructure { .. } => ErrorKind::Other,
         }
     }
 }

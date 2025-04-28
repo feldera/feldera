@@ -35,6 +35,7 @@ use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
 use futures_util::FutureExt;
 use minitrace::collector::Config;
 use serde::Deserialize;
+use serde_json::json;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -605,10 +606,138 @@ async fn query(state: WebData<ServerState>, args: Query<AdhocQueryArgs>) -> impl
 async fn stats(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
-            let json_string = serde_json::to_string(controller.status()).unwrap();
+            let Ok(mut json_value) = serde_json::to_value(controller.status()) else {
+                return Err(ControllerError::UnexpectedJsonStructure {
+                    reason: "could not serialize controller status to JSON".to_string(),
+                }
+                .into());
+            };
+            // Remove unnecessary configuration information
+            let Some(json_object) = json_value.as_object_mut() else {
+                return Err(ControllerError::UnexpectedJsonStructure {
+                    reason: "controller status is not an JSON object".to_string(),
+                }
+                .into());
+            };
+            // Remove: .pipeline_config
+            if json_object.remove("pipeline_config").is_none() {
+                return Err(ControllerError::UnexpectedJsonStructure {
+                    reason: ".pipeline_config was not found and thus could not be removed"
+                        .to_string(),
+                }
+                .into());
+            }
+            // Remove: .inputs[i].config except its stream field
+            let Some(inputs) = json_value
+                .get_mut("inputs")
+                .and_then(|value| value.as_array_mut())
+            else {
+                return Err(ControllerError::UnexpectedJsonStructure {
+                    reason: ".inputs is missing or is not an JSON array".to_string(),
+                }
+                .into());
+            };
+            for input in inputs {
+                let Some(input_object) = input.as_object_mut() else {
+                    return Err(ControllerError::UnexpectedJsonStructure {
+                        reason: ".inputs[i] is not an JSON object".to_string(),
+                    }
+                    .into());
+                };
+                // Retrieve the .inputs[i].config.stream field before deleting its parent
+                let Some(stream) = input_object
+                    .get_mut("config")
+                    .and_then(|v| v.as_object_mut())
+                    .and_then(|v| v.get("stream"))
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.to_string())
+                else {
+                    return Err(ControllerError::UnexpectedJsonStructure {
+                        reason: ".inputs[i].config does not exist or is not an JSON object, or does not have the stream field which is a string".to_string(),
+                    }
+                    .into());
+                };
+                // Delete: .inputs[i].config
+                if input_object.remove("config").is_none() {
+                    return Err(ControllerError::UnexpectedJsonStructure {
+                        reason: ".inputs[i].config could not be removed".to_string(),
+                    }
+                    .into());
+                };
+                // Put back: .inputs[i].config.stream
+                if input_object
+                    .insert(
+                        "config".to_string(),
+                        json!({
+                            "stream": stream
+                        }),
+                    )
+                    .is_some()
+                {
+                    return Err(ControllerError::UnexpectedJsonStructure {
+                        reason: ".inputs[i].config already existed even though it was removed"
+                            .to_string(),
+                    }
+                    .into());
+                }
+            }
+            // Remove: .outputs[i].config except its stream field
+            let Some(outputs) = json_value
+                .get_mut("outputs")
+                .and_then(|value| value.as_array_mut())
+            else {
+                return Err(ControllerError::UnexpectedJsonStructure {
+                    reason: ".outputs is missing or is not an JSON array".to_string(),
+                }
+                .into());
+            };
+            for output in outputs {
+                let Some(output_object) = output.as_object_mut() else {
+                    return Err(ControllerError::UnexpectedJsonStructure {
+                        reason: ".outputs[i] is not an JSON object".to_string(),
+                    }
+                    .into());
+                };
+                // Retrieve the .outputs[i].config.stream field before deleting its parent
+                let Some(stream) = output_object
+                    .get_mut("config")
+                    .and_then(|v| v.as_object_mut())
+                    .and_then(|v| v.get("stream"))
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.to_string())
+                else {
+                    return Err(ControllerError::UnexpectedJsonStructure {
+                        reason: ".outputs[i].config does not exist or is not an JSON object, or does not have the stream field which is a string".to_string(),
+                    }
+                    .into());
+                };
+                // Delete: .outputs[i].config
+                if output_object.remove("config").is_none() {
+                    return Err(ControllerError::UnexpectedJsonStructure {
+                        reason: ".outputs[i].config could not be removed".to_string(),
+                    }
+                    .into());
+                };
+                // Put back: .outputs[i].config.stream
+                if output_object
+                    .insert(
+                        "config".to_string(),
+                        json!({
+                            "stream": stream
+                        }),
+                    )
+                    .is_some()
+                {
+                    return Err(ControllerError::UnexpectedJsonStructure {
+                        reason: ".outputs[i].config already existed even though it was removed"
+                            .to_string(),
+                    }
+                    .into());
+                }
+            }
             Ok(HttpResponse::Ok()
                 .content_type(mime::APPLICATION_JSON)
-                .body(json_string))
+                .body(json_value.to_string()))
         }
         None => Err(missing_controller_error(&state)),
     }
