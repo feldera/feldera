@@ -1,5 +1,5 @@
 use crate::catalog::InputCollectionHandle;
-use crate::format::avro::input;
+use crate::format::avro::{input, output};
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::parquet::test::load_parquet_file;
 use crate::format::relation_to_parquet_schema;
@@ -17,7 +17,7 @@ use chrono::{DateTime, NaiveDate};
 use dbsp::typed_batch::DynBatchReader;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup2;
-use dbsp::{BatchReader, DBData, OrdZSet, ZSet};
+use dbsp::{storage, BatchReader, DBData, OrdZSet, ZSet};
 use deltalake::datafusion::dataframe::DataFrameWriteOptions;
 use deltalake::datafusion::logical_expr::Literal;
 use deltalake::datafusion::prelude::{col, SessionContext};
@@ -58,7 +58,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::{tempdir, NamedTempFile, TempDir};
-use tokio::time::sleep;
+use tokio::sync::mpsc;
+use tokio::time::{sleep, timeout};
 use tracing::{debug, info, trace};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -308,6 +309,7 @@ fn delta_to_delta_pipeline<T>(
     output_config: &HashMap<String, String>,
     buffer_size: u64,
     buffer_timeout_ms: u64,
+    storage_dir: &Path,
 ) -> Controller
 where
     T: DBData
@@ -332,6 +334,8 @@ where
         r#"
 name: test
 workers: 4
+storage_config:
+    path: {storage_dir:?}
 inputs:
     test_input1:
         stream: test_input1
@@ -363,7 +367,7 @@ outputs:
             Ok(test_circuit::<T>(
                 workers,
                 &DeltaTestStruct::schema(),
-                &[None],
+                &[Some("output")],
             ))
         },
         &config,
@@ -376,6 +380,7 @@ outputs:
 fn delta_read_pipeline<T>(
     input_table_uri: &str,
     input_config: &HashMap<String, String>,
+    storage_dir: &Path,
 ) -> Controller
 where
     T: DBData
@@ -395,6 +400,8 @@ where
         r#"
 name: test
 workers: 4
+storage_config:
+    path: {storage_dir:?}
 inputs:
     test_input1:
         stream: test_input1
@@ -413,7 +420,7 @@ inputs:
             Ok(test_circuit::<T>(
                 workers,
                 &DeltaTestStruct::schema(),
-                &[None],
+                &[Some("output")],
             ))
         },
         &config,
@@ -634,11 +641,14 @@ fn init_logging() {
 /// data --> input table in S3 ---> [pipeline] ---> output table in S3
 /// ```
 ///
-/// - When `snapshot` is `false`, runs the connector in `follow` mode,
-///   consuming the dataset in 10 chunks.
-/// - When `snapshot` is `true`, runs the connector in `snapshot_and_follow`
-///   mode.  The dataset is split in halves; the first half is consumed as a
-///   single snapshot and the second half is processed in follow mode.
+/// - `snapshot` flag
+///   - When `snapshot` is `false`, runs the connector in `follow` mode,
+///     consuming the dataset in 10 chunks.
+///   - When `snapshot` is `true`, runs the connector in `snapshot_and_follow`
+///     mode.  The dataset is split in halves; the first half is consumed as a
+///     single snapshot and the second half is processed in follow mode.
+/// - `suspend` flags: when `true`, suspends and resumes the pipeline after
+///   every input chunk.
 #[allow(clippy::too_many_arguments)]
 async fn test_follow(
     schema: &[Field],
@@ -647,10 +657,13 @@ async fn test_follow(
     storage_options: &HashMap<String, String>,
     data: Vec<DeltaTestStruct>,
     snapshot: bool,
+    suspend: bool,
     buffer_size: u64,
     buffer_timeout_ms: u64,
 ) {
     init_logging();
+
+    let storage_dir = TempDir::new().unwrap();
 
     let datafusion = SessionContext::new();
 
@@ -696,16 +709,20 @@ async fn test_follow(
 
     let input_table_uri_clone = input_table_uri.to_string();
     let output_table_uri_clone = output_table_uri.to_string();
+    let input_config_clone = input_config.clone();
+    let output_config_clone = output_config.clone();
+    let storage_dir_path = storage_dir.path().to_path_buf();
 
-    let pipeline = tokio::task::spawn_blocking(move || {
+    let mut pipeline = tokio::task::spawn_blocking(move || {
         delta_to_delta_pipeline::<DeltaTestStruct>(
             &input_table_uri_clone,
             true,
-            &input_config,
+            &input_config_clone,
             &output_table_uri_clone,
-            &output_config,
+            &output_config_clone,
             buffer_size,
             buffer_timeout_ms,
+            &storage_dir_path,
         )
     })
     .await
@@ -740,6 +757,45 @@ async fn test_follow(
                 }
             })
             .collect::<Vec<_>>();
+
+        if suspend {
+            println!("start suspend");
+            let (sender, mut receiver) = mpsc::channel(1);
+            pipeline.start_suspend(Box::new(move |result| sender.try_send(result).unwrap()));
+
+            timeout(Duration::from_secs(100), receiver.recv())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            println!("pipeline suspended");
+
+            pipeline.stop().unwrap();
+            println!("pipeline stopped");
+
+            let input_table_uri_clone = input_table_uri.to_string();
+            let output_table_uri_clone = output_table_uri.to_string();
+            let input_config_clone = input_config.clone();
+            let output_config_clone = output_config.clone();
+            let storage_dir_path = storage_dir.path().to_path_buf();
+            pipeline = tokio::task::spawn_blocking(move || {
+                delta_to_delta_pipeline::<DeltaTestStruct>(
+                    &input_table_uri_clone,
+                    true,
+                    &input_config_clone,
+                    &output_table_uri_clone,
+                    &output_config_clone,
+                    buffer_size,
+                    buffer_timeout_ms,
+                    &storage_dir_path,
+                )
+            })
+            .await
+            .unwrap();
+
+            pipeline.start();
+        }
+
         wait_for_output_records::<DeltaTestStruct>(
             &mut output_table,
             &expected_output,
@@ -835,6 +891,7 @@ async fn test_cdc(
     table_uri: &str,
     storage_options: &HashMap<String, String>,
     data: Vec<DeltaTestStruct>,
+    suspend: bool,
 ) {
     init_logging();
 
@@ -870,8 +927,15 @@ async fn test_cdc(
 
     let table_uri_clone = table_uri.to_string();
 
-    let read_pipeline = tokio::task::spawn_blocking(move || {
-        delta_read_pipeline::<DeltaTestStruct>(&table_uri_clone, &input_config)
+    let storage_dir = TempDir::new().unwrap();
+    let storage_dir_path = storage_dir.path().to_path_buf();
+    let input_config_clone: HashMap<String, String> = input_config.clone();
+    let mut read_pipeline = tokio::task::spawn_blocking(move || {
+        delta_read_pipeline::<DeltaTestStruct>(
+            &table_uri_clone,
+            &input_config_clone,
+            &storage_dir_path,
+        )
     })
     .await
     .unwrap();
@@ -884,6 +948,39 @@ async fn test_cdc(
     for chunk in data.chunks(std::cmp::max(data.len() / 10, 1)) {
         write_updates_as_json(input_file.as_file_mut(), chunk, true);
         total_count += chunk.len();
+
+        if suspend {
+            println!("start suspend");
+            let (sender, mut receiver) = mpsc::channel(1);
+            read_pipeline.start_suspend(Box::new(move |result| sender.try_send(result).unwrap()));
+
+            // Suspend should not succeed, because of the barrier.
+            timeout(Duration::from_secs(100), receiver.recv())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            println!("pipeline suspended");
+
+            read_pipeline.stop().unwrap();
+            println!("pipeline stopped");
+
+            let table_uri_clone = table_uri.to_string();
+            let input_config_clone: HashMap<String, String> = input_config.clone();
+            let storage_dir_path = storage_dir.path().to_path_buf();
+
+            read_pipeline = tokio::task::spawn_blocking(move || {
+                delta_read_pipeline::<DeltaTestStruct>(
+                    &table_uri_clone,
+                    &input_config_clone,
+                    &storage_dir_path,
+                )
+            })
+            .await
+            .unwrap();
+
+            read_pipeline.start();
+        }
 
         wait_for_count_records_materialized(
             &read_pipeline,
@@ -926,11 +1023,11 @@ fn delta_data(max_records: usize) -> impl Strategy<Value = Vec<DeltaTestStruct>>
     })
 }
 
-async fn delta_table_follow_file_test_common(snapshot: bool) {
+async fn delta_table_follow_file_test_common(snapshot: bool, suspend: bool) {
     // We cannot use proptest macros in `async` context, so generate
     // some random data manually.
     let mut runner = TestRunner::default();
-    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
+    let data: Vec<DeltaTestStruct> = delta_data(20_000).new_tree(&mut runner).unwrap().current();
 
     let relation_schema: Vec<Field> = DeltaTestStruct::schema();
 
@@ -947,6 +1044,7 @@ async fn delta_table_follow_file_test_common(snapshot: bool) {
         &HashMap::new(),
         data,
         snapshot,
+        suspend,
         1000,
         100,
     )
@@ -968,12 +1066,44 @@ async fn delta_table_cdc_file_test() {
     let output_table_dir: TempDir = TempDir::new().unwrap();
     let output_table_uri = output_table_dir.path().display().to_string();
 
-    test_cdc(&relation_schema, &input_table_uri, &HashMap::new(), data).await;
+    test_cdc(
+        &relation_schema,
+        &input_table_uri,
+        &HashMap::new(),
+        data,
+        false,
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_file_suspend_test() {
+    // We cannot use proptest macros in `async` context, so generate
+    // some random data manually.
+    let mut runner = TestRunner::default();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
+
+    let relation_schema = DeltaTestStruct::schema();
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+
+    let output_table_dir: TempDir = TempDir::new().unwrap();
+    let output_table_uri = output_table_dir.path().display().to_string();
+
+    test_cdc(
+        &relation_schema,
+        &input_table_uri,
+        &HashMap::new(),
+        data,
+        true,
+    )
+    .await;
 }
 
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn delta_table_cdc_s3_test() {
+async fn delta_table_cdc_s3_test_suspend() {
     register_storage_handlers();
 
     // We cannot use proptest macros in `async` context, so generate
@@ -1010,22 +1140,28 @@ async fn delta_table_cdc_s3_test() {
         &input_table_uri,
         &object_store_config,
         data,
+        true,
     )
     .await;
 }
 
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_test() {
-    delta_table_follow_file_test_common(true).await
+    delta_table_follow_file_test_common(true, false).await
 }
 
 #[tokio::test]
 async fn delta_table_follow_file_test() {
-    delta_table_follow_file_test_common(false).await
+    delta_table_follow_file_test_common(false, false).await
+}
+
+#[tokio::test]
+async fn delta_table_snapshot_and_follow_file_test_suspend() {
+    delta_table_follow_file_test_common(true, true).await
 }
 
 #[cfg(feature = "delta-s3-test")]
-async fn delta_table_follow_s3_test_common(snapshot: bool) {
+async fn delta_table_follow_s3_test_common(snapshot: bool, suspend: bool) {
     register_storage_handlers();
 
     // We cannot use proptest macros in `async` context, so generate
@@ -1064,6 +1200,7 @@ async fn delta_table_follow_s3_test_common(snapshot: bool) {
         &object_store_config,
         data,
         snapshot,
+        suspend,
         1000,
         100,
     )
@@ -1073,13 +1210,19 @@ async fn delta_table_follow_s3_test_common(snapshot: bool) {
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_follow_s3_test() {
-    delta_table_follow_s3_test_common(false).await
+    delta_table_follow_s3_test_common(false, false).await
 }
 
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_snapshot_and_follow_s3_test() {
-    delta_table_follow_s3_test_common(true).await
+    delta_table_follow_s3_test_common(true, false).await
+}
+
+#[cfg(feature = "delta-s3-test")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_snapshot_and_follow_s3_test_suspend() {
+    delta_table_follow_s3_test_common(true, true).await
 }
 
 proptest! {

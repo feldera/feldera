@@ -256,7 +256,7 @@ fn test_pubsub_input(
     // Send data to a topic with a single partition;
     publisher.send(&data, false, label_func);
 
-    wait_for_output_unordered(&zset, &data, || endpoint.queue());
+    wait_for_output_unordered(&zset, &data, || endpoint.queue(false));
     zset.reset();
 
     info!("test_pubsub_input: Test: pause/resume");
@@ -273,7 +273,7 @@ fn test_pubsub_input(
 
     // Receive everything after unpause.
     endpoint.extend();
-    wait_for_output_ordered(&zset, &data, || endpoint.queue());
+    wait_for_output_ordered(&zset, &data, || endpoint.queue(false));
     zset.reset();
 
     info!("test_pubsub_input: Test: Disconnect");
@@ -358,14 +358,14 @@ fn test_pubsub_multiple_subscribers(data: Vec<Vec<TestStruct>>, topic: &str) {
         .collect::<Vec<_>>();
 
     wait_for_output_unordered(&zset1, &data1, || {
-        endpoint1.queue();
-        endpoint2.queue();
+        endpoint1.queue(false);
+        endpoint2.queue(false);
     });
     zset1.reset();
 
     wait_for_output_unordered(&zset2, &data2, || {
-        endpoint1.queue();
-        endpoint2.queue();
+        endpoint1.queue(false);
+        endpoint2.queue(false);
     });
     zset2.reset();
 

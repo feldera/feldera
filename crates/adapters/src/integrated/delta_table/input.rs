@@ -51,6 +51,7 @@ use deltalake::table::builder::ensure_table_uri;
 use deltalake::table::PeekCommit;
 use deltalake::{datafusion, DeltaTable, DeltaTableBuilder, Path};
 use feldera_adapterlib::format::ParseError;
+use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::{
     execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
     validate_sql_expression, validate_timestamp_column,
@@ -137,8 +138,8 @@ impl DeltaTableInputEndpoint {
 }
 
 impl InputEndpoint for DeltaTableInputEndpoint {
-    fn fault_tolerance(&self) -> std::option::Option<FtModel> {
-        None
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        Some(FtModel::AtLeastOnce)
     }
 }
 impl IntegratedInputEndpoint for DeltaTableInputEndpoint {
@@ -253,9 +254,68 @@ impl DeltaTableInputReader {
 
 impl InputReader for DeltaTableInputReader {
     fn request(&self, command: InputReaderCommand) {
-        match command.as_nonft().unwrap() {
-            NonFtInputReaderCommand::Queue => self.inner.queue.queue(),
-            NonFtInputReaderCommand::Transition(state) => drop(self.sender.send_replace(state)),
+        match command {
+            InputReaderCommand::Seek(value) => {
+                let resume_info = match serde_json::from_value::<DeltaResumeInfo>(value.clone())  {
+                    Ok(resume_info) => resume_info,
+                    Err(e) =>{
+                        self.inner.consumer.error(
+                            true,
+                            anyhow!("unable to parse checkpointed connector state (checkpointed state: {value}; parse error: {e})"),
+                        );
+                        return;
+                    }
+                };
+
+                // When resuming from a checkpoint, set the initial table version to start reading from.
+                // The worker thread will check this version after receiving the Extend command and will
+                // jump to it instead of reading the entire table snapshot.
+                //
+                // In addition, this version will be reported by each `Queue` command until we start getting
+                // any actual input data, so the connector will remain checkpointable (i.e., will not create a
+                // checkpoint barrier) until then.
+                info!(
+                    "delta_table {}: resuming from table version {}",
+                    &self.inner.endpoint_name, resume_info.version
+                );
+
+                *self.inner.last_resume_status.lock().unwrap() = Some(resume_info);
+            }
+            InputReaderCommand::Replay { metadata, data } => panic!(
+                "replay command is not supported by DeltaTableInputReader; this is a bug, please report it to developers"),
+            InputReaderCommand::Extend => {
+                let _ = self.sender.send_replace(PipelineState::Running);
+            }
+            InputReaderCommand::Pause => {
+                let _ = self.sender.send_replace(PipelineState::Paused);
+            }
+            InputReaderCommand::Queue {
+                checkpoint_requested,
+            } => {
+                // When initiating a checkpoint, try to stop at a transaction boundary.
+                let stop_at: &dyn Fn(&Option<DeltaResumeInfo>) -> bool = if checkpoint_requested {
+                    &|resume_info: &Option<DeltaResumeInfo>| resume_info.is_some()
+                } else {
+                    &|_: &Option<DeltaResumeInfo>| false
+                };
+                let (total, _, resume_info) = self.inner.queue.flush_with_aux_until(stop_at);
+                let resume_status = resume_info
+                    .last()
+                    .cloned()
+                    .unwrap_or_else(|| self.inner.last_resume_status.lock().unwrap().clone());
+                *self.inner.last_resume_status.lock().unwrap() = resume_status.clone();
+
+                let resume = match resume_status {
+                    None => Resume::Barrier,
+                    Some(delta_resume_info) => Resume::Seek {
+                        seek: serde_json::to_value(delta_resume_info).unwrap(),
+                    },
+                };
+                self.inner.consumer.extended(total, Some(resume));
+            }
+            InputReaderCommand::Disconnect => {
+                let _ = self.sender.send_replace(PipelineState::Terminated);
+            }
         }
     }
 
@@ -270,13 +330,32 @@ impl Drop for DeltaTableInputReader {
     }
 }
 
+/// Resume info stored in each checkpoint for the DeltaTableInputEndpoint.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+struct DeltaResumeInfo {
+    /// Table version where the connector stopped reading before the checkpoint.
+    version: i64,
+}
+
+impl DeltaResumeInfo {
+    fn new(version: i64) -> Self {
+        Self { version }
+    }
+}
+
 struct DeltaTableInputEndpointInner {
     endpoint_name: String,
     schema: Relation,
     config: DeltaTableReaderConfig,
     consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
-    queue: Arc<InputQueue>,
+
+    /// The latest resume status of this endpoint:
+    /// * Initialized to `None`.
+    /// * Updated to `Some(version)` when a Seek command is received when resuming from a checkpoint.
+    /// * Updated to `Some(version)`
+    last_resume_status: Mutex<Option<DeltaResumeInfo>>,
+    queue: Arc<InputQueue<Option<DeltaResumeInfo>>>,
 }
 
 impl DeltaTableInputEndpointInner {
@@ -300,6 +379,7 @@ impl DeltaTableInputEndpointInner {
             config,
             consumer,
             datafusion: SessionContext::new_with_config(session_config),
+            last_resume_status: Mutex::new(None),
             queue,
         }
     }
@@ -441,6 +521,13 @@ impl DeltaTableInputEndpointInner {
         self.execute_snapshot_query(&snapshot_query, "initial snapshot", input_stream, receiver)
             .await;
 
+        // Empty buffer to indicate checkpointable state.
+        self.queue.push_with_aux(
+            (None, Vec::new()),
+            0,
+            Some(DeltaResumeInfo::new(table.version())),
+        );
+
         //let _ = self.datafusion.deregister_table("snapshot");
         info!(
             "delta_table {}: finished reading initial snapshot",
@@ -459,6 +546,13 @@ impl DeltaTableInputEndpointInner {
         self.read_ordered_snapshot_inner(table, input_stream, receiver)
             .await
             .unwrap_or_else(|e| self.consumer.error(true, e));
+
+        // Empty buffer to indicate checkpointable state.
+        self.queue.push_with_aux(
+            (None, Vec::new()),
+            0,
+            Some(DeltaResumeInfo::new(table.version())),
+        );
     }
 
     async fn read_ordered_snapshot_inner(
@@ -606,7 +700,15 @@ impl DeltaTableInputEndpointInner {
         // Wait for the pipeline to start before reading.
         wait_running(&mut receiver).await;
 
-        if self.config.snapshot() && self.config.timestamp_column.is_none() {
+        let last_resume_status = self.last_resume_status.lock().unwrap().clone();
+
+        let mut version = table.version();
+
+        if let Some(resume_status) = last_resume_status {
+            // If resume_status was set during initialization, it means that we are resuming from a checkpoint,
+            // and should start reading from the specified version instead of reading the entire snapshot.
+            version = resume_status.version;
+        } else if self.config.snapshot() && self.config.timestamp_column.is_none() {
             // Read snapshot chunk-by-chunk.
             self.read_unordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
                 .await;
@@ -618,7 +720,6 @@ impl DeltaTableInputEndpointInner {
 
         // Start following the table if required by the configuration.
         if self.config.follow() {
-            let mut version = table.version();
             loop {
                 wait_running(&mut receiver).await;
                 match table.log_store().peek_next_commit(version).await {
@@ -626,6 +727,7 @@ impl DeltaTableInputEndpointInner {
                     Ok(PeekCommit::New(new_version, actions)) => {
                         version = new_version;
                         self.process_log_entry(
+                            new_version,
                             &actions,
                             &table,
                             cdc_delete_filter.clone(),
@@ -1051,7 +1153,7 @@ impl DeltaTableInputEndpointInner {
                         })
                     })
                 },
-                move |(buffer, errors, bytes)| queue.push((buffer, errors), bytes),
+                move |(buffer, errors, bytes)| queue.push_with_aux((buffer, errors), bytes, None),
             );
 
         while let Some(batch) = stream.next().await {
@@ -1132,6 +1234,7 @@ impl DeltaTableInputEndpointInner {
     /// Only `Add` and `Remove` actions are picked up.
     async fn process_log_entry(
         &self,
+        new_version: i64,
         actions: &[Action],
         table: &DeltaTable,
         cdc_delete_filter: Option<Arc<dyn PhysicalExpr>>,
@@ -1152,6 +1255,13 @@ impl DeltaTableInputEndpointInner {
                     .await;
             }
         }
+
+        // Empty buffer to indicate checkpointable state.
+        self.queue.push_with_aux(
+            (None, Vec::new()),
+            0,
+            Some(DeltaResumeInfo::new(new_version)),
+        );
     }
 
     /// Process a DeltaLake transaction in CDC mode:
