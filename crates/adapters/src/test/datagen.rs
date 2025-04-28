@@ -116,7 +116,7 @@ fn wait_for_data(endpoint: &dyn InputReader, consumer: &MockInputConsumer) {
     while !consumer.state().eoi {
         thread::sleep(Duration::from_millis(20));
     }
-    endpoint.queue();
+    endpoint.queue(false);
     while consumer.state().n_extended == 0 {
         thread::sleep(Duration::from_millis(20));
     }

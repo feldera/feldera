@@ -216,10 +216,17 @@ pub enum InputReaderCommand {
     /// how many records it should flush. When it's done, it must call
     /// [InputConsumer::extended] to report it.
     ///
+    /// The `checkpoint_requested` flag indicates that the controller is trying
+    /// to checkpoint or suspend the pipeline. This serves as a hint to the reader
+    /// to try to clear the checkpoint barrier by returning [Resume::Seek] or
+    /// [Resume::Replay] if possible. For instance, if the reader has multiple
+    /// buffers queued, it can choose to stop flushing them after reaching the first
+    /// buffer that corresponds to a seekable position in the input stream.
+    ///
     /// # Constraints
     ///
     /// The controller won't issue this command before it first issues [InputReaderCommand::Extend].
-    Queue,
+    Queue { checkpoint_requested: bool },
 
     /// Tells the reader it's going to be dropped soon and should clean up.
     ///
@@ -240,7 +247,7 @@ impl InputReaderCommand {
     pub fn as_nonft(&self) -> Option<NonFtInputReaderCommand> {
         match self {
             InputReaderCommand::Seek(_) | InputReaderCommand::Replay { .. } => None,
-            InputReaderCommand::Queue => Some(NonFtInputReaderCommand::Queue),
+            InputReaderCommand::Queue { .. } => Some(NonFtInputReaderCommand::Queue),
             InputReaderCommand::Extend => {
                 Some(NonFtInputReaderCommand::Transition(PipelineState::Running))
             }
@@ -418,8 +425,10 @@ pub trait InputReader: Send + Sync {
         self.request(InputReaderCommand::Pause);
     }
 
-    fn queue(&self) {
-        self.request(InputReaderCommand::Queue);
+    fn queue(&self, checkpoint_requested: bool) {
+        self.request(InputReaderCommand::Queue {
+            checkpoint_requested,
+        });
     }
 
     fn disconnect(&self) {

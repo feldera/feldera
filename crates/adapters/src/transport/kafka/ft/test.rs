@@ -213,7 +213,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
 
         // Tell the adapter to queue the batch and wait for it to do it.
         println!("queuing and expecting {batch_size} records");
-        reader.queue();
+        reader.queue(false);
         receiver.expect(vec![ConsumerCall::Extended {
             num_records: batch.len(),
             metadata: metadata(batch),
@@ -262,7 +262,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
             println!("- reading the rest ({final_batch:?})");
             reader.extend();
             receiver.expect_n_buffers((final_batch.end - batches[seek].start) as usize);
-            reader.queue();
+            reader.queue(false);
             receiver.expect(vec![ConsumerCall::Extended {
                 num_records: final_batch.len(),
                 metadata: metadata(&final_batch),
@@ -1183,7 +1183,7 @@ fn test_offset(
     info!("proptest_kafka_input: Test: Receive from topic");
 
     let flush = || {
-        endpoint.queue();
+        endpoint.queue(false);
     };
     if let Some(expected) = expected {
         wait_for_output_unordered(&zset, expected, flush);
@@ -1485,7 +1485,7 @@ max_batch_size: 10000000
     producer.send_to_topic(&data, topic);
 
     let flush = || {
-        endpoint.queue();
+        endpoint.queue(false);
     };
     if poller_threads == 1 {
         // Make sure all records arrive in the original order.

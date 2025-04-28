@@ -349,7 +349,7 @@ impl UrlInputReader {
                         InputReaderCommand::Pause => {
                             extending = false;
                         }
-                        InputReaderCommand::Queue => {
+                        InputReaderCommand::Queue{..} => {
                             let mut total = 0;
                             let mut hasher = consumer.hasher();
                             let limit = consumer.max_batch_size();
@@ -562,7 +562,7 @@ bar,false,-10
         endpoint.extend();
         wait(
             || {
-                endpoint.queue();
+                endpoint.queue(false);
                 n_recs(&zset) == test_data.len()
             },
             DEFAULT_TIMEOUT_MS,
@@ -594,7 +594,7 @@ bar,false,-10
         endpoint.extend();
         wait(
             || {
-                endpoint.queue();
+                endpoint.queue(false);
                 consumer.state().endpoint_error.is_some()
             },
             DEFAULT_TIMEOUT_MS,
@@ -646,7 +646,7 @@ bar,false,-10
         let timeout_ms = 2000;
         let n1_time = wait(
             || {
-                endpoint.queue();
+                endpoint.queue(false);
                 n_recs(&zset) >= 10
             },
             timeout_ms,
@@ -657,7 +657,7 @@ bar,false,-10
 
         // After another 100 ms, there should be more records.
         sleep(Duration::from_millis(100));
-        endpoint.queue(); // XXX need to wait for it to be processed.
+        endpoint.queue(false); // XXX need to wait for it to be processed.
         let n2 = n_recs(&zset);
         println!("100 ms later, {n2} records arrived");
         assert!(n2 > n1, "After 100 ms longer, no more records arrived");
@@ -666,7 +666,7 @@ bar,false,-10
         // check that we've got at least 10 more than `n1` (really it should be
         // 20).
         sleep(Duration::from_millis(100));
-        endpoint.queue();
+        endpoint.queue(false);
         sleep(Duration::from_millis(10));
         let n3 = n_recs(&zset);
         println!("100 ms later, {n3} records arrived");
@@ -679,7 +679,7 @@ bar,false,-10
         // Wait for the first 50 records to arrive.
         let n4_time = wait(
             || {
-                endpoint.queue();
+                endpoint.queue(false);
                 n_recs(&zset) >= 50
             },
             350,
@@ -696,7 +696,7 @@ bar,false,-10
         println!("pausing...");
         endpoint.pause();
         sleep(Duration::from_millis(100));
-        endpoint.queue(); // XXX need to wait for it to be processed.
+        endpoint.queue(false); // XXX need to wait for it to be processed.
         let n5 = n_recs(&zset);
         println!("100 ms later, {n5} records arrived");
 
@@ -704,7 +704,7 @@ bar,false,-10
         for _ in 0..2 {
             sleep(Duration::from_millis(100));
             let n = n_recs(&zset);
-            endpoint.queue(); // XXX need to wait for it to be processed.
+            endpoint.queue(false); // XXX need to wait for it to be processed.
             println!("100 ms later, {n} records arrived");
             assert_eq!(n5, n);
         }
@@ -720,7 +720,7 @@ bar,false,-10
             // there should be no new data.  Since real life is full of races,
             // let's only wait 400 ms.
             for _ in 0..4 {
-                endpoint.queue();
+                endpoint.queue(false);
                 sleep(Duration::from_millis(100));
                 let n = n_recs(&zset);
                 println!("100 ms later, {n} records arrived");
@@ -729,7 +729,7 @@ bar,false,-10
         } else {
             // The records should start arriving again immediately.
             sleep(Duration::from_millis(200));
-            endpoint.queue();
+            endpoint.queue(false);
             sleep(Duration::from_millis(100));
             let n = n_recs(&zset);
             println!("200 ms later, {n} records arrived");
@@ -740,7 +740,7 @@ bar,false,-10
         // 1000 ms.
         let n6_time = wait(
             || {
-                endpoint.queue();
+                endpoint.queue(false);
                 n_recs(&zset) >= 100
             },
             1000,
