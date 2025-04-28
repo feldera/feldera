@@ -13,6 +13,7 @@ use std::{
 
 use crate::trace::Serializer;
 use feldera_storage::error::StorageError;
+use feldera_storage::fbuf::FBuf;
 use feldera_storage::{StorageBackend, StorageFileType, StoragePath};
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
@@ -179,7 +180,7 @@ impl Checkpointer {
         Ok(usage)
     }
 
-    pub(super) fn checkpoint_dir(&self, uuid: Uuid) -> StoragePath {
+    pub(super) fn checkpoint_dir(uuid: Uuid) -> StoragePath {
         uuid.to_string().into()
     }
 
@@ -188,6 +189,11 @@ impl Checkpointer {
         uuid: Uuid,
         identifier: Option<String>,
     ) -> Result<CheckpointMetadata, Error> {
+        // Write marker file to ensure that this directory is detected as a
+        // checkpoint.
+        self.backend
+            .write(&Self::checkpoint_dir(uuid).child("CHECKPOINT"), FBuf::new())?;
+
         let md = CheckpointMetadata {
             uuid,
             identifier,
