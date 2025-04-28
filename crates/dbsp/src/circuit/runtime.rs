@@ -1,6 +1,7 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
+use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::describe_metrics;
 use crate::error::Error as DbspError;
 use crate::storage::backend::StorageBackend;
@@ -328,15 +329,12 @@ impl RuntimeInner {
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
             let backend = storage.backend;
 
-            if let Some(init_checkpoint) = &storage.init_checkpoint {
-                if !storage
-                    .config
-                    .path()
-                    .join(init_checkpoint.to_string())
-                    .is_dir()
+            if let Some(init_checkpoint) = storage.init_checkpoint {
+                if !backend
+                    .exists(&Checkpointer::checkpoint_dir(init_checkpoint).child("CHECKPOINT"))?
                 {
                     return Err(DbspError::Storage(StorageError::CheckpointNotFound(
-                        *init_checkpoint,
+                        init_checkpoint,
                     )));
                 }
             }

@@ -846,12 +846,6 @@ impl DBSPHandle {
         self.commit_as(Uuid::now_v7(), Some(name.into()))
     }
 
-    /// Used by the checkpointer to initiate a commit on the circuit.
-    pub(super) fn send_commit(&mut self, base: StoragePath) -> Result<(), DbspError> {
-        self.broadcast_command(Command::Commit(base), |_, _| {})?;
-        Ok(())
-    }
-
     /// Reset circuit state to the point of the given Commit.
     ///
     /// If the circuit needs bootstrapping new operators, put it in the bootstrap mode.
@@ -910,8 +904,8 @@ impl DBSPHandle {
         uuid: Uuid,
         identifier: Option<String>,
     ) -> Result<CheckpointMetadata, DbspError> {
-        let checkpoint_dir = self.checkpointer()?.checkpoint_dir(uuid);
-        self.send_commit(checkpoint_dir)?;
+        let checkpoint_dir = Checkpointer::checkpoint_dir(uuid);
+        self.broadcast_command(Command::Commit(checkpoint_dir), |_, _| {})?;
         self.checkpointer().unwrap().commit(uuid, identifier)
     }
 
