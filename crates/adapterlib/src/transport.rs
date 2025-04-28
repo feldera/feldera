@@ -283,7 +283,7 @@ pub enum NonFtInputReaderCommand {
 /// Commonly used by `InputReader` implementations for staging buffers from
 /// worker threads.
 pub struct InputQueue<A = ()> {
-    pub queue: Mutex<VecDeque<(Box<dyn InputBuffer>, A)>>,
+    pub queue: Mutex<VecDeque<(Option<Box<dyn InputBuffer>>, A)>>,
     pub consumer: Box<dyn InputConsumer>,
 }
 
@@ -309,16 +309,11 @@ impl<A> InputQueue<A> {
         aux: A,
     ) {
         self.consumer.parse_errors(errors);
-        match buffer {
-            Some(buffer) if !buffer.is_empty() => {
-                let num_records = buffer.len();
+        let num_records = buffer.len();
 
-                let mut queue = self.queue.lock().unwrap();
-                queue.push_back((buffer, aux));
-                self.consumer.buffered(num_records, num_bytes);
-            }
-            _ => self.consumer.buffered(0, num_bytes),
-        }
+        let mut queue = self.queue.lock().unwrap();
+        queue.push_back((buffer, aux));
+        self.consumer.buffered(num_records, num_bytes);
     }
 
     /// Flushes a batch of records to the circuit and returns the auxiliary data
@@ -352,15 +347,18 @@ impl<A> InputQueue<A> {
         let n = self.consumer.max_batch_size();
         let mut consumed_aux = Vec::new();
         while total < n {
-            let Some((mut buffer, aux)) = self.queue.lock().unwrap().pop_front() else {
+            let Some((buffer, aux)) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
-            total += buffer.len();
-            if let Some(hasher) = hasher.as_mut() {
-                buffer.hash(hasher);
+
+            if let Some(mut buffer) = buffer {
+                total += buffer.len();
+                if let Some(hasher) = hasher.as_mut() {
+                    buffer.hash(hasher);
+                }
+                buffer.flush();
             }
-            buffer.flush();
-            
+
             let stop = stop_at(&aux);
             consumed_aux.push(aux);
 
@@ -400,16 +398,19 @@ impl InputQueue<()> {
         let mut total = 0;
         let n = self.consumer.max_batch_size();
         while total < n {
-            let Some((mut buffer, ())) = self.queue.lock().unwrap().pop_front() else {
+            let Some((buffer, ())) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
-            let mut taken = buffer.take_some(n - total);
-            total += taken.len();
-            taken.flush();
-            drop(taken);
-            if !buffer.is_empty() {
-                self.queue.lock().unwrap().push_front((buffer, ()));
-                break;
+
+            if let Some(mut buffer) = buffer {
+                let mut taken = buffer.take_some(n - total);
+                total += taken.len();
+                taken.flush();
+                drop(taken);
+                if !buffer.is_empty() {
+                    self.queue.lock().unwrap().push_front((Some(buffer), ()));
+                    break;
+                }
             }
         }
         self.consumer.extended(total, None);
