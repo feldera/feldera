@@ -3169,3 +3169,109 @@ async fn pipeline_metrics() {
     assert!(metrics_prometheus.contains("# TYPE total_processed_records gauge"));
     assert!(metrics_json.contains("\"key\":\"total_input_records\""));
 }
+
+/// Tests retrieving pipeline statistics via `/stats`.
+#[actix_web::test]
+#[serial]
+async fn pipeline_stats() {
+    let config = setup().await;
+
+    // Basic test pipeline
+    create_and_deploy_test_pipeline(
+        &config,
+        r#"
+        CREATE TABLE t1(c1 INT) WITH (
+            'materialized' = 'true',
+            'connectors' = '[{
+                "transport": {
+                   "name": "datagen",
+                   "config": {
+                       "plan": [{
+                           "limit": 5,
+                           "rate": 1000
+                        }]
+                    }
+                }
+            }]'
+        );
+        CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;
+        "#,
+    )
+    .await;
+
+    // Start the pipeline
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Running, config.start_timeout)
+        .await;
+
+    // Create output connector
+    let response = config.post_no_body("/v0/pipelines/test/egress/v1").await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Give it some seconds to process
+    sleep(Duration::from_secs(4)).await;
+
+    // Check the output of `/stats`
+    let mut response = config.get("/v0/pipelines/test/stats").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: Value = response.json().await.unwrap();
+
+    // Keys of main object
+    let mut keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, vec!["global_metrics", "inputs", "outputs"]);
+
+    // Check global_metrics
+    assert_eq!(value["global_metrics"]["state"], json!("Running"));
+    assert_eq!(value["global_metrics"]["buffered_input_records"], json!(0));
+    assert_eq!(value["global_metrics"]["pipeline_complete"], json!(true));
+    assert_eq!(value["global_metrics"]["total_input_records"], json!(5));
+    assert_eq!(value["global_metrics"]["total_processed_records"], json!(5));
+
+    // Check inputs
+    let inputs = value["inputs"].as_array().unwrap();
+    assert_eq!(inputs.len(), 1);
+    assert_eq!(
+        value["inputs"][0]["config"],
+        json!({
+            "stream": "t1"
+        })
+    );
+    assert_eq!(
+        value["inputs"][0]["metrics"],
+        json!({
+            "buffered_records": 0,
+            "end_of_input": true,
+            "num_parse_errors": 0,
+            "num_transport_errors": 0,
+            "total_bytes": 0,
+            "total_records": 5
+        })
+    );
+
+    // Check outputs
+    let outputs = value["outputs"].as_array().unwrap();
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(
+        value["outputs"][0]["config"],
+        json!({
+            "stream": "v1"
+        })
+    );
+    assert_eq!(
+        value["outputs"][0]["metrics"],
+        json!({
+            "buffered_batches": 0,
+            "buffered_records": 0,
+            "num_encode_errors": 0,
+            "num_transport_errors": 0,
+            "queued_batches": 0,
+            "queued_records": 0,
+            "total_processed_input_records": 5,
+            "transmitted_bytes": 0,
+            "transmitted_records": 0
+        })
+    );
+}
