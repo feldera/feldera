@@ -282,8 +282,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     // Like makeBinaryExpression, but accepts multiple operands.
     static DBSPExpression makeBinaryExpressions(
             CalciteObject node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
-        assert operands.size() >= 2 :
-            "Expected at least two operands for binary expression " + opcode;
+        Utilities.enforce(operands.size() >= 2, "Expected at least two operands for binary expression " + opcode);
         DBSPExpression accumulator = operands.get(0);
         for (int i = 1; i < operands.size(); i++)
             accumulator = makeBinaryExpression(node, type, opcode, accumulator, operands.get(i));
@@ -309,8 +308,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             throw new InternalCompilerError("Expected 2 operands, got " + operands.size(), node);
         DBSPExpression left = operands.get(0);
         DBSPExpression right = operands.get(1);
-        assert left != null && right != null :
-            "Null operand for binary expression " + opcode + ": " + left + ", " + right;
+        Utilities.enforce(left != null && right != null, "Null operand for binary expression " + opcode + ": " + left + ", " + right);
         return makeBinaryExpression(node, type, opcode, left, right);
     }
 
@@ -370,7 +368,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         boolean anyNull = leftType.mayBeNull || rightType.mayBeNull;
         DBSPType typeWithNull = type.withMayBeNull(anyNull);
 
-        assert opcode != DBSPOpcode.DIV_NULL || type.mayBeNull : "DIV_NULL should produce a nullable result";
+        Utilities.enforce(opcode != DBSPOpcode.DIV_NULL || type.mayBeNull, "DIV_NULL should produce a nullable result");
         // Type produced by this operation; if different from 'type', a cast may be needed.
         DBSPType expressionResultType;
         if (needCommonType(opcode, type, leftType, rightType)) {
@@ -973,7 +971,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         // convert to int32
                         DBSPTypeInteger rightInt = rightType.to(DBSPTypeInteger.class);
                         if (rightInt.getWidth() != 32) {
-                            right = right.cast(node, 
+                            right = right.cast(node,
                                     DBSPTypeInteger.getType(right.getNode(), INT32, rightType.mayBeNull), false);
                         }
 
@@ -1210,7 +1208,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             this.ensureInteger(node, ops, i);
                         return compileFunction(call, node, type, ops, 2);
                     case "blackbox":
-                        assert ops.size() == 1 : "expected one argument for blackbox function";
+                        Utilities.enforce(ops.size() == 1, "expected one argument for blackbox function");
                         return new DBSPApplyExpression(node, "blackbox", ops.get(0).type, ops.toArray(new DBSPExpression[0]));
                     case "regexp_replace": {
                         validateArgCount(node, operationName, ops.size(), 2, 3);
@@ -1682,7 +1680,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (isConstructor) {
             DBSPTypeStruct struct = this.compiler.getStructByName(function);
             DBSPType structTuple = Objects.requireNonNull(struct).toTupleDeep();
-            assert structTuple.sameType(type): "Expected the same type " + structTuple + " and " + type;
+            Utilities.enforce(structTuple.sameType(type), "Expected the same type " + structTuple + " and " + type);
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
             for (int i = 0; i < ops.size(); i++) {
                 DBSPExpression opi = ops.get(i);

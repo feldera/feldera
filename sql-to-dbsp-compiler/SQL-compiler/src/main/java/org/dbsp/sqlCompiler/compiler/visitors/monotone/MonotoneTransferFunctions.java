@@ -193,8 +193,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         outputFields = expression.shuffle.shuffle(outputFields);
         DBSPExpression tuple = new DBSPTupleExpression(outputFields, false);
         DBSPType resultType = expression.getType().to(DBSPTypeFunction.class).resultType;
-        assert tuple.getType().sameType(resultType) :
-                "Flatmap result type " + resultType + " does not match computed type " + tuple.getType();
+        Utilities.enforce(tuple.getType().sameType(resultType), "Flatmap result type " + resultType + " does not match computed type " + tuple.getType());
         DBSPClosureExpression closure = tuple.closure(param);
         // This is the same as this.apply(closure)
         this.resolver.apply(closure);
@@ -355,11 +354,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
         MonotoneExpression value = this.variables.get(declaration);
         this.maybeSet(var, value);
-        assert value == null || value.expression.getType().sameType(var.getType())
-                : "Variable " + var.variable + "(" + var.getId() + ") type " + var.getType() +
+        Utilities.enforce(value == null || value.expression.getType().sameType(var.getType()), "Variable " + var.variable + "(" + var.getId() + ") type " + var.getType() +
                 " does not match expected type in expression " + value.expression +
                 "(" + value.expression.getId() + ")" +
-                " with type " + value.expression.getType();
+                " with type " + value.expression.getType());
     }
 
     @Override

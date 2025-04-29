@@ -1173,7 +1173,6 @@ public abstract class InnerRewriteVisitor
         else
             result = new DBSPTupleExpression(
                     expression.getNode(), expression.getTypeAsTuple(), fields);
-        // assert expression.getType().sameType(result.getType());
         this.map(expression, result);
         return VisitDecision.STOP;
     }

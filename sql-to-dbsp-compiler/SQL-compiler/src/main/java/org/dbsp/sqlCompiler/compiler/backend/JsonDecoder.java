@@ -95,7 +95,7 @@ public class JsonDecoder {
         }
         Long originalId = Utilities.getLongProperty(node, "id");
         JsonNode cls = object.get("class");
-        assert cls != null : "Node does not have 'class' field: " + Utilities.toDepth(node, 1);
+        Utilities.enforce(cls != null, "Node does not have 'class' field: " + Utilities.toDepth(node, 1));
         Class<?> clazz = getClass(cls.asText(), outer);
         try {
             Method method = clazz.getMethod("fromJson", JsonNode.class, JsonDecoder.class);

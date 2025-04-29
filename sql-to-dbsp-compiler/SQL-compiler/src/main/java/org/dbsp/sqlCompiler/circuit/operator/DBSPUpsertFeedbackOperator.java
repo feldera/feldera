@@ -19,7 +19,7 @@ import java.util.List;
 public final class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator {
     public DBSPUpsertFeedbackOperator(CalciteRelNode node, OutputPort source) {
         super(node, "upsert_feedback", null, source.outputType(), source.isMultiset(), source);
-        source.getOutputIndexedZSetType();  // assert that the type is right
+        source.getOutputIndexedZSetType();  // asserts that the type is right
     }
 
     @Override

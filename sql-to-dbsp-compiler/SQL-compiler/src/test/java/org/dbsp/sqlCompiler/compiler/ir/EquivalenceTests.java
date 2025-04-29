@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -199,7 +200,7 @@ public class EquivalenceTests {
         DBSPVariablePath var0 = new DBSPVariablePath("x", i32);
         DBSPVariablePath var1 = new DBSPVariablePath("y", i32);
         // Expressions cannot have free variables
-        Assert.assertThrows(AssertionError.class, () -> EquivalenceContext.equiv(var0, var1));
+        Assert.assertThrows(InternalCompilerError.class, () -> EquivalenceContext.equiv(var0, var1));
     }
 
     @SuppressWarnings("SuspiciousNameCombination")

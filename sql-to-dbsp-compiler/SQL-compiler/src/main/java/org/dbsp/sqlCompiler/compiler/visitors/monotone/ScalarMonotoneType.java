@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.util.Utilities;
 
 public abstract class ScalarMonotoneType
         extends BaseMonotoneType {
@@ -11,8 +12,7 @@ public abstract class ScalarMonotoneType
 
     protected ScalarMonotoneType(DBSPType type) {
         super();
-        assert !type.is(DBSPTypeTupleBase.class) :
-            "Type should have been scalar " + type;
+        Utilities.enforce(!type.is(DBSPTypeTupleBase.class), "Type should have been scalar " + type);
         this.type = type;
     }
 

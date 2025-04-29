@@ -33,7 +33,7 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 2: "Expected 2 inputs";
+        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs");
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPrimitiveAggregateOperator(this.getRelNode(), this.function,
                     this.outputType, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
