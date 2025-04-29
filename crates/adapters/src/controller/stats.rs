@@ -132,11 +132,6 @@ pub struct GlobalControllerMetrics {
     // This field is computed on-demand by calling `ControllerStatus::update`.
     pub pipeline_complete: AtomicBool,
 
-    /// If this is empty, the pipeline can be suspended or checkpointed.  If
-    /// this is nonempty, it is the (permanent or temporary) reasons why not.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub suspend_error: Mutex<Option<SuspendError>>,
-
     /// Forces the controller to perform a step regardless of the state of
     /// input buffers.
     #[serde(skip)]
@@ -168,7 +163,6 @@ impl GlobalControllerMetrics {
             total_input_records: AtomicU64::new(processed_records),
             total_processed_records: AtomicU64::new(processed_records),
             pipeline_complete: AtomicBool::new(false),
-            suspend_error: Mutex::new(None),
             step_requested: AtomicBool::new(false),
         }
     }
@@ -269,6 +263,11 @@ pub struct ControllerStatus {
 
     /// Global controller metrics.
     pub global_metrics: GlobalControllerMetrics,
+
+    /// If this is empty, the pipeline can be suspended or checkpointed.  If
+    /// this is nonempty, it is the (permanent or temporary) reasons why not.
+    // This field is computed on-demand by calling `ControllerStatus::update`.
+    pub suspend_error: Mutex<Option<SuspendError>>,
 
     /// Input endpoint configs and metrics.
     #[serde(serialize_with = "serialize_inputs")]
@@ -457,6 +456,7 @@ impl ControllerStatus {
         Self {
             pipeline_config,
             global_metrics: GlobalControllerMetrics::new(processed_records),
+            suspend_error: Mutex::new(None),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
         }
@@ -869,7 +869,7 @@ impl ControllerStatus {
             .pipeline_complete
             .store(self.pipeline_complete(), Ordering::Release);
 
-        *self.global_metrics.suspend_error.lock().unwrap() = suspend_error;
+        *self.suspend_error.lock().unwrap() = suspend_error;
 
         let uptime = Utc::now() - self.global_metrics.start_time;
         self.global_metrics.uptime_msecs.store(
