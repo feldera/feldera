@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
@@ -129,7 +130,8 @@ public class MinMaxOptimize extends Passes {
 
                 indexExpressions.add(extractAggField.call(indexClosure.body.field(1).borrow()).reduce(this.compiler()));
 
-                DBSPExpression init = inputVar.deref().field(ix).applyCloneIfNeeded().cast(resultType, false);
+                DBSPExpression init = inputVar.deref().field(ix).applyCloneIfNeeded()
+                        .cast(CalciteObject.EMPTY, resultType, false);
                 inits.add(init);
 
                 accumulatorTypes.add(resultType);
@@ -138,7 +140,7 @@ public class MinMaxOptimize extends Passes {
                         new DBSPBinaryExpression(operator.getNode(),
                                 resultType, code, acc.field(ix).applyCloneIfNeeded(),
                                 inputVar.deref().field(ix).applyCloneIfNeeded())
-                                .cast(resultType, false);
+                                .cast(CalciteObject.EMPTY, resultType, false);
                 comparisons.add(comparison);
                 ix++;
             }

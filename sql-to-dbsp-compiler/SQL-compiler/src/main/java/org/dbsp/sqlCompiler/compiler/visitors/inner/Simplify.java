@@ -136,7 +136,7 @@ public class Simplify extends ExpressionTranslator {
     public void postorder(DBSPCastExpression expression) {
         DBSPExpression source = this.getE(expression.source);
         DBSPType type = expression.getType();
-        DBSPExpression result = source.cast(type, expression.safe);
+        DBSPExpression result = source.cast(expression.getNode(), type, expression.safe);
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
             DBSPType litType = lit.getType();
@@ -451,7 +451,7 @@ public class Simplify extends ExpressionTranslator {
                 }
             }
         }
-        this.map(expression, result.cast(expression.getType(), false));
+        this.map(expression, result.cast(expression.getNode(), expression.getType(), false));
     }
 
     @Override
@@ -573,7 +573,7 @@ public class Simplify extends ExpressionTranslator {
                     IsNumericType iLeftType = leftType.to(IsNumericType.class);
                     if (iLeftType.isOne(leftLit)) {
                         // This works even for null
-                        result = right.cast(expression.getType(), false);
+                        result = right.cast(expression.getNode(), expression.getType(), false);
                     } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
                         // This is not true for null values
                         result = left;
@@ -638,6 +638,6 @@ public class Simplify extends ExpressionTranslator {
         } catch (ArithmeticException unused) {
             // ignore, defer to runtime
         }
-        this.map(expression, result.cast(expression.getType(), false));
+        this.map(expression, result.cast(expression.getNode(), expression.getType(), false));
     }
 }

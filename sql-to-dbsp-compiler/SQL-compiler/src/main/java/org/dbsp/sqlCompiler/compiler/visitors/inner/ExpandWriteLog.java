@@ -64,7 +64,7 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
                     for (String part: parts) {
                         if (castToStr == null) {
                             DBSPTypeString stringType = DBSPTypeString.varchar(type.mayBeNull);
-                            castToStr = arguments[1].cast(stringType, false);
+                            castToStr = arguments[1].cast(arguments[1].getNode(), stringType, false);
                             // do not print argument first time around the loop
                         } else {
                             String printFunction = type.mayBeNull ? "print_opt" : "print";

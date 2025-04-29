@@ -72,7 +72,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 DBSPExpression field = source.field(i).simplify();
                 if (!field.getType().hasCopy())
                     field = field.applyCloneIfNeeded();
-                DBSPExpression rec = field.cast(DBSPTypeVariant.create(false), false);
+                DBSPExpression rec = field.cast(source.getNode(), DBSPTypeVariant.create(false), false);
                 values.add(rec);
             }
             expression = new DBSPMapExpression(type, keys, values);
@@ -87,7 +87,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPVariablePath var = elementType.ref().var();
             // This expression may need to be recursively converted
             DBSPExpression converter = var.deref()
-                    .applyCloneIfNeeded().cast(DBSPTypeVariant.create(false), false)
+                    .applyCloneIfNeeded().cast(source.getNode(), DBSPTypeVariant.create(false), false)
                     .closure(var);
             expression = new DBSPBinaryExpression(source.getNode(),
                     new DBSPTypeArray(DBSPTypeVariant.create(false), vecType.mayBeNull),
@@ -120,7 +120,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             if (fieldType.is(DBSPTypeTuple.class)) {
                 expression = convertToStruct(index.applyClone(), fieldType.to(DBSPTypeTuple.class));
             } else {
-                expression = index.applyCloneIfNeeded().cast(fieldType, false);
+                expression = index.applyCloneIfNeeded().cast(source.getNode(), fieldType, false);
             }
             fields.add(expression);
         }
@@ -136,15 +136,15 @@ public class ExpandCasts extends InnerRewriteVisitor {
             } else {
                 // Convert to a Vector of VARIANT, and then...
                 DBSPTypeArray vecVType = new DBSPTypeArray(DBSPTypeVariant.create(false), sourceType.mayBeNull);
-                DBSPExpression vecV = source.cast(vecVType, safe);
+                DBSPExpression vecV = source.cast(source.getNode(), vecVType, safe);
                 // ...convert each element recursively to the target element type
                 DBSPVariablePath var = vecVType.getElementType().ref().var();
-                DBSPExpression convert = var.deref().cast(type.getElementType(), safe).closure(var);
+                DBSPExpression convert = var.deref().cast(source.getNode(), type.getElementType(), safe).closure(var);
                 source = new DBSPBinaryExpression(source.getNode(),
                         new DBSPTypeArray(type.getElementType(), sourceType.mayBeNull),
                         DBSPOpcode.ARRAY_CONVERT, vecV, convert);
             }
-            return source.cast(type, safe);
+            return source.cast(source.getNode(), type, safe);
         } else if (sourceType.is(DBSPTypeArray.class)) {
             DBSPTypeArray sourceVecType = sourceType.to(DBSPTypeArray.class);
             // If the element type does not match, need to convert all elements
@@ -157,14 +157,14 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 DBSPExpression convert = var.deref();
                 if (convert.getType().is(DBSPTypeBaseType.class))
                     convert = convert.applyCloneIfNeeded();
-                convert = convert.cast(type.getElementType(), safe).closure(var);
+                convert = convert.cast(source.getNode(), type.getElementType(), safe).closure(var);
                 source = new DBSPBinaryExpression(source.getNode(),
                         new DBSPTypeArray(type.getElementType(), sourceType.mayBeNull),
                         DBSPOpcode.ARRAY_CONVERT, source, convert);
             } else {
                 this.unsupported(source, type);
             }
-            return source.cast(type, safe);
+            return source.cast(source.getNode(), type, safe);
         } else if (sourceType.is(DBSPTypeNull.class)) {
             return new DBSPArrayExpression(type, true);
         } else {
@@ -186,10 +186,10 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPExpression convert = var.deref();
             if (convert.getType().is(DBSPTypeBaseType.class))
                 convert = convert.applyCloneIfNeeded();
-            convert = convert.cast(type.getValueType(), safe).closure(var);
+            convert = convert.cast(source.getNode(), type.getValueType(), safe).closure(var);
             source = new DBSPBinaryExpression(source.getNode(),
                     type, DBSPOpcode.MAP_CONVERT, source.borrow(), convert);
-            return source.cast(type, safe);
+            return source.cast(source.getNode(), type, safe);
         }
         // Everything else use the default conversion
         return null;
@@ -231,7 +231,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
         }
         if (result == null)
             // Default implementation
-            result = source.cast(type, expression.safe);
+            result = source.cast(expression.getNode(), type, expression.safe);
         this.pop(expression);
         Utilities.enforce(expression.hasSameType(result));
         this.map(expression, result);

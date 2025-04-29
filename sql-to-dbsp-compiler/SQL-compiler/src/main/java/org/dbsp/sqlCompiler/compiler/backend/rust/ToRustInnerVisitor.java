@@ -1545,7 +1545,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 DBSPExpression sub1 = ExpressionCompiler.makeBinaryExpression(
                         expression.getNode(), indexType, DBSPOpcode.SUB,
                         expression.right, indexType.to(IsNumericType.class).getOne());
-                sub1 = sub1.cast(DBSPTypeISize.create(indexType.mayBeNull), false);
+                sub1 = sub1.cast(expression.getNode(), DBSPTypeISize.create(indexType.mayBeNull), false);
                 Simplify simplify = new Simplify(this.compiler);
                 sub1 = simplify.apply(sub1).to(DBSPExpression.class);
                 sub1.accept(this);

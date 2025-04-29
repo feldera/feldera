@@ -108,7 +108,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             e0plus1 = new DBSPBinaryExpression(flatmap.getNode(),
                     DBSPTypeUSize.INSTANCE, DBSPOpcode.ADD,
                     e.field(0),
-                    new DBSPUSizeLiteral(1)).cast(flatmap.ordinalityIndexType, false);
+                    new DBSPUSizeLiteral(1))
+                    .cast(flatmap.getNode(), flatmap.ordinalityIndexType, false);
         }
 
         if (flatmap.rightProjections != null) {
@@ -449,8 +450,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPType commonTSType = leftTSType.withMayBeNull(nullable);
         Utilities.enforce(commonTSType.sameType(rightTSType.withMayBeNull(nullable)));
 
-        DBSPClosureExpression leftTimestamp = leftTS.cast(commonTSType, false).closure(leftVar);
-        DBSPClosureExpression rightTimestamp = rightTS.cast(commonTSType, false).closure(rightVar);
+        DBSPClosureExpression leftTimestamp = leftTS.cast(leftTS.getNode(), commonTSType, false).closure(leftVar);
+        DBSPClosureExpression rightTimestamp = rightTS.cast(rightTS.getNode(), commonTSType, false).closure(rightVar);
 
         DBSPVariablePath k = keyType.ref().var();
         DBSPVariablePath l0 = wrappedLeftType.ref().var();

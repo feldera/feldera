@@ -161,7 +161,7 @@ public class TestCase {
                         DBSPType fieldType = tuple.getFieldType(index);
                         if (fieldType.is(DBSPTypeFP.class)) {
                             converted[index] = var.deref().field(index)
-                                    .cast(DBSPTypeString.varchar(fieldType.mayBeNull), false);
+                                    .cast(CalciteObject.EMPTY, DBSPTypeString.varchar(fieldType.mayBeNull), false);
                             foundFp = true;
                         } else {
                             converted[index] = var.deref().field(index).applyCloneIfNeeded();

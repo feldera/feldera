@@ -695,7 +695,7 @@ public class ImplementNow extends Passes {
             // Index input by timestamp
             DBSPClosureExpression indexFunction =
                     new DBSPRawTupleExpression(
-                            bounds.common.cast(commonType.withMayBeNull(false), false),
+                            bounds.common.cast(bounds.common.getNode(), commonType.withMayBeNull(false), false),
                             param.asVariable().deref().applyClone()).closure(param);
             DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getRelNode(),
                     commonType.withMayBeNull(false),

@@ -51,12 +51,14 @@ public class JoinConditionAnalyzer implements IWritesLogs {
     }
 
     /** Represents an equality test in a join between two columns in the two tables.
+     * @param node        Calcite node corresponding to the equality comparison
      * @param leftColumn  Column from the left relation that is compared for equality
      * @param rightColumn Column from the right relation that is compared for equality
      * @param commonType  Type that columns have to be cast to
      * @param nonNull     If true the columns cannot be null */
-    record EqualityTest(int leftColumn, int rightColumn, DBSPType commonType, boolean nonNull) {
-        EqualityTest(int leftColumn, int rightColumn, DBSPType commonType, boolean nonNull) {
+    record EqualityTest(CalciteObject node, int leftColumn, int rightColumn, DBSPType commonType, boolean nonNull) {
+        EqualityTest(CalciteObject node, int leftColumn, int rightColumn, DBSPType commonType, boolean nonNull) {
+            this.node = node;
             this.leftColumn = leftColumn;
             this.rightColumn = rightColumn;
             this.commonType = commonType;
@@ -67,7 +69,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
         }
 
         public EqualityTest withType(DBSPType type) {
-            return new EqualityTest(this.leftColumn, this.rightColumn, type, this.nonNull);
+            return new EqualityTest(this.node, this.leftColumn, this.rightColumn, type, this.nonNull);
         }
     }
 
@@ -96,12 +98,12 @@ public class JoinConditionAnalyzer implements IWritesLogs {
             this.leftOver = leftOver;
         }
 
-        void addEquality(RexNode left, RexNode right, DBSPType commonType, boolean nonNull) {
+        void addEquality(CalciteObject node, RexNode left, RexNode right, DBSPType commonType, boolean nonNull) {
             RexInputRef ref = Objects.requireNonNull(asInputRef(left));
             int l = ref.getIndex();
             ref = Objects.requireNonNull(asInputRef(right));
             int r = ref.getIndex() - JoinConditionAnalyzer.this.leftTableColumnCount;
-            this.comparisons.add(new EqualityTest(l, r, commonType, nonNull));
+            this.comparisons.add(new EqualityTest(node, l, r, commonType, nonNull));
         }
 
         public boolean isCrossJoin() {
@@ -203,6 +205,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
         /** Analyze an equality comparison.  Return 'true' if this is suitable for an equijoin */
         public boolean analyzeEquals(RexCall call) {
             assert call.operands.size() == 2: "Expected 2 operands for equality checking";
+            CalciteObject node = CalciteObject.create(this.join, call);
             RexNode left = call.operands.get(0);
             RexNode right = call.operands.get(1);
             @Nullable
@@ -228,16 +231,14 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                 }
             }
             if (leftType.is(DBSPTypeTupleBase.class) || leftType.is(DBSPTypeStruct.class))
-                throw new UnimplementedException("Join on struct types",
-                        3398, CalciteObject.create(this.join, call));
-            DBSPType commonType = TypeCompiler.reduceType(
-                    CalciteObject.create(this.join, call),
+                throw new UnimplementedException("Join on struct types", 3398, node);
+            DBSPType commonType = TypeCompiler.reduceType(node,
                     leftType, rightType, "Consider using an INNER JOIN with an explicit ON condition.\n" +
                             "In NATURAL or USING JOIN: ").withMayBeNull(mayBeNull);
             if (leftIsLeft) {
-                this.addEquality(left, right, commonType, !mayBeNull);
+                this.addEquality(node, left, right, commonType, !mayBeNull);
             } else {
-                this.addEquality(right, left, commonType, !mayBeNull);
+                this.addEquality(node, right, left, commonType, !mayBeNull);
             }
             return true;
         }
