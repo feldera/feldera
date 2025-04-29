@@ -21,6 +21,9 @@ jobs:
           --health-retries 5
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download Test Binaries
         uses: actions/download-artifact@v4
         with:
