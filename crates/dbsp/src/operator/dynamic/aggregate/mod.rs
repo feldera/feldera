@@ -42,7 +42,9 @@ use crate::{
     storage::file::Deserializable,
     utils::Tup2,
 };
-pub use aggregator::{AggCombineFunc, AggOutputFunc, Aggregator, DynAggregator, DynAggregatorImpl};
+pub use aggregator::{
+    AggCombineFunc, AggOutputFunc, Aggregator, DynAggregator, DynAggregatorImpl, Postprocess,
+};
 pub use average::{Avg, AvgFactories, DynAverage};
 pub use fold::Fold;
 pub use max::{Max, MaxSemigroup};
@@ -1101,7 +1103,10 @@ pub mod test {
     use crate::{
         algebra::DefaultSemigroup,
         indexed_zset,
-        operator::{dynamic::aggregate::MinSome1, Fold, GeneratorNested, Min},
+        operator::{
+            dynamic::aggregate::{MinSome1, Postprocess},
+            Fold, GeneratorNested, Min,
+        },
         trace::{BatchReader, Cursor},
         typed_batch::{OrdIndexedZSet, OrdZSet},
         utils::{Tup1, Tup3},
@@ -1500,6 +1505,57 @@ pub mod test {
         assert_eq!(
             &output,
             &indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(None) => 1 }}
+        );
+
+        dbsp.kill().unwrap();
+    }
+
+    // Test `Postprocess` wrapper.
+    #[test]
+    fn postprocess_test() {
+        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(4, move |circuit| {
+            let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, Tup1<u64>>();
+            // Postprocessing ofren used in SQL: wrap result in Option.
+            let output_handle = input_stream
+                .aggregate(Postprocess::new(Min, |Tup1(x)| Tup1(Some(x))))
+                .integrate()
+                .output();
+
+            Ok((input_handle, output_handle))
+        })
+        .unwrap();
+
+        input_handle.append(&mut vec![
+            Tup2(1u64, Tup2(Tup1(1), 1)),
+            Tup2(2u64, Tup2(Tup1(5), 1)),
+        ]);
+        dbsp.step().unwrap();
+        let output = output_handle.consolidate();
+        assert_eq!(
+            &output,
+            &indexed_zset! {1 => {Tup1(Some(1)) => 1}, 2 => { Tup1(Some(5)) => 1 }}
+        );
+
+        input_handle.append(&mut vec![
+            Tup2(1u64, Tup2(Tup1(3), 1)),
+            Tup2(2u64, Tup2(Tup1(2), 1)),
+        ]);
+        dbsp.step().unwrap();
+        let output = output_handle.consolidate();
+        assert_eq!(
+            &output,
+            &indexed_zset! {1 => {Tup1(Some(1)) => 1}, 2 => { Tup1(Some(2)) => 1 }}
+        );
+
+        input_handle.append(&mut vec![
+            Tup2(1u64, Tup2(Tup1(1), -1)),
+            Tup2(2u64, Tup2(Tup1(5), -1)),
+        ]);
+        dbsp.step().unwrap();
+        let output = output_handle.consolidate();
+        assert_eq!(
+            &output,
+            &indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(Some(2)) => 1 }}
         );
 
         dbsp.kill().unwrap();

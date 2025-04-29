@@ -116,6 +116,50 @@ pub trait Aggregator<K, T, R>: Clone + 'static {
     }
 }
 
+/// Add postprocessing step to any aggregator.
+#[derive(Clone)]
+pub struct Postprocess<A, F> {
+    aggregator: A,
+    postprocess: F,
+}
+
+impl<A, F> Postprocess<A, F> {
+    pub fn new(aggregator: A, postprocess: F) -> Self {
+        Self {
+            aggregator,
+            postprocess,
+        }
+    }
+}
+
+impl<A, F, K, T, R, O> Aggregator<K, T, R> for Postprocess<A, F>
+where
+    A: Aggregator<K, T, R>,
+    F: (Fn(A::Output) -> O) + Clone + 'static,
+    O: DBData,
+{
+    type Accumulator = A::Accumulator;
+    type Semigroup = A::Semigroup;
+    type Output = O;
+
+    fn aggregate<KTrait, RTrait>(
+        &self,
+        cursor: &mut dyn Cursor<KTrait, DynUnit, T, RTrait>,
+    ) -> Option<Self::Accumulator>
+    where
+        KTrait: DataTrait + ?Sized,
+        RTrait: WeightTrait + ?Sized,
+        K: Erase<KTrait>,
+        R: Erase<RTrait>,
+    {
+        self.aggregator.aggregate(cursor)
+    }
+
+    fn finalize(&self, accumulator: Self::Accumulator) -> Self::Output {
+        (self.postprocess)(self.aggregator.finalize(accumulator))
+    }
+}
+
 pub trait DynAggregator<K, T, R>: DynClone + 'static
 where
     K: DataTrait + ?Sized,
