@@ -57,7 +57,9 @@ pub use self::csv::CsvSource;
 pub use apply::Apply;
 pub use condition::Condition;
 pub use delta0::Delta0;
-pub use dynamic::aggregate::{Aggregator, Avg, Fold, Max, MaxSemigroup, Min, MinSemigroup};
+pub use dynamic::aggregate::{
+    Aggregator, Avg, Fold, Max, MaxSemigroup, Min, MinSemigroup, Postprocess,
+};
 pub use dynamic::neighborhood::DynNeighborhood;
 pub use generator::{Generator, GeneratorNested};
 // // //pub use index::Index;
