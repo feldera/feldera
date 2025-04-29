@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -27,8 +28,7 @@ public class MonotoneExpression {
         this.id = crtId++;
         DBSPType expressionType = expression.getType();
         DBSPType monotoneType = type.getType();
-        assert expressionType.sameType(monotoneType):
-            "Types differ\n" + expressionType + " and\n" + monotoneType;
+        Utilities.enforce(expressionType.sameType(monotoneType), "Types differ\n" + expressionType + " and\n" + monotoneType);
     }
 
     public DBSPExpression getReducedExpression() {

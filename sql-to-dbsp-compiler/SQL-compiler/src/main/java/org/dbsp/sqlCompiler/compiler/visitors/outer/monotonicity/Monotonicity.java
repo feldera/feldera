@@ -182,7 +182,7 @@ public class Monotonicity extends CircuitVisitor {
         MonotoneTransferFunctions.ArgumentKind argumentType;
         if (pairOfReferences) {
             DBSPTypeTupleBase tpl = varType.to(DBSPTypeTupleBase.class);
-            assert tpl.size() == 2: "Expected a pair, got " + varType;
+            Utilities.enforce(tpl.size() == 2, "Expected a pair, got " + varType);
             varType = tpl.makeRelatedTupleType(Linq.list(tpl.tupFields[0].ref(), tpl.tupFields[1].ref()));
             var = varType.var();
             body = tpl.makeTuple(var.field(0).deref(), var.deepCopy().field(1).deref());
@@ -792,10 +792,9 @@ public class Monotonicity extends CircuitVisitor {
         DBSPTypeIndexedZSet ix = node.getOutputIndexedZSetType();
         DBSPTypeTupleBase outputValueType = ix.getKVType();
 
-        assert tuple0.getType().sameType(outputValueType.tupFields[0]) :
-                "Types differ " + tuple0.getType() + " and " + outputValueType.tupFields[0];
+        Utilities.enforce(tuple0.getType().sameType(outputValueType.tupFields[0]), "Types differ " + tuple0.getType() + " and " + outputValueType.tupFields[0]);
         DBSPTypeTupleBase varType = projection.getType().to(DBSPTypeTupleBase.class);
-        assert varType.size() == 2 : "Expected a pair, got " + varType;
+        Utilities.enforce(varType.size() == 2, "Expected a pair, got " + varType);
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         DBSPVariablePath var = varType.var();
         DBSPExpression body = new DBSPRawTupleExpression(
@@ -843,10 +842,9 @@ public class Monotonicity extends CircuitVisitor {
         DBSPTypeIndexedZSet ix = node.getOutputIndexedZSetType();
         DBSPTypeTupleBase outputValueType = ix.elementType.to(DBSPTypeTupleBase.class);
 
-        assert timestamp.getType().sameType(outputValueType.tupFields[0]) :
-                "Types differ " + timestampType + " and " + outputValueType.tupFields[0];
+        Utilities.enforce(timestamp.getType().sameType(outputValueType.tupFields[0]), "Types differ " + timestampType + " and " + outputValueType.tupFields[0]);
         DBSPTypeTupleBase varType = inputProjection.getType().to(DBSPTypeTupleBase.class);
-        assert varType.size() == 2 : "Expected a pair, got " + varType;
+        Utilities.enforce(varType.size() == 2, "Expected a pair, got " + varType);
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         DBSPVariablePath var = varType.var();
         DBSPExpression lowerBound = ExpressionCompiler.makeBinaryExpression(node.getNode(),

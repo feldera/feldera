@@ -64,8 +64,8 @@ public class ExplicitShuffle implements Shuffle {
         List<Integer> shuffle = new ArrayList<>();
         for (T in : input) {
             int index = output.indexOf(in);
-            assert index >= 0 : "Input " + in + " not found in output";
-            assert !shuffle.contains(index) : "Input " + in + " appears twice";
+            Utilities.enforce(index >= 0, "Input " + in + " not found in output");
+            Utilities.enforce(!shuffle.contains(index), "Input " + in + " appears twice");
             shuffle.add(index);
         }
         return new ExplicitShuffle(input.size(), shuffle);

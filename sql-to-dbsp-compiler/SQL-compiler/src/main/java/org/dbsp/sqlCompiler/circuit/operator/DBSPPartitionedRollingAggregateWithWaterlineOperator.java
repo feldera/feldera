@@ -91,7 +91,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
 
     @Override
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
+        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
                     this.getRelNode(),

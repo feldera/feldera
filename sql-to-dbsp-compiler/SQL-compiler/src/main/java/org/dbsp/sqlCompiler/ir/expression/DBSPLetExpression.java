@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** An expression that introduces a unique name
  * that exists only locally and is bound to an immutable value.
@@ -21,8 +22,7 @@ public class DBSPLetExpression extends DBSPExpression implements IDBSPDeclaratio
 
     public DBSPLetExpression(DBSPVariablePath var, DBSPExpression initializer, DBSPExpression consumer) {
         super(initializer.getNode(), consumer.getType());
-        assert var.getType().sameType(initializer.getType()) :
-                "Variable has type " + var.getType() + " and initializer has type " + initializer.getType();
+        Utilities.enforce(var.getType().sameType(initializer.getType()), "Variable has type " + var.getType() + " and initializer has type " + initializer.getType());
         this.variable = var;
         this.initializer = initializer;
         this.consumer = consumer;

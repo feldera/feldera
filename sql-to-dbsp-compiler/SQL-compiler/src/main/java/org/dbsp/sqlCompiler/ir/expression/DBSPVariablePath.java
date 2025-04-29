@@ -88,11 +88,9 @@ public final class DBSPVariablePath extends DBSPExpression {
         if (otherExpression == null)
             return false;
         IDBSPDeclaration leftDeclaration = context.leftDeclaration.get(this.variable);
-        assert leftDeclaration != null
-                : "Declaration for variable " + Utilities.singleQuote(this.variable) + " not found";
+        Utilities.enforce(leftDeclaration != null, "Declaration for variable " + Utilities.singleQuote(this.variable) + " not found");
         IDBSPDeclaration rightDeclaration = context.rightDeclaration.get(otherExpression.variable);
-        assert rightDeclaration != null
-                : "Declaration for variable " + Utilities.singleQuote(otherExpression.variable) + " not found";
+        Utilities.enforce(rightDeclaration != null, "Declaration for variable " + Utilities.singleQuote(otherExpression.variable) + " not found");
         IDBSPDeclaration subst = context.leftToRight.get(leftDeclaration);
         return subst.equals(rightDeclaration);
     }

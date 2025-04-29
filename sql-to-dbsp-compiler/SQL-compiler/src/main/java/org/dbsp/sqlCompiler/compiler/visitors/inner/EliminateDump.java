@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,7 +41,7 @@ public class EliminateDump extends InnerRewriteVisitor {
                 //                          writelog("%%,", tuple[n]);
                 //                          print(")\n");
                 //                          tuple.clone()) }
-                assert arguments.length == 2: "Expected 2 arguments for dump function";
+                Utilities.enforce(arguments.length == 2, "Expected 2 arguments for dump function");
                 Function<DBSPExpression, DBSPExpressionStatement> makePrint = stringArgument ->
                         new DBSPApplyExpression(
                                 expression.getNode(), "print", DBSPTypeVoid.INSTANCE, stringArgument)
