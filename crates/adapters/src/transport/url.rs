@@ -33,7 +33,7 @@ use tokio::{
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     time::{sleep_until, Instant},
 };
-use tracing::{info, info_span};
+use tracing::info_span;
 use xxhash_rust::xxh3::Xxh3Default;
 
 pub(crate) struct UrlInputEndpoint {
@@ -169,7 +169,7 @@ impl<'a> UrlStream<'a> {
                         |error| anyhow!("{error}"),
                     )?;
                 let status = response.status();
-                info!("HTTP response status code: {}", status);
+                // info!("HTTP response status code: {}", status);
 
                 // All 2xx status codes are considered valid, including ones that don't provide content.
                 // Note that redirection (3xx) is not followed and will also result in an error.

@@ -120,8 +120,8 @@ curl -i -X \
 ```
 
 :::tip
-Refer to the [secret management](/get-started/enterprise/kubernetes-guides/secret-management) guide
-to externalize secrets such as DBMS passwords via Kubernetes.
+It is possible to externalize secrets in Kafka Connect connectors
+using a Kafka `ConfigProvider` implementation such as `FileConfigProvider`.
 :::
 
 ## Step 3: Create Feldera input connector

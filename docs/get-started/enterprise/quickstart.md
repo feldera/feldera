@@ -39,4 +39,3 @@ in a Kubernetes cluster.
 
 * [Helm guide](helm-guide.md)
 * [EKS ingress](kubernetes-guides/eks/ingress.md)
-* [Secret management](kubernetes-guides/secret-management.md)

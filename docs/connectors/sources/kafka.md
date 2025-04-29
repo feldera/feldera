@@ -105,7 +105,7 @@ underneath.
 Note that it is strongly recommended outside of test/dev
 environments to have encrypted and authenticated communication.
 In addition, in order for connectors to not have secrets in plaintext in their configuration,
-it is recommended to use [secret management](/get-started/enterprise/kubernetes-guides/secret-management).
+it is recommended to use [secret references](/connectors/secret-references).
 
 #### No authentication and plaintext (no encryption)
 

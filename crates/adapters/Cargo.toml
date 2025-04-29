@@ -73,7 +73,6 @@ rustls = { workspace = true }
 rkyv = { workspace = true, features = ["std", "size_64"] }
 csv-core = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }
-regex = { workspace = true }
 tempfile = { workspace = true }
 async-trait = { workspace = true }
 arrow = { workspace = true, features = ["chrono-tz"] }
