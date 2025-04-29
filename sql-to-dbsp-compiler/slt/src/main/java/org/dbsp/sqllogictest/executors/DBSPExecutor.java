@@ -256,7 +256,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             else
                 throw new RuntimeException("Unexpected type " + colType);
             if (!colType.sameType(field.getType()))
-                field = field.cast(colType, false);
+                field = field.cast(field.getNode(), colType, false);
             fields.add(field);
             col++;
             if (col == outputElementType.size()) {

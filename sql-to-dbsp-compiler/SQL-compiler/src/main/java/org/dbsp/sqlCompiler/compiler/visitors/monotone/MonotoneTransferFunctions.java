@@ -600,10 +600,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             if (!lm) {
                 reduced = right.getReducedExpression()
                         // must preserve type
-                        .cast(expression.getType(), false);
+                        .cast(expression.getNode(), expression.getType(), false);
             } else if (!rm) {
                 reduced = left.getReducedExpression()
-                        .cast(expression.getType(), false);
+                        .cast(expression.getNode(), expression.getType(), false);
             } else {
                 reduced = expression.replaceSources(
                         left.getReducedExpression(),

@@ -197,7 +197,7 @@ public abstract class DBSPExpression
         return new DBSPApplyMethodExpression(method, resultType, this, arguments);
     }
 
-    public DBSPExpression cast(DBSPType to, boolean force, boolean safe) {
+    public DBSPExpression cast(CalciteObject node, DBSPType to, boolean force, boolean safe) {
         DBSPType fromType = this.getType();
         // Still, do not insert a cast if the source is a cast to the exact same type
         if (this.is(DBSPCastExpression.class)
@@ -206,28 +206,28 @@ public abstract class DBSPExpression
         if (fromType.sameType(to) && !force) {
             return this;
         }
-        return new DBSPCastExpression(this.getNode(), this, to, safe);
+        return new DBSPCastExpression(node, this, to, safe);
     }
 
     /** Cast an expression to its own type, but nullable */
     public DBSPExpression castToNullable() {
         if (this.getType().mayBeNull)
             return this;
-        return this.cast(this.getType().withMayBeNull(true), false);
+        return this.cast(this.getNode(), this.getType().withMayBeNull(true), false);
     }
 
-    public DBSPExpression cast(DBSPType to, boolean safe) {
+    public DBSPExpression cast(CalciteObject node, DBSPType to, boolean safe) {
         boolean force = type.is(DBSPTypeDecimal.class);
         // Computations on decimal values in Rust do not produce the correct result type,
         // so they must be always cast
-        return this.cast(to, force, safe);
+        return this.cast(node, to, force, safe);
     }
 
     /** Insert a cast which may only change nullability */
     public DBSPExpression nullabilityCast(DBSPType to, boolean safe) {
         DBSPType sourceType = this.getType();
         Utilities.enforce(sourceType.sameTypeIgnoringNullability(to));
-        return this.cast(to, safe);
+        return this.cast(this.getNode(), to, safe);
     }
 
     public DBSPExpression applyCloneIfNeeded() {

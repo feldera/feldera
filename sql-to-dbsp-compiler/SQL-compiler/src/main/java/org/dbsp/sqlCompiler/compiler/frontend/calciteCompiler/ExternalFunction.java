@@ -199,9 +199,9 @@ public class ExternalFunction extends SqlFunction {
             DBSPType functionType = functionBody.getType();
             if (!returnType.sameType(functionType)) {
                 if (returnType.is(DBSPTypeString.class)) {
-                    functionBody = functionBody.cast(returnType, false);
+                    functionBody = functionBody.cast(functionBody.getNode(), returnType, false);
                 } else if (returnType.sameType(functionType.withMayBeNull(true))) {
-                    functionBody = functionBody.cast(returnType, false);
+                    functionBody = functionBody.cast(functionBody.getNode(), returnType, false);
                 } else {
                     throw new CompilationError("Function " + Utilities.singleQuote(this.getName()) +
                             " should return " + Utilities.singleQuote(this.returnType.getFullTypeString()) +
