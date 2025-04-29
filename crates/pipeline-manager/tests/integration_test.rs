@@ -3221,7 +3221,10 @@ async fn pipeline_stats() {
     // Keys of main object
     let mut keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
     keys.sort();
-    assert_eq!(keys, vec!["global_metrics", "inputs", "outputs"]);
+    assert_eq!(
+        keys,
+        vec!["global_metrics", "inputs", "outputs", "suspend_error"]
+    );
 
     // Check global_metrics
     assert_eq!(value["global_metrics"]["state"], json!("Running"));
