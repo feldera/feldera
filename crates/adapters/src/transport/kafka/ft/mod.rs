@@ -35,8 +35,6 @@ use uuid::Uuid;
 pub use input::KafkaFtInputEndpoint;
 pub use output::KafkaOutputEndpoint as KafkaFtOutputEndpoint;
 
-use crate::transport::secret_resolver::resolve_secret;
-
 use super::{rdkafka_loglevel_from, DeferredLogging};
 
 #[cfg(test)]
@@ -114,7 +112,7 @@ fn kafka_config(
 
     let mut config = ClientConfig::new();
     for (key, value) in settings {
-        config.set(String::from(key), resolve_secret(value)?);
+        config.set(String::from(key), String::from(value));
     }
     if let Some(log_level) = log_level {
         config.set_log_level(rdkafka_loglevel_from(log_level));

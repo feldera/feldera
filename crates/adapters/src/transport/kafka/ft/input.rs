@@ -1,5 +1,4 @@
 use crate::transport::kafka::ft::count_partitions_in_topic;
-use crate::transport::secret_resolver::resolve_secret;
 use crate::transport::InputCommandReceiver;
 use crate::{
     transport::{
@@ -505,7 +504,7 @@ impl KafkaFtInputReader {
         let mut client_config = ClientConfig::new();
 
         for (key, value) in config.kafka_options.iter() {
-            client_config.set(key, resolve_secret(value)?);
+            client_config.set(key, value);
         }
 
         if let Some(log_level) = config.log_level {
