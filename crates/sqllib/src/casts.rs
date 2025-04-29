@@ -1620,6 +1620,14 @@ macro_rules! cast_to_i {
         ::paste::paste! {
             #[doc(hidden)]
             #[inline]
+            pub fn [< cast_to_ $result_type _nullN >](_value: Option<()>) -> SqlResult<$result_type> {
+                Err(SqlRuntimeError::from_string(
+                    format!("Casting NULL value to {}", tn!($result_type))
+                ))
+            }
+
+            #[doc(hidden)]
+            #[inline]
             pub fn [< cast_to_ $result_type N_nullN >](_value: Option<()>) -> SqlResult<Option<$result_type>> {
                 Ok(None)
             }

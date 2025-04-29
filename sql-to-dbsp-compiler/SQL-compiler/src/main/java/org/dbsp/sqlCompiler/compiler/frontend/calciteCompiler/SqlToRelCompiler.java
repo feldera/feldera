@@ -576,7 +576,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
         SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT
                 .withIdentifierExpansion(true)
-                .withDefaultNullCollation(NULL_COLLATION);
+                .withDefaultNullCollation(NULL_COLLATION)
+                .withCallRewrite(false);
         validatorConfig = validatorConfig.withConformance(new Conformance(validatorConfig.conformance()));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
                 CalciteSchema.from(this.rootSchema),
