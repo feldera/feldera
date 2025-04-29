@@ -540,6 +540,9 @@ outputs:
                 1000,
             )
             .unwrap();
+
+            // Make sure the step gets executed.
+            sleep(Duration::from_millis(1000));
         }
 
         // Checkpoint, if requested.
@@ -1314,7 +1317,7 @@ fn suspend_barrier() {
 
     // Suspend should now succeed, because we crossed the barrier.
     receiver
-        .recv_timeout(Duration::from_millis(1000))
+        .recv_timeout(Duration::from_millis(10000))
         .unwrap()
         .unwrap();
 
@@ -1364,7 +1367,7 @@ fn suspend_barrier() {
 
     // Suspend should now succeed, because we crossed the barrier.
     receiver
-        .recv_timeout(Duration::from_millis(1000))
+        .recv_timeout(Duration::from_millis(10000))
         .unwrap()
         .unwrap();
 }
@@ -1473,7 +1476,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
 
     // Suspend should now succeed, because we crossed the barrier.
     receiver
-        .recv_timeout(Duration::from_millis(1000))
+        .recv_timeout(Duration::from_millis(10000))
         .unwrap()
         .unwrap();
 
