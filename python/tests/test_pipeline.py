@@ -106,7 +106,9 @@ class TestPipeline(unittest.TestCase):
         stats = TEST_CLIENT.get_pipeline_stats(name)
 
         assert stats is not None
-        assert stats.get("pipeline_config") is not None
+        assert stats.get("global_metrics") is not None
+        assert stats.get("inputs") is not None
+        assert stats.get("outputs") is not None
 
         TEST_CLIENT.pause_pipeline(name)
         TEST_CLIENT.shutdown_pipeline(name)
