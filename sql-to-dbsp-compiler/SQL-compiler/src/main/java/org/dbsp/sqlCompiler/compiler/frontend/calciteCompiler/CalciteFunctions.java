@@ -169,7 +169,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.MOD, "MOD", SqlLibrary.STANDARD, "integer#mod", false),
             new Func(SqlStdOperatorTable.LN, "LN", SqlLibrary.STANDARD, "decimal#ln,float#ln", false),
             new Func(SqlStdOperatorTable.LOG10, "LOG10", SqlLibrary.STANDARD, "decimal#log10,float#log10", false),
-            new Func(SqlStdOperatorTable.ABS, "ABS", SqlLibrary.STANDARD, "decimal#abs,float#abs,integer#abs", false),
+            new Func(SqlStdOperatorTable.ABS, "ABS", SqlLibrary.STANDARD, "decimal#abs,float#abs,integer#abs,datetime#abs", false),
 
             new Func(SqlStdOperatorTable.ACOS, "ACOS", SqlLibrary.STANDARD, "float#acos", false),
             new Func(SqlStdOperatorTable.ASIN, "ASIN", SqlLibrary.STANDARD, "float#asin", false),
