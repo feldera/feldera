@@ -124,7 +124,7 @@ public final class DBSPStringLiteral extends DBSPLiteral {
     }
 
     @SuppressWarnings("unused")
-    public static DBSPStringLiteral fromJson(JsonNode node, JsonDecoder decoder) throws JsonProcessingException {
+    public static DBSPStringLiteral fromJson(JsonNode node, JsonDecoder decoder) {
         String value = null;
         if (node.has("value")) {
             value = Utilities.getStringProperty(node, "value");

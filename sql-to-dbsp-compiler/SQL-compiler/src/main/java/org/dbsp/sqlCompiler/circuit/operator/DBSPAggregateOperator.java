@@ -30,7 +30,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregator;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -42,8 +43,8 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
     public DBSPAggregateOperator(
             CalciteRelNode node,
             DBSPTypeIndexedZSet outputType,
-            @Nullable DBSPExpression function,
-            @Nullable DBSPAggregate aggregate, OutputPort input) {
+            @Nullable DBSPAggregator function,
+            @Nullable DBSPAggregateList aggregate, OutputPort input) {
         super(node, "aggregate", outputType,
                 function, aggregate, false, input, true);
     }
@@ -62,7 +63,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
         DBSPTypeIndexedZSet ix = outputType.to(DBSPTypeIndexedZSet.class);
         return new DBSPAggregateOperator(
                 this.getRelNode(), ix,
-                expression, this.aggregate, this.input())
+                (DBSPAggregator) expression, this.aggregate, this.input())
                 .copyAnnotations(this);
     }
 
@@ -71,7 +72,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateOperator(
                     this.getRelNode(), this.outputType.to(DBSPTypeIndexedZSet.class),
-                    this.function, this.aggregate, newInputs.get(0))
+                    this.getAggregator(), this.aggregate, newInputs.get(0))
                     .copyAnnotations(this);
         return this;
     }
@@ -81,11 +82,11 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
     @SuppressWarnings("unused")
     public static DBSPAggregateOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        DBSPAggregate aggregate = null;
+        DBSPAggregateList aggregate = null;
         if (node.has("aggregate"))
-            aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregate.class);
+            aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregateList.class);
         return new DBSPAggregateOperator(
-                CalciteEmptyRel.INSTANCE, info.getIndexedZsetType(), info.function(),
+                CalciteEmptyRel.INSTANCE, info.getIndexedZsetType(), (DBSPAggregator) info.function(),
                 aggregate, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPAggregateOperator.class);
     }

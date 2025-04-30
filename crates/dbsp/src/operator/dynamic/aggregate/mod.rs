@@ -1517,7 +1517,7 @@ pub mod test {
             let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, Tup1<u64>>();
             // Postprocessing ofren used in SQL: wrap result in Option.
             let output_handle = input_stream
-                .aggregate(Postprocess::new(Min, |Tup1(x)| Tup1(Some(x))))
+                .aggregate(Postprocess::new(Min, |x: &Tup1<u64>| Tup1(Some(x.0))))
                 .integrate()
                 .output();
 

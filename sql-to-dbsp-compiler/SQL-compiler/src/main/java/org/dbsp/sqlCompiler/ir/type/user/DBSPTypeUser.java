@@ -145,22 +145,12 @@ public class DBSPTypeUser extends DBSPType {
      * (Self)::method(arguments)
      * @param method     Method to invoke on this type
      * @param arguments  Arguments to pass to constructor
-     * @return           An expression which invokes the constructor
-     */
+     * @return           An expression which invokes the constructor */
     public DBSPExpression constructor(String method, DBSPExpression... arguments) {
         return new DBSPConstructorExpression(
                 new DBSPPathExpression(this, new DBSPPath(this.name, method)),
                 this,
                 arguments);
-    }
-
-    /** Generate a constructor for this type with the signature:
-     * (Self)::new(arguments)
-     * @param arguments  Arguments to pass to constructor
-     * @return           An expression which invokes the constructor
-     */
-    public DBSPExpression constructor(DBSPExpression... arguments) {
-        return this.constructor("new", arguments);
     }
 
     @SuppressWarnings("unused")

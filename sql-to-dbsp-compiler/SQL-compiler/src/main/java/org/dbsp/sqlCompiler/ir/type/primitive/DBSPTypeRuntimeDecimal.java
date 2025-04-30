@@ -49,11 +49,6 @@ public class DBSPTypeRuntimeDecimal extends DBSPTypeBaseType implements IsNumeri
     }
 
     @Override
-    public boolean hasCopy() {
-        return true;
-    }
-
-    @Override
     public int hashCode() {
         return Objects.hash(super.hashCode());
     }

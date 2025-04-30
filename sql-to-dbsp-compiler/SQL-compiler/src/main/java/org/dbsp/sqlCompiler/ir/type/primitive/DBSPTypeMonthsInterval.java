@@ -93,7 +93,7 @@ public class DBSPTypeMonthsInterval
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPIntervalMonthsLiteral(this.units, 0, this.mayBeNull);
+        return new DBSPIntervalMonthsLiteral(this.units, 0, false);
     }
 
     @Override

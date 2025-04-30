@@ -191,7 +191,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     /** Write the plans to the specified appendable.  Return a Map that renumbers RelNodes */
-    public Map<RelNode, Integer> getPlans(IIndentStream stream) throws IOException {
+    public Map<RelNode, Integer> getPlans(IIndentStream stream) {
         stream.append("{").increase();
         boolean first = true;
         List<ProgramIdentifier> sorted = Linq.list(this.views.keySet());
@@ -691,7 +691,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     @Nullable DBSPCircuit optimize(@Nullable DBSPCircuit circuit) {
-        if (circuit == null) return circuit;
+        if (circuit == null) return null;
         CircuitOptimizer optimizer = new CircuitOptimizer(this);
         return optimizer.optimize(circuit);
     }

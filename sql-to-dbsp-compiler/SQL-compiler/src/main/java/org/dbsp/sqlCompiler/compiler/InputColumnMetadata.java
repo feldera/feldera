@@ -115,7 +115,7 @@ public class InputColumnMetadata
             watermark = DBSPNode.fromJsonInner(node, "watermark", decoder, DBSPExpression.class);
         DBSPExpression defaultValue = null;
         if (node.has("defaultValue"))
-            lateness = DBSPNode.fromJsonInner(node, "defaultValue", decoder, DBSPExpression.class);
+            defaultValue = DBSPNode.fromJsonInner(node, "defaultValue", decoder, DBSPExpression.class);
         return new InputColumnMetadata(CalciteObject.EMPTY, name, type, isPrimaryKey,
                 lateness, watermark, defaultValue, SourcePositionRange.INVALID);
     }

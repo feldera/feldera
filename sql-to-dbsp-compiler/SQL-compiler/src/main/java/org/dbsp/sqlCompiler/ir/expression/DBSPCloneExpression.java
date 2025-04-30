@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.Utilities;
 
 /** Represents an expression of the form e.clone(). */
 public final class DBSPCloneExpression extends DBSPExpression {

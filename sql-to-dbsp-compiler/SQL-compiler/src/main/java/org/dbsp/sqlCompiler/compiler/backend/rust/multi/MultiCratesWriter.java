@@ -20,7 +20,7 @@ public final class MultiCratesWriter extends RustWriter {
     File rootDirectory;
 
     /** Create a writer which will generate code in the specified directory */
-    public MultiCratesWriter(String outputDirectory, String pipelineName, boolean preserve) throws IOException {
+    public MultiCratesWriter(String outputDirectory, String pipelineName, boolean preserve) {
         this.outputDirectory = outputDirectory;
         this.pipelineName = pipelineName;
         this.rootDirectory = this.rootDirectory(preserve);

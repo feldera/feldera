@@ -6,8 +6,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
-import java.lang.module.FindException;
-
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.RESULT;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 

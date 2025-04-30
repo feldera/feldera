@@ -250,15 +250,15 @@ public class CompilerMain {
             String outputFile = this.options.ioOptions.outputFile;
             if (!outputFile.isEmpty() && !this.options.ioOptions.noRust) {
                 Path stubs;
-                String outputPath = new File(outputFile).getAbsolutePath();
+                Path outputPath = Paths.get(new File(outputFile).getAbsolutePath());
                 if (options.ioOptions.multiCrates()) {
                     // Generate globals/src/stubs.rs
                     Utilities.enforce(multiWriter != null);
                     String globals = multiWriter.getGlobalsName();
-                    stubs = Paths.get(outputPath).resolve(globals).resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
+                    stubs = outputPath.resolve(globals).resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
                 } else {
                     // Generate stubs.rs in the same directory
-                    stubs = Paths.get(outputPath).getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
+                    stubs = outputPath.getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
                 }
                 StubsWriter writer = new StubsWriter(stubs);
                 writer.add(circuit);

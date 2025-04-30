@@ -21,7 +21,7 @@ import java.util.Map;
  * or {@link ToJsonInnerVisitor}. */
 public class JsonDecoder {
     static class Cache<T extends IDBSPNode> {
-        Map<Long, IDBSPNode> decoded;
+        final Map<Long, IDBSPNode> decoded;
 
         Cache() {
             this.decoded = new HashMap<>();
@@ -38,8 +38,8 @@ public class JsonDecoder {
         }
     }
 
-    Cache<IDBSPInnerNode> inner;
-    Cache<IDBSPOuterNode> outer;
+    final Cache<IDBSPInnerNode> inner;
+    final Cache<IDBSPOuterNode> outer;
     public final RelDataTypeFactory typeFactory;
 
     public JsonDecoder(RelDataTypeFactory typeFactory) {
@@ -54,7 +54,7 @@ public class JsonDecoder {
     static final String INNER_ROOT = "org.dbsp.sqlCompiler.ir";
     static final List<String> INNER_PACKAGES = Arrays.asList(
             "", "expression", "type.primitive", "type.derived", "type.user",
-            "path", "expression.literal", "pattern", "statement");
+            "path", "expression.literal", "pattern", "statement", "aggregate");
 
     static Class<?> getClass(String simpleName, boolean outer) {
         if (simpleName.equals("Field"))

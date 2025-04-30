@@ -7,21 +7,20 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.Utilities;
 
-/** Representation of an aggregate that is a call to a Min or Max function.
- * In some cases this will be treated as a NonLinearAggregate, in other cases
- * it is handled specially. */
+/** High-level representation of an aggregate that is a call to a Min or Max function.
+ * This is lowered later into a more concrete implementation. */
 public class MinMaxAggregate extends NonLinearAggregate {
     public final boolean isMin;
-    /** An expression that refers to the row variable.  The row variable is
-     * the second parameter of the 'increment' closure. */
-    public final DBSPExpression aggregatedValue;
+    /** A closure with signature |row| -> { aggregated value }, where 'row'
+     * has the same type as the row variable (second parameter of the increment). */
+    public final DBSPClosureExpression aggregatedValue;
 
     public MinMaxAggregate(CalciteObject origin, DBSPExpression zero, DBSPClosureExpression increment,
-                           DBSPExpression emptySetResult, DBSPType semigroup, DBSPExpression aggregatedValue,
-                           boolean isMin) {
+                           DBSPExpression emptySetResult, DBSPTypeUser semigroup,
+                           DBSPClosureExpression aggregatedValue, boolean isMin) {
         super(origin, zero, increment, emptySetResult, semigroup);
         this.aggregatedValue = aggregatedValue;
         this.isMin = isMin;
@@ -51,7 +50,7 @@ public class MinMaxAggregate extends NonLinearAggregate {
     }
 
     @Override
-    public boolean compatible(AggregateBase other) {
+    public boolean compatible(IAggregate other) {
         return other.is(MinMaxAggregate.class);
     }
 
@@ -60,8 +59,8 @@ public class MinMaxAggregate extends NonLinearAggregate {
         DBSPExpression zero = fromJsonInner(node, "zero", decoder, DBSPExpression.class);
         DBSPClosureExpression increment = fromJsonInner(node, "increment", decoder, DBSPClosureExpression.class);
         DBSPExpression emptySetResult = fromJsonInner(node, "emptySetResult", decoder, DBSPExpression.class);
-        DBSPType semigroup = fromJsonInner(node, "semigroup", decoder, DBSPType.class);
-        DBSPExpression aggregatedValue = fromJsonInner(node, "aggregatedValue", decoder, DBSPExpression.class);
+        DBSPTypeUser semigroup = fromJsonInner(node, "semigroup", decoder, DBSPTypeUser.class);
+        DBSPClosureExpression aggregatedValue = fromJsonInner(node, "aggregatedValue", decoder, DBSPClosureExpression.class);
         boolean isMin = Utilities.getBooleanProperty(node, "isMin");
         return new MinMaxAggregate(CalciteObject.EMPTY, zero, increment, emptySetResult, semigroup, aggregatedValue, isMin);
     }

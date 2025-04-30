@@ -32,10 +32,13 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitorProfiles;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDispatcher;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregator;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.*;
@@ -91,7 +94,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
-import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -207,7 +210,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return Utilities.last(this.context);
     }
 
-    public static VisitorProfiles profiles = new VisitorProfiles();
+    public static final VisitorProfiles profiles = new VisitorProfiles();
 
     /** Override to initialize before visiting any node. */
     public void startVisit(IDBSPInnerNode node) {
@@ -233,19 +236,26 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return VisitDecision.CONTINUE;
     }
 
-    public VisitDecision preorder(DBSPAggregate node) {
+    public VisitDecision preorder(DBSPAggregateList node) {
         return this.preorder((IDBSPInnerNode) node);
     }
 
-    public VisitDecision preorder(AggregateBase node) {
+    public VisitDecision preorder(DBSPAggregator node) { return this.preorder((DBSPExpression) node); }
+
+    public VisitDecision preorder(DBSPFold node) { return this.preorder((DBSPAggregator) node); }
+
+    public VisitDecision preorder(DBSPMinMax node) { return this.preorder((DBSPAggregator) node); }
+
+    public VisitDecision preorder(IAggregate node) {
         return this.preorder((IDBSPInnerNode) node);
     }
+
     public VisitDecision preorder(NonLinearAggregate node) {
-        return this.preorder((AggregateBase) node);
+        return this.preorder((IAggregate) node);
     }
 
     public VisitDecision preorder(LinearAggregate node) {
-        return this.preorder((AggregateBase) node);
+        return this.preorder((IAggregate) node);
     }
 
     public VisitDecision preorder(DBSPExpression node) {
@@ -844,20 +854,30 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     @SuppressWarnings("EmptyMethod")
     public void postorder(IDBSPInnerNode ignored) {}
 
-    public void postorder(DBSPAggregate node) {
+    public void postorder(DBSPAggregateList node) {
         this.postorder((IDBSPInnerNode) node);
     }
 
-    public void postorder(AggregateBase node) {
+    public void postorder(DBSPAggregator node) { this.postorder((DBSPExpression) node);}
+
+    public void postorder(DBSPFold node) {
+        this.postorder((DBSPAggregator) node);
+    }
+
+    public void postorder(DBSPMinMax node) {
+        this.postorder((DBSPAggregator) node);
+    }
+
+    public void postorder(IAggregate node) {
         this.postorder((IDBSPInnerNode) node);
     }
 
     public void postorder(NonLinearAggregate node) {
-        this.postorder((AggregateBase) node);
+        this.postorder((IAggregate) node);
     }
 
     public void postorder(LinearAggregate node) {
-        this.postorder((AggregateBase) node);
+        this.postorder((IAggregate) node);
     }
 
     public void postorder(DBSPExpression node) {

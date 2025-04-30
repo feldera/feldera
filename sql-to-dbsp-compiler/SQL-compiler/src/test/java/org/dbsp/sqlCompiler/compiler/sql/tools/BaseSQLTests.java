@@ -49,6 +49,7 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
@@ -202,6 +203,10 @@ public class BaseSQLTests {
         testsToRun.clear();
     }
 
+    public static Path getTestFilePath() {
+        return Paths.get(TEST_FILE_PATH);
+    }
+
     public static File createInputFile(File file, String contents) throws IOException {
         file.deleteOnExit();
         PrintWriter script = new PrintWriter(file, StandardCharsets.UTF_8);
@@ -230,7 +235,7 @@ public class BaseSQLTests {
         List<TestCase> toCheck = Linq.where(testsToRun, testCase -> !testCase.hasData());
 
         if (!toRun.isEmpty()) {
-            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(TEST_FILE_PATH)));
+            PrintStream outputStream = new PrintStream(Files.newOutputStream(getTestFilePath()));
             RustFileWriter writer = new RustFileWriter().withTest(true);
             writer.setOutputBuilder(new IndentStream(outputStream));
 
@@ -261,7 +266,7 @@ public class BaseSQLTests {
 
         if (!toCheck.isEmpty()) {
             createEmptyStubs();
-            PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(TEST_FILE_PATH)));
+            PrintStream outputStream = new PrintStream(Files.newOutputStream(getTestFilePath()));
             RustFileWriter writer = new RustFileWriter().withTest(true);
             writer.setOutputBuilder(new IndentStream(outputStream));
             DBSPCompiler firstCompiler = null;

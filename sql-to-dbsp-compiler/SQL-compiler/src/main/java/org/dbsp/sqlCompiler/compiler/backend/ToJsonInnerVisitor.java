@@ -6,7 +6,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -122,7 +123,7 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public void postorder(DBSPAggregate node) {
+    public void postorder(DBSPAggregateList node) {
         this.property("isLinear");
         this.stream.append(node.isLinear());
         this.stream.endObject();
@@ -322,6 +323,13 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     public void postorder(DBSPKeywordLiteral node) {
         this.property("keyword");
         this.stream.append(node.keyword);
+        super.postorder(node);
+    }
+
+    @Override
+    public void postorder(DBSPMinMax node) {
+        this.property("aggregation");
+        this.stream.append(node.aggregation.toString());
         super.postorder(node);
     }
 

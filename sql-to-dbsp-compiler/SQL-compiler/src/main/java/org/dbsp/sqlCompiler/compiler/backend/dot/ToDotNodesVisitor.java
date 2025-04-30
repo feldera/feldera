@@ -239,13 +239,10 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         if (this.details > 3) {
             this.stream
                     .append("(")
-                    .append(this.getFunction(node));
-            if (node.outputProducer != null) {
-                this.stream
-                        .append(", ")
-                        .append(this.convertFunction(node.outputProducer));
-            }
-            this.stream.append(")\\l");
+                    .append(this.getFunction(node))
+                    .append(", ")
+                    .append(this.convertFunction(node.outputProducer))
+                    .append(")\\l");
         }
         this.stream.append("\" ]")
                 .newline();

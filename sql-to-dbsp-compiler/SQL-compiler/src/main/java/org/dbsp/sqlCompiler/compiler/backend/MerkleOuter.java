@@ -55,7 +55,7 @@ public class MerkleOuter extends CircuitVisitor {
         operator.annotations.add(new OperatorHash(hash, this.includeInputs));
     }
 
-    List<ModifiedJsonOuter> generator = new ArrayList<>();
+    final List<ModifiedJsonOuter> generator = new ArrayList<>();
 
     @Override
     public VisitDecision preorder(DBSPOperator operator) {

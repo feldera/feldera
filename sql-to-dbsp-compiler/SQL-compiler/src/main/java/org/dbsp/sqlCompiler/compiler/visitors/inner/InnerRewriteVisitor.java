@@ -3,8 +3,10 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
-import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -1337,7 +1339,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression increment = this.transform(implementation.increment);
         @Nullable DBSPExpression postProcess = this.transformN(implementation.postProcess);
         DBSPExpression emptySetResult = this.transform(implementation.emptySetResult);
-        DBSPType semiGroup = this.transform(implementation.semigroup);
+        DBSPTypeUser semiGroup = this.transform(implementation.semigroup).to(DBSPTypeUser.class);
         this.pop(implementation);
 
         NonLinearAggregate result = new NonLinearAggregate(
@@ -1368,18 +1370,43 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPAggregate aggregate) {
+    public VisitDecision preorder(DBSPAggregateList aggregate) {
         this.push(aggregate);
         DBSPExpression rowVar = this.transform(aggregate.rowVar);
-        List<AggregateBase> implementations =
+        List<IAggregate> implementations =
                 Linq.map(aggregate.aggregates, c -> {
                     IDBSPInnerNode result = this.transform(c);
-                    return result.to(AggregateBase.class);
+                    return result.to(IAggregate.class);
                 });
         this.pop(aggregate);
-        DBSPAggregate result = new DBSPAggregate(
+        DBSPAggregateList result = new DBSPAggregateList(
                 aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations);
         this.map(aggregate, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPFold fold) {
+        this.push(fold);
+        DBSPExpression zero = this.transform(fold.zero);
+        DBSPClosureExpression increment = this.transform(fold.increment).to(DBSPClosureExpression.class);
+        DBSPClosureExpression postProcessing = this.transform(fold.postProcess).to(DBSPClosureExpression.class);
+        this.pop(fold);
+        DBSPFold result = new DBSPFold(
+                fold.getNode(), fold.getType(), fold.semigroup,
+                zero, increment, postProcessing);
+        this.map(fold, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPMinMax aggregator) {
+        this.push(aggregator);
+        @Nullable
+        DBSPClosureExpression postProcessing = (DBSPClosureExpression) this.transformN(aggregator.postProcessing);
+        DBSPMinMax result = new DBSPMinMax(
+                aggregator.getNode(), aggregator.getType(), postProcessing, aggregator.aggregation);
+        this.map(aggregator, result);
         return VisitDecision.STOP;
     }
 

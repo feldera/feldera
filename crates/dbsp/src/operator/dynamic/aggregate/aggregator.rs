@@ -135,7 +135,7 @@ impl<A, F> Postprocess<A, F> {
 impl<A, F, K, T, R, O> Aggregator<K, T, R> for Postprocess<A, F>
 where
     A: Aggregator<K, T, R>,
-    F: (Fn(A::Output) -> O) + Clone + 'static,
+    F: (Fn(&A::Output) -> O) + Clone + 'static,
     O: DBData,
 {
     type Accumulator = A::Accumulator;
@@ -156,7 +156,7 @@ where
     }
 
     fn finalize(&self, accumulator: Self::Accumulator) -> Self::Output {
-        (self.postprocess)(self.aggregator.finalize(accumulator))
+        (self.postprocess)(&self.aggregator.finalize(accumulator))
     }
 }
 

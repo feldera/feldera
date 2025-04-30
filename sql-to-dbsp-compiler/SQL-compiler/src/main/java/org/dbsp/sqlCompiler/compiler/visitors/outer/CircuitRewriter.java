@@ -59,8 +59,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregator;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -268,10 +269,10 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     public void postorder(DBSPStreamAggregateOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         @Nullable DBSPExpression function = this.transformN(operator.function);
-        @Nullable DBSPAggregate aggregate = null;
+        @Nullable DBSPAggregateList aggregate = null;
         if (operator.aggregate != null) {
             IDBSPInnerNode transformed = this.transform.apply(operator.aggregate);
-            aggregate = transformed.to(DBSPAggregate.class);
+            aggregate = transformed.to(DBSPAggregateList.class);
         }
         OutputPort input = this.mapped(operator.input());
         DBSPSimpleOperator result = operator;
@@ -281,7 +282,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !input.equals(operator.input())) {
             result = new DBSPStreamAggregateOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeIndexedZSet.class),
-                    function, aggregate, input)
+                    (DBSPAggregator) function, aggregate, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -343,9 +344,9 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     public void postorder(DBSPAggregateOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         @Nullable DBSPExpression function = this.transformN(operator.function);
-        @Nullable DBSPAggregate aggregate = null;
+        @Nullable DBSPAggregateList aggregate = null;
         if (operator.aggregate != null)
-            aggregate = this.transform.apply(operator.aggregate).to(DBSPAggregate.class);
+            aggregate = this.transform.apply(operator.aggregate).to(DBSPAggregateList.class);
         OutputPort input = this.mapped(operator.input());
 
         DBSPSimpleOperator result = operator;
@@ -354,7 +355,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || aggregate != operator.aggregate
                 || function != operator.function) {
             result = new DBSPAggregateOperator(operator.getRelNode(),
-                    outputType.to(DBSPTypeIndexedZSet.class), function, aggregate, input)
+                    outputType.to(DBSPTypeIndexedZSet.class), (DBSPAggregator) function, aggregate, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -640,10 +641,10 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         OutputPort input = this.mapped(operator.input());
         @Nullable DBSPExpression function = this.transformN(operator.function);
         DBSPExpression partitioningFunction = this.transform(operator.partitioningFunction);
-        @Nullable DBSPAggregate aggregate = null;
+        @Nullable DBSPAggregateList aggregate = null;
         if (operator.aggregate != null) {
             IDBSPInnerNode transformed = this.transform.apply(operator.aggregate);
-            aggregate = transformed.to(DBSPAggregate.class);
+            aggregate = transformed.to(DBSPAggregateList.class);
         }
         DBSPWindowBoundExpression lower = this.transform(operator.lower).to(DBSPWindowBoundExpression.class);
         DBSPWindowBoundExpression upper = this.transform(operator.upper).to(DBSPWindowBoundExpression.class);
@@ -657,7 +658,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || upper != operator.upper) {
             result = new DBSPPartitionedRollingAggregateOperator(
                     operator.getRelNode(), partitioningFunction.to(DBSPClosureExpression.class),
-                    function, aggregate, lower, upper, type, input)
+                    (DBSPAggregator) function, aggregate, lower, upper, type, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -670,10 +671,10 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         OutputPort right = this.mapped(operator.right());
         @Nullable DBSPExpression function = this.transformN(operator.function);
         DBSPExpression partitioningFunction = this.transform(operator.partitioningFunction);
-        @Nullable DBSPAggregate aggregate = null;
+        @Nullable DBSPAggregateList aggregate = null;
         if (operator.aggregate != null) {
             IDBSPInnerNode transformed = this.transform.apply(operator.aggregate);
-            aggregate = transformed.to(DBSPAggregate.class);
+            aggregate = transformed.to(DBSPAggregateList.class);
         }
         DBSPWindowBoundExpression lower = this.transform(operator.lower).to(DBSPWindowBoundExpression.class);
         DBSPWindowBoundExpression upper = this.transform(operator.upper).to(DBSPWindowBoundExpression.class);

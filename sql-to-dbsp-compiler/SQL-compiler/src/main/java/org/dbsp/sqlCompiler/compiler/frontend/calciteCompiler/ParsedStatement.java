@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.calcite.sql.SqlNode;
 
 /** A SQL statement obtained after parsing.  Some statements are not

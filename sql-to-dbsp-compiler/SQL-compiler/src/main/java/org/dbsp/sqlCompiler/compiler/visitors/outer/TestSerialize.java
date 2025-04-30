@@ -12,7 +12,7 @@ import org.locationtech.jts.util.Assert;
 /** Tests serialization to Json and back */
 @SuppressWarnings("unused")
 public class TestSerialize implements CircuitTransform {
-    DBSPCompiler compiler;
+    final DBSPCompiler compiler;
 
     public TestSerialize(DBSPCompiler compiler) {
         this.compiler = compiler;

@@ -99,7 +99,7 @@ public final class DBSPUuidLiteral extends DBSPLiteral {
     }
 
     @SuppressWarnings("unused")
-    public static DBSPUuidLiteral fromJson(JsonNode node, JsonDecoder decoder) throws JsonProcessingException {
+    public static DBSPUuidLiteral fromJson(JsonNode node, JsonDecoder decoder) {
         UUID value = null;
         if (node.has("value")) {
             value = UUID.fromString(Utilities.getStringProperty(node, "value"));

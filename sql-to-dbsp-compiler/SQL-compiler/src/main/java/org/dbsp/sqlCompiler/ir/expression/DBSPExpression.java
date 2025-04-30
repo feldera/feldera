@@ -293,7 +293,7 @@ public abstract class DBSPExpression
     }
 
     /** Cache here expressions which we know are trees, to avoid re-analyzing them */
-    static AnalyzedSet<DBSPExpression> treeExpressions = new AnalyzedSet<>();
+    static final AnalyzedSet<DBSPExpression> treeExpressions = new AnalyzedSet<>();
 
     /** If this expression is a DAG, convert it to a tree, otherwise it leave it unchanged */
     public DBSPExpression ensureTree(DBSPCompiler compiler) {

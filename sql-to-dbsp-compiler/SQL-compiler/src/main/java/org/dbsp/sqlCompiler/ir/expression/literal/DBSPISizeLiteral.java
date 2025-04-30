@@ -38,7 +38,6 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPISizeLiteral extends DBSPLiteral implements IsNumericLiteral {

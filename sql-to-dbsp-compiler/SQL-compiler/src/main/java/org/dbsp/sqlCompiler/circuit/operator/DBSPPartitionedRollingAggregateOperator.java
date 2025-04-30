@@ -9,7 +9,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregator;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
@@ -37,8 +38,8 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
             DBSPClosureExpression partitioningFunction,
             // Initially 'function' is null, and the 'aggregate' is not.
             // After lowering 'aggregate' is not null, and 'function' has its expected shape
-            @Nullable DBSPExpression function,
-            @Nullable DBSPAggregate aggregate,
+            @Nullable DBSPAggregator function,
+            @Nullable DBSPAggregateList aggregate,
             DBSPWindowBoundExpression lower,
             DBSPWindowBoundExpression upper,
             // The output type of partitioned_rolling_aggregate cannot actually be represented using
@@ -56,7 +57,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPartitionedRollingAggregateOperator(
                 this.getRelNode(), this.partitioningFunction,
-                expression, this.aggregate, this.lower, this.upper,
+                (DBSPAggregator) expression, this.aggregate, this.lower, this.upper,
                 outputType.to(DBSPTypeIndexedZSet.class),
                 this.input()).copyAnnotations(this);
     }
@@ -65,7 +66,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPartitionedRollingAggregateOperator(
-                    this.getRelNode(), this.partitioningFunction, this.function, this.aggregate,
+                    this.getRelNode(), this.partitioningFunction, this.getAggregator(), this.aggregate,
                     this.lower, this.upper, this.getOutputIndexedZSetType(),
                     newInputs.get(0)).copyAnnotations(this);
         return this;
@@ -114,13 +115,13 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         DBSPClosureExpression partitioningFunction = fromJsonInner(
                 node, "partitioningFunction", decoder, DBSPClosureExpression.class);
-        DBSPAggregate aggregate = null;
+        DBSPAggregateList aggregate = null;
         if (node.has("aggregate"))
-            aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregate.class);
+            aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregateList.class);
         DBSPWindowBoundExpression lower = fromJsonInner(node, "lower", decoder, DBSPWindowBoundExpression.class);
         DBSPWindowBoundExpression upper = fromJsonInner(node, "upper", decoder, DBSPWindowBoundExpression.class);
         return new DBSPPartitionedRollingAggregateOperator(
-                CalciteEmptyRel.INSTANCE, partitioningFunction, info.function(),
+                CalciteEmptyRel.INSTANCE, partitioningFunction, (DBSPAggregator) info.function(),
                 aggregate, lower, upper, info.getIndexedZsetType(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPPartitionedRollingAggregateOperator.class);
     }

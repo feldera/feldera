@@ -6,8 +6,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 /** Base class for aggregates */
-public abstract class AggregateBase extends DBSPExpression implements IDBSPInnerNode {
-    protected AggregateBase(CalciteObject node, DBSPType type) {
+public abstract class IAggregate extends DBSPExpression implements IDBSPInnerNode {
+    protected IAggregate(CalciteObject node, DBSPType type) {
         super(node, type);
     }
 
@@ -25,5 +25,5 @@ public abstract class AggregateBase extends DBSPExpression implements IDBSPInner
     /** True if these two aggregates are "compatible", i.e. they
      * can be implemented in a single operator.  For example, all linear
      * aggregates are compatible with each other. */
-    public abstract boolean compatible(AggregateBase other);
+    public abstract boolean compatible(IAggregate other);
 }

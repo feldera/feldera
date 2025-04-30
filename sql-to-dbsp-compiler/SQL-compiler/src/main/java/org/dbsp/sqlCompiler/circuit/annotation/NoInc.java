@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 public class NoInc extends Annotation {
     private NoInc() {}
 
-    public static NoInc INSTANCE = new NoInc();
+    public static final NoInc INSTANCE = new NoInc();
 
     public static NoInc fromJson(JsonNode unused) {
         return INSTANCE;

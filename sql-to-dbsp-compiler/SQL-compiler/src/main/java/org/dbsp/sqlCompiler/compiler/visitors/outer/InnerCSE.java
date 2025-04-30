@@ -7,7 +7,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionsCSE;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.Logger;
 
 /** Perform common-subexpression elimination on the inner IR */
