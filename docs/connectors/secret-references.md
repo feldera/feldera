@@ -70,7 +70,7 @@ We can then specify a connector configuration that refers to it using `${secret:
 
 In the Enterprise edition, it is possible to limit secret references to only
 the Secrets on an allowlist by setting in the Helm chart
-`kubernetesRunner.connectorKubernetesSecrets.enableAllowlist` to `true` and 
+`kubernetesRunner.connectorKubernetesSecrets.enableAllowlist` to `true` and
 `kubernetesRunner.connectorKubernetesSecrets.allowlist` to the list of allowed
 Secret names. See the Helm chart `values.yaml` for more information.
 
