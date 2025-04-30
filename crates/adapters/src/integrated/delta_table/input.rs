@@ -708,7 +708,11 @@ impl DeltaTableInputEndpointInner {
         let delta_table = table_builder.load().await.map_err(|e| {
             ControllerError::invalid_transport_configuration(
                 &self.endpoint_name,
-                &format!("error opening delta table '{}': {e}", &self.config.uri),
+                &format!(
+                    "error opening delta table '{}': {e} (root cause: {})",
+                    &self.config.uri,
+                    root_cause(&e)
+                ),
             )
         })?;
 
