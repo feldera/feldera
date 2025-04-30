@@ -1,4 +1,4 @@
-# Dynamically-Typed Values and JSON Support
+# JSON and Dynamically-Typed Value Support
 
 ## Direct conversion of JSON strings to User-Defined data types
 

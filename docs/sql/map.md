@@ -1,4 +1,4 @@
-# Operations on Maps
+# Map Operations
 
 A MAP type can be created using the syntax `MAP<type, type>`.
 For example `MAP<VARCHAR, INT>` is a map from strings to integers.

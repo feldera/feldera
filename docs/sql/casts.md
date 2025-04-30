@@ -1,4 +1,4 @@
-# Data Type Conversions
+# Casts and Data Type Conversions
 
 SQL expressions can mix data of different types in the same
 expression.  Most operations, however, require operands to have either
