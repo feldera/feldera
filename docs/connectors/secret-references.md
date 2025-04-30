@@ -31,6 +31,16 @@ as files at: `/etc/feldera-secrets/kubernetes/<name>/<data key>`.
 
 :::info
 
+In the Enterprise edition, it is possible to limit secret references to only
+the Secrets on an allowlist by setting in the Helm chart
+`kubernetesRunner.connectorKubernetesSecrets.enableAllowlist` to `true` and
+`kubernetesRunner.connectorKubernetesSecrets.allowlist` to the list of allowed
+Secret names. See the Helm chart `values.yaml` for more information.
+
+:::
+
+:::info
+
 The automatic resolution of Kubernetes Secrets through mounting is Enterprise-only.
 In the Open Source edition, it is still possible to refer to secrets by carefully
 mounting them yourself out-of-band at `/etc/feldera-secrets/kubernetes/<name>/<data key>`.
@@ -65,16 +75,6 @@ We can then specify a connector configuration that refers to it using `${secret:
     "format": ...
 }
 ```
-
-:::info
-
-In the Enterprise edition, it is possible to limit secret references to only
-the Secrets on an allowlist by setting in the Helm chart
-`kubernetesRunner.connectorKubernetesSecrets.enableAllowlist` to `true` and
-`kubernetesRunner.connectorKubernetesSecrets.allowlist` to the list of allowed
-Secret names. See the Helm chart `values.yaml` for more information.
-
-:::
 
 ## Restrictions
 
