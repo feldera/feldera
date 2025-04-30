@@ -440,7 +440,7 @@ where
     A: DataTrait + ?Sized,
 {
     fn cost(&self) -> usize {
-        size_of::<Self>() + self.raw.len()
+        size_of::<Self>() + self.raw.capacity()
     }
 
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
@@ -714,7 +714,7 @@ where
     K: DataTrait + ?Sized,
 {
     fn cost(&self) -> usize {
-        size_of::<Self>() + self.raw.len()
+        size_of::<Self>() + self.raw.capacity()
     }
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
