@@ -75,6 +75,13 @@ impl ShortInterval {
 }
 
 #[doc(hidden)]
+pub fn abs_ShortInterval(value: ShortInterval) -> ShortInterval {
+    ShortInterval::new(num::abs(value.milliseconds))
+}
+
+some_polymorphic_function1!(abs, ShortInterval, ShortInterval, ShortInterval);
+
+#[doc(hidden)]
 /// This function is used in rolling window computations, which require all
 /// values to be expressed using unsigned types.
 pub fn to_bound_ShortInterval_Date_u128(value: &ShortInterval) -> u128 {
@@ -442,6 +449,13 @@ impl LongInterval {
         (months / 12) * mul
     }
 }
+
+#[doc(hidden)]
+pub fn abs_LongInterval(value: LongInterval) -> LongInterval {
+    LongInterval::new(num::abs(value.months))
+}
+
+some_polymorphic_function1!(abs, LongInterval, LongInterval, LongInterval);
 
 /// Multiply a `LongInterval` by an integer producing a `LongInterval`
 impl Mul<i32> for LongInterval {

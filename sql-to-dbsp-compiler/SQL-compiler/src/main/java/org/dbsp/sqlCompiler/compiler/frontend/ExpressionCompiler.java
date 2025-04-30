@@ -977,9 +977,35 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
                         return compilePolymorphicFunction(true, call, node, type, Linq.list(left, right), 2);
                     }
-                    case "numeric_inc":
-                    case "sign":
                     case "abs": {
+                        String opName1 = getCallName(call);
+                        validateArgCount(node, opName1, ops.size(), 1);
+                        StringBuilder functionName = new StringBuilder(opName1);
+                        DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);
+                        boolean resultNullable = false;
+                        for (DBSPExpression op: ops) {
+                            DBSPType type1 = op.getType();
+                            if (type1.is(IsIntervalType.class)) {
+                                var base = type1.to(DBSPTypeBaseType.class);
+                                functionName.append("_").append(base.shortName())
+                                        .append(base.nullableSuffix());
+                            } else {
+                                functionName.append("_").append(type1.baseTypeWithSuffix());
+                            }
+                            if (type1.mayBeNull)
+                                resultNullable = true;
+                        }
+                        DBSPType intermediateResultType = type;
+                        if (type.mayBeNull && !resultNullable) {
+                            intermediateResultType = type.withMayBeNull(false);
+                        }
+                        DBSPExpression result = new DBSPApplyExpression(node, functionName.toString(), intermediateResultType, operands);
+                        if (type.sameType(intermediateResultType))
+                            return result;
+                        return result.castToNullable();
+                    }
+                    case "numeric_inc":
+                    case "sign": {
                         return compilePolymorphicFunction(true, call, node, type,
                                 ops, 1);
                     }
