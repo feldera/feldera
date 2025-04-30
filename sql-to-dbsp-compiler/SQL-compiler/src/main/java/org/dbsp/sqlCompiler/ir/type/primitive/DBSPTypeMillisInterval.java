@@ -101,7 +101,7 @@ public class DBSPTypeMillisInterval
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPIntervalMillisLiteral(this.units, 0, this.mayBeNull);
+        return new DBSPIntervalMillisLiteral(this.units, 0, false);
     }
 
     @Override

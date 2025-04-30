@@ -13,8 +13,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.util.Properties;
 
 import java.util.ArrayList;

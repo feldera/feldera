@@ -5,8 +5,8 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregator;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.IIndentStream;
 
@@ -18,12 +18,12 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
     // Initially 'aggregate' is not null, and 'function' is null.
     // After lowering these two are swapped.
     @Nullable
-    public final DBSPAggregate aggregate;
+    public final DBSPAggregateList aggregate;
 
     protected DBSPAggregateOperatorBase(CalciteRelNode node, String operation,
                                         DBSPTypeIndexedZSet outputType,
-                                        @Nullable DBSPExpression function,
-                                        @Nullable DBSPAggregate aggregate,
+                                        @Nullable DBSPAggregator function,
+                                        @Nullable DBSPAggregateList aggregate,
                                         boolean multiset,
                                         OutputPort source,
                                         boolean containsIntegrate) {
@@ -50,8 +50,15 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
         super.accept(visitor);
     }
 
-    public DBSPAggregate getAggregate() {
+    public DBSPAggregateList getAggregate() {
         return Objects.requireNonNull(this.aggregate);
+    }
+
+    @Nullable
+    public DBSPAggregator getAggregator() {
+        if (this.function == null)
+            return null;
+        return this.function.to(DBSPAggregator.class);
     }
 
     @Override

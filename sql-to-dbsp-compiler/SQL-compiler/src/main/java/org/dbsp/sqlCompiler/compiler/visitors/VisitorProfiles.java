@@ -81,6 +81,8 @@ public class VisitorProfiles {
 
         var list = Linq.where(Linq.list(this.profiles.entrySet()),
                 e -> e.getValue().time > cutoff);
+        if (list.isEmpty())
+            return "";
         list.sort(Comparator.comparingLong(a -> a.getValue().time));
         Collections.reverse(list);
         int len = 0;

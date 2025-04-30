@@ -32,7 +32,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
@@ -50,7 +50,7 @@ import java.util.List;
 public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         extends DBSPBinaryOperator {
     @Nullable
-    public final DBSPAggregate aggregate;
+    public final DBSPAggregateList aggregate;
     public final DBSPClosureExpression partitioningFunction;
     public final DBSPWindowBoundExpression lower;
     public final DBSPWindowBoundExpression upper;
@@ -62,7 +62,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
             // Initially 'function' is null, and the 'aggregate' is not.
             // After lowering 'aggregate' is not null, and 'function' has its expected shape
             @Nullable DBSPExpression function,
-            @Nullable DBSPAggregate aggregate,
+            @Nullable DBSPAggregateList aggregate,
             DBSPWindowBoundExpression lower,
             DBSPWindowBoundExpression upper,
             // The output type of partitioned_rolling_aggregate_with_waterline cannot actually be represented
@@ -144,9 +144,9 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         DBSPClosureExpression partitioningFunction = fromJsonInner(
                 node, "partitioningFunction", decoder, DBSPClosureExpression.class);
-        DBSPAggregate aggregate = null;
+        DBSPAggregateList aggregate = null;
         if (node.has("aggregate"))
-            aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregate.class);
+            aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregateList.class);
         DBSPWindowBoundExpression lower = fromJsonInner(node, "lower", decoder, DBSPWindowBoundExpression.class);
         DBSPWindowBoundExpression upper = fromJsonInner(node, "upper", decoder, DBSPWindowBoundExpression.class);
         return new DBSPPartitionedRollingAggregateWithWaterlineOperator(

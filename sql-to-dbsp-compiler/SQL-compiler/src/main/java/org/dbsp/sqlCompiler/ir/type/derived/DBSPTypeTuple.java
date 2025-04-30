@@ -158,9 +158,9 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         DBSPExpression[] casts = new DBSPExpression[this.tupFields.length];
         for (int i = 0; i < this.tupFields.length; i++) {
             casts[i] = this.tupFields[i].caster(tuple.tupFields[i], safe);
-            casts[i] = casts[i].call(var.deepCopy().deref().field(i));
+            casts[i] = casts[i].call(var.deepCopy().deref().field(i).borrow());
         }
-        return new DBSPTupleExpression(casts).closure(var);
+        return new DBSPTupleExpression(to.mayBeNull, casts).closure(var);
     }
 
     @Override

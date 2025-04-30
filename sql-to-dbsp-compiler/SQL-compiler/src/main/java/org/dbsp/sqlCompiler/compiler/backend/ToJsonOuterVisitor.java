@@ -59,7 +59,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         return new ToJsonOuterVisitor(compiler, verbosity, inner);
     }
 
-    List<Integer> propertyIndexStack = new ArrayList<>();
+    final List<Integer> propertyIndexStack = new ArrayList<>();
 
     int propertyIndex = 0;
 

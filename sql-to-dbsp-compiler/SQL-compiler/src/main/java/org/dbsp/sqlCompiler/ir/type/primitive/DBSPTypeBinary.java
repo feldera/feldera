@@ -38,7 +38,7 @@ public class DBSPTypeBinary extends DBSPTypeBaseType implements IHasPrecision {
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPBinaryLiteral(new byte[] {}, this.mayBeNull);
+        return new DBSPBinaryLiteral(new byte[] {}, false);
     }
 
     @Override

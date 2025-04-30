@@ -45,6 +45,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -859,8 +860,8 @@ public class EndToEndTests extends BaseSQLTests {
                         )),
                 new DBSPZSetExpression(
                         new DBSPTupleExpression(
-                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true).none(),
-                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true).none())
+                                DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32,true).none(),
+                                DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true).none())
                         ));
     }
 
@@ -872,7 +873,18 @@ public class EndToEndTests extends BaseSQLTests {
                         new DBSPTupleExpression(new DBSPI32Literal(10, true))),
                 new DBSPZSetExpression(
                         new DBSPTupleExpression(DBSPLiteral.none(
-                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
+                                DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)))));
+    }
+
+    @Test
+    public void minTest() {
+        String query = "SELECT MIN(T.COL1) FROM T";
+        this.testAggregate(query,
+                new DBSPZSetExpression(
+                        new DBSPTupleExpression(new DBSPI32Literal(10, true))),
+                new DBSPZSetExpression(
+                        new DBSPTupleExpression(DBSPLiteral.none(
+                                DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)))));
     }
 
     @Test

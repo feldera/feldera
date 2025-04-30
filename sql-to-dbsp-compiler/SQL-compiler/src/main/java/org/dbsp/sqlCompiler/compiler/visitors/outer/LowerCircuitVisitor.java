@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -261,7 +262,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPExpression function = node.getAggregate().asFold(this.compiler());
+        DBSPFold function = node.getAggregate().asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPStreamAggregateOperator(
                 node.getRelNode(), node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
@@ -275,7 +276,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression function = node.getAggregate().asFold(this.compiler());
+        DBSPFold function = node.getAggregate().asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPAggregateOperator(
                 node.getRelNode(), node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
@@ -364,7 +365,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression function = node.getAggregate().asFold(this.compiler());
+        DBSPFold function = node.getAggregate().asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateOperator(node.getRelNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(), this.mapped(node.input()));
@@ -377,7 +378,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression function = node.aggregate.asFold(this.compiler());
+        DBSPFold function = node.aggregate.asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getRelNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(),

@@ -172,11 +172,11 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
 
     /** Returns a lambda which casts the current type to the specified type. */
     public DBSPClosureExpression caster(DBSPType to, boolean safe) {
-        if (this.sameType(to)) {
             DBSPVariablePath var = this.ref().var();
-            return var.deref().applyCloneIfNeeded().closure(var);
-        }
-        throw new UnimplementedException("Casting from " + this + " to " + to, to);
+            return var.deref()
+                    .applyCloneIfNeeded()
+                    .cast(CalciteObject.EMPTY, to, safe)
+                    .closure(var);
     }
 
     /** Type must be nullable.

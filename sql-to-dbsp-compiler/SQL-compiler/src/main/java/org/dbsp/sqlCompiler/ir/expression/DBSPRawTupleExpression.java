@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -155,7 +154,7 @@ public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
     @SuppressWarnings("unused")
     public static DBSPRawTupleExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPTypeRawTuple type = fromJsonInner(node, "type", decoder, DBSPTypeRawTuple.class);
-        DBSPExpression[] fields = null;
+        DBSPExpression[] fields;
         if (node.has("fields")) {
             List<DBSPExpression> f = fromJsonInnerList(node, "fields", decoder, DBSPExpression.class);
             fields = f.toArray(new DBSPExpression[0]);

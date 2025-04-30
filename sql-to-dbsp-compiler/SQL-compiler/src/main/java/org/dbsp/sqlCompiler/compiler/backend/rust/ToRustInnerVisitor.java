@@ -42,8 +42,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
@@ -865,6 +867,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPMinMax aggregator) {
+        if (aggregator.postProcessing != null)
+            this.builder.append("Postprocess::new(");
+        this.builder.append(aggregator.toString());
+        if (aggregator.postProcessing != null) {
+            this.builder.append(", ");
+            aggregator.postProcessing.accept(this);
+            this.builder.append(")");
+        }
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPI8Literal literal) {
         if (literal.isNull())
             return this.doNull(literal);
@@ -1442,6 +1457,22 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (!this.compact)
             this.builder.append(")");
         this.pop(expression);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPFold fold) {
+        this.push(fold);
+        this.builder.append("Fold::<_, _, ");
+        fold.semigroup.accept(this);
+        this.builder.append(", _, _>::with_output(").increase();
+        fold.zero.accept(this);
+        this.builder.append(",").newline();
+        fold.increment.accept(this);
+        this.builder.append(",").newline();
+        fold.postProcess.accept(this);
+        this.builder.decrease().newline().append(")");
+        this.pop(fold);
         return VisitDecision.STOP;
     }
 
@@ -2495,12 +2526,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPAggregate aggregate) {
+    public VisitDecision preorder(DBSPAggregateList aggregate) {
         throw new InternalCompilerError("Should have been eliminated", aggregate.getNode());
     }
 
     @Override
-    public VisitDecision preorder(AggregateBase implementation) {
+    public VisitDecision preorder(IAggregate implementation) {
         throw new InternalCompilerError("Should have been eliminated", implementation.getNode());
     }
 

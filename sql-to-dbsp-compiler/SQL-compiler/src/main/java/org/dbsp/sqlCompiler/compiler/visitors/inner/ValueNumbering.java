@@ -34,8 +34,8 @@ public class ValueNumbering extends InnerVisitor {
     public static class CanonicalExpression {
         final DBSPExpression expression;
         /** Expressions which use this CanonicalExpression as a subexpression */
-        Set<ExpressionUser> users;
-        boolean expensive;
+        final Set<ExpressionUser> users;
+        final boolean expensive;
         /** List of declarations whose values are used by this expression */
         final Set<IDBSPDeclaration> dependsOn;
 
@@ -86,7 +86,7 @@ public class ValueNumbering extends InnerVisitor {
     final ResolveReferences resolver;
     /** If true we cannot CSE safely */
     public boolean foundAssignment;
-    public List<Boolean> inClosure;
+    public final List<Boolean> inClosure;
 
     public ValueNumbering(DBSPCompiler compiler) {
         super(compiler);

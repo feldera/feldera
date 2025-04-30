@@ -35,7 +35,7 @@ public class IndentStream implements IIndentStream {
     int amount = 4;
     String indentAdd = "";
     String indentString = "";
-    Map<Integer, String> indentStringCache = new HashMap<>();
+    final Map<Integer, String> indentStringCache = new HashMap<>();
     boolean emitIndent = false;
 
     public IndentStream(Appendable appendable) {

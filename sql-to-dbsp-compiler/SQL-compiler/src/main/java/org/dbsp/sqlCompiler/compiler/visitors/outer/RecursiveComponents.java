@@ -58,8 +58,6 @@ public class RecursiveComponents extends Passes {
         this.add(graph2);
         this.add(new BuildNestedOperators(compiler, graph2.getGraphs()));
         this.add(new ValidateRecursiveOperators(compiler));
-        //this.add(new ShowCircuit(compiler));
-        //this.add(new Graph(compiler));
     }
 
     /** Check that all operators in recursive components are supported */

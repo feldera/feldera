@@ -11,7 +11,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
-import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;

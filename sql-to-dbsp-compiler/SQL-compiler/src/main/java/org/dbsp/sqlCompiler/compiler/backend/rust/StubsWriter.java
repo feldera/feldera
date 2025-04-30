@@ -53,7 +53,7 @@ public class StubsWriter extends BaseRustCodeGenerator {
     }
 
     @Override
-    public void write(DBSPCompiler compiler) throws IOException {
+    public void write(DBSPCompiler compiler) {
         if (compiler.options.ioOptions.verbosity > 0)
             System.out.println("Writing UDF stubs to file " + this.path);
         this.builder().append("""

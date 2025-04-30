@@ -62,7 +62,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
     }
 
     @Override
-    public void write(DBSPCompiler compiler) throws IOException {
+    public void write(DBSPCompiler compiler) {
         this.builder().append(COMMON_PREAMBLE);
         this.builder().append(STANDARD_PREAMBLE);
         this.builder().append(ALLOC_PREAMBLE);

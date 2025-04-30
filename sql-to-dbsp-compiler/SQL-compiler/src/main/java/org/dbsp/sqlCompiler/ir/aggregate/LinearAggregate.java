@@ -40,7 +40,7 @@ import java.util.List;
  * - emptySetResult = None
  * Note that the postProcess parameter type is not a reference
  */
-public class LinearAggregate extends AggregateBase {
+public class LinearAggregate extends IAggregate {
     public final DBSPClosureExpression map;
     public final DBSPClosureExpression postProcess;
     public final DBSPExpression emptySetResult;
@@ -72,7 +72,7 @@ public class LinearAggregate extends AggregateBase {
         DBSPClosureExpression map = tuple.closure(parameter);
         // Zero
         DBSPExpression zero = new DBSPTupleExpression(
-                Linq.map(aggregates, AggregateBase::getEmptySetResult), false);
+                Linq.map(aggregates, IAggregate::getEmptySetResult), false);
         // Post
         List<DBSPType> paramTypes = Linq.map(aggregates, c -> c.postProcess.parameters[0].getType());
         DBSPVariablePath postParam = new DBSPTypeTuple(node, paramTypes).var();
@@ -107,7 +107,7 @@ public class LinearAggregate extends AggregateBase {
     }
 
     @Override
-    public boolean compatible(AggregateBase other) {
+    public boolean compatible(IAggregate other) {
         return other.is(LinearAggregate.class);
     }
 

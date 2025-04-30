@@ -441,7 +441,7 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
-    Set<String> structsGenerated = new HashSet<>();
+    final Set<String> structsGenerated = new HashSet<>();
 
     void generateStructHelpers(DBSPType struct, @Nullable TableMetadata metadata) {
         List<DBSPTypeStruct> nested = new ArrayList<>();

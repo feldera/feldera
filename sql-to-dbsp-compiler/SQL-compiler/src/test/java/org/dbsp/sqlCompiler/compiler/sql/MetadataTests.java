@@ -338,7 +338,7 @@ public class MetadataTests extends BaseSQLTests {
                ) AS SELECT * FROM T;""";
         File file = createInputScript(sql);
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
-        String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
+        String rust = Utilities.readFile(BaseSQLTests.TEST_FILE_PATH);
         Assert.assertFalse(rust.contains("connectors"));
 
         sql = """
@@ -346,7 +346,7 @@ public class MetadataTests extends BaseSQLTests {
                CREATE VIEW V AS SELECT * FROM T;""";
         file = createInputScript(sql);
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
-        String rust0 = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
+        String rust0 = Utilities.readFile(getTestFilePath());
         Assert.assertEquals(rust, rust0);
     }
 

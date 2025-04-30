@@ -1881,11 +1881,6 @@ public class StreamingTests extends StreamingTestBase {
         DBSPType error = new DBSPTypeTuple(string, string,
                 // new DBSPTypeVariant(false)
                 string);
-        /*
-        DBSPTypeMap map = new DBSPTypeMap(
-                new DBSPTypeVariant(false),
-                new DBSPTypeVariant(false), false);
-         */
         String sql = """
                 CREATE TABLE series (
                         distance DOUBLE,

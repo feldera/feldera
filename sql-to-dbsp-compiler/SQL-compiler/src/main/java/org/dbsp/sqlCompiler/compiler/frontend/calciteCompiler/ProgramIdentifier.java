@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.util.IJson;
-import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
 
 import java.util.Objects;
@@ -17,7 +16,7 @@ public final class ProgramIdentifier implements IJson {
         this.isQuoted = isQuoted;
     }
 
-    public static ProgramIdentifier EMPTY = new ProgramIdentifier("", false);
+    public static final ProgramIdentifier EMPTY = new ProgramIdentifier("", false);
 
     public static ProgramIdentifier fromJson(JsonNode node) {
         String name = Utilities.getStringProperty(node, "name");

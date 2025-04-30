@@ -43,7 +43,7 @@ import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
@@ -98,7 +98,7 @@ public class AggregateCompiler implements ICompilerComponent {
     public final DBSPType nullableResultType;
     // Deposit compilation result here
     @Nullable
-    private AggregateBase result;
+    private IAggregate result;
 
     /** Expression that stands for the whole input row in the input zset. */
     private final DBSPVariablePath v;
@@ -199,7 +199,7 @@ public class AggregateCompiler implements ICompilerComponent {
         }
         increment = this.aggregateOperation(this.node, opcode,
                 this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());
-        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
+        DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
                 false, accumulator.getType());
         this.setResult(new NonLinearAggregate(
                 this.node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
@@ -226,7 +226,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression increment = new DBSPI64Literal(result).cast(
                 this.node, this.nullableResultType, false);
         DBSPVariablePath accumulator = this.nullableResultType.var();
-        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
+        DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
                 false, accumulator.getType());
         // Always non-linear (result can not be zero).
         this.setResult(new NonLinearAggregate(
@@ -286,7 +286,7 @@ public class AggregateCompiler implements ICompilerComponent {
             increment = this.aggregateOperation(
                     node, DBSPOpcode.AGG_ADD, this.resultType,
                     accumulator, weighted, this.filterArgument());
-            DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "DefaultSemigroup", false, this.resultType);
+            DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, "DefaultSemigroup", false, this.resultType);
             this.setResult(new NonLinearAggregate(
                     node, zero, this.makeRowClosure(increment, accumulator),
                     zero, semigroup));
@@ -326,7 +326,7 @@ public class AggregateCompiler implements ICompilerComponent {
         }
         DBSPExpression increment = new DBSPApplyExpression(
                 node, functionName, DBSPTypeVoid.INSTANCE, arguments);
-        DBSPType semigroup = new DBSPTypeUser(
+        DBSPTypeUser semigroup = new DBSPTypeUser(
                 node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
         DBSPVariablePath p = accumulatorType.var();
         String convertName = "to_array";
@@ -372,7 +372,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 tuple.fields[0].cast(this.node, this.resultType, false).applyCloneIfNeeded(),
                 tuple.fields[1].cast(this.node, currentType, false).applyCloneIfNeeded());
         DBSPExpression increment = new DBSPIfExpression(node, ge, aggArgCast, accumulator.applyCloneIfNeeded());
-        DBSPType semigroup = new DBSPTypeUser(this.node, SEMIGROUP, "UnimplementedSemigroup",
+        DBSPTypeUser semigroup = new DBSPTypeUser(this.node, SEMIGROUP, "UnimplementedSemigroup",
                 false, aggArgCast.getType());
         DBSPExpression postBody = accumulator.field(0).applyCloneIfNeeded();
         this.setResult(new NonLinearAggregate(
@@ -391,7 +391,7 @@ public class AggregateCompiler implements ICompilerComponent {
         return this.getAggregatedValue().getType();
     }
 
-    void setResult(AggregateBase result) {
+    void setResult(IAggregate result) {
         this.result = result;
         if (!this.isWindowAggregate())
             this.result.validate();
@@ -439,7 +439,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPVariablePath accumulator = this.nullableResultType.var();
         DBSPExpression increment = this.aggregateOperation(
                 node, call, this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());
-        DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, semigroupName, false, accumulator.getType());
+        DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, semigroupName, false, accumulator.getType());
         // If there is a filter, do not use a MinMaxAggregate
         NonLinearAggregate aggregate;
         if (this.filterArgument >= 0)
@@ -448,7 +448,7 @@ public class AggregateCompiler implements ICompilerComponent {
         else
             aggregate = new MinMaxAggregate(
                     node, zero, this.makeRowClosure(increment, accumulator),
-                    zero, semigroup, aggregatedValue, isMin);
+                    zero, semigroup, aggregatedValue.closure(this.v), isMin);
         this.setResult(aggregate);
     }
 
@@ -501,7 +501,7 @@ public class AggregateCompiler implements ICompilerComponent {
             increment = this.aggregateOperation(
                     node, DBSPOpcode.AGG_ADD, this.nullableResultType,
                     accumulator, weighted, this.filterArgument());
-            DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "DefaultOptSemigroup",
+            DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "DefaultOptSemigroup",
                     false, accumulator.getType().withMayBeNull(false));
             this.setResult(new NonLinearAggregate(
                     node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
@@ -545,7 +545,7 @@ public class AggregateCompiler implements ICompilerComponent {
             String semigroupName = "DefaultSemigroup";
             if (accumulator.getType().mayBeNull)
                 semigroupName = "DefaultOptSemigroup";
-            DBSPType semigroup = new DBSPTypeUser(this.node, SEMIGROUP, semigroupName, false,
+            DBSPTypeUser semigroup = new DBSPTypeUser(this.node, SEMIGROUP, semigroupName, false,
                     accumulator.getType().withMayBeNull(false));
             this.setResult(new NonLinearAggregate(
                     this.node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
@@ -564,13 +564,13 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression increment = aggregatedValue;
         if (!increment.getType().mayBeNull)
             increment = increment.applyCloneIfNeeded().some();
-        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
+        DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
                 false, accumulator.getType());
         this.setResult(new NonLinearAggregate(
                 node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
     }
 
-    AggregateBase doAverage(SqlAvgAggFunction function) {
+    IAggregate doAverage(SqlAvgAggFunction function) {
         Utilities.enforce(function.getKind() == SqlKind.AVG);
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
 
@@ -653,7 +653,7 @@ public class AggregateCompiler implements ICompilerComponent {
             divide = divide.cast(this.node, this.nullableResultType, false);
             DBSPClosureExpression post = new DBSPClosureExpression(
                     node, divide, a.asParameter());
-            DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "PairSemigroup", false,
+            DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, "PairSemigroup", false,
                     intermediateResultType, intermediateResultType,
                     new DBSPTypeUser(node, SEMIGROUP, "DefaultOptSemigroup", false, intermediateResultTypeNonNull),
                     new DBSPTypeUser(node, SEMIGROUP, "DefaultOptSemigroup", false, intermediateResultTypeNonNull));
@@ -748,7 +748,7 @@ public class AggregateCompiler implements ICompilerComponent {
         sqrt = sqrt.cast(this.node, this.nullableResultType, false);
         DBSPClosureExpression post = new DBSPClosureExpression(node, sqrt, a.asParameter());
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
-        DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "TripleSemigroup", false,
+        DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, "TripleSemigroup", false,
                 intermediateResultType, intermediateResultType, intermediateResultType,
                 new DBSPTypeUser(node, SEMIGROUP, "DefaultOptSemigroup", false, intermediateResultTypeNonNull),
                 new DBSPTypeUser(node, SEMIGROUP, "DefaultOptSemigroup", false, intermediateResultTypeNonNull),
@@ -758,7 +758,7 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processAvg(SqlAvgAggFunction function) {
-        AggregateBase implementation = switch (function.getKind()) {
+        IAggregate implementation = switch (function.getKind()) {
             case AVG -> this.doAverage(function);
             case STDDEV_POP, STDDEV_SAMP -> this.doStddev(function);
             default -> throw new UnimplementedException("Statistical aggregate function not yet implemented", 172, node);
@@ -766,7 +766,7 @@ public class AggregateCompiler implements ICompilerComponent {
         this.setResult(implementation);
     }
 
-    public AggregateBase compile() {
+    public IAggregate compile() {
         boolean success =
                 this.process(this.aggFunction, SqlCountAggFunction.class, this::processCount) ||
                 this.process(this.aggFunction, SqlBasicAggFunction.class, this::processBasic) || // arg_max or array_agg

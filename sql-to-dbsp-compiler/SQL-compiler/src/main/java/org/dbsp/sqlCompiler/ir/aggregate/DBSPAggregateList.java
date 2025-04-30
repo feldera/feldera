@@ -22,27 +22,26 @@ import org.dbsp.util.Utilities;
 
 import java.util.List;
 
-/** Description of an aggregate.
- * In general an aggregate performs multiple simple aggregates simultaneously. */
-public final class DBSPAggregate extends DBSPNode
+/** Description of a list of aggregations. */
+public final class DBSPAggregateList extends DBSPNode
         implements IDBSPInnerNode, IDBSPDeclaration // Declares the row variable
 {
     public final DBSPVariablePath rowVar;
     /** Component aggregates, must all be linear or non-linear */
-    public final List<AggregateBase> aggregates;
+    public final List<IAggregate> aggregates;
     // Cache here the result of aggregation on the empty set
     final DBSPExpression emptySetResult;
     final boolean isLinear;
 
-    public DBSPAggregate(CalciteObject node, DBSPVariablePath rowVar,
-                         List<AggregateBase> aggregates) {
+    public DBSPAggregateList(CalciteObject node, DBSPVariablePath rowVar,
+                             List<IAggregate> aggregates) {
         super(node);
         Utilities.enforce(!aggregates.isEmpty());
         this.rowVar = rowVar;
         this.aggregates = aggregates;
-        this.isLinear = Linq.all(aggregates, AggregateBase::isLinear);
-        this.emptySetResult = new DBSPTupleExpression(node, Linq.map(aggregates, AggregateBase::getEmptySetResult));
-        for (AggregateBase b: this.aggregates)
+        this.isLinear = Linq.all(aggregates, IAggregate::isLinear);
+        this.emptySetResult = new DBSPTupleExpression(node, Linq.map(aggregates, IAggregate::getEmptySetResult));
+        for (IAggregate b: this.aggregates)
             Utilities.enforce(b.isLinear() == this.isLinear);
     }
 
@@ -67,7 +66,7 @@ public final class DBSPAggregate extends DBSPNode
         this.rowVar.accept(visitor);
         visitor.property("aggregates");
         int index = 0;
-        for (AggregateBase impl : this.aggregates) {
+        for (IAggregate impl : this.aggregates) {
             visitor.propertyIndex(index++);
             impl.accept(visitor);
         }
@@ -79,15 +78,15 @@ public final class DBSPAggregate extends DBSPNode
         if (this.isLinear())
             return this.asLinear(compiler);
         else
-            return this.asFold(compiler, true);
+            return this.asFold(compiler);
     }
 
-    public DBSPExpression asFold(DBSPCompiler compiler, boolean compact) {
+    public DBSPFold asFold(DBSPCompiler compiler) {
         Utilities.enforce(!this.isLinear());
         NonLinearAggregate combined = NonLinearAggregate.combine(
                 this.getNode(), compiler, this.rowVar,
                 Linq.map(this.aggregates, a -> a.to(NonLinearAggregate.class)));
-        return combined.asFold(this.getType(), compact);
+        return combined.asFold(this.getType());
     }
 
     public LinearAggregate asLinear(DBSPCompiler compiler) {
@@ -95,10 +94,6 @@ public final class DBSPAggregate extends DBSPNode
         return LinearAggregate.combine(
                 this.getNode(), compiler, this.rowVar,
                 Linq.map(this.aggregates, a -> a.to(LinearAggregate.class)));
-    }
-
-    public DBSPExpression asFold(DBSPCompiler compiler) {
-        return this.asFold(compiler, false);
     }
 
     public int size() {
@@ -121,7 +116,7 @@ public final class DBSPAggregate extends DBSPNode
 
     @Override
     public boolean sameFields(IDBSPInnerNode other) {
-        DBSPAggregate o = other.as(DBSPAggregate.class);
+        DBSPAggregateList o = other.as(DBSPAggregateList.class);
         if (o == null)
             return false;
         return this.rowVar == o.rowVar &&
@@ -133,13 +128,13 @@ public final class DBSPAggregate extends DBSPNode
         builder.append("Aggregate ")
                 .append(this.aggregates.size())
                 .append(":").increase();
-        for (AggregateBase impl : this.aggregates) {
+        for (IAggregate impl : this.aggregates) {
             builder.append(impl);
         }
         return builder.decrease();
     }
 
-    public boolean equivalent(DBSPAggregate other) {
+    public boolean equivalent(DBSPAggregateList other) {
         if (this.size() != other.size())
             return false;
         EquivalenceContext context = new EquivalenceContext();
@@ -152,9 +147,9 @@ public final class DBSPAggregate extends DBSPNode
     }
 
     @SuppressWarnings("unused")
-    public static DBSPAggregate fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPAggregateList fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPVariablePath rowVar = fromJsonInner(node, "rowVar", decoder, DBSPVariablePath.class);
-        List<AggregateBase> aggregates = fromJsonInnerList(node, "aggregates", decoder, AggregateBase.class);
-        return new DBSPAggregate(CalciteObject.EMPTY, rowVar, aggregates);
+        List<IAggregate> aggregates = fromJsonInnerList(node, "aggregates", decoder, IAggregate.class);
+        return new DBSPAggregateList(CalciteObject.EMPTY, rowVar, aggregates);
     }
 }

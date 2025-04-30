@@ -148,8 +148,9 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUnusedFields;
-import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -182,8 +183,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
-import org.dbsp.sqlCompiler.ir.path.DBSPPath;
-import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
@@ -341,23 +340,23 @@ public class CalciteToDBSPCompiler extends RelVisitor
     /** A list of aggregates and a permutation that has to be applied to the result to produce the expected result.
      * Note that each aggregate computes several scalar values, e.g., one could be a MIN and a MAX.
      * The permutation is applied to the scalar results, i.e., it will have 2 values in this kind. */
-    public record AggregateList(List<DBSPAggregate> aggregates, Shuffle permutation) {
+    public record AggregateList(List<DBSPAggregateList> aggregates, Shuffle permutation) {
         public AggregateList() {
             this(new ArrayList<>(), new IdShuffle(0));
         }
     }
 
-    static Shuffle reorderAggregates(List<AggregateBase> aggregates) {
+    static Shuffle reorderAggregates(List<IAggregate> aggregates) {
         if (aggregates.size() == 1)
             return new IdShuffle(aggregates.size());
         // We make a new list for each AggregateBase which is not compatible with any other previous aggregate
         List<List<Integer>> groups = new ArrayList<>();
         for (int i = 0; i < aggregates.size(); i++) {
-            AggregateBase aggregate = aggregates.get(i);
+            IAggregate aggregate = aggregates.get(i);
             boolean added = false;
             for (List<Integer> group : groups) {
                 int index = Utilities.last(group);
-                AggregateBase inGroup = aggregates.get(index);
+                IAggregate inGroup = aggregates.get(index);
                 if (inGroup.compatible(aggregate)) {
                     // This implicitly relies on the transitivity of compability
                     group.add(i);
@@ -400,7 +399,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         Utilities.enforce(!aggregates.isEmpty());
 
         CalciteObject obj = CalciteObject.create(node);
-        List<AggregateBase> simple = new ArrayList<>();
+        List<IAggregate> simple = new ArrayList<>();
         DBSPVariablePath rowVar = inputRowType.ref().var();
         {
             int aggIndex = 0;
@@ -408,7 +407,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPType resultFieldType = resultType.getFieldType(aggIndex + groupCount);
                 AggregateCompiler aggCompiler = new AggregateCompiler(node,
                         compiler, call, resultFieldType, rowVar, groupKeys, linearAllowed);
-                AggregateBase implementation = aggCompiler.compile();
+                IAggregate implementation = aggCompiler.compile();
                 simple.add(implementation);
                 aggIndex++;
             }
@@ -416,22 +415,22 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         Shuffle shuffle = new IdShuffle(simple.size());
         // Each aggregate in 'results' will contain a sequence of compatible AggregateBase operations.
-        List<DBSPAggregate> results = new ArrayList<>();
-        List<AggregateBase> currentGroup = new ArrayList<>();
+        List<DBSPAggregateList> results = new ArrayList<>();
+        List<IAggregate> currentGroup = new ArrayList<>();
         if (canReorder)
             shuffle = reorderAggregates(simple);
         simple = shuffle.shuffle(simple);
-        for (AggregateBase implementation: simple) {
+        for (IAggregate implementation: simple) {
             // A list of compatible aggregates
             if (!currentGroup.isEmpty() && !Utilities.last(currentGroup).compatible(implementation)) {
-                DBSPAggregate aggregate = new DBSPAggregate(obj, rowVar, currentGroup);
+                DBSPAggregateList aggregate = new DBSPAggregateList(obj, rowVar, currentGroup);
                 results.add(aggregate);
                 currentGroup = new ArrayList<>();
             }
             currentGroup.add(implementation);
         }
         // Add all the left-over aggregates
-        DBSPAggregate aggregate = new DBSPAggregate(obj, rowVar, currentGroup);
+        DBSPAggregateList aggregate = new DBSPAggregateList(obj, rowVar, currentGroup);
         results.add(aggregate);
         return new AggregateList(results, shuffle);
     }
@@ -770,9 +769,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     DBSPSimpleOperator joinAllAggregates(
             CalciteRelNode node, DBSPType groupKeyType, OutputPort indexedInput,
-            List<DBSPAggregate> aggregates) {
+            List<DBSPAggregateList> aggregates) {
         DBSPSimpleOperator result = null;
-        for (DBSPAggregate agg : aggregates) {
+        for (DBSPAggregateList agg : aggregates) {
             // We synthesize each aggregate and repeatedly join it with the previous result.
             // The aggregate operator will not return a stream of type aggType, but a stream
             // with a type given by fd.defaultZero.
@@ -940,7 +939,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             return map.outputPort();
         }
 
-        List<DBSPExpression> emptyResults = Linq.map(aggregates.aggregates, DBSPAggregate::getEmptySetResult);
+        List<DBSPExpression> emptyResults = Linq.map(aggregates.aggregates, DBSPAggregateList::getEmptySetResult);
         DBSPBaseTupleExpression emptySetResult = DBSPTupleExpression.flatten(emptyResults);
         emptySetResult = emptySetResult.shuffle(aggregates.permutation().invert());
         DBSPAggregateZeroOperator zero = new DBSPAggregateZeroOperator(node, emptySetResult, map.outputPort());
@@ -2116,7 +2115,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple inputRowType = this.convertType(input.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPSimpleOperator opInput = this.getInputAs(input, true);
         DBSPVariablePath row = inputRowType.ref().var();
-        AggregateBase agg;
+        IAggregate agg;
 
         // Index by the empty tuple
         DBSPExpression indexingFunction = new DBSPRawTupleExpression(
@@ -2150,7 +2149,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         this.compiler.weightVar,
                         new DBSPBoolLiteral(false),
                         new DBSPBoolLiteral(true));
-                DBSPType semigroup = new DBSPTypeUser(
+                DBSPTypeUser semigroup = new DBSPTypeUser(
                         node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
                 DBSPVariablePath p = accumulatorType.var();
                 String convertName = "to_array";
@@ -2182,7 +2181,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         accumulator.borrow(true),
                         row.deref().applyCloneIfNeeded(),
                         this.compiler.weightVar);
-                DBSPType semigroup = new DBSPTypeUser(
+                DBSPTypeUser semigroup = new DBSPTypeUser(
                         node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
                 DBSPVariablePath p = accumulatorType.var();
                 String convertName = "to_map";
@@ -2198,7 +2197,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 throw new UnimplementedException("Aggregation to " + collect.getCollectionType() +
                         " not yet implemented", node);
         }
-        DBSPAggregate aggregate = new DBSPAggregate(node, row, Linq.list(agg));
+        DBSPAggregateList aggregate = new DBSPAggregateList(node, row, Linq.list(agg));
         DBSPSimpleOperator aggregateOperator = new DBSPAggregateOperator(
                 node, new DBSPTypeIndexedZSet(node, new DBSPTypeTuple(), type), null, aggregate, index.outputPort());
         this.addOperator(aggregateOperator);
@@ -3046,7 +3045,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         ImmutableBitSet.of(), false, false);
                 Utilities.enforce(folds.permutation().isIdentityPermutation());
                 Utilities.enforce(folds.aggregates.size() == 1);
-                DBSPAggregate fd = folds.aggregates.get(0);
+                DBSPAggregateList fd = folds.aggregates.get(0);
 
                 // This function is always the same: |Tup2(x, y)| (x, y)
                 DBSPVariablePath pr = new DBSPVariablePath(partitionAndRowType.ref());
@@ -3432,20 +3431,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // An element with weight 'w' is pushed 'w' times into the vector
         DBSPExpression wPush = new DBSPApplyExpression(node,
                 "weighted_push", DBSPTypeVoid.INSTANCE, accum, row, this.compiler.weightVar);
-        DBSPExpression push = wPush.closure(accum, row, this.compiler.weightVar);
-        DBSPType semigroup = new DBSPTypeUser(node, USER, "UnimplementedSemigroup",
+        DBSPClosureExpression push = wPush.closure(accum, row, this.compiler.weightVar);
+        DBSPTypeUser semigroup = new DBSPTypeUser(node, USER, "UnimplementedSemigroup",
                 false, DBSPTypeAny.getDefault());
         DBSPVariablePath var = vecType.var();
-        DBSPExpression post = new DBSPApplyMethodExpression("into", arrayType, var).closure(var);
-        DBSPExpression constructor =
-                new DBSPPath(new DBSPSimplePathSegment("Fold", DBSPTypeAny.getDefault(),
-                        DBSPTypeAny.getDefault(),
-                        semigroup,
-                        DBSPTypeAny.getDefault(),
-                        DBSPTypeAny.getDefault()),
-                        new DBSPSimplePathSegment("with_output")).toExpression();
-
-        DBSPExpression folder = constructor.call(zero, push, post);
+        DBSPClosureExpression post = new DBSPApplyMethodExpression("into", arrayType, var).closure(var);
+        DBSPFold folder = new DBSPFold(node, arrayType, semigroup, zero, push, post);
         DBSPStreamAggregateOperator agg = new DBSPStreamAggregateOperator(node,
                 makeIndexedZSet(new DBSPTypeRawTuple(), arrayType),
                 folder, null, index.outputPort());

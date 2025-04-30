@@ -7,8 +7,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.*;
@@ -162,6 +164,22 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
         DBSPExpression condition = this.getEN(node.condition);
         this.map(node, new DBSPConditionalAggregateExpression(
                 node.getNode(), node.opcode, node.getType(), left, right, condition));
+    }
+
+    @Override
+    public void postorder(DBSPFold fold) {
+        DBSPExpression zero = this.getE(fold.zero);
+        DBSPClosureExpression increment = this.getE(fold.increment).to(DBSPClosureExpression.class);
+        DBSPClosureExpression postProcessing = this.getE(fold.postProcess).to(DBSPClosureExpression.class);
+        DBSPFold result = new DBSPFold(
+                fold.getNode(), fold.getType(), fold.semigroup,
+                zero, increment, postProcessing);
+        this.map(fold, result);
+    }
+
+    @Override
+    public void postorder(DBSPMinMax aggregator) {
+        this.map(aggregator, aggregator);
     }
 
     @Override
@@ -495,14 +513,14 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     }
 
     @Override
-    public void postorder(DBSPAggregate aggregate) {
+    public void postorder(DBSPAggregateList aggregate) {
         DBSPExpression rowVar = this.getE(aggregate.rowVar);
-        List<AggregateBase> implementations =
+        List<IAggregate> implementations =
                 Linq.map(aggregate.aggregates, c -> {
                     IDBSPInnerNode result = this.getE(c);
-                    return result.to(AggregateBase.class);
+                    return result.to(IAggregate.class);
                 });
-        DBSPAggregate result = new DBSPAggregate(
+        DBSPAggregateList result = new DBSPAggregateList(
                 aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations);
         this.set(aggregate, result);
     }

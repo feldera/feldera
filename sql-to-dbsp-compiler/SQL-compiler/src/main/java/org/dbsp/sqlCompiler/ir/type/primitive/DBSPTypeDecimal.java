@@ -117,11 +117,6 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
     }
 
     @Override
-    public boolean hasCopy() {
-        return true;
-    }
-
-    @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.precision, this.scale);
     }

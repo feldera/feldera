@@ -5,7 +5,6 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.util.Properties;
 
 import javax.annotation.Nullable;

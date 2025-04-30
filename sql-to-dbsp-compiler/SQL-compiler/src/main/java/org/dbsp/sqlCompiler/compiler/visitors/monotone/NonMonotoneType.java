@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -13,7 +12,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;

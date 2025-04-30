@@ -68,7 +68,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
     }
 
     @Override
-    public void write(DBSPCompiler compiler) throws IOException {
+    public void write(DBSPCompiler compiler) {
         this.builder()
                 .append(RustWriter.COMMON_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);

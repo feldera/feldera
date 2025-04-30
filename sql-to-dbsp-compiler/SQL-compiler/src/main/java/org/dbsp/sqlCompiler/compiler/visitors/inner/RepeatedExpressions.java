@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.Linq;
 

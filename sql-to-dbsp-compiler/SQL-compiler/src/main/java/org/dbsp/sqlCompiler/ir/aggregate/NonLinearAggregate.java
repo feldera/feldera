@@ -16,15 +16,13 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.path.DBSPPath;
-import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -41,7 +39,7 @@ import java.util.Objects;
  * and a postprocessing step of |a| a.1/a.0.
  * Notice that the DBSP `Fold` structure has a slightly different signature
  * for the increment. */
-public class NonLinearAggregate extends AggregateBase {
+public class NonLinearAggregate extends IAggregate {
     /** Zero of the fold function. */
     public final DBSPExpression zero;
     /** A closure with signature |&mut accumulator, value, weight|.
@@ -53,7 +51,7 @@ public class NonLinearAggregate extends AggregateBase {
     /** Result produced for an empty set (DBSP produces no result in this case). */
     public final DBSPExpression emptySetResult;
     /** The type that implements the semigroup for this operation. */
-    public final DBSPType semigroup;
+    public final DBSPTypeUser semigroup;
 
     public NonLinearAggregate(
             CalciteObject origin,
@@ -62,7 +60,7 @@ public class NonLinearAggregate extends AggregateBase {
             @Nullable
             DBSPClosureExpression postProcess,
             DBSPExpression emptySetResult,
-            DBSPType semigroup) {
+            DBSPTypeUser semigroup) {
         super(origin, emptySetResult.getType());
         this.zero = zero;
         this.increment = increment;
@@ -77,7 +75,7 @@ public class NonLinearAggregate extends AggregateBase {
             DBSPExpression zero,
             DBSPClosureExpression increment,
             DBSPExpression emptySetResult,
-            DBSPType semigroup) {
+            DBSPTypeUser semigroup) {
         this(operator, zero, increment, null, emptySetResult, semigroup);
     }
 
@@ -96,7 +94,7 @@ public class NonLinearAggregate extends AggregateBase {
     }
 
     @Override
-    public boolean compatible(AggregateBase other) {
+    public boolean compatible(IAggregate other) {
         return other.is(NonLinearAggregate.class) &&
                 !other.is(MinMaxAggregate.class);
     }
@@ -160,25 +158,9 @@ public class NonLinearAggregate extends AggregateBase {
                 this.semigroup == o.semigroup;
     }
 
-    public DBSPExpression asFold(DBSPType type, boolean compact) {
-        DBSPType[] typeArgs;
-        if (compact) {
-            typeArgs = new DBSPType[0];
-        } else {
-            typeArgs = new DBSPType[5];
-            typeArgs[0] = DBSPTypeAny.getDefault();
-            typeArgs[1] = DBSPTypeAny.getDefault();
-            typeArgs[2] = this.semigroup;
-            typeArgs[3] = DBSPTypeAny.getDefault();
-            typeArgs[4] = DBSPTypeAny.getDefault();
-        }
-
-        DBSPExpression constructor =
-                new DBSPPath(
-                        new DBSPSimplePathSegment("Fold", typeArgs),
-                        new DBSPSimplePathSegment("with_output"))
-                        .toExpression();
-        return constructor.call(type, this.zero, this.increment, this.postProcess);
+    public DBSPFold asFold(DBSPType type) {
+        return new DBSPFold(this.getNode(), type, this.semigroup,
+                this.zero, this.increment, Objects.requireNonNull(this.postProcess));
     }
 
     @Override
@@ -267,7 +249,7 @@ public class NonLinearAggregate extends AggregateBase {
                 accumulator, rowVar,
                 weightVar);
         DBSPClosureExpression postClosure = new DBSPTupleExpression(posts).closure(postAccumulator);
-        DBSPType semigroup = new DBSPTypeSemigroup(semigroups, accumulatorTypes);
+        DBSPTypeUser semigroup = new DBSPTypeSemigroup(semigroups, accumulatorTypes);
         return new NonLinearAggregate(node, new DBSPTupleExpression(zeros),
                 accumFunction, postClosure, new DBSPTupleExpression(emptySetResults), semigroup);
     }
@@ -300,7 +282,7 @@ public class NonLinearAggregate extends AggregateBase {
         DBSPExpression zero = fromJsonInner(node, "zero", decoder, DBSPExpression.class);
         DBSPClosureExpression increment = fromJsonInner(node, "increment", decoder, DBSPClosureExpression.class);
         DBSPExpression emptySetResult = fromJsonInner(node, "emptySetResult", decoder, DBSPExpression.class);
-        DBSPType semigroup = fromJsonInner(node, "semigroup", decoder, DBSPType.class);
+        DBSPTypeUser semigroup = fromJsonInner(node, "semigroup", decoder, DBSPTypeUser.class);
         DBSPClosureExpression postProcess = fromJsonInner(node, "postProcess", decoder, DBSPClosureExpression.class);
         return new NonLinearAggregate(CalciteObject.EMPTY, zero, increment, postProcess, emptySetResult, semigroup);
     }

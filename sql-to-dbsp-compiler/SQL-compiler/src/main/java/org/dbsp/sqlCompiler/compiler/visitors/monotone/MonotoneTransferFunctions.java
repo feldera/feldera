@@ -21,7 +21,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -35,7 +34,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
@@ -193,7 +191,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         outputFields = expression.shuffle.shuffle(outputFields);
         DBSPExpression tuple = new DBSPTupleExpression(outputFields, false);
         DBSPType resultType = expression.getType().to(DBSPTypeFunction.class).resultType;
-        Utilities.enforce(tuple.getType().sameType(resultType), "Flatmap result type " + resultType + " does not match computed type " + tuple.getType());
+        Utilities.enforce(tuple.getType().sameType(resultType),
+                "Flatmap result type " + resultType + " does not match computed type " + tuple.getType());
         DBSPClosureExpression closure = tuple.closure(param);
         // This is the same as this.apply(closure)
         this.resolver.apply(closure);
