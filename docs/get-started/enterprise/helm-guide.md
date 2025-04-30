@@ -41,9 +41,9 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    LICENSE_KEY="00000000-0000-0000-0000-000000000000"  # Set to own
 
    helm upgrade --install feldera \
-       oci://public.ecr.aws/feldera/feldera-chart --version 0.48.0 \
+       oci://public.ecr.aws/feldera/feldera-chart --version 0.50.0 \
        --namespace feldera --create-namespace \
-       --set felderaVersion="0.48.0" \
+       --set felderaVersion="0.50.0" \
        --set felderaAccountId="${ACCOUNT_ID}" \
        --set felderaLicenseKey="${LICENSE_KEY}" \
        --set felderaDatabaseSecretRef="feldera-db-insecure-secret"
