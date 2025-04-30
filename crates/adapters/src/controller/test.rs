@@ -1537,25 +1537,7 @@ storage_config: null
 storage: null
 clock_resolution_usecs: null
 inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: "path"
-                follow: true
-        format:
-            name: csv
 outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: "path"
-        format:
-            name: csv
-            config:
         "#
     .to_string();
 
