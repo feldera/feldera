@@ -182,29 +182,35 @@ const sql = {
         'sql/grammar',
         'sql/identifiers',
         'sql/types',
-        'sql/casts',
-        'sql/operators',
-        'sql/aggregates',
-        'sql/boolean',
-        'sql/comparisons',
-        'sql/integer',
-        'sql/float',
-        'sql/decimal',
-        'sql/string',
-        'sql/uuid',
-        'sql/binary',
-        'sql/array',
-        'sql/map',
-        'sql/datetime',
-        'sql/json',
+        {
+            type: 'category',
+            label: 'operations',
+            items: [
+                'sql/aggregates',
+                'sql/array',
+                'sql/binary',
+                'sql/boolean',
+                'sql/casts',
+                'sql/comparisons',
+                'sql/datetime',
+                'sql/decimal',
+                'sql/float',
+                'sql/function-index'
+                'sql/integer',
+                'sql/json',
+                'sql/map',
+                'sql/operators',
+                'sql/string',
+                'sql/table',
+                'sql/uuid',
+            ]
+        },
         'sql/materialized',
         'sql/recursion',
         'sql/ad-hoc',
         'sql/streaming',
         'sql/system',
-        'sql/table',
-        'sql/udf',
-        'sql/function-index'
+        'sql/udf'
     ]
 };
 

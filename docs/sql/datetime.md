@@ -352,10 +352,10 @@ Arithmetic between a `DATE` and an `INTERVAL` first converts the
 interval to a whole number days (rounding down) and then performs the
 computation on whole days.
 
-<a id="date_sub"></a>
-`DATE_SUB` is a synonim for `DATE` - `INTERVAL`.
-<a id="date_add"></a>
-`DATE_ADD` is a synonim for `DATE` + `INTERVAL`.
+<a id="date_sub"></a> `DATE_SUB` is a synonim for `DATE` - `INTERVAL`.
+<a id="date_add"></a> `DATE_ADD` is a synonim for `DATE` + `INTERVAL`.
+<a id="abs"></a>`ABS`(interval) computes the absolute value of an
+interval.
 
 ## Timezones
 
