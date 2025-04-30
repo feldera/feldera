@@ -209,12 +209,16 @@ where
 
     fn rewind_keys(&mut self) {
         self.cursor.rewind_vals();
-        self.cursor.val().fst().clone_to(&mut self.key);
+        if self.cursor.val_valid() {
+            self.cursor.val().fst().clone_to(&mut self.key);
+        }
     }
 
     fn fast_forward_keys(&mut self) {
         self.cursor.fast_forward_vals();
-        self.cursor.val().fst().clone_to(&mut self.key);
+        if self.cursor.val_valid() {
+            self.cursor.val().fst().clone_to(&mut self.key);
+        }
     }
 
     fn rewind_vals(&mut self) {
