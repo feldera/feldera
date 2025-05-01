@@ -117,9 +117,14 @@ pub struct GlobalControllerMetrics {
     /// Total number of input records processed by the DBSP engine.
     /// Note that some of the outputs produced for these input records
     /// may still be buffered at the output endpoint.
-    /// Use `OutputEndpointMetrics::total_processed_input_records`
-    /// for end-to-end progress tracking.
+    /// Use `total_completed_records` for end-to-end progress tracking.
     pub total_processed_records: AtomicU64,
+
+    /// Total number of input records processed to completion.
+    /// A record is processed to completion if it has been processed by the DBSP engine and
+    /// all outputs derived from it have been processed by all output connectors.
+    // This field is computed on-demand by calling `ControllerStatus::update`.
+    pub total_completed_records: AtomicU64,
 
     /// True if the pipeline has processed all input data to completion.
     /// This means that the following conditions hold:
@@ -162,6 +167,7 @@ impl GlobalControllerMetrics {
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(processed_records),
             total_processed_records: AtomicU64::new(processed_records),
+            total_completed_records: AtomicU64::new(processed_records),
             pipeline_complete: AtomicBool::new(false),
             step_requested: AtomicBool::new(false),
         }
@@ -875,6 +881,25 @@ impl ControllerStatus {
         self.global_metrics
             .pipeline_complete
             .store(self.pipeline_complete(), Ordering::Release);
+
+        // Compute total_completed_records as the minimum total_processed_input_records across
+        // all output connectors. In case there are no output connectors attached to the pipeline,
+        // `total_completed_records` is equal to `total_processed_records`.
+        let mut total_completed_records = self
+            .global_metrics
+            .total_processed_records
+            .load(Ordering::Acquire);
+
+        for output_ep in self.outputs.read().unwrap().values() {
+            total_completed_records = min(
+                total_completed_records,
+                output_ep.num_total_processed_input_records(),
+            );
+        }
+
+        self.global_metrics
+            .total_completed_records
+            .store(total_completed_records, Ordering::Release);
 
         *self.suspend_error.lock().unwrap() = suspend_error;
 
