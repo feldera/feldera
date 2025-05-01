@@ -6,11 +6,11 @@ import type {
 import type { BigNumber } from 'bignumber.js/bignumber.js'
 
 export type ControllerStatus = {
-  pipeline_config: RuntimeConfig
   global_metrics: GlobalMetrics
   inputs: InputEndpointStatus[]
   outputs: OutputEndpointStatus[]
   metrics: ControllerMetric[]
+  suspend_error: any
 }
 
 type ControllerMetric = {
@@ -89,9 +89,12 @@ export type GlobalMetricsTimestamp = GlobalMetrics & {
 
 export type InputEndpointStatus = {
   endpoint_name: string
-  config: InputEndpointConfig
+  config: Pick<InputEndpointConfig, 'stream'>
   metrics: InputEndpointMetrics
-  is_fault_tolerant: boolean
+  is_fault_tolerant?: boolean
+  paused?: boolean
+  barrier?: boolean
+  fatal_error?: boolean
 }
 
 export interface InputEndpointMetrics {
@@ -105,9 +108,9 @@ export interface InputEndpointMetrics {
 
 export type OutputEndpointStatus = {
   endpoint_name: string
-  config: OutputEndpointConfig
+  config: Pick<OutputEndpointConfig, 'stream'>
   metrics: OutputEndpointMetrics
-  is_fault_tolerant: boolean
+  is_fault_tolerant?: boolean
 }
 
 export interface OutputEndpointMetrics {

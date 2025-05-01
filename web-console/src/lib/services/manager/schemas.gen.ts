@@ -582,6 +582,24 @@ The condition must be a valid SQL Boolean expression that can be used in
 the \`where\` clause of the \`select * from my_table where ...\` query.`,
       nullable: true
     },
+    max_concurrent_readers: {
+      type: 'integer',
+      format: 'int32',
+      description: `Maximum number of concurrent object store reads performed by all Delta Lake connectors.
+
+This setting is used to limit the number of concurrent reads of the object store in a
+pipeline with a large number of Delta Lake connectors. When multiple connectors are simultaneously
+reading from the object store, this can lead to transport timeouts.
+
+When enabled, this setting limits the number of concurrent reads across all connectors.
+This is a global setting that affects all Delta Lake connectors, and not just the connector
+where it is specified. It should therefore be used at most once in a pipeline.  If multiple
+connectors specify this setting, they must all use the same value.
+
+The default value is 6.`,
+      nullable: true,
+      minimum: 0
+    },
     mode: {
       $ref: '#/components/schemas/DeltaTableIngestMode'
     },
@@ -592,6 +610,21 @@ the \`where\` clause of the \`select * from my_table where ...\` query.`,
 table. Increasing this value can enhance performance by allowing more concurrent processing.
 Recommended range: 1–10. The default is 4.`,
       minimum: 0
+    },
+    skip_unused_columns: {
+      type: 'boolean',
+      description: `Don't read unused columns from the Delta table.
+
+When set to \`true\`, this option instructs the connector to avoid reading
+columns from the Delta table that are not used in any view definitions.
+To be skipped, the columns must be either nullable or have default
+values. This can improve ingestion performance, especially for wide
+tables.
+
+Note: The simplest way to exclude unused columns is to omit them from the Feldera SQL table
+declaration. The connector never reads columns that aren't declared in the SQL schema.
+Additionally, the SQL compiler emits warnings for declared but unused columns—use these as
+a guide to optimize your schema.`
     },
     snapshot_filter: {
       type: 'string',
@@ -806,7 +839,7 @@ export const $Field = {
     },
     {
       type: 'object',
-      required: ['columntype'],
+      required: ['columntype', 'unused'],
       properties: {
         columntype: {
           $ref: '#/components/schemas/ColumnType'
@@ -818,6 +851,9 @@ export const $Field = {
         lateness: {
           type: 'string',
           nullable: true
+        },
+        unused: {
+          type: 'boolean'
         },
         watermark: {
           type: 'string',
@@ -925,8 +961,11 @@ be forced into that range.`,
 
 export const $FtModel = {
   type: 'string',
-  description: 'Fault tolerance model.',
-  enum: ['exactly_once', 'at_least_once']
+  description: `Fault tolerance model.
+
+The ordering is significant: we consider [Self::ExactlyOnce] to be a "higher
+level" of fault tolerance than [Self::AtLeastOnce].`,
+  enum: ['at_least_once', 'exactly_once']
 } as const
 
 export const $GenerationPlan = {
@@ -2521,7 +2560,25 @@ export const $PostgresReaderConfig = {
     },
     uri: {
       type: 'string',
-      description: 'Postgres URI.'
+      description: `Postgres URI.
+See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>`
+    }
+  }
+} as const
+
+export const $PostgresWriterConfig = {
+  type: 'object',
+  description: 'Postgres output connector configuration.',
+  required: ['uri', 'table'],
+  properties: {
+    table: {
+      type: 'string',
+      description: 'The table to write the output to.'
+    },
+    uri: {
+      type: 'string',
+      description: `Postgres URI.
+See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>`
     }
   }
 } as const
@@ -2576,6 +2633,45 @@ export const $ProgramError = {
 - Set \`Some(...)\` upon transition to \`SystemError\`
 - Set \`None\` upon transition to \`Pending\``,
       nullable: true
+    }
+  }
+} as const
+
+export const $ProgramInfo = {
+  type: 'object',
+  description: `Program information is the output of the SQL compiler.
+
+It includes information needed for Rust compilation (e.g., generated Rust code)
+as well as only for runtime (e.g., schema, input/output connectors).`,
+  required: ['schema', 'input_connectors', 'output_connectors'],
+  properties: {
+    dataflow: {
+      description: 'Dataflow graph of the program.'
+    },
+    input_connectors: {
+      type: 'object',
+      description: 'Input connectors derived from the schema.',
+      additionalProperties: {
+        $ref: '#/components/schemas/InputEndpointConfig'
+      }
+    },
+    main_rust: {
+      type: 'string',
+      description: 'Generated main program Rust code: main.rs'
+    },
+    output_connectors: {
+      type: 'object',
+      description: 'Output connectors derived from the schema.',
+      additionalProperties: {
+        $ref: '#/components/schemas/OutputEndpointConfig'
+      }
+    },
+    schema: {
+      $ref: '#/components/schemas/ProgramSchema'
+    },
+    udf_stubs: {
+      type: 'string',
+      description: 'Generated user defined function (UDF) stubs Rust code: stubs.rs'
     }
   }
 } as const
@@ -3798,6 +3894,19 @@ export const $TransportConfig = {
         name: {
           type: 'string',
           enum: ['postgres_input']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
+          $ref: '#/components/schemas/PostgresWriterConfig'
+        },
+        name: {
+          type: 'string',
+          enum: ['postgres_output']
         }
       }
     },

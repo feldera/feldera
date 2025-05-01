@@ -5113,6 +5113,24 @@
           }
         }
       },
+      "PostgresWriterConfig": {
+        "type": "object",
+        "description": "Postgres output connector configuration.",
+        "required": [
+          "uri",
+          "table"
+        ],
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "The table to write the output to."
+          },
+          "uri": {
+            "type": "string",
+            "description": "Postgres URI.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
+          }
+        }
+      },
       "ProgramConfig": {
         "type": "object",
         "description": "Program configuration.",

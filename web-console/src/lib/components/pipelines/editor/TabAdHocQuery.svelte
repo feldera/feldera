@@ -71,7 +71,8 @@
           ...Object.keys(input[0]).map((name) => ({
             name,
             case_sensitive: false,
-            columntype: { nullable: true }
+            columntype: { nullable: true },
+            unused: false
           }))
         )
       }
