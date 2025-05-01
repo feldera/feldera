@@ -1442,9 +1442,14 @@ pub(crate) mod tests {
         cconf.storage.as_mut().unwrap().init_checkpoint = Some(Uuid::now_v7()); // this checkpoint doesn't exist
 
         let res = mkcircuit(&cconf);
+        let Err(err) = res else {
+            panic!("revert_to_unknown_checkpoint is supposed to fail");
+        };
+
+        println!("revert_to_unknown_checkpoint: result: {err:?}");
         assert!(matches!(
-            res,
-            Err(DbspError::Storage(StorageError::CheckpointNotFound(_)))
+            err,
+            DbspError::Storage(StorageError::CheckpointNotFound(_))
         ));
     }
 
