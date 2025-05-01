@@ -561,9 +561,16 @@ impl ControllerStatus {
         endpoint_name: &str,
         config: &OutputEndpointConfig,
     ) {
+        // Initialize the `total_processed_input_records` counter on the new endpoint to `total_processed_records`:
+        // logically the new endpoint is up to speed with the outputs produced by the pipeline so far and only needs to
+        // process any future outputs.
+        let total_processed_records = self
+            .global_metrics
+            .total_processed_records
+            .load(Ordering::Acquire);
         self.outputs.write().unwrap().insert(
             *endpoint_id,
-            OutputEndpointStatus::new(endpoint_name, config),
+            OutputEndpointStatus::new(endpoint_name, config, total_processed_records),
         );
     }
 
@@ -1161,11 +1168,18 @@ impl OutputEndpointStatus {
 }
 
 impl OutputEndpointStatus {
-    fn new(endpoint_name: &str, config: &OutputEndpointConfig) -> Self {
+    fn new(
+        endpoint_name: &str,
+        config: &OutputEndpointConfig,
+        total_processed_records: u64,
+    ) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config: config.clone(),
-            metrics: Default::default(),
+            metrics: OutputEndpointMetrics {
+                total_processed_input_records: AtomicU64::new(total_processed_records),
+                ..Default::default()
+            },
             fatal_error: Mutex::new(None),
         }
     }
