@@ -610,8 +610,14 @@ impl DataBlockBuilder {
         let max_offset = *self.value_offsets.last().unwrap();
         rkyv_deserialize_key::<K, A>(item_factory, &self.raw, max_offset, max.as_mut());
 
-        let capacity = self.raw.capacity();
-        let raw = replace(&mut self.raw, FBuf::with_capacity(capacity));
+        // Take our data buffer, replacing it by a new one with a capacity big
+        // enough for the data in the current one.  We round up to a multiple of
+        // 512 because our caller will have to do that anyhow to write the data
+        // to a storage object (unless the data is being compressed, but
+        // rounding up a bit is harmless for that case).
+        let new_capacity = self.raw.len().next_multiple_of(512);
+        let raw = replace(&mut self.raw, FBuf::with_capacity(new_capacity));
+
         let data_block = DataBlock {
             raw,
             min_max: (min, max),
