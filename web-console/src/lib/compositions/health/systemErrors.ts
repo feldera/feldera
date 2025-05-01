@@ -339,14 +339,14 @@ export const extractPipelineXgressErrors = ({
         ? [
             {
               name: `${input.metrics.num_parse_errors} connector parse errors in ${pipelineName}`,
-              message: `${input.metrics.num_parse_errors} parse errors in ${input.config.transport.name} connector ${input.endpoint_name} of ${pipelineName}`,
+              message: `${input.metrics.num_parse_errors} parse errors in the input connector ${input.endpoint_name} of ${pipelineName}`,
               cause: {
                 entityName: pipelineName,
                 tag: 'xgressError',
                 source,
                 report: {
                   ...defaultGithubReportSections,
-                  name: `Report: ${input.config.transport.name} connector parse errors`,
+                  name: `Report: input connector parse errors`,
                   '6-extra': stringifyConfig(input.config)
                 } as ReportDetails,
                 body: ''
@@ -358,14 +358,14 @@ export const extractPipelineXgressErrors = ({
         ? [
             {
               name: `${input.metrics.num_transport_errors} connector transport errors in ${pipelineName}`,
-              message: `${input.metrics.num_transport_errors} transport errors in ${input.config.transport.name} connector ${input.endpoint_name} of ${pipelineName}`,
+              message: `${input.metrics.num_transport_errors} transport errors in the input connector ${input.endpoint_name} of ${pipelineName}`,
               cause: {
                 entityName: pipelineName,
                 tag: 'xgressError',
                 source,
                 report: {
                   ...defaultGithubReportSections,
-                  name: `Report: ${input.config.transport.name} connector transport errors`,
+                  name: `Report: input connector transport errors`,
                   '6-extra': stringifyConfig(input.config)
                 } as ReportDetails,
                 body: ''
@@ -380,14 +380,14 @@ export const extractPipelineXgressErrors = ({
           ? [
               {
                 name: `${output.metrics.num_encode_errors} connector encode errors in ${pipelineName}`,
-                message: `${output.metrics.num_encode_errors} encode errors in ${output.config.transport.name} connector ${output.endpoint_name} of ${pipelineName}`,
+                message: `${output.metrics.num_encode_errors} encode errors in the output connector ${output.endpoint_name} of ${pipelineName}`,
                 cause: {
                   entityName: pipelineName,
                   tag: 'xgressError',
                   source,
                   report: {
                     ...defaultGithubReportSections,
-                    name: `Report: ${output.config.transport.name} connector encode errors`,
+                    name: `Report: output connector encode errors`,
                     '6-extra': stringifyConfig(output.config)
                   } as ReportDetails,
                   body: ''
@@ -399,14 +399,14 @@ export const extractPipelineXgressErrors = ({
           ? [
               {
                 name: `${output.metrics.num_transport_errors} connector transport errors in ${pipelineName}`,
-                message: `${output.metrics.num_transport_errors} transport errors in ${output.config.transport.name} connector ${output.endpoint_name} of ${pipelineName}`,
+                message: `${output.metrics.num_transport_errors} transport errors in the output connector ${output.endpoint_name} of ${pipelineName}`,
                 cause: {
                   entityName: pipelineName,
                   tag: 'xgressError',
                   source,
                   report: {
                     ...defaultGithubReportSections,
-                    name: `Report: ${output.config.transport.name} connector transport errors`,
+                    name: `Report: output connector transport errors`,
                     '6-extra': stringifyConfig(output.config)
                   } as ReportDetails,
                   body: ''
@@ -431,12 +431,12 @@ export const extractPipelineXgressStderr = ({
       .flatMap((input) => [
         ...(input.metrics.num_parse_errors
           ? [
-              `${input.metrics.num_parse_errors} parse errors in ${input.config.transport.name} connector ${input.endpoint_name} of ${pipelineName}`
+              `${input.metrics.num_parse_errors} parse errors in the input connector ${input.endpoint_name} of ${pipelineName}`
             ]
           : []),
         ...(input.metrics.num_transport_errors
           ? [
-              `${input.metrics.num_transport_errors} transport errors in ${input.config.transport.name} connector ${input.endpoint_name} of ${pipelineName}`
+              `${input.metrics.num_transport_errors} transport errors in the input connector ${input.endpoint_name} of ${pipelineName}`
             ]
           : [])
       ])
@@ -444,12 +444,12 @@ export const extractPipelineXgressStderr = ({
         stats.outputs.flatMap((output) => [
           ...(output.metrics.num_encode_errors
             ? [
-                `${output.metrics.num_encode_errors} encode errors in ${output.config.transport.name} connector ${output.endpoint_name} of ${pipelineName}`
+                `${output.metrics.num_encode_errors} encode errors in the output connector ${output.endpoint_name} of ${pipelineName}`
               ]
             : []),
           ...(output.metrics.num_transport_errors
             ? [
-                `${output.metrics.num_transport_errors} transport errors in ${output.config.transport.name} connector ${output.endpoint_name} of ${pipelineName}`
+                `${output.metrics.num_transport_errors} transport errors in the output connector ${output.endpoint_name} of ${pipelineName}`
               ]
             : [])
         ])

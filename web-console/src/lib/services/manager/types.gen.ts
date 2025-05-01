@@ -430,6 +430,21 @@ export type DeltaTableReaderConfig = {
    * the `where` clause of the `select * from my_table where ...` query.
    */
   filter?: string | null
+  /**
+   * Maximum number of concurrent object store reads performed by all Delta Lake connectors.
+   *
+   * This setting is used to limit the number of concurrent reads of the object store in a
+   * pipeline with a large number of Delta Lake connectors. When multiple connectors are simultaneously
+   * reading from the object store, this can lead to transport timeouts.
+   *
+   * When enabled, this setting limits the number of concurrent reads across all connectors.
+   * This is a global setting that affects all Delta Lake connectors, and not just the connector
+   * where it is specified. It should therefore be used at most once in a pipeline.  If multiple
+   * connectors specify this setting, they must all use the same value.
+   *
+   * The default value is 6.
+   */
+  max_concurrent_readers?: number | null
   mode: DeltaTableIngestMode
   /**
    * The number of parallel parsing tasks the connector uses to process data read from the
@@ -437,6 +452,21 @@ export type DeltaTableReaderConfig = {
    * Recommended range: 1–10. The default is 4.
    */
   num_parsers?: number
+  /**
+   * Don't read unused columns from the Delta table.
+   *
+   * When set to `true`, this option instructs the connector to avoid reading
+   * columns from the Delta table that are not used in any view definitions.
+   * To be skipped, the columns must be either nullable or have default
+   * values. This can improve ingestion performance, especially for wide
+   * tables.
+   *
+   * Note: The simplest way to exclude unused columns is to omit them from the Feldera SQL table
+   * declaration. The connector never reads columns that aren't declared in the SQL schema.
+   * Additionally, the SQL compiler emits warnings for declared but unused columns—use these as
+   * a guide to optimize your schema.
+   */
+  skip_unused_columns?: boolean
   /**
    * Optional snapshot filter.
    *
@@ -511,7 +541,7 @@ export type DeltaTableReaderConfig = {
    * * [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)
    * * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
    */
-  '[key: string]': (string | DeltaTableIngestMode | number) | undefined
+  '[key: string]': (string | number | DeltaTableIngestMode | boolean) | undefined
 }
 
 /**
@@ -611,6 +641,7 @@ export type Field = SqlIdentifier & {
   columntype: ColumnType
   default?: string | null
   lateness?: string | null
+  unused: boolean
   watermark?: string | null
 }
 
@@ -692,8 +723,11 @@ export type FtConfig = {
 
 /**
  * Fault tolerance model.
+ *
+ * The ordering is significant: we consider [Self::ExactlyOnce] to be a "higher
+ * level" of fault tolerance than [Self::AtLeastOnce].
  */
-export type FtModel = 'exactly_once' | 'at_least_once'
+export type FtModel = 'at_least_once' | 'exactly_once'
 
 /**
  * A random generation plan for a table that generates either a limited amount of rows or runs continuously.
@@ -1745,6 +1779,22 @@ export type PostgresReaderConfig = {
   query: string
   /**
    * Postgres URI.
+   * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
+   */
+  uri: string
+}
+
+/**
+ * Postgres output connector configuration.
+ */
+export type PostgresWriterConfig = {
+  /**
+   * The table to write the output to.
+   */
+  table: string
+  /**
+   * Postgres URI.
+   * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
    */
   uri: string
 }
@@ -1775,6 +1825,40 @@ export type ProgramError = {
    * - Set `None` upon transition to `Pending`
    */
   system_error?: string | null
+}
+
+/**
+ * Program information is the output of the SQL compiler.
+ *
+ * It includes information needed for Rust compilation (e.g., generated Rust code)
+ * as well as only for runtime (e.g., schema, input/output connectors).
+ */
+export type ProgramInfo = {
+  /**
+   * Dataflow graph of the program.
+   */
+  dataflow?: unknown
+  /**
+   * Input connectors derived from the schema.
+   */
+  input_connectors: {
+    [key: string]: InputEndpointConfig
+  }
+  /**
+   * Generated main program Rust code: main.rs
+   */
+  main_rust?: string
+  /**
+   * Output connectors derived from the schema.
+   */
+  output_connectors: {
+    [key: string]: OutputEndpointConfig
+  }
+  schema: ProgramSchema
+  /**
+   * Generated user defined function (UDF) stubs Rust code: stubs.rs
+   */
+  udf_stubs?: string
 }
 
 /**
@@ -2446,6 +2530,10 @@ export type TransportConfig =
       name: 'postgres_input'
     }
   | {
+      config: PostgresWriterConfig
+      name: 'postgres_output'
+    }
+  | {
       config: DatagenInputConfig
       name: 'datagen'
     }
@@ -2793,6 +2881,19 @@ export type GetPipelineMetricsResponse = {
 }
 
 export type GetPipelineMetricsError = ErrorResponse
+
+export type GetProgramInfoData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type GetProgramInfoResponse = ProgramInfo
+
+export type GetProgramInfoError = ErrorResponse
 
 export type PipelineAdhocSqlData = {
   path: {
@@ -3246,6 +3347,22 @@ export type $OpenApiTs = {
         '404': ErrorResponse
         '500': ErrorResponse
         '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/program_info': {
+    get: {
+      req: GetProgramInfoData
+      res: {
+        /**
+         * Pipeline retrieved successfully
+         */
+        '200': ProgramInfo
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
       }
     }
   }

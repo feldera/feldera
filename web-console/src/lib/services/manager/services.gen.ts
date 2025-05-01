@@ -60,6 +60,9 @@ import type {
   GetPipelineMetricsData,
   GetPipelineMetricsError,
   GetPipelineMetricsResponse,
+  GetProgramInfoData,
+  GetProgramInfoError,
+  GetProgramInfoResponse,
   PipelineAdhocSqlData,
   PipelineAdhocSqlError,
   PipelineAdhocSqlResponse,
@@ -323,6 +326,16 @@ export const getPipelineMetrics = (options: Options<GetPipelineMetricsData>) => 
   return (options?.client ?? client).get<GetPipelineMetricsResponse, GetPipelineMetricsError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/metrics'
+  })
+}
+
+/**
+ * Retrieve the program info of a pipeline.
+ */
+export const getProgramInfo = (options: Options<GetProgramInfoData>) => {
+  return (options?.client ?? client).get<GetProgramInfoResponse, GetProgramInfoError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/program_info'
   })
 }
 
