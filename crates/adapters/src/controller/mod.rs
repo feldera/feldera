@@ -2722,6 +2722,10 @@ impl ControllerInner {
             .output_buffer_config
             .clone();
 
+        // Initialize endpoint stats.
+        self.status
+            .add_output(&endpoint_id, endpoint_name, endpoint_config);
+
         // Thread to run the output pipeline.
         spawn(move || {
             Self::output_thread_func(
@@ -2735,10 +2739,6 @@ impl ControllerInner {
                 controller,
             )
         });
-
-        // Initialize endpoint stats.
-        self.status
-            .add_output(&endpoint_id, endpoint_name, endpoint_config);
 
         Ok(endpoint_id)
     }
