@@ -14,11 +14,12 @@ pub fn init_logging(name: ColoredString) {
     .format(move |buf, record| {
         let t = chrono::Utc::now();
         let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
+        let level_style = buf.default_level_style(record.level());
         writeln!(
             buf,
-            "{} {} {} {}",
+            "{} {level_style}{}{level_style:#} {} {}",
             t,
-            buf.default_level_style(record.level()),
+            record.level(),
             name,
             record.args()
         )
