@@ -89,7 +89,7 @@ export const programStatusOf = (status: PipelineStatus) =>
     .exhaustive()
 
 const toPipelineThumb = (
-  pipeline: Omit<ExtendedPipelineDescr, 'program_code' | 'udf_rust' | 'udf_toml'>
+  pipeline: Omit<ExtendedPipelineDescr, 'program_code' | 'program_error' | 'udf_rust' | 'udf_toml'>
 ) => ({
   name: pipeline.name,
   description: pipeline.description,
@@ -99,7 +99,6 @@ const toPipelineThumb = (
     pipeline.deployment_desired_status,
     pipeline.deployment_error
   ),
-  compilerOutput: toCompilerOutput(pipeline.program_error),
   deploymentStatusSince: pipeline.deployment_status_since,
   refreshVersion: pipeline.refresh_version
 })
@@ -272,11 +271,11 @@ export const getPipelineStats = async (pipeline_name: string) => {
     })
 }
 
-const toCompilerOutput = (programError: ProgramError) => {
+const toCompilerOutput = (programError: ProgramError | null | undefined) => {
   return {
-    sql: programError.sql_compilation,
-    rust: programError.rust_compilation,
-    systemError: programError.system_error
+    sql: programError?.sql_compilation,
+    rust: programError?.rust_compilation,
+    systemError: programError?.system_error
   }
 }
 
