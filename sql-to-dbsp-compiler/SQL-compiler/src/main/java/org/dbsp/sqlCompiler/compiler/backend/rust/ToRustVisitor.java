@@ -409,18 +409,14 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    /** Remove properties.connectors from a json tree.
-     * If the properties become empty, remove them too. */
-    JsonNode stripConnectors(JsonNode json) {
+    /** Remove properties from a json tree. */
+    JsonNode stripProperties(JsonNode json) {
         if (!json.isObject())
             return json;
         ObjectNode j = (ObjectNode) json;
         ObjectNode props = (ObjectNode) j.get("properties");
-        if (props != null) {
-            props.remove("connectors");
-            if (props.isEmpty())
-                j.remove("properties");
-        }
+        if (props != null)
+            j.remove("properties");
         return json;
     }
 
@@ -533,7 +529,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append("::<_, ");
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
             JsonNode j = tableDescription.asJson();
-            j = this.stripConnectors(j);
+            j = this.stripProperties(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
@@ -624,7 +620,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
             JsonNode j = tableDescription.asJson();
-            j = this.stripConnectors(j);
+            j = this.stripProperties(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
             String registerFunction = operator.metadata.materialized ?
                     "register_materialized_input_map" : "register_input_map";
@@ -833,7 +829,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 this.computeHash(operator);
                 IHasSchema description = this.metadata.getViewDescription(operator.viewName);
                 JsonNode j = description.asJson();
-                j = this.stripConnectors(j);
+                j = this.stripProperties(j);
                 DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
                 String registerFunction = switch (operator.metadata.viewKind) {
                     case MATERIALIZED -> "register_materialized_output_zset_persistent";

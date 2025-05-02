@@ -230,7 +230,7 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
-    public void stripConnectors2() throws IOException, SQLException {
+    public void stripProperties1() throws IOException, SQLException {
         NameGen.reset();
         String sql = """
                 CREATE TABLE CUSTOMER (
@@ -319,8 +319,8 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
-    public void stripConnectors() throws IOException, SQLException {
-        // Test that the connectors property is stripped from the generated Rust
+    public void stripProperties() throws IOException, SQLException {
+        // Test that the properties are stripped from the generated Rust
         String sql = """
                CREATE TABLE T (
                   COL1 INT
