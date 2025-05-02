@@ -699,16 +699,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &DBError::StartFailedDueToFailedCompilation {
-                            compiler_error: pipeline
-                                .program_error
-                                .sql_compilation
-                                .as_ref()
-                                .map(|v| v.messages.clone())
-                                .unwrap_or_default()
-                                .iter()
-                                .map(|s| s.to_string())
-                                .collect::<Vec<String>>()
-                                .join("\n"),
+                            compiler_error:
+                                "SQL error occurred (see `program_error` for more information)"
+                                    .to_string(),
                         },
                     ),
                 });
@@ -718,12 +711,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &DBError::StartFailedDueToFailedCompilation {
-                            compiler_error: pipeline
-                                .program_error
-                                .rust_compilation
-                                .as_ref()
-                                .map(|v| v.to_string())
-                                .unwrap_or("".to_string()),
+                            compiler_error:
+                                "Rust error occurred (see `program_error` for more information)"
+                                    .to_string(),
                         },
                     ),
                 });
@@ -733,11 +723,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &DBError::StartFailedDueToFailedCompilation {
-                            compiler_error: pipeline
-                                .program_error
-                                .system_error
-                                .clone()
-                                .unwrap_or("".to_string()),
+                            compiler_error:
+                                "System error occurred (see `program_error` for more information)"
+                                    .to_string(),
                         },
                     ),
                 });

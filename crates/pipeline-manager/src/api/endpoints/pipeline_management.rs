@@ -170,7 +170,8 @@ pub struct PipelineSelectedInfo {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
-    pub program_error: ProgramError,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_error: Option<ProgramError>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub program_info: Option<Option<PartialProgramInfo>>,
     pub deployment_status: PipelineStatus,
@@ -208,7 +209,8 @@ pub struct PipelineSelectedInfoInternal {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
-    pub program_error: ProgramError,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_error: Option<ProgramError>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub program_info: Option<Option<serde_json::Value>>,
     pub deployment_status: PipelineStatus,
@@ -235,7 +237,7 @@ impl PipelineSelectedInfoInternal {
             program_version: extended_pipeline.program_version,
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
-            program_error: extended_pipeline.program_error,
+            program_error: Some(extended_pipeline.program_error),
             program_info: Some(remove_large_fields_from_program_info(
                 extended_pipeline.program_info,
             )),
@@ -263,7 +265,7 @@ impl PipelineSelectedInfoInternal {
             program_version: extended_pipeline.program_version,
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
-            program_error: extended_pipeline.program_error,
+            program_error: None,
             program_info: None,
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,

@@ -2328,7 +2328,6 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
     'program_version',
     'program_status',
     'program_status_since',
-    'program_error',
     'deployment_status',
     'deployment_status_since',
     'deployment_desired_status',
@@ -2382,7 +2381,12 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
       nullable: true
     },
     program_error: {
-      $ref: '#/components/schemas/ProgramError'
+      allOf: [
+        {
+          $ref: '#/components/schemas/ProgramError'
+        }
+      ],
+      nullable: true
     },
     program_info: {
       allOf: [

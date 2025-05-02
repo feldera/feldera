@@ -215,6 +215,7 @@ impl CompilerTest {
         assert_eq!(
             content_pipeline_dir,
             vec![
+                "dataflow.json",
                 "program.sql",
                 "rust",
                 "schema.json",

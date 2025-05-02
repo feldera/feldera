@@ -171,7 +171,7 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
 /// Pipeline columns relevant to monitoring.
 const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
     "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version,
-     p.program_version, p.program_status, p.program_status_since, p.program_error,
+     p.program_version, p.program_status, p.program_status_since,
      p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
      p.deployment_error, p.deployment_location, p.refresh_version";
 
@@ -179,12 +179,9 @@ const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
 fn row_to_extended_pipeline_descriptor_monitoring(
     row: &Row,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    assert_eq!(row.len(), 17);
-    // Program error: ProgramError
-    let program_error = deserialize_program_error_with_default(&row.get::<_, String>(10));
-
+    assert_eq!(row.len(), 16);
     // Deployment error: ErrorResponse
-    let deployment_error = match row.get::<_, Option<String>>(14) {
+    let deployment_error = match row.get::<_, Option<String>>(13) {
         None => None,
         Some(s) => Some(deserialize_error_response(&s)?),
     };
@@ -199,13 +196,12 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         program_version: Version(row.get(7)),
         program_status: row.get::<_, String>(8).try_into()?,
         program_status_since: row.get(9),
-        program_error,
-        deployment_status: row.get::<_, String>(11).try_into()?,
-        deployment_status_since: row.get(12),
-        deployment_desired_status: row.get::<_, String>(13).try_into()?,
+        deployment_status: row.get::<_, String>(10).try_into()?,
+        deployment_status_since: row.get(11),
+        deployment_desired_status: row.get::<_, String>(12).try_into()?,
         deployment_error,
-        deployment_location: row.get(15),
-        refresh_version: Version(row.get(16)),
+        deployment_location: row.get(14),
+        refresh_version: Version(row.get(15)),
     })
 }
 
@@ -771,7 +767,7 @@ pub(crate) async fn set_program_status(
                 new_program_binary_source_checksum.clone(),
                 new_program_binary_integrity_checksum.clone(),
                 new_program_binary_url.clone(),
-                false,
+                true,
             )
         }
         ProgramStatus::SqlError => {
@@ -792,7 +788,7 @@ pub(crate) async fn set_program_status(
                 None,
                 None,
                 None,
-                false,
+                true,
             )
         }
         ProgramStatus::RustError => {
@@ -813,7 +809,7 @@ pub(crate) async fn set_program_status(
                 None,
                 None,
                 None,
-                false,
+                true,
             )
         }
         ProgramStatus::SystemError => {
@@ -834,7 +830,7 @@ pub(crate) async fn set_program_status(
                 None,
                 None,
                 None,
-                false,
+                true,
             )
         }
     };
