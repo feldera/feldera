@@ -746,7 +746,7 @@ async fn pipeline_retrieval() {
     assert_eq!(rows, vec![]);
 }
 
-/// Progression of both overall version and program version.
+/// Progression of versions across edits.
 #[tokio::test]
 async fn pipeline_versioning() {
     let handle = test_setup().await;
@@ -774,6 +774,7 @@ async fn pipeline_versioning() {
     let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
     assert_eq!(current.version, Version(1));
     assert_eq!(current.program_version, Version(1));
+    assert_eq!(current.refresh_version, Version(1));
 
     // Edit without changes should not affect versions
     handle
@@ -786,6 +787,7 @@ async fn pipeline_versioning() {
     let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
     assert_eq!(current.version, Version(1));
     assert_eq!(current.program_version, Version(1));
+    assert_eq!(current.refresh_version, Version(1));
 
     // Edit program with the same content should have no effect
     handle
@@ -807,6 +809,7 @@ async fn pipeline_versioning() {
     let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
     assert_eq!(current.version, Version(1));
     assert_eq!(current.program_version, Version(1));
+    assert_eq!(current.refresh_version, Version(1));
 
     // Edit description with the same content should have no effect
     handle
@@ -828,8 +831,9 @@ async fn pipeline_versioning() {
     let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
     assert_eq!(current.version, Version(1));
     assert_eq!(current.program_version, Version(1));
+    assert_eq!(current.refresh_version, Version(1));
 
-    // Edit program -> increment version and program version
+    // Edit program -> increment version, program version and refresh_version
     handle
         .db
         .update_pipeline(
@@ -850,8 +854,9 @@ async fn pipeline_versioning() {
     assert_eq!(current.program_code, "c2".to_string());
     assert_eq!(current.version, Version(2));
     assert_eq!(current.program_version, Version(2));
+    assert_eq!(current.refresh_version, Version(2));
 
-    // Edit UDF -> increment version and program version
+    // Edit UDF -> increment version, program version and refresh_version
     handle
         .db
         .update_pipeline(
@@ -872,8 +877,9 @@ async fn pipeline_versioning() {
     assert_eq!(current.udf_rust, "r2".to_string());
     assert_eq!(current.version, Version(3));
     assert_eq!(current.program_version, Version(3));
+    assert_eq!(current.refresh_version, Version(3));
 
-    // Edit TOML -> increment version and program version
+    // Edit TOML -> increment version, program version and refresh_version
     handle
         .db
         .update_pipeline(
@@ -894,8 +900,9 @@ async fn pipeline_versioning() {
     assert_eq!(current.udf_toml, "t2".to_string());
     assert_eq!(current.version, Version(4));
     assert_eq!(current.program_version, Version(4));
+    assert_eq!(current.refresh_version, Version(4));
 
-    // Edit description -> increment version
+    // Edit description -> increment version and refresh_version
     handle
         .db
         .update_pipeline(
@@ -916,8 +923,9 @@ async fn pipeline_versioning() {
     assert_eq!(current.description, "d2".to_string());
     assert_eq!(current.version, Version(5));
     assert_eq!(current.program_version, Version(4));
+    assert_eq!(current.refresh_version, Version(5));
 
-    // Edit program configuration -> increment version and program version
+    // Edit program configuration -> increment version, program version and refresh_version
     let new_program_config = serde_json::to_value(ProgramConfig {
         profile: Some(CompilationProfile::Dev),
         cache: false,
@@ -943,8 +951,9 @@ async fn pipeline_versioning() {
     assert_eq!(current.program_config, new_program_config);
     assert_eq!(current.version, Version(6));
     assert_eq!(current.program_version, Version(5));
+    assert_eq!(current.refresh_version, Version(6));
 
-    // Edit name -> increment version
+    // Edit name -> increment version and refresh_version
     handle
         .db
         .update_pipeline(
@@ -965,8 +974,9 @@ async fn pipeline_versioning() {
     assert_eq!(current.name, "example2".to_string());
     assert_eq!(current.version, Version(7));
     assert_eq!(current.program_version, Version(5));
+    assert_eq!(current.refresh_version, Version(7));
 
-    // Edit runtime configuration -> increment version
+    // Edit runtime configuration -> increment version and refresh_version
     let new_runtime_config = serde_json::to_value(RuntimeConfig {
         workers: 100,
         storage: None,
@@ -1010,6 +1020,7 @@ async fn pipeline_versioning() {
     assert_eq!(current.runtime_config, new_runtime_config);
     assert_eq!(current.version, Version(8));
     assert_eq!(current.program_version, Version(5));
+    assert_eq!(current.refresh_version, Version(8));
 }
 
 /// If the name of a pipeline already exists, it should return an error.
@@ -1200,6 +1211,15 @@ async fn pipeline_program_compilation() {
         )
         .await
         .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline2.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(2)
+    );
 
     // There should be nothing left to compile
     assert_eq!(
@@ -1237,6 +1257,15 @@ async fn pipeline_deployment() {
         .unwrap();
 
     // "Compile" the program of pipeline1
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(1)
+    );
     handle
         .db
         .transit_program_status_to_compiling_sql(tenant_id, pipeline1.id, Version(1))
@@ -1267,6 +1296,15 @@ async fn pipeline_deployment() {
         )
         .await
         .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(2)
+    );
     handle
         .db
         .transit_program_status_to_compiling_rust(tenant_id, pipeline1.id, Version(1))
@@ -1289,6 +1327,15 @@ async fn pipeline_deployment() {
         )
         .await
         .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(3)
+    );
 
     // "Deploy" pipeline1
     handle
@@ -2546,7 +2593,6 @@ fn convert_descriptor_to_monitoring(
         program_version: pipeline.program_version,
         program_status: pipeline.program_status,
         program_status_since: pipeline.program_status_since,
-        program_error: pipeline.program_error,
         deployment_status: pipeline.deployment_status,
         deployment_status_since: pipeline.program_status_since,
         deployment_desired_status: pipeline.deployment_desired_status,
@@ -3070,6 +3116,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_binary_integrity_checksum =
             Some(program_binary_integrity_checksum.to_string());
         pipeline.program_binary_url = Some(program_binary_url.to_string());
+        pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -3095,6 +3142,7 @@ impl Storage for Mutex<DbModel> {
             rust_compilation: None,
             system_error: None,
         };
+        pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -3120,6 +3168,7 @@ impl Storage for Mutex<DbModel> {
             rust_compilation: Some(rust_compilation.clone()),
             system_error: None,
         };
+        pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -3145,6 +3194,7 @@ impl Storage for Mutex<DbModel> {
             rust_compilation: pipeline.program_error.rust_compilation,
             system_error: Some(system_error.to_string()),
         };
+        pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
             .pipelines
@@ -3475,7 +3525,7 @@ impl Storage for Mutex<DbModel> {
                             tid,
                             pipeline.id,
                             pipeline.program_version,
-                            &pipeline.program_error.sql_compilation.unwrap(),
+                            &pipeline_complete.program_error.sql_compilation.unwrap(),
                             &pipeline_complete.program_info.unwrap(),
                         )
                         .await?;

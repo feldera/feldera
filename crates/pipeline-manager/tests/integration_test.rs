@@ -875,7 +875,7 @@ const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 21] = [
 ];
 
 /// Fields included in the `status` selector.
-const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 15] = [
+const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 14] = [
     "id",
     "name",
     "description",
@@ -885,7 +885,6 @@ const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 15] = [
     "program_version",
     "program_status",
     "program_status_since",
-    "program_error",
     "deployment_status",
     "deployment_status_since",
     "deployment_desired_status",
@@ -3084,14 +3083,14 @@ async fn refresh_version() {
     let value: Value = response.json().await.unwrap();
     assert_eq!(value["refresh_version"], json!(1));
 
-    // After compilation, refresh version should be 2
+    // After compilation, refresh version should be 3
     config
         .wait_for_compilation("test", 1, config.compilation_timeout)
         .await;
     let mut response = config.get("/v0/pipelines/test").await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
-    assert_eq!(value["refresh_version"], json!(2));
+    assert_eq!(value["refresh_version"], json!(3));
 
     // Starting and shutting down should have no effect on the refresh version
     let response = config.post_no_body("/v0/pipelines/test/pause").await;
@@ -3107,9 +3106,9 @@ async fn refresh_version() {
     let mut response = config.get("/v0/pipelines/test").await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
-    assert_eq!(value["refresh_version"], json!(2));
+    assert_eq!(value["refresh_version"], json!(3));
 
-    // Edits should have an impact, incrementing refresh version to 3
+    // Edits should have an impact, incrementing refresh version to 4
     let mut response = config
         .patch(
             "/v0/pipelines/test",
@@ -3118,16 +3117,16 @@ async fn refresh_version() {
         .await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
-    assert_eq!(value["refresh_version"], json!(3));
+    assert_eq!(value["refresh_version"], json!(4));
 
-    // After compilation, refresh version should be 4
+    // After compilation, refresh version should be 6
     config
         .wait_for_compilation("test", 2, config.compilation_timeout)
         .await;
     let mut response = config.get("/v0/pipelines/test").await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
-    assert_eq!(value["refresh_version"], json!(4));
+    assert_eq!(value["refresh_version"], json!(6));
 }
 
 /// Tests that circuit metrics can be retrieved from the pipeline.

@@ -1666,7 +1666,7 @@ export type PipelineSelectedInfo = {
   platform_version: string
   program_code?: string | null
   program_config?: ProgramConfig | null
-  program_error: ProgramError
+  program_error?: ProgramError | null
   program_info?: PartialProgramInfo | null
   program_status: ProgramStatus
   program_status_since: string

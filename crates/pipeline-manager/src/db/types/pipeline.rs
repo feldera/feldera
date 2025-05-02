@@ -478,9 +478,10 @@ pub struct ExtendedPipelineDescr {
     pub deployment_location: Option<String>,
 
     /// Refresh version, incremented for the same fields as `version` but also including
-    /// `program_info` as it contains information of interest to the user regarding the pipeline.
-    /// It is a notification mechanism for users. If a user detects it changed while monitoring
-    /// only the status fields, it should refresh fully (retrieve all fields).
+    /// `program_info` and `program_error` as it contains information of interest to the user
+    /// regarding the pipeline. It is a notification mechanism for users. If a user detects
+    /// it changed while monitoring only the status fields, it should refresh fully (retrieve
+    /// all fields).
     pub refresh_version: Version,
 }
 
@@ -501,7 +502,6 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
-    pub program_error: ProgramError,
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
     pub deployment_desired_status: PipelineDesiredStatus,
