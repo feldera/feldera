@@ -122,7 +122,7 @@ class ModifyTableTranslation {
         DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(this.resultType);
         for (Map.Entry<DBSPExpression, Long> e : source.data.entrySet()) {
             DBSPExpression perm = this.permuteColumns(e.getKey());
-            result.add(perm, e.getValue());
+            result.append(perm, e.getValue());
         }
         return result;
     }

@@ -81,11 +81,6 @@ public final class DBSPIndexedZSetExpression extends DBSPExpression
     }
 
     @Override
-    public IDBSPContainer add(DBSPExpression expression) {
-        throw new UnimplementedException("Not yet implemented: IndexedZSet literals", expression);
-    }
-
-    @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("indexed_zset!()");
     }

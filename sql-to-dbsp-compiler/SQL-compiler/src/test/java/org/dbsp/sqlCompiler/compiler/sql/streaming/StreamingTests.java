@@ -1935,24 +1935,21 @@ public class StreamingTests extends StreamingTestBase {
                         )))));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
+        var set = new DBSPZSetExpression(
+                new DBSPTupleExpression(
+                        new DBSPDoubleLiteral(15.0, true),
+                        new DBSPDateLiteral("2023-12-30", false)));
+        set.append(new DBSPZSetExpression(
+                new DBSPTupleExpression(
+                        new DBSPDoubleLiteral(10.0, true),
+                        new DBSPDateLiteral("2023-12-30", false))).negate());
         ccs.addChange(new InputOutputChange(
                 new Change(
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(20.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:10:00", false)))),
-                new Change(
-                        new DBSPZSetExpression(
-                                new DBSPTupleExpression(
-                                        new DBSPDoubleLiteral(15.0, true),
-                                        new DBSPDateLiteral("2023-12-30", false)))
-                                .add(
-                                        new DBSPZSetExpression(
-                                                new DBSPTupleExpression(
-                                                        new DBSPDoubleLiteral(10.0, true),
-                                                        new DBSPDateLiteral("2023-12-30", false))).negate()
-                                ),
-                        DBSPZSetExpression.emptyWithElementType(error))));
+                new Change(set, DBSPZSetExpression.emptyWithElementType(error))));
         // Insert tuple before last waterline, should be dropped
         ccs.addChange(new InputOutputChange(
                 new Change(
@@ -1986,24 +1983,21 @@ public class StreamingTests extends StreamingTestBase {
                                         new DBSPStringLiteral("(Some(10.0), 2023-12-29 09:10:00)")
                                 )))));
         // Insert tuple in the past, but before the last waterline
+        var set1 = new DBSPZSetExpression(
+                new DBSPTupleExpression(
+                        new DBSPDoubleLiteral(13.333333333333334, true),
+                        new DBSPDateLiteral("2023-12-30", false)));
+        set1.append(new DBSPZSetExpression(
+                new DBSPTupleExpression(
+                    new DBSPDoubleLiteral(15.0, true),
+                    new DBSPDateLiteral("2023-12-30", false))).negate());
         ccs.addChange(new InputOutputChange(
                 new Change(
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
-                new Change(
-                        new DBSPZSetExpression(
-                                new DBSPTupleExpression(
-                                        new DBSPDoubleLiteral(13.333333333333334, true),
-                                        new DBSPDateLiteral("2023-12-30", false)))
-                                .add(
-                                        new DBSPZSetExpression(
-                                                new DBSPTupleExpression(
-                                                        new DBSPDoubleLiteral(15.0, true),
-                                                        new DBSPDateLiteral("2023-12-30", false))).negate()
-                                ),
-                        DBSPZSetExpression.emptyWithElementType(error))));
+                new Change(set1, DBSPZSetExpression.emptyWithElementType(error))));
     }
 
     @Test

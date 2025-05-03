@@ -54,14 +54,14 @@ public class NonLinearAggregate extends IAggregate {
     public final DBSPTypeUser semigroup;
 
     public NonLinearAggregate(
-            CalciteObject origin,
+            CalciteObject node,
             DBSPExpression zero,
             DBSPClosureExpression increment,
             @Nullable
             DBSPClosureExpression postProcess,
             DBSPExpression emptySetResult,
             DBSPTypeUser semigroup) {
-        super(origin, emptySetResult.getType());
+        super(node, emptySetResult.getType());
         this.zero = zero;
         this.increment = increment;
         Utilities.enforce(increment.parameters.length == 3);
@@ -71,12 +71,12 @@ public class NonLinearAggregate extends IAggregate {
     }
 
     public NonLinearAggregate(
-            CalciteObject operator,
+            CalciteObject node,
             DBSPExpression zero,
             DBSPClosureExpression increment,
             DBSPExpression emptySetResult,
             DBSPTypeUser semigroup) {
-        this(operator, zero, increment, null, emptySetResult, semigroup);
+        this(node, zero, increment, null, emptySetResult, semigroup);
     }
 
     /** Result produced for an empty set. */

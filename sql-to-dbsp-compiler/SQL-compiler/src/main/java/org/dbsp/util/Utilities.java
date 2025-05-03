@@ -34,6 +34,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
+import org.apache.calcite.util.TimestampString;
 import org.apache.commons.io.IOUtils;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
@@ -92,6 +93,21 @@ public class Utilities {
     public static void enforce(boolean expression, String message) {
         if (!expression)
             throw new InternalCompilerError(message + System.lineSeparator() + getCurrentStackTrace());
+    }
+
+    public static TimestampString roundMillis(TimestampString ts) {
+        long millis = ts.getMillisSinceEpoch();
+        String str = ts.toString();
+        if (str.length() > 23) {
+            String next = str.substring(23, 24);
+            int nextDigit = Integer.parseInt(next);
+            if (nextDigit > 5) {
+                millis += 1;
+            }
+            return TimestampString.fromMillisSinceEpoch(millis);
+        } else {
+            return ts;
+        }
     }
 
     /** Delete a file/directory recursively

@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
+import org.apache.calcite.util.TimestampString;
 import org.apache.commons.lang3.StringUtils;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -59,6 +60,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
@@ -74,6 +76,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
@@ -169,7 +172,7 @@ public class Simplify extends ExpressionTranslator {
                         LocalDate.parse(str.value, dateFormatter); // executed for exception
                         result = new DBSPDateLiteral(lit.getNode(), type, new DateString(str.value));
                     } catch (DateTimeParseException ex) {
-                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a date",
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a DATE",
                                 " String " + Utilities.singleQuote(str.value) +
                                         " cannot be interpreted as a date");
                     }
@@ -178,9 +181,19 @@ public class Simplify extends ExpressionTranslator {
                         TimeString ts = new TimeString(str.value);
                         result = new DBSPTimeLiteral(lit.getNode(), type, ts);
                     } catch (DateTimeParseException | IllegalArgumentException ex) {
-                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a TIME",
                                 " String " + Utilities.singleQuote(str.value) +
                                         " cannot be interpreted as a time");
+                    }
+                } else if (type.is(DBSPTypeTimestamp.class)) {
+                    try {
+                        TimestampString ts = new TimestampString(str.value);
+                        ts = Utilities.roundMillis(ts);
+                        result = new DBSPTimestampLiteral(lit.getNode(), type, ts);
+                    } catch (DateTimeParseException | IllegalArgumentException ex) {
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a TIMESTAMP",
+                                " String " + Utilities.singleQuote(str.value) +
+                                        " cannot be interpreted as a timestamp");
                     }
                 } else if (type.is(DBSPTypeDecimal.class)) {
                     try {

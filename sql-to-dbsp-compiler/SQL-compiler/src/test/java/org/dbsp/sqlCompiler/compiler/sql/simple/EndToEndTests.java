@@ -31,19 +31,19 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChangeStream;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -54,6 +54,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.math.BigDecimal;
@@ -72,6 +73,35 @@ public class EndToEndTests extends BaseSQLTests {
             , COL4 VARCHAR NOT NULL
             , COL5 INT
             , COL6 DECIMAL(6, 2))""";
+
+    public static final DBSPTypeDecimal D62 = new DBSPTypeDecimal(CalciteObject.EMPTY, 6, 2, true);
+    public static final DBSPTupleExpression E0 = new DBSPTupleExpression(
+            new DBSPI32Literal(10),
+            new DBSPDoubleLiteral(12.0),
+            new DBSPBoolLiteral(true),
+            new DBSPStringLiteral("Hi"),
+            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
+            DBSPLiteral.none(D62)
+    );
+    public static final DBSPTupleExpression E1 = new DBSPTupleExpression(
+            new DBSPI32Literal(10),
+            new DBSPDoubleLiteral(1.0),
+            new DBSPBoolLiteral(false),
+            new DBSPStringLiteral("Hi"),
+            new DBSPI32Literal(1, true),
+            new DBSPDecimalLiteral(D62, BigDecimal.ZERO)
+    );
+
+    /**
+     * Returns the table T containing:
+     * -------------------------------------------
+     * | 10 | 12e0 | true  | Hi | NULL    | NULL |
+     * | 10 |  1e0 | false | Hi | Some[1] |  0.0 |
+     * -------------------------------------------
+     INSERT INTO T VALUES (10, 12e0, true, 'Hi', NULL, NULL);
+     INSERT INTO T VALUES (10, 1e0, false, 'Hi', 1, 0e0);
+     */
+    static final Change INPUT = new Change(new DBSPZSetExpression(E0, E1));
 
     public DBSPCompiler compileQuery(String query) {
         DBSPCompiler compiler = this.testCompiler();
@@ -92,46 +122,15 @@ public class EndToEndTests extends BaseSQLTests {
 
     /** Use this function to test queries whose result does not change when table T is modified. */
     void testConstantOutput(String query, DBSPZSetExpression output) {
-        this.testQueryBase(query, new InputOutputChange(createInput(), new Change(output)).toStream());
+        this.testQueryBase(query, new InputOutputChange(INPUT, new Change(output)).toStream());
     }
 
     /** Use this function to test queries that compute aggregates */
     void testAggregate(String query,
                        DBSPZSetExpression firstOutput,
                        DBSPZSetExpression outputForEmptyInput) {
-        this.testQueryBase(query, new InputOutputChange(createInput(), new Change(firstOutput)).toStream());
+        this.testQueryBase(query, new InputOutputChange(INPUT, new Change(firstOutput)).toStream());
     }
-
-    /**
-     * Returns the table T containing:
-     * -------------------------------------------
-     * | 10 | 12e0 | true  | Hi | NULL    | NULL |
-     * | 10 |  1e0 | false | Hi | Some[1] |  0.0 |
-     * -------------------------------------------
-     INSERT INTO T VALUES (10, 12e0, true, 'Hi', NULL, NULL);
-     INSERT INTO T VALUES (10, 1e0, false, 'Hi', 1, 0e0);
-     */
-    static Change createInput() {
-        return new Change(new DBSPZSetExpression(E0, E1));
-    }
-
-    public static final DBSPTypeDecimal D62 = new DBSPTypeDecimal(CalciteObject.EMPTY, 6, 2, true);
-    public static final DBSPTupleExpression E0 = new DBSPTupleExpression(
-            new DBSPI32Literal(10),
-            new DBSPDoubleLiteral(12.0),
-            new DBSPBoolLiteral(true),
-            new DBSPStringLiteral("Hi"),
-            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
-            DBSPLiteral.none(D62)
-    );
-    public static final DBSPTupleExpression E1 = new DBSPTupleExpression(
-            new DBSPI32Literal(10),
-            new DBSPDoubleLiteral(1.0),
-            new DBSPBoolLiteral(false),
-            new DBSPStringLiteral("Hi"),
-            new DBSPI32Literal(1, true),
-            new DBSPDecimalLiteral(D62, BigDecimal.ZERO)
-    );
 
     static final DBSPZSetExpression z0 = new DBSPZSetExpression(E0);
     static final DBSPZSetExpression z1 = new DBSPZSetExpression(E1);
@@ -142,8 +141,7 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     public void testQuery(String query, Change expectedOutput) {
-        Change input = createInput();
-        this.testQueryBase(query, new InputOutputChange(input, expectedOutput).toStream());
+        this.testQueryBase(query, new InputOutputChange(INPUT, expectedOutput).toStream());
     }
 
     @Test
@@ -362,13 +360,12 @@ public class EndToEndTests extends BaseSQLTests {
                         new DBSPTupleExpression(DBSPLiteral.none(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
 
-        /* TODO
-        query = "SELECT Sum(b.price * b.volume) FROM bids b\n" +
-                "WHERE\n" +
-                "0.75 * (SELECT Sum(b1.volume) FROM bids b1)\n" +
-                "< (SELECT Sum(b2.volume) FROM bids b2\n" +
-                "WHERE b2.price <= b.price)";
-         */
+        // TODO
+        //query = "SELECT Sum(b.price * b.volume) FROM bids b\n" +
+        //        "WHERE\n" +
+        //        "0.75 * (SELECT Sum(b1.volume) FROM bids b1)\n" +
+        //        "< (SELECT Sum(b2.volume) FROM bids b2\n" +
+        //        "WHERE b2.price <= b.price)";
     }
 
     @Test
@@ -470,7 +467,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void intersectTest() {
         String query = "SELECT * FROM T INTERSECT (SELECT * FROM T)";
-        this.testQuery(query, createInput());
+        this.testQuery(query, INPUT);
     }
 
     @Test
@@ -514,20 +511,21 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void idTest() {
         String query = "SELECT * FROM T";
-        this.testQuery(query, createInput());
+        this.testQuery(query, INPUT);
     }
 
     @Test
     public void unionTest() {
         String query = "(SELECT * FROM T) UNION (SELECT * FROM T)";
-        this.testQuery(query, createInput());
+        this.testQuery(query, INPUT);
     }
 
     @Test
     public void unionAllTest() {
         String query = "(SELECT * FROM T) UNION ALL (SELECT * FROM T)";
-        Change output = createInput();
-        Change doubleOutput = new Change(output.getSet(0).add(output.getSet(0)));
+        var set = INPUT.getSet(0).clone();
+        set.append(set);
+        Change doubleOutput = new Change(set);
         this.testQuery(query, doubleOutput);
     }
 
@@ -681,8 +679,8 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void groupByCountTest() {
         String query = "SELECT COL1, COUNT(col2) FROM T GROUP BY COL1, COL3";
-        DBSPExpression row =  new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPI64Literal(1));
-        this.testQuery(query, new DBSPZSetExpression( row, row));
+        DBSPExpression row = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPI64Literal(1));
+        this.testQuery(query, new DBSPZSetExpression(row, row));
     }
 
     @Test
@@ -887,6 +885,16 @@ public class EndToEndTests extends BaseSQLTests {
                                 DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)))));
     }
 
+    @Test @Ignore
+    public void argMinTest() {
+        String query = "SELECT ARG_MIN(T.COL2, T.COL3) FROM T";
+        this.testAggregate(query,
+                new DBSPZSetExpression(
+                        new DBSPTupleExpression(new DBSPBoolLiteral(false, true))),
+                new DBSPZSetExpression(
+                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeBool.create(true)))));
+    }
+
     @Test
     public void maxConst() {
         String query = "SELECT MAX(6) FROM T";
@@ -1007,9 +1015,9 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT * FROM T, T AS X";
         DBSPExpression inResult = DBSPTupleExpression.flatten(E0, E0);
         DBSPZSetExpression result = new DBSPZSetExpression( inResult);
-        result.add(DBSPTupleExpression.flatten(E0, E1));
-        result.add(DBSPTupleExpression.flatten(E1, E0));
-        result.add(DBSPTupleExpression.flatten(E1, E1));
+        result.append(DBSPTupleExpression.flatten(E0, E1));
+        result.append(DBSPTupleExpression.flatten(E1, E0));
+        result.append(DBSPTupleExpression.flatten(E1, E1));
         this.testQuery(query, result);
     }
 

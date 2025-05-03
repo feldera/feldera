@@ -4,7 +4,9 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
@@ -12,9 +14,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Utilities;
 import org.junit.Assert;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -113,8 +117,22 @@ public abstract class SqlIoTest extends BaseSQLTests {
             DBSPExpression rowWeight = tuple.fields[rowSize - 1];
             weight *= rowWeight.to(DBSPI64Literal.class).value;
             DBSPExpression newRow = new DBSPTupleExpression(prefix);
-            result.add(newRow, weight);
+            result.append(newRow, weight);
         }
+        return result;
+    }
+
+    // Maps Rust representation to change
+    static final HashMap<String, Change> cachedChangeList = new HashMap<>();
+
+    static Change getCachedChange(DBSPCompiler compiler, DBSPZSetExpression[] data) {
+        DBSPTupleExpression tuple = new DBSPTupleExpression(data);
+        String string = ToRustInnerVisitor.toRustString(compiler, tuple, false);
+        Change change = cachedChangeList.get(string);
+        if (change != null)
+            return change;
+        Change result = new Change(data);
+        Utilities.putNew(cachedChangeList, string, result);
         return result;
     }
 
@@ -122,11 +140,13 @@ public abstract class SqlIoTest extends BaseSQLTests {
         DBSPZSetExpression[] inputs = new DBSPZSetExpression[
                 compiler.getTableContents().tablesCreated.size()];
         int index = 0;
+        Simplify simplify = new Simplify(compiler);
         for (ProgramIdentifier table: compiler.getTableContents().tablesCreated) {
             DBSPZSetExpression data = compiler.getTableContents().getTableContents(table);
-            inputs[index++] = data;
+            var simplified = simplify.apply(data);
+            inputs[index++] = simplified.to(DBSPZSetExpression.class);
         }
-        return new Change(inputs);
+        return getCachedChange(compiler, inputs);
     }
 
     public void compare(String query, DBSPZSetExpression expected, boolean optimize) {

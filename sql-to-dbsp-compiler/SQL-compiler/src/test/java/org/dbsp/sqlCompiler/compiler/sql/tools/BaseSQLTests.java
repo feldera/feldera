@@ -30,10 +30,10 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
-import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -52,6 +52,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -201,6 +202,7 @@ public class BaseSQLTests {
     @BeforeClass
     public static void prepareTests() {
         testsToRun.clear();
+        SqlIoTest.cachedChangeList.clear();
     }
 
     public static Path getTestFilePath() {
@@ -233,6 +235,7 @@ public class BaseSQLTests {
 
         List<TestCase> toRun = Linq.where(testsToRun, TestCase::hasData);
         List<TestCase> toCheck = Linq.where(testsToRun, testCase -> !testCase.hasData());
+        HashMap<Long, DBSPFunction> inputFunctions = new HashMap<>();
 
         if (!toRun.isEmpty()) {
             PrintStream outputStream = new PrintStream(Files.newOutputStream(getTestFilePath()));
@@ -242,6 +245,7 @@ public class BaseSQLTests {
             createEmptyStubs();
             // Use the compiler from the first test case.
             DBSPCompiler firstCompiler = null;
+            // Map from Change id to function that generates the change
             for (TestCase test : toRun) {
                 if (firstCompiler == null)
                     firstCompiler = test.ccs.compiler;
@@ -251,12 +255,12 @@ public class BaseSQLTests {
                             " are not compiled with the same options: "
                             + test.ccs.compiler.options.diff(firstCompiler.options));
                 test.ccs.circuit.setName("circuit" + testNumber);
-                ProgramAndTester pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, RUST_DIRECTORY));
+                List<DBSPFunction> testers = test.createTesterCode(testNumber, RUST_DIRECTORY, inputFunctions);
+                writer.add(test.ccs.circuit);
+                for (var tester: testers)
+                    writer.add(tester);
                 BaseSQLTests.testsExecuted++;
                 testNumber++;
-                // Filter here tests
-                // if (pt.program() != null && !pt.program().toString().contains("join")) continue;
-                writer.add(pt);
             }
             Utilities.enforce(firstCompiler != null);
             writer.write(firstCompiler);
@@ -279,12 +283,12 @@ public class BaseSQLTests {
                             " are not compiled with the same options: "
                             + test.ccs.compiler.options.diff(firstCompiler.options));
                 test.ccs.circuit.setName("circuit" + testNumber);
-                ProgramAndTester pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, RUST_DIRECTORY));
+                List<DBSPFunction> testers = test.createTesterCode(testNumber, RUST_DIRECTORY, inputFunctions);
+                writer.add(test.ccs.circuit);
+                for (var tester: testers)
+                    writer.add(tester);
                 BaseSQLTests.testsChecked++;
                 testNumber++;
-                // Filter here tests
-                // if (pt.program() != null && !pt.program().toString().contains(".flatmap")) continue;
-                writer.add(pt);
             }
             Utilities.enforce(firstCompiler != null);
             writer.write(firstCompiler);

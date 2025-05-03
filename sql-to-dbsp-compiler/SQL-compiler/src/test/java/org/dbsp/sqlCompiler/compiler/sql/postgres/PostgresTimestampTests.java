@@ -755,7 +755,7 @@ public class PostgresTimestampTests extends SqlIoTest {
                    EXTRACT(quarter FROM d1) AS 'quarter', EXTRACT(MILLISECOND FROM d1) AS 'msec',
                    EXTRACT(MICROSECOND FROM d1) AS 'usec'
                    FROM TIMESTAMP_TBL;
-                          timestamp          | quarter | msec  |   usec  \s
+                          timestamp          | quarter | msec  |   usec
                 -----------------------------+---------+-------+----------
                  Thu Jan 01 00:00:00 1970    |       1 |     0 |        0
                  Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000
@@ -1153,7 +1153,7 @@ public class PostgresTimestampTests extends SqlIoTest {
                    -- round(extract(julian from d1)) AS julian,
                    extract(epoch from d1) AS 'epoch'
                    FROM TIMESTAMP_TBL;
-                          timestamp          | microseconds | milliseconds |  seconds  |    epoch  \s
+                          timestamp          | microseconds | milliseconds |  seconds  |    epoch
                 -----------------------------+--------------+--------------+-----------+------------
                  Thu Jan 01 00:00:00 1970    |            0 |        0     |  0        |            0
                  Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921

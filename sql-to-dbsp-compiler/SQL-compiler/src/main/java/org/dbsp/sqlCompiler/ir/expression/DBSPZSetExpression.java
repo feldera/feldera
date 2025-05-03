@@ -64,7 +64,7 @@ public final class DBSPZSetExpression extends DBSPExpression
                 throw new RuntimeException("Cannot add value " + e +
                         "\nNot all values of set have the same type:" +
                         e.getType() + " vs " + data[0].getType());
-            this.add(e);
+            this.append(e);
         }
     }
 
@@ -99,20 +99,20 @@ public final class DBSPZSetExpression extends DBSPExpression
         return this.elementType;
     }
 
-    public DBSPZSetExpression add(DBSPExpression expression) {
-        return this.add(expression, 1);
+    public void append(DBSPExpression expression) {
+        this.append(expression, 1);
     }
 
     public DBSPZSetExpression map(Function<DBSPExpression, DBSPExpression> map, DBSPType elementType) {
         DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(elementType);
         for (Map.Entry<DBSPExpression, Long> entry : this.data.entrySet()) {
             DBSPExpression converted = map.apply(entry.getKey());
-            result.add(converted, entry.getValue());
+            result.append(converted, entry.getValue());
         }
         return result;
     }
 
-    public DBSPZSetExpression add(DBSPExpression expression, long weight) {
+    public void append(DBSPExpression expression, long weight) {
         // We expect the expression to be a constant value (a literal)
         if (!expression.getType().sameType(this.getElementType()))
             throw new InternalCompilerError("Added element type " +
@@ -124,18 +124,16 @@ public final class DBSPZSetExpression extends DBSPExpression
                 this.data.remove(expression);
             else
                 this.data.put(expression, weight + oldWeight);
-            return this;
+        } else {
+            this.data.put(expression, weight);
         }
-        this.data.put(expression, weight);
-        return this;
     }
 
-    public DBSPZSetExpression add(DBSPZSetExpression other) {
+    public void append(DBSPZSetExpression other) {
         if (!this.elementType.sameType(other.elementType))
             throw new InternalCompilerError("Added zsets do not have the same type " +
                     this.getElementType() + " vs " + other.getElementType(), this.elementType);
-        other.data.forEach(this::add);
-        return this;
+        other.data.forEach(this::append);
     }
 
     @SuppressWarnings("UnusedReturnValue")
@@ -187,13 +185,13 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     public void addUsingCast(DBSPExpression row, Long weight) {
         DBSPExpression toAdd = this.castRecursive(row, this.elementType);
-        this.add(toAdd, weight);
+        this.append(toAdd, weight);
     }
 
     public DBSPZSetExpression negate() {
         DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(this.elementType);
         for (Map.Entry<DBSPExpression, Long> entry : data.entrySet()) {
-            result.add(entry.getKey(), -entry.getValue());
+            result.append(entry.getKey(), -entry.getValue());
         }
         return result;
     }
@@ -204,7 +202,7 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     public DBSPZSetExpression minus(DBSPZSetExpression sub) {
         DBSPZSetExpression result = this.clone();
-        result.add(sub.negate());
+        result.append(sub.negate());
         return result;
     }
 

@@ -15,7 +15,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
-import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -38,6 +37,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /** Represents a test case that will be executed. */
 public class TestCase {
@@ -64,12 +64,17 @@ public class TestCase {
 
     /**
      * Generates a Rust function which tests a {@link DBSPCircuit}.
+     * @param changeFunction Maps a Change id to a function that generates the contents of the change.
+     *                       Used to share changes between many tests.
      *
      * @return The code for a function that runs the circuit with the specified
-     * input and tests the produced output. */
-    DBSPFunction createTesterCode(int testNumber,
-                                  @SuppressWarnings("SameParameterValue")
-                                  String codeDirectory) throws IOException {
+     * input and tests the produced output, plus the code for functions that generate
+     * new inputs. */
+    List<DBSPFunction> createTesterCode(
+            int testNumber, @SuppressWarnings("SameParameterValue") String codeDirectory,
+            Map<Long, DBSPFunction> changeFunction) throws IOException {
+        List<DBSPFunction> result = new ArrayList<>();
+
         List<DBSPStatement> list = new ArrayList<>();
         if (!this.name.isEmpty())
             list.add(new DBSPComment(this.name));
@@ -101,18 +106,24 @@ public class TestCase {
         for (InputOutputChange changes : this.ccs.stream.changes) {
             Change inputs = changes.getInputs();
             inputs = inputs.shuffle(inputShuffle);
+            // Use id before simplify
+            Long changeId = inputs.getId();
             inputs = inputs.simplify(this.ccs.compiler);
-            Change outputs = changes.getOutputs().shuffle(outputShuffle).simplify(this.ccs.compiler);
 
             TableValue[] tableValues = new TableValue[inputs.getSetCount()];
             for (int i = 0; i < inputs.getSetCount(); i++)
                 tableValues[i] = new TableValue(
                         this.ccs.compiler.canonicalName("t" + i, false), inputs.getSet(i));
-            String functionName = "input" + pair;
+            String functionName = "input" + changeId;
             DBSPFunction inputFunction = TableValue.createInputFunction(
                     this.ccs.compiler, functionName, tableValues, codeDirectory);
-            list.add(new DBSPFunctionItem(inputFunction));
-            DBSPLetStatement in = new DBSPLetStatement(functionName, inputFunction.call());
+            if (!changeFunction.containsKey(changeId)) {
+                result.add(inputFunction);
+                changeFunction.put(changeId, inputFunction);
+            }
+
+            String inputName = "input" + pair;
+            DBSPLetStatement in = new DBSPLetStatement(inputName, inputFunction.call());
             list.add(in);
 
             if (!useHandles)
@@ -148,6 +159,7 @@ public class TestCase {
                         "mvn test -Dtest=" + this.javaTestName +
                         System.lineSeparator() + this.name;
 
+                Change outputs = changes.getOutputs().shuffle(outputShuffle).simplify(this.ccs.compiler);
                 DBSPType rowType = outputs.getSetElementType(i);
                 boolean foundFp = false;
                 DBSPExpression[] converted = null;
@@ -202,7 +214,8 @@ public class TestCase {
         annotations.add("#[test]");
         if (this.message != null)
             annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
-        return new DBSPFunction(CalciteObject.EMPTY, "test" + testNumber, new ArrayList<>(),
-                DBSPTypeVoid.INSTANCE, body, annotations);
+        result.add(new DBSPFunction(CalciteObject.EMPTY, "test" + testNumber, new ArrayList<>(),
+                DBSPTypeVoid.INSTANCE, body, annotations));
+        return result;
     }
 }
