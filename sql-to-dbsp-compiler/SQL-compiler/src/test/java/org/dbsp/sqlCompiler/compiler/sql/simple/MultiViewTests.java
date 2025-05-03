@@ -49,7 +49,7 @@ public class MultiViewTests extends BaseSQLTests {
         compiler.submitStatementForCompilation(query2);
 
         CompilerCircuitStream ccs = this.getCCS(compiler);
-        Change inputChange = EndToEndTests.createInput();
+        Change inputChange = EndToEndTests.INPUT;
         Change outputChange = new Change(
                 new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
@@ -73,7 +73,7 @@ public class MultiViewTests extends BaseSQLTests {
         CompilerCircuitStream ccs = this.getCCS(compiler);
 
         InputOutputChange change = new InputOutputChange(
-                EndToEndTests.createInput(),
+                EndToEndTests.INPUT,
                 new Change(new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                         new DBSPTupleExpression(new DBSPBoolLiteral(false))),
@@ -97,7 +97,7 @@ public class MultiViewTests extends BaseSQLTests {
 
         CompilerCircuitStream ccs = this.getCCS(compiler);
         InputOutputChange change = new InputOutputChange(
-                EndToEndTests.createInput(),
+                EndToEndTests.INPUT,
                 new Change(new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                         new DBSPTupleExpression(new DBSPBoolLiteral(false))),

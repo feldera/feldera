@@ -108,7 +108,7 @@ public class ArrayTests extends BaseSQLTests {
             if (i == 1)
                 result = new DBSPZSetExpression(tuple);
             else
-                Objects.requireNonNull(result).add(tuple);
+                Objects.requireNonNull(result).append(tuple);
         }
 
         this.testQuery("", query, new InputOutputChange(
@@ -124,7 +124,7 @@ public class ArrayTests extends BaseSQLTests {
             if (i == 1)
                 result = new DBSPZSetExpression(tuple);
             else
-                Objects.requireNonNull(result).add(tuple);
+                Objects.requireNonNull(result).append(tuple);
         }
 
         this.testQuery("", query, new InputOutputChange(
@@ -140,9 +140,9 @@ public class ArrayTests extends BaseSQLTests {
             if (i == 1)
                 result = new DBSPZSetExpression(tuple);
             else
-                Objects.requireNonNull(result).add(tuple);
+                Objects.requireNonNull(result).append(tuple);
         }
-        result.add(new DBSPTupleExpression(
+        result.append(new DBSPTupleExpression(
                 DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
         this.testQuery("", query, new InputOutputChange(
                 new Change(), new Change(result)).toStream());
@@ -159,7 +159,7 @@ public class ArrayTests extends BaseSQLTests {
             if (i == 1)
                 result = new DBSPZSetExpression(tuple);
             else
-                Objects.requireNonNull(result).add(tuple);
+                Objects.requireNonNull(result).append(tuple);
         }
         this.testQuery("", query, new InputOutputChange(
                 new Change(), new Change(result)).toStream());
@@ -176,9 +176,9 @@ public class ArrayTests extends BaseSQLTests {
             if (i == 1)
                 result = new DBSPZSetExpression(tuple);
             else
-                Objects.requireNonNull(result).add(tuple);
+                Objects.requireNonNull(result).append(tuple);
         }
-        result.add(new DBSPTupleExpression(
+        result.append(new DBSPTupleExpression(
                 DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
                 new DBSPI32Literal(6)));
 
@@ -198,7 +198,7 @@ public class ArrayTests extends BaseSQLTests {
             if (i == 1)
                 result = new DBSPZSetExpression(tuple);
             else
-                Objects.requireNonNull(result).add(tuple);
+                Objects.requireNonNull(result).append(tuple);
         }
 
         this.testQuery("", query, new InputOutputChange(
@@ -280,7 +280,7 @@ public class ArrayTests extends BaseSQLTests {
                         new DBSPI32Literal(i, true),
                         new DBSPI32Literal(j, true),
                         new DBSPI32Literal(7));
-                result.add(tuple);
+                result.append(tuple);
             }
         for (int i = 8; i < 11; i++)
             for (int j = 11; j < 14; j++) {
@@ -288,7 +288,7 @@ public class ArrayTests extends BaseSQLTests {
                         new DBSPI32Literal(i, true),
                         new DBSPI32Literal(j, true),
                         new DBSPI32Literal(14));
-                result.add(tuple);
+                result.append(tuple);
             }
         this.testQuery(ddl, query, new InputOutputChange(new Change(input), new Change(result)).toStream());
     }

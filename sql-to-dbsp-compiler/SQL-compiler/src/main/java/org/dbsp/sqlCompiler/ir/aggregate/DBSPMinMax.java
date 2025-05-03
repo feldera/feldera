@@ -15,13 +15,13 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
-/** Represents the built-in SQL Aggregator from DBSP; could be MinSone or Max. */
+/** Represents the built-in SQL Aggregator from DBSP. */
 public class DBSPMinMax extends DBSPAggregator {
     public enum Aggregation {
         Min,
         MinSome1,
         Max
-    };
+    }
     public final Aggregation aggregation;
     @Nullable
     public final DBSPClosureExpression postProcessing;

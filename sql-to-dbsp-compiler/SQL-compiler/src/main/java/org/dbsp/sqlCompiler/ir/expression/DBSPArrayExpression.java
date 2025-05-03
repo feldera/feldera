@@ -72,7 +72,7 @@ public final class DBSPArrayExpression extends DBSPExpression
                 if (!e.getType().sameType(data.get(0).getType()))
                     throw new InternalCompilerError("Not all values of vector have the same type:" +
                             e.getType() + " vs " + data.get(0).getType(), this);
-                this.add(e);
+                this.append(e);
             }
         } else {
             this.data = null;
@@ -87,7 +87,7 @@ public final class DBSPArrayExpression extends DBSPExpression
             if (!e.getType().sameType(data[0].getType()))
                 throw new InternalCompilerError("Not all values of vector have the same type:" +
                         e.getType() + " vs " + data[0].getType(), this);
-            this.add(e);
+            this.append(e);
         }
     }
 
@@ -99,20 +99,19 @@ public final class DBSPArrayExpression extends DBSPExpression
         return this.vecType.getTypeArg(0);
     }
 
-    public IDBSPContainer add(DBSPExpression expression) {
+    public void append(DBSPExpression expression) {
         // We expect the expression to be a constant value (a literal)
         if (!expression.getType().sameType(this.getElementType()))
             throw new InternalCompilerError("Added element " + expression + " type " +
                     expression.getType() + " does not match vector type " + this.getElementType(), this);
         Objects.requireNonNull(this.data).add(expression);
-        return this;
     }
 
-    public void add(DBSPArrayExpression other) {
+    public void append(DBSPArrayExpression other) {
         if (!this.getType().sameType(other.getType()))
             throw new InternalCompilerError("Added vectors do not have the same type " +
                     this.getElementType() + " vs " + other.getElementType(), this);
-        Objects.requireNonNull(other.data).forEach(this::add);
+        Objects.requireNonNull(other.data).forEach(this::append);
     }
 
     public int size() {

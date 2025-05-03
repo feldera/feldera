@@ -67,21 +67,27 @@ public class TableParser {
     static final Pattern SECONDS = Pattern.compile("\\s*(\\d+)([.](\\d+))? secs?(.*)");
     static final Pattern HMS = Pattern.compile("\\s*([0-9][0-9]:[0-9][0-9]:[0-9][0-9])(\\.[0-9]*)?(.*)");
     static final Pattern AGO = Pattern.compile("\\s*ago(.*)");
-
+    @Nullable
+    static Date ZERO = null;
 
     /** Convert a timestamp from a format like Sat Feb 16 17:32:01 1996 to
      * a format like 1996-02-16 17:32:01 */
     public static DBSPExpression convertTimestamp(@Nullable String timestamp, DBSPType type) {
         if (timestamp == null)
             return DBSPLiteral.none(type);
+        try {
+            if (ZERO == null)
+                ZERO = new SimpleDateFormat("yyyy-MM-dd").parse("0000-01-01");
+        } catch (ParseException e) {
+            throw new RuntimeException(e);
+        }
         for (SimpleDateFormat input: TIMESTAMP_INPUT_FORMAT) {
             String out;
             try {
                 // Calcite problems: does not support negative years, or fractional seconds ending in 0
-                Date zero = new SimpleDateFormat("yyyy-MM-dd").parse("0000-01-01");
                 Date converted = input.parse(timestamp);
                 out = TIMESTAMP_OUTPUT_FORMAT.format(converted);
-                if (converted.before(zero))
+                if (converted.before(ZERO))
                     out = "-" + out;
             } catch (ParseException ignored) {
                 continue;
@@ -457,7 +463,7 @@ public class TableParser {
             if (mysqlStyle && line.startsWith("|") && line.endsWith("|"))
                 line = line.substring(1, line.length() - 1);
             DBSPExpression row = parseRow(line, tuple, separator);
-            result.add(row);
+            result.append(row);
             rowsFound++;
         }
         if (rowCount >= 0 && rowCount != rowsFound)

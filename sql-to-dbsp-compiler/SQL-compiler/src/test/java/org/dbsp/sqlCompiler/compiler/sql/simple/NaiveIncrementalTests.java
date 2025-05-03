@@ -41,20 +41,19 @@ public class NaiveIncrementalTests extends EndToEndTests {
 
     @Override
     public void testQuery(String query, DBSPZSetExpression firstOutput) {
-        Change input = createInput();
         Change secondOutput = Change.singleEmptyWithElementType(firstOutput.getElementType());
         Change thirdOutput = new Change(secondOutput.getSet(0).minus(firstOutput));
         this.invokeTestQueryBase(query,
                 new InputOutputChangeStream()
-                        .addPair(input, new Change(firstOutput))  // Add first input
+                        .addPair(INPUT, new Change(firstOutput))  // Add first input
                         .addPair(new Change(empty), secondOutput) // Add an empty input
-                        .addPair(new Change(input.getSet(0).negate()), thirdOutput) // Subtract the first input
+                        .addPair(new Change(INPUT.getSet(0).negate()), thirdOutput) // Subtract the first input
         );
     }
 
     @Override
     void testConstantOutput(String query, DBSPZSetExpression output) {
-        Change input = createInput();
+        Change input = INPUT;
         Change e = Change.singleEmptyWithElementType(output.getElementType());
         this.invokeTestQueryBase(query,
                 new InputOutputChangeStream()
@@ -67,7 +66,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
     void testAggregate(String query,
                        DBSPZSetExpression firstOutput,
                        DBSPZSetExpression outputForEmptyInput) {
-        Change input = createInput();
+        Change input = INPUT;
         Change secondOutput = Change.singleEmptyWithElementType(firstOutput.getElementType());
         Change thirdOutput = new Change(outputForEmptyInput.minus(firstOutput));
         this.invokeTestQueryBase(query,

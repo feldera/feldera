@@ -260,7 +260,10 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             fields.add(field);
             col++;
             if (col == outputElementType.size()) {
-                container.add(new DBSPTupleExpression(CalciteObject.EMPTY, fields));
+                if (container.is(DBSPZSetExpression.class))
+                    container.to(DBSPZSetExpression.class).append(new DBSPTupleExpression(CalciteObject.EMPTY, fields));
+                else
+                    container.to(DBSPArrayExpression.class).append(new DBSPTupleExpression(CalciteObject.EMPTY, fields));
                 fields = new ArrayList<>();
                 col = 0;
             }

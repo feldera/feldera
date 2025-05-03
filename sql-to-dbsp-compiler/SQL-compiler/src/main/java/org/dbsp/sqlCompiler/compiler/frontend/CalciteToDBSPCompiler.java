@@ -2253,7 +2253,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 i++;
             }
             DBSPTupleExpression expression = new DBSPTupleExpression(node, expressions);
-            result.add(expression);
+            result.append(expression);
         }
 
         if (this.modifyTableTranslation != null) {
@@ -3660,7 +3660,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     if (result == null)
                         result = lit;
                     else
-                        result.add(lit);
+                        result.append(lit);
                 }
             }
             Utilities.enforce(result != null);
@@ -3913,7 +3913,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         DBSPExpression exp = new DBSPTupleExpression(node, resultColumns);
-        result.add(exp);
+        result.append(exp);
         return result;
     }
 

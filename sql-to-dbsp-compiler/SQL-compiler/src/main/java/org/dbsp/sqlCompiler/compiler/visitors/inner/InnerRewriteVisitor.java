@@ -748,7 +748,7 @@ public abstract class InnerRewriteVisitor
                 DBSPZSetExpression.emptyWithElementType(zType.getElementType());
         for (Map.Entry<DBSPExpression, Long> entry: expression.data.entrySet()) {
             DBSPExpression row = this.transform(entry.getKey());
-            result.add(row, entry.getValue());
+            result.append(row, entry.getValue());
         }
         this.pop(expression);
         this.map(expression, result);

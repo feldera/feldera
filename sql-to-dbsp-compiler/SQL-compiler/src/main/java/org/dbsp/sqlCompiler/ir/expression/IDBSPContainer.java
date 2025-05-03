@@ -23,6 +23,6 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-public interface IDBSPContainer {
-    IDBSPContainer add(DBSPExpression expression);
-}
+import org.dbsp.util.ICastable;
+
+public interface IDBSPContainer extends ICastable  { }
