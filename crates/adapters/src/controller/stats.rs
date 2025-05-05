@@ -921,7 +921,7 @@ impl ControllerStatus {
         }
     }
 
-    pub fn completed(
+    pub fn extended(
         &self,
         endpoint_id: EndpointId,
         step_results: StepResults,
@@ -934,7 +934,7 @@ impl ControllerStatus {
         let mut finished = false;
 
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            endpoint_stats.completed(
+            endpoint_stats.extended(
                 step_results,
                 self.num_total_circuit_input_records(),
                 self.num_total_completed_records(),
@@ -1511,7 +1511,7 @@ impl InputEndpointStatus {
     ///
     /// `total_circuit_input_records`, `total_completed_records` - current pipeline-level metrics
     /// (already updated with `step_results`) used to update `completion_tokens`.
-    fn completed(
+    fn extended(
         &self,
         step_results: StepResults,
         total_circuit_input_records: u64,
