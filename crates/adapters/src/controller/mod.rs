@@ -3202,7 +3202,7 @@ impl InputConsumer for InputProbe {
     }
 
     fn replayed(&self, num_records: usize, hash: u64) {
-        self.controller.status.completed(
+        self.controller.status.extended(
             self.endpoint_id,
             StepResults {
                 num_records: num_records as u64,
@@ -3227,7 +3227,7 @@ impl InputConsumer for InputProbe {
             let pipeline_ft = self.controller.fault_tolerance;
             debug_assert!(resume_ft >= self.controller.fault_tolerance, "endpoint {} produced input at fault tolerance level {resume_ft:?} in pipeline with fault tolerance level {pipeline_ft:?}", &self.endpoint_name);
         }
-        self.controller.status.completed(
+        self.controller.status.extended(
             self.endpoint_id,
             StepResults {
                 num_records: num_records as u64,
