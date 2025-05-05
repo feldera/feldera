@@ -23,16 +23,21 @@
 //! ```text
 //! TEST_DBSP_URL=http://localhost:8080 cargo test --test integration_test --package=pipeline-manager  -- --nocapture
 //! ```
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use actix_http::{encoding::Decoder, Payload, StatusCode};
 use awc::error::SendRequestError;
 use awc::{http, ClientRequest, ClientResponse};
 use aws_sdk_cognitoidentityprovider::config::Region;
+use chrono::Utc;
+use feldera_types::completion_token::{
+    CompletionStatus, CompletionStatusResponse, CompletionTokenResponse,
+};
 use feldera_types::transport::http::Chunk;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
 use serial_test::serial;
+use tempfile::NamedTempFile;
 use tokio::time::{sleep, timeout};
 
 use anyhow::{bail, Result as AnyResult};
@@ -444,6 +449,71 @@ impl TestConfig {
         }
     }
 
+    /// Shut down and delete pipelines if it exists.
+    async fn delete_pipeline_if_exists(&self, pipeline_name: &str) {
+        println!("Deleting pipeline {pipeline_name}");
+
+        let config = self;
+
+        // Retrieve list of pipelines
+        let start = Instant::now();
+        let response = loop {
+            match config
+                .try_get(&format!("/v0/pipelines/{pipeline_name}"))
+                .await
+            {
+                Ok(response) => {
+                    break response;
+                }
+                Err(e) => {
+                    if start.elapsed() > MANAGER_INITIALIZATION_TIMEOUT {
+                        panic!("Timeout waiting for the pipeline manager");
+                    }
+                    println!("Could not reach API due to error: {e}");
+                    println!("Retrying...");
+                    sleep(Duration::from_millis(1000)).await;
+                }
+            }
+        };
+        if response.status() == StatusCode::NOT_FOUND {
+            println!("Pipeline doesn't exist -- nothing to do");
+            return;
+        }
+        assert!(
+            response.status().is_success(),
+            "Unexpected reponse to GET /pipeline/{pipeline_name}: {:?}",
+            response
+        );
+
+        println!("Shutting down pipeline {pipeline_name}");
+        let response = config
+            .post_no_body(format!("/v0/pipelines/{pipeline_name}/shutdown"))
+            .await;
+        assert_eq!(
+            StatusCode::ACCEPTED,
+            response.status(),
+            "Unexpected response to pipeline shutdown: {:?}",
+            response
+        );
+
+        // Delete pipeline once it is confirmed it is shutdown
+        self.wait_for_deployment_status(
+            pipeline_name,
+            PipelineStatus::Shutdown,
+            config.shutdown_timeout,
+        )
+        .await;
+        let response = config
+            .delete(format!("/v0/pipelines/{pipeline_name}"))
+            .await;
+        assert_eq!(
+            StatusCode::OK,
+            response.status(),
+            "Unexpected response to pipeline deletion: {:?}",
+            response
+        );
+    }
+
     /// Cleanup by shutting down and removing all pipelines.
     async fn cleanup(&self) {
         let config = self;
@@ -550,6 +620,10 @@ async fn bearer_token() -> Option<String> {
 }
 
 async fn setup() -> TestConfig {
+    setup_for_pipeline(None).await
+}
+
+async fn setup_for_pipeline(pipeline_name: Option<&str>) -> TestConfig {
     let _ = rustls::crypto::CryptoProvider::install_default(
         rustls::crypto::aws_lc_rs::default_provider(),
     );
@@ -613,7 +687,11 @@ async fn setup() -> TestConfig {
         shutdown_timeout,
         failed_timeout,
     };
-    config.cleanup().await;
+    if let Some(pipeline_name) = pipeline_name {
+        config.delete_pipeline_if_exists(pipeline_name).await;
+    } else {
+        config.cleanup().await;
+    }
     config
 }
 
@@ -1624,6 +1702,321 @@ not_a_number,true,ΑαΒβΓγΔδ
             .await,
         json!([{"c1": 15, "c2": true, "c3": "foo"}, {"c1": 16, "c2": false, "c3": "unicode🚲"}, {"c1": 20, "c2": null, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 60, "c2": true, "c3": "hello"}])
     );
+
+    // Shutdown the pipeline
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+}
+
+/// Test completion tokens with a pipeline that has no output connectors.
+#[actix_web::test]
+#[serial]
+async fn completion_tokens() {
+    let config = setup_for_pipeline(Some("test")).await;
+
+    create_and_deploy_test_pipeline(
+        &config,
+        "create table t1(c1 integer, c2 bool, c3 varchar) with ('materialized' = 'true'); create materialized view v1 as select * from t1;",
+    )
+        .await;
+
+    // Start the pipeline
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
+        .await;
+
+    for i in 0..1000 {
+        let token: CompletionTokenResponse = config
+            .post_json(
+                "/v0/pipelines/test/ingress/T1?format=json&update_format=raw",
+                format!(r#"{{"c1": {i}, "c2": true}}"#),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        println!("Iteration {i}, token: {}", token.token);
+        loop {
+            let mut response = config
+                .get(&format!(
+                    "/v0/pipelines/test/completion_status?token={}",
+                    token.token
+                ))
+                .await;
+
+            assert!(
+                response.status().is_success(),
+                "Unexpected reponse to /completion_status: {response:?}"
+            );
+
+            let status: CompletionStatusResponse = response.json().await.unwrap();
+            if status.status == CompletionStatus::Complete {
+                break;
+            }
+            println!("status: {:?}", status.status);
+            tokio::time::sleep(Duration::from_millis(10)).await
+        }
+
+        assert_eq!(
+            config
+                .adhoc_query_json("test", &format!("select count(*) from t1 where c1 = {i};"))
+                .await,
+            json!([{"count(*)": 1}])
+        );
+    }
+
+    // Shutdown the pipeline
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+}
+
+/// Test completion tokens with a pipeline with output connectors.
+#[actix_web::test]
+#[serial]
+async fn completion_tokens_with_outputs() {
+    let config = setup_for_pipeline(Some("test")).await;
+
+    let temp_output_path = NamedTempFile::new().unwrap().into_temp_path();
+    let output_path1 = temp_output_path.to_str().unwrap().to_string();
+    temp_output_path.close().unwrap();
+    let temp_output_path = NamedTempFile::new().unwrap().into_temp_path();
+    let output_path2 = temp_output_path.to_str().unwrap().to_string();
+    temp_output_path.close().unwrap();
+    let temp_output_path = NamedTempFile::new().unwrap().into_temp_path();
+    let output_path3 = temp_output_path.to_str().unwrap().to_string();
+    temp_output_path.close().unwrap();
+    let temp_output_path = NamedTempFile::new().unwrap().into_temp_path();
+    let output_path4 = temp_output_path.to_str().unwrap().to_string();
+    temp_output_path.close().unwrap();
+
+    create_and_deploy_test_pipeline(
+        &config,
+        &format!(
+            r#"create table t1(c1 integer, c2 bool, c3 varchar)
+with (
+    'materialized' = 'true',
+    'connectors' = '[{{
+        "name": "datagen_connector",
+        "paused": true,
+        "transport": {{
+            "name": "datagen",
+            "config": {{"plan": [{{ "limit": 1 }}]}}
+        }}
+    }}]'
+);
+create materialized view v1
+with (
+    'connectors' = '[{{
+        "transport": {{
+            "name": "file_output",
+            "config": {{
+                "path": {output_path1:?}
+            }}
+        }},
+        "format": {{
+            "name": "json"
+        }}
+    }},
+    {{
+        "transport": {{
+            "name": "file_output",
+            "config": {{
+                "path": {output_path2:?}
+            }}
+        }},
+        "format": {{
+            "name": "json"
+        }}
+    }}]'
+)
+as select * from t1;
+create materialized view v2
+with (
+    'connectors' = '[{{
+        "transport": {{
+            "name": "file_output",
+            "config": {{
+                "path": {output_path3:?}
+            }}
+        }},
+        "format": {{
+            "name": "json"
+        }}
+    }},
+    {{
+        "transport": {{
+            "name": "file_output",
+            "config": {{
+                "path": {output_path4:?}
+            }}
+        }},
+        "format": {{
+            "name": "json"
+        }}
+    }}]'
+)
+as select * from t1;
+"#
+        ),
+    )
+    .await;
+
+    // Start the pipeline
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
+        .await;
+
+    let mut expected_output = String::new();
+
+    for i in 0..100 {
+        let token: CompletionTokenResponse = config
+            .post_json(
+                "/v0/pipelines/test/ingress/T1?format=json&update_format=raw",
+                format!(r#"{{"c1": {i}, "c2": true}}"#),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        println!("Iteration {i}, token: {}", token.token);
+        loop {
+            let mut response = config
+                .get(&format!(
+                    "/v0/pipelines/test/completion_status?token={}",
+                    token.token
+                ))
+                .await;
+
+            assert!(
+                response.status().is_success(),
+                "Unexpected response to /completion_status: {response:?}"
+            );
+
+            let status: CompletionStatusResponse = response.json().await.unwrap();
+            if status.status == CompletionStatus::Complete {
+                break;
+            }
+            println!("status: {:?}", status.status);
+            tokio::time::sleep(Duration::from_millis(10)).await
+        }
+        println!(
+            "{}: DONE",
+            chrono::DateTime::<Utc>::from(SystemTime::now()).to_rfc3339()
+        );
+
+        expected_output += &format!(
+            r#"{{"insert":{{"c1":{i},"c2":true,"c3":null}}}}
+"#
+        );
+
+        assert_eq!(
+            config
+                .adhoc_query_json("test", &format!("select count(*) from t1 where c1 = {i};"))
+                .await,
+            json!([{"count(*)": 1}])
+        );
+
+        // FIXME: This test can run against docker, in which case we cannot inspect the output files.
+        // This is why the following lines are commented.
+
+        // let output1 = fs::read_to_string(&output_path1).await.unwrap();
+        // let output2 = fs::read_to_string(&output_path2).await.unwrap();
+        // let output3 = fs::read_to_string(&output_path3).await.unwrap();
+        // let output4 = fs::read_to_string(&output_path4).await.unwrap();
+
+        // assert_eq!(&output1, &expected_output);
+        // assert_eq!(&output2, &expected_output);
+        // assert_eq!(&output3, &expected_output);
+        // assert_eq!(&output4, &expected_output);
+    }
+
+    // Feed data from datagen; use the /completion_token endpoint to
+    // generate the token.
+
+    assert_eq!(
+        config
+            .post_no_body(format!(
+                "/v0/pipelines/test/tables/t1/connectors/datagen_connector/start"
+            ))
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    tokio::time::sleep(Duration::from_millis(1000)).await;
+
+    let mut response = config
+        .get("/v0/pipelines/test/tables/t1/connectors/datagen_connector/completion_token")
+        .await;
+
+    assert!(
+        response.status().is_success(),
+        "Unexpected response to /completion_token: {:?}",
+        response.body().await
+    );
+
+    let token: CompletionTokenResponse = response.json().await.unwrap();
+
+    println!("Datagen connector token: {}", token.token);
+    loop {
+        let mut response = config
+            .get(&format!(
+                "/v0/pipelines/test/completion_status?token={}",
+                token.token
+            ))
+            .await;
+
+        assert!(
+            response.status().is_success(),
+            "Unexpected response to /completion_status: {response:?}"
+        );
+
+        let status: CompletionStatusResponse = response.json().await.unwrap();
+        if status.status == CompletionStatus::Complete {
+            break;
+        }
+        println!("status: {:?}", status.status);
+        tokio::time::sleep(Duration::from_millis(10)).await
+    }
+
+    expected_output += &format!(
+        r#"{{"insert":{{"c1":0,"c2":false,"c3":"0"}}}}
+"#
+    );
+
+    assert_eq!(
+        config
+            .adhoc_query_json("test", &format!("select count(*) from t1 where c1 = 0;"))
+            .await,
+        json!([{"count(*)": 2}])
+    );
+
+    // let output1 = fs::read_to_string(&output_path1).await.unwrap();
+    // let output2 = fs::read_to_string(&output_path2).await.unwrap();
+    // let output3 = fs::read_to_string(&output_path3).await.unwrap();
+    // let output4 = fs::read_to_string(&output_path4).await.unwrap();
+
+    // assert_eq!(&output1, &expected_output);
+    // assert_eq!(&output2, &expected_output);
+    // assert_eq!(&output3, &expected_output);
+    // assert_eq!(&output4, &expected_output);
 
     // Shutdown the pipeline
     let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
