@@ -708,6 +708,17 @@ pub enum ControllerError {
     UnexpectedJsonStructure {
         reason: String,
     },
+
+    /// The request relates to an old incarnation of the pipeline.
+    PipelineRestarted {
+        error: String,
+    },
+
+    /// Completion token specified non-existing endpoint id. This indicates that the endpoint was removed
+    /// or the token is invalid.
+    UnknownEndpointInCompletionToken {
+        endpoint_id: u64,
+    },
 }
 
 impl ResponseError for ControllerError {
@@ -727,6 +738,8 @@ impl ResponseError for ControllerError {
             Self::EnterpriseFeature(_) => StatusCode::NOT_IMPLEMENTED,
             Self::RestoreInProgress => StatusCode::SERVICE_UNAVAILABLE,
             Self::BootstrapInProgress => StatusCode::SERVICE_UNAVAILABLE,
+            Self::PipelineRestarted { .. } => StatusCode::GONE,
+            Self::UnknownEndpointInCompletionToken { .. } => StatusCode::GONE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -853,6 +866,10 @@ impl DbspDetailedError for ControllerError {
             Self::StorageError { .. } => Cow::from("StorageError"),
             Self::SuspendError(_) => Cow::from("SuspendError"),
             Self::UnexpectedJsonStructure { .. } => Cow::from("UnexpectedJsonStructure"),
+            Self::PipelineRestarted { .. } => Cow::from("PipelineRestarted"),
+            Self::UnknownEndpointInCompletionToken { .. } => {
+                Cow::from("UnknownEndpointInCompletionToken")
+            }
         }
     }
 }
@@ -989,6 +1006,12 @@ impl Display for ControllerError {
             Self::SuspendError(error) => write!(f, "{error}"),
             Self::UnexpectedJsonStructure { reason } => {
                 write!(f, "An unexpected JSON structure was detected: {reason}")
+            }
+            Self::PipelineRestarted { error } => {
+                write!(f, "{error}")
+            }
+            Self::UnknownEndpointInCompletionToken { endpoint_id } => {
+                write!(f, "completion token specifies input endpoint id {endpoint_id}, which doesn't exist; this indicates that the input connector was deleted after the completion token was generated")
             }
         }
     }
@@ -1258,6 +1281,16 @@ impl ControllerError {
         }
     }
 
+    pub fn pipeline_restarted(error: &str) -> Self {
+        Self::PipelineRestarted {
+            error: error.to_string(),
+        }
+    }
+
+    pub fn unknown_endpoint_in_completion_token(endpoint_id: u64) -> Self {
+        Self::UnknownEndpointInCompletionToken { endpoint_id }
+    }
+
     pub fn kind(&self) -> ErrorKind {
         match self {
             Self::IoError { io_error, .. } => io_error.kind(),
@@ -1293,7 +1326,9 @@ impl ControllerError {
             | Self::ControllerPanic
             | Self::ControllerExit
             | Self::EnterpriseFeature(_)
-            | Self::UnexpectedJsonStructure { .. } => ErrorKind::Other,
+            | Self::UnexpectedJsonStructure { .. }
+            | Self::UnknownEndpointInCompletionToken { .. }
+            | Self::PipelineRestarted { .. } => ErrorKind::Other,
         }
     }
 }

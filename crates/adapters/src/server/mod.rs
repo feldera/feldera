@@ -1,4 +1,4 @@
-use crate::controller::ControllerMetric;
+use crate::controller::{CompletionToken, ControllerMetric};
 use crate::format::{get_input_format, get_output_format};
 use crate::{
     adhoc::stream_adhoc_result,
@@ -26,6 +26,9 @@ use colored::{ColoredString, Colorize};
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
+use feldera_types::completion_token::{
+    CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
+};
 use feldera_types::query_params::{MetricsFormat, MetricsParameters};
 use feldera_types::secret_resolver::{
     resolve_secret_references_in_connector_config, DEFAULT_SECRETS_DIRECTORY_PATH,
@@ -559,6 +562,8 @@ where
         .service(pause)
         .service(shutdown)
         .service(status)
+        .service(completion_token)
+        .service(completion_status)
         .service(query)
         .service(stats)
         .service(metrics)
@@ -1057,7 +1062,7 @@ async fn input_endpoint(
                 &state,
                 format.clone(),
                 table_name.clone(),
-                endpoint_name,
+                endpoint_name.clone(),
             )
             .await?;
             TABLE_ENDPOINTS
@@ -1072,7 +1077,15 @@ async fn input_endpoint(
     endpoint
         .complete_request(payload, args.force)
         .instrument(info_span!("http_input"))
-        .await
+        .await?;
+
+    match &*state.controller.lock().unwrap() {
+        None => Err(missing_controller_error(&state)),
+        Some(controller) => {
+            let token = controller.completion_token(endpoint.name())?.encode();
+            Ok(HttpResponse::Ok().json(CompletionTokenResponse::new(token)))
+        }
+    }
 }
 
 /// Create an instance of `FormatConfig` from format name and
@@ -1306,6 +1319,44 @@ async fn start_input_endpoint(
     Ok(HttpResponse::Ok())
 }
 
+/// Generate a completion token for the endpoint.
+#[get("/input_endpoints/{endpoint_name}/completion_token")]
+async fn completion_token(state: WebData<ServerState>, path: web::Path<String>) -> impl Responder {
+    let endpoint_name = path.into_inner();
+
+    match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            let token = controller.completion_token(&endpoint_name)?.encode();
+            let response = CompletionTokenResponse::new(token);
+            Ok(HttpResponse::Ok().json(response))
+        }
+        None => Err(missing_controller_error(&state)),
+    }
+}
+
+/// Check the status of a completion token.
+#[get("/completion_status")]
+async fn completion_status(
+    state: WebData<ServerState>,
+    args: Query<CompletionStatusArgs>,
+) -> impl Responder {
+    match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            let token = CompletionToken::decode(&args.into_inner().token).map_err(|e| {
+                PipelineError::InvalidParam {
+                    error: format!("invalid completion token: {e}"),
+                }
+            })?;
+            if controller.completion_status(&token)? {
+                Ok(HttpResponse::Ok().json(CompletionStatusResponse::complete()))
+            } else {
+                Ok(HttpResponse::Accepted().json(CompletionStatusResponse::inprogress()))
+            }
+        }
+        None => Err(missing_controller_error(&state)),
+    }
+}
+
 #[cfg(test)]
 #[cfg(feature = "with-kafka")]
 mod test_with_kafka {
@@ -1314,13 +1365,17 @@ mod test_with_kafka {
         controller::MAX_API_CONNECTIONS,
         ensure_default_crypto_provider,
         test::{
-            generate_test_batches,
+            async_wait, generate_test_batches,
             http::{TestHttpReceiver, TestHttpSender},
             kafka::{BufferConsumer, KafkaResources, TestProducer},
             test_circuit, TestStruct,
         },
     };
+    use actix_test::TestServer;
     use actix_web::{http::StatusCode, middleware::Logger, web::Data as WebData, App};
+    use feldera_types::completion_token::{
+        CompletionStatus, CompletionStatusResponse, CompletionTokenResponse,
+    };
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
@@ -1333,6 +1388,22 @@ mod test_with_kafka {
         time::{Duration, Instant},
     };
     use tempfile::NamedTempFile;
+
+    async fn print_stats(server: &TestServer) {
+        let stats = serde_json::to_string_pretty(
+            &server
+                .get("/stats")
+                .send()
+                .await
+                .unwrap()
+                .json::<JsonValue>()
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+
+        println!("{stats}")
+    }
 
     #[actix_web::test]
     async fn test_server() {
@@ -1575,9 +1646,40 @@ outputs:
         println!("Force-push data via HTTP");
         let req = server.post("/ingress/test_input1?force=true");
 
-        TestHttpSender::send_stream(req, &data).await;
+        let CompletionTokenResponse { token } =
+            TestHttpSender::send_stream_deserialize_resp::<CompletionTokenResponse>(req, &data)
+                .await;
+        println!("completion token: {token}");
 
+        // Wait for completion.
+        async_wait(
+            || async {
+                print_stats(&server).await;
+
+                let resp = server
+                    .get(format!("/completion_status?token={token}"))
+                    .send()
+                    .await
+                    .unwrap()
+                    .body()
+                    .await
+                    .unwrap();
+                let CompletionStatusResponse { status } = serde_json::from_slice(&resp).unwrap();
+                println!("completion status: {status:?}");
+
+                // println!("stats {}", stats.to_str_lossy());
+                status == CompletionStatus::Complete
+            },
+            20_000,
+        )
+        .await
+        .unwrap();
+
+        // Even though we checked completion status of the token, it only means that the connector
+        // has sent data to Kafka, not that it has been received by the consumer.
         buffer_consumer.wait_for_output_unordered(&data);
+        print_stats(&server).await;
+
         buffer_consumer.clear();
 
         TestHttpReceiver::wait_for_output_unordered(&mut resp1, &data).await;

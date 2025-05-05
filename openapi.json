@@ -1572,6 +1572,148 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/completion_status": {
+      "get": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Check the status of a completion token returned by the `/ingress` or `/completion_to`",
+        "operationId": "completion_status",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "completion_token",
+            "in": "query",
+            "description": "Completion token returned by the '/ingress' or '/completion_status' endpoint.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pipeline has finished processing inputs associated with the provided completion token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompletionStatusResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The pipeline is still processing inputs associated with the provided completion token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompletionStatusResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Completion token was created by a previous incarnation of the pipeline and is not valid for the current incarnation. This indicates that the pipeline was suspended and resumed from a checkpoint or restarted after a failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/egress/{table_name}": {
       "post": {
         "tags": [
@@ -1945,7 +2087,14 @@
         },
         "responses": {
           "200": {
-            "description": "Data successfully delivered to the pipeline"
+            "description": "Data successfully delivered to the pipeline. The body of the response contains a completion token that can be passed to the '/completion_status' endpoint to check whether the pipeline has fully processed the data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompletionTokenResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "",
@@ -2559,6 +2708,138 @@
           },
           "404": {
             "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token": {
+      "get": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Generate a completion token for a specified input connector.",
+        "description": "Returns a token that can be passed to the `/completion_status` endpoint\nto check whether the pipeline has finished processing all inputs received from the\nconnector before the token was generated.",
+        "operationId": "completion_token",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table_name",
+            "in": "path",
+            "description": "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connector_name",
+            "in": "path",
+            "description": "Unique input connector name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Completion token that can be passed to the '/completion_status' endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompletionTokenResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Specified pipeline, table, or connector does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -3351,6 +3632,52 @@
           "unoptimized",
           "optimized"
         ]
+      },
+      "CompletionStatus": {
+        "type": "string",
+        "description": "Completion token status returned by the `/completion_status` endpoint.",
+        "enum": [
+          "complete",
+          "inprogress"
+        ]
+      },
+      "CompletionStatusArgs": {
+        "type": "object",
+        "description": "URL-encoded arguments to the `/completion_status` endpoint.",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Completion token returned by the `/completion_token` or `/ingress`\nendpoint."
+          }
+        }
+      },
+      "CompletionStatusResponse": {
+        "type": "object",
+        "description": "Response to a completion token status request.",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/CompletionStatus"
+          }
+        }
+      },
+      "CompletionTokenResponse": {
+        "type": "object",
+        "description": "Response to a completion token creation request.",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Completion token.\n\nAn opaque string associated with the current position in the input stream\ngenerated by an input connector.\nPass this string to the `/completion_status` endpoint to check whether all\ninputs associated with the token have been fully processed by the pipeline."
+          }
+        }
       },
       "Configuration": {
         "type": "object",

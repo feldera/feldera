@@ -7,6 +7,7 @@ use awc::{error::PayloadError, ClientRequest};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::{Stream, StreamExt};
+use serde::Deserialize;
 use tracing::trace;
 
 pub struct TestHttpSender;
@@ -14,25 +15,36 @@ pub struct TestHttpReceiver;
 
 impl TestHttpSender {
     /// Serialize `data` as `csv` and send it as part of HTTP request.
-    pub async fn send_stream(req: ClientRequest, data: &[Vec<TestStruct>]) {
+    pub async fn send_stream(req: ClientRequest, data: &[Vec<TestStruct>]) -> Bytes {
         let data = data.to_vec();
 
-        req.send_stream(stream! {
-            for batch in data.iter() {
-                let mut writer = CsvWriterBuilder::new()
-                    .has_headers(false)
-                    .from_writer(Vec::with_capacity(batch.len() * 32));
+        let mut response = req
+            .send_stream(stream! {
+                for batch in data.iter() {
+                    let mut writer = CsvWriterBuilder::new()
+                        .has_headers(false)
+                        .from_writer(Vec::with_capacity(batch.len() * 32));
 
-                for val in batch.iter().cloned() {
-                    writer.serialize(val).unwrap();
+                    for val in batch.iter().cloned() {
+                        writer.serialize(val).unwrap();
+                    }
+                    writer.flush().unwrap();
+                    let bytes = writer.into_inner().unwrap();
+                    yield <Result<_, anyhow::Error>>::Ok(Bytes::from(bytes));
                 }
-                writer.flush().unwrap();
-                let bytes = writer.into_inner().unwrap();
-                yield <Result<_, anyhow::Error>>::Ok(Bytes::from(bytes));
-            }
-        })
-        .await
-        .unwrap();
+            })
+            .await
+            .unwrap();
+
+        response.body().await.unwrap()
+    }
+
+    pub async fn send_stream_deserialize_resp<R>(req: ClientRequest, data: &[Vec<TestStruct>]) -> R
+    where
+        R: for<'de> Deserialize<'de>,
+    {
+        let resp_bytes = Self::send_stream(req, data).await;
+        serde_json::from_slice::<R>(&resp_bytes).unwrap()
     }
 }
 

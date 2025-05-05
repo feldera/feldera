@@ -1,3 +1,4 @@
+pub mod completion_token;
 pub mod config;
 pub mod error;
 pub mod format;
