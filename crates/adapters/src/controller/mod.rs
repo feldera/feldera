@@ -107,7 +107,9 @@ pub use feldera_types::config::{
 use feldera_types::config::{FtConfig, FtModel, OutputBufferConfig};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
-pub use stats::{ControllerMetric, ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
+pub use stats::{
+    CompletionToken, ControllerMetric, ControllerStatus, InputEndpointStatus, OutputEndpointStatus,
+};
 
 /// Maximal number of concurrent API connections per circuit
 /// (including both input and output connections).
@@ -406,6 +408,14 @@ impl Controller {
         self.inner.input_endpoint_status(endpoint_name)
     }
 
+    /// Lookup input endpoint by name.
+    pub fn input_endpoint_id_by_name(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<EndpointId, ControllerError> {
+        self.inner.input_endpoint_id_by_name(endpoint_name)
+    }
+
     /// Returns whether the controller is replaying a fault tolerance log.
     pub fn is_replaying(&self) -> bool {
         self.inner.restoring.load(Ordering::Relaxed)
@@ -548,6 +558,27 @@ impl Controller {
     /// Like execute_query_text, but can run outside of async runtime.
     pub fn execute_query_text_sync(&self, query: &str) -> Result<String, AnyError> {
         TOKIO.block_on(async { self.execute_query_text(query).await })
+    }
+
+    /// Generate a completion token for the specified endpoint.
+    ///
+    /// A completion token is a bookmark that identifies the current set of records ingested
+    /// by the endpoint, including records buffered in its input queue. It can be passed to
+    /// `completion_status` to determine whether all these records have been processed to
+    /// completion.
+    pub fn completion_token(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<CompletionToken, ControllerError> {
+        let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
+
+        self.status().completion_token(endpoint_name, endpoint_id)
+    }
+
+    /// Check whether all records identified by the completion token
+    /// have been fully processed by the pipeline.
+    pub fn completion_status(&self, token: &CompletionToken) -> Result<bool, ControllerError> {
+        self.status().completion_status(token)
     }
 }
 
@@ -1202,13 +1233,15 @@ impl CircuitThread {
 
     /// Reports that `total_consumed` records have been consumed.
     ///
-    /// Returns the total number of records processed by the pipeline *before*
-    /// this step.
+    /// Returns the total number of records processed.
     fn processed_records(&mut self, total_consumed: u64) -> u64 {
-        self.controller
+        let processed_records = self
+            .controller
             .status
             .global_metrics
-            .processed_records(total_consumed)
+            .processed_records(total_consumed);
+        self.controller.status.update_total_completed_records();
+        processed_records
     }
 
     /// Pushes all of the records to the output.
@@ -2309,30 +2342,14 @@ impl ControllerInner {
         &self,
         endpoint_name: &str,
     ) -> Result<EndpointId, ControllerError> {
-        let inputs = self.status.input_status();
-
-        for (endpoint_id, descr) in inputs.iter() {
-            if descr.endpoint_name == endpoint_name {
-                return Ok(*endpoint_id);
-            }
-        }
-
-        Err(ControllerError::unknown_input_endpoint(endpoint_name))
+        self.status.input_endpoint_id_by_name(endpoint_name)
     }
 
     fn output_endpoint_id_by_name(
         &self,
         endpoint_name: &str,
     ) -> Result<EndpointId, ControllerError> {
-        let outputs = self.status.output_status();
-
-        for (endpoint_id, descr) in outputs.iter() {
-            if descr.endpoint_name == endpoint_name {
-                return Ok(*endpoint_id);
-            }
-        }
-
-        Err(ControllerError::unknown_output_endpoint(endpoint_name))
+        self.status.output_endpoint_id_by_name(endpoint_name)
     }
 
     fn initialize_adhoc_queries(self: &Arc<Self>) {

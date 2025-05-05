@@ -15,6 +15,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs::{read_dir, File};
+use std::future::Future;
 use std::hash::Hash;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -83,6 +84,27 @@ where
             return Err(());
         }
         sleep(Duration::from_millis(10));
+    }
+
+    Ok(start.elapsed().as_millis())
+}
+
+/// Wait for `predicate` to become `true`.
+///
+/// Returns the number of milliseconds elapsed or `Err(())` on timeout.
+#[allow(clippy::result_unit_err)]
+pub async fn async_wait<P, Fut>(predicate: P, timeout_ms: u128) -> Result<u128, ()>
+where
+    P: Fn() -> Fut,
+    Fut: Future<Output = bool>,
+{
+    let start = Instant::now();
+
+    while !predicate().await {
+        if start.elapsed().as_millis() >= timeout_ms {
+            return Err(());
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
     Ok(start.elapsed().as_millis())

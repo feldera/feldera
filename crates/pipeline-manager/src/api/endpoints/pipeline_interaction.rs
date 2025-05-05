@@ -51,8 +51,9 @@ use std::time::Duration;
     ),
     responses(
         (status = OK
-            , description = "Data successfully delivered to the pipeline"
-            , content_type = "application/json"),
+            , description = "Data successfully delivered to the pipeline. The body of the response contains a completion token that can be passed to the '/completion_status' endpoint to check whether the pipeline has fully processed the data."
+            , content_type = "application/json"
+            , body = CompletionTokenResponse),
         (status = NOT_FOUND
             , body = ErrorResponse
             , description = "Pipeline and/or table with that name does not exist"
@@ -902,4 +903,138 @@ pub(crate) async fn pipeline_adhoc_sql(
             Some(Duration::MAX),
         )
         .await
+}
+
+/// Generate a completion token for a specified input connector.
+///
+/// Returns a token that can be passed to the `/completion_status` endpoint
+/// to check whether the pipeline has finished processing all inputs received from the
+/// connector before the token was generated.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("table_name" = String, Path,
+            description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
+        ("connector_name" = String, Path, description = "Unique input connector name")
+    ),
+    responses(
+        (status = OK
+            , description = "Completion token that can be passed to the '/completion_status' endpoint."
+            , content_type = "application/json"
+            , body = CompletionTokenResponse),
+        (status = NOT_FOUND
+            , description = "Specified pipeline, table, or connector does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[get(
+    "/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token"
+)]
+pub(crate) async fn completion_token(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<(String, String, String)>,
+) -> Result<HttpResponse, ManagerError> {
+    // Parse the URL path parameters
+    let (pipeline_name, table_name, connector_name) = path.into_inner();
+
+    let actual_table_name = SqlIdentifier::from(&table_name).name();
+    let endpoint_name = format!("{actual_table_name}.{connector_name}");
+    let encoded_endpoint_name: String = urlencoding::encode(&endpoint_name).to_string();
+
+    // Forward the action request to the pipeline
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            &format!("input_endpoints/{encoded_endpoint_name}/completion_token"),
+            "",
+            None,
+        )
+        .await?;
+
+    Ok(response)
+}
+
+/// Check the status of a completion token returned by the `/ingress` or `/completion_to`
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("completion_token" = String, Query, description = "Completion token returned by the '/ingress' or '/completion_status' endpoint."),
+    ),
+    responses(
+        (status = OK
+            , description = "The pipeline has finished processing inputs associated with the provided completion token."
+            , content_type = "application/json"
+            , body = CompletionStatusResponse),
+        (status = ACCEPTED
+            , description = "The pipeline is still processing inputs associated with the provided completion token."
+            , content_type = "application/json"
+            , body = CompletionStatusResponse),
+        (status = GONE
+            , description = "Completion token was created by a previous incarnation of the pipeline and is not valid for the current incarnation. This indicates that the pipeline was suspended and resumed from a checkpoint or restarted after a failure."
+            , body = ErrorResponse,
+        ),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[get("/pipelines/{pipeline_name}/completion_status")]
+pub(crate) async fn completion_status(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+
+    // Forward the action request to the pipeline
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "completion_status",
+            request.query_string(),
+            None,
+        )
+        .await?;
+
+    Ok(response)
 }

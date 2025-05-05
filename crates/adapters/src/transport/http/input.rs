@@ -6,7 +6,7 @@ use crate::{
     ControllerError, InputConsumer, PipelineState, TransportInputEndpoint,
 };
 use crate::{InputBuffer, ParseError, Parser};
-use actix_web::{web::Payload, HttpResponse};
+use actix_web::web::Payload;
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use circular_queue::CircularQueue;
@@ -163,7 +163,7 @@ impl HttpInputEndpoint {
         self.inner.state.load(Ordering::Acquire)
     }
 
-    fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.inner.name
     }
 
@@ -224,7 +224,7 @@ impl HttpInputEndpoint {
         &self,
         mut payload: Payload,
         force: bool,
-    ) -> Result<HttpResponse, PipelineError> {
+    ) -> Result<(), PipelineError> {
         debug!("HTTP input endpoint '{}': start of request", self.name());
 
         let mut num_bytes = 0;
@@ -278,7 +278,7 @@ impl HttpInputEndpoint {
             self.name()
         );
         if errors.is_empty() {
-            Ok(HttpResponse::Ok().finish())
+            Ok(())
         } else {
             Err(PipelineError::parse_errors(num_errors, errors.asc_iter()))
         }
