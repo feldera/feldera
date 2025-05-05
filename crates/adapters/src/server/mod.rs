@@ -1651,29 +1651,43 @@ outputs:
                 .await;
         println!("completion token: {token}");
 
-        // Wait for completion.
-        async_wait(
-            || async {
-                print_stats(&server).await;
+        tokio::join!(
+            // Wait for completion.
+            async {
+                async_wait(
+                    || async {
+                        print_stats(&server).await;
 
-                let resp = server
-                    .get(format!("/completion_status?token={token}"))
-                    .send()
-                    .await
-                    .unwrap()
-                    .body()
-                    .await
-                    .unwrap();
-                let CompletionStatusResponse { status } = serde_json::from_slice(&resp).unwrap();
-                println!("completion status: {status:?}");
+                        let resp = server
+                            .get(format!("/completion_status?token={token}"))
+                            .send()
+                            .await
+                            .unwrap()
+                            .body()
+                            .await
+                            .unwrap();
+                        let CompletionStatusResponse { status } =
+                            serde_json::from_slice(&resp).unwrap();
+                        println!("completion status: {status:?}");
 
-                // println!("stats {}", stats.to_str_lossy());
-                status == CompletionStatus::Complete
+                        // println!("stats {}", stats.to_str_lossy());
+                        status == CompletionStatus::Complete
+                    },
+                    20_000,
+                )
+                .await
+                .unwrap()
             },
-            20_000,
-        )
-        .await
-        .unwrap();
+            // In parallel, run the HTTP client to receive outputs from the pipeline, otherwise the
+            // HTTP output connector can get stuck, and the /completion_status check above will timeout.
+            async {
+                TestHttpReceiver::wait_for_output_unordered(&mut resp1, &data).await;
+                TestHttpReceiver::wait_for_output_unordered(&mut resp2, &data).await;
+            }
+        );
+
+        drop(resp1);
+        drop(resp2);
 
         // Even though we checked completion status of the token, it only means that the connector
         // has sent data to Kafka, not that it has been received by the consumer.
@@ -1681,11 +1695,6 @@ outputs:
         print_stats(&server).await;
 
         buffer_consumer.clear();
-
-        TestHttpReceiver::wait_for_output_unordered(&mut resp1, &data).await;
-        TestHttpReceiver::wait_for_output_unordered(&mut resp2, &data).await;
-        drop(resp1);
-        drop(resp2);
 
         println!("/start");
         let resp = server.get("/start").send().await.unwrap();
