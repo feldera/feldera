@@ -86,6 +86,8 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_interaction::get_pipeline_heap_profile,
         endpoints::pipeline_interaction::pipeline_adhoc_sql,
         endpoints::pipeline_interaction::checkpoint_pipeline,
+        endpoints::pipeline_interaction::completion_token,
+        endpoints::pipeline_interaction::completion_status,
 
         // API keys
         endpoints::api_key::list_api_keys,
@@ -214,6 +216,10 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::query_params::MetricsFormat,
         feldera_types::query_params::MetricsParameters,
         feldera_types::error::ErrorResponse,
+        feldera_types::completion_token::CompletionTokenResponse,
+        feldera_types::completion_token::CompletionStatusArgs,
+        feldera_types::completion_token::CompletionStatus,
+        feldera_types::completion_token::CompletionStatusResponse,
     ),),
     tags(
         (name = "Pipeline management", description = "Create, retrieve, update, delete and deploy pipelines."),
@@ -268,6 +274,8 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
+        .service(endpoints::pipeline_interaction::completion_token)
+        .service(endpoints::pipeline_interaction::completion_status)
         // Pipeline management endpoint (placed here to prevent {action} from matching e.g., "checkpoint")
         .service(endpoints::pipeline_management::post_pipeline_action)
         // API keys endpoints

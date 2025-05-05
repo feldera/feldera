@@ -154,6 +154,9 @@ pub enum PipelineError {
     MissingUrlEncodedParam {
         param: &'static str,
     },
+    InvalidParam {
+        error: String,
+    },
     ApiConnectionLimit,
     ControllerError {
         // Fold `ControllerError` directly into `PipelineError` to simplify
@@ -231,6 +234,9 @@ impl Display for PipelineError {
             Self::MissingUrlEncodedParam { param } => {
                 write!(f, "Missing URL-encoded parameter '{param}'.")
             }
+            Self::InvalidParam { error } => {
+                write!(f, "Invalid parameter: {error}.")
+            }
             Self::ApiConnectionLimit => {
                 f.write_str("The API connections limit has been exceded. Close some of the existing connections before opening new ones.")
             }
@@ -270,6 +276,7 @@ impl DetailedError for PipelineError {
             Self::InitializationError { .. } => Cow::from("InitializationError"),
             Self::PrometheusError { .. } => Cow::from("PrometheusError"),
             Self::MissingUrlEncodedParam { .. } => Cow::from("MissingUrlEncodedParam"),
+            Self::InvalidParam { .. } => Cow::from("InvalidParam"),
             Self::ApiConnectionLimit => Cow::from("ApiConnectionLimit"),
             Self::ParseErrors { .. } => Cow::from("ParseErrors"),
             Self::ControllerError { error } => error.error_code(),
@@ -298,6 +305,7 @@ impl ResponseError for PipelineError {
             Self::InitializationError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PrometheusError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::MissingUrlEncodedParam { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidParam { .. } => StatusCode::BAD_REQUEST,
             Self::ApiConnectionLimit => StatusCode::TOO_MANY_REQUESTS,
             Self::ParseErrors { .. } => StatusCode::BAD_REQUEST,
             Self::HeapProfilerError { .. } => StatusCode::BAD_REQUEST,
