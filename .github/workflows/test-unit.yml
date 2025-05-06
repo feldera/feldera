@@ -10,7 +10,17 @@ env:
 jobs:
   rust-unit-tests:
     name: Rust Unit Tests
-    runs-on: [self-hosted, skylake40]
+    strategy:
+      matrix:
+        include:
+          - runner: [self-hosted, skylake40]
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+          - runner: blacksmith-16vcpu-ubuntu-2204-arm
+            arch: aarch64
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+
     container:
       image: ghcr.io/feldera/feldera-dev:f4797ad926773a38483275405728a9eb3b9005b5
       options: --user=ubuntu
@@ -22,7 +32,7 @@ jobs:
       - name: Download Test Binaries
         uses: actions/download-artifact@v4
         with:
-          name: feldera-test-binaries-x86_64-unknown-linux-gnu
+          name: feldera-test-binaries-${{ matrix.target }}
           path: build
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
