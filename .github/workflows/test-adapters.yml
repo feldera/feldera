@@ -6,8 +6,17 @@ on:
 jobs:
   adapter-tests:
     name: Test Adapters
-    runs-on: [ubuntu-latest]
-    #runs-on: [self-hosted, skylake40]
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+          # needs 2404 images which supposedly ship next week
+          #- runner: blacksmith-16vcpu-ubuntu-2204-arm
+          #  arch: aarch64
+          #  target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
     # can't run in container because see below
     # For some dumb reason we can't run these tests in the dev container
     # because while it finds redis on the docker network it doesn't find
@@ -51,25 +60,14 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      pubsub:
-        image: thekevjames/gcloud-pubsub-emulator:e852273e07
-        ports:
-          - 8681:8681
-        options: >-
-          -e PUBSUB_PROJECT1=feldera-test,test_pubsub_input-0
-          --health-cmd "nc -z 127.0.0.1 8681"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
-      # This is needed because we need some python to run the tests
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Download Test Binaries
         uses: actions/download-artifact@v4
         with:
-          name: feldera-test-binaries-x86_64-unknown-linux-gnu
+          name: feldera-test-binaries-${{ matrix.target }}
           path: build
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
@@ -87,10 +85,11 @@ jobs:
           uv pip install -r ../iceberg/src/test/requirements.ci.txt
         working-directory: crates/adapters
 
+      # Pubsub tests are only supported on x86_64, see below
       - name: Run adapters tests
         run: |
           source .venv/bin/activate
-          ../../build/dbsp_adapters-*
+          ../../build/dbsp_adapters-* --skip pubsub
         working-directory: crates/adapters
         env:
           RUST_BACKTRACE: 1
@@ -103,3 +102,41 @@ jobs:
           ICEBERG_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
           DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
           DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
+
+  # We can't run the pubsub tests on aarch64 because we don't have a
+  # arm image for the pubsub emulator:
+  # https://github.com/TheKevJames/tools/issues/453
+  adapter-tests-pubsub:
+    name: Test Adapters (PubSub only)
+    runs-on: ubuntu-latest
+    services:
+      pubsub:
+        image: thekevjames/gcloud-pubsub-emulator:e852273e07
+        ports:
+          - 8681:8681
+        options: >-
+          -e PUBSUB_PROJECT1=feldera-test,test_pubsub_input-0
+          --health-cmd "nc -z 127.0.0.1 8681"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Test Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-test-binaries-x86_64-unknown-linux-gnu
+          path: build
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make binaries executable
+        run: chmod +x ./build/*
+
+      - name: Run adapters pubsub tests
+        run: ../../build/dbsp_adapters-* pubsub
+        working-directory: crates/adapters
+        env:
+          RUST_BACKTRACE: 1
+          PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
