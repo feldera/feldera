@@ -1953,9 +1953,9 @@ as select * from t1;
 
     assert_eq!(
         config
-            .post_no_body(format!(
-                "/v0/pipelines/test/tables/t1/connectors/datagen_connector/start"
-            ))
+            .post_no_body(
+                "/v0/pipelines/test/tables/t1/connectors/datagen_connector/start".to_string()
+            )
             .await
             .status(),
         StatusCode::OK
@@ -1996,14 +1996,12 @@ as select * from t1;
         tokio::time::sleep(Duration::from_millis(10)).await
     }
 
-    expected_output += &format!(
-        r#"{{"insert":{{"c1":0,"c2":false,"c3":"0"}}}}
-"#
-    );
+    expected_output += r#"{"insert":{"c1":0,"c2":false,"c3":"0"}}
+"#;
 
     assert_eq!(
         config
-            .adhoc_query_json("test", &format!("select count(*) from t1 where c1 = 0;"))
+            .adhoc_query_json("test", "select count(*) from t1 where c1 = 0;")
             .await,
         json!([{"count(*)": 2}])
     );
