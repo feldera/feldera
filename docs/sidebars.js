@@ -195,7 +195,7 @@ const sql = {
                 'sql/datetime',
                 'sql/decimal',
                 'sql/float',
-                'sql/function-index'
+                'sql/function-index',
                 'sql/integer',
                 'sql/json',
                 'sql/map',
