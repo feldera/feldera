@@ -1987,10 +1987,8 @@ as select * from t1;
         tokio::time::sleep(Duration::from_millis(10)).await
     }
 
-    expected_output += &format!(
-        r#"{{"insert":{{"c1":0,"c2":false,"c3":"0"}}}}
-"#
-    );
+    expected_output += r#"{"insert":{"c1":0,"c2":false,"c3":"0"}}
+"#;
 
     let output1 = fs::read_to_string(&output_path1).await.unwrap();
     let output2 = fs::read_to_string(&output_path2).await.unwrap();

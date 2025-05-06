@@ -249,7 +249,7 @@ impl GlobalControllerMetrics {
     }
 
     /// `num_records`` records have been pushed to the circuit
-    /// (but not yet processes, i.e., the circuit hasn't performed a step yet).
+    /// (but not yet processed, i.e., the circuit hasn't performed a step yet).
     pub(crate) fn consume_buffered_inputs(&self, num_records: u64) {
         self.buffered_input_records
             .fetch_sub(num_records, Ordering::Release);
@@ -921,6 +921,7 @@ impl ControllerStatus {
         }
     }
 
+    /// Endpoint pushed additional records to the circuit.
     pub fn extended(
         &self,
         endpoint_id: EndpointId,
@@ -1186,7 +1187,7 @@ const MAX_TOKENLIST_LEN: usize = 1_000_000;
 /// We do this by removing all except one token whose global offset is `<= total_completed_records`
 /// from the list.  This bounds the number of tokens to the size of the connectors
 /// input queue + the number of inputs currently in the circuit of buffered in the output
-/// connectors. Which can be quite large. Therefore we additionally bound the list to `MAX_TOKENLIST_LEN`
+/// connectors, which can be quite large. Therefore we additionally bound the list to `MAX_TOKENLIST_LEN`
 /// tokens, dropping the oldest token when queue is full. This is safe (i.e., we can never
 /// report an operation that hasn't been completed as completed), but it can delay the
 /// completion notification. In the worst case, if there are always `> MAX_TOKENLIST_LEN` incomplete
@@ -1214,25 +1215,25 @@ impl TokenListInner {
     /// Invoked when a new token is pushed to the queue or when additional records are pushed from
     /// the connector to the circuit.
     ///
-    /// * Set `total_circuit_input_records` as the global offset for all tokens that are <= input_records,
+    /// * Set `total_circuit_input_records` as the global offset for all tokens that are <= connector_input_records,
     ///   and that don't have a global offset yet.
     /// * GC all but one tokens whose global offset is `<= total_completed_records`.
     /// * Remove old tokens that exceed queue capacity.
     ///
     /// # Arguments
     ///
-    /// * `input_records` - total number of inputs **from this connector** ingested by the circuit or `None`
+    /// * `connector_input_records` - total number of inputs **from this connector** ingested by the circuit or `None`
     ///   if the number is unknown at this point.
     /// * `total_circuit_input_records` - total number of inputs across all connectors ingested by the circuit.
     /// * `total_completed_records` - the number of records processed by the pipeline to completion.
     fn update(
         &mut self,
-        input_records: Option<u64>,
+        connector_input_records: Option<u64>,
         total_circuit_input_records: u64,
         total_completed_records: u64,
     ) {
-        // Label all unlabeled tokens <= input_records with total_circuit_input_records
-        if let Some(input_records) = input_records {
+        // Label all unlabeled tokens <= connector_input_records with total_circuit_input_records
+        if let Some(input_records) = connector_input_records {
             let first_unlabeled = self
                 .token_list
                 .partition_point(|(_token, label)| label.is_some());
@@ -1271,24 +1272,27 @@ impl TokenListInner {
     ///
     /// # Arguments
     ///
-    /// See `Self::update`.
+    /// * `connector_input_records` - the number of records queued by the connector so far
+    ///   (not all of these record have been pushed to the circuit).
+    /// * `total_circuit_input_records` - total number of inputs across all connectors ingested by the circuit.
+    /// * `total_completed_records` - the number of records processed by the pipeline to completion.
     fn add_token(
         &mut self,
-        input_records: u64,
+        connector_input_records: u64,
         total_circuit_input_records: u64,
         total_completed_records: u64,
     ) {
         // Don't track more than one token for the same offset.
         if !self.token_list.is_empty() {
             // The number of ingested records grows monotonically.
-            debug_assert!(self.token_list[self.token_list.len() - 1].0 <= input_records);
+            debug_assert!(self.token_list[self.token_list.len() - 1].0 <= connector_input_records);
 
-            if self.token_list[self.token_list.len() - 1].0 >= input_records {
+            if self.token_list[self.token_list.len() - 1].0 >= connector_input_records {
                 return;
             }
         }
 
-        self.token_list.push_back((input_records, None));
+        self.token_list.push_back((connector_input_records, None));
         self.update(None, total_circuit_input_records, total_completed_records);
     }
 
@@ -1329,12 +1333,12 @@ impl TokenList {
     }
     fn update(
         &self,
-        input_records: Option<u64>,
+        connector_input_records: Option<u64>,
         total_circuit_input_records: u64,
         total_completed_records: u64,
     ) {
         self.0.lock().unwrap().update(
-            input_records,
+            connector_input_records,
             total_circuit_input_records,
             total_completed_records,
         );
@@ -1342,12 +1346,12 @@ impl TokenList {
 
     fn add_token(
         &self,
-        input_records: u64,
+        connector_input_records: u64,
         total_circuit_input_records: u64,
         total_completed_records: u64,
     ) {
         self.0.lock().unwrap().add_token(
-            input_records,
+            connector_input_records,
             total_circuit_input_records,
             total_completed_records,
         );
@@ -1500,7 +1504,7 @@ impl InputEndpointStatus {
         buffered_records >= max_queued_records
     }
 
-    /// Endpoint pushed additional record to the circuit.
+    /// Endpoint pushed additional records to the circuit.
     ///
     /// Updates:
     /// * `buffered_records`

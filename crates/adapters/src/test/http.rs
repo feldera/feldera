@@ -15,6 +15,7 @@ pub struct TestHttpReceiver;
 
 impl TestHttpSender {
     /// Serialize `data` as `csv` and send it as part of HTTP request.
+    /// Returns the response as bytes.
     pub async fn send_stream(req: ClientRequest, data: &[Vec<TestStruct>]) -> Bytes {
         let data = data.to_vec();
 
@@ -39,6 +40,8 @@ impl TestHttpSender {
         response.body().await.unwrap()
     }
 
+    /// Serialize `data` as `csv` and send it as part of HTTP request;
+    /// Deserialize JSON response.
     pub async fn send_stream_deserialize_resp<R>(req: ClientRequest, data: &[Vec<TestStruct>]) -> R
     where
         R: for<'de> Deserialize<'de>,
