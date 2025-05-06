@@ -8,9 +8,7 @@ supports [fault tolerance](/pipelines/fault-tolerance) too.
 
 :::caution Experimental feature
 
-Snowflake support is an experimental feature of Feldera.  Setting up a Snowflake
-connector currently involves a number of manual steps, which will be automated
-in the production release of the connector.
+Snowflake support is an experimental feature of Feldera.
 
 :::
 
@@ -81,13 +79,6 @@ to setup private key authentication for the `feldera` user.
 
 ## Create landing tables
 
-:::tip
-
-This step will be performed automatically in the production version of the
-Snowflake connector.
-
-:::
-
 Create a landing table for each target table.  The landing table has the same
 columns as the target, but none of its constraints (`UNIQUE`, `PRIMARY KEY`,
 `FOREIGN KEY`, `DEFAULT`, `NOT NULL`).  It also contains several metadata columns
@@ -117,7 +108,7 @@ CREATE TABLE t1 (
     seq NUMBER,
     foreign_id NUMBER,
 
-    -- Additional metada columns.
+    -- Additional metadata columns.
     __action STRING NOT NULL,
     __stream_id NUMBER NOT NULL,
     __seq_number NUMBER NOT NULL,
@@ -137,13 +128,6 @@ to the landing table.  This stream will be used by
 the data ingestion task to track changes to the table.
 
 ## Create the data ingestion task
-
-:::tip
-
-This step will be performed automatically in the production version of the
-Snowflake connector.
-
-:::
 
 :::caution
 

@@ -115,10 +115,10 @@ Not all connectors reach the end of input. Some, like Pub/Sub, continuously wait
 | [Debezium](/connectors/sources/debezium)  | no                          |         |
 | [Delta Lake](/connectors/sources/delta)   | when `mode=snapshot`        | When configured with `mode=snapshot`, the DeltaLake connector signals the end of input after ingesting the specified snapshot of the table. |
 | File                                      | when `follow=false`         | When configured with `follow=false` (the default), the file input connector signals the end of input after reading the current contents of the file; otherwise (`follow=true`), the connector continues polling for new changes. |
-| [Iceberg](/connectors/sources/iceberg)    | yes                         | Stops after reading a complete table shapshot. |
+| [Iceberg](/connectors/sources/iceberg)    | yes                         | Stops after reading a complete table snapshot. |
 | [Kafka](/connectors/sources/kafka)        | when `enable.partition.eof` | Otherwise, waits for new messages from the Kafka topic. |
-| [Pub/Sub](/connectors/sources/pubsub)     | no                          | Waits for new messages from the Pub/Sub subscriptio. |
-| [Postgres](/connectors/sources/postgresql)| yes                         | Stops after reading a complete table shapshot (use the [Debezium connector](/connectors/sources/debezium) for Change Data Capture). |
+| [Pub/Sub](/connectors/sources/pubsub)     | no                          | Waits for new messages from the Pub/Sub subscription. |
+| [Postgres](/connectors/sources/postgresql)| yes                         | Stops after reading a complete table snapshot (use the [Debezium connector](/connectors/sources/debezium) for Change Data Capture). |
 | [S3](/connectors/sources/s3)              | yes                         | Stops after reading all objects that match the specified prefix. |
 
 

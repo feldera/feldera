@@ -32,7 +32,7 @@ The Iceberg input connector does not yet support [fault tolerance](/pipelines/fa
 | `snapshot_filter`           | string | <p>Optional row filter.  When specified, only rows that satisfy the filter condition are included in the snapshot.  The condition must be a valid SQL Boolean expression that can be used in the `where` clause of the `select * from snapshot where ..` query.</p><p> This option can be used to specify the range of event times to include in the snapshot, e.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.</p>
 | `snapshot_id`               | integer| <p>Optional table snapshot id.  When this option is set, the connector reads the specified snapshot of the table.</p><p>Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest snapshot of the table is used.</p>
 | `datetime`                  | string | <p>Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g., "2024-12-09T16:09:53+00:00". When this option is set, the connector reads the version of the table as of the specified point in time (based on the server time recorded in the transaction log, not the event time encoded in the data). </p><p> Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest committed version of the table is used.</p>|
-| `metadata_location`         | string | Location of the table metadata JSON file. This propery is used to access an Iceberg table directly, without a catalog. It is mutually exclusive with the `catalog_type` property.|
+| `metadata_location`         | string | Location of the table metadata JSON file. This property is used to access an Iceberg table directly, without a catalog. It is mutually exclusive with the `catalog_type` property.|
 | `table_name`                | string | Specifies the Iceberg table name within the catalog in the `namespace.table` format. This option is applicable when an Iceberg catalog is configured using the `catalog_type` property.|
 | `catalog_type`              | enum   | Type of the Iceberg catalog used to access the table. Supported options include `rest` and `glue`. This property is mutually exclusive with `metadata_location`.|
 
@@ -147,7 +147,7 @@ has the same or larger timestamp than the previous event. In some cases, events
 can get reordered and delayed, but this delay is bounded, e.g., it may not
 exceed 1 hour. We refer to this bound as **lateness** and specify it by
 attaching the [`LATENESS`](/sql/streaming#lateness-expressions) attribute to the
-timestamp column of the table declaraion.  See our [Time Series Analysis
+timestamp column of the table declaration.  See our [Time Series Analysis
 Guide](/tutorials/time-series) for more details.
 
 When reading from an Iceberg that contains time series data, the user must
@@ -187,7 +187,7 @@ to ensure that changes it applies to the table respect the `LATENESS` annotation
 The following table contains a timestamp column of type `TIMESTAMP` with `LATENESS` equal
 to `INTERVAL 30 days`. Assuming that the oldest timestamp in the table is `2024-01-01T00:00:00`,
 the connector will fetch all records with timestamps from `2024-01-01`, then all records for
-`2024-01-02`, `2024-01-03`, etc., until all rcords in the table have been ingested.
+`2024-01-02`, `2024-01-03`, etc., until all records in the table have been ingested.
 
 ```sql
 CREATE TABLE transaction(
@@ -259,7 +259,7 @@ create table iceberg_table(
 ### Read an Iceberg table from S3 through a REST catalog
 
 Create an Iceberg input connector to read a snapshot of a table stored in an S3 bucket
-through a REST catalog runnin on `http://127.0.0.1:8181`.
+through a REST catalog running on `http://127.0.0.1:8181`.
 
 ```sql
 create table iceberg_table(

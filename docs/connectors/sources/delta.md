@@ -73,7 +73,7 @@ has the same or larger timestamp than the previous event. In some cases, events
 can get reordered and delayed, but this delay is bounded, e.g., it may not
 exceed 1 hour. We refer to this bound as **lateness** and specify it by
 attaching the [`LATENESS`](/sql/streaming#lateness-expressions) attribute to the
-timestamp column of the table declaraion.  See our [Time Series Analysis
+timestamp column of the table declaration.  See our [Time Series Analysis
 Guide](/tutorials/time-series) for more details.
 
 When reading from a Delta Table that contains time series data, the user must
@@ -113,7 +113,7 @@ to ensure that changes it applies to the table respect the `LATENESS` annotation
 The following table contains a timestamp column of type `TIMESTAMP` with `LATENESS` equal
 to `INTERVAL 30 days`. Assuming that the oldest timestamp in the table is `2024-01-01T00:00:00`,
 the connector will fetch all records with timestamps from `2024-01-01`, then all records for
-`2024-01-02`, `2024-01-03`, etc., until all rcords in the table have been ingested.
+`2024-01-02`, `2024-01-03`, etc., until all records in the table have been ingested.
 
 ```sql
 CREATE TABLE transaction(
@@ -147,7 +147,7 @@ CREATE TABLE transaction(
 Create a Delta Lake input connector to read a snapshot of a table from a public S3 bucket, using
 `unix_time` as the timestamp column.  The column stores event time in seconds since UNIX epoch
 and has lateness equal to 30 days (3600 seconds/hour * 24 hours/day * 30 days).
-Note the `aws_skip_signature` flag, required to read from the bucket without authentcation,
+Note the `aws_skip_signature` flag, required to read from the bucket without authentication,
 
 
 ```sql
