@@ -26,7 +26,7 @@ language (e.g., in Python using the `requests` module).
 3. **Feldera instance:**  If you haven't done so already, you can start Feldera locally using
    [**docker**](https://docs.docker.com/engine/install/):
    ```
-   curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
+   curl -L https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | \
    docker compose -f - up
    ```
    (leave it running in a separate terminal while going through this tutorial)

@@ -20,14 +20,14 @@ Feldera with auxiliary services included in the Docker Compose file
 like Redpanda, Prometheus and Grafana.
 
 ```
-curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
+curl -L https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | \
 docker compose -f - up
 ```
 
 You can enable specific services from the Docker Compose file as follows:
 
 ```
-curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
+curl -L https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | \
 docker compose -f - up pipeline-manager redpanda
 ```
 
