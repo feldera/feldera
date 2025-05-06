@@ -184,7 +184,7 @@ const sql = {
         'sql/types',
         {
             type: 'category',
-            label: 'operations',
+            label: 'Operations',
             items: [
                 'sql/aggregates',
                 'sql/array',
