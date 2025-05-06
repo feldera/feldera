@@ -68,7 +68,7 @@ CREATE TABLE INPUT (
 
 ### Starting from a specific offset
 
-Feldera supports starting a Kafka connector from a specific offset in a specifc
+Feldera supports starting a Kafka connector from a specific offset in a specific
 partition.
 
 ```sql

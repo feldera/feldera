@@ -51,7 +51,7 @@ The only required option that must be present in any valid Pub/Sub connector con
    When not specified, the connector will use the project id associated
    with the authenticated account.
 
-### Subscribtion
+### Subscription
 
 * `subscription` - Pub/Sub subscription name.  The subscription must exist.
 
@@ -143,7 +143,7 @@ Please ensure you have a Google Cloud account before proceeding.
   ```
 
   Select the `pub_sub_input` table in the "Changes stream" tab and run the pipeline.  You should see the ten messages
-  you publishe in Step 3 in the change stream of the pipeline.
+  you published in Step 3 in the change stream of the pipeline.
 
 ## Additional resources
 
