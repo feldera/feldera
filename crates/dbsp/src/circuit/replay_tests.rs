@@ -155,7 +155,6 @@ type CircuitFn<I1, I2, O1, O2> = Arc<
 ///```
 ///
 /// The common part of the two circuits must return identical results.
-
 fn test_replay<I1, I2, I3, O1, O2, O3>(
     circuit_constructor1: CircuitFn<I1, I2, O1, O2>,
     circuit_constructor2: CircuitFn<I2, I3, O2, O3>,

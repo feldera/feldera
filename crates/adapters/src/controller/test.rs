@@ -946,9 +946,9 @@ outputs:
 /// * append the specified number of records to the input file
 /// * wait for the newly added records to show up in the output file
 /// * suspend the pipeline
-/// * modify the pipeline by changinging the persistent id of the output stream
+/// * modify the pipeline by changing the persistent id of the output stream
 /// * resume the pipeline, make sure that the entire input shows up in the
-/// output stream.
+///   output stream.
 fn test_bootstrap(rounds: &[usize]) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -1412,11 +1412,11 @@ fn suspend_multiple_barriers(n_inputs: usize) {
 
     // Write records to the input files.
     println!("Writing 1000 records to each of {n_inputs} files");
-    for i in 0..n_inputs {
+    for writer in writers.iter_mut().take(n_inputs) {
         for id in 0..1000 {
-            writers[i].serialize(TestStruct::for_id(id as u32)).unwrap();
+            writer.serialize(TestStruct::for_id(id as u32)).unwrap();
         }
-        writers[i].flush().unwrap();
+        writer.flush().unwrap();
     }
 
     // Start pipeline.
@@ -1469,8 +1469,8 @@ fn suspend_multiple_barriers(n_inputs: usize) {
         // we got exactly what we expect on output.
         let expect = expectations(&written, &barriers);
         wait_for_records(&controller, &expect);
-        for i in 0..n_inputs {
-            check_file_contents(&output_path(&storage_dir, i), 0..expect[i]);
+        for (i, expectation) in expect.iter().enumerate().take(n_inputs) {
+            check_file_contents(&output_path(&storage_dir, i), 0..*expectation);
         }
     }
 
