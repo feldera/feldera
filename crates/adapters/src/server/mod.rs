@@ -79,7 +79,7 @@ use self::prometheus::PrometheusMetrics;
 /// Tracks the health of the pipeline.
 ///
 /// Enables the server to report the state of the pipeline while it is
-/// initializing, when it has failed to initialize, or failed.
+/// initializing, when it has failed to initialize, failed, or been suspended.
 enum PipelinePhase {
     /// Initialization in progress.
     Initializing,
@@ -93,6 +93,9 @@ enum PipelinePhase {
 
     /// Pipeline encountered a fatal error.
     Failed(Arc<ControllerError>),
+
+    /// Pipeline was successfully suspended to storage.
+    Suspended,
 }
 
 /// Generate an appropriate error when `state.controller` is set to
@@ -106,6 +109,7 @@ fn missing_controller_error(state: &ServerState) -> PipelineError {
         }
         PipelinePhase::InitializationComplete => PipelineError::Terminating,
         PipelinePhase::Failed(e) => PipelineError::ControllerError { error: e.clone() },
+        PipelinePhase::Suspended => PipelineError::Suspended,
     }
 }
 
@@ -910,21 +914,41 @@ async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
     }
 }
 
+/// Suspends the pipeline (but only a later call to `/shutdown` will shut down
+/// the webserver or terminate the process).
+///
+/// This implementation is designed to be idempotent, so that any number of
+/// suspend requests act like just one.
 #[post("/suspend")]
 async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    let (sender, receiver) = oneshot::channel();
-    match &*state.controller.lock().unwrap() {
-        None => return Err(missing_controller_error(&state)),
-        Some(controller) => {
-            controller.start_suspend(Box::new(move |suspend| {
-                if sender.send(suspend).is_err() {
-                    error!("`/suspend` result could not be sent");
-                }
-            }));
+    fn success() -> Result<impl Responder, PipelineError> {
+        Ok(HttpResponse::Ok().json("Pipeline suspended"))
+    }
+
+    let Some(controller) = state.controller.lock().unwrap().take() else {
+        match missing_controller_error(&state) {
+            PipelineError::Suspended => {
+                // Ensure idempotence.
+                return success();
+            }
+            other => return Err(other),
         }
     };
+    let (sender, receiver) = oneshot::channel();
+    controller.start_suspend(Box::new(move |suspend| {
+        if sender.send(suspend).is_err() {
+            error!("`/suspend` result could not be sent");
+        }
+    }));
     receiver.await.unwrap()?;
-    Ok(HttpResponse::Ok().json("Pipeline suspended"))
+    controller.stop()?;
+    if let Ok(mut phase) = state.phase.write() {
+        if !matches!(*phase, PipelinePhase::Failed(_)) {
+            *phase = PipelinePhase::Suspended;
+        }
+    }
+
+    success()
 }
 
 #[get("/shutdown")]
@@ -933,24 +957,23 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
 }
 
 async fn do_shutdown(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    let controller = state.controller.lock().unwrap().take();
-    if let Some(controller) = controller {
-        // Stop the controller.
+    let retval = if let Some(controller) = state.controller.lock().unwrap().take() {
         controller.stop()?;
-
-        // Stop the webserver.
-        if let Some(sender) = &state.terminate_sender {
-            let _ = sender.send(()).await;
-        }
-
-        if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
-            warn!("Failed to remove server port file: {e}");
-        }
         Ok(HttpResponse::Ok().json("Pipeline terminated"))
+    } else if let PipelinePhase::Initializing = &*state.phase.read().unwrap() {
+        return Err(PipelineError::Initializing);
     } else {
-        // TODO: handle ongoing initialization
         Ok(HttpResponse::Ok().json("Pipeline already terminated"))
+    };
+
+    if let Some(sender) = &state.terminate_sender {
+        let _ = sender.send(()).await;
     }
+    if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
+        warn!("Failed to remove server port file: {e}");
+    }
+
+    retval
 }
 
 #[derive(Debug, Deserialize)]

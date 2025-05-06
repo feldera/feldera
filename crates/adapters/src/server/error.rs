@@ -176,6 +176,7 @@ pub enum PipelineError {
         #[serde(skip)]
         df: Option<DataFusionError>,
     },
+    Suspended,
 }
 
 impl From<ControllerError> for PipelineError {
@@ -264,6 +265,9 @@ impl Display for PipelineError {
             Self::AdHocQueryError {error, df: _} => {
                 write!(f, "Error during query processing: {error}.")
             }
+            Self::Suspended => {
+                write!(f, "Operation failed because the pipeline has been suspended.")
+            }
         }
     }
 }
@@ -282,6 +286,7 @@ impl DetailedError for PipelineError {
             Self::ControllerError { error } => error.error_code(),
             Self::HeapProfilerError { .. } => Cow::from("HeapProfilerError"),
             Self::AdHocQueryError { .. } => Cow::from("AdHocQueryError"),
+            Self::Suspended => Cow::from("Suspended"),
         }
     }
 
@@ -311,6 +316,7 @@ impl ResponseError for PipelineError {
             Self::HeapProfilerError { .. } => StatusCode::BAD_REQUEST,
             Self::ControllerError { error } => error.status_code(),
             Self::AdHocQueryError { .. } => StatusCode::BAD_REQUEST,
+            Self::Suspended => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 
