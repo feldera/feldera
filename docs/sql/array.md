@@ -1,4 +1,4 @@
-# Array operations
+# Array Operations
 
 An array type can be created by applying the `ARRAY` suffix to another
 type.  For example `INT ARRAY` is an array of integers.  Array indexes
