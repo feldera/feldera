@@ -31,6 +31,10 @@ use std::time::Duration;
 /// The pipeline ingests data as it arrives without waiting for the end of
 /// the request.  Successful HTTP response indicates that all data has been
 /// ingested successfully.
+///
+/// On success, returns a completion token that can be passed to the
+/// '/completion_status' endpoint to check whether the pipeline has fully
+/// processed the data.
 // TODO: implement chunked and batch modes.
 #[utoipa::path(
     context_path = "/v0",
@@ -905,7 +909,7 @@ pub(crate) async fn pipeline_adhoc_sql(
         .await
 }
 
-/// Generate a completion token for a specified input connector.
+/// Generate a completion token for an input connector.
 ///
 /// Returns a token that can be passed to the `/completion_status` endpoint
 /// to check whether the pipeline has finished processing all inputs received from the
@@ -974,7 +978,8 @@ pub(crate) async fn completion_token(
     Ok(response)
 }
 
-/// Check the status of a completion token returned by the `/ingress` or `/completion_to`
+/// Check the status of a completion token returned by the `/ingress` or `/completion_token`
+/// endpoint.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),

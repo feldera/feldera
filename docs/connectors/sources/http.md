@@ -2,10 +2,8 @@
 
 Feldera supports directly pushing data to a SQL table over HTTP.
 
-* This input connector is ephemeral: it is created when the HTTP
-  connection is opened, and is deleted once it is closed.
-
-* It is the only input connector not created and managed by the user.
+* Unlike other input connectors that must be created by the user as part of the SQL table
+  declaration, the HTTP input connector is created automatically for each table in the pipeline.
 
 * Usage is through a special
   endpoint: [/v0/pipelines/:pipeline_name/ingress/:table_name?format=...](/api/push-data-to-a-sql-table)
