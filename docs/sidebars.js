@@ -225,6 +225,7 @@ const connectors = {
     items: [
         'connectors/unique_keys',
         'connectors/orchestration',
+        'connectors/completion-tokens',
         'connectors/secret-references',
         {
             type: 'category',

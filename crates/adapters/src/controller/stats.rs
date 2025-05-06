@@ -1269,10 +1269,8 @@ impl TokenListInner {
     ///
     /// # Arguments
     ///
-    /// * `connector_input_records` - the number of records queued by the connector so far
+    /// * `token_input_records` - the number of records queued by the connector so far
     ///   (not all of these record have been pushed to the circuit).
-    /// * `total_circuit_input_records` - total number of inputs across all connectors ingested by the circuit.
-    /// * `total_completed_records` - the number of records processed by the pipeline to completion.
     fn add_token(&mut self, token_input_records: u64) {
         // Don't track more than one token for the same offset.
         if !self.token_list.is_empty() {
