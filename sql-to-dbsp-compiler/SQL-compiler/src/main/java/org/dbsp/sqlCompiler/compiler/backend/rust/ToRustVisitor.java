@@ -143,6 +143,7 @@ public class ToRustVisitor extends CircuitVisitor {
      *         let mut catalog = Catalog::new();
      *         let hash = Some("10293481029348102934");
      *         let (input, handle0) = circuit.add_input_zset::<TestStruct, i32>();
+     *         handle0.set_persistent_hash(hash);
      *         catalog.register_input_zset(input, handles.0, input0_metadata);
      *         catalog.register_output_zset_persistent(hash, input, output0_metadata);
      *         Ok(catalog)
@@ -520,6 +521,8 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(";")
                     .newline();
         }
+        this.tagStream(operator);
+        this.builder.newline();
         if (!this.useHandles) {
             this.generateStructHelpers(operator.originalRowType, operator.metadata);
             String registerFunction = operator.metadata.materialized ?
@@ -541,7 +544,6 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(");")
                     .newline();
         }
-        this.tagStream(operator);
         return VisitDecision.STOP;
     }
 
