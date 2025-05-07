@@ -26,4 +26,40 @@ public class Regression1Tests extends SqlIoTest {
                  ----------------------------
                    5 |  6 | 1998 | 2363 | 1""");
     }
+
+    @Test
+    public void temporal() {
+        this.getCCS("""
+                CREATE TABLE a (
+                    c BIGINT,
+                    j TIMESTAMP,
+                    ad DOUBLE,
+                    av VARCHAR,
+                    bg DOUBLE,
+                    bk SMALLINT
+                );
+                
+                CREATE MATERIALIZED VIEW bl AS
+                SELECT
+                    bm.c AS bn,
+                    bm.av AS bo,
+                    SUM(CASE WHEN bm.bk = 0 THEN 1 ELSE 0 END) AS bp,
+                    SUM(CASE WHEN bm.bk = 1 THEN 1 ELSE 0 END) AS bq,
+                    COUNT(*) AS br,
+                    SUM(CASE WHEN bm.bk = 0 THEN bm.bg ELSE 0.0 END) AS bs,
+                    SUM(CASE WHEN bm.bk = 1 THEN bm.bg ELSE 0.0 END) AS bt,
+                    SUM(bm.bg) AS bu
+                FROM
+                    a bm
+                WHERE
+                    bm.j >= NOW() - INTERVAL '5' minutes
+                    AND bm.av IS NOT NULL
+                    AND bm.bk IS NOT NULL
+                    AND bm.bg IS NOT NULL
+                    AND bm.ad IS NOT NULL
+                    AND bm.bg > 0
+                GROUP BY
+                    bm.c,
+                    bm.av;""");
+    }
 }

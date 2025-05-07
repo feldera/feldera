@@ -1075,7 +1075,6 @@ where
         "NaN".to_string()
     } else {
         let result = format!("{}", v);
-        let result = result.trim_end_matches('0').to_string();
         result.trim_end_matches('.').to_string()
     };
     limit_or_size_string(&result, size, fixed)
