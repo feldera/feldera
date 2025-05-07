@@ -51,8 +51,8 @@ impl Display for PipelineId {
 ///                    ▼              /shutdown │                  │
 ///             ⌛Provisioning ──────────────────┤     All states except ShuttingDown
 ///                    │                        │        can transition to Failed
-///                    │                        │    
-///                    ▼                        │  
+///                    │                        │
+///                    ▼                        │
 ///             ⌛Initializing ──────────────────┤
 ///                    │                        │────────────────────────────────────────────────────────────────┐
 ///          ┌─────────┼────────────────────────┴─┐                  │                         │                 │
