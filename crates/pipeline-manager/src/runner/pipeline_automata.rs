@@ -199,7 +199,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             };
                             self.database_error_counter += 1;
                             error!(
-                                "Automaton of pipeline {pipeline_id} encountered a database error: {e} -- retrying run cycle in {} seconds...", 
+                                "Automaton of pipeline {pipeline_id} encountered a database error: {e} -- retrying run cycle in {} seconds...",
                                 backoff_timeout.as_secs()
                             );
                             poll_timeout = backoff_timeout;
