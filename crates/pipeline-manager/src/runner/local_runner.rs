@@ -445,6 +445,7 @@ impl PipelineExecutor for LocalRunner {
         deployment_config: &PipelineConfig,
         program_binary_url: &str,
         program_version: Version,
+        _suspend_exists: bool, // TODO
     ) -> Result<(), ManagerError> {
         // (Re-)create pipeline working directory (which will contain storage directory)
         let pipeline_dir = self.config.pipeline_dir(self.pipeline_id);
@@ -586,6 +587,14 @@ impl PipelineExecutor for LocalRunner {
         } else {
             Ok(())
         }
+    }
+
+    async fn suspend_compute(&mut self) -> Result<(), ManagerError> {
+        Ok(()) // TODO
+    }
+
+    async fn is_compute_suspended(&mut self) -> Result<bool, ManagerError> {
+        Ok(true) // TODO
     }
 
     /// Shuts down the process deployment.

@@ -270,6 +270,14 @@ pub(crate) trait Storage {
         pipeline_name: &str,
     ) -> Result<PipelineId, DBError>;
 
+    /// Sets deployment desired status to `Suspended`.
+    #[allow(dead_code)] // This will only be called in the Enterprise edition
+    async fn set_deployment_desired_status_suspended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<PipelineId, DBError>;
+
     /// Sets deployment desired status to `Shutdown`.
     async fn set_deployment_desired_status_shutdown(
         &self,
@@ -313,6 +321,31 @@ pub(crate) trait Storage {
 
     /// Transitions deployment status to `Unavailable`.
     async fn transit_deployment_status_to_unavailable(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+    ) -> Result<(), DBError>;
+
+    /// Transitions deployment status to `SuspendingCircuit`.
+    async fn transit_deployment_status_to_suspending_circuit(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+    ) -> Result<(), DBError>;
+
+    /// Transitions deployment status to `SuspendingCompute`.
+    async fn transit_deployment_status_to_suspending_compute(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        suspend_info: serde_json::Value,
+    ) -> Result<(), DBError>;
+
+    /// Transitions deployment status to `Suspended`.
+    async fn transit_deployment_status_to_suspended(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,

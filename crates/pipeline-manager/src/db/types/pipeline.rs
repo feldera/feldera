@@ -39,30 +39,30 @@ impl Display for PipelineId {
 ///   period expires.
 ///
 /// * State transitions labeled with API endpoint names (`/start`, `/pause`,
-///   `/shutdown`) are triggered by invoking corresponding endpoint,
+///   `/suspend`, `/shutdown`) are triggered by invoking corresponding endpoint,
 ///   e.g., `POST /v0/pipelines/{name}/start`. Note that these only express
 ///   desired state, and are applied asynchronously by the automata.
 ///
 /// ```text
 ///                Shutdown◄────────────────────┐
 ///                    │                        │
-///    /start or /pause│                    ShuttingDown ◄────── Failed
+///   /start or /pause │                   ShuttingDown ◄─────── Failed
 ///                    │                        ▲                  ▲
 ///                    ▼              /shutdown │                  │
-///             ⌛Provisioning ──────────────────┤        Shutdown, Provisioning,
-///                    │                        │        Initializing, Paused,
-///                    │                        │         Running, Unavailable
-///                    ▼                        │    (all states except ShuttingDown
-///             ⌛Initializing ──────────────────┤      can transition to Failed)
-///                    │                        │
-///          ┌─────────┼────────────────────────┴─┐
-///          │         ▼                          │
-///          │       Paused  ◄──────► Unavailable │
-///          │       │    ▲                ▲      │
-///          │ /start│    │/pause          │      │
-///          │       ▼    │                │      │
-///          │      Running ◄──────────────┘      │
-///          └────────────────────────────────────┘
+///             ⌛Provisioning ──────────────────┤     All states except ShuttingDown
+///                    │                        │        can transition to Failed
+///                    │                        │    
+///                    ▼                        │  
+///             ⌛Initializing ──────────────────┤
+///                    │                        │────────────────────────────────────────────────────────────────┐
+///          ┌─────────┼────────────────────────┴─┐                  │                         │                 │
+///          │         ▼                          │                  │                         │                 │
+///          │       Paused  ◄──────► Unavailable │                  │                         │                 │
+///          │       │    ▲                ▲      │                  │                         │                 │
+///          │ /start│    │/pause          │      │──────────> SuspendingCircuit ───> SuspendingCompute ───> Suspended
+///          │       ▼    │                │      │ /suspend                                                     │ /start or /pause
+///          │      Running ◄──────────────┘      │                                                              ▼
+///          └────────────────────────────────────┘                                                        ⌛Provisioning
 /// ```
 ///
 /// ### Desired and actual status
@@ -74,11 +74,12 @@ impl Display for PipelineId {
 /// represents the actual state of the pipeline.  The pipeline runner
 /// service continuously monitors both fields and steers the pipeline
 /// towards the desired state specified by the user.
-// Using rustdoc references in the following paragraph upsets `docusaurus`.
-/// Only three of the states in the pipeline automaton above can be
-/// used as desired statuses: `Paused`, `Running`, and `Shutdown`.
-/// These statuses are selected by invoking REST endpoints shown
-/// in the diagram.
+///
+/// Only four of the states in the pipeline automaton above can be
+/// used as desired statuses: `Paused`, `Running`, `Suspended` and
+/// `Shutdown`. These statuses are selected by invoking REST endpoints
+/// shown in the diagram (respectively, `/pause`, `/start`, `/suspend`
+/// and `/shutdown`).
 ///
 /// The user can monitor the current state of the pipeline via the
 /// `GET /v0/pipelines/{name}` endpoint. In a typical scenario,
@@ -103,8 +104,11 @@ pub enum PipelineStatus {
     ///    [`Failed`](`Self::Failed`).
     Shutdown,
 
-    /// The runner is provisioning the resources needed for the
-    /// deployment of the pipeline (including storage).
+    /// The compute and storage resources needed for the deployment
+    /// of the pipeline are being allocated.
+    ///
+    /// If the pipeline was suspended prior (not shutdown), then
+    /// only compute resources will be allocated.
     ///
     /// The deployment is performed asynchronously, as such the user
     /// is able to cancel. The pipeline remains in this state until:
@@ -146,9 +150,12 @@ pub enum PipelineStatus {
     /// 1. The user starts the pipeline by invoking the `/start` endpoint.
     ///    The runner asynchronously passes the request to the pipeline;
     ///    transitions to the [`Running`](`Self::Running`) state.
-    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    /// 2. The user suspends the pipeline by invoking the `/suspend` endpoint.
+    ///    The runner transitions to the [`SuspendingCircuit`](`Self::SuspendingCircuit`)
+    ///    state.
+    /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint,
     ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
-    /// 3. An unexpected deployment or runtime error renders the pipeline
+    /// 4. An unexpected deployment or runtime error renders the pipeline
     ///    [`Failed`](`Self::Failed`).
     Paused,
 
@@ -160,9 +167,12 @@ pub enum PipelineStatus {
     /// 1. The user pauses the pipeline by invoking the `/pause` endpoint.
     ///    The runner asynchronously passes the request to the pipeline;
     ///    transitions to the [`Paused`](`Self::Paused`) state.
-    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    /// 2. The user suspends the pipeline by invoking the `/suspend` endpoint.
+    ///    The runner transitions to the [`SuspendingCircuit`](`Self::SuspendingCircuit`)
+    ///    state.
+    /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint,
     ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
-    /// 3. An unexpected deployment or runtime error renders the pipeline
+    /// 4. An unexpected deployment or runtime error renders the pipeline
     ///    [`Failed`](`Self::Failed`).
     Running,
 
@@ -174,9 +184,12 @@ pub enum PipelineStatus {
     /// 1. A status check succeeds, in which case it transitions to either
     ///    [`Paused`](`Self::Paused`) or [`Running`](`Self::Running`) state
     ///    depending on the check outcome.
-    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    /// 2. The user suspends the pipeline by invoking the `/suspend` endpoint.
+    ///    The runner transitions to the [`SuspendingCircuit`](`Self::SuspendingCircuit`)
+    ///    state.
+    /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint,
     ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
-    /// 3. An unexpected deployment or runtime error renders the pipeline
+    /// 4. An unexpected deployment or runtime error renders the pipeline
     ///    [`Failed`](`Self::Failed`).
     ///
     /// Note that calls to `/start` and `/pause` express desired state and
@@ -185,7 +198,44 @@ pub enum PipelineStatus {
     /// until a status check has succeeded.
     Unavailable,
 
+    /// The pipeline is being request to suspend the circuit to storage.
+    ///
+    /// The pipeline remains in this state until:
+    ///
+    /// 1. The pipeline responds that the circuit was suspended to storage,
+    ///    in which case it transitions to [`SuspendingCompute`](`Self::SuspendingCompute`)
+    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected deployment or runtime error renders the pipeline
+    ///    [`Failed`](`Self::Failed`).
+    SuspendingCircuit,
+
+    /// The compute resources of the pipeline are being scaled down to zero.
+    ///
+    /// The pipeline remains in this state until:
+    ///
+    /// 1. The pipeline compute resources are scaled down to zero,
+    ///    in which case it transitions to [`Suspended`](`Self::Suspended`)
+    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected deployment error renders the pipeline [`Failed`](`Self::Failed`).
+    SuspendingCompute,
+
+    /// The pipeline retains its storage resources (where the suspended state is stored),
+    /// but does not have any compute resources currently allocated.
+    ///
+    /// The pipeline remains in this state until:
+    ///
+    /// 1. The user triggers scaling back up by invoking the `/start`
+    ///    or `/pause` endpoint, after which it transitions to the
+    ///    [`Provisioning`](`Self::Provisioning`) state.
+    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint,
+    ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected deployment error renders the pipeline [`Failed`](`Self::Failed`).
+    Suspended,
+
     /// A fatal error occurred for the pipeline.
+    ///
     /// This can be caused by either the pipeline itself or its resources.
     /// The pipeline remains in this state until the user acknowledges the
     /// error by issuing a `/shutdown` request, after which it transitions
@@ -194,7 +244,7 @@ pub enum PipelineStatus {
 
     /// Shutdown in progress.
     ///
-    /// The pipeline resources are being terminated and deleted.
+    /// The pipeline compute and storage resources are being terminated and deleted.
     /// The pipeline remains in this state until shutdown completes successfully,
     /// after which it transitions to the [`Shutdown`](`Self::Shutdown`) state.
     ///
@@ -214,6 +264,9 @@ impl TryFrom<String> for PipelineStatus {
             "paused" => Ok(Self::Paused),
             "running" => Ok(Self::Running),
             "unavailable" => Ok(Self::Unavailable),
+            "suspending_circuit" => Ok(Self::SuspendingCircuit),
+            "suspending_compute" => Ok(Self::SuspendingCompute),
+            "suspended" => Ok(Self::Suspended),
             "failed" => Ok(Self::Failed),
             "shutting_down" => Ok(Self::ShuttingDown),
             _ => Err(DBError::invalid_pipeline_status(value)),
@@ -230,6 +283,9 @@ impl From<PipelineStatus> for &'static str {
             PipelineStatus::Paused => "paused",
             PipelineStatus::Running => "running",
             PipelineStatus::Unavailable => "unavailable",
+            PipelineStatus::SuspendingCircuit => "suspending_circuit",
+            PipelineStatus::SuspendingCompute => "suspending_compute",
+            PipelineStatus::Suspended => "suspended",
             PipelineStatus::Failed => "failed",
             PipelineStatus::ShuttingDown => "shutting_down",
         }
@@ -249,6 +305,7 @@ pub enum PipelineDesiredStatus {
     Shutdown,
     Paused,
     Running,
+    Suspended,
 }
 
 impl TryFrom<String> for PipelineDesiredStatus {
@@ -258,6 +315,7 @@ impl TryFrom<String> for PipelineDesiredStatus {
             "shutdown" => Ok(Self::Shutdown),
             "paused" => Ok(Self::Paused),
             "running" => Ok(Self::Running),
+            "suspended" => Ok(Self::Suspended),
             _ => Err(DBError::invalid_desired_pipeline_status(value)),
         }
     }
@@ -269,6 +327,7 @@ impl From<PipelineDesiredStatus> for &'static str {
             PipelineDesiredStatus::Shutdown => "shutdown",
             PipelineDesiredStatus::Paused => "paused",
             PipelineDesiredStatus::Running => "running",
+            PipelineDesiredStatus::Suspended => "suspended",
         }
     }
 }
@@ -297,16 +356,46 @@ pub fn validate_deployment_status_transition(
             | (PipelineStatus::Initializing, PipelineStatus::Failed)
             | (PipelineStatus::Running, PipelineStatus::Paused)
             | (PipelineStatus::Running, PipelineStatus::Unavailable)
+            | (PipelineStatus::Running, PipelineStatus::SuspendingCircuit)
+            | (PipelineStatus::Running, PipelineStatus::SuspendingCompute)
             | (PipelineStatus::Running, PipelineStatus::ShuttingDown)
             | (PipelineStatus::Running, PipelineStatus::Failed)
             | (PipelineStatus::Paused, PipelineStatus::Running)
             | (PipelineStatus::Paused, PipelineStatus::Unavailable)
+            | (PipelineStatus::Paused, PipelineStatus::SuspendingCircuit)
+            | (PipelineStatus::Paused, PipelineStatus::SuspendingCompute)
             | (PipelineStatus::Paused, PipelineStatus::ShuttingDown)
             | (PipelineStatus::Paused, PipelineStatus::Failed)
             | (PipelineStatus::Unavailable, PipelineStatus::Running)
             | (PipelineStatus::Unavailable, PipelineStatus::Paused)
+            | (
+                PipelineStatus::Unavailable,
+                PipelineStatus::SuspendingCircuit
+            )
+            | (
+                PipelineStatus::Unavailable,
+                PipelineStatus::SuspendingCompute
+            )
             | (PipelineStatus::Unavailable, PipelineStatus::ShuttingDown)
             | (PipelineStatus::Unavailable, PipelineStatus::Failed)
+            | (
+                PipelineStatus::SuspendingCircuit,
+                PipelineStatus::SuspendingCompute
+            )
+            | (PipelineStatus::SuspendingCircuit, PipelineStatus::Failed)
+            | (
+                PipelineStatus::SuspendingCircuit,
+                PipelineStatus::ShuttingDown
+            )
+            | (PipelineStatus::SuspendingCompute, PipelineStatus::Suspended)
+            | (PipelineStatus::SuspendingCompute, PipelineStatus::Failed)
+            | (
+                PipelineStatus::SuspendingCompute,
+                PipelineStatus::ShuttingDown
+            )
+            | (PipelineStatus::Suspended, PipelineStatus::Provisioning)
+            | (PipelineStatus::Suspended, PipelineStatus::Failed)
+            | (PipelineStatus::Suspended, PipelineStatus::ShuttingDown)
             | (PipelineStatus::Failed, PipelineStatus::ShuttingDown)
             | (PipelineStatus::ShuttingDown, PipelineStatus::Shutdown)
     ) {
@@ -325,41 +414,82 @@ pub fn validate_deployment_desired_status_transition(
     current_desired_status: &PipelineDesiredStatus,
     new_desired_status: &PipelineDesiredStatus,
 ) -> Result<(), DBError> {
-    // Desired status of shutdown can always be set, as such only the cases
-    // where desired is to become Paused/Running needs to be checked
-    if *new_desired_status == PipelineDesiredStatus::Paused
-        || *new_desired_status == PipelineDesiredStatus::Running
-    {
-        // Refuse to restart a pipeline that has not completed shutting down.
-        // Occurs when the user calls /shutdown followed by either /start or /pause,
-        // but not waiting inbetween for it to have actually become Shutdown status.
-        if *current_desired_status == PipelineDesiredStatus::Shutdown
-            && *current_status != PipelineStatus::Shutdown
-        {
-            Err(DBError::IllegalPipelineAction {
-                hint: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting the pipeline again.".to_string(),
-                status: *current_status,
-                desired_status: *current_desired_status,
-                requested_desired_status: *new_desired_status,
-            })?;
-        };
+    match new_desired_status {
+        PipelineDesiredStatus::Shutdown => {
+            // It's always possible to shut down a pipeline
+            Ok(())
+        }
+        PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running => {
+            if *current_desired_status == PipelineDesiredStatus::Shutdown
+                && *current_status != PipelineStatus::Shutdown
+            {
+                // After calling `/shutdown`, it must first become `Shutdown`
+                return Err(DBError::IllegalPipelineAction {
+                    hint: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting the pipeline again.".to_string(),
+                    status: *current_status,
+                    desired_status: *current_desired_status,
+                    requested_desired_status: *new_desired_status,
+                });
+            };
 
-        // Refuse to restart a pipeline which is failed.
-        // Occurs when the user issues /start or /pause while in Failed status.
-        // This check is not necessary for ShuttingDown status because it can only
-        // get in that state when the desired status is Shutdown.
-        if *current_desired_status != PipelineDesiredStatus::Shutdown
-            && *current_status == PipelineStatus::Failed
-        {
-            Err(DBError::IllegalPipelineAction {
-                hint: "Cannot restart a pipeline which is failed. Clear the failed error state first by invoking the '/shutdown' endpoint.".to_string(),
-                status: *current_status,
-                desired_status: *current_desired_status,
-                requested_desired_status: *new_desired_status,
-            })?;
+            if *current_desired_status == PipelineDesiredStatus::Suspended
+                && *current_status != PipelineStatus::Suspended
+            {
+                // After calling `/suspend`, it must first become `Suspended`
+                return Err(DBError::IllegalPipelineAction {
+                    hint: "Cannot resume the pipeline while it is suspending. Wait for the suspend to complete before resuming the pipeline.".to_string(),
+                    status: *current_status,
+                    desired_status: *current_desired_status,
+                    requested_desired_status: *new_desired_status,
+                });
+            };
+
+            if *current_status == PipelineStatus::Failed {
+                // If a pipeline is `Failed`, it must first be shut down
+                return Err(DBError::IllegalPipelineAction {
+                    hint: "Cannot restart a pipeline which is failed. Clear the failed error state first by invoking the '/shutdown' endpoint.".to_string(),
+                    status: *current_status,
+                    desired_status: *current_desired_status,
+                    requested_desired_status: *new_desired_status,
+                });
+            }
+
+            Ok(())
+        }
+        PipelineDesiredStatus::Suspended => {
+            if *current_desired_status == PipelineDesiredStatus::Suspended {
+                // Calling `/suspend` again should work, unless the pipeline has become `Failed`
+                return if *current_status == PipelineStatus::Failed {
+                    Err(DBError::IllegalPipelineAction {
+                        hint: "Cannot suspend a pipeline which is failed. Clear the failed error state first by invoking the '/shutdown' endpoint, followed by `/start` or `/pause` to start it again.".to_string(),
+                        status: *current_status,
+                        desired_status: *current_desired_status,
+                        requested_desired_status: *new_desired_status,
+                    })
+                } else {
+                    Ok(())
+                };
+            }
+
+            if matches!(
+                current_status,
+                PipelineStatus::Running | PipelineStatus::Paused | PipelineStatus::Unavailable
+            ) {
+                // Calling `/suspend` is only possible if the pipeline is Running, Paused or Unavailable.
+                Ok(())
+            } else {
+                // In other cases, it is not possible. Sometimes it will become possible eventually
+                // (e.g., `Provisioning` should eventually generally transition to these states).
+                Err(DBError::IllegalPipelineAction {
+                    hint: "Cannot suspend a pipeline which is not running, paused or unavailable."
+                        .to_string(),
+                    status: *current_status,
+                    desired_status: *current_desired_status,
+                    requested_desired_status: *new_desired_status,
+                })
+            }
         }
     }
-    Ok(())
 }
 
 /// Pipeline descriptor.

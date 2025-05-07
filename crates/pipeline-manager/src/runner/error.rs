@@ -45,6 +45,10 @@ pub enum RunnerError {
         timeout: Duration,
     },
     AutomatonAfterInitializationBecameRunning,
+    AutomatonImpossibleDesiredStatus {
+        current_status: PipelineStatus,
+        desired_status: PipelineDesiredStatus,
+    },
 
     // The pipeline runner implementation encounters an error
     RunnerDeploymentProvisionError {
@@ -114,6 +118,9 @@ impl DetailedError for RunnerError {
             }
             RunnerError::AutomatonAfterInitializationBecameRunning => {
                 Cow::from("AutomatonAfterInitializationBecameRunning")
+            }
+            RunnerError::AutomatonImpossibleDesiredStatus { .. } => {
+                Cow::from("AutomatonImpossibleDesiredStatus")
             }
             RunnerError::RunnerDeploymentProvisionError { .. } => {
                 Cow::from("RunnerDeploymentProvisionError")
@@ -249,6 +256,17 @@ impl Display for RunnerError {
                     "Pipeline immediately became running rather than paused after initialization"
                 )
             }
+            Self::AutomatonImpossibleDesiredStatus {
+                current_status,
+                desired_status,
+            } => {
+                write! {
+                    f,
+                    "
+                    Current deployment status {current_status} cannot reach desired status {desired_status}
+                    "
+                }
+            }
             Self::RunnerDeploymentProvisionError { error } => {
                 write!(f, "Deployment provision operation failed: {error}")
             }
@@ -285,9 +303,12 @@ impl Display for RunnerError {
                     (PipelineStatus::Shutdown, PipelineDesiredStatus::Shutdown) => {
                         "start the pipeline"
                     }
-                    (PipelineStatus::Failed, PipelineDesiredStatus::Running | PipelineDesiredStatus::Paused) => {
+                    (PipelineStatus::Failed, PipelineDesiredStatus::Running | PipelineDesiredStatus::Paused | PipelineDesiredStatus::Suspended) => {
                         "investigate the reason why the pipeline failed by looking at the error and logs, \
                         shut down the pipeline to clear the 'failed' state, fix any issues, and start again afterwards"
+                    }
+                    (_, PipelineDesiredStatus::Suspended) => {
+                        "wait for the pipeline to become suspended and then start again"
                     }
                     (_, PipelineDesiredStatus::Running | PipelineDesiredStatus::Paused) => {
                         "wait for the pipeline to become running or paused"
@@ -343,6 +364,7 @@ impl ResponseError for RunnerError {
             Self::AutomatonProvisioningTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonInitializingTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonAfterInitializationBecameRunning => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonImpossibleDesiredStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerDeploymentProvisionError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerDeploymentCheckError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerDeploymentShutdownError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
