@@ -417,7 +417,7 @@ public class ImplementNow extends Passes {
             }
         }
 
-        /** A Boolean expression that involves now() but is not a temporal filter */
+        /** A Boolean expression that may involve now(), but is not a temporal filter */
         record NonTemporalFilter(DBSPExpression expression) implements BooleanExpression {
             @Override
             public boolean compatible(BooleanExpression other) {
@@ -427,10 +427,17 @@ public class ImplementNow extends Passes {
 
             @Override
             public BooleanExpression combine(BooleanExpression other) {
+                DBSPExpression otherExpression;
+                if (other.is(NoNow.class))
+                    otherExpression = other.to(NoNow.class).noNow;
+                else if (other.is(NonTemporalFilter.class))
+                    otherExpression = other.to(NonTemporalFilter.class).expression;
+                else
+                    throw new InternalCompilerError("Unexpected temporal filter " + other);
                 return new NonTemporalFilter(
                         ExpressionCompiler.makeBinaryExpression(this.expression().getNode(),
                                 DBSPTypeBool.create(false), DBSPOpcode.AND,
-                                this.expression, other.to(NoNow.class).noNow));
+                                this.expression, otherExpression));
             }
 
             @Override
@@ -527,7 +534,9 @@ public class ImplementNow extends Passes {
                 this.analyzeConjunction(expression);
             }
 
-            /** Analyze a conjunction; return 'true' if it was fully decomposed */
+            /** Analyze a conjunction; return 'false' if some NonTemporalFilters were found.
+             * When this function returns, this.comparisons contains a full
+             * decomposition of 'expression'. */
             boolean analyzeConjunction(DBSPExpression expression) {
                 DBSPBinaryExpression binary = expression.as(DBSPBinaryExpression.class);
                 if (binary == null) {
@@ -537,8 +546,11 @@ public class ImplementNow extends Passes {
                 }
                 if (binary.opcode == DBSPOpcode.AND) {
                     boolean foundLeft = this.analyzeConjunction(binary.left);
-                    if (!foundLeft)
+                    if (!foundLeft) {
+                        BooleanExpression exp = Utilities.removeLast(this.comparisons);
+                        this.comparisons.add(exp.combine(new NonTemporalFilter(binary.right)));
                         return false;
+                    }
                     return this.analyzeConjunction(binary.right);
                 } else {
                     boolean decomposed = this.findComparison(binary);
@@ -549,7 +561,8 @@ public class ImplementNow extends Passes {
             }
 
             /** See if a binary expression can be implemented as a temporal filter.
-             * Return 'false' if the expression contains now() but is not a temporal filter. */
+             * Return 'false' if the expression contains now() but is not a temporal filter.
+             * If it returns 'true', the expression is added to this.comparisons. */
             boolean findComparison(DBSPBinaryExpression binary) {
                 this.containsNow.apply(binary);
                 if (!this.containsNow.found) {

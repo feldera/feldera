@@ -629,7 +629,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 ToDot.dump(this, "initial.png", this.getDebugLevel(), "png", circuit);
 
             this.validateForeignKeys(circuit, foreignKeys);
-            circuit = this.optimize(circuit);
+            if (!this.options.ioOptions.inputCircuit)
+                circuit = this.optimize(circuit);
             return circuit;
         } catch (CalciteContextException e) {
             this.messages.reportError(e);

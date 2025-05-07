@@ -195,6 +195,9 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--crates", description = "Followed by a program name. Generates code using multiple crates; " +
                 "`outputFile` is interpreted as a directory.")
         public String crates = "";
+        @Parameter(hidden = true, names = "--input_circuit",
+                description = "Do not process the circuit, return immediately after creation.  Used for testing")
+        public boolean inputCircuit = false;
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {
