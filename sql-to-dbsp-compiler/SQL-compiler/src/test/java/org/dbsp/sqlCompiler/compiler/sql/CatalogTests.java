@@ -33,6 +33,28 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void cloudIssue818() {
+        this.getCCS("""
+                create table data(
+                    id int,
+                    name varchar
+                ) with (
+                    'connectors' = '[{
+                        "transport": {
+                            "name": "datagen",
+                            "config": {
+                                "plan": [{
+                                    "rate": 1000,
+                                    "limit": 20000
+                                }]
+                            }
+                        }
+                    }]'
+                );
+                create view v0 as select * from data;""");
+    }
+
+    @Test
     public void issue3902() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(row_row ROW(v1 ROW(v11 VARCHAR NULL), v2 ROW(v21 VARCHAR NULL)));
