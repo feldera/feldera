@@ -1,6 +1,7 @@
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
+use crate::common_error::CommonError;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::pipeline::{
@@ -808,6 +809,7 @@ pub(crate) async fn delete_pipeline(
 /// The desired state is set based on the `action` path parameter:
 /// - `/start` sets desired state to `Running`
 /// - `/pause` sets desired state to `Paused`
+/// - `/suspend` sets desired state to `Suspended`
 /// - `/shutdown` sets desired state to `Shutdown`
 ///
 /// The endpoint returns immediately after setting the desired state.
@@ -819,12 +821,15 @@ pub(crate) async fn delete_pipeline(
 /// - A shutdown pipeline can be started through calling either `/start` or `/pause`
 /// - Both starting as running and resuming a pipeline is done by calling `/start`
 /// - Both starting as paused and pausing a pipeline is done by calling `/pause`
+/// - `/shutdown` cannot be cancelled: the pipeline must reach `Shutdown` before another action
+/// - `/suspend` can only be cancelled using `/shutdown`: otherwise, the pipeline must reach
+///   `Suspended` first
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("action" = String, Path, description = "Pipeline action (one of: start, pause, shutdown)")
+        ("action" = String, Path, description = "Pipeline action (one of: start, pause, suspend, shutdown)")
     ),
     responses(
         (status = ACCEPTED
@@ -840,6 +845,10 @@ pub(crate) async fn delete_pipeline(
                 ("Invalid action" = (value = json!(examples::error_invalid_pipeline_action()))),
                 ("Illegal action" = (value = json!(examples::error_illegal_pipeline_action()))),
             )
+        ),
+        (status = NOT_IMPLEMENTED
+            , description = "Action is not implemented because it is only available in the Enterprise edition"
+            , body = ErrorResponse
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
@@ -867,6 +876,21 @@ pub(crate) async fn post_pipeline_action(
                 .lock()
                 .await
                 .set_deployment_desired_status_paused(*tenant_id, &pipeline_name)
+                .await?
+        }
+        "suspend" => {
+            #[cfg(not(feature = "feldera-enterprise"))]
+            {
+                Err(ManagerError::from(CommonError::EnterpriseFeature(
+                    "suspend",
+                )))?
+            }
+            #[cfg(feature = "feldera-enterprise")]
+            state
+                .db
+                .lock()
+                .await
+                .set_deployment_desired_status_suspended(*tenant_id, &pipeline_name)
                 .await?
         }
         "shutdown" => {

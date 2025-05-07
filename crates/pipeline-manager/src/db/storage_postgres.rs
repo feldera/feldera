@@ -217,7 +217,7 @@ impl Storage for StoragePostgres {
                 provision_called
             ),
             (
-                PipelineStatus::Shutdown,
+                PipelineStatus::Shutdown | PipelineStatus::Suspended,
                 PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
                 true,
                 _
@@ -646,6 +646,24 @@ impl Storage for StoragePostgres {
         Ok(pipeline_id)
     }
 
+    async fn set_deployment_desired_status_suspended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<PipelineId, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let pipeline_id = operations::pipeline::set_deployment_desired_status(
+            &txn,
+            tenant_id,
+            pipeline_name,
+            PipelineDesiredStatus::Suspended,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(pipeline_id)
+    }
+
     async fn set_deployment_desired_status_shutdown(
         &self,
         tenant_id: TenantId,
@@ -781,6 +799,76 @@ impl Storage for StoragePostgres {
         Ok(())
     }
 
+    async fn transit_deployment_status_to_suspending_circuit(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::set_deployment_status(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            PipelineStatus::SuspendingCircuit,
+            None,
+            None,
+            None,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn transit_deployment_status_to_suspending_compute(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        _suspend_info: serde_json::Value,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::set_deployment_status(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            PipelineStatus::SuspendingCompute,
+            None,
+            None,
+            None,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn transit_deployment_status_to_suspended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::set_deployment_status(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            PipelineStatus::Suspended,
+            None,
+            None,
+            None,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
     async fn transit_deployment_status_to_shutting_down(
         &self,
         tenant_id: TenantId,
@@ -878,7 +966,9 @@ impl Storage for StoragePostgres {
         let pipelines =
             operations::pipeline::list_pipelines_across_all_tenants_for_monitoring(&txn).await?;
         for (tenant_id, pipeline) in pipelines {
-            if pipeline.deployment_status == PipelineStatus::Shutdown {
+            if pipeline.deployment_status == PipelineStatus::Shutdown
+                || pipeline.deployment_status == PipelineStatus::Suspended
+            {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingSql {
                         operations::pipeline::set_program_status(
@@ -940,7 +1030,9 @@ impl Storage for StoragePostgres {
         let pipelines =
             operations::pipeline::list_pipelines_across_all_tenants_for_monitoring(&txn).await?;
         for (tenant_id, pipeline) in pipelines {
-            if pipeline.deployment_status == PipelineStatus::Shutdown {
+            if pipeline.deployment_status == PipelineStatus::Shutdown
+                || pipeline.deployment_status == PipelineStatus::Suspended
+            {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingRust {
                         // Because `program_info` can be rather large, it is only fetched when
