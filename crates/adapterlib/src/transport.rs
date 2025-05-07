@@ -153,7 +153,7 @@ pub enum InputReaderCommand {
     /// Tells a fault-tolerant input reader to seek past the data already read
     /// in the step whose metadata is given by the value.
     ///
-    /// # Contraints
+    /// # Constraints
     ///
     /// Only fault-tolerant input readers need to accept this. If it is given,
     /// it will be issued only once and before any of the other commands.
@@ -169,7 +169,7 @@ pub enum InputReaderCommand {
     /// The input reader doesn't have to process other commands while it does
     /// the replay.
     ///
-    /// # Contraints
+    /// # Constraints
     ///
     /// Only fault-tolerant input readers need to accept this. It will be issued
     /// zero or more times, after [InputReaderCommand::Seek] but before any
@@ -216,10 +216,17 @@ pub enum InputReaderCommand {
     /// how many records it should flush. When it's done, it must call
     /// [InputConsumer::extended] to report it.
     ///
+    /// The `checkpoint_requested` flag indicates that the controller is trying
+    /// to checkpoint or suspend the pipeline. This serves as a hint to the reader
+    /// to try to clear the checkpoint barrier by returning [Resume::Seek] or
+    /// [Resume::Replay] if possible. For instance, if the reader has multiple
+    /// buffers queued, it can choose to stop flushing them after reaching the first
+    /// buffer that corresponds to a seekable position in the input stream.
+    ///
     /// # Constraints
     ///
     /// The controller won't issue this command before it first issues [InputReaderCommand::Extend].
-    Queue,
+    Queue { checkpoint_requested: bool },
 
     /// Tells the reader it's going to be dropped soon and should clean up.
     ///
@@ -240,7 +247,7 @@ impl InputReaderCommand {
     pub fn as_nonft(&self) -> Option<NonFtInputReaderCommand> {
         match self {
             InputReaderCommand::Seek(_) | InputReaderCommand::Replay { .. } => None,
-            InputReaderCommand::Queue => Some(NonFtInputReaderCommand::Queue),
+            InputReaderCommand::Queue { .. } => Some(NonFtInputReaderCommand::Queue),
             InputReaderCommand::Extend => {
                 Some(NonFtInputReaderCommand::Transition(PipelineState::Running))
             }
@@ -276,7 +283,8 @@ pub enum NonFtInputReaderCommand {
 /// Commonly used by `InputReader` implementations for staging buffers from
 /// worker threads.
 pub struct InputQueue<A = ()> {
-    pub queue: Mutex<VecDeque<(Box<dyn InputBuffer>, A)>>,
+    #[allow(clippy::type_complexity)]
+    pub queue: Mutex<VecDeque<(Option<Box<dyn InputBuffer>>, A)>>,
     pub consumer: Box<dyn InputConsumer>,
 }
 
@@ -302,16 +310,11 @@ impl<A> InputQueue<A> {
         aux: A,
     ) {
         self.consumer.parse_errors(errors);
-        match buffer {
-            Some(buffer) if !buffer.is_empty() => {
-                let num_records = buffer.len();
+        let num_records = buffer.len();
 
-                let mut queue = self.queue.lock().unwrap();
-                queue.push_back((buffer, aux));
-                self.consumer.buffered(num_records, num_bytes);
-            }
-            _ => self.consumer.buffered(0, num_bytes),
-        }
+        let mut queue = self.queue.lock().unwrap();
+        queue.push_back((buffer, aux));
+        self.consumer.buffered(num_records, num_bytes);
     }
 
     /// Flushes a batch of records to the circuit and returns the auxiliary data
@@ -322,20 +325,47 @@ impl<A> InputQueue<A> {
     /// individual records. If the auxiliary data type `A` is `()`, then
     /// [InputQueue<()>::flush] avoids that and so is a better choice.
     pub fn flush_with_aux(&self) -> (usize, Option<Xxh3Default>, Vec<A>) {
+        self.flush_with_aux_until(&|_| false)
+    }
+
+    /// Flushes a batch of records to the circuit and returns the auxiliary data
+    /// that was associated with those records.
+    ///
+    /// Stops after flushing at least `max_batch_size` records or after flushing a
+    /// buffer whose auxiliary data satisfies the `stop_at` predicate, whichever
+    /// happens first.
+    ///
+    /// This always flushes whole buffers to the circuit (with `flush`),
+    /// since auxiliary data is associated with a whole buffer rather than with
+    /// individual records. If the auxiliary data type `A` is `()`, then
+    /// [InputQueue<()>::flush] avoids that and so is a better choice.
+    pub fn flush_with_aux_until(
+        &self,
+        stop_at: &dyn Fn(&A) -> bool,
+    ) -> (usize, Option<Xxh3Default>, Vec<A>) {
         let mut total = 0;
         let mut hasher = self.consumer.hasher();
         let n = self.consumer.max_batch_size();
         let mut consumed_aux = Vec::new();
         while total < n {
-            let Some((mut buffer, aux)) = self.queue.lock().unwrap().pop_front() else {
+            let Some((buffer, aux)) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
-            total += buffer.len();
-            if let Some(hasher) = hasher.as_mut() {
-                buffer.hash(hasher);
+
+            if let Some(mut buffer) = buffer {
+                total += buffer.len();
+                if let Some(hasher) = hasher.as_mut() {
+                    buffer.hash(hasher);
+                }
+                buffer.flush();
             }
-            buffer.flush();
+
+            let stop = stop_at(&aux);
             consumed_aux.push(aux);
+
+            if stop {
+                break;
+            }
         }
         (total, hasher, consumed_aux)
     }
@@ -369,16 +399,19 @@ impl InputQueue<()> {
         let mut total = 0;
         let n = self.consumer.max_batch_size();
         while total < n {
-            let Some((mut buffer, ())) = self.queue.lock().unwrap().pop_front() else {
+            let Some((buffer, ())) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
-            let mut taken = buffer.take_some(n - total);
-            total += taken.len();
-            taken.flush();
-            drop(taken);
-            if !buffer.is_empty() {
-                self.queue.lock().unwrap().push_front((buffer, ()));
-                break;
+
+            if let Some(mut buffer) = buffer {
+                let mut taken = buffer.take_some(n - total);
+                total += taken.len();
+                taken.flush();
+                drop(taken);
+                if !buffer.is_empty() {
+                    self.queue.lock().unwrap().push_front((Some(buffer), ()));
+                    break;
+                }
             }
         }
         self.consumer.extended(total, None);
@@ -418,8 +451,10 @@ pub trait InputReader: Send + Sync {
         self.request(InputReaderCommand::Pause);
     }
 
-    fn queue(&self) {
-        self.request(InputReaderCommand::Queue);
+    fn queue(&self, checkpoint_requested: bool) {
+        self.request(InputReaderCommand::Queue {
+            checkpoint_requested,
+        });
     }
 
     fn disconnect(&self) {

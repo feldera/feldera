@@ -509,7 +509,7 @@ impl InputGenerator {
                 }
                 Some(InputReaderCommand::Extend) => running = true,
                 Some(InputReaderCommand::Pause) => running = false,
-                Some(InputReaderCommand::Queue) => {
+                Some(InputReaderCommand::Queue { .. }) => {
                     let mut num_records = 0;
                     let mut hasher = consumer.hasher();
                     let n = consumer.max_batch_size();
