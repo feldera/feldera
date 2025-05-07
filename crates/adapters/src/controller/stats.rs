@@ -1222,28 +1222,25 @@ impl TokenListInner {
     ///
     /// # Arguments
     ///
-    /// * `connector_input_records` - total number of inputs **from this connector** ingested by the circuit or `None`
-    ///   if the number is unknown at this point.
+    /// * `connector_circuit_input_records` - total number of inputs **from this connector** ingested by the circuit.
     /// * `total_circuit_input_records` - total number of inputs across all connectors ingested by the circuit.
     /// * `total_completed_records` - the number of records processed by the pipeline to completion.
     fn update(
         &mut self,
-        connector_input_records: Option<u64>,
+        connector_circuit_input_records: u64,
         total_circuit_input_records: u64,
         total_completed_records: u64,
     ) {
         // Label all unlabeled tokens <= connector_input_records with total_circuit_input_records
-        if let Some(input_records) = connector_input_records {
-            let first_unlabeled = self
-                .token_list
-                .partition_point(|(_token, label)| label.is_some());
+        let first_unlabeled = self
+            .token_list
+            .partition_point(|(_token, label)| label.is_some());
 
-            for (token, label) in self.token_list.range_mut(first_unlabeled..) {
-                if *token <= input_records {
-                    *label = Some(total_circuit_input_records)
-                } else {
-                    break;
-                }
+        for (token, label) in self.token_list.range_mut(first_unlabeled..) {
+            if *token <= connector_circuit_input_records {
+                *label = Some(total_circuit_input_records)
+            } else {
+                break;
             }
         }
 
@@ -1276,24 +1273,18 @@ impl TokenListInner {
     ///   (not all of these record have been pushed to the circuit).
     /// * `total_circuit_input_records` - total number of inputs across all connectors ingested by the circuit.
     /// * `total_completed_records` - the number of records processed by the pipeline to completion.
-    fn add_token(
-        &mut self,
-        connector_input_records: u64,
-        total_circuit_input_records: u64,
-        total_completed_records: u64,
-    ) {
+    fn add_token(&mut self, token_input_records: u64) {
         // Don't track more than one token for the same offset.
         if !self.token_list.is_empty() {
             // The number of ingested records grows monotonically.
-            debug_assert!(self.token_list[self.token_list.len() - 1].0 <= connector_input_records);
+            debug_assert!(self.token_list[self.token_list.len() - 1].0 <= token_input_records);
 
-            if self.token_list[self.token_list.len() - 1].0 >= connector_input_records {
+            if self.token_list[self.token_list.len() - 1].0 >= token_input_records {
                 return;
             }
         }
 
-        self.token_list.push_back((connector_input_records, None));
-        self.update(None, total_circuit_input_records, total_completed_records);
+        self.token_list.push_back((token_input_records, None));
     }
 
     /// Check completion status of a token.
@@ -1333,28 +1324,19 @@ impl TokenList {
     }
     fn update(
         &self,
-        connector_input_records: Option<u64>,
+        connector_circuit_input_records: u64,
         total_circuit_input_records: u64,
         total_completed_records: u64,
     ) {
         self.0.lock().unwrap().update(
-            connector_input_records,
+            connector_circuit_input_records,
             total_circuit_input_records,
             total_completed_records,
         );
     }
 
-    fn add_token(
-        &self,
-        connector_input_records: u64,
-        total_circuit_input_records: u64,
-        total_completed_records: u64,
-    ) {
-        self.0.lock().unwrap().add_token(
-            connector_input_records,
-            total_circuit_input_records,
-            total_completed_records,
-        );
+    fn add_token(&self, token_input_records: u64) {
+        self.0.lock().unwrap().add_token(token_input_records);
     }
 
     fn completion_status(&self, token: u64, total_completed_records: u64) -> bool {
@@ -1531,7 +1513,7 @@ impl InputEndpointStatus {
             .circuit_input_records
             .fetch_add(num_records, Ordering::AcqRel);
         self.completion_tokens.update(
-            Some(old_circuit_input_records + num_records),
+            old_circuit_input_records + num_records,
             total_circuit_input_records,
             total_completed_records,
         );
@@ -1546,13 +1528,21 @@ impl InputEndpointStatus {
         total_circuit_input_records: u64,
         total_completed_records: u64,
     ) -> u64 {
-        let input_records = self.metrics.total_records.load(Ordering::Acquire);
-        self.completion_tokens.add_token(
-            input_records,
+        let token_input_records = self.metrics.total_records.load(Ordering::Acquire);
+
+        // To avoid a race, we add a token _before_ reading the circuit_input_records
+        // metric and using it to update the token list.
+        self.completion_tokens.add_token(token_input_records);
+
+        let connector_circuit_input_records =
+            self.metrics.circuit_input_records.load(Ordering::Acquire);
+
+        self.completion_tokens.update(
+            connector_circuit_input_records,
             total_circuit_input_records,
             total_completed_records,
         );
-        input_records
+        token_input_records
     }
 
     /// Check the status of a completion token.
