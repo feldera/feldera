@@ -631,7 +631,7 @@ impl MulByRef<i32> for Decimal {
 
 /////////// generic implementation for Option<t>
 
-trait OptionWeightType {}
+pub trait OptionWeightType {}
 impl OptionWeightType for isize {}
 impl OptionWeightType for i8 {}
 impl OptionWeightType for i16 {}
@@ -650,6 +650,19 @@ where
     S: OptionWeightType,
 {
     type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, rhs: &S) -> Self::Output {
+        self.as_ref().map(|lhs| lhs.mul_by_ref(rhs))
+    }
+}
+
+impl<T, S> MulByRef<S> for &Option<T>
+where
+    T: MulByRef<S, Output = T>,
+    S: OptionWeightType,
+{
+    type Output = Option<T>;
 
     #[inline]
     fn mul_by_ref(&self, rhs: &S) -> Self::Output {

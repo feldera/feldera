@@ -6,7 +6,7 @@ use crate::{
     polymorphic_return_function2, some_existing_operator, some_operator,
     some_polymorphic_function1, some_polymorphic_function2,
     timestamp::{extract_epoch_Date, extract_quarter_Date, plus_Date_LongInterval_Date},
-    Date, Decimal,
+    Date, Decimal, SqlDecimal,
 };
 use dbsp::{algebra::F64, num_entries_scalar};
 use feldera_types::serde_with_context::{
@@ -165,6 +165,20 @@ impl Mul<Decimal> for ShortInterval {
     }
 }
 
+/// Multiply a `ShortInterval` by a numeric value, producing a `ShortInterval`.
+impl Mul<SqlDecimal> for ShortInterval {
+    type Output = Self;
+
+    fn mul(self, rhs: SqlDecimal) -> Self {
+        println!("{:?}, {}", self, rhs);
+        Self {
+            milliseconds: (SqlDecimal::from(self.milliseconds) * rhs)
+                .try_into()
+                .expect("overflow in short interval multiplication"),
+        }
+    }
+}
+
 /// Divide a `ShortInterval` by a numeric value, producing a `ShortInterval`.
 impl Div<i64> for ShortInterval {
     type Output = Self;
@@ -194,6 +208,19 @@ impl Div<Decimal> for ShortInterval {
     fn div(self, rhs: Decimal) -> Self {
         Self {
             milliseconds: (Decimal::from(self.milliseconds) / rhs)
+                .try_into()
+                .expect("overflow in short interval division"),
+        }
+    }
+}
+
+/// Divide a `ShortInterval` by a numeric value, producing a `ShortInterval`.
+impl Div<SqlDecimal> for ShortInterval {
+    type Output = Self;
+
+    fn div(self, rhs: SqlDecimal) -> Self {
+        Self {
+            milliseconds: (SqlDecimal::from(self.milliseconds) / rhs)
                 .try_into()
                 .expect("overflow in short interval division"),
         }
@@ -319,6 +346,20 @@ some_polymorphic_function2!(
 );
 
 #[doc(hidden)]
+pub fn div_ShortInterval_SqlDecimal(left: ShortInterval, right: SqlDecimal) -> ShortInterval {
+    left / right
+}
+
+some_polymorphic_function2!(
+    div,
+    ShortInterval,
+    ShortInterval,
+    SqlDecimal,
+    SqlDecimal,
+    ShortInterval
+);
+
+#[doc(hidden)]
 pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
     left * right
 }
@@ -343,6 +384,20 @@ some_polymorphic_function2!(
     ShortInterval,
     decimal,
     Decimal,
+    ShortInterval
+);
+
+#[doc(hidden)]
+pub fn times_ShortInterval_SqlDecimal(left: ShortInterval, right: SqlDecimal) -> ShortInterval {
+    left * right
+}
+
+some_polymorphic_function2!(
+    times,
+    ShortInterval,
+    ShortInterval,
+    SqlDecimal,
+    SqlDecimal,
     ShortInterval
 );
 
@@ -492,6 +547,19 @@ impl Mul<Decimal> for LongInterval {
     }
 }
 
+/// Multiply a `LongInterval` by a numeric value producing a `LongInterval`
+impl Mul<SqlDecimal> for LongInterval {
+    type Output = Self;
+
+    fn mul(self, rhs: SqlDecimal) -> Self {
+        Self {
+            months: (SqlDecimal::from(self.months) * rhs)
+                .try_into()
+                .expect("overflow in long interval multiplication"),
+        }
+    }
+}
+
 /// Divide a `LongInterval` by an integer producing a `LongInterval`
 impl Div<i32> for LongInterval {
     type Output = Self;
@@ -521,6 +589,19 @@ impl Div<Decimal> for LongInterval {
     fn div(self, rhs: Decimal) -> Self {
         Self {
             months: (Decimal::from(self.months) / rhs)
+                .try_into()
+                .expect("overflow in long interval division"),
+        }
+    }
+}
+
+/// Divide a `LongInterval` by a numeric value producing a `LongInterval`
+impl Div<SqlDecimal> for LongInterval {
+    type Output = Self;
+
+    fn div(self, rhs: SqlDecimal) -> Self {
+        Self {
+            months: (SqlDecimal::from(self.months) / rhs)
                 .try_into()
                 .expect("overflow in long interval division"),
         }
@@ -661,6 +742,20 @@ some_polymorphic_function2!(
 );
 
 #[doc(hidden)]
+pub fn times_LongInterval_SqlDecimal(left: LongInterval, right: SqlDecimal) -> LongInterval {
+    left * right
+}
+
+some_polymorphic_function2!(
+    times,
+    LongInterval,
+    LongInterval,
+    SqlDecimal,
+    SqlDecimal,
+    LongInterval
+);
+
+#[doc(hidden)]
 pub fn div_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
     left / right
 }
@@ -685,6 +780,20 @@ some_polymorphic_function2!(
     LongInterval,
     decimal,
     Decimal,
+    LongInterval
+);
+
+#[doc(hidden)]
+pub fn div_LongInterval_SqlDecimal(left: LongInterval, right: SqlDecimal) -> LongInterval {
+    left / right
+}
+
+some_polymorphic_function2!(
+    div,
+    LongInterval,
+    LongInterval,
+    SqlDecimal,
+    SqlDecimal,
     LongInterval
 );
 
