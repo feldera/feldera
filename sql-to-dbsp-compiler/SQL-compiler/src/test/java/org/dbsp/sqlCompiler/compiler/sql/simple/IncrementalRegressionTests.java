@@ -704,7 +704,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
     @Test
     public void illegalDecimalTest() {
         this.statementsFailingInCompilation("""
-                CREATE TABLE T(c DECIMAL(38, 18));""",
+                CREATE TABLE T(c DECIMAL(48, 18));""",
                 "Maximum precision supported for DECIMAL");
     }
 
