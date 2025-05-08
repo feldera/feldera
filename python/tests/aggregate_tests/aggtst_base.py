@@ -5,7 +5,7 @@ import unittest
 from feldera import PipelineBuilder, Pipeline
 from tests import TEST_CLIENT
 from feldera.enums import CompilationProfile
-
+from feldera.runtime_config import RuntimeConfig
 from typing import TypeAlias, Dict
 import re
 
@@ -166,7 +166,11 @@ class TstAccumulator:
         """Run all tests registered"""
         sql = self.generate_sql()
         pipeline = PipelineBuilder(
-            TEST_CLIENT, "test", sql=sql, compilation_profile=CompilationProfile.DEV
+            TEST_CLIENT,
+            "test",
+            sql=sql,
+            compilation_profile=CompilationProfile.DEV,
+            runtime_config=RuntimeConfig(provisioning_timeout_secs=60),
         ).create_or_replace()
 
         pipeline.start()

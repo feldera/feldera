@@ -70,6 +70,7 @@ class RuntimeConfig:
         max_buffering_delay_usecs: int = 0,
         min_batch_size_records: int = 0,
         clock_resolution_usecs: Optional[int] = None,
+        provisioning_timeout_secs: Optional[int] = None,
         resources: Optional[Resources] = None,
     ):
         self.workers = workers
@@ -80,6 +81,7 @@ class RuntimeConfig:
         self.max_buffering_delay_usecs = max_buffering_delay_usecs
         self.min_batch_size_records = min_batch_size_records
         self.clock_resolution_usecs = clock_resolution_usecs
+        self.provisioning_timeout_secs = provisioning_timeout_secs
         if resources is not None:
             self.resources = resources.__dict__
 
