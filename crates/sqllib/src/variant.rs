@@ -3,7 +3,7 @@
 
 use crate::{
     array::Array, binary::ByteArray, casts::*, error::SqlRuntimeError, map::Map, tn, ttn, Date,
-    GeoPoint, LongInterval, ShortInterval, SqlString, Time, Timestamp, Uuid,
+    GeoPoint, LongInterval, ShortInterval, SqlDecimal, SqlString, Time, Timestamp, Uuid,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_types::serde_with_context::serde_config::VariantFormat;
@@ -22,7 +22,6 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::{fmt::Debug, hash::Hash};
 
@@ -60,6 +59,7 @@ pub enum Variant {
     Real(F32),
     Double(F64),
     Decimal(Decimal),
+    SqlDecimal(SqlDecimal),
     String(SqlString),
     Date(Date),
     Time(Time),
@@ -138,12 +138,12 @@ impl<'de> Deserialize<'de> for Variant {
 
             #[inline]
             fn visit_i64<E>(self, value: i64) -> Result<Variant, E> {
-                Ok(Variant::Decimal(Decimal::from(value)))
+                Ok(Variant::SqlDecimal(SqlDecimal::from(value)))
             }
 
             #[inline]
             fn visit_u64<E>(self, value: u64) -> Result<Variant, E> {
-                Ok(Variant::Decimal(Decimal::from(value)))
+                Ok(Variant::SqlDecimal(SqlDecimal::from(value)))
             }
 
             #[inline]
@@ -204,7 +204,7 @@ impl<'de> Deserialize<'de> for Variant {
                 match visitor.next_key_seed(KeyClassifier)? {
                     Some(KeyClass::Number) => {
                         let number: NumberFromString = visitor.next_value()?;
-                        Ok(Variant::Decimal(number.value))
+                        Ok(Variant::SqlDecimal(number.value))
                     }
                     Some(KeyClass::Map(first_key)) => {
                         let mut values = BTreeMap::new();
@@ -310,7 +310,7 @@ impl Visitor<'_> for KeyClassifier {
 
 #[doc(hidden)]
 pub struct NumberFromString {
-    pub value: Decimal,
+    pub value: SqlDecimal,
 }
 
 #[doc(hidden)]
@@ -333,8 +333,8 @@ impl<'de> de::Deserialize<'de> for NumberFromString {
             where
                 E: de::Error,
             {
-                let d = Decimal::from_str(s)
-                    .or_else(|_| Decimal::from_scientific(s))
+                let d = SqlDecimal::parse(s)
+                    // .or_else(|_| SqlDecimal::from_scientific(s))
                     .map_err(serde::de::Error::custom)?;
                 Ok(NumberFromString { value: d })
             }
@@ -382,6 +382,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
                 Variant::Real(v) => v.serialize_with_context(serializer, context),
                 Variant::Double(v) => v.serialize_with_context(serializer, context),
                 Variant::Decimal(v) => v.serialize_with_context(serializer, context),
+                Variant::SqlDecimal(v) => v.serialize_with_context(serializer, context),
                 Variant::String(v) => v.serialize_with_context(serializer, context),
                 Variant::Date(v) => v.serialize_with_context(serializer, context),
                 Variant::Time(v) => v.serialize_with_context(serializer, context),
@@ -412,6 +413,7 @@ impl Variant {
             Variant::Real(_) => "REAL",
             Variant::Double(_) => "DOUBLE",
             Variant::Decimal(_) => "DECIMAL",
+            Variant::SqlDecimal(_) => "DECIMAL",
             Variant::String(_) => "VARCHAR",
             Variant::Date(_) => "DATE",
             Variant::Time(_) => "TIME",
@@ -500,6 +502,7 @@ from!(BigInt, i64);
 from!(Real, F32);
 from!(Double, F64);
 from!(Decimal, Decimal);
+from!(SqlDecimal, SqlDecimal);
 from!(String, SqlString);
 from!(Date, Date);
 from!(Time, Time);
@@ -660,6 +663,7 @@ macro_rules! into_numeric {
                         Variant::Real(x) => [< cast_to_ $type_name _f >](x),
                         Variant::Double(x) => [< cast_to_ $type_name _d >](x),
                         Variant::Decimal(x) => [< cast_to_ $type_name _decimal >](x),
+                        Variant::SqlDecimal(x) => [< cast_to_ $type_name _SqlDecimal >](x),
                         _ => Err(SqlRuntimeError::from_string(format!(
                             "variant is {}, which cannot be converted to {}",
                             typeof_(value),
@@ -732,6 +736,29 @@ impl TryFrom<Variant> for Decimal {
 }
 
 #[doc(hidden)]
+impl TryFrom<Variant> for SqlDecimal {
+    type Error = Box<dyn Error>;
+
+    #[doc(hidden)]
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::TinyInt(x) => Ok(SqlDecimal::from(x)),
+            Variant::SmallInt(x) => Ok(SqlDecimal::from(x)),
+            Variant::Int(x) => Ok(SqlDecimal::from(x)),
+            Variant::BigInt(x) => Ok(SqlDecimal::from(x)),
+            Variant::Real(x) => Ok(SqlDecimal::from(x.into_inner())),
+            Variant::Double(x) => Ok(SqlDecimal::from(x.into_inner())),
+            Variant::SqlDecimal(x) => Ok(x),
+            _ => Err(SqlRuntimeError::from_string(format!(
+                "variant is {}, which cannot be converted to {}",
+                typeof_(value),
+                "DECIMAL",
+            ))),
+        }
+    }
+}
+
+#[doc(hidden)]
 impl TryFrom<Variant> for Option<Decimal> {
     type Error = Box<dyn Error>;
 
@@ -741,6 +768,23 @@ impl TryFrom<Variant> for Option<Decimal> {
             Variant::VariantNull => Ok(None),
             Variant::SqlNull => Ok(None),
             _ => match Decimal::try_from(value) {
+                Ok(result) => Ok(Some(result)),
+                Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
+            },
+        }
+    }
+}
+
+#[doc(hidden)]
+impl TryFrom<Variant> for Option<SqlDecimal> {
+    type Error = Box<dyn Error>;
+
+    #[doc(hidden)]
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::VariantNull => Ok(None),
+            Variant::SqlNull => Ok(None),
+            _ => match SqlDecimal::try_from(value) {
                 Ok(result) => Ok(Some(result)),
                 Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
             },
@@ -889,8 +933,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{binary::ByteArray, Date, SqlString, Time, Timestamp};
-    use std::str::FromStr;
+    use crate::{binary::ByteArray, Date, SqlDecimal, SqlString, Time, Timestamp};
     use std::sync::Arc;
 
     use super::Variant;
@@ -899,8 +942,6 @@ mod test {
         algebra::{F32, F64},
         RootCircuit,
     };
-    use num::FromPrimitive;
-    use rust_decimal::Decimal;
     use std::collections::BTreeMap;
 
     #[test]
@@ -925,29 +966,29 @@ mod test {
     fn deserialize_ints() {
         assert_eq!(
             serde_json::from_str::<Variant>("5").unwrap(),
-            Variant::Decimal(Decimal::from(5))
+            Variant::SqlDecimal(SqlDecimal::from(5))
         );
 
         assert_eq!(
             serde_json::from_str::<Variant>("-5").unwrap(),
-            Variant::Decimal(Decimal::from(-5))
+            Variant::SqlDecimal(SqlDecimal::from(-5))
         );
 
         assert_eq!(
             serde_json::from_str::<Variant>("18446744073709551615").unwrap(),
-            Variant::Decimal(Decimal::from(u64::MAX))
+            Variant::SqlDecimal(SqlDecimal::from(u64::MAX))
         );
 
         // u64::MAX * 10
         assert_eq!(
             serde_json::from_str::<Variant>("184467440737095516150").unwrap(),
-            Variant::Decimal(Decimal::from_str_exact("184467440737095516150").unwrap())
+            Variant::SqlDecimal(SqlDecimal::parse("184467440737095516150").unwrap())
         );
 
         // -u64::MAX * 10
         assert_eq!(
             serde_json::from_str::<Variant>("-184467440737095516150").unwrap(),
-            Variant::Decimal(Decimal::from_str_exact("-184467440737095516150").unwrap())
+            Variant::SqlDecimal(SqlDecimal::parse("-184467440737095516150").unwrap())
         );
     }
 
@@ -955,27 +996,27 @@ mod test {
     fn deserialize_fractional() {
         assert_eq!(
             serde_json::from_str::<Variant>("5.0").unwrap(),
-            Variant::Decimal(Decimal::from_f32(5.0).unwrap())
+            Variant::SqlDecimal(SqlDecimal::from(5.0))
         );
 
         assert_eq!(
             serde_json::from_str::<Variant>("-5.0").unwrap(),
-            Variant::Decimal(Decimal::from_f32(-5.0).unwrap())
+            Variant::SqlDecimal(SqlDecimal::from(-5.0))
         );
 
         assert_eq!(
             serde_json::from_str::<Variant>("0.1").unwrap(),
-            Variant::Decimal(Decimal::from_str("0.1").unwrap())
+            Variant::SqlDecimal(SqlDecimal::parse("0.1").unwrap())
         );
 
         assert_eq!(
             serde_json::from_str::<Variant>("123E-5").unwrap(),
-            Variant::Decimal(Decimal::from_str("0.00123").unwrap())
+            Variant::SqlDecimal(SqlDecimal::parse("0.00123").unwrap())
         );
 
         assert_eq!(
             serde_json::from_str::<Variant>("10e10").unwrap(),
-            Variant::Decimal(Decimal::from_str("100_000_000_000").unwrap())
+            Variant::SqlDecimal(SqlDecimal::parse("100_000_000_000").unwrap())
         );
     }
 
@@ -1004,15 +1045,15 @@ mod test {
                 ),
                 (
                     Variant::String(SqlString::from_ref("i")),
-                    Variant::Decimal(Decimal::from(12345)),
+                    Variant::SqlDecimal(SqlDecimal::from(12345)),
                 ),
                 (
                     Variant::String(SqlString::from_ref("f")),
-                    Variant::Decimal(Decimal::from_str("0.00123").unwrap()),
+                    Variant::SqlDecimal(SqlDecimal::parse("0.00123").unwrap()),
                 ),
                 (
                     Variant::String(SqlString::from_ref("d")),
-                    Variant::Decimal(Decimal::from_str("123.45").unwrap()),
+                    Variant::SqlDecimal(SqlDecimal::parse("123.45").unwrap()),
                 ),
                 (
                     Variant::String(SqlString::from_ref("s")),
@@ -1028,7 +1069,7 @@ mod test {
                         [(
                             Variant::String(SqlString::from_ref("arr")),
                             Variant::Array(Arc::new(vec![
-                                Variant::Decimal(Decimal::from(1)),
+                                Variant::SqlDecimal(SqlDecimal::from(1)),
                                 Variant::String(SqlString::from_ref("foo")),
                                 Variant::VariantNull,
                             ])),
@@ -1050,21 +1091,19 @@ mod test {
     fn serialize_fractional() {
         assert_eq!(
             "5",
-            &serde_json::to_string(&Variant::Decimal(Decimal::from(5))).unwrap()
+            &serde_json::to_string(&Variant::SqlDecimal(SqlDecimal::from(5))).unwrap()
         );
 
         assert_eq!(
             "123.45",
-            &serde_json::to_string(&Variant::Decimal(Decimal::from_str("123.45").unwrap()))
+            &serde_json::to_string(&Variant::SqlDecimal(SqlDecimal::parse("123.45").unwrap()))
                 .unwrap()
         );
 
         assert_eq!(
             "1.23",
-            &serde_json::to_string(&Variant::Decimal(
-                Decimal::from_scientific("123E-2").unwrap()
-            ))
-            .unwrap()
+            &serde_json::to_string(&Variant::SqlDecimal(SqlDecimal::parse("123E-2").unwrap()))
+                .unwrap()
         );
 
         assert_eq!(
@@ -1088,7 +1127,7 @@ mod test {
                 ),
                 (
                     Variant::String(SqlString::from_ref("i")),
-                    Variant::Decimal(Decimal::from(12345)),
+                    Variant::SqlDecimal(SqlDecimal::from(12345)),
                 ),
                 (
                     Variant::String(SqlString::from_ref("f")),
@@ -1096,7 +1135,7 @@ mod test {
                 ),
                 (
                     Variant::String(SqlString::from_ref("d")),
-                    Variant::Decimal(Decimal::from_str("123.45").unwrap()),
+                    Variant::SqlDecimal(SqlDecimal::parse("123.45").unwrap()),
                 ),
                 (
                     Variant::String(SqlString::from_ref("s")),
@@ -1118,7 +1157,7 @@ mod test {
                                 Variant::String(SqlString::from_ref("arr")),
                                 Variant::Array(
                                     vec![
-                                        Variant::Decimal(Decimal::from(1)),
+                                        Variant::SqlDecimal(SqlDecimal::from(1)),
                                         Variant::String(SqlString::from_ref("foo")),
                                         Variant::VariantNull,
                                     ]

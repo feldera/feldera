@@ -1,12 +1,11 @@
 //! Operations on Decimal values
 
-use crate::{casts::*, some_function2, some_polymorphic_function1, some_polymorphic_function2};
+use crate::{some_function2, some_polymorphic_function1, some_polymorphic_function2};
 use core::cmp::Ordering;
 use dbsp::algebra::F64;
 use num::ToPrimitive;
 use num_traits::Signed;
 use rust_decimal::{Decimal, MathematicalOps, RoundingStrategy};
-use std::str::FromStr;
 
 // Runtime decimal type
 pub type Dec = Decimal;
@@ -32,6 +31,7 @@ pub fn bround__(left: Decimal, right: i32) -> Decimal {
 
 some_function2!(bround, Decimal, i32, Decimal);
 
+/*
 #[doc(hidden)]
 #[inline(always)]
 pub fn new_decimal(s: &str, precision: u32, scale: u32) -> Option<Decimal> {
@@ -40,6 +40,7 @@ pub fn new_decimal(s: &str, precision: u32, scale: u32) -> Option<Decimal> {
         value, precision, scale,
     )))
 }
+*/
 
 #[doc(hidden)]
 #[inline(always)]

@@ -1,11 +1,11 @@
 use std::ops::{Add, Div, Mul, Sub};
 
 use dbsp::algebra::{HasZero, F32, F64};
-use num::PrimInt;
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
+use num::{PrimInt, Zero};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
 use std::cmp::Ordering;
 
-use crate::{for_all_int_operator, some_existing_operator, some_operator};
+use crate::{dec::SqlDecimal, for_all_int_operator, some_existing_operator, some_operator};
 
 use rust_decimal::Decimal;
 
@@ -268,6 +268,7 @@ where
 
 for_all_int_operator!(plus);
 some_operator!(plus, decimal, Decimal, Decimal);
+some_operator!(plus, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 fn fp_plus<T>(left: T, right: T) -> T
@@ -292,6 +293,7 @@ where
 
 for_all_int_operator!(minus);
 some_operator!(minus, decimal, Decimal, Decimal);
+some_operator!(minus, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 fn fp_minus<T>(left: T, right: T) -> T
@@ -353,6 +355,7 @@ where
 
 for_all_int_operator!(times);
 some_operator!(times, decimal, Decimal, Decimal);
+some_operator!(times, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 fn fp_times<T>(left: T, right: T) -> T
@@ -364,30 +367,6 @@ where
 
 some_operator!(fp_times, times, f, F32, F32);
 some_operator!(fp_times, times, d, F64, F64);
-
-/*
-
-TODO: shifts seem wrong
-
-#[inline(always)]
-fn shiftr<T, U>(left: T, right: U) -> T
-where
-    T: PrimInt,
-    U: Into<usize>,
-{ left >> right.into() }
-
-for_all_int_operator!(shiftr);
-
-#[inline(always)]
-fn shiftl<T, U>(left: T, right: U) -> T
-where
-    T: PrimInt,
-    U: Into<usize>,
-{ left << right.into() }
-
-for_all_int_operator!(shiftl);
-
-*/
 
 #[inline(always)]
 #[doc(hidden)]
@@ -426,9 +405,9 @@ for_all_int_operator!(bxor);
 #[doc(hidden)]
 fn div<T>(left: T, right: T) -> T
 where
-    T: CheckedDiv + ToPrimitive,
+    T: CheckedDiv + Zero + Eq,
 {
-    let panic_message = if Some(0) == right.to_isize() {
+    let panic_message = if T::zero() == right {
         "attempt to divide by zero"
     } else {
         "attempt to divide with overflow"
@@ -439,6 +418,7 @@ where
 
 for_all_int_operator!(div);
 some_operator!(div, decimal, Decimal, Decimal);
+some_operator!(div, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 fn fp_div<T>(left: T, right: T) -> T
@@ -521,30 +501,6 @@ where
 }
 
 for_all_compare!(min, T, T where Ord);
-
-/*
-#[inline(always)]
-#[doc(hidden)]
-fn max<T>(left: &T, right: &T) -> T
-where
-    T: Ord + Clone,
-{
-    left.max(right).clone()
-}
-
-for_all_compare!(max, T, Ord + Clone);
-
-#[inline(always)]
-#[doc(hidden)]
-fn min<T>(left: &T, right: &T) -> T
-where
-    T: Ord + Clone,
-{
-    left.min(right).clone()
-}
-
-for_all_compare!(min, T, Ord + Clone);
-*/
 
 #[doc(hidden)]
 pub fn blackbox<T>(value: T) -> T {
