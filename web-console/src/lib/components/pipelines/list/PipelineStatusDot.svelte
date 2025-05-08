@@ -10,6 +10,8 @@
       .with('Shutdown', () => 'preset-filled-surface-400-600')
       .with('Preparing', 'Provisioning', 'Initializing', () => 'preset-filled-tertiary-200-800')
       .with('Paused', () => 'preset-filled-warning-400-600')
+      .with('Suspending', () => 'bg-blue-400 dark:bg-blue-600')
+      .with('Suspended', () => 'bg-blue-400 dark:bg-blue-600')
       .with('Running', () => 'preset-filled-success-400-600')
       .with('Pausing', () => 'preset-filled-secondary-200-800')
       .with('Resuming', () => 'preset-filled-tertiary-200-800')

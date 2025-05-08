@@ -13,6 +13,7 @@
   import { isPipelineEditable } from '$lib/functions/pipelines/status'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   let {
     pipelines,
     selectedPipelines = $bindable()
@@ -21,9 +22,12 @@
   const availableActions = [
     'start' as const,
     'pause' as const,
+    'suspend' as const,
     'shutdown' as const,
     'delete' as const
   ]
+  let isPremium = usePremiumFeatures()
+  let suspend = isPremium.value ? ['suspend' as const] : []
   let statusActions = (status: PipelineStatus) =>
     match(status)
       .returnType<(typeof availableActions)[number][]>()
@@ -39,12 +43,14 @@
       )
       .with('Shutdown', () => ['start', 'delete'])
       .with('Preparing', 'Provisioning', 'Initializing', () => ['shutdown', 'delete'])
-      .with('Running', () => ['shutdown', 'pause'])
-      .with('Pausing', () => ['shutdown', 'delete'])
-      .with('Paused', () => ['shutdown', 'start'])
-      .with('Resuming', () => ['shutdown', 'delete'])
+      .with('Running', () => [...suspend, 'shutdown', 'pause'])
+      .with('Pausing', () => [...suspend, 'shutdown', 'delete'])
+      .with('Paused', () => [...suspend, 'shutdown', 'start'])
+      .with('Suspending', () => ['shutdown', 'delete'])
+      .with('Suspended', () => ['shutdown', 'start'])
+      .with('Resuming', () => [...suspend, 'shutdown', 'delete'])
       .with('ShuttingDown', () => ['shutdown'])
-      .with('Unavailable', () => ['shutdown', 'delete'])
+      .with('Unavailable', () => [...suspend, 'shutdown', 'delete'])
       .with('SqlError', 'RustError', 'SystemError', () => ['delete'])
       .with({ PipelineError: P.any }, () => ['shutdown', 'delete'])
       .exhaustive()
@@ -76,6 +82,7 @@
         match(action)
           .with('start', () => btnStart)
           .with('pause', () => btnPause)
+          .with('suspend', () => btnSuspend)
           .with('shutdown', () => btnShutdown)
           .with('delete', () => btnDelete)
           .exhaustive()
@@ -114,9 +121,15 @@
     Pause
   </button>
 {/snippet}
+{#snippet btnSuspend()}
+  <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = suspendDialog)}>
+    <span class="fd fd-circle-stop text-[20px]"></span>
+    Suspend
+  </button>
+{/snippet}
 {#snippet btnShutdown()}
   <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = shutdownDialog)}>
-    <span class="fd fd-square text-[20px]"></span>
+    <span class="fd fd-square-power text-[20px]"></span>
     Shutdown
   </button>
 {/snippet}
@@ -140,6 +153,25 @@
           ? '1 pipeline'
           : selectedPipelines.length.toFixed() + ' pipelines',
       deletePipelines
+    )()}
+    onClose={() => (globalDialog.dialog = null)}
+  ></DeleteDialog>
+{/snippet}
+
+{#snippet suspendDialog()}
+  <DeleteDialog
+    {...deleteDialogProps(
+      'Suspend',
+      () =>
+        selectedPipelines.length === 1
+          ? '1 pipeline'
+          : selectedPipelines.length.toFixed() + ' pipelines',
+      () => {
+        return postPipelinesAction('suspend')
+      },
+      selectedPipelines.length === 1
+        ? "The pipeline's state will be preserved in the persistent storage, and the allocated resources will be released. The pipeline can be resumed from the preserved state, avoiding historic backfill."
+        : "These pipelines' state will be preserved in the persistent storage, and the allocated resources will be released. The pipelines can be resumed from the preserved state, avoiding historic backfill."
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
