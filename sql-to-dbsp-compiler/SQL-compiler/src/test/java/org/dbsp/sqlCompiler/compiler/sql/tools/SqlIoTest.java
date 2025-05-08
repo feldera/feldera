@@ -258,10 +258,10 @@ public abstract class SqlIoTest extends BaseSQLTests {
         for (String part: parts) {
             Matcher regexMatcher = regex.matcher(part);
             if (regexMatcher.find()) {
-                String result = regexMatcher.group(1);
+                String queryAndOutput = regexMatcher.group(1);
                 String rows = regexMatcher.group(2);
                 int rowCount = Integer.parseInt(rows);
-                this.q(result, to, rowCount);
+                this.q(queryAndOutput, to, rowCount);
             } else {
                 throw new RuntimeException("Could not understand test #" + index + ": " + part);
             }
