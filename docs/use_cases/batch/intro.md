@@ -39,11 +39,11 @@ output views incrementally.
 This guide provides a set of recipes to convert your batch pipelines into
 incremental Feldera pipelines:
 
-* [Part 1: Create a simple Spark SQL batch job](part1).
-* [Part 2: Convert the Spark SQL job into a Feldera pipeline](part2).
+* [Part 1: Create a simple Spark SQL batch job](/use_cases/batch/part1/).
+* [Part 2: Convert the Spark SQL job into a Feldera pipeline](/use_cases/batch/part2/).
 * [Part 3: Input connector orchestration: ingest historical and real-time data
-  from multiple sources](part3).
-* [Part 4: Send outputs of the pipeline to multiple destinations](part4).
+  from multiple sources](/use_cases/batch/part3/).
+* [Part 4: Send outputs of the pipeline to multiple destinations](/use_cases/batch/part4/).
 
 By the end of the tutorial we will build the pipeline shown below:
 
