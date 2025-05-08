@@ -357,9 +357,14 @@ public class VariantTests extends BaseSQLTests {
     }
 
     @Test
+    public void remove() {
+        this.testQuery("SELECT TO_JSON(PARSE_JSON(1))",
+                new DBSPStringLiteral("1", true));
+    }
+
+    @Test
     public void unparseJsonTests() {
         DBSPExpression NULL = DBSPStringLiteral.none(DBSPTypeString.varchar(true));
-
         this.testQuery("SELECT TO_JSON(PARSE_JSON(1))",
                 new DBSPStringLiteral("1", true));
         this.testQuery("SELECT TO_JSON(null)",
