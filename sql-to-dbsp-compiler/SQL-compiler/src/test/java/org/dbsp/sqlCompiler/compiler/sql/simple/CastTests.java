@@ -85,7 +85,7 @@ public class CastTests extends SqlIoTest {
     @Test
     public void castFail() {
         this.runtimeConstantFail("SELECT CAST('blah' AS DECIMAL)",
-                "Invalid decimal: unknown character");
+                "invalid decimal");
     }
 
     @Test

@@ -1228,9 +1228,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append(type.scale)
                     .append(").unwrap()");
         } else if (literal.getType().is(DBSPTypeRuntimeDecimal.class)) {
-            this.builder.append("dec!(")
+            this.builder.append("SqlDecimal::from(\"")
                     .append(value)
-                    .append(")");
+                    .append("\")");
         }
         if (literal.getType().mayBeNull)
             this.builder.append(")");
@@ -1382,7 +1382,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             functionName = "cast_to_" + t.shortName() + destType.nullableSuffix() +
                     "_" + t.shortName() + sourceType.nullableSuffix();
         } else if (destType.is(DBSPTypeRuntimeDecimal.class)) {
-            functionName = "cast_to_dec" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
+            functionName = "cast_to_RuntimeDecimal" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
         }
         this.builder.append(functionName).append("(");
         expression.source.accept(this);
