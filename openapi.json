@@ -1577,7 +1577,8 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "Check the status of a completion token returned by the `/ingress` or `/completion_to`",
+        "summary": "Check the status of a completion token returned by the `/ingress` or `/completion_token`",
+        "description": "endpoint.",
         "operationId": "completion_status",
         "parameters": [
           {
@@ -2010,7 +2011,7 @@
           "Pipeline interaction"
         ],
         "summary": "Push data to a SQL table.",
-        "description": "The client sends data encoded using the format specified in the `?format=`\nparameter as a body of the request.  The contents of the data must match\nthe SQL table schema specified in `table_name`\n\nThe pipeline ingests data as it arrives without waiting for the end of\nthe request.  Successful HTTP response indicates that all data has been\ningested successfully.",
+        "description": "The client sends data encoded using the format specified in the `?format=`\nparameter as a body of the request.  The contents of the data must match\nthe SQL table schema specified in `table_name`\n\nThe pipeline ingests data as it arrives without waiting for the end of\nthe request.  Successful HTTP response indicates that all data has been\ningested successfully.\n\nOn success, returns a completion token that can be passed to the\n'/completion_status' endpoint to check whether the pipeline has fully\nprocessed the data.",
         "operationId": "http_input",
         "parameters": [
           {
@@ -2795,7 +2796,7 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "Generate a completion token for a specified input connector.",
+        "summary": "Generate a completion token for an input connector.",
         "description": "Returns a token that can be passed to the `/completion_status` endpoint\nto check whether the pipeline has finished processing all inputs received from the\nconnector before the token was generated.",
         "operationId": "completion_token",
         "parameters": [
