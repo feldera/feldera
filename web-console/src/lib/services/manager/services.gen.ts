@@ -45,6 +45,9 @@ import type {
   GetPipelineCircuitProfileData,
   GetPipelineCircuitProfileError,
   GetPipelineCircuitProfileResponse,
+  CompletionStatusData,
+  CompletionStatusError,
+  CompletionStatusResponse2,
   HttpOutputData,
   HttpOutputError,
   HttpOutputResponse,
@@ -69,6 +72,9 @@ import type {
   GetPipelineStatsData,
   GetPipelineStatsError,
   GetPipelineStatsResponse,
+  CompletionTokenData,
+  CompletionTokenError,
+  CompletionTokenResponse2,
   GetPipelineInputConnectorStatusData,
   GetPipelineInputConnectorStatusError,
   GetPipelineInputConnectorStatusResponse,
@@ -255,6 +261,16 @@ export const getPipelineCircuitProfile = (options: Options<GetPipelineCircuitPro
 }
 
 /**
+ * Check the status of a completion token returned by the `/ingress` or `/completion_to`
+ */
+export const completionStatus = (options: Options<CompletionStatusData>) => {
+  return (options?.client ?? client).get<CompletionStatusResponse2, CompletionStatusError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/completion_status'
+  })
+}
+
+/**
  * Subscribe to a stream of updates from a SQL view or table.
  * The pipeline responds with a continuous stream of changes to the specified
  * table or view, encoded using the format specified in the `?format=`
@@ -361,6 +377,19 @@ export const getPipelineStats = (options: Options<GetPipelineStatsData>) => {
 }
 
 /**
+ * Generate a completion token for a specified input connector.
+ * Returns a token that can be passed to the `/completion_status` endpoint
+ * to check whether the pipeline has finished processing all inputs received from the
+ * connector before the token was generated.
+ */
+export const completionToken = (options: Options<CompletionTokenData>) => {
+  return (options?.client ?? client).get<CompletionTokenResponse2, CompletionTokenError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token'
+  })
+}
+
+/**
  * Retrieve the status of an input connector.
  */
 export const getPipelineInputConnectorStatus = (
@@ -435,6 +464,7 @@ export const getPipelineOutputConnectorStatus = (
  * The desired state is set based on the `action` path parameter:
  * - `/start` sets desired state to `Running`
  * - `/pause` sets desired state to `Paused`
+ * - `/suspend` sets desired state to `Suspended`
  * - `/shutdown` sets desired state to `Shutdown`
  *
  * The endpoint returns immediately after setting the desired state.
@@ -446,6 +476,9 @@ export const getPipelineOutputConnectorStatus = (
  * - A shutdown pipeline can be started through calling either `/start` or `/pause`
  * - Both starting as running and resuming a pipeline is done by calling `/start`
  * - Both starting as paused and pausing a pipeline is done by calling `/pause`
+ * - `/shutdown` cannot be cancelled: the pipeline must reach `Shutdown` before another action
+ * - `/suspend` can only be cancelled using `/shutdown`: otherwise, the pipeline must reach
+ * `Suspended` first
  */
 export const postPipelineAction = (options: Options<PostPipelineActionData>) => {
   return (options?.client ?? client).post<PostPipelineActionResponse, PostPipelineActionError>({

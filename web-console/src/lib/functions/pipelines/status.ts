@@ -9,6 +9,8 @@ export const getPipelineStatusLabel = (status: PipelineStatus) => {
     .with('Provisioning', () => 'Provisioning')
     .with('Initializing', () => 'Initializing')
     .with('Paused', () => 'Paused')
+    .with('Suspended', () => 'Suspended')
+    .with('Suspending', () => 'Suspending')
     .with('Running', () => 'Running')
     .with('Pausing', () => 'Pausing')
     .with('Resuming', () => 'Resuming')
@@ -32,10 +34,12 @@ export const getDeploymentStatusLabel = (status: PipelineStatus) => {
     .with('Provisioning', () => 'Provisioning')
     .with('Initializing', () => 'Initializing')
     .with('Paused', () => 'Paused')
+    .with('Suspended', () => 'Suspended')
+    .with('Suspending', () => 'Suspending')
     .with('Running', () => 'Running')
     .with('Pausing', () => 'Pausing')
     .with('Resuming', () => 'Resuming')
-    .with('ShuttingDown', () => 'Shutting Down')
+    .with('ShuttingDown', () => 'Stopping')
     .with({ PipelineError: P._ }, () => 'Pipeline Error')
     .with(
       { Queued: P.any },
@@ -61,6 +65,8 @@ export const isPipelineInteractive = (status: PipelineStatus) => {
     .with('Provisioning', () => false)
     .with('Initializing', () => false)
     .with('Paused', () => true)
+    .with('Suspended', () => false)
+    .with('Suspending', () => false)
     .with('Running', () => true)
     .with('Pausing', () => true)
     .with('Resuming', () => true)
@@ -80,13 +86,15 @@ export const isPipelineInteractive = (status: PipelineStatus) => {
     .exhaustive()
 }
 
-export const isPipelineEditable = (status: PipelineStatus) => {
+export const isPipelineCodeEditable = (status: PipelineStatus) => {
   return match(status)
     .with('Shutdown', () => true)
     .with('Preparing', () => false)
     .with('Provisioning', () => false)
     .with('Initializing', () => false)
     .with('Paused', () => false)
+    .with('Suspended', () => false)
+    .with('Suspending', () => false)
     .with('Running', () => false)
     .with('Pausing', () => false)
     .with('Resuming', () => false)
@@ -106,6 +114,9 @@ export const isPipelineEditable = (status: PipelineStatus) => {
     .exhaustive()
 }
 
+export const isPipelineConfigEditable = (status: PipelineStatus) =>
+  status === 'Suspended' || isPipelineCodeEditable(status)
+
 export const isMetricsAvailable = (status: PipelineStatus) => {
   return match(status)
     .with('Shutdown', () => 'no' as const)
@@ -113,6 +124,8 @@ export const isMetricsAvailable = (status: PipelineStatus) => {
     .with('Provisioning', () => 'no' as const)
     .with('Initializing', () => 'no' as const)
     .with('Paused', () => 'yes' as const)
+    .with('Suspended', () => 'no' as const)
+    .with('Suspending', () => 'no' as const)
     .with('Running', () => 'yes' as const)
     .with('Pausing', () => 'yes' as const)
     .with('Resuming', () => 'yes' as const)

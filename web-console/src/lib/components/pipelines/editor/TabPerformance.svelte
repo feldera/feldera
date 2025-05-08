@@ -153,7 +153,8 @@
     </div>
   </div>
 {:else}
-  <div>Pipeline is not running</div><br />
+  <div>Pipeline is not running</div>
+  <br />
   Pipeline ID: {pipeline.current.id}
   <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"></ClipboardCopyButton>
 {/if}

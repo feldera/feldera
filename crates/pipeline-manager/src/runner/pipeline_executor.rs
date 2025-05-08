@@ -52,39 +52,68 @@ pub trait PipelineExecutor: Sync + Send {
     /// Initializes any runner internal state. In particular, reconnects with
     /// pipeline resources provisioned by a prior runner, including switching
     /// to operational logging.
+    ///
+    /// Characteristics:
+    /// - Idempotent
+    /// - Blocks until finished
     async fn init(&mut self, was_provisioned: bool);
 
-    /// Provisions resources required for the pipeline to run.
-    /// The provisioned resources must be uniquely identifiable/addressable through the
-    /// pipeline identifier, such that `shutdown()` without any other state is able to
-    /// delete them. The backing storage must be mounted at the storage directory
-    /// specified earlier by `generate_storage_config()` and be empty. Calls to
-    /// `provision()` must be idempotent as it can be called again if the runner is
-    /// unexpectedly restarted during provisioning.
+    /// Provisions compute and storage resources required for the pipeline to run.
     ///
-    /// The implementation should be as non-blocking as possible -- resources which might take
-    /// a long time should have their provisioning initiated, and completion validation done
-    /// within `is_provisioned()`. This enables a user to swiftly shut down a provisioning pipeline.
+    /// The provisioned resources must be uniquely identifiable/addressable through the
+    /// pipeline identifier, such that no other state is needed to scale down (e.g., suspend)
+    /// or delete them.
+    ///
+    /// The backing storage must be mounted at the storage directory specified earlier by
+    /// `generate_storage_config()` and be empty.
+    ///
+    /// Characteristics:
+    /// - Idempotent
+    /// - As non-blocking as possible: provision finish should be done afterward by polling
+    ///   `is_provisioned()`. This enables a user to swiftly shut down a provisioning pipeline.
     async fn provision(
         &mut self,
         deployment_config: &PipelineConfig,
         program_binary_url: &str,
         program_version: Version,
+        suspend_exist: bool,
     ) -> Result<(), ManagerError>;
 
     /// Validates whether the provisioning initiated by `provision()` is completed.
-    /// Returns the following:
+    ///
+    /// Returns:
     /// - `Ok(Some(deployment_location))` if provisioning completed successfully
     /// - `Ok(None)` if provisioning is still ongoing
     /// - `Err(...)` if provisioning failed
     async fn is_provisioned(&mut self) -> Result<Option<String>, ManagerError>;
 
     /// Checks the pipeline.
-    /// Returns an error if the provisioned resources encountered a fatal error.
+    ///
+    /// Returns an `Err(...)` if the provisioned resources encountered a fatal error.
     async fn check(&mut self) -> Result<(), ManagerError>;
 
-    /// Terminates and deletes provisioned resources (including storage),
+    /// Scales down the compute resources to zero, but retains storage.
+    ///
+    /// Characteristics:
+    /// - Idempotent
+    /// - As non-blocking as possible: compute suspension finish should be done afterward by polling
+    ///   `is_suspended_compute()`. This enables a user to swiftly shut down a compute-suspending pipeline.
+    async fn suspend_compute(&mut self) -> Result<(), ManagerError>;
+
+    /// Validates whether the compute suspension initiated by `suspend_compute()` is completed.
+    ///
+    /// Returns:
+    /// - `Ok(true)` if compute suspension is finished
+    /// - `Ok(false)` if compute suspension is still ongoing
+    /// - `Err(...)` if compute suspension failed
+    async fn is_compute_suspended(&mut self) -> Result<bool, ManagerError>;
+
+    /// Terminates and deletes all provisioned resources (including storage),
     /// and switches to rejection logging.
+    ///
+    /// Characteristics:
+    /// - Idempotent
+    /// - Blocks until finished
     async fn shutdown(&mut self) -> Result<(), ManagerError>;
 
     /// Sets up a thread which replies to any log follow request with a rejection that the pipeline

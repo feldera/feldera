@@ -478,12 +478,14 @@ pub(crate) async fn update_pipeline(
     // This will also return an error if the pipeline does not exist.
     let current = get_pipeline(txn, tenant_id, original_name).await?;
 
-    // Pipeline update is only possible if it is shutdown.
-    // The user cannot edit a pipeline with a desired status which is not shutdown,
+    // Pipeline update is only possible if it is shutdown or suspended.
+    // The user cannot edit a pipeline with a desired status which is not shutdown or suspended,
     // but the compiler can still in order to bump the `platform_version`.
-    if current.deployment_status != PipelineStatus::Shutdown
+    if (current.deployment_status != PipelineStatus::Shutdown
+        && current.deployment_status != PipelineStatus::Suspended)
         || (!is_compiler_update
-            && current.deployment_desired_status != PipelineDesiredStatus::Shutdown)
+            && (current.deployment_desired_status != PipelineDesiredStatus::Shutdown
+                && current.deployment_desired_status != PipelineDesiredStatus::Suspended))
     {
         return Err(DBError::CannotUpdateNonShutdownPipeline);
     }
@@ -664,7 +666,9 @@ pub(crate) async fn set_program_status(
     // Pipeline program status update is only possible if it is shutdown.
     // The desired status does not necessarily have to be shutdown,
     // in order to accommodate the compilation during early start.
-    if current.deployment_status != PipelineStatus::Shutdown {
+    if current.deployment_status != PipelineStatus::Shutdown
+        && current.deployment_status != PipelineStatus::Suspended
+    {
         return Err(DBError::CannotUpdateProgramStatusOfNonShutdownPipeline);
     }
 
@@ -958,8 +962,9 @@ pub(crate) async fn set_deployment_status(
 
     // Due to early start, the following do not require a successfully compiled program:
     // (1) Shutdown -> Failed
-    // (2) Failed -> ShuttingDown
-    // (3) ShuttingDown -> Shutdown
+    // (2) Suspended -> Failed
+    // (3) Failed -> ShuttingDown
+    // (4) ShuttingDown -> Shutdown
     // The above occurs because in early start, the program is not (yet) successfully
     // compiled and the runner is awaiting it to transition to Provisioning.
     //
@@ -967,6 +972,7 @@ pub(crate) async fn set_deployment_status(
     if !matches!(
         (current.deployment_status, new_deployment_status),
         (PipelineStatus::Shutdown, PipelineStatus::Failed)
+            | (PipelineStatus::Suspended, PipelineStatus::Failed)
             | (PipelineStatus::Failed, PipelineStatus::ShuttingDown)
             | (PipelineStatus::ShuttingDown, PipelineStatus::Shutdown)
     ) && current.program_status != ProgramStatus::Success
@@ -1001,11 +1007,13 @@ pub(crate) async fn set_deployment_status(
 
     // Deployment configuration is set when becoming...
     // - Provisioning: a value
-    // - ShuttingDown: NULL
+    // - SuspendingCompute or ShuttingDown: NULL
     // - Otherwise: current value
     let final_deployment_config = if new_deployment_status == PipelineStatus::Provisioning {
         new_deployment_config
-    } else if new_deployment_status == PipelineStatus::ShuttingDown {
+    } else if new_deployment_status == PipelineStatus::SuspendingCompute
+        || new_deployment_status == PipelineStatus::ShuttingDown
+    {
         None
     } else {
         current.deployment_config
@@ -1023,12 +1031,14 @@ pub(crate) async fn set_deployment_status(
 
     // Deployment location is set when becoming...
     // - Initializing: a value
-    // - ShuttingDown: NULL
+    // - SuspendingCompute or ShuttingDown: NULL
     // - Otherwise: current value
     let final_deployment_location = if new_deployment_status == PipelineStatus::Initializing {
         assert!(new_deployment_location.is_some());
         new_deployment_location
-    } else if new_deployment_status == PipelineStatus::ShuttingDown {
+    } else if new_deployment_status == PipelineStatus::SuspendingCompute
+        || new_deployment_status == PipelineStatus::ShuttingDown
+    {
         assert!(new_deployment_location.is_none());
         None
     } else {
@@ -1127,7 +1137,7 @@ pub(crate) async fn get_next_sql_compilation(
         .prepare_cached(&format!(
             "SELECT {RETRIEVE_PIPELINE_COLUMNS}
              FROM pipeline AS p
-             WHERE p.deployment_status = 'shutdown'
+             WHERE (p.deployment_status = 'shutdown' or p.deployment_status = 'suspended')
                    AND p.program_status = 'pending'
                    AND p.platform_version = $1
              ORDER BY p.program_status_since ASC, p.id ASC
@@ -1162,7 +1172,7 @@ pub(crate) async fn get_next_rust_compilation(
         .prepare_cached(&format!(
             "SELECT {RETRIEVE_PIPELINE_COLUMNS}
              FROM pipeline AS p
-             WHERE p.deployment_status = 'shutdown'
+             WHERE (p.deployment_status = 'shutdown' or p.deployment_status = 'suspended')
                    AND p.program_status = 'sql_compiled'
                    AND p.platform_version = $1
              ORDER BY p.program_status_since ASC, p.id ASC
