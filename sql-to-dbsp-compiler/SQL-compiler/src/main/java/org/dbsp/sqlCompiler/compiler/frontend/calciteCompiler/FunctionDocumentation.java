@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -43,7 +44,7 @@ public class FunctionDocumentation {
         List<FunctionDescription> sorted = new ArrayList<>();
         sorted.addAll(CalciteFunctions.INSTANCE.getDescriptions());
         sorted.addAll(new CustomFunctions().getDescriptions());
-        sorted.sort(Comparator.comparing(FunctionDescription::functionName));
+        sorted.sort(Comparator.comparing(FunctionDescription::functionName, String.CASE_INSENSITIVE_ORDER));
         Map<String, String> fileContents = new HashMap<>();
 
         FunctionDescription previous = null;
@@ -54,7 +55,7 @@ public class FunctionDocumentation {
                 continue;
             previous = func;
             String[] files = func.documentation().split(",");
-            writer.print("* `" + func.functionName() + "`");
+            writer.print("* `" + func.functionName().toUpperCase(Locale.ENGLISH) + "`");
             if (func.aggregate())
                 writer.print(" (aggregate)");
             writer.print(": ");
@@ -76,7 +77,7 @@ public class FunctionDocumentation {
                     Utilities.putNew(fileContents, docFile, contents);
                 }
                 String contents = Utilities.getExists(fileContents, docFile);
-                String funcName = func.functionName();
+                String funcName = func.functionName().toUpperCase(Locale.ENGLISH);
                 if (!contents.contains(funcName)) {
                     // Check that the file does indeed mention this function
                     if (funcName.contains(" "))

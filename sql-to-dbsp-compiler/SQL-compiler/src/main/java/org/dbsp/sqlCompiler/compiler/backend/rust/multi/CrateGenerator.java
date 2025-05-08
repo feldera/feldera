@@ -73,14 +73,14 @@ public final class CrateGenerator {
                 version = "0.1.0"
                 edition = "2021"
                 publish = false
-                
+
                 [dev-dependencies]
                 uuid = { version = "1.6.1" }
 
                 [lib]
                 path = "src/lib.rs"
                 doctest = false
-                
+
                 [dependencies]
                 paste = { workspace = true }
                 derive_more = { workspace = true }
@@ -91,8 +91,6 @@ public final class CrateGenerator {
                 serde = { workspace = true }
                 compare = { workspace = true }
                 size-of = { workspace = true }
-                rust_decimal = { workspace = true }
-                rust_decimal_macros = { workspace = true }
                 serde_json = { workspace = true }
                 rkyv = { workspace = true }""";
         stream.println(cargo);

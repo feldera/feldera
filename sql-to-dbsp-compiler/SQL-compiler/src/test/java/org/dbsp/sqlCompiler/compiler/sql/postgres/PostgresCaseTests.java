@@ -105,40 +105,6 @@ public class PostgresCaseTests extends SqlIoTest {
     }
 
     @Test
-    public void remove() {
-        this.qs("""
-                SELECT COALESCE(a.f, b.i, b.j)
-                FROM CASE_TBL a, CASE2_TBL b;
-                 coalesce
-                ----------
-                     10.1
-                     20.2
-                    -30.3
-                        1
-                     10.1
-                     20.2
-                    -30.3
-                        2
-                     10.1
-                     20.2
-                    -30.3
-                        3
-                     10.1
-                     20.2
-                    -30.3
-                        2
-                     10.1
-                     20.2
-                    -30.3
-                        1
-                     10.1
-                     20.2
-                    -30.3
-                       -6
-                (24 rows)""");
-    }
-
-    @Test
     public void testCases2() {
         // changed error to null output
         this.qs(

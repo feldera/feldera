@@ -151,7 +151,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             // Functions
             new Func(SqlStdOperatorTable.SUBSTRING, "SUBSTRING", SqlLibrary.STANDARD, "string#substring", false),
             new Func(SqlStdOperatorTable.REPLACE, "REPLACE", SqlLibrary.STANDARD, "string#replace", false),
-            new Func(SqlStdOperatorTable.CONVERT, "CONVERT", SqlLibrary.STANDARD, "casts#data-type-conversions", false),
+            new Func(SqlStdOperatorTable.CONVERT, "CONVERT", SqlLibrary.STANDARD, "casts#casts-and-data-type-conversions", false),
             new Func(SqlStdOperatorTable.TRANSLATE, "TRANSLATE", SqlLibrary.STANDARD, "", false),
 
             new Func(SqlStdOperatorTable.OVERLAY, "OVERLAY", SqlLibrary.STANDARD, "string#overlay,binary#overlay", false),
@@ -197,7 +197,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "datetime#timestampadd", false),
             new Func(SqlStdOperatorTable.TIMESTAMP_DIFF, "TIMESTAMPDIFF", SqlLibrary.STANDARD,
                     "datetime#date_timestampdiff,datetime#timestamp_timestampdiff", false),
-            new Func(SqlStdOperatorTable.CAST, "CAST", SqlLibrary.STANDARD, "casts#data-type-conversions", false),
+            new Func(SqlStdOperatorTable.CAST, "CAST", SqlLibrary.STANDARD, "casts#casts-and-data-type-conversions", false),
             new Func(SqlStdOperatorTable.EXTRACT, "EXTRACT", SqlLibrary.STANDARD, "datetime#time_extract,datetime#date_extract,datetime#timestamp_extract", false),
             new Func(SqlStdOperatorTable.YEAR, "YEAR", SqlLibrary.STANDARD,
                     "datetime#year", false),

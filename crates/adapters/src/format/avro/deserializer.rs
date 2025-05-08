@@ -54,8 +54,8 @@ fn deserialize_decimal<E: serde::de::Error>(d: &Decimal, schema: &Schema) -> Res
     };
 
     // TODO: this is really expensive, and can be optimized by passing a binary representation of
-    // mantissa + scale. This will require a customer `DeserializeWithContext` implementation for
-    // rust_decimal::Decimal.
+    // mantissa + scale. This will require a custom `DeserializeWithContext` implementation for
+    // SqlDecimal.
     let bigdecimal = BigDecimal::new(BigInt::from(d.clone()), schema.scale as i64);
     Ok(bigdecimal.to_string())
 }
