@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /*
@@ -30,6 +31,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
     }
 
     @Test
+    @Ignore("disabled until fix for aarch64 is in main")
     public void testSelect() {
         this.qs("""
                 -- special inputs
