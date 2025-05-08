@@ -7,8 +7,6 @@ use std::cmp::Ordering;
 
 use crate::{dec::SqlDecimal, for_all_int_operator, some_existing_operator, some_operator};
 
-use rust_decimal::Decimal;
-
 macro_rules! for_all_compare {
     ($func_name: ident, $ret_type: ty, $t:ty where $($bounds:tt)*) => {
         ::paste::paste! {
@@ -42,39 +40,6 @@ macro_rules! for_all_compare {
         }
     };
 }
-
-/*
-macro_rules! for_all_compare {
-    ($func_name: ident, $ret_type: ty, $($bounds:tt)*) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name __ >]<T: $($bounds)*>( arg0: &T, arg1: &T ) -> $ret_type {
-                $func_name(arg0, arg1)
-            }
-
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name _N_ >]<T: $($bounds)*>( arg0: &Option<T>, arg1: &T ) -> Option<$ret_type> {
-                arg0.as_ref().and_then(|arg0| Some([< $func_name __ >](arg0, arg1)))
-            }
-
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name __N >]<T: $($bounds)*>( arg0: &T, arg1: &Option<T> ) -> Option<$ret_type> {
-                arg1.as_ref().and_then(|arg1| Some([< $func_name __ >](arg0, arg1)))
-            }
-
-            #[doc(hidden)]
-            #[inline(always)]
-            pub fn [<$func_name _N_N >]<T: $($bounds)*>( arg0: &Option<T>, arg1: &Option<T> ) -> Option<$ret_type> {
-                arg0.as_ref().and_then(|arg0|
-                                       arg1.as_ref().and_then(|arg1| Some([< $func_name __ >](arg0, arg1))))
-            }
-        }
-    };
-}
-*/
 
 #[inline(always)]
 #[doc(hidden)]
@@ -188,74 +153,6 @@ where
 
 for_all_compare!(gte, bool, T where Ord);
 
-/*
-#[inline(always)]
-#[doc(hidden)]
-pub(crate) fn eq<T>(left: &T, right: &T) -> bool
-where
-    T: Eq,
-{
-    left == right
-}
-
-for_all_compare!(eq, bool, Eq);
-
-#[doc(hidden)]
-#[inline(always)]
-pub(crate) fn neq<T>(left: &T, right: &T) -> bool
-where
-    T: Eq,
-{
-    left != right
-}
-
-for_all_compare!(neq, bool, Eq);
-
-#[doc(hidden)]
-#[inline(always)]
-pub(crate) fn lt<T>(left: &T, right: &T) -> bool
-where
-    T: Ord,
-{
-    left < right
-}
-
-for_all_compare!(lt, bool, Ord);
-
-#[doc(hidden)]
-#[inline(always)]
-pub(crate) fn gt<T>(left: &T, right: &T) -> bool
-where
-    T: Ord,
-{
-    left > right
-}
-
-for_all_compare!(gt, bool, Ord);
-
-#[doc(hidden)]
-#[inline(always)]
-pub(crate) fn lte<T>(left: &T, right: &T) -> bool
-where
-    T: Ord,
-{
-    left <= right
-}
-
-for_all_compare!(lte, bool, Ord);
-
-#[doc(hidden)]
-#[inline(always)]
-pub(crate) fn gte<T>(left: &T, right: &T) -> bool
-where
-    T: Ord,
-{
-    left >= right
-}
-
-for_all_compare!(gte, bool, Ord);
-*/
-
 #[doc(hidden)]
 #[inline(always)]
 fn plus<T>(left: T, right: T) -> T
@@ -267,7 +164,6 @@ where
 }
 
 for_all_int_operator!(plus);
-some_operator!(plus, decimal, Decimal, Decimal);
 some_operator!(plus, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
@@ -292,7 +188,6 @@ where
 }
 
 for_all_int_operator!(minus);
-some_operator!(minus, decimal, Decimal, Decimal);
 some_operator!(minus, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
@@ -337,14 +232,6 @@ some_operator!(f64_modulo, modulo, d, F64, F64);
 
 #[inline(always)]
 #[doc(hidden)]
-fn decimal_modulo(left: Decimal, right: Decimal) -> Decimal {
-    left % right
-}
-
-some_operator!(decimal_modulo, modulo, decimal, Decimal, Decimal);
-
-#[inline(always)]
-#[doc(hidden)]
 fn times<T>(left: T, right: T) -> T
 where
     T: CheckedMul,
@@ -354,7 +241,6 @@ where
 }
 
 for_all_int_operator!(times);
-some_operator!(times, decimal, Decimal, Decimal);
 some_operator!(times, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
@@ -417,7 +303,6 @@ where
 }
 
 for_all_int_operator!(div);
-some_operator!(div, decimal, Decimal, Decimal);
 some_operator!(div, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]

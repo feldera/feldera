@@ -175,8 +175,6 @@ rkyv = { version = "0.7.45", default-features = false }
 rmp-serde = "1.3.0"
 rmpv = "1.3.0"
 rstest = "0.15"
-rust_decimal = "1.33.1-feldera.1"
-rust_decimal_macros = "1.32"
 # Make sure this is the same rustls version used by the `tonic` crate.
 # See the `ensure_default_crypto_provider` function.
 rustls = "0.23.12"

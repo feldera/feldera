@@ -22,7 +22,6 @@ pub use zset::{
 };
 
 use num::PrimInt;
-use rust_decimal::{prelude::One, prelude::Zero, Decimal};
 use size_of::SizeOf;
 use std::{
     fmt::{Debug, Display},
@@ -165,18 +164,6 @@ impl_has_zero! {
     isize,
 }
 
-impl HasZero for Decimal {
-    #[inline]
-    fn is_zero(&self) -> bool {
-        Zero::is_zero(self)
-    }
-
-    #[inline]
-    fn zero() -> Self {
-        Zero::zero()
-    }
-}
-
 impl<T> HasZero for Option<T> {
     #[inline]
     fn is_zero(&self) -> bool {
@@ -224,13 +211,6 @@ macro_rules! impl_has_one {
             }
         )*
     };
-}
-
-impl HasOne for Decimal {
-    #[inline]
-    fn one() -> Self {
-        One::one()
-    }
 }
 
 impl_has_one! {
@@ -454,15 +434,6 @@ impl MulByRef<isize> for F64 {
     }
 }
 
-impl MulByRef<isize> for Decimal {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &isize) -> Self::Output {
-        *self * Decimal::from(*w)
-    }
-}
-
 /////////// `MulByRef<i64>`
 
 impl MulByRef<i64> for i8 {
@@ -534,15 +505,6 @@ impl MulByRef<i64> for F64 {
     #[inline]
     fn mul_by_ref(&self, w: &i64) -> Self::Output {
         *self * ((*w) as f64)
-    }
-}
-
-impl MulByRef<i64> for Decimal {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &i64) -> Self::Output {
-        *self * Decimal::from(*w)
     }
 }
 
@@ -620,15 +582,6 @@ impl MulByRef<i32> for F64 {
     }
 }
 
-impl MulByRef<i32> for Decimal {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &i32) -> Self::Output {
-        *self * Decimal::from(*w)
-    }
-}
-
 /////////// generic implementation for Option<t>
 
 pub trait OptionWeightType {}
@@ -641,7 +594,6 @@ impl OptionWeightType for f32 {}
 impl OptionWeightType for f64 {}
 impl OptionWeightType for F32 {}
 impl OptionWeightType for F64 {}
-impl OptionWeightType for Decimal {}
 impl OptionWeightType for Present {}
 
 impl<T, S> MulByRef<S> for Option<T>

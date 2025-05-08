@@ -10,4 +10,4 @@ sltsqlvalue = { path = "../sltsqlvalue" }
 feldera-sqllib = { path = "../../../crates/sqllib" }
 num = { version = "0.4.0" }
 dbsp = { path = "../../../crates/dbsp" }
-size-of = { version = "0.1.5", package = "feldera-size-of", features = ["rust_decimal"] }
+size-of = { version = "0.1.5", package = "feldera-size-of" }
