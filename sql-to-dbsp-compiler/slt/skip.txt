@@ -11,4 +11,5 @@ SELECT ALL - 23 / 19 / - 0 / ( - 13 ) * ( - MIN ( + CAST ( NULL AS INTEGER ) ) )
 SELECT ALL 12 / + + 0 * - MAX ( + CASE - 75 WHEN ( 44 ) * - 15 - - ( - + 55 ) * 89 THEN 45 WHEN 67 THEN NULL ELSE NULL END ) + 39 * - 69 AS col2
 // test/random/expr/slt_good_115.test: test 9895, multiplication overflow
 SELECT DISTINCT - 27 + 0 + 47 - - 3, - 72 * + + 23 * - - NULLIF ( ( 36 ), 23 * + MIN ( - 66 ) * - 84 * 58 * 48 * - - 61 / - ( 58 ) ) * COUNT ( * ) + + 95 + + COUNT ( DISTINCT + 42 ) col1
-
+// test/random/expr/slt_good_7.test: test 7031, division by zero
+SELECT ALL + CASE - 59 WHEN + 55 * - 56 + - - 95 THEN - 78 + 98 * CASE - COUNT ( * ) WHEN NULLIF ( - AVG ( DISTINCT - + NULLIF ( + - ( 11 ), 89 / ( 0 ) ) ), - COUNT ( * ) ) + 62 THEN 37 + + COUNT ( DISTINCT + 77 ) / 61 ELSE + 26 / 10 - + 14 * - 10 END / 79 END * 60 col2
