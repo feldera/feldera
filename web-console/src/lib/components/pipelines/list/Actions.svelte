@@ -18,6 +18,8 @@
   import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
   import { useToast } from '$lib/compositions/useToastNotification'
+  import { getDeploymentStatusLabel } from '$lib/functions/pipelines/status'
+  import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
 
   let {
     pipeline,
@@ -56,6 +58,7 @@
     _start_pending,
     _pause,
     _shutdown,
+    _suspend,
     _delete,
     _spacer_short,
     _spacer_long,
@@ -71,7 +74,13 @@
   const active = $derived.by(() => {
     return match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', () => ['_spacer_long', '_start_paused'])
+      .with('Shutdown', () => [
+        '_spacer_long',
+        '_start_paused',
+        '_saveFile',
+        '_configurations',
+        '_delete'
+      ])
       .with(
         'Preparing',
         'Provisioning',
@@ -79,12 +88,32 @@
         'Pausing',
         'Resuming',
         'Unavailable',
-        () => ['_shutdown', '_status_spinner']
+        () => ['_suspend', '_status_spinner', '_saveFile', '_configurations', '_shutdown']
       )
-      .with('Running', () => ['_shutdown', '_pause'])
-      .with('Paused', () => ['_shutdown', '_start'])
-      .with('ShuttingDown', () => ['_spacer_long', '_status_spinner'])
-      .with({ PipelineError: P.any }, () => ['_shutdown', '_spacer_long'])
+      .with('Running', () => ['_suspend', '_pause', '_saveFile', '_configurations', '_shutdown'])
+      .with('Paused', () => ['_suspend', '_start', '_saveFile', '_configurations', '_shutdown'])
+      .with('Suspending', () => [
+        '_spacer_long',
+        '_status_spinner',
+        '_saveFile',
+        '_configurations',
+        '_shutdown'
+      ])
+      .with('Suspended', () => [
+        '_spacer_long',
+        '_start_paused',
+        '_saveFile',
+        '_configurations',
+        '_shutdown'
+      ])
+      .with('ShuttingDown', () => [
+        '_spacer_long',
+        '_status_spinner',
+        '_saveFile',
+        '_configurations',
+        '_spacer_short'
+      ])
+      .with({ PipelineError: P.any }, () => ['_saveFile', '_configurations', '_shutdown'])
       .with(
         { Queued: P.any },
         { CompilingSql: P.any },
@@ -94,10 +123,19 @@
           Object.values(cause)[0].cause === 'upgrade'
             ? ('_unschedule' as const)
             : ('_spacer_long' as const),
-          '_start_pending'
+          '_start_pending',
+          '_saveFile',
+          '_configurations',
+          '_delete'
         ]
       )
-      .with('SqlError', 'RustError', 'SystemError', () => ['_spacer_long', '_start_error'])
+      .with('SqlError', 'RustError', 'SystemError', () => [
+        '_spacer_long',
+        '_start_error',
+        '_saveFile',
+        '_configurations',
+        '_delete'
+      ])
       .exhaustive()
   })
 
@@ -108,6 +146,21 @@
   const shortColor = 'preset-tonal-surface'
   const basicBtnColor = 'preset-filled-surface-100-900'
   const importantBtnColor = 'preset-filled-primary-500'
+
+  const performStartAction = async (
+    action: PipelineAction | 'start_paused_start',
+    pipelineName: string,
+    targetStatus: PipelineStatus
+  ) => {
+    const waitFor = await postPipelineAction(
+      pipeline.current.name,
+      action === 'start_paused_start' ? 'start_paused' : action
+    )
+    pipeline.optimisticUpdate({ status: targetStatus })
+    waitFor().then(() => onActionSuccess?.(pipelineName, action), toastError)
+  }
+
+  let isPremium = usePremiumFeatures()
 </script>
 
 {#snippet deleteDialog()}
@@ -140,13 +193,30 @@
   ></DeleteDialog>
 {/snippet}
 
+{#snippet suspendDialog()}
+  <DeleteDialog
+    {...deleteDialogProps(
+      'Suspend',
+      (name) => `${name} pipeline`,
+      (pipelineName: string) => {
+        return postPipelineAction(pipelineName, 'suspend').then(() => {
+          onActionSuccess?.(pipelineName, 'suspend')
+          pipeline.optimisticUpdate({ status: 'Suspending' })
+        })
+      },
+      "The pipeline's state will be preserved in the persistent storage, and the allocated resources will be released. The pipeline can be resumed from the preserved state, avoiding historic backfill."
+    )(pipeline.current.name)}
+    onClose={() => (globalDialog.dialog = null)}
+  ></DeleteDialog>
+{/snippet}
+
 <div class={'flex flex-nowrap gap-2 sm:gap-4 ' + _class}>
   {#each active as name}
     {@render actions[name]()}
   {/each}
-  {@render _saveFile()}
+  <!-- {@render _saveFile()}
   {@render _configurations()}
-  {@render _delete()}
+  {@render _delete()} -->
 </div>
 
 {#snippet _delete()}
@@ -169,23 +239,18 @@
 {/snippet}
 {#snippet start(
   text: string,
-  action: (alt: boolean) => PipelineAction | 'start_paused_start',
+  getAction: (alt: boolean) => PipelineAction | 'start_paused_start',
   status: PipelineStatus
 )}
   <div>
     <button
-      aria-label={action(false)}
+      aria-label={getAction(false)}
       class:disabled={unsavedChanges}
       class="{buttonClass} {longClass} {importantBtnColor}"
       onclick={async (e) => {
-        const _action = action(e.ctrlKey || e.shiftKey || e.metaKey)
+        const action = getAction(e.ctrlKey || e.shiftKey || e.metaKey)
         const pipelineName = pipeline.current.name
-        const waitFor = await postPipelineAction(
-          pipeline.current.name,
-          _action === 'start_paused_start' ? 'start_paused' : _action
-        )
-        pipeline.optimisticUpdate({ status })
-        waitFor().then(() => onActionSuccess?.(pipelineName, _action), toastError)
+        performStartAction(action, pipelineName, status)
       }}
     >
       <span class="fd fd-play {iconClass}"></span>
@@ -203,7 +268,7 @@
   {/if}
 {/snippet}
 {#snippet _start_paused()}
-  {@render start('Start', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Preparing')}
+  {@render start(pipeline.current.status === 'Suspended' ? 'Resume' : 'Start', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Preparing')}
   {#if unsavedChanges}
     <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
       Save the program before running
@@ -238,7 +303,7 @@
       const pipelineName = pipeline.current.name
       await postPipelineAction(pipelineName, 'pause')
       onActionSuccess?.(pipelineName, 'pause')
-      pipeline.optimisticUpdate({ status: 'Pausing' })
+      pipeline.optimisticUpdate({ status: 'Suspending' })
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>
@@ -246,17 +311,45 @@
     <span></span>
   </button>
 {/snippet}
+{#snippet _suspend()}
+  <div>
+    <button
+      disabled={!isPremium.value}
+      class="{buttonClass} {longClass} {basicBtnColor}"
+      onclick={() => {
+        globalDialog.dialog = suspendDialog
+      }}
+    >
+      <span class="fd fd-circle-stop {iconClass}"></span>
+      Suspend
+      <span></span>
+    </button>
+  </div>
+  {#if !isPremium.value}
+    <Tooltip
+      activeContent
+      class="bg-white-dark z-20 rounded text-base text-surface-950-50"
+      placement="bottom"
+    >
+      Suspending pipelines is only available on Premium and Enterprise plans<br />
+      <a
+        class="block pt-2 underline"
+        href="https://calendly.com/d/cqnj-p63-mbq/feldera-demo"
+        target="_blank"
+        rel="noreferrer">Upgrade</a
+      >
+    </Tooltip>
+  {/if}
+{/snippet}
 {#snippet _shutdown()}
-  <button
-    class="{buttonClass} {longClass} {basicBtnColor}"
-    onclick={() => {
-      globalDialog.dialog = shutdownDialog
-    }}
-  >
-    <span class="fd fd-square {iconClass}"></span>
-    Shutdown
-    <span></span>
-  </button>
+  <div>
+    <button
+      class="{buttonClass} {shortClass} {shortColor} fd fd-square-power {iconClass}"
+      onclick={() => (globalDialog.dialog = shutdownDialog)}
+    >
+    </button>
+  </div>
+  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">Shutdown</Tooltip>
 {/snippet}
 {#snippet _saveFile()}
   <div>
@@ -283,7 +376,9 @@
     }}
   >
     <div></div>
+    <div></div>
     Cancel start
+    <div></div>
   </button>
   <Tooltip class="bg-white-dark z-20 whitespace-nowrap rounded text-surface-950-50" placement="top">
     The pipeline is scheduled to start automatically after compilation
@@ -346,6 +441,15 @@
 {/snippet}
 {#snippet _configurations()}
   <PipelineConfigurationsPopup {pipeline} {pipelineBusy}></PipelineConfigurationsPopup>
+  {#if pipelineBusy}
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      Stop the pipeline to edit configuration
+    </Tooltip>
+  {:else}
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      Compilation and runtime configuration
+    </Tooltip>
+  {/if}
 {/snippet}
 {#snippet _spacer_short()}
   <div class={shortClass}></div>
@@ -358,7 +462,8 @@
 {/snippet}
 {#snippet _status_spinner()}
   <button class="{buttonClass} {longClass} pointer-events-none {basicBtnColor}">
-    <IconLoader class="h-5 animate-spin fill-surface-950-50"></IconLoader>
+    <IconLoader class="h-5 flex-none animate-spin fill-surface-950-50"></IconLoader>
+    <span>{getDeploymentStatusLabel(pipeline.current.status)}</span>
     <span></span>
   </button>
 {/snippet}
