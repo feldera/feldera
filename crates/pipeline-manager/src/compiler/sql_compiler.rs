@@ -2,7 +2,7 @@ use crate::common_error::CommonError;
 use crate::compiler::util::{
     cleanup_specific_directories, crate_name_pipeline_base, crate_name_pipeline_globals,
     create_new_file, create_new_file_with_content, encode_dir_as_string, read_file_content,
-    recreate_dir, CleanupDecision, UtilError,
+    recreate_dir, CleanupDecision, ProcessGroupTerminator, UtilError,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -398,7 +398,9 @@ pub(crate) async fn perform_sql_compilation(
         .stdin(Stdio::null())
         .stdout(Stdio::from(output_stdout_file.into_std().await))
         .stderr(Stdio::from(output_stderr_file.into_std().await))
-        .kill_on_drop(true);
+        // Setting it to zero sets the process group ID to the PID.
+        // This is done to be able to kill any subprocesses that are spawned.
+        .process_group(0);
 
     // Start process
     let mut process = command.spawn().map_err(|e| {
@@ -413,6 +415,15 @@ pub(crate) async fn perform_sql_compilation(
             .to_string(),
         )
     })?;
+
+    // Retrieve process group ID and create a terminator
+    // which ends the group when going out of scope.
+    let Some(process_group) = process.id() else {
+        return Err(SqlCompilationError::SystemError(
+            "unable to retrieve pid".to_string(),
+        ));
+    };
+    let mut terminator = ProcessGroupTerminator::new("SQL compilation", process_group);
 
     // Wait for process to exit while regularly checking if the pipeline still exists
     // and has not had its program get updated
@@ -453,6 +464,9 @@ pub(crate) async fn perform_sql_compilation(
         }
         sleep(COMPILATION_CHECK_INTERVAL).await;
     };
+
+    // Once the process has exited, it is no longer needed to terminate its process group
+    terminator.cancel();
 
     // Check presence of exit status code
     let Some(exit_code) = exit_status.code() else {

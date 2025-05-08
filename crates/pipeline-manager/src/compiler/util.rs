@@ -1,7 +1,10 @@
 use crate::db::types::pipeline::PipelineId;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use flate2::Compression;
-use log::{debug, warn};
+use log::{debug, error, warn};
+use nix::libc::pid_t;
+use nix::sys::signal::{killpg, Signal};
+use nix::unistd::Pid;
 use openssl::sha::sha256;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,6 +12,65 @@ use thiserror::Error as ThisError;
 use tokio::fs;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+
+/// Automatically terminates a process and all subprocesses it spawns using
+/// the group they are all in. The process must have set a process group ID
+/// via `Command::process_group()`.
+///
+/// By having set the process group ID, it is now different from the parent process.
+/// As a consequence, using Ctrl-C in the terminal will no longer terminate the
+/// compiler process by itself. To preserve this behavior, this special struct is
+/// used which will kill the process group when it goes out of scope via the `Drop`
+/// trait. This happens generally when the parent process terminates (effectively,
+/// whenever the `drop()` function is still called gracefully).
+pub struct ProcessGroupTerminator {
+    /// Name of what is being terminated (used for logging).
+    subject: String,
+    process_group: u32,
+    is_cancelled: bool,
+}
+
+impl ProcessGroupTerminator {
+    pub fn new(subject: &str, process_group: u32) -> Self {
+        Self {
+            subject: subject.to_string(),
+            process_group,
+            is_cancelled: false,
+        }
+    }
+
+    /// Cancels the attempt to terminate the process group when it is dropped.
+    pub fn cancel(&mut self) {
+        self.is_cancelled = true;
+    }
+}
+
+impl Drop for ProcessGroupTerminator {
+    /// Terminates all processes in the process group by sending a SIGKILL using `killpg`.
+    fn drop(&mut self) {
+        if !self.is_cancelled {
+            // Convert the process group (u32) to the pgrp (i32)
+            let pgrp = match pid_t::try_from(self.process_group) {
+                Ok(pgrp) => pgrp,
+                Err(e) => {
+                    error!(
+                        "Failed to cancel {}: unable to convert process group ({}): {e}",
+                        self.subject, self.process_group
+                    );
+                    return;
+                }
+            };
+            // Send the SIGKILL to the PGRP
+            if let Err(e) = killpg(Pid::from_raw(pgrp), Signal::SIGKILL) {
+                error!("Failed to cancel {}: attempt to kill the process and its subprocesses (PGRP: {}) failed: {e}", self.subject, self.process_group);
+            }
+            debug!(
+                "Successfully cancelled {} by killing its process group",
+                self.subject
+            );
+        }
+    }
+}
 
 /// Errors that can occur within the compiler utility functions.
 /// Not every function can cause every error, but this does not
