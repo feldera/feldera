@@ -17,9 +17,8 @@ dec = { workspace = true }
 feldera-types = { workspace = true }
 itertools = { workspace = true }
 # `serde-with-arbitrary-precision` is needed because we enable `arbitrary_precision` in `serde_json`.
-rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["maths", "rkyv", "serde-float", "serde-arbitrary-precision"] }
 geo = { workspace = true }
-size-of = { workspace = true, features = ["rust_decimal"] }
+size-of = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 num = { workspace = true }

@@ -7,8 +7,7 @@
 #![allow(non_snake_case)]
 
 use dbsp::algebra::{F32, F64};
-use feldera_sqllib::{casts::*, SqlString};
-use rust_decimal::Decimal;
+use feldera_sqllib::{casts::*, SqlDecimal, SqlString};
 
 #[derive(Debug)]
 pub enum SltSqlValue {
@@ -18,7 +17,7 @@ pub enum SltSqlValue {
     Flt(f32),
     Dbl(f64),
     Bool(bool),
-    Decimal(Decimal),
+    Decimal(SqlDecimal),
 
     OptInt(Option<i32>),
     OptLong(Option<i64>),
@@ -26,7 +25,7 @@ pub enum SltSqlValue {
     OptFlt(Option<f32>),
     OptDbl(Option<f64>),
     OptBool(Option<bool>),
-    OptDecimal(Option<Decimal>),
+    OptDecimal(Option<SqlDecimal>),
 }
 
 impl From<i32> for SltSqlValue {
@@ -77,8 +76,8 @@ impl From<SqlString> for SltSqlValue {
     }
 }
 
-impl From<Decimal> for SltSqlValue {
-    fn from(value: Decimal) -> Self {
+impl From<SqlDecimal> for SltSqlValue {
+    fn from(value: SqlDecimal) -> Self {
         SltSqlValue::Decimal(value)
     }
 }
@@ -137,8 +136,8 @@ impl From<Option<SqlString>> for SltSqlValue {
     }
 }
 
-impl From<Option<Decimal>> for SltSqlValue {
-    fn from(value: Option<Decimal>) -> Self {
+impl From<Option<SqlDecimal>> for SltSqlValue {
+    fn from(value: Option<SqlDecimal>) -> Self {
         SltSqlValue::OptDecimal(value)
     }
 }

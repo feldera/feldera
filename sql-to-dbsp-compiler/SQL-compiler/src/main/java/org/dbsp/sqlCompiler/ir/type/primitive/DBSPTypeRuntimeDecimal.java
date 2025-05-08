@@ -16,7 +16,6 @@ import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.util.Objects;
 
-/** Corresponds to the runtime type rust_decimal type. */
 public class DBSPTypeRuntimeDecimal extends DBSPTypeBaseType implements IsNumericType {
     public DBSPTypeRuntimeDecimal(CalciteObject node, boolean mayBeNull) {
         super(node, DBSPTypeCode.DECIMAL_RUNTIME, mayBeNull);

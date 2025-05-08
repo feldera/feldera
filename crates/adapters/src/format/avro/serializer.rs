@@ -792,7 +792,7 @@ mod test {
         from_avro_datum, to_avro_datum, types::Value as AvroValue, Decimal, Schema as AvroSchema,
     };
     use dbsp::algebra::{F32, F64};
-    use feldera_sqllib::{Date, Timestamp};
+    use feldera_sqllib::{Date, SqlDecimal, Timestamp};
     use feldera_types::{serde_with_context::SerializeWithContext, serialize_table_record};
     use num_bigint::BigInt;
     use rust_decimal::Decimal as RustDecimal;
@@ -935,7 +935,7 @@ mod test {
                 ("foo".to_string(), 1),
                 ("bar".to_string(), 2),
             ])),
-            field_7: rust_decimal::Decimal::new(10000, 3),
+            field_7: SqlDecimal::from_i128_with_scale(10000i128, 3i32),
         };
 
         let avro2_1: AvroValue = AvroValue::Record(vec![

@@ -763,9 +763,6 @@ macro_rules! deserialize_table_record {
 mod test {
     use std::sync::LazyLock;
 
-    use rust_decimal::Decimal;
-    use rust_decimal_macros::dec;
-
     use crate::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 
     #[derive(Debug, Eq, PartialEq)]
@@ -797,113 +794,6 @@ mod test {
         assert_eq!(
             deserialize_with_default_context::<TUPLE0>("[]").unwrap(),
             TUPLE0
-        );
-    }
-
-    #[derive(Debug, Eq, PartialEq)]
-    #[allow(non_snake_case)]
-    struct Struct2 {
-        #[allow(non_snake_case)]
-        cc_num: u64,
-        #[allow(non_snake_case)]
-        first: Option<String>,
-        #[allow(non_snake_case)]
-        dec: Decimal,
-    }
-    deserialize_table_record!(Struct2["Table.Name", 3] {(cc_num, "cc_num", false, u64, None), (first, "first", false, Option<String>, Some(None)), (dec, "dec", false, Decimal, None)});
-
-    #[test]
-    fn deserialize_struct2() {
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100, "dec": "0.123"}"#)
-                .unwrap(),
-            Struct2 {
-                cc_num: 100,
-                first: None,
-                dec: dec!(0.123),
-            }
-        );
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100, "dec": 0.123}"#)
-                .unwrap(),
-            Struct2 {
-                cc_num: 100,
-                first: None,
-                dec: dec!(0.123),
-            }
-        );
-
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(
-                r#"{"CC_NUM": 100, "first": null, "dec": "-1.40"}"#
-            )
-            .unwrap(),
-            Struct2 {
-                cc_num: 100,
-                first: None,
-                dec: dec!(-1.40),
-            }
-        );
-
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(
-                r#"{"CC_NUM": 100, "first": null, "dec": -1.40}"#
-            )
-            .unwrap(),
-            Struct2 {
-                cc_num: 100,
-                first: None,
-                dec: dec!(-1.40),
-            }
-        );
-
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(
-                r#"{"CC_NUM": 100, "first": "foo", "dec": "1e20"}"#
-            )
-            .unwrap(),
-            Struct2 {
-                cc_num: 100,
-                first: Some("foo".to_string()),
-                dec: dec!(1e20),
-            }
-        );
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"{"first": "foo"}"#)
-                .map_err(|e| e.to_string()),
-            Err(r#"missing field `cc_num` at line 1 column 16"#.to_string())
-        );
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"[100, "foo", "-1e20"]"#).unwrap(),
-            Struct2 {
-                cc_num: 100,
-                first: Some("foo".to_string()),
-                dec: dec!(-1e20),
-            }
-        );
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"[100, null, "2e-5"]"#).unwrap(),
-            Struct2 {
-                cc_num: 100,
-                first: None,
-                dec: dec!(0.00002),
-            }
-        );
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"[100, null, "-3e-5"]"#).unwrap(),
-            Struct2 {
-                cc_num: 100,
-                first: None,
-                dec: dec!(-3e-5),
-            }
-        );
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"[100, null, -3e-5]"#).unwrap(),
-            Struct2 {
-                cc_num: 100,
-                first: None,
-                dec: dec!(-3e-5),
-            }
         );
     }
 

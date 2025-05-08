@@ -1,13 +1,12 @@
 // I cannot use the standard geopoint object because it doesn't implement Ord
 
-use crate::{casts::cast_to_d_decimal, some_polymorphic_function2};
+use crate::{casts::cast_to_d_SqlDecimal, some_polymorphic_function2, SqlDecimal};
 use ::serde::{Deserialize, Serialize};
 use dbsp::algebra::{F32, F64};
 use dbsp::num_entries_scalar;
 use feldera_types::serde_with_context::SerializeWithContext;
 use geo::EuclideanDistance;
 use geo::Point;
-use rust_decimal::Decimal;
 use serde::ser::Error;
 use size_of::*;
 
@@ -79,14 +78,21 @@ pub fn make_geopoint_d_d(left: F64, right: F64) -> GeoPoint {
 some_polymorphic_function2!(make_geopoint, d, F64, d, F64, GeoPoint);
 
 #[doc(hidden)]
-pub fn make_geopoint_decimal_decimal(left: Decimal, right: Decimal) -> GeoPoint {
+pub fn make_geopoint_SqlDecimal_SqlDecimal(left: SqlDecimal, right: SqlDecimal) -> GeoPoint {
     GeoPoint::new(
-        cast_to_d_decimal(left).unwrap(),
-        cast_to_d_decimal(right).unwrap(),
+        cast_to_d_SqlDecimal(left).unwrap(),
+        cast_to_d_SqlDecimal(right).unwrap(),
     )
 }
 
-some_polymorphic_function2!(make_geopoint, decimal, Decimal, decimal, Decimal, GeoPoint);
+some_polymorphic_function2!(
+    make_geopoint,
+    SqlDecimal,
+    SqlDecimal,
+    SqlDecimal,
+    SqlDecimal,
+    GeoPoint
+);
 
 #[doc(hidden)]
 pub fn make_geopoint_f_f(left: F32, right: F32) -> GeoPoint {

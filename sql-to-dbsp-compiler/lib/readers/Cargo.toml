@@ -11,7 +11,7 @@ sltsqlvalue = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 csv = { workspace = true }
 dbsp = { path = "../../../crates/dbsp" }
-size-of = { version = "0.1.5", package = "feldera-size-of", features = ["rust_decimal"] }
+size-of = { version = "0.1.5", package = "feldera-size-of" }
 async-std = { workspace = true, features = ["attributes"] }
 rkyv = { workspace = true, features = ["size_64"] }
 feldera-sqllib = { workspace = true }

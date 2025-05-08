@@ -15,8 +15,6 @@ pub use casts::*;
 pub mod dec;
 pub use dec::*;
 #[doc(hidden)]
-pub mod decimal;
-#[doc(hidden)]
 pub mod error;
 pub use error::*;
 #[doc(hidden)]
@@ -48,7 +46,7 @@ pub use variant::*;
 
 pub use array::Array;
 pub use binary::ByteArray;
-pub use dec::{RuntimeDecimal, SqlDecimal};
+pub use dec::SqlDecimal;
 #[doc(hidden)]
 pub use geopoint::GeoPoint;
 pub use interval::{LongInterval, ShortInterval};
@@ -84,9 +82,8 @@ use dbsp::{
     DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
 use metrics::{counter, Counter};
-use num::{PrimInt, ToPrimitive};
+use num::PrimInt;
 use num_traits::{Pow, Zero};
-use rust_decimal::Decimal;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, Neg};
@@ -1047,12 +1044,6 @@ pub fn abs_d(left: F64) -> F64 {
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn abs_decimal(left: Decimal) -> Decimal {
-    left.abs()
-}
-
-#[doc(hidden)]
-#[inline(always)]
 pub fn abs_SqlDecimal(left: SqlDecimal) -> SqlDecimal {
     left.abs()
 }
@@ -1063,7 +1054,6 @@ some_polymorphic_function1!(abs, i32, i32, i32);
 some_polymorphic_function1!(abs, i64, i64, i64);
 some_polymorphic_function1!(abs, f, F32, F32);
 some_polymorphic_function1!(abs, d, F64, F64);
-some_polymorphic_function1!(abs, decimal, Decimal, Decimal);
 some_polymorphic_function1!(abs, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
@@ -1342,13 +1332,6 @@ pub fn power_d_d(left: F64, right: F64) -> F64 {
 }
 
 some_polymorphic_function2!(power, d, F64, d, F64, F64);
-
-#[doc(hidden)]
-pub fn power_d_decimal(left: F64, right: Decimal) -> F64 {
-    F64::new(left.into_inner().powf(right.to_f64().unwrap()))
-}
-
-some_polymorphic_function2!(power, d, F64, decimal, Decimal, F64);
 
 #[doc(hidden)]
 pub fn power_d_SqlDecimal(left: F64, right: SqlDecimal) -> F64 {
