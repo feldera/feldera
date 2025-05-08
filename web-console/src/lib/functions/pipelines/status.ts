@@ -85,7 +85,7 @@ export const isPipelineInteractive = (status: PipelineStatus) => {
     .exhaustive()
 }
 
-export const isPipelineEditable = (status: PipelineStatus) => {
+export const isPipelineCodeEditable = (status: PipelineStatus) => {
   return match(status)
     .with('Shutdown', () => true)
     .with('Preparing', () => false)
@@ -112,6 +112,9 @@ export const isPipelineEditable = (status: PipelineStatus) => {
     .with('SystemError', () => true)
     .exhaustive()
 }
+
+export const isPipelineConfigEditable = (status: PipelineStatus) =>
+  status === 'Suspended' || isPipelineCodeEditable(status)
 
 export const isMetricsAvailable = (status: PipelineStatus) => {
   return match(status)

@@ -10,7 +10,7 @@
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
-  import { isPipelineEditable } from '$lib/functions/pipelines/status'
+  import { isPipelineCodeEditable } from '$lib/functions/pipelines/status'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
@@ -97,10 +97,10 @@
   const { toastError } = useToast()
   let deletePipelines = () => {
     selected.forEach(async (pipeline) => {
-      if (!isPipelineEditable(pipeline.status)) {
-        await api
-          .postPipelineAction(pipeline.name, 'shutdown')
-          .then((waitFor) => waitFor().catch(toastError))
+      if (!isPipelineCodeEditable(pipeline.status)) {
+        await api.postPipelineAction(pipeline.name, 'shutdown').then((waitFor) =>
+          waitFor().catch(toastError)
+        )
       }
       return api.deletePipeline(pipeline.name)
     })
@@ -170,8 +170,8 @@
         return postPipelinesAction('suspend')
       },
       selectedPipelines.length === 1
-        ? "The pipeline's state will be preserved in the persistent storage, and the allocated resources will be released. The pipeline can be resumed from the preserved state, avoiding historic backfill."
-        : "These pipelines' state will be preserved in the persistent storage, and the allocated resources will be released. The pipelines can be resumed from the preserved state, avoiding historic backfill."
+        ? "The pipeline's state will be preserved in the persistent storage, and the allocated compute resources will be released. The pipeline can be resumed from the preserved state, avoiding historic backfill."
+        : "These pipelines' state will be preserved in the persistent storage, and the allocated compute resources will be released. The pipelines can be resumed from the preserved state, avoiding historic backfill."
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>

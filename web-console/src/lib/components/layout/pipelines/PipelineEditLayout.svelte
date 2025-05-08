@@ -20,7 +20,7 @@
     type PipelineAction,
     type PipelineThumb
   } from '$lib/services/pipelineManager'
-  import { isPipelineEditable } from '$lib/functions/pipelines/status'
+  import { isPipelineCodeEditable } from '$lib/functions/pipelines/status'
   import { nonNull } from '$lib/functions/common/function'
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -57,8 +57,11 @@
     }
   } = $props()
 
-  let editDisabled = $derived(
-    nonNull(pipeline.current.status) && !isPipelineEditable(pipeline.current.status)
+  let editCodeDisabled = $derived(
+    nonNull(pipeline.current.status) && !isPipelineCodeEditable(pipeline.current.status)
+  )
+  let editConfigDisabled = $derived(
+    nonNull(pipeline.current.status) && !isPipelineCodeEditable(pipeline.current.status)
   )
 
   const { updatePipelines } = useUpdatePipelineList()
@@ -220,7 +223,7 @@ example = "1.0"`
     class={props?.class}
     {pipeline}
     onDeletePipeline={handleDeletePipeline}
-    pipelineBusy={editDisabled}
+    {editConfigDisabled}
     unsavedChanges={downstreamChanged}
     onActionSuccess={handleActionSuccess}
     {saveFile}
@@ -257,7 +260,7 @@ example = "1.0"`
                   goto(newUrl, { replaceState: true })
                 })
               }}
-              disabled={editDisabled}
+              disabled={editCodeDisabled}
               class="inline overflow-hidden overflow-ellipsis"
               inputClass="input flex -ml-1 mr-2 py-0 pl-1 text-base mt-1"
             >
@@ -265,7 +268,7 @@ example = "1.0"`
                 {pipeline.current.name}
               </span>
             </DoubleClickInput>
-            {#if editDisabled}
+            {#if editCodeDisabled}
               <Tooltip class="z-10 rounded bg-white text-base text-surface-950-50 dark:bg-black">
                 Cannot edit the pipeline's name while it's running
               </Tooltip>
@@ -338,7 +341,7 @@ example = "1.0"`
         <CodeEditor
           path={pipelineName}
           {files}
-          {editDisabled}
+          editDisabled={editCodeDisabled}
           bind:currentFileName={currentPipelineFile[pipelineName]}
           bind:downstreamChanged
           bind:saveFile
