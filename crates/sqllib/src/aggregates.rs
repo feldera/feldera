@@ -5,7 +5,7 @@
 
 use crate::binary::ByteArray;
 use crate::decimal::Dec;
-use crate::{FromInteger, ToInteger, Weight};
+use crate::{FromInteger, RuntimeDecimal, SqlDecimal, ToInteger, Weight};
 use dbsp::algebra::{FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt, F32, F64};
 use num::PrimInt;
 use num_traits::CheckedAdd;
@@ -396,14 +396,31 @@ pub fn agg_plus_decimal(left: Decimal, right: Decimal) -> Decimal {
 }
 
 #[doc(hidden)]
+pub fn agg_plus_SqlDecimal(left: SqlDecimal, right: SqlDecimal) -> SqlDecimal {
+    left + right
+}
+
+#[doc(hidden)]
 pub fn agg_plus_dec(left: Dec, right: Dec) -> Dec {
+    left + right
+}
+
+#[doc(hidden)]
+pub fn agg_plus_RuntimeDecimal(left: RuntimeDecimal, right: RuntimeDecimal) -> RuntimeDecimal {
     left + right
 }
 
 some_aggregate!(agg_plus_f32, agg_plus, f, F32);
 some_aggregate!(agg_plus_f64, agg_plus, d, F64);
 some_aggregate!(agg_plus_decimal, agg_plus, decimal, Decimal);
+some_aggregate!(agg_plus_SqlDecimal, agg_plus, SqlDecimal, SqlDecimal);
 some_aggregate!(agg_plus_dec, agg_plus, dec, Dec);
+some_aggregate!(
+    agg_plus_RuntimeDecimal,
+    agg_plus,
+    RuntimeDecimal,
+    RuntimeDecimal
+);
 
 for_all_int_aggregate!(agg_plus, agg_plus);
 
@@ -430,6 +447,11 @@ pub fn agg_plus_decimal_non_null(left: Decimal, right: Decimal) -> Decimal {
     left + right
 }
 
+#[doc(hidden)]
+pub fn agg_plus_SqlDecimal_non_null(left: SqlDecimal, right: SqlDecimal) -> SqlDecimal {
+    left + right
+}
+
 some_aggregate_non_null!(agg_plus_f32_non_null, agg_plus_non_null, f, F32);
 some_aggregate_non_null!(agg_plus_f64, agg_plus_non_null, d, F64);
 some_aggregate_non_null!(
@@ -437,6 +459,12 @@ some_aggregate_non_null!(
     agg_plus_non_null,
     decimal,
     Decimal
+);
+some_aggregate_non_null!(
+    agg_plus_SqlDecimal_non_null,
+    agg_plus_non_null,
+    SqlDecimal,
+    SqlDecimal
 );
 
 for_all_int_aggregate_non_null!(agg_plus_non_null, agg_plus_non_null);

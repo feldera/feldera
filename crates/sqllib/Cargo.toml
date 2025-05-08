@@ -13,6 +13,7 @@ publish = true
 [dependencies]
 thiserror = { workspace = true }
 dbsp = { workspace = true }
+dec = { workspace = true }
 feldera-types = { workspace = true }
 itertools = { workspace = true }
 # `serde-with-arbitrary-precision` is needed because we enable `arbitrary_precision` in `serde_json`.
@@ -35,6 +36,7 @@ metrics = { workspace = true }
 base64 = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
 arcstr = { workspace = true, features = ["serde"] }
+ryu = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

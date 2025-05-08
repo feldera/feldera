@@ -12,8 +12,10 @@ pub use binary::*;
 pub mod casts;
 pub use casts::*;
 #[doc(hidden)]
+pub mod dec;
+pub use dec::*;
+#[doc(hidden)]
 pub mod decimal;
-pub use decimal::*;
 #[doc(hidden)]
 pub mod error;
 pub use error::*;
@@ -46,6 +48,7 @@ pub use variant::*;
 
 pub use array::Array;
 pub use binary::ByteArray;
+pub use dec::{RuntimeDecimal, SqlDecimal};
 #[doc(hidden)]
 pub use geopoint::GeoPoint;
 pub use interval::{LongInterval, ShortInterval};
@@ -1048,6 +1051,12 @@ pub fn abs_decimal(left: Decimal) -> Decimal {
     left.abs()
 }
 
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_SqlDecimal(left: SqlDecimal) -> SqlDecimal {
+    left.abs()
+}
+
 some_polymorphic_function1!(abs, i8, i8, i8);
 some_polymorphic_function1!(abs, i16, i16, i16);
 some_polymorphic_function1!(abs, i32, i32, i32);
@@ -1055,6 +1064,7 @@ some_polymorphic_function1!(abs, i64, i64, i64);
 some_polymorphic_function1!(abs, f, F32, F32);
 some_polymorphic_function1!(abs, d, F64, F64);
 some_polymorphic_function1!(abs, decimal, Decimal, Decimal);
+some_polymorphic_function1!(abs, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 #[inline(always)]
@@ -1339,6 +1349,13 @@ pub fn power_d_decimal(left: F64, right: Decimal) -> F64 {
 }
 
 some_polymorphic_function2!(power, d, F64, decimal, Decimal, F64);
+
+#[doc(hidden)]
+pub fn power_d_SqlDecimal(left: F64, right: SqlDecimal) -> F64 {
+    F64::new(left.into_inner().powf(right.try_into().unwrap()))
+}
+
+some_polymorphic_function2!(power, d, F64, SqlDecimal, SqlDecimal, F64);
 
 #[doc(hidden)]
 pub fn sqrt_d(left: F64) -> F64 {

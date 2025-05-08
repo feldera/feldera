@@ -74,6 +74,7 @@ datafusion = "45"
 dbsp = { path = "crates/dbsp", version = "0.50.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.10.5"
+dec = { version = "0.4.9", features = ["serde"] }
 deltalake = { git = "https://github.com/delta-io/delta-rs.git", rev = "666179e" }
 directories = "6.0"
 dirs = "5.0"
@@ -180,11 +181,12 @@ rust_decimal_macros = "1.32"
 # See the `ensure_default_crypto_provider` function.
 rustls = "0.23.12"
 rustyline = "15.0"
+ryu = "1.0.20"
 schema_registry_converter = "4.2.0"
 serde = "1.0.213"
 serde_arrow = { git = "https://github.com/ryzhyk/serde_arrow.git", rev = "dbab218" }
 serde_bytes = "0.11.15"
-serde_json = "1.0.132"
+serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }
 serde_urlencoded = "0.7.1"
 serde_with = "3.0.0"
 serde_yaml = "0.9.34"
