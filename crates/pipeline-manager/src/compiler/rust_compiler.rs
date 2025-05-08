@@ -3,7 +3,7 @@ use crate::compiler::util::{
     crate_name_pipeline_globals, crate_name_pipeline_main, create_dir_if_not_exists,
     create_new_file, create_new_file_with_content, decode_string_as_dir, read_file_content,
     read_file_content_bytes, recreate_dir, recreate_file_with_content, truncate_sha256_checksum,
-    CleanupDecision, DirectoryContent, UtilError,
+    CleanupDecision, DirectoryContent, ProcessGroupTerminator, UtilError,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -17,9 +17,6 @@ use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
 use indoc::formatdoc;
 use log::{debug, error, info, trace, warn};
-use nix::libc::pid_t;
-use nix::sys::signal::{killpg, Signal};
-use nix::unistd::Pid;
 use openssl::sha;
 use openssl::sha::sha256;
 use std::collections::{BTreeMap, HashSet};
@@ -781,47 +778,6 @@ async fn prepare_workspace(
     Ok(())
 }
 
-/// Upon drop, attempts to terminate the process group.
-struct ProcessGroupTerminator {
-    process_group: u32,
-    is_cancelled: bool,
-}
-
-impl ProcessGroupTerminator {
-    fn new(process_group: u32) -> Self {
-        Self {
-            process_group,
-            is_cancelled: false,
-        }
-    }
-
-    /// Cancels the attempt to terminate the process group when it is dropped.
-    fn cancel(&mut self) {
-        self.is_cancelled = true;
-    }
-}
-
-impl Drop for ProcessGroupTerminator {
-    /// Terminates all processes in the process group by sending a SIGKILL using `killpg`.
-    fn drop(&mut self) {
-        if !self.is_cancelled {
-            // Convert the process group (u32) to the pgrp (i32)
-            let pgrp = match pid_t::try_from(self.process_group) {
-                Ok(pgrp) => pgrp,
-                Err(e) => {
-                    error!("Failed to cancel Rust compilation: unable to convert process group ({}): {e}", self.process_group);
-                    return;
-                }
-            };
-            // Send the SIGKILL to the PGRP
-            if let Err(e) = killpg(Pid::from_raw(pgrp), Signal::SIGKILL) {
-                error!("Failed to cancel Rust compilation: attempt to kill the 'cargo' process and its subprocesses (PGRP: {}) failed: {e}", self.process_group);
-            }
-            debug!("Successfully cancelled Rust compilation by killing its process group");
-        }
-    }
-}
-
 /// Calls the compiler on the project with the provided source checksum and using the compilation profile.
 async fn call_compiler(
     db: Option<Arc<Mutex<StoragePostgres>>>,
@@ -902,7 +858,7 @@ async fn call_compiler(
         .stdout(Stdio::from(stdout_file.into_std().await))
         .stderr(Stdio::from(stderr_file.into_std().await))
         // Setting it to zero sets the process group ID to the PID.
-        // This is done to be able to kill any `rustc` processes that `cargo` has spawned.
+        // This is done to be able to kill any subprocesses that are spawned.
         .process_group(0);
 
     // Start process
@@ -912,18 +868,14 @@ async fn call_compiler(
         )
     })?;
 
-    // By having set the process group ID, it is now different from the parent process.
-    // As a consequence, using Ctrl-C in the terminal will no longer terminate the
-    // compiler process by itself. To preserve this behavior, this special struct is
-    // used which will kill the process group when it goes out of scope via the `Drop`
-    // trait. This happens generally when the parent process terminates (effectively,
-    // whenever the `drop()` function is still called gracefully).
+    // Retrieve process group ID and create a terminator
+    // which ends the group when going out of scope.
     let Some(process_group) = process.id() else {
         return Err(RustCompilationError::SystemError(
             "unable to retrieve pid".to_string(),
         ));
     };
-    let mut terminator = ProcessGroupTerminator::new(process_group);
+    let mut terminator = ProcessGroupTerminator::new("Rust compilation", process_group);
 
     // Wait for process to exit while regularly checking if the pipeline still exists
     // and has not had its program get updated
