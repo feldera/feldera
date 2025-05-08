@@ -23,7 +23,7 @@
   let {
     pipeline,
     onDeletePipeline,
-    pipelineBusy,
+    editConfigDisabled,
     unsavedChanges,
     onActionSuccess,
     saveFile,
@@ -35,7 +35,7 @@
       optimisticUpdate: (newPipeline: Partial<ExtendedPipeline>) => Promise<void>
     }
     onDeletePipeline?: (pipelineName: string) => void
-    pipelineBusy: boolean
+    editConfigDisabled: boolean
     unsavedChanges: boolean
     onActionSuccess?: (pipelineName: string, action: PipelineAction | 'start_paused_start') => void
     saveFile: () => void
@@ -81,15 +81,19 @@
         '_configurations',
         '_delete'
       ])
-      .with(
-        'Preparing',
-        'Provisioning',
-        'Initializing',
-        'Pausing',
-        'Resuming',
-        'Unavailable',
-        () => ['_suspend', '_status_spinner', '_saveFile', '_configurations', '_shutdown']
-      )
+      .with('Preparing', 'Provisioning', 'Initializing', () => [
+        '_status_spinner',
+        '_saveFile',
+        '_configurations',
+        '_shutdown'
+      ])
+      .with('Pausing', 'Resuming', 'Unavailable', () => [
+        '_suspend',
+        '_status_spinner',
+        '_saveFile',
+        '_configurations',
+        '_shutdown'
+      ])
       .with('Running', () => ['_suspend', '_pause', '_saveFile', '_configurations', '_shutdown'])
       .with('Paused', () => ['_suspend', '_start', '_saveFile', '_configurations', '_shutdown'])
       .with('Suspending', () => [
@@ -204,7 +208,7 @@
           pipeline.optimisticUpdate({ status: 'Suspending' })
         })
       },
-      "The pipeline's state will be preserved in the persistent storage, and the allocated resources will be released. The pipeline can be resumed from the preserved state, avoiding historic backfill."
+      "The pipeline's state will be preserved in the persistent storage, and the allocated compute resources will be released. The pipeline can be resumed from the preserved state, avoiding historic backfill."
     )(pipeline.current.name)}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
@@ -223,12 +227,12 @@
   <div>
     <button
       class="{buttonClass} {shortClass} {shortColor} fd fd-trash-2 preset-tonal-surface {iconClass}"
-      class:disabled={pipelineBusy}
+      class:disabled={editConfigDisabled}
       onclick={() => (globalDialog.dialog = deleteDialog)}
     >
     </button>
   </div>
-  {#if pipelineBusy}
+  {#if editConfigDisabled}
     <Tooltip
       class="bg-white-dark z-20 whitespace-nowrap rounded text-surface-950-50"
       placement="top"
@@ -268,7 +272,11 @@
   {/if}
 {/snippet}
 {#snippet _start_paused()}
-  {@render start(pipeline.current.status === 'Suspended' ? 'Resume' : 'Start', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Preparing')}
+  {@render start(
+    pipeline.current.status === 'Suspended' ? 'Resume' : 'Start',
+    (alt) => (alt ? 'start_paused' : 'start_paused_start'),
+    'Preparing'
+  )}
   {#if unsavedChanges}
     <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
       Save the program before running
@@ -303,7 +311,7 @@
       const pipelineName = pipeline.current.name
       await api.postPipelineAction(pipelineName, 'pause')
       onActionSuccess?.(pipelineName, 'pause')
-      pipeline.optimisticUpdate({ status: 'Suspending' })
+      pipeline.optimisticUpdate({ status: 'Pausing' })
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>
@@ -387,7 +395,7 @@
 
 {#snippet pipelineResourcesDialog(dialogTitle: string, field: keyof typeof pipeline.current)}
   <JSONDialog
-    disabled={pipelineBusy}
+    disabled={editConfigDisabled}
     json={JSONbig.stringify(pipeline.current[field], undefined, '  ')}
     filePath="file://feldera/pipelines/{pipeline.current.name}/{field}.json"
     onApply={async (json) => {
@@ -422,7 +430,7 @@
     class="{buttonClass} {shortClass} {shortColor} fd fd-sliders-horizontal {basicBtnColor} {iconClass}"
   >
   </button>
-  {#if pipelineBusy}
+  {#if editConfigDisabled}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Stop the pipeline to edit configuration
     </Tooltip>
@@ -434,15 +442,16 @@
     class="{buttonClass} {shortClass} {shortColor} fd fd-settings {basicBtnColor} {iconClass}"
   >
   </button>
-  {#if pipelineBusy}
+  {#if editConfigDisabled}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Stop the pipeline to edit configuration
     </Tooltip>
   {/if}
 {/snippet}
 {#snippet _configurations()}
-  <PipelineConfigurationsPopup {pipeline} {pipelineBusy}></PipelineConfigurationsPopup>
-  {#if pipelineBusy}
+  <PipelineConfigurationsPopup {pipeline} pipelineBusy={editConfigDisabled}
+  ></PipelineConfigurationsPopup>
+  {#if editConfigDisabled}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Stop the pipeline to edit configuration
     </Tooltip>
