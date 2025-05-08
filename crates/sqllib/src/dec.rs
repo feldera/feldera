@@ -1,4 +1,4 @@
-//! Operations on Decimal values and runtime Decimal type
+//! Operations on Decimal values
 
 use crate::{
     cast_to_SqlDecimal_s, some_existing_operator, some_function2, some_operator,
@@ -13,9 +13,9 @@ use feldera_types::serde_with_context::{
 };
 use num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, One, Zero};
 use rkyv::{string::StringResolver, DeserializeUnsized, Fallible, SerializeUnsized};
-use serde::de::Error as DeserError;
+use serde::de::Unexpected;
 use serde::ser::Error as SerError;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use serde_json::Number;
 use size_of::SizeOf;
 use std::{
@@ -35,8 +35,6 @@ pub struct SqlDecimal {
     value: LargeDecimal,
 }
 
-pub type RuntimeDecimal = SqlDecimal;
-
 pub(crate) type DecimalContext = Context<LargeDecimal>;
 
 #[doc(hidden)]
@@ -48,7 +46,6 @@ pub(crate) fn is_error(context: &DecimalContext) -> bool {
         || status.division_by_zero()
         || status.division_undefined()
         || status.division_impossible()
-        || status.underflow()
         || status.division_by_zero()
         || status.division_undefined()
 }
@@ -92,11 +89,14 @@ impl SqlDecimal {
     }
 
     pub fn validate(value: LargeDecimal, context: &DecimalContext, msg: &str) -> Self {
-        // println!("{:?} {:?} {:?}", value, context, context.status());
         if is_error(context) {
             panic!("Error during DECIMAL computation: {}", msg);
         }
-        SqlDecimal::new(value)
+        if value.is_zero() && value.is_negative() {
+            SqlDecimal::new(LargeDecimal::zero())
+        } else {
+            SqlDecimal::new(value)
+        }
     }
 
     pub fn abs(self) -> Self {
@@ -115,6 +115,23 @@ impl SqlDecimal {
         let result = context.parse(value)?;
         Ok(Self::new(result))
     }
+
+    pub fn from_i128_with_scale(value: i128, scale: i32) -> Self {
+        let mut context = CONTEXT_PROTO.clone();
+        let mut result = context.from_i128(value);
+        let scale = LargeDecimal::from(-scale);
+        context.rescale(&mut result, &scale);
+        Self::validate(result, &context, "from_i128_with_scale")
+    }
+
+    /// Will panic if the number does not fit in an i128
+    pub fn mantissa(self) -> i128 {
+        let mut context = CONTEXT_PROTO.clone();
+        let scale = LargeDecimal::from(0);
+        let mut result = self.value;
+        context.rescale(&mut result, &scale);
+        context.try_into_i128(result).unwrap()
+    }
 }
 
 impl Hash for SqlDecimal {
@@ -126,7 +143,7 @@ impl Hash for SqlDecimal {
 impl OptionWeightType for SqlDecimal {}
 impl OptionWeightType for &SqlDecimal {}
 
-impl Serialize for SqlDecimal {
+impl serde::Serialize for SqlDecimal {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -139,16 +156,135 @@ impl Serialize for SqlDecimal {
     }
 }
 
-impl<'de> Deserialize<'de> for SqlDecimal {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+struct DecimalVisitor;
+
+impl<'de> serde::Deserialize<'de> for SqlDecimal {
+    fn deserialize<D>(deserializer: D) -> Result<SqlDecimal, D::Error>
     where
-        D: Deserializer<'de>,
+        D: serde::de::Deserializer<'de>,
     {
-        let n: Number = Deserialize::deserialize(deserializer)?;
-        SqlDecimal::parse(&n.to_string())
-            .map_err(|e| D::Error::custom(format!("Error parsing DECIMAL {}", e)))
+        deserializer.deserialize_any(DecimalVisitor)
     }
 }
+
+impl<'de> serde::de::Visitor<'de> for DecimalVisitor {
+    type Value = SqlDecimal;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "A DECIMAL type representing a fixed-point number"
+        )
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<SqlDecimal, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(SqlDecimal::from(value))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<SqlDecimal, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(SqlDecimal::from(value))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<SqlDecimal, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(SqlDecimal::from(value))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<SqlDecimal, E>
+    where
+        E: serde::de::Error,
+    {
+        SqlDecimal::parse(value).map_err(|_| E::invalid_value(Unexpected::Str(value), &self))
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<SqlDecimal, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        let mut map = map;
+        let value = map.next_key::<DecimalKey>()?;
+        if value.is_none() {
+            return Err(serde::de::Error::invalid_type(Unexpected::Map, &self));
+        }
+        let v: DecimalFromString = map.next_value()?;
+        Ok(v.value)
+    }
+}
+
+struct DecimalKey;
+const DECIMAL_KEY_TOKEN: &str = "$serde_json::private::Number";
+
+impl<'de> serde::de::Deserialize<'de> for DecimalKey {
+    fn deserialize<D>(deserializer: D) -> Result<DecimalKey, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        struct FieldVisitor;
+
+        impl serde::de::Visitor<'_> for FieldVisitor {
+            type Value = ();
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a valid DECIMAL field")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<(), E>
+            where
+                E: serde::de::Error,
+            {
+                if s == DECIMAL_KEY_TOKEN {
+                    Ok(())
+                } else {
+                    Err(serde::de::Error::custom("expected field with custom name"))
+                }
+            }
+        }
+
+        deserializer.deserialize_identifier(FieldVisitor)?;
+        Ok(DecimalKey)
+    }
+}
+
+pub struct DecimalFromString {
+    pub value: SqlDecimal,
+}
+
+impl<'de> serde::de::Deserialize<'de> for DecimalFromString {
+    fn deserialize<D>(deserializer: D) -> Result<DecimalFromString, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl serde::de::Visitor<'_> for Visitor {
+            type Value = DecimalFromString;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("string containing a DECIMAL")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<DecimalFromString, E>
+            where
+                E: serde::de::Error,
+            {
+                let d = SqlDecimal::parse(value).map_err(serde::de::Error::custom)?;
+                Ok(DecimalFromString { value: d })
+            }
+        }
+
+        deserializer.deserialize_str(Visitor)
+    }
+}
+
+//////////////////////
 
 impl SerializeWithContext<SqlSerdeConfig> for SqlDecimal {
     fn serialize_with_context<S>(
@@ -254,6 +390,12 @@ impl From<i64> for SqlDecimal {
     }
 }
 
+impl From<u64> for SqlDecimal {
+    fn from(n: u64) -> Self {
+        Self::new(LargeDecimal::from(n))
+    }
+}
+
 impl From<f32> for SqlDecimal {
     fn from(n: f32) -> Self {
         Self::new(LargeDecimal::from(n))
@@ -274,12 +416,6 @@ impl From<isize> for SqlDecimal {
 
 impl From<usize> for SqlDecimal {
     fn from(n: usize) -> Self {
-        Self::new(LargeDecimal::from(n))
-    }
-}
-
-impl From<u64> for SqlDecimal {
-    fn from(n: u64) -> Self {
         Self::new(LargeDecimal::from(n))
     }
 }
@@ -431,10 +567,6 @@ impl Neg for SqlDecimal {
     type Output = Self;
 
     fn neg(self) -> Self {
-        if HasZero::is_zero(&self) {
-            // Do not return -zero
-            return self;
-        }
         let mut context = CONTEXT_PROTO.clone();
         let mut result = self.value;
         context.neg(&mut result);
@@ -805,4 +937,131 @@ pub fn shift_left__(left: SqlDecimal, amount: i32) -> SqlDecimal {
 pub fn shift_leftN_(left: Option<SqlDecimal>, amount: i32) -> Option<SqlDecimal> {
     let left = left?;
     Some(shift_left__(left, amount))
+}
+
+#[cfg(test)]
+mod test {
+    use crate::SqlDecimal;
+    use feldera_types::deserialize_table_record;
+    use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+    use std::sync::LazyLock;
+
+    static DEFAULT_CONFIG: LazyLock<SqlSerdeConfig> = LazyLock::new(SqlSerdeConfig::default);
+
+    fn deserialize_with_default_context<'de, T>(json: &'de str) -> Result<T, serde_json::Error>
+    where
+        T: DeserializeWithContext<'de, SqlSerdeConfig>,
+    {
+        T::deserialize_with_context(
+            &mut serde_json::Deserializer::from_str(json),
+            &DEFAULT_CONFIG,
+        )
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    #[allow(non_snake_case)]
+    struct Struct2 {
+        #[allow(non_snake_case)]
+        cc_num: u64,
+        #[allow(non_snake_case)]
+        first: Option<String>,
+        #[allow(non_snake_case)]
+        dec: SqlDecimal,
+    }
+    deserialize_table_record!(Struct2["Table.Name", 3] {(cc_num, "cc_num", false, u64, None), (first, "first", false, Option<String>, Some(None)), (dec, "dec", false, SqlDecimal, None)});
+
+    #[test]
+    fn deserialize_struct2() {
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100, "dec": "0.123"}"#)
+                .unwrap(),
+            Struct2 {
+                cc_num: 100,
+                first: None,
+                dec: SqlDecimal::from(0.123),
+            }
+        );
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100, "dec": 0.123}"#)
+                .unwrap(),
+            Struct2 {
+                cc_num: 100,
+                first: None,
+                dec: SqlDecimal::from(0.123),
+            }
+        );
+
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(
+                r#"{"CC_NUM": 100, "first": null, "dec": "-1.40"}"#
+            )
+            .unwrap(),
+            Struct2 {
+                cc_num: 100,
+                first: None,
+                dec: SqlDecimal::from(-1.40),
+            }
+        );
+
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(
+                r#"{"CC_NUM": 100, "first": null, "dec": -1.40}"#
+            )
+            .unwrap(),
+            Struct2 {
+                cc_num: 100,
+                first: None,
+                dec: SqlDecimal::from(-1.40),
+            }
+        );
+
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(
+                r#"{"CC_NUM": 100, "first": "foo", "dec": "1e20"}"#
+            )
+            .unwrap(),
+            Struct2 {
+                cc_num: 100,
+                first: Some("foo".to_string()),
+                dec: SqlDecimal::from(1e20),
+            }
+        );
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(r#"{"first": "foo"}"#)
+                .map_err(|e| e.to_string()),
+            Err(r#"missing field `cc_num` at line 1 column 16"#.to_string())
+        );
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(r#"[100, "foo", "-1e20"]"#).unwrap(),
+            Struct2 {
+                cc_num: 100,
+                first: Some("foo".to_string()),
+                dec: SqlDecimal::from(-1e20),
+            }
+        );
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(r#"[100, null, "2e-5"]"#).unwrap(),
+            Struct2 {
+                cc_num: 100,
+                first: None,
+                dec: SqlDecimal::from(0.00002),
+            }
+        );
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(r#"[100, null, "-3e-5"]"#).unwrap(),
+            Struct2 {
+                cc_num: 100,
+                first: None,
+                dec: SqlDecimal::from(-3e-5),
+            }
+        );
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(r#"[100, null, -3e-5]"#).unwrap(),
+            Struct2 {
+                cc_num: 100,
+                first: None,
+                dec: SqlDecimal::from(-3e-5),
+            }
+        );
+    }
 }

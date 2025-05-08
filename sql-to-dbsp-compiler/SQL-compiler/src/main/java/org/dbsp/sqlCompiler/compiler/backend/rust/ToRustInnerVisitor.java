@@ -1382,7 +1382,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             functionName = "cast_to_" + t.shortName() + destType.nullableSuffix() +
                     "_" + t.shortName() + sourceType.nullableSuffix();
         } else if (destType.is(DBSPTypeRuntimeDecimal.class)) {
-            functionName = "cast_to_RuntimeDecimal" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
+            functionName = "cast_to_SqlDecimal" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
         }
         this.builder.append(functionName).append("(");
         expression.source.accept(this);

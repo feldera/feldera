@@ -86,6 +86,7 @@ deltalake = { workspace = true, features = ["datafusion", "s3", "gcs", "azure"],
 apache-avro = { workspace = true, optional = true }
 schema_registry_converter = { workspace = true, features = ["avro", "blocking"], optional = true }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["tokio-pg"] }
+rust_decimal_macros = "1.32"
 url = { workspace = true }
 metrics = { workspace = true }
 metrics-util = { workspace = true }
@@ -128,6 +129,7 @@ feldera-ir = { workspace = true }
 base64 = {workspace = true }
 aws-msk-iam-sasl-signer = "1.0.0"
 aws-credential-types = "1.2.3"
+feldera-sqllib = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]
@@ -151,9 +153,7 @@ futures-timer = { workspace = true }
 test_bin = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 serial_test = { workspace = true }
-rust_decimal_macros = { workspace = true }
 mockall = { workspace = true }
 pretty_assertions = { workspace = true }
-feldera-sqllib = { workspace = true }
 google-cloud-googleapis = { workspace = true }
 postgres-types = { version = "0.2.9", features = ["derive"] }

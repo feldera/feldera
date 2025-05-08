@@ -42,7 +42,6 @@ crossbeam = { workspace = true }
 arc-swap = { workspace = true }
 mimalloc-rust-sys = { workspace = true }
 rand = { workspace = true }
-rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
 rkyv = { workspace = true, features = ["std", "size_64", "validation", "uuid"] }
 size-of = { workspace = true, features = [
     "hashbrown",

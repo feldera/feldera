@@ -10,8 +10,6 @@ use feldera_types::serde_with_context::serde_config::VariantFormat;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
-use num::FromPrimitive;
-use rust_decimal::Decimal;
 use serde::de::{self, DeserializeSeed, Error as _, MapAccess, SeqAccess, Visitor};
 use serde::ser::{self, Error as _};
 use serde::{Deserialize, Serialize};
@@ -58,7 +56,6 @@ pub enum Variant {
     BigInt(i64),
     Real(F32),
     Double(F64),
-    Decimal(Decimal),
     SqlDecimal(SqlDecimal),
     String(SqlString),
     Date(Date),
@@ -333,9 +330,7 @@ impl<'de> de::Deserialize<'de> for NumberFromString {
             where
                 E: de::Error,
             {
-                let d = SqlDecimal::parse(s)
-                    // .or_else(|_| SqlDecimal::from_scientific(s))
-                    .map_err(serde::de::Error::custom)?;
+                let d = SqlDecimal::parse(s).map_err(serde::de::Error::custom)?;
                 Ok(NumberFromString { value: d })
             }
         }
@@ -381,7 +376,6 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
                 Variant::BigInt(v) => v.serialize_with_context(serializer, context),
                 Variant::Real(v) => v.serialize_with_context(serializer, context),
                 Variant::Double(v) => v.serialize_with_context(serializer, context),
-                Variant::Decimal(v) => v.serialize_with_context(serializer, context),
                 Variant::SqlDecimal(v) => v.serialize_with_context(serializer, context),
                 Variant::String(v) => v.serialize_with_context(serializer, context),
                 Variant::Date(v) => v.serialize_with_context(serializer, context),
@@ -412,7 +406,6 @@ impl Variant {
             Variant::BigInt(_) => "BIGINT",
             Variant::Real(_) => "REAL",
             Variant::Double(_) => "DOUBLE",
-            Variant::Decimal(_) => "DECIMAL",
             Variant::SqlDecimal(_) => "DECIMAL",
             Variant::String(_) => "VARCHAR",
             Variant::Date(_) => "DATE",
@@ -501,7 +494,6 @@ from!(Int, i32);
 from!(BigInt, i64);
 from!(Real, F32);
 from!(Double, F64);
-from!(Decimal, Decimal);
 from!(SqlDecimal, SqlDecimal);
 from!(String, SqlString);
 from!(Date, Date);
@@ -662,7 +654,6 @@ macro_rules! into_numeric {
                         Variant::BigInt(x) => [< cast_to_ $type_name _i64 >](x),
                         Variant::Real(x) => [< cast_to_ $type_name _f >](x),
                         Variant::Double(x) => [< cast_to_ $type_name _d >](x),
-                        Variant::Decimal(x) => [< cast_to_ $type_name _decimal >](x),
                         Variant::SqlDecimal(x) => [< cast_to_ $type_name _SqlDecimal >](x),
                         _ => Err(SqlRuntimeError::from_string(format!(
                             "variant is {}, which cannot be converted to {}",
@@ -701,41 +692,6 @@ into_numeric!(F32, f);
 into_numeric!(F64, d);
 
 #[doc(hidden)]
-impl TryFrom<Variant> for Decimal {
-    type Error = Box<dyn Error>;
-
-    #[doc(hidden)]
-    fn try_from(value: Variant) -> Result<Self, Self::Error> {
-        match value {
-            Variant::TinyInt(x) => {
-                Decimal::from_i8(x).ok_or(SqlRuntimeError::from_strng("out of range"))
-            }
-            Variant::SmallInt(x) => {
-                Decimal::from_i16(x).ok_or(SqlRuntimeError::from_strng("out of range"))
-            }
-            Variant::Int(x) => {
-                Decimal::from_i32(x).ok_or(SqlRuntimeError::from_strng("out of range"))
-            }
-            Variant::BigInt(x) => {
-                Decimal::from_i64(x).ok_or(SqlRuntimeError::from_strng("out of range"))
-            }
-            Variant::Real(x) => {
-                Decimal::from_f32(x.into_inner()).ok_or(SqlRuntimeError::from_strng("out of range"))
-            }
-            Variant::Double(x) => {
-                Decimal::from_f64(x.into_inner()).ok_or(SqlRuntimeError::from_strng("out of range"))
-            }
-            Variant::Decimal(x) => Ok(x),
-            _ => Err(SqlRuntimeError::from_string(format!(
-                "variant is {}, which cannot be converted to {}",
-                typeof_(value),
-                "DECIMAL",
-            ))),
-        }
-    }
-}
-
-#[doc(hidden)]
 impl TryFrom<Variant> for SqlDecimal {
     type Error = Box<dyn Error>;
 
@@ -754,23 +710,6 @@ impl TryFrom<Variant> for SqlDecimal {
                 typeof_(value),
                 "DECIMAL",
             ))),
-        }
-    }
-}
-
-#[doc(hidden)]
-impl TryFrom<Variant> for Option<Decimal> {
-    type Error = Box<dyn Error>;
-
-    #[doc(hidden)]
-    fn try_from(value: Variant) -> Result<Self, Self::Error> {
-        match value {
-            Variant::VariantNull => Ok(None),
-            Variant::SqlNull => Ok(None),
-            _ => match Decimal::try_from(value) {
-                Ok(result) => Ok(Some(result)),
-                Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
-            },
         }
     }
 }
@@ -1016,7 +955,7 @@ mod test {
 
         assert_eq!(
             serde_json::from_str::<Variant>("10e10").unwrap(),
-            Variant::SqlDecimal(SqlDecimal::parse("100_000_000_000").unwrap())
+            Variant::SqlDecimal(SqlDecimal::parse("100000000000").unwrap())
         );
     }
 

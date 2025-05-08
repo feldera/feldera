@@ -1,6 +1,5 @@
 use crate::algebra::{HasOne, HasZero, MulByRef};
 use rkyv::{Archive, Deserialize, Serialize};
-use rust_decimal::Decimal;
 use size_of::SizeOf;
 use std::ops::{Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -107,7 +106,6 @@ make_mul!(i32);
 make_mul!(i64);
 make_mul!(F32);
 make_mul!(F64);
-make_mul!(Decimal);
 
 // FIXME: This doesn't really make sense and is wrong
 impl Neg for Present {

@@ -120,7 +120,6 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                 MapHandle, ZSetHandle, OutputHandle,
                 dynamic::{DynData,DynDataTyped},
             };
-            use rust_decimal_macros::dec;
             use dbsp_adapters::Catalog;
             use feldera_types::{
                 program_schema::SqlIdentifier,
@@ -139,6 +138,5 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                 sync::{Arc, LazyLock},
             };
             use core::cmp::Ordering;
-            use rust_decimal::Decimal;
             use feldera_sqllib::*;""";
 }

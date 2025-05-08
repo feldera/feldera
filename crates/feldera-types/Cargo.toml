@@ -31,6 +31,6 @@ thiserror = { workspace = true }
 regex = { workspace = true }
 
 [dev-dependencies]
-rust_decimal_macros = { workspace = true }
+rust_decimal_macros = "1.32"
 csv = { workspace = true }
 tempfile = { workspace = true }
