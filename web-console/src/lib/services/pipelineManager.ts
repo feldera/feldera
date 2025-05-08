@@ -115,6 +115,10 @@ const consolidatePipelineStatus = (
     .with(['Running', 'Shutdown', P._], () => 'ShuttingDown' as const)
     .with(['Running', P.any, P._], () => 'Running' as const)
     .with(['ShuttingDown', P.any, P._], () => 'ShuttingDown' as const)
+    .with(['Suspended', 'Suspended', P._], () => 'Suspended' as const)
+    .with(['Suspended', P.any, P._], () => 'Resuming' as const)
+    .with([P.not('Shutdown'), 'Shutdown', P._], () => 'ShuttingDown' as const)
+    .with([P.not('Suspended'), 'Suspended', P._], () => 'Suspending' as const)
     .with(
       ['Failed', P.any, P._],
       P.when(() => nonNull(pipelineError)),
@@ -146,6 +150,8 @@ export const programStatusOf = (status: PipelineStatus) =>
       'Unavailable',
       'Running',
       'Paused',
+      'Suspending',
+      'Suspended',
       'ShuttingDown',
       { PipelineError: P.any },
       'Shutdown',
@@ -350,7 +356,7 @@ export const deletePipeline = async (pipeline_name: string) => {
   await mapResponse(_deletePipeline({ path: { pipeline_name } }), (v) => v)
 }
 
-export type PipelineAction = 'start' | 'pause' | 'shutdown' | 'start_paused'
+export type PipelineAction = 'start' | 'pause' | 'shutdown' | 'start_paused' | 'suspend'
 
 export const postPipelineAction = async (
   pipeline_name: string,
@@ -368,7 +374,8 @@ export const postPipelineAction = async (
         start: 'Running',
         pause: 'Paused',
         shutdown: 'Shutdown',
-        start_paused: 'Paused'
+        start_paused: 'Paused',
+        suspend: 'Suspended'
       } satisfies Record<PipelineAction, PipelineStatus>
     )[action]
     const ignoreStatuses: NamesInUnion<PipelineStatus>[] = [
