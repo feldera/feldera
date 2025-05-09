@@ -87,7 +87,7 @@ impl From<&str> for SqlString {
 
 impl SizeOf for SqlString {
     fn size_of_children(&self, context: &mut Context) {
-        self.str().size_of_children(context)
+        self.0.size_of_children(context);
     }
 }
 
@@ -714,6 +714,7 @@ mod tests {
     use crate::SqlString;
     use dbsp::storage::file::to_bytes;
     use rkyv::from_bytes;
+    use size_of::SizeOf;
 
     #[test]
     fn rkyv_serialize_deserialize_sqlstring() {
@@ -721,5 +722,15 @@ mod tests {
         let archived = to_bytes(&s).unwrap();
         let deserialized: SqlString = from_bytes(&archived).unwrap();
         assert_eq!(s.str(), deserialized.str());
+    }
+
+    #[test]
+    fn sizeof_sqlstring() {
+        let s = SqlString::from_ref("abcdefghijklmnopqrstuvwxyz");
+        let total_size = SizeOf::size_of(&s);
+
+        // The exact size may depend on the architecture's pointer size.
+        assert!(total_size.total_bytes() > 26);
+        assert!(total_size.shared_bytes() >= 26);
     }
 }
