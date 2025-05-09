@@ -81,6 +81,11 @@ where
     /// Maximum time to wait for the pipeline resources to be provisioned.
     /// This can differ significantly between the type of runner.
     default_provisioning_timeout: Duration,
+
+    /// How often has the automaton encountered a database error during operation.
+    /// This will decide its backoff timeout. It will be reset to zero if a run
+    /// cycle succeeds.
+    database_error_counter: u64,
 }
 
 impl<T: PipelineExecutor> PipelineAutomaton<T> {
@@ -138,6 +143,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             first_run_cycle: true,
             provision_called: None,
             default_provisioning_timeout,
+            database_error_counter: 0,
         }
     }
 
@@ -153,32 +159,52 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             match self.do_run().await {
                 Ok(new_poll_timeout) => {
                     poll_timeout = new_poll_timeout;
+                    self.database_error_counter = 0; // Cycle succeeded
                 }
                 Err(e) => {
-                    // Only database errors can bubble up here. They are always fatal
-                    // to the automaton because the database itself is used to update
-                    // the pipeline status and communicate failures to the user.
+                    // Only database errors can bubble up here. The database itself
+                    // is used to update the pipeline status and communication failures
+                    // to the user, as such it does not have a way to communicate the
+                    // database errors here. There are two categories of database errors:
+                    // not being able to reach the database (e.g., due to temporary outage),
+                    // or a database operation is expected to succeed but is not.
                     //
-                    // TODO: as a consequence, if the database is temporarily unreachable,
-                    //       the pipeline automatons will terminate. It is not possible to
-                    //       recreate a pipeline automaton currently except by restarting
-                    //       the runner. There could be a retry strategy here for the database,
-                    //       where it not immediately terminates but instead waits in hopes
-                    //       of the database returning.
+                    // As we cannot communicate the errors, instead we log the error and
+                    // backoff before trying again. In the case of a temporary outage,
+                    // it should again be reachable eventually. In the case of a failing
+                    // database operation, it might be that the user can change the operation
+                    // by setting a different desired state (e.g., shutting it down).
+                    // In the latter case, it needs to still be investigated why a database
+                    // operation did not work, and the relevant operation fixed.
                     match &e {
                         // Pipeline deletions should not lead to errors in the logs.
                         DBError::UnknownPipeline { pipeline_id } => {
                             info!("Automaton ended: pipeline {pipeline_id}");
+
+                            // By leaving the run loop, the automaton will consume itself.
+                            // As such, the pipeline_handle it owns will be dropped,
+                            // which in turn will shut down by itself as a consequence.
+                            return Err(ManagerError::from(e));
                         }
-                        _ => {
-                            error!("Automaton ended (unexpected): pipeline {pipeline_id} -- due to database error: {e}")
+                        e => {
+                            let backoff_timeout = match self.database_error_counter {
+                                0 => Duration::from_secs(5),
+                                1..=5 => Duration::from_secs(10),
+                                6..=10 => Duration::from_secs(30),
+                                11..=15 => Duration::from_secs(60),
+                                16..=20 => Duration::from_secs(120),
+                                21..=25 => Duration::from_secs(300),
+                                26..=30 => Duration::from_secs(600),
+                                _ => Duration::from_secs(1200),
+                            };
+                            self.database_error_counter += 1;
+                            error!(
+                                "Automaton of pipeline {pipeline_id} encountered a database error: {e} -- retrying run cycle in {} seconds...",
+                                backoff_timeout.as_secs()
+                            );
+                            poll_timeout = backoff_timeout;
                         }
                     };
-
-                    // By leaving the run loop, the automaton will consume itself.
-                    // As such, the pipeline_handle it owns will be dropped,
-                    // which in turn will shut down by itself as a consequence.
-                    return Err(ManagerError::from(e));
                 }
             }
         }
