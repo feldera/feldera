@@ -25,6 +25,7 @@ use crate::{
 use crate::storage::file::to_bytes;
 pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
+use enum_map::EnumMap;
 use feldera_storage::StoragePath;
 use list_merger::ArcMerger;
 use metrics::counter;
@@ -73,7 +74,7 @@ impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine {
 }
 
 /// A group of batches with similar sizes (as determined by [size_from_level]).
-#[derive(SizeOf)]
+#[derive(Clone, SizeOf)]
 struct Slot<B>
 where
     B: Batch,
@@ -275,21 +276,13 @@ where
         self.add_batches([new_batch]);
     }
 
-    /// Returns information that the caller can use to construct a metadata
-    /// report. The vector consists of each of the batches and a bool that
-    /// indicates whether it is now being merged.
+    /// Returns a copy of the data that the caller can use to construct a
+    /// metadata report.
     ///
-    /// This is better than getting the full metadata here because part of that
-    /// is measuring the size of the batches, which can require I/O.
-    fn metadata_snapshot(&self) -> (Vec<(Arc<B>, bool)>, MergeStats) {
-        let mut batches = Vec::new();
-        for slot in &self.slots {
-            batches.extend(slot.loose_batches.iter().map(|b| (Arc::clone(b), false)));
-            if let Some(merging_batches) = &slot.merging_batches {
-                batches.extend(merging_batches.iter().map(|b| (Arc::clone(b), true)));
-            }
-        }
-        (batches, self.merge_stats.clone())
+    /// This is better than constructing the report here directly, because part
+    /// of that is measuring the size of the batches, which can require I/O.
+    fn metadata_snapshot(&self) -> ([Slot<B>; MAX_LEVELS], MergeStats) {
+        (self.slots.clone(), self.merge_stats.clone())
     }
 }
 
@@ -466,8 +459,52 @@ where
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
-        let (batches, merge_stats) = self.state.lock().unwrap().metadata_snapshot();
+        let (mut slots, merge_stats) = self.state.lock().unwrap().metadata_snapshot();
 
+        // Construct per-slot occupancy description.
+        for (index, slot) in slots.iter_mut().enumerate() {
+            for (class, batches) in [
+                ("loose", slot.loose_batches.make_contiguous() as &_),
+                (
+                    "merging",
+                    slot.merging_batches
+                        .as_ref()
+                        .unwrap_or(&Vec::new())
+                        .as_slice(),
+                ),
+            ] {
+                if !batches.is_empty() {
+                    let mut tuple_counts = EnumMap::<BatchLocation, usize>::default();
+                    for batch in batches {
+                        tuple_counts[batch.location()] += batch.len();
+                    }
+
+                    let mut facts = Vec::with_capacity(3);
+                    facts.push(format!("{} batches", batches.len()));
+                    for (location, count) in tuple_counts {
+                        if count > 0 {
+                            facts.push(format!("{count} {} tuples", location.as_str()));
+                        }
+                    }
+                    meta.extend([(
+                        format!("slot {index} {class}").into(),
+                        MetaItem::String(facts.join(", ")),
+                    )]);
+                }
+            }
+        }
+
+        // Extract all the batches from `slots`, annotating with whether they're
+        // merging.
+        let mut batches = Vec::new();
+        for slot in slots {
+            batches.extend(slot.loose_batches.into_iter().map(|b| (b, false)));
+            if let Some(merging_batches) = slot.merging_batches {
+                batches.extend(merging_batches.into_iter().map(|b| (b, true)));
+            }
+        }
+
+        // Then summarize the batches.
         let n_batches = batches.len();
         let n_merging = batches.iter().filter(|(_batch, merging)| *merging).count();
         let mut cache_stats = merge_stats.cache_stats;
