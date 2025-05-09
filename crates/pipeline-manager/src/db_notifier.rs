@@ -7,9 +7,10 @@ use crate::db::types::pipeline::PipelineId;
 use crate::db::types::tenant::TenantId;
 use futures_util::{stream, StreamExt};
 use log::{debug, error, trace, warn};
+use postgres_openssl::TlsStream;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_postgres::AsyncMessage;
+use tokio_postgres::{tls::NoTlsStream, AsyncMessage, Connection, Socket};
 use uuid::Uuid;
 
 const RETRY_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(2);
@@ -73,14 +74,30 @@ pub async fn listen(
     conn: Arc<tokio::sync::Mutex<StoragePostgres>>,
     tx: UnboundedSender<DbNotification>,
 ) {
+    let db_config = conn.lock().await.db_config.clone();
     loop {
-        let (client, mut connection) = conn
-            .lock()
-            .await
-            .config
-            .connect(tokio_postgres::NoTls)
-            .await
-            .unwrap();
+        enum ConnWrapper {
+            Tls(Connection<Socket, TlsStream<Socket>>),
+            NoTls(Connection<Socket, NoTlsStream>),
+        }
+
+        let (client, mut connection) = if let Some(connector) = db_config
+            .tls_connector()
+            .expect("Unable to get Tls connector")
+        {
+            let (client, connection) = conn.lock().await.config.connect(connector).await.unwrap();
+            (client, ConnWrapper::Tls(connection))
+        } else {
+            let (client, connection) = conn
+                .lock()
+                .await
+                .config
+                .connect(tokio_postgres::NoTls)
+                .await
+                .unwrap();
+            (client, ConnWrapper::NoTls(connection))
+        };
+
         let client = Arc::new(client);
         // Not clear why the calls to LISTEN block forever when we call it from the same
         // thread. But we need to call LISTEN before we can poll for async
@@ -89,7 +106,11 @@ pub async fn listen(
         tokio::spawn(async move {
             client_copy.batch_execute("LISTEN pipeline;").await.unwrap();
         });
-        let mut stream = stream::poll_fn(move |cx| connection.poll_message(cx));
+        let mut stream = stream::poll_fn(move |cx| match &mut connection {
+            ConnWrapper::Tls(c) => c.poll_message(cx),
+            ConnWrapper::NoTls(c) => c.poll_message(cx),
+        });
+
         let res = sync(&conn, &tx).await;
         if res.is_err() {
             error!("Synchronize attempt returned an error {:?}", res);

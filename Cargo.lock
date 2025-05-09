@@ -7642,6 +7642,7 @@ dependencies = [
  "openssl",
  "pg-client-config",
  "pg-embed",
+ "postgres-openssl",
  "pretty_assertions",
  "proptest",
  "proptest-derive",
@@ -7772,6 +7773,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.98",
+]
+
+[[package]]
+name = "postgres-openssl"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb14e4bbc2c0b3d165bf30b79c7a9c10412dff9d98491ffdd64ed810ab891d21"
+dependencies = [
+ "openssl",
+ "tokio",
+ "tokio-openssl",
+ "tokio-postgres",
 ]
 
 [[package]]

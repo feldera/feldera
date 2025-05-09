@@ -118,6 +118,48 @@ Instead of the insecure default DB credentials, you can supply your own custom d
    ```
    _Note:_ it must be a new installation.
 
+### Connect to an external database service
+
+You can connect to an external PostgreSQL database with the following steps:
+
+1. **Secret configuration file:** create a file `feldera-db-secret.yaml` with the `.connection_url`
+  ```yaml
+   # Filename: feldera-db-secret.yaml
+   apiVersion: v1
+   kind: Secret
+   type: Opaque
+   metadata:
+     name: feldera-db-secret
+   stringData:
+     .connection_url: "postgresql://username:password@db-name.cluster-name.region.rds.amazonaws.com/db_name?sslmode=require"
+  ```
+
+2. **Create secret:** with the configuration file, create the secret:
+   ```bash
+   #kubectl create namespace feldera  # If the namespace does not exist yet
+   kubectl apply -n feldera -f feldera-db-secret.yaml
+   ```
+
+3. **Add the TLS Certificate (`.pem` file) in a configmap**: We use the Amazon bundled `.pem` file
+   as an example (in case you want to connect to Amazon RDS):
+
+   ```bash
+   wget https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+   kubectl create configmap postgres-pem -n feldera --from-file=postgresql-ca.pem=global-bundle.pem
+   ```
+
+   _Note:_ If necessary, you can override the file (`postgresql-ca.pem`) and configmap (`postgres-pem`) 
+   names by adjusting `postgresTlsCertificateFile` and `postgresTlsConfigMapRef` in `values.yaml`.
+
+3. **Specify secret and external postgres configuration during installation:** in the `helm` installation command, set
+   the following:
+   ```
+   --set postgresExternal=true
+   --set felderaDatabaseSecretRef="feldera-db-secret"
+   ```
+
+   _Note:_ it must be a new installation.
+
 ### Feldera installation overview
 
 **Services:**

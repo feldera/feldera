@@ -167,6 +167,11 @@ pub enum DBError {
         desired_status: PipelineDesiredStatus,
         requested_desired_status: PipelineDesiredStatus,
     },
+    TlsConnection {
+        hint: String,
+        #[serde(skip)]
+        openssl_error: Option<openssl::error::ErrorStack>,
+    },
 }
 
 impl DBError {
@@ -559,6 +564,9 @@ impl Display for DBError {
                     "Deployment status (current: '{status:?}', desired: '{desired_status:?}') cannot have desired changed to '{requested_desired_status:?}'. {hint}"
                 )
             }
+            DBError::TlsConnection { hint, .. } => {
+                write!(f, "Unable to setup TLS connection to the database: {hint}")
+            }
         }
     }
 }
@@ -632,6 +640,7 @@ impl DetailedError for DBError {
                 Cow::from("InvalidDeploymentStatusTransition")
             }
             Self::IllegalPipelineAction { .. } => Cow::from("IllegalPipelineAction"),
+            Self::TlsConnection { .. } => Cow::from("TlsConnection"),
         }
     }
 }
@@ -683,6 +692,7 @@ impl ResponseError for DBError {
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidDeploymentStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::IllegalPipelineAction { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which cannot be performed currently
+            Self::TlsConnection { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
