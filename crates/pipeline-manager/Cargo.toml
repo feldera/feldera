@@ -66,6 +66,7 @@ deadpool-postgres = { workspace = true }
 # Waiting for https://github.com/faokunega/pg-embed/pull/26
 pg-embed = { workspace = true, features = ["rt_tokio"], optional = true }
 refinery = { workspace = true, features = ["tokio-postgres"] }
+postgres-openssl = { workspace = true }
 
 # HTTP server and client
 actix-web = { workspace = true }

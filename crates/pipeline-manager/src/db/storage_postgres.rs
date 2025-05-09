@@ -33,6 +33,8 @@ mod embedded {
 /// A trait method implementation consists of a single transaction
 /// in which database operations are executed.
 pub struct StoragePostgres {
+    /// DatabaseConfig cmd line arguments.
+    pub db_config: DatabaseConfig,
     /// Postgres configuration.
     pub config: tokio_postgres::Config,
     /// Pool from which clients can be taken.
@@ -1018,86 +1020,55 @@ impl StoragePostgres {
         db_config: &DatabaseConfig,
         #[cfg(feature = "pg-embed")] pg_embed_config: PgEmbedConfig,
     ) -> Result<Self, DBError> {
-        let connection_str = db_config.database_connection_string();
-
         #[cfg(feature = "pg-embed")]
-        if connection_str.starts_with("postgres-embed") {
+        if db_config.uses_postgres_embed() {
             let database_dir = pg_embed_config.pg_embed_data_dir();
             let pg_inst = pg_setup::install(database_dir, true, Some(8082)).await?;
             let connection_string = pg_inst.db_uri.to_string();
-            return Self::connect_inner(connection_string.as_str(), Some(pg_inst)).await;
+            let db_config = DatabaseConfig::new(connection_string, None);
+            return Self::initialize(&db_config, Some(pg_inst)).await;
         };
 
-        Self::connect_inner(
-            connection_str.as_str(),
+        Self::initialize(
+            db_config,
             #[cfg(feature = "pg-embed")]
             None,
         )
         .await
     }
 
-    /// Connect to the project database.
-    ///
-    /// # Arguments
-    /// - `config` a tokio postgres config
-    ///
-    /// # Notes
-    /// Maybe this should become the preferred way to create a ProjectDb
-    /// together with `pg-client-config` (and drop `connect_inner`).
-    #[cfg(all(test, not(feature = "pg-embed")))]
-    pub(crate) async fn with_config(config: tokio_postgres::Config) -> Result<Self, DBError> {
-        let db = StoragePostgres::initialize(
-            config,
-            #[cfg(feature = "pg-embed")]
-            None,
-        )
-        .await?;
-        Ok(db)
-    }
-
-    /// Connect to the project database.
-    ///
-    /// # Arguments
-    /// - `connection_str`: The connection string to the database.
-    pub(crate) async fn connect_inner(
-        connection_str: &str,
+    pub(crate) async fn initialize(
+        db_config: &DatabaseConfig,
         #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
     ) -> Result<Self, DBError> {
-        if !connection_str.starts_with("postgres") {
-            panic!("Unsupported Postgres connection string: does not start with 'postgres'");
-        }
-        let config = connection_str.parse::<tokio_postgres::Config>()?;
+        let config = db_config.tokio_postgres_config()?;
         debug!(
             "Opening Postgres connection with configuration: {:?}",
             config
         );
-
-        let db = StoragePostgres::initialize(
-            config,
-            #[cfg(feature = "pg-embed")]
-            pg_inst,
-        )
-        .await?;
-        Ok(db)
-    }
-
-    async fn initialize(
-        config: tokio_postgres::Config,
-        #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
-    ) -> Result<Self, DBError> {
+        let tls = db_config.tls_connector()?;
         let mgr_config = deadpool_postgres::ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         };
-        let mgr = Manager::from_config(config.clone(), NoTls, mgr_config);
+        let mgr = if let Some(tls_connector) = tls {
+            Manager::from_config(config.clone(), tls_connector, mgr_config)
+        } else {
+            Manager::from_config(config.clone(), NoTls, mgr_config)
+        };
         let pool = Pool::builder(mgr).max_size(16).build().unwrap();
         #[cfg(feature = "pg-embed")]
         return Ok(Self {
+            db_config: db_config.clone(),
             config,
             pool,
             pg_inst,
         });
         #[cfg(not(feature = "pg-embed"))]
-        return Ok(Self { config, pool });
+        return Ok(Self {
+            db_config: db_config.clone(),
+            config,
+            pool,
+        });
     }
 
     /// Runs database migrations if needed.

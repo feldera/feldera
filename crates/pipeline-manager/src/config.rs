@@ -1,11 +1,14 @@
-use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::CompilationProfile;
 use crate::db::types::version::Version;
+use crate::db::{error::DBError, types::pipeline::PipelineId};
 use actix_web::http::header;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
+use openssl::ssl::{SslConnector, SslMethod};
+use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use std::{
+    env,
     fs::{canonicalize, create_dir_all},
     path::{Path, PathBuf},
 };
@@ -205,16 +208,76 @@ pub struct DatabaseConfig {
     #[serde(default = "default_db_connection_string")]
     #[arg(long, default_value_t = default_db_connection_string())]
     pub db_connection_string: String,
+
+    /// Create a TLS connector by loading a certificate from the path specified argument.
+    ///
+    /// If the argument is not set, tries to connect without TLS.
+    #[arg(long, env = "FELDERA_DB_TLS_CERT_PATH")]
+    pub db_tls_certificate_path: Option<String>,
 }
 
 impl DatabaseConfig {
+    pub fn new(db_connection_string: String, db_tls_certificate_path: Option<String>) -> Self {
+        Self {
+            db_connection_string,
+            db_tls_certificate_path,
+        }
+    }
+
+    pub(crate) fn tokio_postgres_config(
+        &self,
+    ) -> Result<tokio_postgres::Config, tokio_postgres::Error> {
+        #[cfg(test)]
+        {
+            if self.uses_pg_client_config() {
+                return Ok(pg_client_config::load_config(None).unwrap());
+            }
+        }
+        let connection_str = self.database_connection_string();
+        connection_str.parse::<tokio_postgres::Config>()
+    }
+
+    #[cfg(feature = "pg-embed")]
+    pub(crate) fn uses_postgres_embed(&self) -> bool {
+        self.db_connection_string.starts_with("postgres-embed")
+    }
+
+    #[cfg(test)]
+    pub(crate) fn uses_pg_client_config(&self) -> bool {
+        self.db_connection_string
+            .starts_with("postgres-pg-client-embed")
+    }
+
     /// Database connection string.
-    pub(crate) fn database_connection_string(&self) -> String {
+    fn database_connection_string(&self) -> String {
         if self.db_connection_string.starts_with("postgres") {
             // this starts_with works for `postgres://` and `postgres-embed`
             self.db_connection_string.clone()
         } else {
             panic!("Invalid connection string {}", self.db_connection_string)
+        }
+    }
+
+    pub(crate) fn tls_connector(&self) -> Result<Option<MakeTlsConnector>, DBError> {
+        let mut builder =
+            SslConnector::builder(SslMethod::tls()).map_err(|e| DBError::TlsConnection {
+                hint: "Unable to build TLS Connector to connect to PostgreSQL".to_string(),
+                openssl_error: Some(e),
+            })?;
+        match &self.db_tls_certificate_path {
+            Some(ca_path) => {
+                builder
+                    .set_ca_file(ca_path)
+                    .map_err(|e| DBError::TlsConnection {
+                        hint: format!(
+                            "Unable to find TLS certificate at {:?}",
+                            self.db_tls_certificate_path
+                        ),
+                        openssl_error: Some(e),
+                    })?;
+                Ok(Some(MakeTlsConnector::new(builder.build())))
+            }
+            None => Ok(None),
         }
     }
 }

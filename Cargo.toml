@@ -149,6 +149,7 @@ petgraph = "0.6.0"
 pg-client-config = "0.1.2"
 pg-embed = { git = "https://github.com/gz/pg-embed.git", rev = "8906af8", default-features = false }
 postgres = "0.19.10"
+postgres-openssl = "0.5.1"
 pprof = "0.13.0"
 pretty_assertions = "1.4.0"
 prettyplease = "0.2.22"

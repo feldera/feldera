@@ -60,6 +60,13 @@ impl Drop for DbHandle {
 
     #[cfg(not(feature = "pg-embed"))]
     fn drop(&mut self) {
+        use postgres_openssl::TlsStream;
+        use tokio_postgres::{tls::NoTlsStream, Connection, Socket};
+        enum ConnWrapper {
+            Tls(Connection<Socket, TlsStream<Socket>>),
+            NoTls(Connection<Socket, NoTlsStream>),
+        }
+
         let _r = async {
             let db_name = self.config.get_dbname().unwrap_or("");
 
@@ -67,10 +74,28 @@ impl Drop for DbHandle {
             // database. Thus, we make a new connection.
             let mut config = self.config.clone();
             config.dbname("");
-            let (client, conn) = config.connect(tokio_postgres::NoTls).await.unwrap();
+            let (client, conn) = if let Some(tls_connector) =
+                self.db.db_config.tls_connector().expect("Can't setup tls")
+            {
+                let (client, conn) = config.connect(tls_connector).await.unwrap();
+                (client, ConnWrapper::Tls(conn))
+            } else {
+                let (client, conn) = config.connect(tokio_postgres::NoTls).await.unwrap();
+                (client, ConnWrapper::NoTls(conn))
+            };
+
             tokio::spawn(async move {
-                if let Err(e) = conn.await {
-                    eprintln!("connection error: {}", e);
+                match conn {
+                    ConnWrapper::Tls(c) => {
+                        if let Err(e) = c.await {
+                            eprintln!("connection error: {}", e);
+                        }
+                    }
+                    ConnWrapper::NoTls(c) => {
+                        if let Err(e) = c.await {
+                            eprintln!("connection error: {}", e);
+                        }
+                    }
                 }
             });
 
@@ -94,6 +119,7 @@ async fn test_setup() -> DbHandle {
 
 #[cfg(feature = "pg-embed")]
 pub(crate) async fn setup_pg() -> (StoragePostgres, tempfile::TempDir) {
+    use crate::config::DatabaseConfig;
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicU16, Ordering};
 
@@ -117,7 +143,8 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tempfile::TempDir) {
         .await
         .unwrap();
     let db_uri = pg.db_uri.clone();
-    let conn = StoragePostgres::connect_inner(&db_uri, Some(pg))
+    let db_config = DatabaseConfig::new(db_uri, None);
+    let conn = StoragePostgres::initialize(&db_config, Some(pg))
         .await
         .unwrap();
     conn.run_migrations().await.unwrap();
@@ -132,10 +159,9 @@ async fn test_setup() -> DbHandle {
 
 #[cfg(not(feature = "pg-embed"))]
 pub(crate) async fn setup_pg() -> (StoragePostgres, tokio_postgres::Config) {
-    use pg_client_config::load_config;
-
-    let mut config = load_config(None).unwrap();
-
+    use crate::config::DatabaseConfig;
+    let db_config = DatabaseConfig::new("postgres-pg-client-embed".to_string(), None);
+    let mut config = db_config.tokio_postgres_config().expect("Can't get config");
     // Workaround for https://github.com/3liz/pg-event-server/issues/1.
     if let Ok(pguser) = std::env::var("PGUSER") {
         config.user(&pguser);
@@ -160,7 +186,7 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tokio_postgres::Config) {
     log::debug!("tests connecting to: {config:#?}");
 
     config.dbname(&test_db);
-    let conn = StoragePostgres::with_config(config.clone()).await.unwrap();
+    let conn = StoragePostgres::connect(&db_config).await.unwrap();
     conn.run_migrations().await.unwrap();
 
     (conn, config)
