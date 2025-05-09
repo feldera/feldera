@@ -34,6 +34,7 @@ pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::{FilteredMergeCursor, UnfilteredMergeCursor};
 use dyn_clone::DynClone;
+use enum_map::Enum;
 use feldera_storage::StoragePath;
 use rand::Rng;
 use rkyv::ser::Serializer as _;
@@ -324,13 +325,22 @@ pub trait Trace: BatchReader {
 }
 
 /// Where a batch is stored.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Enum)]
 pub enum BatchLocation {
     /// In RAM.
     Memory,
 
     /// On disk.
     Storage,
+}
+
+impl BatchLocation {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Memory => "memory",
+            Self::Storage => "storage",
+        }
+    }
 }
 
 /// A set of `(key, value, time, diff)` tuples whose contents may be read in
