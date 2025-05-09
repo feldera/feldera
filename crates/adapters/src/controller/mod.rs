@@ -69,7 +69,7 @@ use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::AtomicI64;
-use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
+use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender};
 use std::sync::LazyLock;
 use std::thread;
 use std::{
@@ -148,6 +148,18 @@ enum Command {
     GraphProfile(GraphProfileCallbackFn),
     Checkpoint(CheckpointCallbackFn),
     Suspend(SuspendCallbackFn),
+}
+
+impl Command {
+    pub fn flush(self) {
+        match self {
+            Command::GraphProfile(callback) => callback(Err(ControllerError::ControllerExit)),
+            Command::Checkpoint(callback) => {
+                callback(Err(Arc::new(ControllerError::ControllerExit)))
+            }
+            Command::Suspend(callback) => callback(Err(Arc::new(ControllerError::ControllerExit))),
+        }
+    }
 }
 
 impl Controller {
@@ -467,7 +479,7 @@ impl Controller {
     /// The callback-based nature of this function makes it useful in
     /// asynchronous contexts.
     pub fn start_graph_profile(&self, cb: GraphProfileCallbackFn) {
-        self.inner.graph_profile(cb)
+        self.inner.send_command(Command::GraphProfile(cb));
     }
 
     /// Triggers a checkpoint operation. `cb` will be called when it completes.
@@ -475,7 +487,7 @@ impl Controller {
     /// The callback-based nature of this function makes it useful in
     /// asynchronous contexts.
     pub fn start_checkpoint(&self, cb: CheckpointCallbackFn) {
-        self.inner.checkpoint(cb)
+        self.inner.send_command(Command::Checkpoint(cb));
     }
 
     /// Checkpoints the pipeline.
@@ -492,7 +504,7 @@ impl Controller {
     /// The callback-based nature of this function makes it useful in
     /// asynchronous contexts.
     pub fn start_suspend(&self, cb: SuspendCallbackFn) {
-        self.inner.suspend(cb)
+        self.inner.send_command(Command::Suspend(cb));
     }
 
     /// Suspends the pipeline.
@@ -764,12 +776,13 @@ impl CircuitThread {
 
         loop {
             // Run received commands.  Commands can initiate checkpoint
-            // requests, so attempt to execute those afterward.
+            // requests, so attempt to execute those afterward.  Executing a
+            // checkpoint request can then terminate the pipeline, so check for
+            // that right afterward.
             self.run_commands();
-            if !self.checkpoint_requests.is_empty() && self.checkpoint() {
-                break;
+            if !self.checkpoint_requests.is_empty() {
+                self.checkpoint();
             }
-
             let running = match self.controller.state() {
                 PipelineState::Running => true,
                 PipelineState::Paused => false,
@@ -802,6 +815,7 @@ impl CircuitThread {
                 Action::Park(None) => self.parker.park(),
             }
         }
+        self.controller.status.set_state(PipelineState::Terminated);
         self.flush_commands_and_requests();
         self.circuit
             .kill()
@@ -884,7 +898,7 @@ impl CircuitThread {
         }
     }
 
-    fn checkpoint(&mut self) -> bool {
+    fn checkpoint(&mut self) {
         fn inner(this: &mut CircuitThread) -> Result<Checkpoint, ControllerError> {
             this.controller.can_suspend()?;
 
@@ -957,7 +971,7 @@ impl CircuitThread {
                             elapsed.as_secs()
                         )
                     });
-                return false;
+                return;
             }
             Err(error) => {
                 warn!("checkpoint failed: {error}");
@@ -976,13 +990,12 @@ impl CircuitThread {
         // a problem and a short checkpoint interval.
         self.last_checkpoint = Instant::now();
 
-        let mut suspend = false;
         for request in self.checkpoint_requests.drain(..) {
             match request {
                 CheckpointRequest::Scheduled => (),
                 CheckpointRequest::CheckpointCommand(callback) => callback(result.clone()),
                 CheckpointRequest::SuspendCommand(callback) => {
-                    suspend = true;
+                    self.controller.status.set_state(PipelineState::Terminated);
                     callback(result.clone().map(|_| ()))
                 }
             }
@@ -993,8 +1006,6 @@ impl CircuitThread {
         if let Some(ft) = &mut self.ft {
             ft.enable();
         }
-
-        suspend
     }
 
     /// Reads and executes all the commands pending from
@@ -1024,26 +1035,10 @@ impl CircuitThread {
     /// `self.checkpoint_requests`, without executing them.
     fn flush_commands_and_requests(&mut self) {
         for request in self.checkpoint_requests.drain(..) {
-            match request {
-                CheckpointRequest::Scheduled => (),
-                CheckpointRequest::CheckpointCommand(callback) => {
-                    callback(Err(Arc::new(ControllerError::ControllerExit)))
-                }
-                CheckpointRequest::SuspendCommand(callback) => {
-                    callback(Err(Arc::new(ControllerError::ControllerExit)))
-                }
-            }
+            request.flush();
         }
         for command in self.command_receiver.try_iter() {
-            match command {
-                Command::GraphProfile(callback) => callback(Err(ControllerError::ControllerExit)),
-                Command::Checkpoint(callback) => {
-                    callback(Err(Arc::new(ControllerError::ControllerExit)))
-                }
-                Command::Suspend(callback) => {
-                    callback(Err(Arc::new(ControllerError::ControllerExit)))
-                }
-            }
+            command.flush();
         }
     }
 
@@ -1289,6 +1284,20 @@ enum CheckpointRequest {
     Scheduled,
     CheckpointCommand(CheckpointCallbackFn),
     SuspendCommand(SuspendCallbackFn),
+}
+
+impl CheckpointRequest {
+    pub fn flush(self) {
+        match self {
+            CheckpointRequest::Scheduled => (),
+            CheckpointRequest::CheckpointCommand(callback) => {
+                callback(Err(Arc::new(ControllerError::ControllerExit)))
+            }
+            CheckpointRequest::SuspendCommand(callback) => {
+                callback(Err(Arc::new(ControllerError::ControllerExit)))
+            }
+        }
+    }
 }
 
 /// Tracks fault-tolerant state in a controller [CircuitThread].
@@ -2950,19 +2959,11 @@ impl ControllerInner {
         Ok(serde_json::to_value(&self.status.output_status()[&endpoint_id]).unwrap())
     }
 
-    fn graph_profile(&self, cb: GraphProfileCallbackFn) {
-        self.command_sender.send(Command::GraphProfile(cb)).unwrap();
-        self.unpark_circuit();
-    }
-
-    fn checkpoint(&self, cb: CheckpointCallbackFn) {
-        self.command_sender.send(Command::Checkpoint(cb)).unwrap();
-        self.unpark_circuit();
-    }
-
-    fn suspend(&self, cb: SuspendCallbackFn) {
-        self.command_sender.send(Command::Suspend(cb)).unwrap();
-        self.unpark_circuit();
+    fn send_command(&self, command: Command) {
+        match self.command_sender.send(command) {
+            Ok(()) => self.unpark_circuit(),
+            Err(SendError(command)) => command.flush(),
+        }
     }
 
     fn error(&self, error: ControllerError) {
