@@ -148,7 +148,7 @@ You can connect to an external PostgreSQL database with the following steps:
    kubectl create configmap postgres-pem -n feldera --from-file=postgresql-ca.pem=global-bundle.pem
    ```
 
-   _Note:_ If necessary, you can override the file (`postgresql-ca.pem`) and configmap (`postgres-pem`) 
+   _Note:_ If necessary, you can override the file (`postgresql-ca.pem`) and configmap (`postgres-pem`)
    names by adjusting `postgresTlsCertificateFile` and `postgresTlsConfigMapRef` in `values.yaml`.
 
 3. **Specify secret and external postgres configuration during installation:** in the `helm` installation command, set
