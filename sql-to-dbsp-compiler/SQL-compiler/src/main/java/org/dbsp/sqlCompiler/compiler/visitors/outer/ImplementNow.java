@@ -347,6 +347,7 @@ public class ImplementNow extends Passes {
             BooleanExpression combine(BooleanExpression other);
             /** Returns the final form of this Boolean expression */
             BooleanExpression seal();
+            boolean isNullable();
         }
 
         /**
@@ -394,6 +395,11 @@ public class ImplementNow extends Passes {
                 // return a singleton list
                 return new TemporalFilterList(Linq.list(this));
             }
+
+            @Override
+            public boolean isNullable() {
+                return this.noNow.getType().mayBeNull || this.withNow.getType().mayBeNull;
+            }
         }
 
         /** A Boolean expression that does not involve now */
@@ -407,13 +413,18 @@ public class ImplementNow extends Passes {
             public BooleanExpression combine(BooleanExpression other) {
                 return new NoNow(
                         ExpressionCompiler.makeBinaryExpression(this.noNow().getNode(),
-                                DBSPTypeBool.create(false), DBSPOpcode.AND,
-                                this.noNow, other.to(NoNow.class).noNow));
+                                DBSPTypeBool.create(this.isNullable() || other.isNullable()), DBSPOpcode.AND,
+                                this.noNow, other.to(NoNow.class).noNow).wrapBoolIfNeeded());
             }
 
             @Override
             public BooleanExpression seal() {
                 return this;
+            }
+
+            @Override
+            public boolean isNullable() {
+                return this.noNow.getType().mayBeNull;
             }
         }
 
@@ -436,13 +447,18 @@ public class ImplementNow extends Passes {
                     throw new InternalCompilerError("Unexpected temporal filter " + other);
                 return new NonTemporalFilter(
                         ExpressionCompiler.makeBinaryExpression(this.expression().getNode(),
-                                DBSPTypeBool.create(false), DBSPOpcode.AND,
-                                this.expression, otherExpression));
+                                DBSPTypeBool.create(this.isNullable() || other.isNullable()), DBSPOpcode.AND,
+                                this.expression, otherExpression).wrapBoolIfNeeded());
             }
 
             @Override
             public BooleanExpression seal() {
                 return this;
+            }
+
+            @Override
+            public boolean isNullable() {
+                return this.expression.getType().mayBeNull;
             }
         }
 
@@ -493,6 +509,11 @@ public class ImplementNow extends Passes {
                 return this;
             }
 
+            @Override
+            public boolean isNullable() {
+                return Linq.any(this.comparisons, BooleanExpression::isNullable);
+            }
+
             public DBSPParameter getParameter() {
                 return this.comparisons.get(0).parameter;
             }
@@ -534,28 +555,43 @@ public class ImplementNow extends Passes {
                 this.analyzeConjunction(expression);
             }
 
+            BooleanExpression nonTemporal(DBSPExpression expression) {
+                this.containsNow.apply(expression);
+                if (this.containsNow.found)
+                    return new NonTemporalFilter(expression);
+                return new NoNow(expression);
+            }
+
             /** Analyze a conjunction; return 'false' if some NonTemporalFilters were found.
              * When this function returns, this.comparisons contains a full
              * decomposition of 'expression'. */
             boolean analyzeConjunction(DBSPExpression expression) {
                 DBSPBinaryExpression binary = expression.as(DBSPBinaryExpression.class);
                 if (binary == null) {
-                    NonTemporalFilter ntf = new NonTemporalFilter(expression);
-                    this.comparisons.add(ntf);
+                    this.comparisons.add(this.nonTemporal(expression));
                     return false;
                 }
                 if (binary.opcode == DBSPOpcode.AND) {
                     boolean foundLeft = this.analyzeConjunction(binary.left);
                     if (!foundLeft) {
-                        BooleanExpression exp = Utilities.removeLast(this.comparisons);
-                        this.comparisons.add(exp.combine(new NonTemporalFilter(binary.right)));
+                        BooleanExpression last = Utilities.removeLast(this.comparisons);
+                        BooleanExpression right = this.nonTemporal(binary.right);
+                        if (last.is(NonTemporalFilter.class) ||
+                                (last.is(NoNow.class) && right.is(NoNow.class)))
+                            this.comparisons.add(last.combine(right));
+                        else {
+                            this.comparisons.add(last);
+                            this.comparisons.add(right);
+                        }
                         return false;
                     }
                     return this.analyzeConjunction(binary.right);
                 } else {
                     boolean decomposed = this.findComparison(binary);
-                    if (!decomposed)
-                        this.comparisons.add(new NonTemporalFilter(expression));
+                    if (!decomposed) {
+                        BooleanExpression be = this.nonTemporal(expression);
+                        this.comparisons.add(be);
+                    }
                     return decomposed;
                 }
             }
