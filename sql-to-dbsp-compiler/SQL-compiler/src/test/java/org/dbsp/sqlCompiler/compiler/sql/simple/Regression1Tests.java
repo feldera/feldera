@@ -1,7 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.util.Linq;
 import org.junit.Test;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class Regression1Tests extends SqlIoTest {
     @Test
@@ -29,7 +33,7 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void temporal() {
-        this.getCCS("""
+        var ccs = this.getCCS("""
                 CREATE TABLE a (
                     c BIGINT,
                     j TIMESTAMP,
@@ -39,7 +43,7 @@ public class Regression1Tests extends SqlIoTest {
                     bk SMALLINT
                 );
                 
-                CREATE MATERIALIZED VIEW bl AS
+                CREATE VIEW bl AS
                 SELECT
                     bm.c AS bn,
                     bm.av AS bo,
@@ -52,7 +56,7 @@ public class Regression1Tests extends SqlIoTest {
                 FROM
                     a bm
                 WHERE
-                    bm.j >= NOW() - INTERVAL '5' minutes
+                    bm.j >= NOW() - INTERVAL '1' year
                     AND bm.av IS NOT NULL
                     AND bm.bk IS NOT NULL
                     AND bm.bg IS NOT NULL
@@ -61,5 +65,33 @@ public class Regression1Tests extends SqlIoTest {
                 GROUP BY
                     bm.c,
                     bm.av;""");
+
+        LocalDateTime now = LocalDateTime.now();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        String j = now.format(formatter);
+        ccs.step("INSERT INTO A VALUES(NULL, '" + j + "', 0, 'a', NULL, 0)", """
+                                     bn | bo | bp | bq | br | bs | bt | weight
+                                    -------------------------------------------""");
+        for (var c : Linq.list("NULL", "0")) {
+            for (var ad : Linq.list("NULL", "0")) {
+                for (var av: Linq.list("NULL", "'a'")) {
+                    for (var bg: Linq.list("NULL", "0", "1")) {
+                        for (var bk : Linq.list("NULL", "0")) {
+                            String result = "";
+                            if (nn(ad) && nn(av) && nn(bg) && nn(bk) && !bg.equals("0")) {
+                                result = "\n " + c + " | a | " + (bk.equals("0") ? "1" : "0") + " | 0 | 1 | 1 | 0 | 1 | 1";
+                            }
+                            ccs.step("INSERT INTO A VALUES(" + c + ", '" + j + "', " + ad + ", " + av + ", " + bg + ", " + bk + ")", """
+                                     bn | bo | bp | bq | br | bs | bt | weight
+                                    -------------------------------------------""" + result);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    static boolean nn(String v) {
+        return !v.equals("NULL");
     }
 }

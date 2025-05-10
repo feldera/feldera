@@ -59,10 +59,10 @@ public class TemporalFilterTests extends SqlIoTest {
     }
 
     void test(String program, List<String> expectedFilters) {
-        var ccs = this.getCCS(program);
-        var canon = new CanonicalForm(ccs.compiler).getCircuitRewriter(false);
-        var newCircuit = canon.apply(ccs.getCircuit());
-        var filter = this.extractFilter(ccs.compiler, newCircuit);
+        var cc = this.getCC(program);
+        var canon = new CanonicalForm(cc.compiler).getCircuitRewriter(false);
+        var newCircuit = canon.apply(cc.getCircuit());
+        var filter = this.extractFilter(cc.compiler, newCircuit);
         var list = this.findFilters(filter);
         String expected = expectedFilters.toString();
         Assert.assertEquals(expected, list.toString());
@@ -98,22 +98,22 @@ public class TemporalFilterTests extends SqlIoTest {
         this.test(sql, Linq.list(aComp, bComp, base));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() AND a IS NOT NULL;";
-        this.test(sql, Linq.list(base, "NonTemporalFilter[expression=(! ((*p0).0).is_none())]"));
+        this.test(sql, Linq.list(base, "NoNow[noNow=(! ((*p0).0).is_none())]"));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() AND a IS NOT NULL AND b IS NOT NULL;";
-        final String nt = "NonTemporalFilter[expression=((! ((*p0).0).is_none()) && (! ((*p0).1).is_none()))]";
+        final String nt = "NoNow[noNow=((! ((*p0).0).is_none()) && (! ((*p0).1).is_none()))]";
         this.test(sql, Linq.list(base, nt));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() AND a IS NOT NULL AND b IS NOT NULL AND c IS NOT NULL;";
-        this.test(sql, Linq.list(base, "NonTemporalFilter[expression=(((! ((*p0).0).is_none()) && (! ((*p0).1).is_none())) && (! ((*p0).2).is_none()))]"));
+        this.test(sql, Linq.list(base, "NoNow[noNow=(((! ((*p0).0).is_none()) && (! ((*p0).1).is_none())) && (! ((*p0).2).is_none()))]"));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE a IS NOT NULL AND b IS NOT NULL AND c IS NOT NULL AND ts > NOW();";
         // same as above
-        this.test(sql, Linq.list(base, "NonTemporalFilter[expression=(((! ((*p0).0).is_none()) && (! ((*p0).1).is_none())) && (! ((*p0).2).is_none()))]"));
+        this.test(sql, Linq.list(base, "NoNow[noNow=(((! ((*p0).0).is_none()) && (! ((*p0).1).is_none())) && (! ((*p0).2).is_none()))]"));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE a IS NOT NULL AND ts > NOW() AND b IS NOT NULL AND c IS NOT NULL;";
         // same as above
-        this.test(sql, Linq.list(base, "NonTemporalFilter[expression=(((! ((*p0).0).is_none()) && (! ((*p0).1).is_none())) && (! ((*p0).2).is_none()))]"));
+        this.test(sql, Linq.list(base, "NoNow[noNow=(((! ((*p0).0).is_none()) && (! ((*p0).1).is_none())) && (! ((*p0).2).is_none()))]"));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() AND a IS NOT NULL AND b IS NOT NULL AND SIN(a) < COS(b);";
         this.test(sql, Linq.list(base, "NoNow[noNow=(sin_dN(((d?)((*p0).0))) ?<? cos_dN(((*p0).1)))]", nt));
@@ -162,5 +162,14 @@ public class TemporalFilterTests extends SqlIoTest {
                         ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(300000)), opcode=>]",
                 "TemporalFilter[" + param +
                         ", noNow=(2020-01-01 00:00:00 +? ((ShortInterval?)((*p0).0))), withNow=now(), opcode=>=]"));
+
+        sql = "CREATE VIEW V AS SELECT * FROM T WHERE EXTRACT(DAY FROM ts) > EXTRACT(DAY FROM NOW());";
+        this.test(sql, Linq.list("NonTemporalFilter[expression=(extract_day_TimestampN(((*p0).3)) ?> extract_day_Timestamp(now()))]"));
+
+        sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() AND EXTRACT(DAY FROM ts) > EXTRACT(DAY FROM NOW());";
+        this.test(sql, Linq.list(base, "NonTemporalFilter[expression=(extract_day_TimestampN(((*p0).3)) ?> extract_day_Timestamp(now()))]"));
+
+        sql = "CREATE VIEW V AS SELECT * FROM T WHERE EXTRACT(DAY FROM ts) > EXTRACT(DAY FROM NOW()) AND ts > NOW();";
+        this.test(sql, Linq.list("NonTemporalFilter[expression=(wrap_bool? ((extract_day_TimestampN(((*p0).3)) ?> extract_day_Timestamp(now())) ?&&? (((*p0).3) ?> now())))]"));
     }
 }
