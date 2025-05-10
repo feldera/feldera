@@ -146,7 +146,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue3259() {
         this.statementsFailingInCompilation("create table t0(c0 decimal(0, 0));",
-                "DECIMAL precision 0 must be between 1 and 28");
+                "DECIMAL precision 0 must be between 1 and 38");
     }
 
     @Test
