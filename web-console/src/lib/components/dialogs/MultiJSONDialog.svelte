@@ -23,7 +23,6 @@
   const submitResults = async () => {
     let res: Record<string, string> = {}
     Object.entries(refs).forEach(([key, getData]) => (res[key] = getData()))
-    console.log('aaaa', res)
     onApply(res).then(onClose)
   }
 </script>
@@ -32,7 +31,12 @@
   {#each Object.keys(states) as key}
     <span class="font-normal">{metadata?.[key].title ?? ''}</span>
     <div class={metadata?.[key].editorClass}>
-      <JsonForm filePath={metadata?.[key].filePath ?? key} json={states[key]} onSubmit={submitResults} bind:getData={refs[key]} {disabled}
+      <JsonForm
+        filePath={metadata?.[key].filePath ?? key}
+        json={states[key]}
+        onSubmit={submitResults}
+        bind:getData={refs[key]}
+        {disabled}
       ></JsonForm>
     </div>
   {/each}

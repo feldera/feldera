@@ -87,7 +87,7 @@
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
   import { rgbToHex } from '$lib/functions/common/color'
-    import type { $ } from 'bun'
+  import type { $ } from 'bun'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
 

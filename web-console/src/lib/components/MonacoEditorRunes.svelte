@@ -42,9 +42,11 @@
 <script lang="ts">
   import type Monaco from 'monaco-editor/esm/vs/editor/editor.api'
   import * as monacoImport from 'monaco-editor/esm/vs/editor/editor.api'
+  import 'monaco-editor/esm/vs/language/json/jsonMode'
   import { onDestroy, onMount } from 'svelte'
   import loader from '@monaco-editor/loader'
   import { felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
+  import felderaApiJsonSchemas from 'virtual:felderaApiJsonSchemas.json'
 
   let monaco: typeof Monaco
 
@@ -100,6 +102,12 @@
   })
 
   onMount(async () => {
+    if (!monacoImport.languages.json.jsonDefaults.diagnosticsOptions.schemas?.length) {
+      monacoImport.languages.json.jsonDefaults.setDiagnosticsOptions({
+        validate: true,
+        schemas: felderaApiJsonSchemas
+      })
+    }
     monaco = await loader.init()
     editor = monaco.editor.create(container, { ...options, model: null })
 

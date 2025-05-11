@@ -294,6 +294,7 @@
   <JSONDialog
     disabled={pipelineBusy}
     json={JSONbig.stringify(pipeline.current[field], undefined, '  ')}
+    filePath="file://feldera/pipelines/{pipeline.current.name}/{field}.json"
     onApply={async (json) => {
       await pipeline.patch({
         [field]: JSONbig.parse(json)
