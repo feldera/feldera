@@ -56,13 +56,13 @@
     markers,
     onready
   }: {
-    editor: Monaco.editor.IStandaloneCodeEditor
+    editor?: Monaco.editor.IStandaloneCodeEditor
     model: Monaco.editor.ITextModel
     options?: Omit<
       Monaco.editor.IStandaloneEditorConstructionOptions,
       'model' | 'value' | 'language'
     >
-    markers: Record<string, Monaco.editor.IMarkerData[]> | undefined
+    markers?: Record<string, Monaco.editor.IMarkerData[]> | undefined
     onready: (event: Monaco.editor.IStandaloneCodeEditor) => void
   } = $props()
 
