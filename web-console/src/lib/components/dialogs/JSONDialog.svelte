@@ -5,12 +5,14 @@
 
   let {
     json,
+    filePath,
     onApply,
     onClose,
     title,
     disabled
   }: {
     json: string
+    filePath: string
     onApply: (json: string) => Promise<void>
     onClose: () => void
     title: Snippet
@@ -25,6 +27,6 @@
 
 <GenericDialog onApply={onsubmit} {onClose} {title}>
   <div class="h-96">
-    <JsonForm {json} onSubmit={onApply} {disabled}></JsonForm>
+    <JsonForm {json} {filePath} onSubmit={onApply} {disabled}></JsonForm>
   </div>
 </GenericDialog>

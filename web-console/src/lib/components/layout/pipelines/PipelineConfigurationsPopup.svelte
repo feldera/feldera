@@ -35,11 +35,13 @@
     metadata={{
       runtimeConfig: {
         title: `Runtime configuration`,
-        editorClass: 'h-96'
+        editorClass: 'h-96',
+        filePath: `file://pipelines/${pipeline.current.name}/RuntimeConfig.json`
       },
       programConfig: {
         title: `Compilation configuration`,
-        editorClass: 'h-24'
+        editorClass: 'h-24',
+        filePath: `file://pipelines/${pipeline.current.name}/ProgramConfig.json`
       }
     }}
     onApply={async (json) => {

@@ -8,7 +8,6 @@
   import * as MonacoImports from 'monaco-editor'
   import { editor } from 'monaco-editor/esm/vs/editor/editor.api'
 
-
   let {
     json,
     filePath,
