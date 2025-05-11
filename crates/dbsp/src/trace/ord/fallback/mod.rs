@@ -7,3 +7,4 @@ pub mod key_batch;
 mod utils;
 pub mod val_batch;
 pub mod wset;
+pub use utils::pick_merge_destination;

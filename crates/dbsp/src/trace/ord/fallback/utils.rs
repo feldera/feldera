@@ -25,7 +25,7 @@ where
     }
 }
 
-pub(super) fn pick_merge_destination<'a, B, I>(
+pub fn pick_merge_destination<'a, B, I>(
     batches: I,
     dst_hint: Option<BatchLocation>,
 ) -> BatchLocation

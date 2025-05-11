@@ -16,8 +16,8 @@ use crate::{
     storage::buffer_cache::CacheStats,
     time::Timestamp,
     trace::{
-        cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Builder,
-        Cursor, Filter, Trace,
+        cursor::CursorList, merge_batches, ord::fallback::pick_merge_destination, Batch,
+        BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Trace,
     },
     Error, NumEntries, Runtime,
 };
@@ -1139,8 +1139,49 @@ where
         }
     }
 
-    fn insert(&mut self, batch: Self::Batch) {
+    fn insert(&mut self, mut batch: Self::Batch) {
         if !batch.is_empty() {
+            // If `batch` is in memory and it's got a fair number of records
+            // (level 2 or higher), and we'll write it to storage on first
+            // merge, then write it to storage right away.
+            //
+            // This addresses a problem with very large in-memory batches being
+            // added to a spine and using too much memory.  This should not
+            // happen in normal operation, because we do not feed such very
+            // large batches into the circuit.  But intermediate joins, etc. can
+            // sometimes produce them, and in that case we want to get them out
+            // of memory as quickly as we can.
+            //
+            // This approach is a stopgap.  It is still a problem to generate
+            // very large in-memory batches, because if they every exist at all
+            // then they can OOM the process.  There are better ways to avoid
+            // them that we should implement instead or in addition:
+            //
+            // - One of the sources of these large batches is the Batcher, which
+            //   is currently in-memory.  It could fall back to an external sort
+            //   if the result or the inputs are large.
+            //
+            // - We can allow an operator to split its output across many steps
+            //   (see the huge step RFC).
+            //
+            // - We can have operators output mini-spines instead of batches.
+            let batch = if batch.location() == BatchLocation::Memory
+                && Spine::<B>::size_to_level(batch.len()) >= 2
+                && pick_merge_destination([&batch], None) == BatchLocation::Storage
+            {
+                let factories = batch.factories();
+                let builder =
+                    B::Builder::for_merge(&factories, [&batch], Some(BatchLocation::Storage));
+                let (key_filter, value_filter) = self.merger.state.lock().unwrap().get_filters();
+                ListMerger::merge(
+                    &factories,
+                    builder,
+                    vec![batch.consuming_cursor(key_filter, value_filter)],
+                )
+            } else {
+                batch
+            };
+
             self.dirty = true;
             self.merger.add_batch(Arc::new(batch));
         }
