@@ -73,7 +73,8 @@
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { DecoupledStateProxy } from '$lib/compositions/decoupledState.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
-  import MonacoEditor, { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
+  import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
+  import MonacoEditor from '$lib/components/MonacoEditorRunes.svelte'
   import * as MonacoImports from 'monaco-editor'
   import { editor, KeyCode, KeyMod } from 'monaco-editor/esm/vs/editor/editor.api'
   import type { EditorLanguage } from 'monaco-editor/esm/metadata'
@@ -86,6 +87,7 @@
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
   import { rgbToHex } from '$lib/functions/common/color'
+    import type { $ } from 'bun'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
 
