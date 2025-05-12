@@ -4226,12 +4226,18 @@
             "minimum": 0
           },
           "model": {
-            "allOf": [
+            "oneOf": [
               {
                 "$ref": "#/components/schemas/FtModel"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "none"
+                ]
               }
             ],
-            "nullable": true
+            "default": "exactly_once"
           }
         }
       },

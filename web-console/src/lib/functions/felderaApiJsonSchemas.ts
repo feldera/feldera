@@ -46,10 +46,66 @@ function updateFieldsByName<T extends object>(
   return result as T
 }
 
+/**
+ * Recursively updates nested objects using an updater function.
+ * @param obj The input object to process (can be nested).
+ * @param updater A function that takes an object and returns the same or updated object.
+ * @returns A new object with updates applied.
+ */
+function updateNestedObjects<T extends object>(
+  obj: T,
+  updater: (obj: Record<string, any>) => Record<string, any>
+): T {
+  // Handle non-object inputs (e.g., null, primitives)
+  if (obj === null || typeof obj !== 'object') {
+    return obj
+  }
+
+  // Handle arrays
+  if (Array.isArray(obj)) {
+    return obj.map((item) => updateNestedObjects(item, updater)) as unknown as T
+  }
+
+  // Apply updater to the current object
+  const updatedObj = updater({ ...obj })
+
+  // Recursively process nested fields
+  const result: Record<string, any> = {}
+  for (const [key, value] of Object.entries(updatedObj)) {
+    if (typeof value === 'object' && value !== null) {
+      result[key] = updateNestedObjects(value, updater)
+    } else {
+      result[key] = value
+    }
+  }
+
+  return result as T
+}
+
 export const felderaApiJsonSchemas = Object.entries(openapi.components.schemas).map(
   ([name, schema]) => ({
     uri: `file://feldera/components/schemas/${name}`,
     fileMatch: schemaFileAssociations[name],
-    schema: updateFieldsByName(schema, '$ref', (val: string) => val.slice(1)) as any
+    schema: updateNestedObjects(schema, (obj) => {
+      if ('$ref' in obj) {
+        return {
+          $ref: obj['$ref'].slice(1)
+        }
+      }
+      if (obj.nullable === true && 'type' in obj) {
+        return {
+          ...obj,
+          type: [obj.type, 'null']
+        }
+      }
+      if (obj.nullable === true && 'allOf' in obj) {
+        return {
+          ...obj,
+          allOf: undefined,
+          oneOf: [...obj.allOf, { type: 'null' }]
+        }
+      }
+      return obj
+    })
   })
 )
