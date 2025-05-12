@@ -428,6 +428,15 @@ impl Profiler {
         let _ = self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
             let mut meta = OperatorMeta::new();
             node.metadata(&mut meta);
+            for (label, value) in node.labels().iter() {
+                meta.insert(
+                    0,
+                    (
+                        Cow::Owned(label.to_string()),
+                        MetaItem::String(value.to_string()),
+                    ),
+                )
+            }
             metadata.insert(node.global_id().clone(), meta);
             Ok(())
         });
