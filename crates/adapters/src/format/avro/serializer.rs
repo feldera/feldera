@@ -1,8 +1,9 @@
 use apache_avro::schema::{Name, NamesRef, RecordSchema};
-use apache_avro::{types::Value as AvroValue, Decimal, Schema as AvroSchema};
+use apache_avro::Decimal;
+use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
+use feldera_sqllib::SqlDecimal;
 use feldera_types::serde_with_context::serde_config::{DecimalFormat, UuidFormat};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
-use rust_decimal::Decimal as RustDecimal;
 use serde::ser::{
     Error as _, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
     SerializeTuple, SerializeTupleStruct, SerializeTupleVariant,
@@ -21,7 +22,7 @@ pub fn avro_ser_config() -> SqlSerdeConfig {
         .with_timestamp_format(TimestampFormat::MicrosSinceEpoch)
         .with_time_format(TimeFormat::Micros)
         .with_date_format(DateFormat::DaysSinceEpoch)
-        .with_decimal_format(DecimalFormat::U128)
+        .with_decimal_format(DecimalFormat::String)
         .with_uuid_format(UuidFormat::String)
 }
 
@@ -549,24 +550,8 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         })
     }
 
-    fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
-        serialize_maybe_optional(self.schema, |schema| match schema {
-            AvroSchema::Decimal(decimal_schema) => {
-                let mut decimal = RustDecimal::deserialize(v.to_be_bytes());
-                decimal.rescale(decimal_schema.scale as u32);
-                if decimal.round_sf(decimal_schema.precision as u32) != Some(decimal) {
-                    return Err(AvroSerializerError::out_of_bounds(
-                        &v,
-                        "decimal",
-                        &AvroSchema::Decimal(decimal_schema.clone()),
-                    ));
-                }
-                Ok(AvroValue::Decimal(Decimal::from(
-                    decimal.mantissa().to_be_bytes(),
-                )))
-            }
-            _ => Err(AvroSerializerError::incompatible("u128", schema)),
-        })
+    fn serialize_u128(self, _v: u128) -> Result<Self::Ok, Self::Error> {
+        Err(AvroSerializerError::incompatible("u128", self.schema))
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
@@ -591,7 +576,42 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        serialize_maybe_optional(self.schema, |_| Ok(AvroValue::String(v.to_owned())))
+        serialize_maybe_optional(self.schema, |schema| match schema {
+            AvroSchema::String => Ok(AvroValue::String(v.to_owned())),
+            AvroSchema::Decimal(decimal_schema) => {
+                let mut decimal: SqlDecimal = v.parse().map_err(|e| {
+                    Self::Error::custom(format!("invalid decimal string '{v}': {e}"))
+                })?;
+
+                decimal.rescale(-(decimal_schema.scale as i32));
+
+                let mut rounded_decimal = decimal;
+
+                rounded_decimal
+                    .round_to_place(decimal_schema.precision)
+                    .map_err(|e| {
+                        Self::Error::custom(format!("error rounding decimal to precision {} specified in the Avro schema: {e}", decimal_schema.precision))
+                    })?;
+
+                if rounded_decimal != decimal {
+                    return Err(AvroSerializerError::out_of_bounds(
+                        &v,
+                        "decimal",
+                        &AvroSchema::Decimal(decimal_schema.clone()),
+                    ));
+                }
+
+                // println!(
+                //     "rounded decimal: {rounded_decimal}, mantissa: {}",
+                //     rounded_decimal.mantissa()
+                // );
+
+                Ok(AvroValue::Decimal(Decimal::from(
+                    rounded_decimal.mantissa().to_be_bytes(),
+                )))
+            }
+            _ => Err(AvroSerializerError::incompatible("string", schema)),
+        })
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
@@ -795,8 +815,6 @@ mod test {
     use feldera_sqllib::{Date, SqlDecimal, Timestamp};
     use feldera_types::{serde_with_context::SerializeWithContext, serialize_table_record};
     use num_bigint::BigInt;
-    use rust_decimal::Decimal as RustDecimal;
-    use rust_decimal_macros::dec;
     use serde::Serialize;
     use std::collections::{BTreeMap, HashMap};
     use std::str::FromStr;
@@ -828,17 +846,17 @@ mod test {
     struct TestNumeric {
         float32: F32,
         float64: F64,
-        dec1: RustDecimal,
-        dec2: RustDecimal,
-        dec3: RustDecimal,
+        dec1: SqlDecimal,
+        dec2: SqlDecimal,
+        dec3: SqlDecimal,
     }
 
     serialize_table_record!(TestNumeric[5] {
         float32["float32"]: F32,
         float64["float64"]: F64,
-        dec1["dec1"]: RustDecimal,
-        dec2["dec2"]: RustDecimal,
-        dec3["dec3"]: RustDecimal
+        dec1["dec1"]: SqlDecimal,
+        dec2["dec2"]: SqlDecimal,
+        dec3["dec3"]: SqlDecimal
     });
 
     const SCHEMA_NUMERIC: &str = r#"{
@@ -976,9 +994,9 @@ mod test {
         let record_numeric_1: TestNumeric = TestNumeric {
             float32: F32::new(123.45),
             float64: F64::new(12345E-5),
-            dec1: dec!(12.34),
-            dec2: dec!(1234.56),
-            dec3: dec!(123.12345),
+            dec1: "12.34".parse().unwrap(),
+            dec2: "1234.56".parse().unwrap(),
+            dec3: "123.12345".parse().unwrap(),
         };
 
         let avro_numeric_1: AvroValue = AvroValue::Record(vec![
@@ -990,7 +1008,7 @@ mod test {
             ),
             (
                 "dec2".to_string(),
-                AvroValue::Decimal(Decimal::from(&BigInt::from(1235).to_signed_bytes_be())),
+                AvroValue::Decimal(Decimal::from(&BigInt::from(1234).to_signed_bytes_be())),
             ),
             (
                 "dec3".to_string(),
@@ -1021,7 +1039,7 @@ mod test {
                 AvroValue::Union(
                     1,
                     Box::new(AvroValue::Decimal(Decimal::from(
-                        &BigInt::from(1235).to_signed_bytes_be(),
+                        &BigInt::from(1234).to_signed_bytes_be(),
                     ))),
                 ),
             ),
