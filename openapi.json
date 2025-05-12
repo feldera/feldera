@@ -4434,6 +4434,26 @@
         ],
         "description": "A SQL field.\n\nMatches the SQL compiler JSON format."
       },
+      "FileBackendConfig": {
+        "type": "object",
+        "description": "Configuration for local file system access.",
+        "properties": {
+          "async_threads": {
+            "type": "boolean",
+            "description": "Whether to use background threads for file I/O.\n\nBackground threads should improve performance, but they can reduce\nperformance if too few cores are available. This is provided for\ndebugging and fine-tuning and should ordinarily be left unset.",
+            "default": null,
+            "nullable": true
+          },
+          "ioop_delay": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Per-I/O operation sleep duration, in milliseconds.\n\nThis is for simulating slow storage devices.  Do not use this in\nproduction.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
       "FileInputConfig": {
         "type": "object",
         "description": "Configuration for reading data from a file with `FileInputTransport`",
@@ -6736,6 +6756,24 @@
                 "type": "string",
                 "enum": [
                   "default"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/FileBackendConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "file"
                 ]
               }
             }

@@ -18,6 +18,8 @@ use metrics::counter;
 use std::ffi::OsString;
 use std::fs::{create_dir_all, DirEntry};
 use std::io::{ErrorKind, IoSlice, Write};
+use std::thread::sleep;
+use std::time::Duration;
 use std::{
     fs::{self, File, OpenOptions},
     io::Error as IoError,
@@ -37,15 +39,25 @@ pub(super) struct PosixReader {
 
     /// Whether to use background threads for file I/O.
     async_threads: bool,
+
+    /// Per-I/O operation sleep delay, for simulating slow storage devices.
+    ioop_delay: Duration,
 }
 
 impl PosixReader {
-    fn new(file: Arc<File>, file_id: FileId, drop: DeleteOnDrop, async_threads: bool) -> Self {
+    fn new(
+        file: Arc<File>,
+        file_id: FileId,
+        drop: DeleteOnDrop,
+        async_threads: bool,
+        ioop_delay: Duration,
+    ) -> Self {
         Self {
             file,
             file_id,
             drop,
             async_threads,
+            ioop_delay,
         }
     }
     fn open(
@@ -53,6 +65,7 @@ impl PosixReader {
         cache: StorageCacheConfig,
         usage: Arc<AtomicI64>,
         async_threads: bool,
+        ioop_delay: Duration,
     ) -> Result<Arc<dyn FileReader>, StorageError> {
         let file = OpenOptions::new()
             .read(true)
@@ -65,6 +78,7 @@ impl PosixReader {
             FileId::new(),
             DeleteOnDrop::new(path, true, size, usage),
             async_threads,
+            ioop_delay,
         )))
     }
 }
@@ -81,6 +95,7 @@ impl FileReader for PosixReader {
     }
 
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
+        sleep(self.ioop_delay);
         let mut buffer = FBuf::with_capacity(location.size);
 
         match buffer.read_exact_at(&self.file, location.offset, location.size) {
@@ -96,7 +111,10 @@ impl FileReader for PosixReader {
     ) {
         if self.async_threads {
             let file = self.file.clone();
+            let ioop_delay = self.ioop_delay;
             TOKIO.spawn_blocking(move || {
+                // For background reads, we only sleep once, not once per block.
+                sleep(ioop_delay);
                 callback(
                     blocks
                         .into_iter()
@@ -172,6 +190,7 @@ struct PosixWriter {
     len: u64,
 
     async_threads: bool,
+    ioop_delay: Duration,
 }
 
 impl HasFileId for PosixWriter {
@@ -203,6 +222,7 @@ impl FileWriter for PosixWriter {
                 self.file_id,
                 self.drop.with_path(finalized_path),
                 self.async_threads,
+                self.ioop_delay,
             )),
             self.name,
         ))
@@ -216,6 +236,7 @@ impl PosixWriter {
         path: PathBuf,
         usage: Arc<AtomicI64>,
         async_threads: bool,
+        ioop_delay: Duration,
     ) -> Self {
         Self {
             file_id: FileId::new(),
@@ -225,6 +246,7 @@ impl PosixWriter {
             buffers: Vec::new(),
             len: 0,
             async_threads,
+            ioop_delay,
         }
     }
 
@@ -268,6 +290,9 @@ pub struct PosixBackend {
 
     /// Whether to use background threads for file I/O.
     async_threads: bool,
+
+    /// Per-I/O operation sleep delay, for simulating slow storage devices.
+    ioop_delay: Duration,
 }
 
 impl PosixBackend {
@@ -286,7 +311,8 @@ impl PosixBackend {
             base: Arc::new(base.as_ref().to_path_buf()),
             cache,
             usage: Arc::new(AtomicI64::new(0)),
-            async_threads: options.async_threads.unwrap_or(false),
+            async_threads: options.async_threads.unwrap_or(true),
+            ioop_delay: Duration::from_millis(options.ioop_delay.unwrap_or_default()),
         }
     }
 
@@ -367,6 +393,7 @@ impl StorageBackend for PosixBackend {
             path,
             self.usage.clone(),
             self.async_threads,
+            self.ioop_delay,
         )))
     }
 
@@ -376,6 +403,7 @@ impl StorageBackend for PosixBackend {
             self.cache,
             self.usage.clone(),
             self.async_threads,
+            self.ioop_delay,
         )
     }
 
