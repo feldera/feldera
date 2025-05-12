@@ -1089,6 +1089,8 @@ pub trait Node: Any {
     /// Get the label associated with the given key.
     fn get_label(&self, key: &str) -> Option<&str>;
 
+    fn labels(&self) -> &BTreeMap<String, String>;
+
     /// Apply closure to a child node of `self`.
     fn map_child(&self, _path: &[NodeId], _f: &mut dyn FnMut(&dyn Node)) {
         panic!("map_child: not a circuit node")
@@ -4142,6 +4144,10 @@ where
         self.labels.get(key).map(|s| s.as_str())
     }
 
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -4264,6 +4270,10 @@ where
 
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -4404,6 +4414,10 @@ where
         self.labels.get(key).map(|s| s.as_str())
     }
 
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -4532,6 +4546,10 @@ where
 
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -4722,6 +4740,10 @@ where
         self.labels.get(key).map(|s| s.as_str())
     }
 
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -4910,6 +4932,10 @@ where
         self.labels.get(key).map(|s| s.as_str())
     }
 
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -5070,6 +5096,10 @@ where
 
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -5255,6 +5285,10 @@ where
         self.labels.get(key).map(|s| s.as_str())
     }
 
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -5423,6 +5457,10 @@ where
         self.labels.get(key).map(|s| s.as_str())
     }
 
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -5581,6 +5619,10 @@ where
         self.labels.get(key).map(|s| s.as_str())
     }
 
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -5721,6 +5763,10 @@ where
 
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -5914,6 +5960,10 @@ where
 
     fn get_label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
     }
 
     fn map_child(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
