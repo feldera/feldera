@@ -335,6 +335,12 @@ pub struct FileBackendConfig {
     /// performance if too few cores are available. This is provided for
     /// debugging and fine-tuning and should ordinarily be left unset.
     pub async_threads: Option<bool>,
+
+    /// Per-I/O operation sleep duration, in milliseconds.
+    ///
+    /// This is for simulating slow storage devices.  Do not use this in
+    /// production.
+    pub ioop_delay: Option<u64>,
 }
 
 /// Global pipeline configuration settings. This is the publicly

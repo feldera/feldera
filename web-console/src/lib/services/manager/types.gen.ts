@@ -729,6 +729,27 @@ export type Field = SqlIdentifier & {
 }
 
 /**
+ * Configuration for local file system access.
+ */
+export type FileBackendConfig = {
+  /**
+   * Whether to use background threads for file I/O.
+   *
+   * Background threads should improve performance, but they can reduce
+   * performance if too few cores are available. This is provided for
+   * debugging and fine-tuning and should ordinarily be left unset.
+   */
+  async_threads?: boolean | null
+  /**
+   * Per-I/O operation sleep duration, in milliseconds.
+   *
+   * This is for simulating slow storage devices.  Do not use this in
+   * production.
+   */
+  ioop_delay?: number | null
+}
+
+/**
  * Configuration for reading data from a file with `FileInputTransport`
  */
 export type FileInputConfig = {
@@ -2559,6 +2580,10 @@ export type SqlType =
 export type StorageBackendConfig =
   | {
       name: 'default'
+    }
+  | {
+      config: FileBackendConfig
+      name: 'file'
     }
   | {
       config: ObjectStorageConfig

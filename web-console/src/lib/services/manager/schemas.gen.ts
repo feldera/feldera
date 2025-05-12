@@ -987,6 +987,34 @@ export const $Field = {
 Matches the SQL compiler JSON format.`
 } as const
 
+export const $FileBackendConfig = {
+  type: 'object',
+  description: 'Configuration for local file system access.',
+  properties: {
+    async_threads: {
+      type: 'boolean',
+      description: `Whether to use background threads for file I/O.
+
+Background threads should improve performance, but they can reduce
+performance if too few cores are available. This is provided for
+debugging and fine-tuning and should ordinarily be left unset.`,
+      default: null,
+      nullable: true
+    },
+    ioop_delay: {
+      type: 'integer',
+      format: 'int64',
+      description: `Per-I/O operation sleep duration, in milliseconds.
+
+This is for simulating slow storage devices.  Do not use this in
+production.`,
+      default: null,
+      nullable: true,
+      minimum: 0
+    }
+  }
+} as const
+
 export const $FileInputConfig = {
   type: 'object',
   description: 'Configuration for reading data from a file with `FileInputTransport`',
@@ -3837,6 +3865,19 @@ export const $StorageBackendConfig = {
         name: {
           type: 'string',
           enum: ['default']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
+          $ref: '#/components/schemas/FileBackendConfig'
+        },
+        name: {
+          type: 'string',
+          enum: ['file']
         }
       }
     },
