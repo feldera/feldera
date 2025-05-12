@@ -86,7 +86,6 @@ deltalake = { workspace = true, features = ["datafusion", "s3", "gcs", "azure"],
 apache-avro = { workspace = true, optional = true }
 schema_registry_converter = { workspace = true, features = ["avro", "blocking"], optional = true }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["tokio-pg"] }
-rust_decimal_macros = "1.32"
 url = { workspace = true }
 metrics = { workspace = true }
 metrics-util = { workspace = true }

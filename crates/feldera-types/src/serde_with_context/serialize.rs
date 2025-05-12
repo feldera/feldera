@@ -24,9 +24,6 @@
 // This could benefit from procedural macros to auto-derive
 // [`SerializeWithContext`].
 
-use crate::serde_with_context::serde_config::DecimalFormat;
-use crate::serde_with_context::SqlSerdeConfig;
-use rust_decimal::Decimal;
 use serde::{
     ser::{SerializeMap, SerializeSeq, SerializeTuple},
     Serialize, Serializer,
@@ -150,23 +147,6 @@ serialize_without_context!(usize);
 serialize_without_context!(isize);
 serialize_without_context!(String);
 serialize_without_context!(char);
-
-impl SerializeWithContext<SqlSerdeConfig> for Decimal {
-    fn serialize_with_context<S>(
-        &self,
-        serializer: S,
-        context: &SqlSerdeConfig,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match context.decimal_format {
-            DecimalFormat::Numeric => Serialize::serialize(self, serializer),
-            DecimalFormat::String => serializer.serialize_str(&self.to_string()),
-            DecimalFormat::U128 => serializer.serialize_u128(u128::from_be_bytes(self.serialize())),
-        }
-    }
-}
 
 /// Used to pass the context to nested structures during serialization.
 // This is only public because it's used in a macro; it's not supposed
