@@ -29,6 +29,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::{borrow::Cow, cmp::max, collections::BTreeMap};
 use utoipa::ToSchema;
+use utoipa::openapi::{ObjectBuilder, OneOfBuilder, Ref, RefOr, Schema, SchemaType};
 
 const DEFAULT_MAX_PARALLEL_CONNECTOR_INIT: u64 = 10;
 
@@ -550,6 +551,9 @@ pub struct FtConfig {
     /// Fault tolerance model to use.
     #[serde(with = "none_as_string")]
     #[serde(default = "default_model")]
+    #[schema(
+        schema_with = none_as_string_schema::<FtModel>,
+    )]
     pub model: Option<FtModel>,
 
     /// Interval between automatic checkpoints, in seconds.
@@ -705,6 +709,22 @@ mod none_as_string {
     {
         deserializer.deserialize_str(NoneAsString(PhantomData))
     }
+}
+
+/// Generates an OpenAPI schema for an `Option<T>` field serialized with `none_as_string`.
+/// The schema is a `oneOf` with a reference to `T`'s schema and a `"none"` string enum.
+fn none_as_string_schema<'a, T: ToSchema<'a> + Default + Serialize>() -> Schema {
+    Schema::OneOf(
+        OneOfBuilder::new()
+            .item(RefOr::Ref(Ref::new(format!("#/components/schemas/{}", T::schema().0))))
+            .item(
+                ObjectBuilder::new()
+                    .schema_type(SchemaType::String)
+                    .enum_values(Some(vec!["none"])),
+            )
+            .default(Some(serde_json::to_value(T::default()).expect("Failed to serialize default value")))
+            .build(),
+    )
 }
 
 /// Fault tolerance model.
