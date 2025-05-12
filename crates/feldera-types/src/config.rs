@@ -28,8 +28,8 @@ use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
 use std::{borrow::Cow, cmp::max, collections::BTreeMap};
-use utoipa::ToSchema;
 use utoipa::openapi::{ObjectBuilder, OneOfBuilder, Ref, RefOr, Schema, SchemaType};
+use utoipa::ToSchema;
 
 const DEFAULT_MAX_PARALLEL_CONNECTOR_INIT: u64 = 10;
 
@@ -716,13 +716,18 @@ mod none_as_string {
 fn none_as_string_schema<'a, T: ToSchema<'a> + Default + Serialize>() -> Schema {
     Schema::OneOf(
         OneOfBuilder::new()
-            .item(RefOr::Ref(Ref::new(format!("#/components/schemas/{}", T::schema().0))))
+            .item(RefOr::Ref(Ref::new(format!(
+                "#/components/schemas/{}",
+                T::schema().0
+            ))))
             .item(
                 ObjectBuilder::new()
                     .schema_type(SchemaType::String)
                     .enum_values(Some(vec!["none"])),
             )
-            .default(Some(serde_json::to_value(T::default()).expect("Failed to serialize default value")))
+            .default(Some(
+                serde_json::to_value(T::default()).expect("Failed to serialize default value"),
+            ))
             .build(),
     )
 }
