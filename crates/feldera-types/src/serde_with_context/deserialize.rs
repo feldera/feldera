@@ -40,7 +40,6 @@
 // [`DeserializeWithContext`].
 
 use erased_serde::Deserializer as ErasedDeserializer;
-use rust_decimal::Decimal;
 use serde::de::Error as SerdeError;
 use serde::{
     de::{DeserializeSeed, MapAccess, SeqAccess, Visitor},
@@ -110,7 +109,6 @@ deserialize_without_context!(usize);
 deserialize_without_context!(isize);
 deserialize_without_context!(String);
 deserialize_without_context!(char);
-deserialize_without_context!(Decimal);
 
 // Used to pass the context to nested structures using the
 // `DeserializeSeed` mechanism.  This is only public because it's

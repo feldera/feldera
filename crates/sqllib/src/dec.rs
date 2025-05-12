@@ -6,7 +6,9 @@ use crate::{
     SqlString,
 };
 use dbsp::algebra::{MulByRef, OptionWeightType, F64};
-use dec::{Context, Decimal, ParseDecimalError, Rounding, TryFromDecimalError};
+use dec::{
+    Context, Decimal, InvalidPrecisionError, ParseDecimalError, Rounding, TryFromDecimalError,
+};
 use feldera_types::deserialize_without_context;
 use feldera_types::serde_with_context::{
     serde_config::DecimalFormat, SerializeWithContext, SqlSerdeConfig,
@@ -18,6 +20,7 @@ use serde::ser::Error as SerError;
 use serde::{Serialize, Serializer};
 use serde_json::Number;
 use size_of::SizeOf;
+use std::str::FromStr;
 use std::{
     fmt,
     hash::{Hash, Hasher},
@@ -106,6 +109,21 @@ impl SqlDecimal {
         Self::new(result)
     }
 
+    pub fn rescale(&mut self, scale: i32) {
+        let mut context = CONTEXT_PROTO.clone();
+        context.rescale(&mut self.value, &LargeDecimal::from(scale));
+    }
+
+    pub fn round_to_place(&mut self, scale: usize) -> Result<(), InvalidPrecisionError> {
+        let mut context = CONTEXT_PROTO.clone();
+        context.round_to_place(&mut self.value, scale)
+    }
+
+    pub fn shift(&mut self, scale: i32) {
+        let mut context = CONTEXT_PROTO.clone();
+        context.shift(&mut self.value, &LargeDecimal::from(scale));
+    }
+
     pub fn is_negative(self) -> bool {
         self.value.is_negative()
     }
@@ -121,15 +139,30 @@ impl SqlDecimal {
         let mut result = context.from_i128(value);
         let scale = LargeDecimal::from(-scale);
         context.rescale(&mut result, &scale);
+        context.shift(&mut result, &scale);
         Self::validate(result, &context, "from_i128_with_scale")
+    }
+
+    pub fn from_f32(value: f32) -> Self {
+        Self {
+            value: LargeDecimal::from(value),
+        }
+    }
+
+    pub fn from_f64(value: f64) -> Self {
+        Self {
+            value: LargeDecimal::from(value),
+        }
     }
 
     /// Will panic if the number does not fit in an i128
     pub fn mantissa(self) -> i128 {
         let mut context = CONTEXT_PROTO.clone();
-        let scale = LargeDecimal::from(0);
+        let zero_scale = LargeDecimal::from(0);
         let mut result = self.value;
-        context.rescale(&mut result, &scale);
+        let scale = LargeDecimal::from(-result.exponent());
+        context.shift(&mut result, &scale);
+        context.rescale(&mut result, &zero_scale);
         context.try_into_i128(result).unwrap()
     }
 }
@@ -298,7 +331,6 @@ impl SerializeWithContext<SqlSerdeConfig> for SqlDecimal {
         match context.decimal_format {
             DecimalFormat::Numeric => Serialize::serialize(&self, serializer),
             DecimalFormat::String => serializer.serialize_str(&self.value.to_string()),
-            DecimalFormat::U128 => todo!(), // serializer.serialize_u128(u128::from_be_bytes(self.serialize())),
         }
     }
 }
@@ -338,6 +370,14 @@ where
 impl fmt::Display for SqlDecimal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.value)
+    }
+}
+
+impl FromStr for SqlDecimal {
+    type Err = <LargeDecimal as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self { value: s.parse()? })
     }
 }
 

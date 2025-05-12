@@ -22,7 +22,6 @@ log = { workspace = true }
 utoipa = { workspace = true }
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
-rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
 actix-web = { workspace = true }
 enum-map = { workspace = true }
 erased-serde = { workspace = true }
@@ -31,6 +30,5 @@ thiserror = { workspace = true }
 regex = { workspace = true }
 
 [dev-dependencies]
-rust_decimal_macros = "1.32"
 csv = { workspace = true }
 tempfile = { workspace = true }
