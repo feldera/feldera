@@ -652,10 +652,10 @@ impl Runtime {
             })
     }
 
-    /// Returns the minimum number of bytes in a batch to spill it to storage,
-    /// or `None` if this thread doesn't have a [Runtime] or if it doesn't have
-    /// storage configured.
-    pub fn min_storage_bytes() -> Option<usize> {
+    /// Returns the minimum number of bytes in a batch (one that persists from
+    /// step to step) to spill it to storage, or `None` if this thread doesn't
+    /// have a [Runtime] or if it doesn't have storage configured.
+    pub fn min_index_storage_bytes() -> Option<usize> {
         RUNTIME.with(|rt| {
             Some(
                 rt.borrow()
@@ -669,6 +669,29 @@ impl Runtime {
                         // This reduces the files stored on disk to a reasonable number.
 
                         1024 * 1024
+                    }),
+            )
+        })
+    }
+
+    /// Returns the minimum number of bytes in a batch (one that does not
+    /// persist from step to step) to spill it to storage, or `None` if this
+    /// thread doesn't have a [Runtime] or if it doesn't have storage
+    /// configured.
+    pub fn min_step_storage_bytes() -> Option<usize> {
+        RUNTIME.with(|rt| {
+            Some(
+                rt.borrow()
+                    .as_ref()?
+                    .inner()
+                    .storage
+                    .as_ref()?
+                    .options
+                    .min_step_storage_bytes
+                    .unwrap_or({
+                        // This prevents large transient batches from exhausting
+                        // memory.
+                        10 * 1024 * 1024
                     }),
             )
         })

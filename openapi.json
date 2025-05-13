@@ -376,6 +376,7 @@
                           "name": "default"
                         },
                         "min_storage_bytes": null,
+                        "min_step_storage_bytes": null,
                         "compression": "default",
                         "cache_mib": null
                       },
@@ -437,6 +438,7 @@
                           "name": "default"
                         },
                         "min_storage_bytes": null,
+                        "min_step_storage_bytes": null,
                         "compression": "default",
                         "cache_mib": null
                       },
@@ -527,6 +529,7 @@
                       "name": "default"
                     },
                     "min_storage_bytes": null,
+                    "min_step_storage_bytes": null,
                     "compression": "default",
                     "cache_mib": null
                   },
@@ -586,6 +589,7 @@
                         "name": "default"
                       },
                       "min_storage_bytes": null,
+                      "min_step_storage_bytes": null,
                       "compression": "default",
                       "cache_mib": null
                     },
@@ -740,6 +744,7 @@
                         "name": "default"
                       },
                       "min_storage_bytes": null,
+                      "min_step_storage_bytes": null,
                       "compression": "default",
                       "cache_mib": null
                     },
@@ -857,6 +862,7 @@
                       "name": "default"
                     },
                     "min_storage_bytes": null,
+                    "min_step_storage_bytes": null,
                     "compression": "default",
                     "cache_mib": null
                   },
@@ -916,6 +922,7 @@
                         "name": "default"
                       },
                       "min_storage_bytes": null,
+                      "min_step_storage_bytes": null,
                       "compression": "default",
                       "cache_mib": null
                     },
@@ -987,6 +994,7 @@
                         "name": "default"
                       },
                       "min_storage_bytes": null,
+                      "min_step_storage_bytes": null,
                       "compression": "default",
                       "cache_mib": null
                     },
@@ -1225,6 +1233,7 @@
                         "name": "default"
                       },
                       "min_storage_bytes": null,
+                      "min_step_storage_bytes": null,
                       "compression": "default",
                       "cache_mib": null
                     },
@@ -2450,6 +2459,7 @@
                         "name": "default"
                       },
                       "min_storage_bytes": null,
+                      "min_step_storage_bytes": null,
                       "compression": "default",
                       "cache_mib": null
                     },
@@ -5075,6 +5085,7 @@
                     "name": "default"
                   },
                   "min_storage_bytes": null,
+                  "min_step_storage_bytes": null,
                   "compression": "default",
                   "cache_mib": null
                 },
@@ -6042,6 +6053,7 @@
                 "name": "default"
               },
               "min_storage_bytes": null,
+              "min_step_storage_bytes": null,
               "compression": "default",
               "cache_mib": null
             },
@@ -6511,9 +6523,16 @@
             ],
             "default": "default"
           },
+          "min_step_storage_bytes": {
+            "type": "integer",
+            "description": "For a batch of data passed through the pipeline during a single step,\nthe minimum estimated number of bytes to write it to storage.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.  A value of 0 will write even empty batches to storage, and\nnonzero values provide a threshold.  `usize::MAX`, the default,\neffectively disables storage for such batches.  If it is set to another\nvalue, it should ordinarily be greater than or equal to\n`min_storage_bytes`.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "min_storage_bytes": {
             "type": "integer",
-            "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.\n\nThe default is 1,048,576 (1 MiB).",
+            "description": "For a batch of data maintained as part of a persistent index during a\npipeline run, the minimum estimated number of bytes to write it to\nstorage.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage for such batches.  The default is 1,048,576 (1 MiB).",
             "default": null,
             "nullable": true,
             "minimum": 0

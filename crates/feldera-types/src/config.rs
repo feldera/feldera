@@ -169,16 +169,29 @@ pub struct StorageOptions {
     /// How to connect to the underlying storage.
     pub backend: StorageBackendConfig,
 
-    /// The minimum estimated number of bytes in a batch of data to write it to
-    /// storage.  This is provided for debugging and fine-tuning and should
-    /// ordinarily be left unset.
+    /// For a batch of data maintained as part of a persistent index during a
+    /// pipeline run, the minimum estimated number of bytes to write it to
+    /// storage.
+    ///
+    /// This is provided for debugging and fine-tuning and should ordinarily be
+    /// left unset.
     ///
     /// A value of 0 will write even empty batches to storage, and nonzero
     /// values provide a threshold.  `usize::MAX` would effectively disable
-    /// storage.
-    ///
-    /// The default is 1,048,576 (1 MiB).
+    /// storage for such batches.  The default is 1,048,576 (1 MiB).
     pub min_storage_bytes: Option<usize>,
+
+    /// For a batch of data passed through the pipeline during a single step,
+    /// the minimum estimated number of bytes to write it to storage.
+    ///
+    /// This is provided for debugging and fine-tuning and should ordinarily be
+    /// left unset.  If it is set, it should ordinarily be greater than or equal
+    /// to `min_storage_bytes`.
+    ///
+    /// A value of 0 will write even empty batches to storage, and nonzero
+    /// values provide a threshold.  `usize::MAX` would effectively disable
+    /// storage for such batches.  The default is 10,485,760 (10 MiB).
+    pub min_step_storage_bytes: Option<usize>,
 
     /// The form of compression to use in data batches.
     ///

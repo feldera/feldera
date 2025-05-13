@@ -14,6 +14,7 @@ use crate::{
     utils::Tup2,
     DBData, DBWeight, NumEntries,
 };
+use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -732,6 +733,43 @@ where
             self.diffs.len(),
             "every value must have exactly one diff"
         );
+    }
+
+    /// Copies the contents of this in-progress [Builder] to `dst`.
+    ///
+    /// This handles all the possible states that this builder can be in (such
+    /// as time-diff pairs without a value yet, and values without a key yet)
+    /// and reproduces them in `dst`.
+    pub fn copy_to_builder<B, BO>(&self, dst: &mut B)
+    where
+        B: Builder<BO>,
+        BO: Batch<Key = K, Val = V, R = R, Time = ()>,
+    {
+        let mut key_index = 0;
+        for (val_diff, val_index) in self
+            .vals
+            .dyn_iter()
+            .zip_longest(self.diffs.dyn_iter())
+            .zip(1..)
+        {
+            match val_diff {
+                EitherOrBoth::Both(val, diff) => {
+                    dst.push_val_diff(val, diff);
+                    if self
+                        .offs
+                        .get(key_index + 1)
+                        .is_some_and(|val_offset| O::from_usize(val_index) >= *val_offset)
+                    {
+                        dst.push_key(&self.keys[key_index]);
+                        key_index += 1;
+                    }
+                }
+                EitherOrBoth::Left(_) => unreachable!(),
+                EitherOrBoth::Right(diff) => {
+                    dst.push_time_diff(&(), diff);
+                }
+            }
+        }
     }
 }
 

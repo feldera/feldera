@@ -1165,6 +1165,11 @@ where
             //   (see the huge step RFC).
             //
             // - We can have operators output mini-spines instead of batches.
+            //
+            // We already have the ability to write very large batches to
+            // storage at build time, using `min_step_storage_bytes`.  This only
+            // addresses individual large batches; it does not help with the
+            // Batcher, which should be separately addressed.
             let batch = if batch.location() == BatchLocation::Memory
                 && Spine::<B>::size_to_level(batch.len()) >= 2
                 && pick_merge_destination([&batch], None) == BatchLocation::Storage

@@ -6,6 +6,7 @@ use crate::{
         cursor::DelegatingCursor,
         merge_batches_by_reference,
         ord::{
+            fallback::utils::BuildTo,
             file::indexed_wset_batch::FileIndexedWSetBuilder,
             merge_batcher::MergeBatcher,
             vec::indexed_wset_batch::{VecIndexedWSet, VecIndexedWSetBuilder},
@@ -343,6 +344,34 @@ where
     inner: BuilderInner<K, V, R>,
 }
 
+impl<K, V, R> FallbackIndexedWSetBuilder<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn should_spill(size: usize, remaining: &mut usize) -> bool {
+        if size > *remaining {
+            true
+        } else {
+            *remaining -= size;
+            false
+        }
+    }
+
+    /// We ran out of the bytes threshold for `BuilderInner::Threshold`. Spill
+    /// to storage as `BuilderInner::File`, writing `vec` as the initial
+    /// contents.
+    fn spill(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        vec: &VecIndexedWSetBuilder<K, V, R, usize>,
+    ) -> BuilderInner<K, V, R> {
+        let mut file = FileIndexedWSetBuilder::with_capacity(factories, 0);
+        vec.copy_to_builder(&mut file);
+        BuilderInner::File(file)
+    }
+}
+
 #[derive(SizeOf)]
 #[allow(clippy::large_enum_variant)]
 enum BuilderInner<K, V, R>
@@ -351,8 +380,50 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    /// Memory.
     Vec(VecIndexedWSetBuilder<K, V, R, usize>),
+
+    /// Storage.
     File(FileIndexedWSetBuilder<K, V, R>),
+
+    /// Memory, unless we exceed a maximum size.
+    Threshold {
+        vec: VecIndexedWSetBuilder<K, V, R, usize>,
+
+        /// Bytes left to add until the threshold is exceeded.
+        remaining: usize,
+    },
+}
+
+impl<K, V, R> BuilderInner<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn new(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        capacity: usize,
+        build_to: BuildTo,
+    ) -> Self {
+        match build_to {
+            BuildTo::Memory => Self::Vec(Self::new_vec(factories, capacity)),
+            BuildTo::Storage => {
+                Self::File(FileIndexedWSetBuilder::with_capacity(factories, capacity))
+            }
+            BuildTo::Threshold(bytes) => Self::Threshold {
+                vec: Self::new_vec(factories, capacity),
+                remaining: bytes,
+            },
+        }
+    }
+
+    fn new_vec(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        capacity: usize,
+    ) -> VecIndexedWSetBuilder<K, V, R, usize> {
+        VecIndexedWSetBuilder::with_capacity(&factories.vec_indexed_wset_factory, capacity)
+    }
 }
 
 impl<K, V, R> Builder<FallbackIndexedWSet<K, V, R>> for FallbackIndexedWSetBuilder<K, V, R>
@@ -365,10 +436,7 @@ where
     fn with_capacity(factories: &FallbackIndexedWSetFactories<K, V, R>, capacity: usize) -> Self {
         Self {
             factories: factories.clone(),
-            inner: BuilderInner::Vec(VecIndexedWSetBuilder::with_capacity(
-                &factories.vec_indexed_wset_factory,
-                capacity,
-            )),
+            inner: BuilderInner::new(factories, capacity, BuildTo::for_capacity(capacity)),
         }
     }
 
@@ -381,18 +449,13 @@ where
         B: BatchReader,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let cap = batches.clone().into_iter().map(|b| b.len()).sum();
         Self {
             factories: factories.clone(),
-            inner: match pick_merge_destination(batches, location) {
-                BatchLocation::Memory => BuilderInner::Vec(VecIndexedWSetBuilder::with_capacity(
-                    &factories.vec_indexed_wset_factory,
-                    cap,
-                )),
-                BatchLocation::Storage => {
-                    BuilderInner::File(FileIndexedWSetBuilder::with_capacity(factories, cap))
-                }
-            },
+            inner: BuilderInner::new(
+                factories,
+                batches.clone().into_iter().map(|b| b.len()).sum(),
+                pick_merge_destination(batches, location).into(),
+            ),
         }
     }
 
@@ -400,6 +463,12 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_time_diff(time, weight),
             BuilderInner::File(file) => file.push_time_diff(time, weight),
+            BuilderInner::Threshold { vec, remaining } => {
+                vec.push_time_diff(time, weight);
+                if Self::should_spill(weight.size_of().total_bytes(), remaining) {
+                    self.inner = Self::spill(&self.factories, vec);
+                }
+            }
         }
     }
 
@@ -407,6 +476,12 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_val(val),
             BuilderInner::File(file) => file.push_val(val),
+            BuilderInner::Threshold { vec, remaining } => {
+                vec.push_val(val);
+                if Self::should_spill(val.size_of().total_bytes(), remaining) {
+                    self.inner = Self::spill(&self.factories, vec);
+                }
+            }
         }
     }
 
@@ -414,6 +489,12 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_key(key),
             BuilderInner::File(file) => file.push_key(key),
+            BuilderInner::Threshold { vec, remaining } => {
+                vec.push_key(key);
+                if Self::should_spill(key.size_of().total_bytes(), remaining) {
+                    self.inner = Self::spill(&self.factories, vec);
+                }
+            }
         }
     }
 
@@ -421,6 +502,13 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_time_diff_mut(time, weight),
             BuilderInner::File(file) => file.push_time_diff_mut(time, weight),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = weight.size_of().total_bytes();
+                vec.push_time_diff_mut(time, weight);
+                if Self::should_spill(size, remaining) {
+                    self.inner = Self::spill(&self.factories, vec);
+                }
+            }
         }
     }
 
@@ -428,6 +516,13 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_val_mut(val),
             BuilderInner::File(file) => file.push_val_mut(val),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = val.size_of().total_bytes();
+                vec.push_val_mut(val);
+                if Self::should_spill(size, remaining) {
+                    self.inner = Self::spill(&self.factories, vec);
+                }
+            }
         }
     }
 
@@ -435,6 +530,13 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_key_mut(key),
             BuilderInner::File(file) => file.push_key_mut(key),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = key.size_of().total_bytes();
+                vec.push_key_mut(key);
+                if Self::should_spill(size, remaining) {
+                    self.inner = Self::spill(&self.factories, vec);
+                }
+            }
         }
     }
 
@@ -442,6 +544,12 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_val_diff(val, weight),
             BuilderInner::File(file) => file.push_val_diff(val, weight),
+            BuilderInner::Threshold { vec, remaining } => {
+                vec.push_val_diff(val, weight);
+                if Self::should_spill((val, weight).size_of().total_bytes(), remaining) {
+                    self.inner = Self::spill(&self.factories, vec);
+                }
+            }
         }
     }
 
@@ -449,12 +557,19 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_val_diff_mut(val, weight),
             BuilderInner::File(file) => file.push_val_diff_mut(val, weight),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = val.size_of().total_bytes() + weight.size_of().total_bytes();
+                vec.push_val_diff_mut(val, weight);
+                if Self::should_spill(size, remaining) {
+                    self.inner = Self::spill(&self.factories, vec);
+                }
+            }
         }
     }
 
     fn reserve(&mut self, additional: usize) {
         match &mut self.inner {
-            BuilderInner::Vec(vec) => vec.reserve(additional),
+            BuilderInner::Vec(vec) | BuilderInner::Threshold { vec, .. } => vec.reserve(additional),
             BuilderInner::File(file) => file.reserve(additional),
         }
     }
@@ -464,7 +579,9 @@ where
             factories: self.factories,
             inner: match self.inner {
                 BuilderInner::File(file) => Inner::File(file.done()),
-                BuilderInner::Vec(vec) => Inner::Vec(vec.done()),
+                BuilderInner::Vec(vec) | BuilderInner::Threshold { vec, .. } => {
+                    Inner::Vec(vec.done())
+                }
             },
         }
     }

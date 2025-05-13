@@ -15,6 +15,7 @@ use crate::{
     utils::Tup2,
     DBData, DBWeight, NumEntries,
 };
+use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -551,7 +552,6 @@ where
     #[size_of(skip)]
     factories: VecWSetFactories<K, R>,
     keys: Box<DynVec<K>>,
-    #[cfg(debug_assertions)]
     val: bool,
     diffs: Box<DynVec<R>>,
 }
@@ -570,8 +570,8 @@ where
                 self.diffs.len(),
                 "every key must have exactly one diff"
             );
-            self.val = false;
         }
+        self.val = false;
 
         debug_assert!(
             {
@@ -593,6 +593,33 @@ where
             "every diff must have exactly one key"
         );
     }
+
+    /// Copies the contents of this in-progress [Builder] to `dst`.
+    ///
+    /// This handles all the possible states that this builder can be in (such
+    /// as a diff without a value, and a value without a key) and reproduces
+    /// them in `dst`.
+    pub fn copy_to_builder<B, BO>(&self, dst: &mut B)
+    where
+        B: Builder<BO>,
+        BO: Batch<Key = K, Val = DynUnit, R = R, Time = ()>,
+    {
+        for key_diff in self.keys.dyn_iter().zip_longest(self.diffs.dyn_iter()) {
+            match key_diff {
+                EitherOrBoth::Both(key, diff) => {
+                    dst.push_val_diff(&(), diff);
+                    dst.push_key(key);
+                }
+                EitherOrBoth::Left(_) => unreachable!(),
+                EitherOrBoth::Right(diff) => {
+                    dst.push_diff(diff);
+                    if self.val {
+                        dst.push_val(&());
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl<K, R> Builder<VecWSet<K, R>> for VecWSetBuilder<K, R>
@@ -610,7 +637,6 @@ where
         Self {
             factories: factories.clone(),
             keys,
-            #[cfg(debug_assertions)]
             val: false,
             diffs,
         }
@@ -635,13 +661,14 @@ where
         #[cfg(debug_assertions)]
         {
             debug_assert!(!self.val);
-            self.val = true;
             debug_assert_eq!(
                 self.diffs.len(),
                 self.keys.len() + 1,
                 "every value must have exactly one diff"
             );
         }
+
+        self.val = true;
     }
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
