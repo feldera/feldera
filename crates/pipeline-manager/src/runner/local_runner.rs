@@ -445,11 +445,13 @@ impl PipelineExecutor for LocalRunner {
         deployment_config: &PipelineConfig,
         program_binary_url: &str,
         program_version: Version,
-        _suspend_exists: bool, // TODO
+        suspend_info: Option<serde_json::Value>,
     ) -> Result<(), ManagerError> {
         // (Re-)create pipeline working directory (which will contain storage directory)
         let pipeline_dir = self.config.pipeline_dir(self.pipeline_id);
-        let _ = remove_dir_all(&pipeline_dir).await;
+        if suspend_info.is_none() {
+            let _ = remove_dir_all(&pipeline_dir).await;
+        }
         create_dir_all(&pipeline_dir).await.map_err(|e| {
             ManagerError::from(CommonError::io_error(
                 format!(
@@ -462,7 +464,9 @@ impl PipelineExecutor for LocalRunner {
 
         // (Re-)create pipeline storage directory
         if let Some(storage_config) = &deployment_config.storage_config {
-            let _ = remove_dir_all(&storage_config.path).await;
+            if suspend_info.is_none() {
+                let _ = remove_dir_all(&storage_config.path).await;
+            }
             create_dir_all(&storage_config.path).await.map_err(|e| {
                 ManagerError::from(CommonError::io_error(
                     format!(
@@ -590,7 +594,27 @@ impl PipelineExecutor for LocalRunner {
     }
 
     async fn suspend_compute(&mut self) -> Result<(), ManagerError> {
-        Ok(()) // TODO
+        // Kill pipeline process
+        if let Some(mut p) = self.process.take() {
+            let _ = p.kill().await;
+            let _ = p.wait().await;
+        }
+
+        // Switch to rejection logging
+        let (current_log_terminate_sender, current_log_join_handle) = self
+            .log_terminate_sender_and_join_handle
+            .take()
+            .expect("Log terminate sender and join handle are not present");
+        let (log_follow_request_receiver, log_deployment_check_receiver) =
+            Self::terminate_log_thread(current_log_terminate_sender, current_log_join_handle).await;
+        let (new_log_terminate_sender, new_log_join_handle) = Self::setup_log_rejection(
+            self.pipeline_id,
+            log_follow_request_receiver,
+            log_deployment_check_receiver,
+        );
+        self.log_terminate_sender_and_join_handle =
+            Some((new_log_terminate_sender, new_log_join_handle));
+        Ok(())
     }
 
     async fn is_compute_suspended(&mut self) -> Result<bool, ManagerError> {

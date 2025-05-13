@@ -505,6 +505,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         suspend_info,
                     )
                     .await?;
+                self.provision_called = None;
                 PipelineStatus::SuspendingCompute
             }
             State::TransitionToSuspended => {
@@ -987,7 +988,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &deployment_config,
                 &program_binary_url,
                 pipeline.program_version,
-                true, // TODO: supply value
+                pipeline.suspend_info.clone(),
             )
             .await
         {
@@ -1265,7 +1266,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     // themselves (which will terminate the pipeline in its entirety)
                     self.suspend_compute_called = None;
                     State::TransitionToSuspendingCompute {
-                        suspend_info: json!({}), // TODO: the response? Or deployment_config?
+                        suspend_info: json!({}),
                     }
                 } else if status == StatusCode::SERVICE_UNAVAILABLE {
                     warn!("Unable to suspend circuit of pipeline {} because pipeline indicated it is not (yet) ready", pipeline.id);
