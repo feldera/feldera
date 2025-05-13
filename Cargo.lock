@@ -3612,7 +3612,6 @@ dependencies = [
  "feldera-size-of",
  "feldera-storage",
  "feldera-types",
- "feldera_rust_decimal",
  "futures",
  "hashbrown 0.14.5",
  "impl-trait-for-tuples",
@@ -3752,7 +3751,6 @@ dependencies = [
  "rkyv",
  "rmp-serde",
  "rmpv",
- "rust_decimal_macros",
  "rustls 0.23.23",
  "schema_registry_converter",
  "serde",
@@ -3860,6 +3858,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef552e6f588e446098f6ba40d89ac146c8c7b64aade83c051ee00bb5d2bc18d"
 dependencies = [
  "uuid",
+]
+
+[[package]]
+name = "dec"
+version = "0.4.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09ae126ef80702bd514a66279b6dac1e58ff1dbcb12024f7110de95608348fd7"
+dependencies = [
+ "decnumber-sys",
+ "libc",
+ "paste",
+ "serde",
+ "static_assertions",
+]
+
+[[package]]
+name = "decnumber-sys"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23b4bc33814bd5bcd46dd13f9471a29ab1a22c4701ae0c4a182e45e8336d1a5b"
+dependencies = [
+ "cc",
+ "libc",
 ]
 
 [[package]]
@@ -4708,9 +4729,9 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "dbsp",
+ "dec",
  "feldera-size-of",
  "feldera-types",
- "feldera_rust_decimal",
  "flate2",
  "geo",
  "hex",
@@ -4722,6 +4743,7 @@ dependencies = [
  "paste",
  "regex",
  "rkyv",
+ "ryu",
  "serde",
  "serde_json",
  "thiserror 2.0.11",
@@ -4755,13 +4777,11 @@ dependencies = [
  "csv",
  "enum-map",
  "erased-serde",
- "feldera_rust_decimal",
  "libc",
  "log",
  "proptest",
  "proptest-derive",
  "regex",
- "rust_decimal_macros",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -9095,16 +9115,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust_decimal_macros"
-version = "1.36.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da991f231869f34268415a49724c6578e740ad697ba0999199d6f22b3949332c"
-dependencies = [
- "quote",
- "rust_decimal",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9299,9 +9309,9 @@ dependencies = [
 
 [[package]]
 name = "ryu"
-version = "1.0.19"
+version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ea1a2d0a644769cc99faa24c3ad26b379b786fe7c36fd3c546254801650e6dd"
+checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "safe_arch"
@@ -9829,7 +9839,6 @@ version = "0.1.0"
 dependencies = [
  "dbsp",
  "feldera-sqllib",
- "feldera_rust_decimal",
 ]
 
 [[package]]
