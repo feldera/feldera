@@ -5,6 +5,9 @@ use std::sync::Arc;
 #[cfg(feature = "with-deltalake")]
 use std::{error::Error, future::Future, pin::Pin};
 
+use anyhow::{bail, Result as AnyResult};
+use feldera_adapterlib::catalog::SerCursor;
+use feldera_types::program_schema::SqlIdentifier;
 #[cfg(feature = "with-deltalake")]
 use futures::channel::oneshot;
 #[cfg(feature = "with-deltalake")]
@@ -16,6 +19,151 @@ pub(crate) fn root_cause(mut err: &dyn Error) -> &dyn Error {
         err = source;
     }
     err
+}
+
+/// Operations over an indexed view.
+#[derive(Debug)]
+pub enum IndexedOperationType {
+    Insert,
+    Delete,
+    Upsert,
+}
+
+/// Report unique key constraint violation in an output connector.
+pub fn non_unique_key_error(
+    view_name: &SqlIdentifier,
+    index_name: &SqlIdentifier,
+    error: &str,
+    cursor: &mut dyn SerCursor,
+) -> String {
+    cursor.rewind_vals();
+    let key_json = cursor.key_to_json().unwrap_or_else(|e| {
+        serde_json::Value::String(format!(
+            "(unable to display key: error converting record key to JSON format: {e})"
+        ))
+    });
+
+    let mut updates = Vec::new();
+    let mut counter = 0;
+
+    // Print up to 10 updates. 3 is sufficient to show non-uniqueness.
+    while cursor.val_valid() && counter < 10 {
+        let w = cursor.weight();
+
+        if w == 0 {
+            cursor.step_val();
+            continue;
+        }
+
+        updates.push(format!(
+            "    {}: {:+}",
+            cursor.val_to_json().unwrap_or_else(|e| {
+                serde_json::Value::String(format!(
+                    "(unable to display record: error converting record to JSON format: {e})"
+                ))
+            }),
+            w
+        ));
+
+        cursor.step_val();
+        counter += 1;
+    }
+
+    if cursor.val_valid() {
+        updates.push("    ...".to_string());
+    }
+
+    let updates = updates.join("\n");
+
+    format!(
+        r#"Output connector configured with 'index={}' encountered multiple values with the same key. When configured with SQL index, the connector expects keys to be unique. To resolve this, either remove the 'index' attribute from the connector configuration or fix the '{}' view definition to ensure that '{}' is a unique index.
+The offending key is: {}.
+Error description: {error}.
+List of updates associated with this key:
+{updates}
+        "#,
+        index_name, view_name, index_name, key_json,
+    )
+}
+
+/// Determine whether the key under an indexed cursor is an insert, delete or upsert.
+pub fn indexed_operation_type(
+    view_name: &SqlIdentifier,
+    index_name: &SqlIdentifier,
+    cursor: &mut dyn SerCursor,
+) -> AnyResult<Option<IndexedOperationType>> {
+    let mut found_insert = false;
+    let mut found_delete = false;
+
+    // First pass: determine the operation type.
+    while cursor.val_valid() {
+        let w = cursor.weight();
+
+        if w == 0 {
+            cursor.step_val();
+            continue;
+        }
+
+        if w > 1 {
+            bail!(non_unique_key_error(
+                view_name,
+                index_name,
+                &format!(
+                    "Record {} is inserted {w} times",
+                    cursor.val_to_json().unwrap_or_default()
+                ),
+                cursor
+            ));
+        }
+
+        if w < -1 {
+            bail!(non_unique_key_error(
+                view_name,
+                index_name,
+                &format!(
+                    "Record {} is deleted {} times",
+                    cursor.val_to_json().unwrap_or_default(),
+                    -w
+                ),
+                cursor
+            ));
+        }
+
+        if w == 1 {
+            if found_insert {
+                bail!(non_unique_key_error(
+                    view_name,
+                    index_name,
+                    "Multiple new values for the same key",
+                    cursor
+                ));
+            }
+
+            found_insert = true;
+        }
+
+        if w == -1 {
+            if found_delete {
+                bail!(non_unique_key_error(
+                    view_name,
+                    index_name,
+                    "Multiple deleted values for the same key",
+                    cursor
+                ));
+            }
+
+            found_delete = true;
+        }
+
+        cursor.step_val();
+    }
+
+    Ok(match (found_insert, found_delete) {
+        (true, false) => Some(IndexedOperationType::Insert),
+        (false, true) => Some(IndexedOperationType::Delete),
+        (true, true) => Some(IndexedOperationType::Upsert),
+        (false, false) => return Ok(None),
+    })
 }
 
 pub(crate) fn truncate_ellipse<'a>(s: &'a str, len: usize, ellipse: &str) -> Cow<'a, str> {

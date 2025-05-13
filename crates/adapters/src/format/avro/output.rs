@@ -2,6 +2,7 @@ use crate::catalog::{CursorWithPolarity, SerBatchReader};
 use crate::format::avro::schema::{schema_json, AvroSchemaBuilder};
 use crate::format::avro::schema_registry_settings;
 use crate::format::MAX_DUPLICATES;
+use crate::util::{indexed_operation_type, IndexedOperationType};
 use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, RecordFormat, SerCursor};
 use actix_web::HttpRequest;
 use anyhow::{anyhow, bail, Result as AnyResult};
@@ -28,14 +29,6 @@ use tracing::debug;
 // - Support complex schemas with cross-references.
 // - The serializer doesn't currently support the Avro `fixed` type.
 // - Add a Kafka end-to-end test to `kafka/test.rs`.  This requires implementing an Avro parser.
-
-#[derive(Debug)]
-enum OperationType {
-    Insert,
-    Delete,
-    Upsert,
-    //DeleteInsert,
-}
 
 /// Avro format encoder.
 pub struct AvroOutputFormat;
@@ -463,58 +456,12 @@ impl AvroEncoder {
         Ok(())
     }
 
-    fn non_unique_key_error(&self) -> String {
-        format!("Avro connector configured with 'index={}' encountered multiple values with the same key. When configured with SQL index, the connector expects keys to be unique. To resolve this, either remove the 'index' attribute from the connector configuration or fix the '{}' view definition to ensure that '{}' is a unique index.",
-        self.index_name().unwrap(),
-        self.view_name(),
-        self.index_name().unwrap())
-    }
-
-    /// A helper method for serializing indexed batches.
-    /// 1. Determine whether the key under the cursor is an insert, delete or upsert.
-    /// 2. Serialize key and/or value needed for this operation by the given output format.
-    fn operation_type(&mut self, cursor: &mut dyn SerCursor) -> AnyResult<Option<OperationType>> {
-        let mut found_insert = false;
-        let mut found_delete = false;
-
-        // First pass: determine the operation type.
-        while cursor.val_valid() {
-            let w = cursor.weight();
-
-            if w == 0 {
-                cursor.step_val();
-                continue;
-            }
-
-            if w != 1 && w != -1 {
-                // TODO: print the key
-                bail!(self.non_unique_key_error());
-            }
-
-            if w == 1 {
-                if found_insert {
-                    bail!(self.non_unique_key_error());
-                }
-
-                found_insert = true;
-            }
-
-            if w == -1 {
-                if found_delete {
-                    bail!(self.non_unique_key_error());
-                }
-
-                found_delete = true;
-            }
-
-            cursor.step_val();
-        }
-
-        let operation_type = match (found_insert, found_delete) {
-            (true, false) => OperationType::Insert,
-            (false, true) => OperationType::Delete,
-            (true, true) => OperationType::Upsert,
-            (false, false) => return Ok(None),
+    /// Serialize key and/or value needed for this operation by the given output format.
+    fn serialize(&mut self, cursor: &mut dyn SerCursor) -> AnyResult<Option<IndexedOperationType>> {
+        let Some(operation_type) =
+            indexed_operation_type(self.view_name(), self.index_name().unwrap(), cursor)?
+        else {
+            return Ok(None);
         };
 
         // Second pass: serialize the key and value for the operation.
@@ -538,7 +485,7 @@ impl AvroEncoder {
 
             if w == 1 {
                 match operation_type {
-                    OperationType::Insert | OperationType::Upsert => {
+                    IndexedOperationType::Insert | IndexedOperationType::Upsert => {
                         // println!("schema: {:#?}", self.value_avro_schema);
                         let avro_value = cursor
                             .val_to_avro(&self.value_avro_schema, &HashMap::new())
@@ -557,7 +504,7 @@ impl AvroEncoder {
 
             if w == -1 {
                 match operation_type {
-                    OperationType::Delete if self.update_format == AvroUpdateFormat::Raw => {
+                    IndexedOperationType::Delete if self.update_format == AvroUpdateFormat::Raw => {
                         let avro_value = cursor
                             .val_to_avro(&self.value_avro_schema, &HashMap::new())
                             .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
@@ -584,7 +531,7 @@ impl AvroEncoder {
         let mut cursor = batch.cursor(RecordFormat::Avro)?;
 
         while cursor.key_valid() {
-            let operation_type = self.operation_type(cursor.as_mut())?;
+            let operation_type = self.serialize(cursor.as_mut())?;
 
             let key_buffer = if self.key_avro_schema.is_some() {
                 Some(self.key_buffer.as_slice())
@@ -594,10 +541,10 @@ impl AvroEncoder {
 
             match (operation_type, self.update_format.clone()) {
                 (None, _) => (),
-                (Some(OperationType::Delete), AvroUpdateFormat::ConfluentJdbc) => {
+                (Some(IndexedOperationType::Delete), AvroUpdateFormat::ConfluentJdbc) => {
                     self.output_consumer.push_key(key_buffer, None, &[], 1);
                 }
-                (Some(OperationType::Delete), AvroUpdateFormat::Raw) => {
+                (Some(IndexedOperationType::Delete), AvroUpdateFormat::Raw) => {
                     self.output_consumer.push_key(
                         key_buffer,
                         Some(&self.value_buffer),
@@ -606,13 +553,13 @@ impl AvroEncoder {
                     );
                 }
                 (
-                    Some(OperationType::Insert) | Some(OperationType::Upsert),
+                    Some(IndexedOperationType::Insert) | Some(IndexedOperationType::Upsert),
                     AvroUpdateFormat::ConfluentJdbc,
                 ) => {
                     self.output_consumer
                         .push_key(key_buffer, Some(&self.value_buffer), &[], 1);
                 }
-                (Some(OperationType::Insert), AvroUpdateFormat::Raw) => {
+                (Some(IndexedOperationType::Insert), AvroUpdateFormat::Raw) => {
                     self.output_consumer.push_key(
                         key_buffer,
                         Some(&self.value_buffer),
@@ -620,7 +567,7 @@ impl AvroEncoder {
                         1,
                     );
                 }
-                (Some(OperationType::Upsert), AvroUpdateFormat::Raw) => {
+                (Some(IndexedOperationType::Upsert), AvroUpdateFormat::Raw) => {
                     self.output_consumer.push_key(
                         key_buffer,
                         Some(&self.value_buffer),

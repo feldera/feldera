@@ -967,6 +967,91 @@ fn test_confluent_avro_output_indexed<K, V>(
     assert_eq!(expected_output, actual_outputs);
 }
 
+#[test]
+fn test_non_unique_keys() {
+    let schema_str = TestStruct::avro_schema().to_string();
+    let config: AvroEncoderConfig = AvroEncoderConfig {
+        schema: Some(schema_str.clone()),
+        key_mode: Some(AvroEncoderKeyMode::None),
+        ..Default::default()
+    };
+    let consumer = MockOutputConsumer::new();
+
+    let k1 = KeyStruct { id: 1 };
+    let v1 = TestStruct {
+        id: 1,
+        b: true,
+        i: None,
+        s: "foo".to_string(),
+    };
+    let v2 = TestStruct {
+        id: 1,
+        b: false,
+        i: None,
+        s: "bar".to_string(),
+    };
+
+    let mut encoder = AvroEncoder::create(
+        "avro_test_endpoint",
+        &Some(KeyStruct::relation_schema()),
+        &TestStruct::relation_schema(),
+        Box::new(consumer),
+        config,
+        None,
+    )
+    .unwrap();
+
+    let zset = OrdIndexedZSet::from_tuples((), vec![Tup2(Tup2(k1.clone(), v1.clone()), 2)]);
+    let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
+
+    encoder.consumer().batch_start(0);
+    let err = encoder.encode(zset.as_batch_reader()).unwrap_err();
+    assert!(err.to_string().contains(r#"is inserted 2 times"#));
+    encoder.consumer().batch_end();
+
+    let zset = OrdIndexedZSet::from_tuples((), vec![Tup2(Tup2(k1.clone(), v1.clone()), -2)]);
+    let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
+
+    encoder.consumer().batch_start(0);
+    let err = encoder.encode(zset.as_batch_reader()).unwrap_err();
+    assert!(err.to_string().contains(r#"is deleted 2 times"#));
+    encoder.consumer().batch_end();
+
+    let zset = OrdIndexedZSet::from_tuples(
+        (),
+        vec![
+            Tup2(Tup2(k1.clone(), v1.clone()), 1),
+            Tup2(Tup2(k1.clone(), v2.clone()), 1),
+        ],
+    );
+    let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
+
+    encoder.consumer().batch_start(0);
+    let err = encoder.encode(zset.as_batch_reader()).unwrap_err();
+    println!("{err}");
+    assert!(err
+        .to_string()
+        .contains(r#"Error description: Multiple new values for the same key."#));
+    encoder.consumer().batch_end();
+
+    let zset = OrdIndexedZSet::from_tuples(
+        (),
+        vec![
+            Tup2(Tup2(k1.clone(), v1.clone()), -1),
+            Tup2(Tup2(k1.clone(), v2.clone()), -1),
+        ],
+    );
+    let zset = Arc::new(<SerBatchImpl<_, KeyStruct, TestStruct>>::new(zset)) as Arc<dyn SerBatch>;
+
+    encoder.consumer().batch_start(0);
+    let err = encoder.encode(zset.as_batch_reader()).unwrap_err();
+    println!("{err}");
+    assert!(err
+        .to_string()
+        .contains(r#"Error description: Multiple deleted values for the same key."#));
+    encoder.consumer().batch_end();
+}
+
 proptest! {
     #[test]
     fn proptest_raw_avro_output(data in generate_test_batches_with_weights(10, 20))
