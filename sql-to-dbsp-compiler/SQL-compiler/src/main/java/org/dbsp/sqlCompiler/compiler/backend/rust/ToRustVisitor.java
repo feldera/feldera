@@ -775,7 +775,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(this.getInputName(operator, 0))
                 .append(".")
                 .append(operator.operation)
-                .append("(");
+                .append("_persistent(hash, ");
         // This part is different from a standard operator.
         operator.init.accept(this.innerVisitor);
         this.builder.append(", ");
