@@ -5,9 +5,10 @@
 use crate::{
     array::Array,
     binary::ByteArray,
-    dec::{is_error, DecimalContext, LargeDecimal, SqlDecimal, CONTEXT_PROTO},
+    dec::{is_error, DecimalContext, LargeDecimal, SqlDecimal},
     error::{r2o, SqlResult, SqlRuntimeError},
     geopoint::*,
+    get_standard_context,
     interval::*,
     map::Map,
     timestamp::*,
@@ -488,7 +489,7 @@ pub fn cast_to_SqlDecimal_fN(
 #[inline]
 pub fn cast_to_SqlDecimal_s(value: SqlString, precision: u32, scale: u32) -> SqlResult<SqlDecimal> {
     let str = value.str().trim();
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     match context.parse(str) {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "While converting '{}' to DECIMAL: {}",
@@ -525,7 +526,7 @@ pub fn cast_to_SqlDecimalN_V(
         Variant::BigInt(i) => r2o(cast_to_SqlDecimal_i64(i, precision, scale)),
         Variant::Real(f) => r2o(cast_to_SqlDecimal_f(f, precision, scale)),
         Variant::Double(f) => r2o(cast_to_SqlDecimal_d(f, precision, scale)),
-        //Variant::SqlDecimal(d) => r2o(cast_to_SqlDecimal_SqlDecimal(d, precision, scale)),
+        Variant::SqlDecimal(d) => r2o(cast_to_SqlDecimal_SqlDecimal(d, precision, scale)),
         _ => Ok(None),
     }
 }
@@ -699,7 +700,7 @@ pub fn cast_to_SqlDecimalN_s(
     scale: u32,
 ) -> SqlResult<Option<SqlDecimal>> {
     let str = value.str().trim();
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     match context.parse(str) {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "While converting '{}' to DECIMAL: {}",
@@ -792,7 +793,7 @@ pub fn cast_to_d_SqlDecimal(value: SqlDecimal) -> SqlResult<F64> {
     This implementation produces FP results that have small errors
     compared to just string parsing... 10.1 becomes 10.100000000000001
 
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     match context.try_into_f64(val) {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Cannot convert {val} to DOUBLE: {e}"
@@ -878,7 +879,7 @@ pub fn cast_to_f_SqlDecimal(value: SqlDecimal) -> SqlResult<F32> {
     This implementation produces FP results that have small errors
     compared to just string parsing... 10.1 becomes 10.100000000000001
 
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     let val = value.get_dec();
     match context.try_into_f32(val) {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
@@ -1638,7 +1639,7 @@ macro_rules! cast_to_i {
             #[doc(hidden)]
             #[inline]
             pub fn [< cast_to_ $result_type _SqlDecimal >](value: SqlDecimal) -> SqlResult<$result_type> {
-                let mut context = CONTEXT_PROTO.clone();
+                let mut context = get_standard_context();
                 context.set_rounding(Rounding::Down);
                 let mut val = value.get_dec();
                 context.round(&mut val);

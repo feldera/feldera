@@ -44,22 +44,11 @@ pub use uuid::*;
 pub mod variant;
 pub use variant::*;
 
-pub use array::Array;
-pub use binary::ByteArray;
-pub use dec::SqlDecimal;
-#[doc(hidden)]
-pub use geopoint::GeoPoint;
-pub use interval::{LongInterval, ShortInterval};
-pub use map::Map;
 #[doc(hidden)]
 pub use num_traits::Float;
 pub use regex::Regex;
 #[doc(hidden)]
 pub use source::{SourcePosition, SourcePositionRange};
-pub use string::SqlString;
-pub use timestamp::{Date, Time, Timestamp};
-pub use uuid::Uuid;
-pub use variant::Variant;
 
 use std::sync::LazyLock;
 
