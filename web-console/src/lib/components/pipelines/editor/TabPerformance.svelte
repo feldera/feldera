@@ -6,7 +6,7 @@
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import { format } from 'd3-format'
   import Dayjs from 'dayjs'
-  import { getDeploymentStatusLabel } from '$lib/functions/pipelines/status'
+  import { getDeploymentStatusLabel, isMetricsAvailable } from '$lib/functions/pipelines/status'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
 
@@ -21,8 +21,17 @@
   const now = useInterval(() => new Date(), 1000, 1000 - (Date.now() % 1000))
 </script>
 
-{#if global}
-  <div class="flex h-full flex-col gap-4 overflow-y-auto overflow-x-clip scrollbar">
+{#if isMetricsAvailable(pipeline.current.status) === 'no'}
+  <div>Pipeline is not running</div>
+  <br />
+  Pipeline ID: {pipeline.current.id}
+  <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"></ClipboardCopyButton>
+{:else if !global}
+  <div>Pipeline is running, but has not reported usage telemetry yet</div>
+  <br />
+  Pipeline ID: {pipeline.current.id}
+  <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"></ClipboardCopyButton>
+{:else}<div class="flex h-full flex-col gap-4 overflow-y-auto overflow-x-clip scrollbar">
     <div class="flex w-full flex-col gap-4">
       <table class="mt-2 w-full max-w-[1100px] table-auto border-separate border-spacing-1 sm:mt-0">
         <thead class="align-top text-sm sm:text-base">
@@ -87,7 +96,7 @@
     </div>
     <div class="flex flex-wrap gap-4">
       {#if metrics.current.tables.size}
-        <table class="bg-white-dark table max-w-[1000px] rounded text-base">
+        <table class="bg-white-dark table h-min max-w-[1000px] rounded text-base">
           <thead>
             <tr>
               <th class="font-normal text-surface-600-400">Table</th>
@@ -117,7 +126,7 @@
         </table>
       {/if}
       {#if metrics.current.views.size}
-        <table class="bg-white-dark table max-w-[1300px] rounded text-base">
+        <table class="bg-white-dark table h-min max-w-[1300px] rounded text-base">
           <thead>
             <tr>
               <th class="font-normal text-surface-600-400">View</th>
@@ -152,9 +161,4 @@
       {/if}
     </div>
   </div>
-{:else}
-  <div>Pipeline is not running</div>
-  <br />
-  Pipeline ID: {pipeline.current.id}
-  <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"></ClipboardCopyButton>
 {/if}
