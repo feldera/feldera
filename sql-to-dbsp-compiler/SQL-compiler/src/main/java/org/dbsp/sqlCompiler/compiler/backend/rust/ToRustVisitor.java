@@ -472,7 +472,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(".set_persistent_id(hash);");
     }
 
-    void computeHash(DBSPSimpleOperator operator) {
+    void computeHash(DBSPOperator operator) {
         if (this.preferHash)
             // Hash is received as an argument
             return;
@@ -490,6 +490,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPDeltaOperator delta) {
+        this.computeHash(delta);
         this.builder.append("let ")
                 .append(delta.getNodeName(this.preferHash))
                 .append(" = ")
@@ -497,6 +498,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(".delta0(circuit)")
                 .append(this.markDistinct(delta))
                 .append(";");
+        this.tagStream(delta);
         return VisitDecision.STOP;
     }
 
@@ -682,6 +684,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPControlledKeyFilterOperator operator) {
+        // No need to use the Merkle Hash
         this.builder.append("let (")
                 .append(operator.getOutput(0).getName(this.preferHash))
                 .append(",")
@@ -1010,6 +1013,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPConcreteAsofJoinOperator operator) {
+        this.computeHash(operator);
         DBSPType streamType = this.streamType(operator);
         this.writeComments(operator)
                 .append("let ")
@@ -1312,6 +1316,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPJoinOperator operator) {
+        this.computeHash(operator);
         DBSPType streamType = this.streamType(operator);
         this.writeComments(operator)
                 .append("let ")
