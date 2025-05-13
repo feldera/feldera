@@ -249,7 +249,25 @@ where
         WF: Fn(&K, &V) -> TS + 'static,
         LB: Fn(&TS, &TS) -> TS + Clone + 'static,
     {
+        self.waterline_persistent(None, init, extract_ts, least_upper_bound)
+    }
+
+    #[track_caller]
+    pub fn waterline_persistent<TS, WF, IF, LB>(
+        &self,
+        persistent_id: Option<&str>,
+        init: IF,
+        extract_ts: WF,
+        least_upper_bound: LB,
+    ) -> Stream<RootCircuit, TypedBox<TS, DynData>>
+    where
+        TS: DBData,
+        IF: Fn() -> TS + 'static,
+        WF: Fn(&K, &V) -> TS + 'static,
+        LB: Fn(&TS, &TS) -> TS + Clone + 'static,
+    {
         let result = self.inner().dyn_waterline_mono(
+            persistent_id,
             Box::new(move || Box::new(init()).erase_box()),
             Box::new(move |k, v, ts: &mut DynData| unsafe {
                 *ts.downcast_mut::<TS>() = extract_ts(k.downcast(), v.downcast())
@@ -391,7 +409,25 @@ where
         WF: Fn(&K, &()) -> TS + 'static,
         LB: Fn(&TS, &TS) -> TS + Clone + 'static,
     {
+        self.waterline_persistent(None, init, extract_ts, least_upper_bound)
+    }
+
+    #[track_caller]
+    pub fn waterline_persistent<TS, WF, IF, LB>(
+        &self,
+        persistent_id: Option<&str>,
+        init: IF,
+        extract_ts: WF,
+        least_upper_bound: LB,
+    ) -> Stream<RootCircuit, TypedBox<TS, DynData>>
+    where
+        TS: DBData,
+        IF: Fn() -> TS + 'static,
+        WF: Fn(&K, &()) -> TS + 'static,
+        LB: Fn(&TS, &TS) -> TS + Clone + 'static,
+    {
         let result = self.inner().dyn_waterline_mono(
+            persistent_id,
             Box::new(move || Box::new(init()).erase_box()),
             Box::new(move |k, v, ts: &mut DynData| unsafe {
                 *ts.downcast_mut::<TS>() = extract_ts(k.downcast(), v.downcast())
