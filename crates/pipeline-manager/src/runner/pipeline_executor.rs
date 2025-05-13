@@ -76,7 +76,7 @@ pub trait PipelineExecutor: Sync + Send {
         deployment_config: &PipelineConfig,
         program_binary_url: &str,
         program_version: Version,
-        suspend_exist: bool,
+        suspend_info: Option<serde_json::Value>,
     ) -> Result<(), ManagerError>;
 
     /// Validates whether the provisioning initiated by `provision()` is completed.

@@ -613,6 +613,14 @@ pub struct ExtendedPipelineDescr {
     /// it changed while monitoring only the status fields, it should refresh fully (retrieve
     /// all fields).
     pub refresh_version: Version,
+
+    /// Information about the current suspended state.
+    ///
+    /// This field is only used when the `deployment_status` of the pipeline
+    /// is [`SuspendingCompute`](`PipelineStatus::SuspendingCompute`),
+    /// [`Suspended`](`PipelineStatus::Suspended`) or
+    /// [`Provisioning`](`PipelineStatus::Provisioning`).
+    pub suspend_info: Option<serde_json::Value>,
 }
 
 /// Pipeline descriptor which includes the fields relevant to system monitoring.

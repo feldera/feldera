@@ -66,6 +66,7 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         deployment_desired_status: PipelineDesiredStatus::Shutdown,
         deployment_error: None,
         refresh_version: Version(4),
+        suspend_info: None,
     }
 }
 
@@ -128,6 +129,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         deployment_desired_status: PipelineDesiredStatus::Shutdown,
         deployment_error: None,
         refresh_version: Version(1),
+        suspend_info: None,
     }
 }
 
