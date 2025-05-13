@@ -700,6 +700,7 @@ impl Storage for StoragePostgres {
             None,
             Some(deployment_config),
             None,
+            None,
         )
         .await?;
         txn.commit().await?;
@@ -724,6 +725,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             Some(deployment_location.to_string()),
+            None,
         )
         .await?;
         txn.commit().await?;
@@ -744,6 +746,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             PipelineStatus::Running,
+            None,
             None,
             None,
             None,
@@ -770,6 +773,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             None,
+            None,
         )
         .await?;
         txn.commit().await?;
@@ -790,6 +794,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             PipelineStatus::Unavailable,
+            None,
             None,
             None,
             None,
@@ -816,6 +821,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             None,
+            None,
         )
         .await?;
         txn.commit().await?;
@@ -827,7 +833,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
-        _suspend_info: serde_json::Value,
+        suspend_info: serde_json::Value,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -840,6 +846,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             None,
+            Some(suspend_info),
         )
         .await?;
         txn.commit().await?;
@@ -860,6 +867,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             PipelineStatus::Suspended,
+            None,
             None,
             None,
             None,
@@ -886,6 +894,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             None,
+            None,
         )
         .await?;
         txn.commit().await?;
@@ -906,6 +915,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             PipelineStatus::Shutdown,
+            None,
             None,
             None,
             None,
@@ -931,6 +941,7 @@ impl Storage for StoragePostgres {
             version_guard,
             PipelineStatus::Failed,
             Some(deployment_error.clone()),
+            None,
             None,
             None,
         )

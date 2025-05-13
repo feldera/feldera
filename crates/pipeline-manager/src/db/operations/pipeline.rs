@@ -87,12 +87,12 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
      p.program_status_since, p.program_error, p.program_info,
      p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_binary_url,
      p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
-     p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version";
+     p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version, p.suspend_info";
 
 /// Converts a pipeline table row to its extended descriptor with all fields.
 ///
 /// Backward compatibility:
-/// - Fields `runtime_config`, `program_config`, `program_info`, and `deployment_config`
+/// - Fields `runtime_config`, `program_config`, `program_info`, `deployment_config` and `suspend_info`
 ///   are deserialized as JSON values -- they are not deserialized as their actual types.
 ///   Backward incompatible changes in those actual types will not prevent retrieval of
 ///   pipelines as long as they are serialized as valid JSON.
@@ -100,7 +100,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
 ///   Backwards incompatible changes therein will prevent retrieval of pipelines
 ///   because an error will be returned instead.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
-    assert_eq!(row.len(), 27);
+    assert_eq!(row.len(), 28);
 
     // Runtime configuration: RuntimeConfig
     let runtime_config = deserialize_json_value(row.get(7))?;
@@ -137,6 +137,12 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         let _ = validate_deployment_config(value); // Prints to log if validation failed
     }
 
+    // Suspend information
+    let suspend_info = match row.get::<_, Option<String>>(27) {
+        None => None,
+        Some(s) => Some(deserialize_json_value(&s)?),
+    };
+
     Ok(ExtendedPipelineDescr {
         id: PipelineId(row.get(0)),
         // tenant_id is not used
@@ -165,6 +171,7 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         deployment_config,
         deployment_location: row.get(25),
         refresh_version: Version(row.get(26)),
+        suspend_info,
     })
 }
 
@@ -373,13 +380,13 @@ pub(crate) async fn new_pipeline(
                                    program_status_since, program_error, program_info,
                                    program_binary_source_checksum, program_binary_integrity_checksum, program_binary_url,
                                    deployment_status, deployment_status_since, deployment_desired_status,
-                                   deployment_error, deployment_config, deployment_location, uses_json, refresh_version)
+                                   deployment_error, deployment_config, deployment_location, uses_json, refresh_version, suspend_info)
             VALUES ($1, $2, $3, $4, now(), $5, $6, $7,
                     $8, $9, $10, $11, $12, $13,
                     now(), $14, NULL,
                     NULL, NULL, NULL,
                     $15, now(), $16,
-                    NULL, NULL, NULL, TRUE, $17)",
+                    NULL, NULL, NULL, TRUE, $17, NULL)",
         )
         .await?;
     txn.execute(
@@ -949,6 +956,7 @@ pub(crate) async fn set_deployment_status(
     new_deployment_error: Option<ErrorResponse>,
     new_deployment_config: Option<serde_json::Value>,
     new_deployment_location: Option<String>,
+    new_suspend_info: Option<serde_json::Value>,
 ) -> Result<(), DBError> {
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
 
@@ -1046,6 +1054,23 @@ pub(crate) async fn set_deployment_status(
         current.deployment_location
     };
 
+    // Suspend information is set when becoming...
+    // - SuspendingCompute: a value
+    // - Suspended or Provisioning: current value
+    // - Otherwise: NULL
+    let final_suspend_info = if new_deployment_status == PipelineStatus::SuspendingCompute {
+        assert!(new_suspend_info.is_some());
+        new_suspend_info
+    } else if new_deployment_status == PipelineStatus::Suspended
+        || new_deployment_status == PipelineStatus::Provisioning
+    {
+        assert!(new_suspend_info.is_none());
+        current.suspend_info
+    } else {
+        assert!(new_suspend_info.is_none());
+        None
+    };
+
     // Execute query
     let stmt = txn
         .prepare_cached(
@@ -1054,8 +1079,9 @@ pub(crate) async fn set_deployment_status(
                      deployment_status_since = now(),
                      deployment_error = $2,
                      deployment_config = $3,
-                     deployment_location = $4
-                 WHERE tenant_id = $5 AND id = $6",
+                     deployment_location = $4,
+                     suspend_info = $5
+                 WHERE tenant_id = $6 AND id = $7",
         )
         .await?;
     let rows_affected = txn
@@ -1069,6 +1095,7 @@ pub(crate) async fn set_deployment_status(
                 },
                 &final_deployment_config.map(|v| v.to_string()),
                 &final_deployment_location,
+                &final_suspend_info.map(|v| v.to_string()),
                 &tenant_id.0,
                 &pipeline_id.0,
             ],

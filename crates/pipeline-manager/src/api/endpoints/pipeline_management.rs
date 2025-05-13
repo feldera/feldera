@@ -1,6 +1,7 @@
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
+#[cfg(not(feature = "feldera-enterprise"))]
 use crate::common_error::CommonError;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
