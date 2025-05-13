@@ -1,10 +1,7 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
-    dynamic::{
-        DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
-        WeightTrait, WeightTraitTyped,
-    },
+    dynamic::{DataTrait, DynUnit, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
         cursor::DelegatingCursor,
@@ -12,12 +9,12 @@ use crate::{
         ord::{
             file::wset_batch::FileWSetBuilder,
             merge_batcher::MergeBatcher,
-            vec::wset_batch::{VecWSet, VecWSetBuilder, VecWSetFactories},
+            vec::wset_batch::{VecWSet, VecWSetBuilder},
         },
-        serialize_wset, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories,
-        Builder, FileWSet, FileWSetFactories, Filter, MergeCursor, WeightedItem,
+        serialize_wset, Batch, BatchLocation, BatchReader, Builder, FileWSet, FileWSetFactories,
+        Filter, MergeCursor,
     },
-    DBData, DBWeight, NumEntries,
+    DBWeight, NumEntries,
 };
 use feldera_storage::StoragePath;
 use rand::Rng;
@@ -28,91 +25,7 @@ use std::ops::Neg;
 
 use super::utils::{copy_to_builder, pick_merge_destination};
 
-pub struct FallbackWSetFactories<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    file: FileWSetFactories<K, R>,
-    vec: VecWSetFactories<K, R>,
-}
-
-impl<K, R> Clone for FallbackWSetFactories<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn clone(&self) -> Self {
-        Self {
-            file: self.file.clone(),
-            vec: self.vec.clone(),
-        }
-    }
-}
-
-impl<K, R> BatchReaderFactories<K, DynUnit, (), R> for FallbackWSetFactories<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn new<KType, VType, RType>() -> Self
-    where
-        KType: DBData + Erase<K>,
-        VType: DBData + Erase<DynUnit>,
-        RType: DBWeight + Erase<R>,
-    {
-        Self {
-            file: FileWSetFactories::new::<KType, VType, RType>(),
-            vec: VecWSetFactories::new::<KType, VType, RType>(),
-        }
-    }
-
-    fn key_factory(&self) -> &'static dyn Factory<K> {
-        self.file.key_factory()
-    }
-
-    fn keys_factory(&self) -> &'static dyn Factory<DynVec<K>> {
-        self.file.keys_factory()
-    }
-
-    fn val_factory(&self) -> &'static dyn Factory<DynUnit> {
-        self.file.val_factory()
-    }
-
-    fn weight_factory(&self) -> &'static dyn Factory<R> {
-        self.file.weight_factory()
-    }
-}
-
-impl<K, R> BatchFactories<K, DynUnit, (), R> for FallbackWSetFactories<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn item_factory(&self) -> &'static dyn Factory<DynPair<K, DynUnit>> {
-        self.file.item_factory()
-    }
-
-    fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, DynUnit, R>> {
-        self.file.weighted_item_factory()
-    }
-
-    fn weighted_items_factory(
-        &self,
-    ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
-        self.file.weighted_items_factory()
-    }
-
-    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynUnit, R>> {
-        self.file.weighted_vals_factory()
-    }
-
-    fn time_diffs_factory(
-        &self,
-    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<()>, R>>> {
-        None
-    }
-}
+pub type FallbackWSetFactories<K, R> = FileWSetFactories<K, R>;
 
 #[derive(SizeOf)]
 pub struct FallbackWSet<K, R>
@@ -390,7 +303,7 @@ where
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
             Inner::Vec(vec) => {
-                let mut file = FileWSetBuilder::with_capacity(&self.factories.file, 0);
+                let mut file = FileWSetBuilder::with_capacity(&self.factories, 0);
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
                     inner: Inner::File(file.done()),
@@ -411,7 +324,7 @@ where
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
         Ok(Self {
             factories: factories.clone(),
-            inner: Inner::File(FileWSet::<K, R>::from_path(&factories.file, path)?),
+            inner: Inner::File(FileWSet::<K, R>::from_path(factories, path)?),
         })
     }
 }
@@ -594,7 +507,7 @@ where
     }
 
     fn restore(&mut self, data: &[u8]) -> Result<(), crate::Error> {
-        self.inner = Inner::Vec(deserialize_wset(&self.factories.vec, data));
+        self.inner = Inner::Vec(deserialize_wset(&self.factories.vec_wset_factory, data));
         Ok(())
     }
 }
