@@ -544,7 +544,7 @@ impl TestStruct2 {
             .map(|r| r.field_5.as_ref().map(|emb_struct| emb_struct.field))
             .collect();
         let row6_booleans = Arc::new(BooleanArray::from(row6));
-        let row7: Vec<i128> = data.iter().map(|r| r.field_7.mantissa()).collect();
+        let row7: Vec<i128> = data.iter().map(|r| r.field_7.mantissa().unwrap()).collect();
 
         // Create an Arrow Decimal128Array
         let decimal_array = Decimal128Array::from(row7).with_data_type(DataType::Decimal128(10, 3));
