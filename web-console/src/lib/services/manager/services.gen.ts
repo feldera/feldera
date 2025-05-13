@@ -45,6 +45,9 @@ import type {
   GetPipelineCircuitProfileData,
   GetPipelineCircuitProfileError,
   GetPipelineCircuitProfileResponse,
+  CompletionStatusData,
+  CompletionStatusError,
+  CompletionStatusResponse2,
   HttpOutputData,
   HttpOutputError,
   HttpOutputResponse,
@@ -69,6 +72,9 @@ import type {
   GetPipelineStatsData,
   GetPipelineStatsError,
   GetPipelineStatsResponse,
+  CompletionTokenData,
+  CompletionTokenError,
+  CompletionTokenResponse2,
   GetPipelineInputConnectorStatusData,
   GetPipelineInputConnectorStatusError,
   GetPipelineInputConnectorStatusResponse,
@@ -255,6 +261,17 @@ export const getPipelineCircuitProfile = (options: Options<GetPipelineCircuitPro
 }
 
 /**
+ * Check the status of a completion token returned by the `/ingress` or `/completion_token`
+ * endpoint.
+ */
+export const completionStatus = (options: Options<CompletionStatusData>) => {
+  return (options?.client ?? client).get<CompletionStatusResponse2, CompletionStatusError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/completion_status'
+  })
+}
+
+/**
  * Subscribe to a stream of updates from a SQL view or table.
  * The pipeline responds with a continuous stream of changes to the specified
  * table or view, encoded using the format specified in the `?format=`
@@ -292,6 +309,10 @@ export const getPipelineHeapProfile = (options: Options<GetPipelineHeapProfileDa
  * The pipeline ingests data as it arrives without waiting for the end of
  * the request.  Successful HTTP response indicates that all data has been
  * ingested successfully.
+ *
+ * On success, returns a completion token that can be passed to the
+ * '/completion_status' endpoint to check whether the pipeline has fully
+ * processed the data.
  */
 export const httpInput = (options: Options<HttpInputData>) => {
   return (options?.client ?? client).post<HttpInputResponse, HttpInputError>({
@@ -357,6 +378,19 @@ export const getPipelineStats = (options: Options<GetPipelineStatsData>) => {
   return (options?.client ?? client).get<GetPipelineStatsResponse, GetPipelineStatsError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/stats'
+  })
+}
+
+/**
+ * Generate a completion token for an input connector.
+ * Returns a token that can be passed to the `/completion_status` endpoint
+ * to check whether the pipeline has finished processing all inputs received from the
+ * connector before the token was generated.
+ */
+export const completionToken = (options: Options<CompletionTokenData>) => {
+  return (options?.client ?? client).get<CompletionTokenResponse2, CompletionTokenError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token'
   })
 }
 
