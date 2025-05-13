@@ -607,7 +607,7 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
                 // );
 
                 Ok(AvroValue::Decimal(Decimal::from(
-                    rounded_decimal.mantissa().to_be_bytes(),
+                    rounded_decimal.mantissa()?.to_be_bytes(),
                 )))
             }
             _ => Err(AvroSerializerError::incompatible("string", schema)),

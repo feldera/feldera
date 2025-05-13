@@ -53,9 +53,8 @@ pub(crate) fn is_error(context: &DecimalContext) -> bool {
         || status.division_undefined()
 }
 
-/// Prototype clean context
 #[doc(hidden)]
-pub static CONTEXT_PROTO: LazyLock<DecimalContext> = LazyLock::new(|| {
+pub fn get_standard_context() -> DecimalContext {
     let mut cx = DecimalContext::default();
     // Default rounding mode
     cx.set_rounding(Rounding::Down);
@@ -65,12 +64,11 @@ pub static CONTEXT_PROTO: LazyLock<DecimalContext> = LazyLock::new(|| {
     cx.set_min_exponent(-(DECIMAL_MAX_PRECISION as isize))
         .unwrap();
     cx
-});
+}
 
 impl SizeOf for SqlDecimal {
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        context.add(9 + 2 * MAX_DIGITS).add_distinct_allocations(1);
-    }
+    #[doc(hidden)]
+    fn size_of_children(&self, _context: &mut size_of::Context) {}
 }
 
 impl SqlDecimal {
@@ -103,24 +101,24 @@ impl SqlDecimal {
     }
 
     pub fn abs(self) -> Self {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.abs(&mut result);
         Self::new(result)
     }
 
     pub fn rescale(&mut self, scale: i32) {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         context.rescale(&mut self.value, &LargeDecimal::from(scale));
     }
 
     pub fn round_to_place(&mut self, scale: usize) -> Result<(), InvalidPrecisionError> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         context.round_to_place(&mut self.value, scale)
     }
 
     pub fn shift(&mut self, scale: i32) {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         context.shift(&mut self.value, &LargeDecimal::from(scale));
     }
 
@@ -129,13 +127,13 @@ impl SqlDecimal {
     }
 
     pub fn parse(value: &str) -> Result<SqlDecimal, ParseDecimalError> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let result = context.parse(value)?;
         Ok(Self::new(result))
     }
 
     pub fn from_i128_with_scale(value: i128, scale: i32) -> Self {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = context.from_i128(value);
         let scale = LargeDecimal::from(-scale);
         context.rescale(&mut result, &scale);
@@ -155,15 +153,14 @@ impl SqlDecimal {
         }
     }
 
-    /// Will panic if the number does not fit in an i128
-    pub fn mantissa(self) -> i128 {
-        let mut context = CONTEXT_PROTO.clone();
+    pub fn mantissa(self) -> Result<i128, TryFromDecimalError> {
+        let mut context = get_standard_context();
         let zero_scale = LargeDecimal::from(0);
         let mut result = self.value;
         let scale = LargeDecimal::from(-result.exponent());
         context.shift(&mut result, &scale);
         context.rescale(&mut result, &zero_scale);
-        context.try_into_i128(result).unwrap()
+        context.try_into_i128(result)
     }
 }
 
@@ -462,7 +459,7 @@ impl From<usize> for SqlDecimal {
 
 impl From<&str> for SqlDecimal {
     fn from(value: &str) -> Self {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         match context.parse(value) {
             Err(e) => panic!("Invalid DECIMAL value {}: {}", value, e),
             Ok(n) => Self::new(LargeDecimal::from(n)),
@@ -493,7 +490,7 @@ impl TryInto<i8> for SqlDecimal {
     type Error = TryFromDecimalError;
 
     fn try_into(self) -> Result<i8, Self::Error> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         context.set_rounding(Rounding::Down);
         let mut val = self.value;
         context.round(&mut val);
@@ -506,7 +503,7 @@ impl TryInto<i16> for SqlDecimal {
     type Error = TryFromDecimalError;
 
     fn try_into(self) -> Result<i16, Self::Error> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         context.set_rounding(Rounding::Down);
         let mut val = self.value;
         context.round(&mut val);
@@ -519,7 +516,7 @@ impl TryInto<i32> for SqlDecimal {
     type Error = TryFromDecimalError;
 
     fn try_into(self) -> Result<i32, Self::Error> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         context.set_rounding(Rounding::Down);
         let mut val = self.value;
         context.round(&mut val);
@@ -532,7 +529,7 @@ impl TryInto<i64> for SqlDecimal {
     type Error = TryFromDecimalError;
 
     fn try_into(self) -> Result<i64, Self::Error> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         context.set_rounding(Rounding::Down);
         let mut val = self.value;
         context.round(&mut val);
@@ -545,7 +542,7 @@ impl TryInto<f32> for SqlDecimal {
     type Error = TryFromDecimalError;
 
     fn try_into(self) -> Result<f32, Self::Error> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         context.set_rounding(Rounding::Down);
         let mut val = self.value;
         context.round(&mut val);
@@ -557,7 +554,7 @@ impl TryInto<f64> for SqlDecimal {
     type Error = TryFromDecimalError;
 
     fn try_into(self) -> Result<f64, Self::Error> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         context.set_rounding(Rounding::Down);
         let mut val = self.value;
         context.round(&mut val);
@@ -575,7 +572,7 @@ impl PartialOrd for SqlDecimal {
 
 impl Ord for SqlDecimal {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         // This returns Option for NaN, Inf, and other illegal values
         context.partial_cmp(&self.value, &other.value).unwrap()
     }
@@ -585,7 +582,7 @@ impl Add for SqlDecimal {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.add(&mut result, &other.value);
         Self::validate(result, &context, "Addition")
@@ -596,7 +593,7 @@ impl Add for &SqlDecimal {
     type Output = SqlDecimal;
 
     fn add(self, other: Self) -> SqlDecimal {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.add(&mut result, &other.value);
         SqlDecimal::validate(result, &context, "Addition")
@@ -607,7 +604,7 @@ impl Neg for SqlDecimal {
     type Output = Self;
 
     fn neg(self) -> Self {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.neg(&mut result);
         Self::validate(result, &context, "Negation")
@@ -618,7 +615,7 @@ impl Neg for &SqlDecimal {
     type Output = SqlDecimal;
 
     fn neg(self) -> SqlDecimal {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.neg(&mut result);
         SqlDecimal::validate(result, &context, "Negation")
@@ -627,7 +624,7 @@ impl Neg for &SqlDecimal {
 
 impl AddAssign<SqlDecimal> for SqlDecimal {
     fn add_assign(&mut self, other: Self) {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.add(&mut result, &other.value);
         if is_error(&context) {
@@ -639,7 +636,7 @@ impl AddAssign<SqlDecimal> for SqlDecimal {
 
 impl AddAssign<&SqlDecimal> for SqlDecimal {
     fn add_assign(&mut self, other: &SqlDecimal) {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.add(&mut result, &other.value);
         if is_error(&context) {
@@ -651,7 +648,7 @@ impl AddAssign<&SqlDecimal> for SqlDecimal {
 
 impl CheckedAdd for SqlDecimal {
     fn checked_add(&self, other: &Self) -> Option<Self> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.add(&mut result, &other.value);
         Self::new(result).if_ok(&context)
@@ -662,16 +659,16 @@ impl Sub for SqlDecimal {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.sub(&mut result, &other.value);
-        Self::validate(result, &context, "Division")
+        Self::validate(result, &context, "Subtraction")
     }
 }
 
 impl CheckedSub for SqlDecimal {
     fn checked_sub(&self, other: &Self) -> Option<Self> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.sub(&mut result, &other.value);
         Self::new(result).if_ok(&context)
@@ -682,7 +679,7 @@ impl Mul for SqlDecimal {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &other.value);
         Self::validate(result, &context, "Multiplication")
@@ -693,7 +690,7 @@ impl Mul for &SqlDecimal {
     type Output = SqlDecimal;
 
     fn mul(self, other: Self) -> SqlDecimal {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &other.value);
         SqlDecimal::validate(result, &context, "Multiplication")
@@ -705,7 +702,7 @@ impl MulByRef<isize> for SqlDecimal {
 
     #[inline]
     fn mul_by_ref(&self, w: &isize) -> Self::Output {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &LargeDecimal::from(*w));
         Self::validate(result, &context, "Multiplication")
@@ -717,7 +714,7 @@ impl MulByRef<i64> for SqlDecimal {
 
     #[inline]
     fn mul_by_ref(&self, w: &i64) -> Self::Output {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &LargeDecimal::from(*w));
         Self::validate(result, &context, "Multiplication")
@@ -729,7 +726,7 @@ impl MulByRef<i32> for SqlDecimal {
 
     #[inline]
     fn mul_by_ref(&self, w: &i32) -> Self::Output {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &LargeDecimal::from(*w));
         Self::validate(result, &context, "Multiplication")
@@ -738,7 +735,7 @@ impl MulByRef<i32> for SqlDecimal {
 
 impl CheckedMul for SqlDecimal {
     fn checked_mul(&self, other: &Self) -> Option<Self> {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &other.value);
         Self::new(result).if_ok(&context)
@@ -749,7 +746,7 @@ impl Div for SqlDecimal {
     type Output = Self;
 
     fn div(self, other: Self) -> Self {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.div(&mut result, &other.value);
         Self::validate(result, &context, "Division")
@@ -761,7 +758,7 @@ impl CheckedDiv for SqlDecimal {
         if other.value == LargeDecimal::zero() {
             panic!("attempt to divide by zero");
         }
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = self.value;
         context.div(&mut result, &other.value);
         Self::new(result).if_ok(&context)
@@ -775,7 +772,7 @@ fn sqldecimal_modulo(left: SqlDecimal, right: SqlDecimal) -> SqlDecimal {
         panic!("attempt to divide by zero");
     }
     let left_neg = left.is_negative();
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     let mut result = left.value;
     context.abs(&mut result);
     let mut right = right.value;
@@ -799,7 +796,7 @@ fn generic_round(left: SqlDecimal, right: i32, mode: Rounding, message: &str) ->
     if right >= (DECIMAL_MAX_PRECISION as i32) || right >= num::abs(left.value.exponent()) {
         return left;
     }
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     context.set_rounding(mode);
     if right.is_negative() {
         let mut result = left.value;
@@ -860,7 +857,7 @@ some_polymorphic_function2!(power, i32, i32, SqlDecimal, SqlDecimal, F64);
 #[doc(hidden)]
 pub static POINT_FIVE: LazyLock<LargeDecimal> = LazyLock::new(|| {
     let mut five = LargeDecimal::from(5);
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     let minone = LargeDecimal::from(-1);
     context.rescale(&mut five, &minone);
     five
@@ -872,7 +869,7 @@ pub fn power_SqlDecimal_SqlDecimal(left: SqlDecimal, right: SqlDecimal) -> F64 {
         // special case for sqrt, has higher precision than pow
         sqrt_SqlDecimal(left)
     } else {
-        let mut context = CONTEXT_PROTO.clone();
+        let mut context = get_standard_context();
         let mut result = left.get_dec();
         context.pow(&mut result, &right.get_dec());
         if is_error(&context) {
@@ -886,7 +883,7 @@ some_polymorphic_function2!(power, SqlDecimal, SqlDecimal, SqlDecimal, SqlDecima
 
 #[doc(hidden)]
 pub fn power_SqlDecimal_i32(left: SqlDecimal, right: i32) -> F64 {
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     let mut result = left.get_dec();
     let power = SqlDecimal::from(right);
     context.pow(&mut result, &power.get_dec());
@@ -904,7 +901,7 @@ pub fn power_SqlDecimal_d(left: SqlDecimal, right: F64) -> F64 {
     if right.into_inner().is_nan() {
         return right;
     }
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     let left = context.try_into_f64(left.get_dec()).unwrap();
     F64::new(left.powf(right.into_inner()))
 }
@@ -917,7 +914,7 @@ pub fn sqrt_SqlDecimal(left: SqlDecimal) -> F64 {
         return F64::new(f64::NAN);
     }
 
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     let mut result = left.get_dec();
     context.sqrt(&mut result);
     if is_error(&context) {
@@ -930,7 +927,7 @@ some_polymorphic_function1!(sqrt, SqlDecimal, SqlDecimal, F64);
 
 #[doc(hidden)]
 pub fn floor_SqlDecimal(value: SqlDecimal) -> SqlDecimal {
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     context.set_rounding(Rounding::Floor);
     let mut result = value.get_dec();
     context.round(&mut result);
@@ -941,7 +938,7 @@ some_polymorphic_function1!(floor, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 pub fn ceil_SqlDecimal(value: SqlDecimal) -> SqlDecimal {
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     context.set_rounding(Rounding::Ceiling);
     let mut result = value.get_dec();
     context.round(&mut result);
@@ -967,7 +964,7 @@ some_polymorphic_function1!(sign, SqlDecimal, SqlDecimal, SqlDecimal);
 #[doc(hidden)]
 pub fn shift_left__(left: SqlDecimal, amount: i32) -> SqlDecimal {
     let pow = LargeDecimal::from(amount);
-    let mut context = CONTEXT_PROTO.clone();
+    let mut context = get_standard_context();
     let mut result = left.get_dec();
     context.scaleb(&mut result, &pow);
     SqlDecimal::validate(result, &context, "SHIFT LEFT")
@@ -984,6 +981,7 @@ mod test {
     use crate::SqlDecimal;
     use feldera_types::deserialize_table_record;
     use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+    use size_of::SizeOf;
     use std::sync::LazyLock;
 
     static DEFAULT_CONFIG: LazyLock<SqlSerdeConfig> = LazyLock::new(SqlSerdeConfig::default);
@@ -996,6 +994,14 @@ mod test {
             &mut serde_json::Deserializer::from_str(json),
             &DEFAULT_CONFIG,
         )
+    }
+
+    #[test]
+    fn sizeof_sqldecimal() {
+        let d = SqlDecimal::from_i128_with_scale(12309182309182093812i128, 10);
+        let total_size = SizeOf::size_of(&d);
+        assert_eq!(36, total_size.total_bytes());
+        assert_eq!(0, total_size.shared_bytes());
     }
 
     #[derive(Debug, Eq, PartialEq)]
