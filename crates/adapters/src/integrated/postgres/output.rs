@@ -8,29 +8,23 @@ use std::{
     time::Instant,
 };
 
-use crate::ControllerError;
 use crate::{
     catalog::{CursorWithPolarity, RecordFormat, SerBatchReader, SerCursor},
     controller::{ControllerInner, EndpointId},
     format::{Encoder, OutputConsumer, MAX_DUPLICATES},
     transport::OutputEndpoint,
-    util::truncate_ellipse,
+    util::{truncate_ellipse, IndexedOperationType},
 };
+use crate::{util::indexed_operation_type, ControllerError};
 use anyhow::{anyhow, bail, Result as AnyResult};
 use feldera_adapterlib::transport::{AsyncErrorCallback, Step};
 use feldera_types::{
     format::{csv::CsvParserConfig, json::JsonFlavor},
-    program_schema::Relation,
+    program_schema::{Relation, SqlIdentifier},
     transport::postgres::PostgresWriterConfig,
 };
 use postgres::{Client, NoTls, Statement};
 use tracing::{info_span, span::EnteredSpan};
-
-enum OperationType {
-    Insert,
-    Delete,
-    Upsert,
-}
 
 pub struct PostgresOutputEndpoint {
     endpoint_id: EndpointId,
@@ -188,6 +182,14 @@ impl PostgresOutputEndpoint {
         Ok(out)
     }
 
+    fn view_name(&self) -> &SqlIdentifier {
+        &self.value_schema.name
+    }
+
+    fn index_name(&self) -> &SqlIdentifier {
+        &self.key_schema.name
+    }
+
     fn transaction(&mut self) -> AnyResult<&mut postgres::Transaction<'static>> {
         self.transaction.as_mut().ok_or(anyhow!("postgres: unreachable: attempting to perform a transaction that hasn't been created yet"))
     }
@@ -248,63 +250,6 @@ impl PostgresOutputEndpoint {
             pg_table = self.table,
         )
         .entered()
-    }
-
-    fn non_unique_key_error(&self) -> String {
-        format!(
-            "Postgres connector configured with 'index={}' encountered multiple values with the same key. When configured with SQL index, the connector expects keys to be unique. Please fix the '{}' view definition to ensure that '{}' is a unique index.",
-            self.key_schema.name,
-            self.value_schema.name,
-            self.key_schema.name,
-        )
-    }
-
-    fn operation_type(
-        &mut self,
-        cursor: &mut dyn SerCursor,
-    ) -> anyhow::Result<Option<OperationType>> {
-        let mut found_insert = false;
-        let mut found_delete = false;
-
-        while cursor.val_valid() {
-            let w = cursor.weight();
-
-            if w == 0 {
-                cursor.step_val();
-                continue;
-            }
-
-            if w != 1 && w != -1 {
-                bail!(self.non_unique_key_error());
-            }
-
-            if w == 1 {
-                if found_insert {
-                    bail!(self.non_unique_key_error());
-                }
-
-                found_insert = true;
-            }
-
-            if w == -1 {
-                if found_delete {
-                    bail!(self.non_unique_key_error());
-                }
-
-                found_delete = true;
-            }
-
-            cursor.step_val();
-        }
-
-        cursor.rewind_vals();
-
-        Ok(match (found_insert, found_delete) {
-            (true, true) => Some(OperationType::Upsert),
-            (true, false) => Some(OperationType::Insert),
-            (false, true) => Some(OperationType::Delete),
-            (false, false) => None,
-        })
     }
 }
 
@@ -386,9 +331,12 @@ impl Encoder for PostgresOutputEndpoint {
         let mut cursor = batch.cursor(RecordFormat::Json(JsonFlavor::Postgres))?;
 
         while cursor.key_valid() {
-            if let Some(op) = self.operation_type(cursor.as_mut())? {
+            if let Some(op) =
+                indexed_operation_type(self.view_name(), self.index_name(), cursor.as_mut())?
+            {
+                cursor.rewind_vals();
                 match op {
-                    OperationType::Insert => {
+                    IndexedOperationType::Insert => {
                         let buf = &mut insert_buffer;
                         let mut new_buf: Vec<u8> = Vec::new();
                         if buf.last() != Some(&b'[') {
@@ -400,7 +348,7 @@ impl Encoder for PostgresOutputEndpoint {
                         }
                         buf.append(&mut new_buf);
                     }
-                    OperationType::Delete => {
+                    IndexedOperationType::Delete => {
                         let buf = &mut delete_buffer;
                         let mut new_buf: Vec<u8> = Vec::new();
                         if buf.last() != Some(&b'[') {
@@ -412,7 +360,7 @@ impl Encoder for PostgresOutputEndpoint {
                         }
                         buf.append(&mut new_buf);
                     }
-                    OperationType::Upsert => {
+                    IndexedOperationType::Upsert => {
                         if cursor.weight() < 0 {
                             cursor.step_val();
                         }

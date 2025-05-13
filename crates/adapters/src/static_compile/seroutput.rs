@@ -5,7 +5,7 @@ use crate::{
     catalog::{RecordFormat, SerBatch, SerCollectionHandle, SerCursor},
     ControllerError,
 };
-use anyhow::Result as AnyResult;
+use anyhow::{anyhow, Result as AnyResult};
 #[cfg(feature = "with-avro")]
 use apache_avro::schema::NamesRef;
 #[cfg(feature = "with-avro")]
@@ -635,6 +635,14 @@ where
         )
     }
 
+    fn key_to_json(&mut self) -> AnyResult<serde_json::Value> {
+        serde_json::to_value(SerializeWithContextWrapper::new(
+            self.key.as_ref().unwrap(),
+            &self.serde_config,
+        ))
+        .map_err(|e| anyhow!("Failed to serialize key to JSON: {}", e))
+    }
+
     fn serialize_key_fields(
         &mut self,
         fields: &HashSet<String>,
@@ -692,6 +700,14 @@ where
             &SerializeWithContextWrapper::new(&self.val.as_ref().unwrap(), &self.serde_config),
             dst,
         )
+    }
+
+    fn val_to_json(&mut self) -> AnyResult<serde_json::Value> {
+        serde_json::to_value(SerializeWithContextWrapper::new(
+            self.val.as_ref().unwrap(),
+            &self.serde_config,
+        ))
+        .map_err(|e| anyhow!("Failed to serialize value to JSON: {}", e))
     }
 
     #[cfg(feature = "with-avro")]

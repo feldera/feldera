@@ -273,6 +273,10 @@ pub trait SerCursor: Send {
     /// Serialize current key. Panics if invalid.
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
 
+    /// Convert key to JSON. Used for error reporting to generate a human-readable
+    /// representation of the key.
+    fn key_to_json(&mut self) -> AnyResult<serde_json::Value>;
+
     /// Like `serialize_key`, but only serializes the specified fields of the key.
     fn serialize_key_fields(
         &mut self,
@@ -303,6 +307,10 @@ pub trait SerCursor: Send {
 
     /// Serialize current value. Panics if invalid.
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
+
+    /// Convert value to JSON. Used for error reporting to generate a human-readable
+    /// representation of the value.
+    fn val_to_json(&mut self) -> AnyResult<serde_json::Value>;
 
     #[cfg(feature = "with-avro")]
     /// Convert current value to Avro.
@@ -432,6 +440,10 @@ impl SerCursor for CursorWithPolarity<'_> {
         self.cursor.serialize_key(dst)
     }
 
+    fn key_to_json(&mut self) -> AnyResult<serde_json::Value> {
+        self.cursor.key_to_json()
+    }
+
     fn serialize_key_fields(
         &mut self,
         fields: &HashSet<String>,
@@ -464,6 +476,10 @@ impl SerCursor for CursorWithPolarity<'_> {
 
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.cursor.serialize_val(dst)
+    }
+
+    fn val_to_json(&mut self) -> AnyResult<serde_json::Value> {
+        self.cursor.val_to_json()
     }
 
     #[cfg(feature = "with-avro")]
