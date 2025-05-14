@@ -1,5 +1,7 @@
 //! Convert circuits to dot format for debugging.
 
+use std::fmt::Display;
+
 use crate::{
     circuit::{
         circuit_builder::{CircuitBase, Edge, Node, StreamId},
@@ -16,6 +18,22 @@ pub struct DotNodeAttributes {
 impl Default for DotNodeAttributes {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Display for DotNodeAttributes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut attributes = Vec::new();
+        if let Some(ref label) = self.label {
+            attributes.push(format!("label=\"{}\"", label));
+        }
+        if let Some(color) = self.fillcolor {
+            attributes.push(format!("fillcolor=\"#{:06x}\"", color));
+            attributes.push("style=filled".to_string());
+        }
+        let attributes_str = attributes.join(", ");
+
+        f.write_str(&attributes_str)
     }
 }
 
@@ -36,24 +54,32 @@ impl DotNodeAttributes {
         self.fillcolor = color;
         self
     }
-
-    pub fn to_string(&self) -> String {
-        let mut attributes = Vec::new();
-        if let Some(ref label) = self.label {
-            attributes.push(format!("label=\"{}\"", label));
-        }
-        if let Some(color) = self.fillcolor {
-            attributes.push(format!("fillcolor=\"#{:06x}\"", color));
-            attributes.push("style=filled".to_string());
-        }
-        attributes.join(", ")
-    }
 }
 
 pub struct DotEdgeAttributes {
     stream_id: Option<StreamId>,
     style: Option<String>,
     label: Option<String>,
+}
+
+impl Display for DotEdgeAttributes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut attributes = Vec::new();
+        if let Some(style) = &self.style {
+            attributes.push(format!("style=\"{}\"", style));
+        }
+        let stream_id = if let Some(stream_id) = &self.stream_id {
+            format!("{stream_id}\n")
+        } else {
+            String::new()
+        };
+        if let Some(label) = &self.label {
+            attributes.push(format!("label=\"{stream_id}{}\"", label));
+        }
+        let attributes_str = attributes.join(", ");
+
+        f.write_str(&attributes_str)
+    }
 }
 
 impl DotEdgeAttributes {
@@ -74,22 +100,6 @@ impl DotEdgeAttributes {
         self.style = style;
         self
     }
-
-    pub fn to_string(&self) -> String {
-        let mut attributes = Vec::new();
-        if let Some(style) = &self.style {
-            attributes.push(format!("style=\"{}\"", style));
-        }
-        let stream_id = if let Some(stream_id) = &self.stream_id {
-            format!("{stream_id}\n")
-        } else {
-            String::new()
-        };
-        if let Some(label) = &self.label {
-            attributes.push(format!("label=\"{stream_id}{}\"", label));
-        }
-        attributes.join(", ")
-    }
 }
 
 impl<P> ChildCircuit<P>
@@ -107,7 +117,7 @@ where
         let _ = self.map_local_nodes(&mut |node| {
             if let Some(attributes) = node_function(node) {
                 let node_id = node.local_id();
-                nodes.push(format!("{} [{}];", node_id, attributes.to_string()));
+                nodes.push(format!("{} [{}];", node_id, attributes));
             }
             Ok(())
         });
@@ -116,12 +126,7 @@ where
 
         for edge in self.edges().iter() {
             if let Some(attributes) = edge_function(edge) {
-                edges.push(format!(
-                    "{} -> {} [{}];",
-                    edge.from,
-                    edge.to,
-                    attributes.to_string()
-                ));
+                edges.push(format!("{} -> {} [{}];", edge.from, edge.to, attributes));
             }
         }
 

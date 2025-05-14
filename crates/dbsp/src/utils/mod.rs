@@ -8,7 +8,6 @@ mod tuple;
 #[cfg(test)]
 mod vec_ext;
 
-#[cfg(test)]
 mod dot;
 
 use std::cmp::Ordering;
@@ -23,7 +22,7 @@ pub use consolidation::{
     consolidate_slice, ConsolidatePairedSlices,
 };
 
-#[cfg(test)]
+#[allow(unused_imports)]
 pub use dot::{DotEdgeAttributes, DotNodeAttributes};
 
 #[cfg(test)]
