@@ -711,7 +711,11 @@ mod test {
             input
                 .integrate_trace_with_bound(bound, TraceBound::new())
                 .apply(|trace| {
-                    assert!(trace.size_of().total_bytes() < 70000);
+                    let trace_size = trace.size_of().total_bytes();
+                    assert!(
+                        trace_size < 70000,
+                        "trace_size {trace_size} is larger than expected"
+                    );
                 });
 
             Ok(input_handle)
