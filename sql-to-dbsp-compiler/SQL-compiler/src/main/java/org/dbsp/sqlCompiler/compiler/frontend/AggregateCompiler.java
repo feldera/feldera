@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.logical.LogicalAggregate;
+import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.fun.SqlAbstractGroupFunction;
@@ -111,16 +112,19 @@ public class AggregateCompiler implements ICompilerComponent {
     private final ImmutableBitSet groups;
     private final AggregateCall call;
     private final boolean linearAllowed;
+    private final List<RexLiteral> constants;
 
     public AggregateCompiler(
             RelNode node,
             DBSPCompiler compiler,
             AggregateCall call,
+            List<RexLiteral> constants,
             DBSPType resultType,
             DBSPVariablePath v,
             ImmutableBitSet groups,
             boolean linearAllowed) {
         this.aggregateNode = node;
+        this.constants = constants;
         this.node = CalciteObject.create(node, call);
         this.linearAllowed = linearAllowed;
         this.call = call;
@@ -135,18 +139,19 @@ public class AggregateCompiler implements ICompilerComponent {
         this.aggFunction = call.getAggregation();
         this.filterArgument = call.filterArg;
         List<Integer> argList = call.getArgList();
+        ExpressionCompiler eComp = new ExpressionCompiler(this.aggregateNode, this.v, this.constants, this.compiler);
         if (argList.isEmpty()) {
             this.aggArgument = null;
         } else if (argList.size() == 1) {
             int fieldNumber = call.getArgList().get(0);
-            this.aggArgument = this.v.deref().field(fieldNumber);
+            this.aggArgument = eComp.inputIndex(this.node, fieldNumber).applyCloneIfNeeded();
             if (this.aggArgument.getType().is(DBSPTypeNull.class)) {
                 throw new CompilationError("Argument of aggregate has NULL type",
                         CalciteObject.create(call.getParserPosition()));
             }
         } else {
             List<DBSPExpression> fields = Linq.map(call.getArgList(),
-                    a -> this.v.deref().field(a).applyCloneIfNeeded());
+                    a -> eComp.inputIndex(this.node, a).applyCloneIfNeeded());
             this.aggArgument = new DBSPTupleExpression(fields, false);
         }
     }
