@@ -84,7 +84,7 @@ A SQL column and a field in the Avro schema are compatible if the following cond
 | `BIGINT`                      | `long`         |                                                                     |
 | `REAL`                        | `float`        |                                                                     |
 | `DOUBLE`                      | `double`       |                                                                     |
-| `DECIMAL`                     |                | not yet supported                                                   |
+| `DECIMAL(precision,scale)`    | `decimal`      | Precision and scale of the Avro decimal type must precisely match the SQL type.  |
 | `CHAR`, `VARCHAR`             | `string`       |                                                                     |
 | `BINARY`, `VARBINARY`         | `bytes`        |                                                                     |
 | `DATE`                        | `int`          |                                                                     |
