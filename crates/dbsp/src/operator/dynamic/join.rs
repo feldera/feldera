@@ -645,23 +645,46 @@ where
                 AntijoinId::new((self.stream_id(), other.stream_id())),
                 move || {
                     self.circuit().region("antijoin", || {
+                        // Used to assign persistent ids to intermediate operators below.
+                        let antijoin_pid = if let (Some(pid1), Some(pid2)) =
+                            (self.get_persistent_id(), other.get_persistent_id())
+                        {
+                            Some(format!("{}.antijoin.{}", pid1, pid2))
+                        } else {
+                            None
+                        };
+
                         let stream1 = self.dyn_shard(&factories.join_factories.left_factories);
 
                         // Project away values, leave keys only.
-                        let other_keys = other.try_sharded_version().dyn_map(
-                            &factories.join_factories.right_factories,
-                            Box::new(|item: <I2 as DynFilterMap>::DynItemRef<'_>, output| {
-                                <I2 as DynFilterMap>::item_ref_keyval(item)
-                                    .0
-                                    .clone_to(output.fst_mut())
-                            }),
-                        );
+                        let other_keys = other
+                            .try_sharded_version()
+                            .dyn_map(
+                                &factories.join_factories.right_factories,
+                                Box::new(|item: <I2 as DynFilterMap>::DynItemRef<'_>, output| {
+                                    <I2 as DynFilterMap>::item_ref_keyval(item)
+                                        .0
+                                        .clone_to(output.fst_mut())
+                                }),
+                            )
+                            .set_persistent_id(
+                                antijoin_pid
+                                    .as_deref()
+                                    .map(|pid| format!("{pid}.keys"))
+                                    .as_deref(),
+                            );
 
                         // `dyn_map` above preserves keys.
                         other_keys.mark_sharded_if(other);
 
                         let stream2 = other_keys
                             .dyn_distinct(&factories.distinct_factories)
+                            .set_persistent_id(
+                                antijoin_pid
+                                    .as_deref()
+                                    .map(|pid| format!("{pid}.distinct"))
+                                    .as_deref(),
+                            )
                             .dyn_shard(&factories.join_factories.right_factories);
 
                         //map_func: Box<dyn Fn(B::DynItemRef<'_>, &mut DynPair<K, DynUnit>)>,
