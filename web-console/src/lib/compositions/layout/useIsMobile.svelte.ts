@@ -9,13 +9,13 @@ export const useIsMobile = () => {
 }
 
 export const useIsScreenMd = () => {
-  return new MediaQuery('not (min-width: 768px)')
+  return new MediaQuery('min-width: 768px')
 }
 
 export const useIsScreenLg = () => {
-  return new MediaQuery('not (min-width: 1024px)')
+  return new MediaQuery('min-width: 1024px')
 }
 
 export const useIsScreenXl = () => {
-  return new MediaQuery('not (min-width: 1280px)')
+  return new MediaQuery('min-width: 1280px')
 }
