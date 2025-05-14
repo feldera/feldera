@@ -185,12 +185,11 @@ pub struct StorageOptions {
     /// the minimum estimated number of bytes to write it to storage.
     ///
     /// This is provided for debugging and fine-tuning and should ordinarily be
-    /// left unset.  If it is set, it should ordinarily be greater than or equal
-    /// to `min_storage_bytes`.
-    ///
-    /// A value of 0 will write even empty batches to storage, and nonzero
-    /// values provide a threshold.  `usize::MAX` would effectively disable
-    /// storage for such batches.  The default is 10,485,760 (10 MiB).
+    /// left unset.  A value of 0 will write even empty batches to storage, and
+    /// nonzero values provide a threshold.  `usize::MAX`, the default,
+    /// effectively disables storage for such batches.  If it is set to another
+    /// value, it should ordinarily be greater than or equal to
+    /// `min_storage_bytes`.
     pub min_step_storage_bytes: Option<usize>,
 
     /// The form of compression to use in data batches.

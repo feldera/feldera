@@ -688,11 +688,7 @@ impl Runtime {
                     .as_ref()?
                     .options
                     .min_step_storage_bytes
-                    .unwrap_or({
-                        // This prevents large transient batches from exhausting
-                        // memory.
-                        10 * 1024 * 1024
-                    }),
+                    .unwrap_or(usize::MAX),
             )
         })
     }
