@@ -347,15 +347,6 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn should_spill(size: usize, remaining: &mut usize) -> bool {
-        if size > *remaining {
-            true
-        } else {
-            *remaining -= size;
-            false
-        }
-    }
-
     /// We ran out of the bytes threshold for `BuilderInner::Threshold`. Spill
     /// to storage as `BuilderInner::File`, writing `vec` as the initial
     /// contents.
@@ -386,8 +377,11 @@ where
     Threshold {
         vec: VecWSetBuilder<K, R>,
 
-        /// Bytes left to add until the threshold is exceeded.
-        remaining: usize,
+        /// Number of bytes so far.
+        size: usize,
+
+        /// Threshold at which we spill to storage.
+        threshold: usize,
     },
 }
 
@@ -402,7 +396,8 @@ where
             BuildTo::Storage => Self::File(FileWSetBuilder::with_capacity(factories, capacity)),
             BuildTo::Threshold(bytes) => Self::Threshold {
                 vec: Self::new_vec(factories, capacity),
-                remaining: bytes,
+                size: 0,
+                threshold: bytes,
             },
         }
     }
@@ -448,11 +443,14 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_time_diff(time, weight),
             BuilderInner::File(file) => file.push_time_diff(time, weight),
-            BuilderInner::Threshold { vec, remaining } => {
+            BuilderInner::Threshold {
+                vec,
+                size,
+                threshold: _,
+            } => {
+                *size += weight.size_of().total_bytes();
                 vec.push_time_diff(time, weight);
-                if Self::should_spill(weight.size_of().total_bytes(), remaining) {
-                    self.inner = Self::spill(&self.factories, vec);
-                }
+                // We will check the threshold later in push_key[_mut].
             }
         }
     }
@@ -468,9 +466,14 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_key(key),
             BuilderInner::File(file) => file.push_key(key),
-            BuilderInner::Threshold { vec, remaining } => {
+            BuilderInner::Threshold {
+                vec,
+                size,
+                threshold,
+            } => {
+                *size += key.size_of().total_bytes();
                 vec.push_key(key);
-                if Self::should_spill(key.size_of().total_bytes(), remaining) {
+                if *size >= *threshold {
                     self.inner = Self::spill(&self.factories, vec);
                 }
             }
@@ -481,12 +484,14 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_time_diff_mut(time, weight),
             BuilderInner::File(file) => file.push_time_diff_mut(time, weight),
-            BuilderInner::Threshold { vec, remaining } => {
-                let size = weight.size_of().total_bytes();
+            BuilderInner::Threshold {
+                vec,
+                size,
+                threshold: _,
+            } => {
+                *size += weight.size_of().total_bytes();
                 vec.push_time_diff_mut(time, weight);
-                if Self::should_spill(size, remaining) {
-                    self.inner = Self::spill(&self.factories, vec);
-                }
+                // We will check the threshold later in push_key[_mut].
             }
         }
     }
@@ -502,10 +507,14 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_key_mut(key),
             BuilderInner::File(file) => file.push_key_mut(key),
-            BuilderInner::Threshold { vec, remaining } => {
-                let size = key.size_of().total_bytes();
+            BuilderInner::Threshold {
+                vec,
+                size,
+                threshold,
+            } => {
+                *size += key.size_of().total_bytes();
                 vec.push_key_mut(key);
-                if Self::should_spill(size, remaining) {
+                if *size >= *threshold {
                     self.inner = Self::spill(&self.factories, vec);
                 }
             }
@@ -516,11 +525,14 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_val_diff(val, weight),
             BuilderInner::File(file) => file.push_val_diff(val, weight),
-            BuilderInner::Threshold { vec, remaining } => {
+            BuilderInner::Threshold {
+                vec,
+                size,
+                threshold: _,
+            } => {
+                *size += weight.size_of().total_bytes();
                 vec.push_val_diff(val, weight);
-                if Self::should_spill(val.size_of().total_bytes(), remaining) {
-                    self.inner = Self::spill(&self.factories, vec);
-                }
+                // We will check the threshold later in push_key[_mut].
             }
         }
     }
@@ -529,12 +541,14 @@ where
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_val_diff_mut(val, weight),
             BuilderInner::File(file) => file.push_val_diff_mut(val, weight),
-            BuilderInner::Threshold { vec, remaining } => {
-                let size = weight.size_of().total_bytes();
+            BuilderInner::Threshold {
+                vec,
+                size,
+                threshold: _,
+            } => {
+                *size += weight.size_of().total_bytes();
                 vec.push_val_diff_mut(val, weight);
-                if Self::should_spill(size, remaining) {
-                    self.inner = Self::spill(&self.factories, vec);
-                }
+                // We will check the threshold later in push_key[_mut].
             }
         }
     }
