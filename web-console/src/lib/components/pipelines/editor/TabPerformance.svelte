@@ -9,6 +9,8 @@
   import { getDeploymentStatusLabel, isMetricsAvailable } from '$lib/functions/pipelines/status'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
+  import { Segment } from '@skeletonlabs/skeleton-svelte'
+  import { useIsScreenLg } from '$lib/compositions/layout/useIsMobile.svelte'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -19,6 +21,17 @@
 
   const global = $derived(metrics.current.global.at(-1))
   const now = useInterval(() => new Date(), 1000, 1000 - (Date.now() % 1000))
+
+  const formatElapsedTime = (timestamp: Date) =>
+    ((d) =>
+      ((d) => (d ? ` ${d}d` : ''))(Math.floor(d.asDays())) +
+      ((d) => (d ? ` ${d}h` : ''))(d.hours()) +
+      ((d) => (d ? ` ${d}m` : ''))(d.minutes()) +
+      ((d) => (d ? ` ${d}s` : ''))(d.seconds()))(
+      Dayjs.duration(now.current.valueOf() - timestamp.valueOf())
+    )
+  let statusTab: 'age' | 'updated' | 'id' = $state('age')
+  let isLg = useIsScreenLg()
 </script>
 
 {#if isMetricsAvailable(pipeline.current.status) === 'no'}
@@ -31,50 +44,95 @@
   <br />
   Pipeline ID: {pipeline.current.id}
   <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"></ClipboardCopyButton>
-{:else}<div class="flex h-full flex-col gap-4 overflow-y-auto overflow-x-clip scrollbar">
+{:else}<div class="flex h-full flex-col gap-2 overflow-y-auto overflow-x-clip scrollbar">
     <div class="flex w-full flex-col gap-4">
-      <table class="mt-2 w-full max-w-[1100px] table-auto border-separate border-spacing-1 sm:mt-0">
-        <thead class="align-top text-sm sm:text-base">
-          <tr>
-            <th class="text-start font-semibold"> Records Ingested </th>
-            <th class="text-start font-semibold"> Records Processed </th>
-            <th class="text-start font-semibold"> Records Buffered </th>
-            <th class="text-start font-semibold"> Last status update </th>
-            <th class="text-start font-semibold"> Pipeline ID </th>
-          </tr>
-        </thead>
-        <tbody class="align-top">
-          <tr>
-            <td class="pt-2">
-              {formatQty(global.total_input_records)}
-            </td>
-            <td class="pt-2">
-              {formatQty(global.total_processed_records)}
-            </td>
-            <td class="pt-2">
-              {formatQty(global.buffered_input_records)}
-            </td>
-            <td class="pt-2">
-              {getDeploymentStatusLabel(pipeline.current.status)} for
-              {((d) =>
-                ((d) => (d ? ` ${d}d` : ''))(Math.floor(d.asDays())) +
-                ((d) => (d ? ` ${d}h` : ''))(d.hours()) +
-                ((d) => (d ? ` ${d}m` : ''))(d.minutes()) +
-                ((d) => (d ? ` ${d}s` : ''))(d.seconds()))(
-                Dayjs.duration(
-                  now.current.valueOf() - new Date(pipeline.current.deploymentStatusSince).valueOf()
-                )
-              )}
-              since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}
-            </td>
-            <td class="pt-2">
-              <span class=" break-all">{pipeline.current.id}</span>
-              <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"
-              ></ClipboardCopyButton>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="flex max-w-[1600px] flex-wrap gap-4 pt-2">
+        <div class="flex flex-col">
+          <div class="text-nowrap text-start font-semibold">Records Ingested</div>
+          <div class="pt-2">
+            {formatQty(global.total_input_records)}
+          </div>
+        </div>
+        <div class="flex flex-col">
+          <div class="text-nowrap text-start font-semibold">
+            <span class="hidden sm:inline">Records</span> Processed
+          </div>
+          <div class="pt-2">
+            {formatQty(global.total_processed_records)}
+          </div>
+        </div>
+        <div class="flex flex-col">
+          <div class="text-nowrap text-start font-semibold">
+            <span class="hidden sm:inline">Records</span> Buffered
+          </div>
+          <div class="pt-2">
+            {formatQty(global.buffered_input_records)}
+          </div>
+        </div>
+        {#snippet age()}
+          <div class="w-96 pt-2">
+            Active for
+            {formatElapsedTime(new Date(global.start_time * 1000))}
+            since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}
+          </div>
+        {/snippet}
+        {#snippet updated()}
+          <div class="w-96 pt-2">
+            {getDeploymentStatusLabel(pipeline.current.status)} for
+            {formatElapsedTime(new Date(pipeline.current.deploymentStatusSince))}
+            since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}
+          </div>
+        {/snippet}
+        {#snippet id()}
+          <div class="w-[340px] pt-2">
+            <span class=" break-all">{pipeline.current.id}</span>
+            <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"
+            ></ClipboardCopyButton>
+          </div>
+        {/snippet}
+        {#if isLg.current}
+          <div class="flex flex-col">
+            <div class="text-start font-semibold">Deployment age</div>
+            {@render age()}
+          </div>
+          <div class="flex flex-col">
+            <div class="text-start font-semibold">Last status update</div>
+            {@render updated()}
+          </div>
+          <div class="flex flex-col">
+            <div class="text-start font-semibold">Pipeline ID</div>
+            {@render id()}
+          </div>
+        {:else}
+          <div>
+            <Segment
+              bind:value={statusTab}
+              background="preset-filled-surface-50-950 w-fit flex-none -mt-3"
+              indicatorBg="bg-white-dark shadow"
+              indicatorText=""
+              border="p-1"
+              rounded="rounded"
+            >
+              <Segment.Item value="age" base="btn cursor-pointer z-[1] px-5 py-4 h-6">
+                <div class="text-start font-semibold">Age</div>
+              </Segment.Item>
+              <Segment.Item value="updated" base="btn cursor-pointer z-[1] px-5 py-4 h-6">
+                <div class="text-start font-semibold">Last status update</div>
+              </Segment.Item>
+              <Segment.Item value="id" base="btn cursor-pointer z-[1] px-5 py-4 h-6">
+                <div class="text-start font-semibold">Pipeline ID</div>
+              </Segment.Item>
+            </Segment>
+            {#if statusTab === 'age'}
+              {@render age()}
+            {:else if statusTab === 'updated'}
+              {@render updated()}
+            {:else}
+              {@render id()}
+            {/if}
+          </div>
+        {/if}
+      </div>
       <div class="flex w-full flex-col gap-4 md:flex-row">
         <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
           <PipelineThroughputGraph

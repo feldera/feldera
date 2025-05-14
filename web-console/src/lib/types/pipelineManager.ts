@@ -75,12 +75,21 @@ export interface GlobalConfig {
 }
 
 export interface GlobalMetrics {
-  rss_bytes: number
+  bootstrap_in_progress: boolean
   buffered_input_records: number
+  cpu_msecs: number
+  incarnation_uuid: string
+  pipeline_complete: boolean
+  rss_bytes: number
+  runtime_elapsed_msecs: number
+  start_time: number
+  state: 'Running' | 'Paused'
+  storage_bytes: number
+  storage_mb_secs: number
+  total_completed_records: number
   total_input_records: number
   total_processed_records: number
-  pipeline_complete: boolean
-  state: 'Running' | string
+  uptime_msecs: number
 }
 
 export type GlobalMetricsTimestamp = GlobalMetrics & {
