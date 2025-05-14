@@ -419,7 +419,13 @@ where
                         Box::new(<TS as Bounded>::max_value()).erase_box(),
                     )
                 });
-                let window = self.dyn_window(&factories.input_factories, (true, true), &bounds);
+                let window = self
+                    .dyn_window(&factories.input_factories, (true, true), &bounds)
+                    .set_persistent_id(
+                        persistent_id
+                            .map(|name| format!("{name}.window"))
+                            .as_deref(),
+                    );
 
                 // Now that we've truncated old inputs, which required the
                 // input stream to be indexed by time, we can re-index it
