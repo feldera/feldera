@@ -180,17 +180,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             throw new InternalCompilerError("Expected a reference type for row", inputRow.getNode());
     }
 
-    /** Convert an expression that refers to a field in the input row.
-     * @param inputRef   index in the input row.
-     * @return           the corresponding DBSP expression. */
-    @Override
-    public DBSPExpression visitInputRef(RexInputRef inputRef) {
-        CalciteObject node = CalciteObject.create(this.context, inputRef);
+    public DBSPExpression inputIndex(CalciteObject node, int index) {
         if (this.inputRow == null)
             throw new InternalCompilerError("Row referenced without a row context", node);
         // Unfortunately it looks like we can't trust the type coming from Calcite.
         DBSPTypeTuple type = this.inputRow.getType().deref().to(DBSPTypeTuple.class);
-        int index = inputRef.getIndex();
         if (index < type.size()) {
             DBSPExpression field = this.inputRow.deref().field(index);
             return field.applyCloneIfNeeded();
@@ -198,6 +192,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (index - type.size() < this.constants.size())
             return this.visitLiteral(this.constants.get(index - type.size()));
         throw new InternalCompilerError("Index in row out of bounds ", node);
+    }
+
+    /** Convert an expression that refers to a field in the input row.
+     * @param inputRef   index in the input row.
+     * @return           the corresponding DBSP expression. */
+    @Override
+    public DBSPExpression visitInputRef(RexInputRef inputRef) {
+        CalciteObject node = CalciteObject.create(this.context, inputRef);
+        return this.inputIndex(node, inputRef.getIndex());
     }
 
     @Override

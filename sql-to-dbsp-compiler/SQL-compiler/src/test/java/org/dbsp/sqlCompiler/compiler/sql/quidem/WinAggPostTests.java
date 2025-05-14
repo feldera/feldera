@@ -159,6 +159,26 @@ public class WinAggPostTests extends PostBaseTests {
 
     @Test
     public void test0() {
+        // Constant argument to aggregate, issue 4010
+        // validated on Postgres
+        this.qs("""
+                select gender,deptno,
+                sum(1) over (partition by gender,deptno) as count1
+                from emp;
+                +--------+--------+--------+
+                | gender | deptno | count1 |
+                +--------+--------+--------+
+                | F|       10     | 1      |
+                | F|       30     | 2      |
+                | F|       30     | 2      |
+                | F|       50     | 1      |
+                | F|       60     | 1      |
+                | F|              | 1      |
+                | M|       10     | 1      |
+                | M|       20     | 1      |
+                | M|       50     | 1      |
+                +--------+--------+--------+
+                (9 rows)""");
         this.qs("""
                 -- [CALCITE-1540] Support multiple columns in PARTITION BY clause of window function
                 select gender,deptno,

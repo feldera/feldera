@@ -94,4 +94,48 @@ public class Regression1Tests extends SqlIoTest {
     static boolean nn(String v) {
         return !v.equals("NULL");
     }
+
+    @Test
+    public void issue4010() {
+        this.getCCS("""
+                -- Customers.
+                CREATE TABLE customer (
+                    id BIGINT NOT NULL,
+                    name varchar,
+                    state VARCHAR,
+                    -- Lateness annotation: customer records cannot arrive more than 7 days out of order.
+                    ts TIMESTAMP LATENESS INTERVAL 7 DAYS
+                );
+                
+                -- Credit card transactions.
+                CREATE TABLE transaction (
+                    -- Lateness annotation: transactions cannot arrive more than 1 day out of order.
+                    ts TIMESTAMP LATENESS INTERVAL 1 DAYS,
+                    amt DOUBLE,
+                    customer_id BIGINT NOT NULL,
+                    state VARCHAR
+                );
+                
+                -- Data enrichment:
+                -- * Use ASOF JOIN to find the most recent customer record for each transaction.
+                -- * Compute 'out_of_state' flag, which indicates that the transaction was performed outside
+                --   of the customer's home state.
+                CREATE VIEW enriched_transaction AS
+                SELECT
+                    transaction.*,
+                    (transaction.state != customer.state) AS out_of_state
+                FROM
+                    transaction LEFT ASOF JOIN customer
+                    MATCH_CONDITION ( transaction.ts >= customer.ts )
+                    ON transaction.customer_id = customer.id;
+                
+                -- Rolling aggregation: Compute the number of out-of-state transactions in the last 30 days for each transaction.
+                CREATE VIEW transaction_with_history AS
+                SELECT
+                    *,
+                    SUM(1) OVER window_30_day as out_of_state_count
+                FROM
+                    transaction
+                WINDOW window_30_day AS (PARTITION BY customer_id ORDER BY ts RANGE BETWEEN INTERVAL 30 DAYS PRECEDING AND CURRENT ROW);""");
+    }
 }

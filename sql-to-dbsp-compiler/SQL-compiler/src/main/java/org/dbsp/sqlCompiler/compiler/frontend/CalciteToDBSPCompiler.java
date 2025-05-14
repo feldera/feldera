@@ -393,7 +393,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      */
     public static AggregateList createAggregates(
             DBSPCompiler compiler,
-            RelNode node, List<AggregateCall> aggregates, DBSPTypeTuple resultType,
+            RelNode node, List<AggregateCall> aggregates, List<RexLiteral> constants, DBSPTypeTuple resultType,
             DBSPType inputRowType, int groupCount, ImmutableBitSet groupKeys,
             boolean linearAllowed, boolean canReorder) {
         Utilities.enforce(!aggregates.isEmpty());
@@ -406,7 +406,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             for (AggregateCall call : aggregates) {
                 DBSPType resultFieldType = resultType.getFieldType(aggIndex + groupCount);
                 AggregateCompiler aggCompiler = new AggregateCompiler(node,
-                        compiler, call, resultFieldType, rowVar, groupKeys, linearAllowed);
+                        compiler, call, constants, resultFieldType, rowVar, groupKeys, linearAllowed);
                 IAggregate implementation = aggCompiler.compile();
                 simple.add(implementation);
                 aggIndex++;
@@ -867,7 +867,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             aggregates = new AggregateList();
         } else {
             aggregates = createAggregates(this.compiler(),
-                    aggregate, aggregateCalls, tuple, inputRowType,
+                    aggregate, aggregateCalls, Linq.list(), tuple, inputRowType,
                     aggregate.getGroupCount(), localKeys, true, true);
             result = this.joinAllAggregates(node, localGroupType, indexedInput.outputPort(), aggregates.aggregates);
             if (!aggregates.permutation.isIdentityPermutation()) {
@@ -2847,7 +2847,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             AggregateList aggregates = CalciteToDBSPCompiler.createAggregates(
                     this.compiler.compiler,
-                    this.window, this.aggregateCalls, tuple, inputType,
+                    this.window, this.aggregateCalls, this.window.constants, tuple, inputType,
                     0, this.group.keys, true, false);
             Utilities.enforce(aggregates.permutation.isIdentityPermutation());
 
@@ -3041,7 +3041,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         this.aggregateCalls, c -> this.compiler.convertType(c.type, false));
                 DBSPTypeTuple tuple = new DBSPTypeTuple(types);
                 AggregateList folds = CalciteToDBSPCompiler.createAggregates(this.compiler.compiler,
-                        this.window, this.aggregateCalls, tuple, this.inputRowType, 0,
+                        this.window, this.aggregateCalls, this.window.constants, tuple, this.inputRowType, 0,
                         ImmutableBitSet.of(), false, false);
                 Utilities.enforce(folds.permutation().isIdentityPermutation());
                 Utilities.enforce(folds.aggregates.size() == 1);
