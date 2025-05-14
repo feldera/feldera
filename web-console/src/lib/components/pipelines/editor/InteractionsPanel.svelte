@@ -80,7 +80,11 @@
   let xgressErrors = $derived(
     extractPipelineXgressErrors({ pipelineName, status: metrics.current })
   )
-  let errors = $derived([...programErrors, ...pipelineErrors, ...xgressErrors])
+  let errors = $derived(
+    [...programErrors, ...pipelineErrors, ...xgressErrors].sort((a, b) =>
+      a.cause.warning === b.cause.warning ? 0 : a.cause.warning ? 1 : -1
+    )
+  )
 </script>
 
 {#snippet TabControlPipelineErrors(pipeline: ExtendedPipeline)}
