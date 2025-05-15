@@ -533,6 +533,8 @@ impl InputConsumer for DummyInputConsumer {
         self.called(ConsumerCall::Error(fatal));
     }
 
+    fn request_step(&self) {}
+
     fn eoi(&self) {
         self.called(ConsumerCall::Eoi);
     }

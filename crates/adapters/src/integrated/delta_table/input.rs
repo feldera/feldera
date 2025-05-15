@@ -353,7 +353,8 @@ struct DeltaTableInputEndpointInner {
     /// The latest resume status of this endpoint:
     /// * Initialized to `None`.
     /// * Updated to `Some(version)` when a Seek command is received when resuming from a checkpoint.
-    /// * Updated to `Some(version)`
+    /// * Updated to `Some(new_version)` after advancing to the next table version in the transaction log
+    ///   in follow mode or after ingesting the initial snapshot.
     last_resume_status: Mutex<Option<DeltaResumeInfo>>,
     queue: Arc<InputQueue<Option<DeltaResumeInfo>>>,
 }

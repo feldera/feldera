@@ -109,6 +109,8 @@ impl InputConsumer for MockInputConsumer {
 
     fn replayed(&self, _num_records: usize, _hash: u64) {}
 
+    fn request_step(&self) {}
+
     fn extended(&self, _num_records: usize, _resume: Option<Resume>) {
         self.state().n_extended += 1;
     }
