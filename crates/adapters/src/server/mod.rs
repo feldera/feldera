@@ -1780,7 +1780,7 @@ outputs:
         // Start after shutdown must fail.
         println!("/start");
         let resp = server.get("/start").send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(resp.status(), StatusCode::GONE);
 
         drop(buffer_consumer);
         drop(kafka_resources);
