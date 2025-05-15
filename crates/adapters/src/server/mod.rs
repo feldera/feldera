@@ -26,6 +26,7 @@ use colored::{ColoredString, Colorize};
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
+use feldera_types::checkpoint::CheckpointStatus;
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
@@ -113,11 +114,52 @@ fn missing_controller_error(state: &ServerState) -> PipelineError {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct CheckpointState {
+    /// Sequence number for the next checkpoint request.
+    next_seq: u64,
+
+    /// Status to report to user.
+    status: CheckpointStatus,
+}
+
+impl CheckpointState {
+    /// Returns the sequence number to use for the next checkpoint request.
+    fn next_seq(&mut self) -> u64 {
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        seq
+    }
+
+    /// Updates the state for completion of the checkpoint request with sequence
+    /// number `seq` with status `result`.
+    fn completed(&mut self, seq: u64, result: Result<(), Arc<ControllerError>>) {
+        match result {
+            Ok(()) => {
+                if self.status.success.is_none_or(|success| success < seq) {
+                    self.status.success = Some(seq);
+                }
+            }
+            Err(error) => {
+                if self
+                    .status
+                    .failure
+                    .as_ref()
+                    .is_none_or(|(failure, _)| *failure < seq)
+                {
+                    self.status.failure = Some((seq, error.to_string()));
+                }
+            }
+        }
+    }
+}
+
 struct ServerState {
     phase: RwLock<PipelinePhase>,
     metadata: RwLock<String>,
     controller: Mutex<Option<Controller>>,
     prometheus: RwLock<Option<PrometheusMetrics>>,
+    checkpoint_state: Arc<Mutex<CheckpointState>>,
     /// Channel used to send a `kill` command to
     /// the self-destruct task when shutting down
     /// the server.
@@ -130,6 +172,7 @@ impl ServerState {
             phase: RwLock::new(PipelinePhase::Initializing),
             metadata: RwLock::new(String::new()),
             controller: Mutex::new(None),
+            checkpoint_state: Arc::new(Mutex::new(CheckpointState::default())),
             prometheus: RwLock::new(None),
             terminate_sender,
         }
@@ -576,6 +619,7 @@ where
         .service(dump_profile)
         .service(lir)
         .service(checkpoint)
+        .service(checkpoint_status)
         .service(suspend)
         .service(input_endpoint)
         .service(output_endpoint)
@@ -888,30 +932,27 @@ async fn lir(state: WebData<ServerState>) -> impl Responder {
         .body(lir.as_zip()))
 }
 
+/// Initiates a checkpoint and returns its sequence number.  The caller may poll
+/// `/checkpoint_status` to determine when the checkpoint completes.
 #[post("/checkpoint")]
 async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
-    #[cfg(feature = "feldera-enterprise")]
-    {
-        let (sender, receiver) = oneshot::channel();
-        match &*state.controller.lock().unwrap() {
-            None => return Err(missing_controller_error(&state)),
-            Some(controller) => {
-                controller.start_checkpoint(Box::new(move |checkpoint| {
-                    if sender.send(checkpoint.map(|_| ())).is_err() {
-                        error!("`/checkpoint` result could not be sent");
-                    }
-                }));
-            }
-        };
-        receiver.await.unwrap()?;
-        Ok(HttpResponse::Ok().json("Checkpoint completed"))
-    }
+    let seq = match &*state.controller.lock().unwrap() {
+        None => return Err(missing_controller_error(&state)),
+        Some(controller) => {
+            let state = state.checkpoint_state.clone();
+            let seq = state.lock().unwrap().next_seq();
+            controller.start_checkpoint(Box::new(move |result| {
+                state.lock().unwrap().completed(seq, result.map(|_| ()));
+            }));
+            seq
+        }
+    };
+    Ok(HttpResponse::Ok().json(seq))
+}
 
-    #[cfg(not(feature = "feldera-enterprise"))]
-    {
-        let _ = state;
-        Err::<&str, _>(ControllerError::EnterpriseFeature("checkpoint"))
-    }
+#[get("/checkpoint_status")]
+async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
+    HttpResponse::Ok().json(state.checkpoint_state.lock().unwrap().status.clone())
 }
 
 /// Suspends the pipeline (but only a later call to `/shutdown` will shut down
