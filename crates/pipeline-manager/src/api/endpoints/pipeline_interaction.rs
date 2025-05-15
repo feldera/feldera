@@ -669,7 +669,10 @@ pub(crate) async fn get_pipeline_circuit_profile(
         .await
 }
 
-/// Checkpoint a running or paused pipeline.
+/// Initiates checkpoint for a running or paused pipeline.
+///
+/// Returns a sequence number that can be used with `/checkpoint_status` to
+/// determine when the checkpoint has completed.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -678,7 +681,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
     ),
     responses(
         (status = OK
-            , description = "Checkpoint completed"),
+            , description = "Checkpoint initiated"),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -726,6 +729,58 @@ pub(crate) async fn checkpoint_pipeline(
             )
             .await
     }
+}
+
+/// Retrieve status of checkpoint activity in a pipeline.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+         , description = "Checkpoint status retrieved successfully"
+         , content_type = "application/json"
+         , body = CheckpointStatus),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[get("/pipelines/{pipeline_name}/checkpoint_status")]
+pub(crate) async fn get_checkpoint_status(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "checkpoint_status",
+            request.query_string(),
+            None,
+        )
+        .await
 }
 
 /// Suspend a running or paused pipeline.

@@ -1,3 +1,4 @@
+pub mod checkpoint;
 pub mod completion_token;
 pub mod config;
 pub mod error;
