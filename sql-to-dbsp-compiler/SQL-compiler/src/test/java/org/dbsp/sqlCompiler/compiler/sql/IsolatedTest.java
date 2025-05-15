@@ -2,7 +2,10 @@ package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.util.Logger;
+import org.junit.Test;
 
 /** Used for interactive debugging: create here temporary tests. */
 @SuppressWarnings("unused")

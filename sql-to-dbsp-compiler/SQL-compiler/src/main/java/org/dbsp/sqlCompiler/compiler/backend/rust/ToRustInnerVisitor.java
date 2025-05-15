@@ -1346,12 +1346,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 return VisitDecision.STOP;
             }
 
-            if (destVecType == null)
-                throw new UnsupportedException("Cast from " + sourceType + " to " + destType, expression.getNode());
-            if (destVecType.getElementType().sameType(sourceVecType.getElementType())) {
-                // should have been eliminated
-                this.unimplementedCast(expression);
-            }
+            // should have been eliminated
+            this.unimplementedCast(expression);
             this.pop(expression);
             return VisitDecision.STOP;
         }
