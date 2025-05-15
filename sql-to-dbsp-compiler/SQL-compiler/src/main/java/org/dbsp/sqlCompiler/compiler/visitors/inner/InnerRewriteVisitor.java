@@ -1277,9 +1277,11 @@ public abstract class InnerRewriteVisitor
     @Override
     public VisitDecision preorder(DBSPFunctionItem item) {
         this.push(item);
-        // TODO: do we need to transform?
+        item.function.accept(this);
+        DBSPFunction function = this.getResult().to(DBSPFunction.class);
         this.pop(item);
-        this.map(item, item);
+        DBSPFunctionItem result = new DBSPFunctionItem(function);
+        this.map(item, result);
         return VisitDecision.STOP;
     }
 

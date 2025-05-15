@@ -161,6 +161,16 @@ public class CalciteOptimizer implements IWritesLogs {
                 PruneEmptyRules.JOIN_RIGHT_INSTANCE,
                 PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE
         ));
+        this.addStep(new SimpleOptimizerStep("Simplify set operations", 0,
+                CoreRules.UNION_MERGE,
+                CoreRules.INTERSECT_MERGE,
+                CoreRules.MINUS_MERGE,
+                new SetopOptimizerRule(SetopOptimizerRule.Config.INTERSECT),
+                new SetopOptimizerRule(SetopOptimizerRule.Config.UNION),
+                CoreRules.INTERSECT_FILTER_TO_FILTER,
+                CoreRules.MINUS_FILTER_TO_FILTER,
+                CoreRules.UNION_FILTER_TO_FILTER
+        ));
 
         this.addStep(new CalciteOptimizerStep() {
             @Override
@@ -190,6 +200,14 @@ public class CalciteOptimizer implements IWritesLogs {
             @Override
             HepProgram getProgram(RelNode node, int level) {
                 this.addRules(level,
+                        CoreRules.JOIN_CONDITION_PUSH,
+                        CoreRules.JOIN_PUSH_EXPRESSIONS,
+                        CoreRules.FILTER_INTO_JOIN
+                );
+                this.addRules(level,
+                        CoreRules.EXPAND_FILTER_DISJUNCTION_GLOBAL,
+                        CoreRules.EXPAND_JOIN_DISJUNCTION_GLOBAL,
+                        CoreRules.JOIN_EXPAND_OR_TO_UNION_RULE,
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
                         // Below rule crashes with test NaiveIncrementalTests.inTest
@@ -239,14 +257,28 @@ public class CalciteOptimizer implements IWritesLogs {
                 //CoreRules.PROJECT_JOIN_TRANSPOSE
         ));
 
-        this.addStep(new BaseOptimizerStep("Pushdown", 2) {
+        this.addStep(new BaseOptimizerStep("Simple Join conditions", 2) {
             @Override
             HepProgram getProgram(RelNode node, int level) {
                 // This is a fragment of the Join order rule above
                 // It is worth repeating after moving projections.
                 this.addRules(level,
+                        CoreRules.JOIN_PUSH_EXPRESSIONS
+                );
+                this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
+                return this.builder.build();
+            }
+        });
+
+        this.addStep(new BaseOptimizerStep("Pushdown", 2) {
+            @Override
+            HepProgram getProgram(RelNode node, int level) {
+                this.addRules(level,
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
+                        CoreRules.JOIN_EXPAND_OR_TO_UNION_RULE,
+                        CoreRules.EXPAND_FILTER_DISJUNCTION_GLOBAL,
+                        CoreRules.EXPAND_JOIN_DISJUNCTION_GLOBAL,
                         // TODO: Rule is unsound
                         // https://github.com/feldera/feldera/issues/1702
                         CoreRules.FILTER_INTO_JOIN
