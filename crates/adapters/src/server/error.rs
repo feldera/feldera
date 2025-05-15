@@ -306,7 +306,7 @@ impl ResponseError for PipelineError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::Initializing => StatusCode::SERVICE_UNAVAILABLE,
-            Self::Terminating => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Terminating => StatusCode::GONE,
             Self::InitializationError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PrometheusError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::MissingUrlEncodedParam { .. } => StatusCode::BAD_REQUEST,
