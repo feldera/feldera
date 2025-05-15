@@ -71,7 +71,7 @@ You can also view the eviction event in your cluster monitoring stack (e.g. Data
 
 Evictions typically happen only when running Feldera in shared Kubernetes
 clusters. The pods to evict are determined by [Kubernetes Quality-of-Service
-classes](https://kubernetes.io/docs/tasks/configure-pod-container/quality-service-pod/). 
+classes](https://kubernetes.io/docs/tasks/configure-pod-container/quality-service-pod/).
 
 By default, Feldera Pipelines do not reserve any CPU or memory resources, which
 puts them in the [`BestEffort`](https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/#besteffort) priority class,
