@@ -9,7 +9,9 @@ mod input;
 mod output;
 
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
+use aws_msk_iam_sasl_signer::generate_auth_token;
 use feldera_types::transport::kafka::{default_redpanda_server, KafkaLogLevel};
+use rdkafka::client::OAuthToken;
 use rdkafka::{
     client::Client as KafkaClient,
     config::RDKafkaLogLevel,
@@ -21,6 +23,7 @@ use rdkafka::{
     util::Timeout,
     ClientConfig, ClientContext, Offset, TopicPartitionList,
 };
+use std::error::Error;
 use std::{
     collections::BTreeMap,
     fmt::{Display, Formatter, Result as FmtResult},
@@ -427,16 +430,18 @@ where
 {
     error_cb: F,
     deferred_logging: DeferredLogging,
+    oauthbearer: bool,
 }
 
 impl<F> DataConsumerContext<F>
 where
     F: Fn(AnyError) + Send + Sync,
 {
-    fn new(error_cb: F) -> Self {
+    fn new(error_cb: F, oauthbearer: bool) -> Self {
         Self {
             error_cb,
             deferred_logging: DeferredLogging::new(),
+            oauthbearer,
         }
     }
 }
@@ -445,6 +450,8 @@ impl<F> ClientContext for DataConsumerContext<F>
 where
     F: Fn(AnyError) + Send + Sync,
 {
+    const ENABLE_REFRESH_OAUTH_TOKEN: bool = true;
+
     fn error(&self, error: KafkaError, reason: &str) {
         let fatal = error
             .rdkafka_error_code()
@@ -459,6 +466,33 @@ where
 
     fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
         self.deferred_logging.log(level, fac, log_message);
+    }
+
+    fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
+        // TODO: Currently, OAUTHBEARER only works with AWS MSK.
+        if self.oauthbearer {
+            let region = {
+                let region = std::env::var("AWS_REGION").ok();
+                let default = std::env::var("AWS_DEFAULT_REGION").ok();
+                aws_types::region::Region::new(
+                    region.or(default).unwrap_or("us-east-1".to_string()),
+                )
+            };
+            let (token, expiration_time_ms) =
+                { futures::executor::block_on(async { generate_auth_token(region).await }) }?;
+
+            return Ok(OAuthToken {
+                token,
+                principal_name: "".to_string(),
+                lifetime_ms: expiration_time_ms,
+            });
+        }
+
+        Ok(OAuthToken {
+            token: "".to_string(),
+            principal_name: "".to_string(),
+            lifetime_ms: i64::MAX,
+        })
     }
 }
 

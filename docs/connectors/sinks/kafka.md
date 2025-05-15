@@ -90,6 +90,46 @@ The updated configuration would look like:
 > :warning: If both `ssl.certificate.pem` and `ssl.certificate.location` are set
 the latter will be overwritten.
 
+### Connecting to AWS MSK with IAM SASL
+
+Example of writing data to AWS MSK with IAM SASL.
+
+:::important
+- AWS credentials must either be set as Environment Variables or present in `~/.aws/credentials`.
+- Ensure that the defined output topic either exists in AWS MSK or, automatic topic creation is enabled.
+- `sasl.mechanism` must be set to `OAUTHBEARER`.
+- `security.protocol` must be set to `SASL_SSL`.
+
+Other protocols and mechanisms aren't supported.
+:::
+
+```sql
+
+CREATE VIEW OUTPUT
+WITH (
+   'connectors' = '[
+    {
+      "transport": {
+          "name": "kafka_output",
+          "config": {
+              "bootstrap.servers": "broker-1.kafka.region.amazonaws.com:9098,broker-2.kafka.region.amazonaws.com:9098",
+              "sasl.mechanism": "OAUTHBEARER",
+              "security.protocol": "SASL_SSL",
+              "topic": "<TOPIC>"
+          }
+      },
+      "format": {
+          "name": "json",
+          "config": {
+              "update_format": "insert_delete",
+              "array": false
+          }
+      }
+   }
+   ]'
+) as select * from INPUT;
+```
+
 
 ## Additional resources
 
