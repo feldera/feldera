@@ -1269,10 +1269,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         suspend_info: json!({}),
                     }
                 } else if status == StatusCode::SERVICE_UNAVAILABLE {
-                    warn!("Unable to suspend circuit of pipeline {} because pipeline indicated it is not (yet) ready", pipeline.id);
+                    warn!("Unable to suspend pipeline {} because pipeline indicated it is not (yet) ready", pipeline.id);
                     State::Unchanged
                 } else {
-                    error!("Suspend circuit operation of pipeline {} returned an error. Status: {status}. Body: {body}", pipeline.id);
+                    error!("Suspend operation of pipeline {} returned an error. Status: {status}. Body: {body}", pipeline.id);
                     State::TransitionToFailed {
                         error: Self::error_response_from_json(self.pipeline_id, status, &body),
                     }
@@ -1280,7 +1280,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
             Err(e) => {
                 warn!(
-                    "Unable to suspend circuit of pipeline {} because it could not be reached due to: {e}",
+                    "Unable to suspend pipeline {} because it could not be reached due to: {e}",
                     pipeline.id
                 );
                 State::Unchanged
