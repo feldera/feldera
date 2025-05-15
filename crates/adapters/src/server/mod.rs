@@ -966,6 +966,31 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
         Ok(HttpResponse::Ok().json("Pipeline suspended"))
     }
 
+    let receiver = match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            let (sender, receiver) = oneshot::channel();
+            controller.start_suspend(Box::new(move |suspend| {
+                if sender.send(suspend).is_err() {
+                    error!("`/suspend` result could not be sent");
+                }
+            }));
+            receiver
+        }
+        None => {
+            match missing_controller_error(&state) {
+                PipelineError::Suspended => {
+                    // Ensure idempotence.
+                    return success();
+                }
+                other => {
+                    return Err(other);
+                }
+            }
+        }
+    };
+
+    receiver.await.unwrap()?;
+
     let Some(controller) = state.controller.lock().unwrap().take() else {
         match missing_controller_error(&state) {
             PipelineError::Suspended => {
@@ -975,13 +1000,7 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
             other => return Err(other),
         }
     };
-    let (sender, receiver) = oneshot::channel();
-    controller.start_suspend(Box::new(move |suspend| {
-        if sender.send(suspend).is_err() {
-            error!("`/suspend` result could not be sent");
-        }
-    }));
-    receiver.await.unwrap()?;
+
     controller.stop()?;
     if let Ok(mut phase) = state.phase.write() {
         if !matches!(*phase, PipelinePhase::Failed(_)) {
