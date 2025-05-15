@@ -407,6 +407,14 @@ public class ToRustVisitor extends CircuitVisitor {
                 .decrease()
                 .append("}).unwrap();")
                 .newline();
+        for (int i = 0; i < operator.outputCount(); i++) {
+            OutputPort port = operator.internalOutputs.get(i);
+            if (port != null) {
+                this.computeHash(port.operator);
+                this.tagStream(port.operator.to(DBSPSimpleOperator.class));
+            }
+        }
+
         return VisitDecision.STOP;
     }
 
