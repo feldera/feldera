@@ -379,6 +379,15 @@ const literature = {
     ]
 };
 
+// Operations section
+const operations = {
+    type: 'category',
+    label: 'Feldera Operations',
+    items: [
+        'operations/guide',
+    ]
+};
+
 // Combine all sections
 const sidebars = {
     docsSidebar: [
@@ -387,6 +396,7 @@ const sidebars = {
         guides,
         interface,
         pipelines,
+        operations,
         literature
     ]
 };
