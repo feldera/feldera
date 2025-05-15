@@ -200,6 +200,9 @@ public class CalciteOptimizer implements IWritesLogs {
             @Override
             HepProgram getProgram(RelNode node, int level) {
                 this.addRules(level,
+                        CoreRules.EXPAND_FILTER_DISJUNCTION_GLOBAL,
+                        CoreRules.EXPAND_JOIN_DISJUNCTION_GLOBAL,
+                        CoreRules.JOIN_EXPAND_OR_TO_UNION_RULE,
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
                         CoreRules.FILTER_INTO_JOIN
