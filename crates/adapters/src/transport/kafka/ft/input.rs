@@ -9,12 +9,14 @@ use crate::{
 };
 use crate::{InputBuffer, ParseError, Parser};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use aws_msk_iam_sasl_signer::generate_auth_token;
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
 use feldera_adapterlib::transport::{InputEndpoint, InputReaderCommand, Resume};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{KafkaInputConfig, KafkaStartFromConfig};
+use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::base_consumer::PartitionQueue;
 use rdkafka::message::BorrowedMessage;
@@ -27,6 +29,7 @@ use rdkafka::{
 use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
+use std::error::Error;
 use std::hash::Hasher;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
@@ -76,18 +79,28 @@ struct KafkaFtInputContext {
     endpoint: Mutex<Weak<KafkaFtInputReaderInner>>,
 
     deferred_logging: DeferredLogging,
+
+    // True if the sasl.mechanism is oauthbearer.
+    oauthbearer: bool,
 }
 
 impl KafkaFtInputContext {
-    fn new() -> Self {
+    fn new(oauthbearer: bool) -> Self {
         Self {
             endpoint: Mutex::new(Weak::new()),
             deferred_logging: DeferredLogging::new(),
+            oauthbearer,
         }
     }
 }
 
 impl ClientContext for KafkaFtInputContext {
+    const ENABLE_REFRESH_OAUTH_TOKEN: bool = true;
+
+    fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
+        self.deferred_logging.log(level, fac, log_message);
+    }
+
     fn error(&self, error: KafkaError, reason: &str) {
         // eprintln!("Kafka error: {error}");
         if let Some(endpoint) = self.endpoint.lock().unwrap().upgrade() {
@@ -95,8 +108,33 @@ impl ClientContext for KafkaFtInputContext {
         }
     }
 
-    fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
-        self.deferred_logging.log(level, fac, log_message);
+    fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
+        // TODO: Currently, OAUTHBEARER only works with AWS MSK.
+        if self.oauthbearer {
+            let region = {
+                let region = std::env::var("AWS_REGION").ok();
+                let default = std::env::var("AWS_DEFAULT_REGION").ok();
+                aws_types::region::Region::new(
+                    region.or(default).unwrap_or("us-east-1".to_string()),
+                )
+            };
+            let (token, expiration_time_ms) =
+            // TODO: Set a timeout here.
+                { futures::executor::block_on(async { generate_auth_token(region).await }) }?;
+
+            return Ok(OAuthToken {
+                token,
+                principal_name: "".to_string(),
+                lifetime_ms: expiration_time_ms,
+            });
+        }
+
+        // Return a default / empty token.
+        Ok(OAuthToken {
+            token: "".to_string(),
+            principal_name: "".to_string(),
+            lifetime_ms: i64::MAX,
+        })
     }
 }
 
@@ -515,8 +553,17 @@ impl KafkaFtInputReader {
         //
         // This has the desirable side effect of ensuring that we can reach the
         // broker and failing with an error if we cannot.
-        let context = KafkaFtInputContext::new();
+        let context = KafkaFtInputContext::new(
+            config
+                .kafka_options
+                .get("sasl.mechanism")
+                .is_some_and(|s| s.to_uppercase() == "OAUTHBEARER"),
+        );
         let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)?;
+
+        // IMPORTANT: Poll before trying to fetch metadata. Necessary so that OAUTHBREAKER token
+        // is set.
+        kafka_consumer.poll(std::time::Duration::from_nanos(0));
         let partition_count = count_partitions_in_topic(&kafka_consumer, &config.topic)?;
 
         let inner = Arc::new(KafkaFtInputReaderInner {

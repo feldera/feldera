@@ -219,6 +219,45 @@ The Kafka connector can be used to ingest data from a source via
 Debezium.  For information on how to setup Debezium integration for Feldera, see
 [Debezium connector documentation](debezium).
 
+### Connecting to AWS MSK with IAM SASL
+
+Example of reading data from AWS MSK with IAM SASL.
+
+:::important
+- AWS credentials must either be set as Environment Variables or present in `~/.aws/credentials`.
+- `sasl.mechanism` must be set to `OAUTHBEARER`.
+- `security.protocol` must be set to `SASL_SSL`.
+
+Other protocols and mechanisms aren't supported.
+:::
+
+```sql
+CREATE TABLE INPUT (
+   ... -- columns omitted
+) WITH (
+   'connectors' = '[
+    {
+      "transport": {
+          "name": "kafka_input",
+          "config": {
+              "bootstrap.servers": "broker-1.kafka.region.amazonaws.com:9098,broker-2.kafka.region.amazonaws.com:9098",
+              "sasl.mechanism": "OAUTHBEARER",
+              "security.protocol": "SASL_SSL",
+              "topic": "<TOPIC>"
+          }
+      },
+      "format": {
+          "name": "json",
+          "config": {
+              "update_format": "insert_delete",
+              "array": false
+          }
+      }
+   }
+   ]'
+);
+```
+
 ## Additional resources
 
 For more information, see:
