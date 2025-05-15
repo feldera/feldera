@@ -4233,6 +4233,7 @@
             "type": "integer",
             "format": "int64",
             "description": "Interval between automatic checkpoints, in seconds.\n\nThe default is 60 seconds.  Values less than 1 or greater than 3600 will\nbe forced into that range.",
+            "nullable": true,
             "minimum": 0
           },
           "model": {
