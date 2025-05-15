@@ -436,7 +436,7 @@ fn is_fatal_controller_error(error: &ControllerError) -> bool {
 }
 
 /// Handle errors from the controller.
-fn error_handler(state: &Weak<ServerState>, error: ControllerError) {
+fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>) {
     error!("{error}");
 
     let state = match state.upgrade() {
@@ -450,7 +450,7 @@ fn error_handler(state: &Weak<ServerState>, error: ControllerError) {
         if let Ok(mut controller) = state.controller.lock() {
             if let Some(controller) = controller.take() {
                 if let Ok(mut phase) = state.phase.write() {
-                    *phase = PipelinePhase::Failed(Arc::new(error));
+                    *phase = PipelinePhase::Failed(error);
                 }
 
                 controller.initiate_stop();
@@ -580,7 +580,7 @@ fn do_bootstrap(
         circuit_factory,
         &config,
         Box::new(move |e| error_handler(&weak_state_ref, e))
-            as Box<dyn Fn(ControllerError) + Send + Sync>,
+            as Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     )?;
 
     *state.prometheus.write().unwrap() = Some(
