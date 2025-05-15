@@ -195,7 +195,7 @@ impl Controller {
     pub fn with_config<F>(
         circuit_factory: F,
         config: &PipelineConfig,
-        error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
@@ -630,7 +630,7 @@ impl CircuitThread {
     fn new<F>(
         circuit_factory: F,
         config: PipelineConfig,
-        error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
@@ -843,7 +843,7 @@ impl CircuitThread {
         debug!("circuit thread: calling 'circuit.step'");
         self.circuit
             .step()
-            .unwrap_or_else(|e| self.controller.error(e.into()));
+            .unwrap_or_else(|e| self.controller.error(Arc::new(e.into())));
         debug!("circuit thread: 'circuit.step' returned");
 
         // If bootstrapping has completed, update the status flag.
@@ -2283,7 +2283,7 @@ pub struct ControllerInner {
     next_output_id: Atomic<EndpointId>,
     circuit_thread_unparker: Unparker,
     backpressure_thread_unparker: Unparker,
-    error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+    error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     session_ctxt: SessionContext,
     fault_tolerance: Option<FtModel>,
 
@@ -2296,7 +2296,7 @@ impl ControllerInner {
         config: PipelineConfig,
         catalog: Box<dyn CircuitCatalog>,
         lir: LirCircuit,
-        error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
         processed_records: u64,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(config.clone(), processed_records));
@@ -2996,7 +2996,7 @@ impl ControllerInner {
         }
     }
 
-    fn error(&self, error: ControllerError) {
+    fn error(&self, error: Arc<ControllerError>) {
         (self.error_cb)(error);
     }
 
@@ -3012,21 +3012,24 @@ impl ControllerInner {
     ) {
         self.status
             .input_transport_error(endpoint_id, fatal, &error);
-        self.error(ControllerError::input_transport_error(
+        self.error(Arc::new(ControllerError::input_transport_error(
             endpoint_name,
             fatal,
             error,
-        ));
+        )));
     }
 
     pub fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: ParseError) {
         self.status.parse_error(endpoint_id);
-        self.error(ControllerError::parse_error(endpoint_name, error));
+        self.error(Arc::new(ControllerError::parse_error(endpoint_name, error)));
     }
 
     pub fn encode_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: AnyError) {
         self.status.encode_error(endpoint_id);
-        self.error(ControllerError::encode_error(endpoint_name, error));
+        self.error(Arc::new(ControllerError::encode_error(
+            endpoint_name,
+            error,
+        )));
     }
 
     /// Process an output transport error.
@@ -3041,11 +3044,11 @@ impl ControllerInner {
     ) {
         self.status
             .output_transport_error(endpoint_id, fatal, &error);
-        self.error(ControllerError::output_transport_error(
+        self.error(Arc::new(ControllerError::output_transport_error(
             endpoint_name,
             fatal,
             error,
-        ));
+        )));
     }
 
     /// Update counters after receiving a new input batch.
