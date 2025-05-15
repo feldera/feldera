@@ -1241,9 +1241,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(" = ");
         this.builder.append(this.getInputName(operator, 0))
                 .append(".");
-        this.builder.append(operator.operation)
-                .append("(&");
-        this.builder.append(this.getInputName(operator, 1))
+        this.operationCall(operator);
+        this.builder.append("&")
+                .append(this.getInputName(operator, 1))
                 // FIXME: temporary workaround until the compiler learns about TypedBox
                 .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
                 .append(", ");
