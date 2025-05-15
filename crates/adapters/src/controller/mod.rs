@@ -3247,6 +3247,10 @@ impl InputConsumer for InputProbe {
         self.controller.eoi(self.endpoint_id);
     }
 
+    fn request_step(&self) {
+        self.controller.request_step();
+    }
+
     fn error(&self, fatal: bool, error: AnyError) {
         self.controller
             .input_transport_error(self.endpoint_id, &self.endpoint_name, fatal, error);

@@ -296,7 +296,7 @@ impl<A> InputQueue<A> {
         }
     }
 
-    /// Appends `buffer`, if nonempty, to the queue, and associates it with
+    /// Appends `buffer`, to the queue, and associates it with
     /// `aux`.  Reports to the controller that `num_bytes` have been received
     /// and at least partially parsed, and that `errors` have occurred during
     /// parsing.
@@ -315,6 +315,14 @@ impl<A> InputQueue<A> {
         let mut queue = self.queue.lock().unwrap();
         queue.push_back((buffer, aux));
         self.consumer.buffered(num_records, num_bytes);
+
+        // The endpoint pushed an empty buffer. This likely indicates that the accompanying aux data
+        // needs to be processed by the endpoint after preceding buffers have been flushed. However,
+        // since we didn't report any buffered records, the controller may never perform another step,
+        // so we nudge it to do it.
+        if num_records == 0 {
+            self.consumer.request_step();
+        }
     }
 
     /// Flushes a batch of records to the circuit and returns the auxiliary data
@@ -347,7 +355,10 @@ impl<A> InputQueue<A> {
         let mut hasher = self.consumer.hasher();
         let n = self.consumer.max_batch_size();
         let mut consumed_aux = Vec::new();
-        while total < n {
+
+        let mut stop = false;
+
+        while !stop && total < n {
             let Some((buffer, aux)) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
@@ -360,13 +371,21 @@ impl<A> InputQueue<A> {
                 buffer.flush();
             }
 
-            let stop = stop_at(&aux);
+            stop = stop_at(&aux);
             consumed_aux.push(aux);
-
-            if stop {
-                break;
-            }
         }
+
+        // Process any entries with aux data only.
+        let mut queue = self.queue.lock().unwrap();
+        while !stop && queue.front().is_some_and(|(buffer, _aux)| buffer.is_none()) {
+            let Some((_buffer, aux)) = queue.pop_front() else {
+                break;
+            };
+
+            stop = stop_at(&aux);
+            consumed_aux.push(aux);
+        }
+
         (total, hasher, consumed_aux)
     }
 
@@ -530,6 +549,10 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// messages. The endpoint must not make further calls to
     /// [InputConsumer::buffered] or [InputConsumer::parse_errors].
     fn eoi(&self);
+
+    /// Request the controller to schedule a step even if the connector hasn't queued
+    /// any records.
+    fn request_step(&self);
 
     /// Endpoint failed.
     ///
