@@ -903,8 +903,10 @@ impl CircuitThread {
     }
 
     fn checkpoint(&mut self) {
-        fn inner(this: &mut CircuitThread) -> Result<Checkpoint, ControllerError> {
-            this.controller.can_suspend()?;
+        fn inner(this: &mut CircuitThread) -> Result<Checkpoint, Arc<ControllerError>> {
+            this.controller
+                .can_suspend()
+                .map_err(|e| Arc::new(ControllerError::SuspendError(e)))?;
 
             // Replace the input adapter configuration in the pipeline configuration
             // by the current inputs. (HTTP input adapters might have been added or
@@ -939,7 +941,7 @@ impl CircuitThread {
             let checkpoint = this
                 .circuit
                 .commit()
-                .map_err(ControllerError::from)
+                .map_err(|e| Arc::new(ControllerError::from(e)))
                 .and_then(|circuit| {
                     let checkpoint = Checkpoint {
                         circuit: Some(circuit),
@@ -958,6 +960,7 @@ impl CircuitThread {
                             &StoragePath::from(STATE_FILE),
                         )
                         .map(|()| checkpoint)
+                        .map_err(Arc::new)
                 })?;
             if let Some(ft) = &mut this.ft {
                 ft.checkpointed()?;
@@ -966,7 +969,16 @@ impl CircuitThread {
         }
 
         let result = match inner(self) {
-            Err(ControllerError::SuspendError(error @ SuspendError::Temporary(_))) => {
+            Err(e)
+                if matches!(
+                    e.as_ref(),
+                    ControllerError::SuspendError(SuspendError::Temporary(_))
+                ) =>
+            {
+                let ControllerError::SuspendError(error) = e.as_ref() else {
+                    unreachable!()
+                };
+
                 self.checkpoint_delay_warning
                     .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)))
                     .check(|elapsed| {
@@ -979,7 +991,7 @@ impl CircuitThread {
             }
             Err(error) => {
                 warn!("checkpoint failed: {error}");
-                Err(Arc::new(error))
+                Err(error)
             }
             Ok(checkpoint) => Ok(checkpoint),
         };
@@ -1000,6 +1012,9 @@ impl CircuitThread {
                 CheckpointRequest::CheckpointCommand(callback) => callback(result.clone()),
                 CheckpointRequest::SuspendCommand(callback) => {
                     self.controller.status.set_state(PipelineState::Terminated);
+                    if let Err(e) = &result {
+                        self.controller.error(e.clone());
+                    }
                     callback(result.clone().map(|_| ()))
                 }
             }
