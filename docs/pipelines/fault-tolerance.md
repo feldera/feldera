@@ -64,6 +64,10 @@ later restart it from the same point:
 
   A fault-tolerant pipeline can also be suspended and resumed.
 
+> ⚠️ Feldera resolves [secrets](../connectors/secret-references.md)
+> once at pipeline startup.  Storage for fault tolerant pipelines and
+> suspended pipelines will contain resolved secrets.
+
 The following sections describes these features in more detail.
 
 ## Implementation
