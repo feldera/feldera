@@ -16,8 +16,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.util.HashString;
+import org.dbsp.util.Utilities;
 
-import java.io.IOException;
 import java.util.HashSet;
 
 /** Writes the implementation of a {@link DBSPNestedOperator} as a function that instantiates
@@ -173,6 +173,25 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         }
         this.builder().append("))").newline();
         this.builder().decrease().append("}).unwrap();").newline();
+
+        for (int i = 0; i < operator.outputCount(); i++) {
+            OutputPort port = operator.internalOutputs.get(i);
+            if (port != null) {
+                this.builder().append("let hash = ");
+                HashString hash1 = OperatorHash.getHash(port.operator, true);
+                if (hash1 == null) {
+                    this.builder().append("None;").newline();
+                } else {
+                    this.builder().append("Some(")
+                            .append(Utilities.doubleQuote(hash1.toString()))
+                            .append(");")
+                            .newline();
+                }
+                this.builder().append(port.getName(false))
+                        .append(".set_persistent_id(hash);")
+                        .newline();
+            }
+        }
 
         this.builder().append("return (");
         for (int i = 0; i < this.operator.outputCount(); i++) {
