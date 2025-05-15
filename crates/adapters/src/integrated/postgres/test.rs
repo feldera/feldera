@@ -16,7 +16,6 @@ use feldera_types::{
 };
 use pg::PostgresTestStruct;
 use postgres::NoTls;
-use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use serial_test::serial;
 use std::{collections::BTreeMap, io::Write, str::FromStr};
@@ -37,7 +36,7 @@ mod pg {
 
     use chrono::SubsecRound;
     use dbsp::{circuit::CircuitConfig, typed_batch::TypedBatch, utils::Tup1, DBSPHandle, Runtime};
-    use feldera_sqllib::{SqlString, F32, F64};
+    use feldera_sqllib::{SqlDecimal, SqlString, F32, F64};
     use feldera_types::{
         config::PipelineConfig,
         deserialize_table_record, deserialize_without_context,
@@ -47,7 +46,6 @@ mod pg {
     use num_traits::FromPrimitive;
     use postgres::{NoTls, Row};
     use rand::{distributions::Standard, prelude::Distribution, Rng};
-    use rust_decimal::Decimal;
 
     use crate::{test::TestStruct, Catalog, Controller};
 
@@ -92,7 +90,7 @@ mod pg {
         pub smallint_: i16,
         pub int_: i32,
         pub bigint_: i64,
-        pub decimal_: Decimal,
+        pub decimal_: SqlDecimal,
         pub float_: F32,
         pub double_: F64,
         pub varchar_: SqlString,
@@ -114,7 +112,7 @@ mod pg {
         smallint_["smallint_"]: i16,
         int_["int_"]: i32,
         bigint_["bigint_"]: i64,
-        decimal_["decimal_"]: Decimal,
+        decimal_["decimal_"]: SqlDecimal,
         float_["float_"]: F32,
         double_["double_"]: F64,
         varchar_["varchar_"]: SqlString,
@@ -136,7 +134,7 @@ mod pg {
         (smallint_, "smallint_", false, i16, None),
         (int_, "int_", false, i32, None),
         (bigint_, "bigint_", false, i64, None),
-        (decimal_, "decimal_", false, Decimal, None),
+        (decimal_, "decimal_", false, SqlDecimal, None),
         (float_, "float_", false, F32, None),
         (double_, "double_", false, F64, None),
         (varchar_, "varchar_", false, SqlString, None),
@@ -211,7 +209,13 @@ CREATE TABLE {name} (
 
         pub fn query(&mut self) -> Vec<Row> {
             self.client
-                .query(&format!("SELECT * FROM {}", self.name), &[])
+                .query(
+                    &format!(
+                        "SELECT *, CAST(decimal_ AS VARCHAR) AS decimal_str FROM {}",
+                        self.name
+                    ),
+                    &[],
+                )
                 .expect("failed to query table")
         }
     }
@@ -236,7 +240,10 @@ CREATE TABLE {name} (
                 smallint_: r.get("smallint_"),
                 int_: r.get("int_"),
                 bigint_: r.get("bigint_"),
-                decimal_: r.get("decimal_"),
+                decimal_: r
+                    .get::<_, String>("decimal_str")
+                    .parse::<SqlDecimal>()
+                    .unwrap(),
                 float_: F32::new(r.get("float_")),
                 double_: F64::new(r.get("double_")),
                 varchar_: SqlString::from_ref(r.get("varchar_")),
@@ -408,9 +415,7 @@ CREATE TABLE {name} (
                 smallint_: rng.gen(),
                 int_: rng.gen(),
                 bigint_: rng.gen(),
-                decimal_: Decimal::from_f32(rng.gen_range::<f32, _>(-100.0..100.0))
-                    .unwrap()
-                    .trunc_with_scale(3),
+                decimal_: SqlDecimal::from_i128_with_scale(rng.gen_range::<i128, _>(-100..100), 3),
                 float_: F32::new((rng.gen::<f32>() * 1000.0).trunc() / 1000.0),
                 double_: F64::new((rng.gen::<f64>() * 1000.0).trunc() / 1000.0),
                 varchar_: rng.gen::<u32>().to_string().into(),

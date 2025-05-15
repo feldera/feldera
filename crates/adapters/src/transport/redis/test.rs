@@ -1,11 +1,10 @@
-use feldera_sqllib::{ByteArray, Date, SqlString, Timestamp, Uuid, Variant, F32, F64};
+use feldera_sqllib::{ByteArray, Date, SqlDecimal, SqlString, Timestamp, Uuid, Variant, F32, F64};
 use feldera_types::{
     config::PipelineConfig,
     format::json::JsonFlavor,
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
 };
 use redis::Commands;
-use rust_decimal::Decimal;
 use serde_json::json;
 use std::{
     collections::{BTreeMap, HashSet},
@@ -34,7 +33,7 @@ fn test_redis_output() {
         binary: ByteArray::new(&[0, 1, 2]),
         boolean: false,
         date: Date::new(1),
-        decimal_10_3: Decimal::new(123, 2),
+        decimal_10_3: SqlDecimal::from_i128_with_scale(123i128, 2),
         double: F64::from_str("1.123").unwrap(),
         float: F32::from_str("1.123").unwrap(),
         int: 1,

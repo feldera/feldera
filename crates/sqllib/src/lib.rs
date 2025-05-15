@@ -12,8 +12,8 @@ pub use binary::*;
 pub mod casts;
 pub use casts::*;
 #[doc(hidden)]
-pub mod decimal;
-pub use decimal::*;
+pub mod dec;
+pub use dec::*;
 #[doc(hidden)]
 pub mod error;
 pub use error::*;
@@ -44,21 +44,11 @@ pub use uuid::*;
 pub mod variant;
 pub use variant::*;
 
-pub use array::Array;
-pub use binary::ByteArray;
-#[doc(hidden)]
-pub use geopoint::GeoPoint;
-pub use interval::{LongInterval, ShortInterval};
-pub use map::Map;
 #[doc(hidden)]
 pub use num_traits::Float;
 pub use regex::Regex;
 #[doc(hidden)]
 pub use source::{SourcePosition, SourcePositionRange};
-pub use string::SqlString;
-pub use timestamp::{Date, Time, Timestamp};
-pub use uuid::Uuid;
-pub use variant::Variant;
 
 use std::sync::LazyLock;
 
@@ -81,9 +71,8 @@ use dbsp::{
     DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
 use metrics::{counter, Counter};
-use num::{PrimInt, ToPrimitive};
+use num::PrimInt;
 use num_traits::{Pow, Zero};
-use rust_decimal::Decimal;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, Neg};
@@ -1044,7 +1033,7 @@ pub fn abs_d(left: F64) -> F64 {
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn abs_decimal(left: Decimal) -> Decimal {
+pub fn abs_SqlDecimal(left: SqlDecimal) -> SqlDecimal {
     left.abs()
 }
 
@@ -1054,7 +1043,7 @@ some_polymorphic_function1!(abs, i32, i32, i32);
 some_polymorphic_function1!(abs, i64, i64, i64);
 some_polymorphic_function1!(abs, f, F32, F32);
 some_polymorphic_function1!(abs, d, F64, F64);
-some_polymorphic_function1!(abs, decimal, Decimal, Decimal);
+some_polymorphic_function1!(abs, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 #[inline(always)]
@@ -1334,11 +1323,11 @@ pub fn power_d_d(left: F64, right: F64) -> F64 {
 some_polymorphic_function2!(power, d, F64, d, F64, F64);
 
 #[doc(hidden)]
-pub fn power_d_decimal(left: F64, right: Decimal) -> F64 {
-    F64::new(left.into_inner().powf(right.to_f64().unwrap()))
+pub fn power_d_SqlDecimal(left: F64, right: SqlDecimal) -> F64 {
+    F64::new(left.into_inner().powf(right.try_into().unwrap()))
 }
 
-some_polymorphic_function2!(power, d, F64, decimal, Decimal, F64);
+some_polymorphic_function2!(power, d, F64, SqlDecimal, SqlDecimal, F64);
 
 #[doc(hidden)]
 pub fn sqrt_d(left: F64) -> F64 {

@@ -40,7 +40,7 @@ import org.junit.Test;
  * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/numeric.out
  * Since Calcite rounds differently, these tests give slightly different results from Postgres. */
 public class PostgresNumericTests extends SqlIoTest {
-    protected static final int WIDTH = 28;
+    protected static final int WIDTH = 38;
 
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
@@ -366,7 +366,7 @@ public class PostgresNumericTests extends SqlIoTest {
             INSERT INTO num_exp_add VALUES (7,7,'-166056970');
             INSERT INTO num_exp_sub VALUES (7,7,'0');
             INSERT INTO num_exp_mul VALUES (7,7,'6893729321395225');
-            INSERT INTO num_exp_div VALUES (7,7,'1.00000000000000000000');
+            INSERT INTO num_exp_div VALUES (7,7,'1.000000000');
             INSERT INTO num_exp_add VALUES (7,8,'-82953604');
             INSERT INTO num_exp_sub VALUES (7,8,'-83103366');
             INSERT INTO num_exp_mul VALUES (7,8,'-6217255985285');
@@ -609,6 +609,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testDivision() {
+        // Due to calcite rounding rules, the results have effectively scale 6
         String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(t1.val / t2.val AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2\n" +
@@ -756,17 +757,13 @@ public class PostgresNumericTests extends SqlIoTest {
     @Test
     public void testDivByZero() {
         this.qf("SELECT '0'::numeric / '0'", "divide by zero");
-
         //SELECT 'inf'::numeric % '0';
-        this.qf("SELECT '1'::numeric % '0'", "Division by zero");
-
+        this.qf("SELECT '1'::numeric % '0'", "divide by zero");
         //SELECT '-inf'::numeric % '0';
         //SELECT 'nan'::numeric % '0';
-        this.qf("SELECT '-1'::numeric % '0'", "Division by zero");
-
+        this.qf("SELECT '-1'::numeric % '0'", "divide by zero");
         //SELECT '0'::numeric % '0';
-        this.qf("SELECT '0'::numeric % '0'", "Division by zero");
-
+        this.qf("SELECT '0'::numeric % '0'", "divide by zero");
         //SELECT div('inf'::numeric, '0');
         //SELECT div('-inf'::numeric, '0');
         //SELECT div('nan'::numeric, '0');
