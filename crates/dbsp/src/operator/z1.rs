@@ -152,7 +152,11 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.stream_id()), || {
-                self.circuit().add_unary_operator(Z1::new(D::zero()), self)
+                let delay_pid = self.get_persistent_id().map(|pid| format!("{pid}.delay"));
+
+                self.circuit()
+                    .add_unary_operator(Z1::new(D::zero()), self)
+                    .set_persistent_id(delay_pid.as_deref())
             })
             .clone()
     }
@@ -164,8 +168,11 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.stream_id()), move || {
+                let delay_pid = self.get_persistent_id().map(|pid| format!("{pid}.delay"));
+
                 self.circuit()
                     .add_unary_operator(Z1::new(initial.clone()), self)
+                    .set_persistent_id(delay_pid.as_deref())
             })
             .clone()
     }
@@ -178,8 +185,11 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(NestedDelayedId::new(self.stream_id()), || {
+                let delay_pid = self.get_persistent_id().map(|pid| format!("{pid}.delay"));
+
                 self.circuit()
                     .add_unary_operator(Z1Nested::new(D::zero()), self)
+                    .set_persistent_id(delay_pid.as_deref())
             })
             .clone()
     }
