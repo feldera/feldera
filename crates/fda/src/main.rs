@@ -419,7 +419,10 @@ fn patch_runtime_config(
             }
         }
         RuntimeConfigKey::CheckpointInterval => {
-            rc.fault_tolerance.checkpoint_interval_secs = value.parse().map_err(|_| ())?;
+            rc.fault_tolerance.checkpoint_interval_secs = match value.parse().map_err(|_| ())? {
+                0 => None,
+                interval => Some(interval),
+            };
         }
         RuntimeConfigKey::CpuProfiler => {
             rc.cpu_profiler = value.parse().map_err(|_| ())?;

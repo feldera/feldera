@@ -573,15 +573,15 @@ pub struct FtConfig {
     /// The default is 60 seconds.  Values less than 1 or greater than 3600 will
     /// be forced into that range.
     #[serde(default = "default_checkpoint_interval_secs")]
-    pub checkpoint_interval_secs: u64,
+    pub checkpoint_interval_secs: Option<u64>,
 }
 
 fn default_model() -> Option<FtModel> {
     Some(FtModel::default())
 }
 
-pub fn default_checkpoint_interval_secs() -> u64 {
-    60
+pub fn default_checkpoint_interval_secs() -> Option<u64> {
+    Some(60)
 }
 
 impl Default for FtConfig {
@@ -620,7 +620,7 @@ mod test {
                 Wrapper {
                     config: FtConfig {
                         model: None,
-                        ..FtConfig::default()
+                        checkpoint_interval_secs: Some(60)
                     }
                 }
             );
@@ -640,10 +640,19 @@ mod test {
                 serde_json::from_str::<FtConfig>(s).unwrap(),
                 FtConfig {
                     model: Some(FtModel::default()),
-                    ..FtConfig::default()
+                    checkpoint_interval_secs: Some(60)
                 }
             );
         }
+
+        // `"checkpoint_interval_secs": null` disables periodic checkpointing.
+        assert_eq!(
+            serde_json::from_str::<FtConfig>(r#"{"checkpoint_interval_secs": null}"#).unwrap(),
+            FtConfig {
+                model: Some(FtModel::default()),
+                checkpoint_interval_secs: None
+            }
+        );
     }
 }
 
@@ -655,8 +664,12 @@ impl FtConfig {
     /// Returns the checkpoint interval, if fault tolerance is enabled, and
     /// otherwise `None`.
     pub fn checkpoint_interval(&self) -> Option<Duration> {
-        self.is_enabled()
-            .then(|| Duration::from_secs(self.checkpoint_interval_secs.clamp(1, 3600)))
+        if self.is_enabled() {
+            self.checkpoint_interval_secs
+                .map(|interval| Duration::from_secs(interval.clamp(1, 3600)))
+        } else {
+            None
+        }
     }
 }
 

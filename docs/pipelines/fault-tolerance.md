@@ -137,16 +137,54 @@ Feldera pipeline:
 
 3. To additionally enable fault tolerance:
 
-   - In the web UI, click on the gear icon ⚙️.  In the dialog box, find
-     `fault_tolerance`, and then `model` inside it, and change its
-     value to `"exactly_once"`, then click on the Apply button.  If
-     clicking on Apply does not dismiss the dialog box, then either
-     storage has not been enabled or the running version of Feldera is
-     not the enterprise edition.
+   - In the web UI, click on the gear icon ⚙️.  In the dialog box,
+     inside `fault_tolerance`:
 
-   - With the `fda` command line tool, use one of these commands:
+     - Change `model` to `"at_least_once"` or `"exactly_once"`.
+
+     - Optionally, change `"checkpoint_interval_secs"` to an automatic
+       checkpoint interval of your choice, in seconds, or to `null` to
+       disable automatic checkpoints.
+
+     Then, click on the Apply button.  If clicking on Apply does not
+     dismiss the dialog box, then either storage has not been enabled
+     or the running version of Feldera is not the enterprise edition.
+
+   - With the `fda` command line tool, use one of these commands to
+     enable fault tolerance:
 
      ```
      fda set-config <pipeline> fault_tolerance at_least_once
      fda set-config <pipeline> fault_tolerance exactly_once
      ```
+
+     Optionally, use the following command to change the automatic
+     checkpointing interval to `<seconds>` (use `0` for `<seconds>` to
+     disable automatic checkpoints):
+
+     ```
+     fda set-config <pipeline> checkpoint_interval <seconds>
+     ```
+
+## Writing checkpoints
+
+When fault tolerance is enabled as described, by default Feldera
+automatically writes a checkpoint every 60 seconds.  This interval can
+be changed to another value, or disabled entirely, as described
+[above](#enabling-suspend-and-resume-and-fault-tolerance).
+
+Feldera also has an HTTP API, `/checkpoint`, that allows the user to
+request writing a checkpoint immediately.  If automatic checkpoints
+are disabled, then the user should occasionally invoke this API to
+ensure that the checkpoint feature is useful.
+
+<!-- Uncomment this when Delta Lake supports checkpointing (see
+https://github.com/feldera/feldera/issues/3884):
+> ⚠️ Writing a checkpoint should ordinarily be a fairly fast operation
+that takes a second or less.  However, the [Delta Lake input
+connector](../connectors/sources/delta.md) can only checkpoint at some
+input positions.  When a checkpoint is requested between those points,
+Feldera will execute steps that draw input only from those connectors
+until they advance to a point at which a checkpoint is possible, and
+then write the checkpoint.  In some cases, this can take minutes or
+longer.  -->
