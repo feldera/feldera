@@ -2,7 +2,6 @@
   import { base } from '$app/paths'
   import { type ExtendedPipeline, type Pipeline } from '$lib/services/pipelineManager'
   import { goto } from '$app/navigation'
-  import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
@@ -10,6 +9,7 @@
   import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
   import JSONbig from 'true-json-bigint'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   let {
     pipelineName,
@@ -31,8 +31,9 @@
   } = $props()
 
   const globalDialog = useGlobalDialog()
+  const api = usePipelineManager()
   const deletePipeline = async (pipelineName: string) => {
-    await _deletePipeline(pipelineName)
+    await api.deletePipeline(pipelineName)
     onDeletePipeline?.(pipelineName)
     goto(`${base}/`)
   }

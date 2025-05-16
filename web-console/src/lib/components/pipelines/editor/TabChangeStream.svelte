@@ -44,8 +44,12 @@
       headers: newHeaders
     }
   }
-  const startReadingStream = (pipelineName: string, relationName: string) => {
-    const request = relationEgressStream(pipelineName, relationName).then((result) => {
+  const startReadingStream = (
+    api: PipelineManagerApi,
+    pipelineName: string,
+    relationName: string
+  ) => {
+    const request = api.relationEgressStream(pipelineName, relationName).then((result) => {
       if (result instanceof Error) {
         pipelinesRelations[pipelineName][relationName].cancelStream = undefined
         return undefined
@@ -127,7 +131,7 @@
       })
     }
   }
-  const registerPipelineName = (pipelineName: string) => {
+  const registerPipelineName = (api: PipelineManagerApi, pipelineName: string) => {
     if (pipelinesRelations[pipelineName]) {
       return
     }
@@ -144,6 +148,7 @@
           return
         }
         pipelinesRelations[pipelineName][relationName].cancelStream = startReadingStream(
+          api,
           pipelineName,
           relationName
         )
@@ -163,16 +168,10 @@
     getCaseIndependentName,
     normalizeCaseIndependentName
   } from '$lib/functions/felderaRelation'
-  import {
-    relationEgressStream,
-    relationIngress,
-    type ExtendedPipeline,
-    type XgressEntry
-  } from '$lib/services/pipelineManager'
-  import type { XgressRecord } from '$lib/types/pipelineManager'
+  import { type ExtendedPipeline, type XgressEntry } from '$lib/services/pipelineManager'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
-  import type { ColumnType, Field, Relation } from '$lib/services/manager'
+  import type { Field, Relation } from '$lib/services/manager'
   import {
     CustomJSONParserTransformStream,
     parseCancellable,
@@ -184,6 +183,10 @@
   import { tuple } from '$lib/functions/common/tuple'
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
   import { Segment } from '@skeletonlabs/skeleton-svelte'
+  import {
+    usePipelineManager,
+    type PipelineManagerApi
+  } from '$lib/compositions/usePipelineManager.svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
@@ -194,7 +197,7 @@
     if (!schema) {
       return
     }
-    registerPipelineName(pipelineName)
+    registerPipelineName(api, pipelineName)
     const oldSchema = pipelinesRelations[pipelineName]
     pipelinesRelations[pipelineName] = {}
     const process = (type: 'tables' | 'views', newRelations: Relation[]) => {
@@ -253,9 +256,10 @@
     }
   })
 
+  const api = usePipelineManager()
   const pasteChanges = (changes: { relationName: string; values: XgressEntry[] }[]) => {
     for (const batch of changes) {
-      relationIngress(pipelineName, batch.relationName, batch.values, 'force')
+      api.relationIngress(pipelineName, batch.relationName, batch.values, 'force')
     }
   }
   const ingestPasted = (e: ClipboardEvent) => {
@@ -293,7 +297,7 @@
           if (follow) {
             // If stream is stopped - the action will silently fail
             pipelinesRelations[pipelineName][relation.relationName].cancelStream =
-              startReadingStream(pipelineName, relation.relationName)
+              startReadingStream(api, pipelineName, relation.relationName)
           } else {
             pipelinesRelations[pipelineName][relation.relationName].cancelStream?.()
             pipelinesRelations[pipelineName][relation.relationName].cancelStream = undefined

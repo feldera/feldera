@@ -9,6 +9,7 @@
   import { base } from '$app/paths'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager.js'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte.js'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
 
   let { data } = $props()
 
@@ -21,7 +22,8 @@
   let set = (pipeline: ExtendedPipeline) => {
     pipelineCache.current = pipeline
   }
-  let pipeline = $derived(writablePipeline(pipelineCache, set))
+  const api = usePipelineManager()
+  let pipeline = $derived(writablePipeline(api, pipelineCache, set))
   const pipelineList = usePipelineList(data.preloaded)
 
   useRefreshPipeline(

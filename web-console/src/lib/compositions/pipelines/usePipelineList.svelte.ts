@@ -1,11 +1,12 @@
-import { getPipelines, type PipelineThumb } from '$lib/services/pipelineManager'
+import { type PipelineThumb } from '$lib/services/pipelineManager'
 import { onMount } from 'svelte'
 import { useToast } from '$lib/compositions/useToastNotification'
 import { closedIntervalAction } from '$lib/functions/common/promise'
+import { usePipelineManager, type PipelineManagerApi } from '../usePipelineManager.svelte'
 
 let pipelines = $state<PipelineThumb[] | undefined>(undefined)
-const reload = async () => {
-  pipelines = await getPipelines()
+const reload = async (api: PipelineManagerApi) => {
+  pipelines = await api.getPipelines()
 }
 
 export const useUpdatePipelineList = () => {
@@ -17,9 +18,9 @@ export const useUpdatePipelineList = () => {
 }
 
 export const useRefreshPipelineList = () => {
-  const { toastError } = useToast()
+  const api = usePipelineManager()
   onMount(() => {
-    return closedIntervalAction(() => reload().catch(toastError), 2000)
+    return closedIntervalAction(() => reload(api), 2000)
   })
 }
 

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { goto } from '$app/navigation'
-  import { postPipeline } from '$lib/services/pipelineManager'
   import { base } from '$app/paths'
   import type { Snippet } from 'svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   let {
     onShowInput,
@@ -63,9 +63,10 @@
     }
   }
   const { updatePipelines } = useUpdatePipelineList()
+  const api = usePipelineManager()
 
   const createPipeline = async (pipelineName: string) => {
-    const newPipeline = await postPipeline({
+    const newPipeline = await api.postPipeline({
       name: pipelineName,
       runtime_config: {},
       program_config: {},

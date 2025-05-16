@@ -8,7 +8,7 @@
 </script>
 
 <script lang="ts">
-  import { adHocQuery, type ExtendedPipeline } from '$lib/services/pipelineManager'
+  import { type ExtendedPipeline } from '$lib/services/pipelineManager'
   import Query, { type Row } from '$lib/components/adhoc/Query.svelte'
   import { type QueryData } from '$lib/components/adhoc/Query.svelte'
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
@@ -21,6 +21,7 @@
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { enclosure, reclosureKey } from '$lib/functions/common/function'
   import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   let pipelineName = $derived(pipeline.current.name)
@@ -33,11 +34,12 @@
   $effect.pre(() => {
     adhocQueries[pipelineName] ??= { queries: [{ query: '' }] }
   })
+  const api = usePipelineManager()
   const isDataRow = (record: Record<string, SQLValueJS>) =>
     !(Object.keys(record).length === 1 && ('error' in record || 'warning' in record))
 
   const onSubmitQuery = (pipelineName: string, i: number) => async (query: string) => {
-    const request = adHocQuery(pipelineName, query)
+    const request = api.adHocQuery(pipelineName, query)
     adhocQueries[pipelineName].queries[i]!.progress = true
     const result = await request
     if (!adhocQueries[pipelineName].queries[i]) {

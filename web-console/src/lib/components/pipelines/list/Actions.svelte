@@ -1,13 +1,11 @@
 <script lang="ts">
   import {
-    postPipelineAction,
     type ExtendedPipeline,
     type Pipeline,
     type PipelineAction,
     type PipelineStatus
   } from '$lib/services/pipelineManager'
   import { match, P } from 'ts-pattern'
-  import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
@@ -18,6 +16,7 @@
   import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
   import { useToast } from '$lib/compositions/useToastNotification'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   let {
     pipeline,
@@ -42,8 +41,9 @@
   } = $props()
 
   const globalDialog = useGlobalDialog()
+  const api = usePipelineManager()
   const deletePipeline = async (pipelineName: string) => {
-    await _deletePipeline(pipelineName)
+    await api.deletePipeline(pipelineName)
     onDeletePipeline?.(pipelineName)
     goto(`${base}/`)
   }
@@ -129,7 +129,7 @@
       'Shutdown',
       (name) => `${name} pipeline`,
       (pipelineName: string) => {
-        return postPipelineAction(pipelineName, 'shutdown').then(() => {
+        return api.postPipelineAction(pipelineName, 'shutdown').then(() => {
           onActionSuccess?.(pipelineName, 'shutdown')
           pipeline.optimisticUpdate({ status: 'ShuttingDown' })
         })
@@ -180,7 +180,7 @@
       onclick={async (e) => {
         const _action = action(e.ctrlKey || e.shiftKey || e.metaKey)
         const pipelineName = pipeline.current.name
-        const waitFor = await postPipelineAction(
+        const waitFor = await api.postPipelineAction(
           pipeline.current.name,
           _action === 'start_paused_start' ? 'start_paused' : _action
         )
@@ -236,7 +236,7 @@
     class="{buttonClass} {longClass} {basicBtnColor}"
     onclick={async () => {
       const pipelineName = pipeline.current.name
-      await postPipelineAction(pipelineName, 'pause')
+      await api.postPipelineAction(pipelineName, 'pause')
       onActionSuccess?.(pipelineName, 'pause')
       pipeline.optimisticUpdate({ status: 'Pausing' })
     }}
@@ -259,7 +259,7 @@
   </button>
 {/snippet}
 {#snippet _saveFile()}
-  <div>
+  <div role="button">
     <button
       class="{buttonClass} {shortClass} {shortColor} fd fd-save {iconClass}"
       class:disabled={!unsavedChanges}

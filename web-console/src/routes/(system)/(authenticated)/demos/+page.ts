@@ -1,8 +1,9 @@
-import { getDemos } from '$lib/services/pipelineManager'
+import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
 
 export const load = async ({ parent }) => {
   await parent()
+  const api = usePipelineManager()
   return {
-    demos: await getDemos()
+    demos: await api.getDemos()
   }
 }

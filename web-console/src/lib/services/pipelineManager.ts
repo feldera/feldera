@@ -1,4 +1,3 @@
-import { handled } from '$lib/functions/request'
 import {
   getPipeline as _getPipeline,
   getPipelineStats as _getPipelineStats,
@@ -43,7 +42,7 @@ export type ProgramStatus = _ProgramStatus
 import * as AxaOidc from '@axa-fr/oidc-client'
 const { OidcClient } = AxaOidc
 
-import { client, createClient } from '@hey-api/client-fetch'
+import { client, createClient, type RequestResult } from '@hey-api/client-fetch'
 import JSONbig from 'true-json-bigint'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 import invariant from 'tiny-invariant'
@@ -63,6 +62,77 @@ type PipelineDescr = PostPutPipeline
 type ExtendedPipelineDescr = PipelineSelectedInfo
 
 export type ExtendedPipelineDescrNoCode = Omit<ExtendedPipelineDescr, 'program_code'>
+
+export type CompilerOutput = ReturnType<typeof toCompilerOutput>
+
+const toCompilerOutput = (programError: ProgramError | null | undefined) => {
+  return {
+    sql: programError?.sql_compilation,
+    rust: programError?.rust_compilation,
+    systemError: programError?.system_error
+  }
+}
+
+export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>['status']
+
+const consolidatePipelineStatus = (
+  programStatus: ProgramStatus,
+  pipelineStatus: _PipelineStatus,
+  desiredStatus: _PipelineStatus,
+  pipelineError: ErrorResponse | null | undefined
+) => {
+  const status = match([pipelineStatus, desiredStatus, programStatus])
+    .with(['Shutdown', P.any, 'Pending'], () => ({
+      Queued: { cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const) }
+    }))
+    .with(['Shutdown', P.any, 'CompilingSql'], () => ({
+      CompilingSql: {
+        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+      }
+    }))
+    .with(['Shutdown', P.any, 'SqlCompiled'], () => ({
+      SqlCompiled: {
+        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+      }
+    }))
+    .with(['Shutdown', P.any, 'CompilingRust'], () => ({
+      CompilingRust: {
+        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+      }
+    }))
+    .with(['Shutdown', P.any, 'SqlError'], () => 'SqlError' as const)
+    .with(['Shutdown', P.any, 'RustError'], () => 'RustError' as const)
+    .with(['Shutdown', P.any, 'SystemError'], () => 'SystemError' as const)
+    .with(['Shutdown', 'Running', P._], () => 'Preparing' as const)
+    .with(['Shutdown', 'Paused', P._], () => 'Preparing' as const)
+    .with(['Shutdown', 'Shutdown', 'Success'], () => 'Shutdown' as const)
+    .with(['Provisioning', P.any, P._], () => 'Provisioning' as const)
+    .with(['Initializing', P.any, P._], () => 'Initializing' as const)
+    .with(['Paused', 'Running', P._], () => 'Resuming' as const)
+    .with(['Paused', 'Shutdown', P._], () => 'ShuttingDown' as const)
+    .with(['Paused', P.any, P._], () => 'Paused' as const)
+    .with(['Running', 'Paused', P._], () => 'Pausing' as const)
+    .with(['Running', 'Shutdown', P._], () => 'ShuttingDown' as const)
+    .with(['Running', P.any, P._], () => 'Running' as const)
+    .with(['ShuttingDown', P.any, P._], () => 'ShuttingDown' as const)
+    .with(
+      ['Failed', P.any, P._],
+      P.when(() => nonNull(pipelineError)),
+      () => {
+        invariant(pipelineError)
+        return { PipelineError: pipelineError }
+      }
+    )
+    .with(['Unavailable', P.any, P.any], () => 'Unavailable' as const)
+    .otherwise(() => {
+      throw new Error(
+        `Unable to consolidatePipelineStatus: ${pipelineStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
+      )
+    })
+  return {
+    status
+  }
+}
 
 export const programStatusOf = (status: PipelineStatus) =>
   match(status)
@@ -165,29 +235,39 @@ export type PipelineThumb = ReturnType<typeof toPipelineThumb>
 export type Pipeline = ReturnType<typeof toPipeline>
 export type ExtendedPipeline = ReturnType<typeof toExtendedPipeline>
 
-// export const getPipeline = async (pipeline_name: string) => {
-//   return handled(
-//     _getPipeline,
-//     `Failed to fetch ${pipeline_name} pipeline`
-//   )({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(toPipeline)
-// }
+const mapResponse = <R, T, E extends { message: string }>(
+  request: RequestResult<R, E>,
+  f: (v: R) => T,
+  g?: (e: E) => T
+) => {
+  return request.then((response) => {
+    if (response.error) {
+      if (g) {
+        return g(response.error)
+      }
+      throw new Error(response.error.message, { cause: response.error })
+    }
+    return f(response.data!)
+  })
+}
 
 export const getExtendedPipeline = async (
   pipeline_name: string,
   options?: { fetch?: (request: Request) => ReturnType<typeof fetch>; onNotFound?: () => void }
 ) => {
-  return handled(
-    _getPipeline,
-    `Failed to fetch ${pipeline_name} pipeline`
-  )({
-    path: { pipeline_name: encodeURIComponent(pipeline_name) },
-    ...options
-  }).then(toExtendedPipeline, (e) => {
-    if (typeof e === 'object' && 'error_code' in e && e.error_code === 'UnknownPipelineName') {
-      options?.onNotFound?.()
+  return mapResponse(
+    _getPipeline({
+      path: { pipeline_name: encodeURIComponent(pipeline_name) },
+      ...options
+    }),
+    toExtendedPipeline,
+    (e) => {
+      if (e.error_code === 'UnknownPipelineName') {
+        options?.onNotFound?.()
+      }
+      throw new Error(e.message, { cause: e })
     }
-    throw e
-  })
+  )
 }
 
 /**
@@ -197,154 +277,77 @@ export const postPipeline = async (pipeline: PipelineDescr) => {
   if (!pipeline.name) {
     throw new Error('Cannot create pipeline with empty name')
   }
-  return handled(
-    _postPipeline,
-    `Failed to create ${pipeline.name} pipeline`
-  )({ body: pipeline }).then(toPipelineThumb)
+  return mapResponse(_postPipeline({ body: pipeline }), toPipelineThumb)
 }
 
 /**
  * Pipeline should already exist
  */
 export const putPipeline = async (pipeline_name: string, newPipeline: PipelineDescr) => {
-  await handled(
-    _putPipeline,
-    `Failed to update ${pipeline_name} pipeline`
-  )({
-    body: newPipeline,
-    path: { pipeline_name: encodeURIComponent(pipeline_name) }
-  })
-}
-
-export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pipeline>) => {
-  return await handled(
-    _patchPipeline,
-    `Failed to update ${pipeline_name} pipeline`
-  )({
-    path: { pipeline_name: encodeURIComponent(pipeline_name) },
-    body: fromPipeline(pipeline)
-  }).then(toExtendedPipeline)
-}
-
-export const getPipelines = async (): Promise<PipelineThumb[]> => {
-  const pipelines = await handled(
-    listPipelines,
-    'Failed to fetch the list of pipelines'
-  )({ query: { selector: 'status' } })
-  return pipelines.map(toPipelineThumb)
-}
-
-export const getPipelineStatus = async (pipeline_name: string) => {
-  const pipeline = await handled(
-    _getPipeline,
-    `Failed to get ${pipeline_name} pipeline's status`
-  )({
-    path: { pipeline_name: encodeURIComponent(pipeline_name) },
-    query: { selector: 'status' }
-  })
-  return consolidatePipelineStatus(
-    pipeline.program_status,
-    pipeline.deployment_status,
-    pipeline.deployment_desired_status,
-    pipeline.deployment_error
+  await mapResponse(
+    _putPipeline({
+      body: newPipeline,
+      path: { pipeline_name: encodeURIComponent(pipeline_name) }
+    }),
+    (v) => v
   )
 }
 
-export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>['status']
+export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pipeline>) => {
+  return mapResponse(
+    _patchPipeline({
+      path: { pipeline_name: encodeURIComponent(pipeline_name) },
+      body: fromPipeline(pipeline)
+    }),
+    toExtendedPipeline
+  )
+}
+
+export const getPipelines = async (): Promise<PipelineThumb[]> => {
+  return mapResponse(listPipelines({ query: { selector: 'status' } }), (pipelines) =>
+    pipelines.map(toPipelineThumb)
+  )
+}
+
+export const getPipelineStatus = async (pipeline_name: string) => {
+  return mapResponse(
+    _getPipeline({
+      path: { pipeline_name: encodeURIComponent(pipeline_name) },
+      query: { selector: 'status' }
+    }),
+    (pipeline) =>
+      consolidatePipelineStatus(
+        pipeline.program_status,
+        pipeline.deployment_status,
+        pipeline.deployment_desired_status,
+        pipeline.deployment_error
+      )
+  )
+}
 
 export const getPipelineStats = async (pipeline_name: string) => {
-  return handled(_getPipelineStats)({
-    path: { pipeline_name: encodeURIComponent(pipeline_name) }
-  })
-    .then((status) => ({
+  return mapResponse(
+    _getPipelineStats({
+      path: { pipeline_name: encodeURIComponent(pipeline_name) }
+    }),
+    (status) => ({
       pipelineName: pipeline_name,
-      status: status as ControllerStatus | null
-    }))
-    .catch((e) => {
+      status: status as ControllerStatus | null | 'not running'
+    }),
+    (e) => {
       if (e.error_code === 'PipelineInteractionNotDeployed') {
         return {
           pipelineName: pipeline_name,
           status: 'not running' as const
         }
       }
-      throw new Error(`Failed to fetch ${pipeline_name} pipeline stats`)
-    })
-}
-
-const toCompilerOutput = (programError: ProgramError | null | undefined) => {
-  return {
-    sql: programError?.sql_compilation,
-    rust: programError?.rust_compilation,
-    systemError: programError?.system_error
-  }
-}
-
-export type CompilerOutput = ReturnType<typeof toCompilerOutput>
-
-const consolidatePipelineStatus = (
-  programStatus: ProgramStatus,
-  pipelineStatus: _PipelineStatus,
-  desiredStatus: _PipelineStatus,
-  pipelineError: ErrorResponse | null | undefined
-) => {
-  const status = match([pipelineStatus, desiredStatus, programStatus])
-    .with(['Shutdown', P.any, 'Pending'], () => ({
-      Queued: { cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const) }
-    }))
-    .with(['Shutdown', P.any, 'CompilingSql'], () => ({
-      CompilingSql: {
-        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
-      }
-    }))
-    .with(['Shutdown', P.any, 'SqlCompiled'], () => ({
-      SqlCompiled: {
-        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
-      }
-    }))
-    .with(['Shutdown', P.any, 'CompilingRust'], () => ({
-      CompilingRust: {
-        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
-      }
-    }))
-    .with(['Shutdown', P.any, 'SqlError'], () => 'SqlError' as const)
-    .with(['Shutdown', P.any, 'RustError'], () => 'RustError' as const)
-    .with(['Shutdown', P.any, 'SystemError'], () => 'SystemError' as const)
-    .with(['Shutdown', 'Running', P._], () => 'Preparing' as const)
-    .with(['Shutdown', 'Paused', P._], () => 'Preparing' as const)
-    .with(['Shutdown', 'Shutdown', 'Success'], () => 'Shutdown' as const)
-    .with(['Provisioning', P.any, P._], () => 'Provisioning' as const)
-    .with(['Initializing', P.any, P._], () => 'Initializing' as const)
-    .with(['Paused', 'Running', P._], () => 'Resuming' as const)
-    .with(['Paused', 'Shutdown', P._], () => 'ShuttingDown' as const)
-    .with(['Paused', P.any, P._], () => 'Paused' as const)
-    .with(['Running', 'Paused', P._], () => 'Pausing' as const)
-    .with(['Running', 'Shutdown', P._], () => 'ShuttingDown' as const)
-    .with(['Running', P.any, P._], () => 'Running' as const)
-    .with(['ShuttingDown', P.any, P._], () => 'ShuttingDown' as const)
-    .with(
-      ['Failed', P.any, P._],
-      P.when(() => nonNull(pipelineError)),
-      () => {
-        invariant(pipelineError)
-        return { PipelineError: pipelineError }
-      }
-    )
-    .with(['Unavailable', P.any, P.any], () => 'Unavailable' as const)
-    .otherwise(() => {
-      throw new Error(
-        `Unable to consolidatePipelineStatus: ${pipelineStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
-      )
-    })
-  return {
-    status
-  }
+      throw new Error(e.message, { cause: e })
+    }
+  )
 }
 
 export const deletePipeline = async (pipeline_name: string) => {
-  await handled(
-    _deletePipeline,
-    `Failed to delete ${pipeline_name} pipeline`
-  )({ path: { pipeline_name } })
+  await mapResponse(_deletePipeline({ path: { pipeline_name } }), (v) => v)
 }
 
 export type PipelineAction = 'start' | 'pause' | 'shutdown' | 'start_paused'
@@ -353,12 +356,12 @@ export const postPipelineAction = async (
   pipeline_name: string,
   action: PipelineAction
 ): Promise<() => Promise<void>> => {
-  await handled(
-    _postPipelineAction,
-    `Failed to ${action} ${pipeline_name} pipeline`
-  )({
-    path: { pipeline_name, action: action === 'start_paused' ? 'pause' : action }
-  })
+  await mapResponse(
+    _postPipelineAction({
+      path: { pipeline_name, action: action === 'start_paused' ? 'pause' : action }
+    }),
+    (v) => v
+  )
   return async () => {
     const desiredStatus = (
       {
@@ -395,17 +398,18 @@ export const postPipelineAction = async (
 }
 
 export const getAuthConfig = () =>
-  handled(getConfigAuthentication)({ client: unauthenticatedClient })
+  mapResponse(getConfigAuthentication({ client: unauthenticatedClient }), (v) => v)
 
-export const getConfig = () => handled(_getConfig)()
+export const getConfig = () => mapResponse(_getConfig(), (v) => v)
 
-export const getApiKeys = () => handled(listApiKeys, `Failed to fetch API keys`)()
+export const getApiKeys = () => mapResponse(listApiKeys(), (v) => v)
 
-export const postApiKey = (name: string) =>
-  handled(_postApiKey, `Failed to create API key`)({ body: { name } })
+export const postApiKey = (name: string) => mapResponse(_postApiKey({ body: { name } }), (v) => v)
 
 export const deleteApiKey = (name: string) =>
-  handled(_deleteApiKey, `Failed to delete ${name} API key`)({ path: { api_key_name: name } })
+  mapResponse(_deleteApiKey({ path: { api_key_name: name } }), () => {
+    throw new Error(`Failed to delete ${name} API key`)
+  })
 
 const getAuthenticatedFetch = () => {
   try {
@@ -506,7 +510,7 @@ const extractDemoType = (demo: { title: string }) => {
 }
 
 export const getDemos = () =>
-  handled(getConfigDemos, `Failed to fetch available demos`)().then((demos) =>
+  mapResponse(getConfigDemos(), (demos) =>
     demos.map((demo) => {
       const [title, type] = extractDemoType(demo)
       return {

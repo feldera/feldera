@@ -20,6 +20,8 @@
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import Dayjs from 'dayjs'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { useToast } from '$lib/compositions/useToastNotification'
 
   const dialog = useGlobalDialog()
 
@@ -51,11 +53,28 @@
       return { ...message, text }
     })
   )
+
+  let api = usePipelineManager()
+  let { toastMain, dismissMain } = useToast()
+  $effect(() => {
+    if (api.isNetworkHealthy) {
+      dismissMain()
+    } else {
+      toastMain(
+        'Unable to reach this Feldera instance.\nEither the cluster is unresponsive, or there is an issue with the network connection.'
+      )
+    }
+  })
 </script>
 
 <SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}
 ></SvelteKitTopLoader>
-<div class="flex h-full w-full flex-col">
+<div
+  class="flex h-full w-full flex-col {api.isNetworkHealthy
+    ? ''
+    : 'disabled pointer-events-auto select-text [&_.monaco-editor-background]:pointer-events-none [&_[role="button"]]:pointer-events-none [&_[role="separator"]]:pointer-events-none [&_a]:pointer-events-none [&_button]:pointer-events-none'}"
+  style={api.isNetworkHealthy ? '' : ''}
+>
   {#each displayedMessages as message}
     {#if message.id.startsWith('expiring_license_')}
       <LineBanner

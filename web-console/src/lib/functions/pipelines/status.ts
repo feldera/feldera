@@ -1,5 +1,4 @@
 import type { PipelineStatus } from '$lib/services/pipelineManager'
-import type { Arguments, FunctionType } from '$lib/types/common/function'
 import { P, match } from 'ts-pattern'
 
 export const getPipelineStatusLabel = (status: PipelineStatus) => {

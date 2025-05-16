@@ -12,7 +12,7 @@
   }: {
     value: string
     children?: Snippet
-    onvalue?: (value: string) => void
+    onvalue?: (value: string) => void | Promise<any>
     class?: string
     inputClass?: string
     disabled?: boolean
@@ -25,8 +25,11 @@
 
   const handleSubmit = (e: { currentTarget: EventTarget & HTMLInputElement }) => {
     if (_value !== e.currentTarget.value) {
-      value = _value = e.currentTarget.value
-      onvalue?.(e.currentTarget.value)
+      onvalue?.(e.currentTarget.value)?.then(() => {
+        if (e.currentTarget) {
+          value = _value = e.currentTarget.value
+        }
+      })
     }
     showInput = false
   }
@@ -43,7 +46,8 @@
     use:autofocus
     {value}
     onblur={(e) => {
-      handleSubmit(e)
+      e.currentTarget.value = ''
+      showInput = false
     }}
     onkeydown={(e) => {
       if (e.key === 'Enter') {
