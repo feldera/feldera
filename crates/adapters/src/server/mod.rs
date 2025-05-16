@@ -26,7 +26,7 @@ use colored::{ColoredString, Colorize};
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
-use feldera_types::checkpoint::CheckpointStatus;
+use feldera_types::checkpoint::{CheckpointResponse, CheckpointStatus};
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
@@ -947,7 +947,7 @@ async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
             seq
         }
     };
-    Ok(HttpResponse::Ok().json(seq))
+    Ok(HttpResponse::Ok().json(CheckpointResponse::new(seq)))
 }
 
 #[get("/checkpoint_status")]

@@ -86,6 +86,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_interaction::get_pipeline_heap_profile,
         endpoints::pipeline_interaction::pipeline_adhoc_sql,
         endpoints::pipeline_interaction::checkpoint_pipeline,
+        endpoints::pipeline_interaction::get_checkpoint_status,
         endpoints::pipeline_interaction::completion_token,
         endpoints::pipeline_interaction::completion_status,
 
@@ -220,6 +221,8 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::completion_token::CompletionStatusArgs,
         feldera_types::completion_token::CompletionStatus,
         feldera_types::completion_token::CompletionStatusResponse,
+        feldera_types::checkpoint::CheckpointStatus,
+        feldera_types::checkpoint::CheckpointResponse,
     ),),
     tags(
         (name = "Pipeline management", description = "Create, retrieve, update, delete and deploy pipelines."),
