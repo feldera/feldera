@@ -1,6 +1,8 @@
-use anyhow::{bail, Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use aws_msk_iam_sasl_signer::generate_auth_token;
 use feldera_types::transport::kafka::{KafkaHeader, KafkaLogLevel};
 use parquet::data_type::AsBytes;
+use rdkafka::client::OAuthToken;
 use rdkafka::message::{Header, OwnedHeaders, ToBytes};
 use rdkafka::producer::{BaseRecord, ProducerContext, ThreadedProducer};
 use rdkafka::{
@@ -11,6 +13,8 @@ use rdkafka::{
 };
 use sha2::Digest;
 use std::cmp::min;
+use std::collections::{BTreeMap, HashMap};
+use std::error::Error;
 use std::io::Write;
 use std::path::PathBuf;
 #[cfg(test)]
@@ -285,4 +289,72 @@ where
 
 fn is_retriable_send_error(error: RDKafkaErrorCode) -> bool {
     error == RDKafkaErrorCode::QueueFull
+}
+
+fn is_oauthbearer(config: &BTreeMap<String, String>) -> bool {
+    config
+        .get("sasl.mechanism")
+        .is_some_and(|s| s.eq_ignore_ascii_case("OAUTHBEARER"))
+}
+
+fn validate_aws_msk_region(
+    kafka_options: &BTreeMap<String, String>,
+    region: Option<String>,
+) -> AnyResult<Option<String>> {
+    if is_oauthbearer(kafka_options) {
+        // Try to load the region from the environment, but if it isn't set,
+        // load it from the configuration.
+        // If both are none, return an error.
+        let region = futures::executor::block_on(async {
+                aws_config::load_from_env()
+                    .await
+                    .region()
+                    .and_then(|r| {
+                        let s = r.to_string();
+                        if s.trim().is_empty() {
+                            None
+                        } else {
+                            Some(s)
+                        }
+
+                    })
+            })
+            .or(region)
+            .ok_or(
+                anyhow!(
+            "sasl.mechanism is set to OAUTHBEARER, which only supports AWS MSK for now, but no region set. Consider setting the environment variable `AWS_REGION` or `region` field in Kafka connector configuration."
+        ))?;
+
+        if region.trim().is_empty() {
+            bail!("region is empty, region must be set to connect to AWS MSK");
+        }
+
+        return Ok(Some(region));
+    }
+
+    Ok(None)
+}
+
+fn generate_oauthbearer_token(
+    config: &HashMap<String, String>,
+) -> Result<OAuthToken, Box<dyn Error>> {
+    if let Some(region) = config.get("region").cloned() {
+        let (token, expiration_time_ms) = {
+            futures::executor::block_on(async {
+                generate_auth_token(aws_types::region::Region::new(region)).await
+            })
+        }?;
+
+        return Ok(OAuthToken {
+            token,
+            principal_name: "".to_string(),
+            lifetime_ms: expiration_time_ms,
+        });
+    }
+
+    Ok(OAuthToken {
+        token: "".to_string(),
+        principal_name: "".to_string(),
+        lifetime_ms: i64::MAX,
+    })
 }
