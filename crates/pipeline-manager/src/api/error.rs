@@ -19,7 +19,7 @@ pub enum ApiError {
     InvalidChecksumParam { value: String, error: String },
     InvalidVersionParam { value: String, error: String },
     InvalidPipelineAction { action: String },
-    UnsupportedPipelineAction { action: String },
+    UnsupportedPipelineAction { action: String, reason: String },
     InvalidConnectorAction { action: String },
 }
 
@@ -59,8 +59,8 @@ impl Display for ApiError {
             Self::InvalidPipelineAction { action } => {
                 write!(f, "Invalid pipeline action '{action}'; valid actions are: 'start', 'pause', or 'shutdown'")
             }
-            Self::UnsupportedPipelineAction { action } => {
-                write!(f, "Unsupported pipeline action '{action}'")
+            Self::UnsupportedPipelineAction { action, reason } => {
+                write!(f, "Unsupported pipeline action '{action}': {reason}")
             }
             Self::InvalidConnectorAction { action } => {
                 write!(

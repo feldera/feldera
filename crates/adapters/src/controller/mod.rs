@@ -46,13 +46,11 @@ use dbsp::{
     DBSPHandle,
 };
 use enum_map::EnumMap;
-use feldera_adapterlib::errors::controller::{
-    PermanentSuspendError, SuspendError, TemporarySuspendError,
-};
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
 use feldera_types::format::json::JsonLines;
+use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;

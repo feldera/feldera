@@ -324,6 +324,7 @@ pub(crate) fn error_invalid_pipeline_action() -> ErrorResponse {
 pub(crate) fn error_unsupported_pipeline_action() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&ApiError::UnsupportedPipelineAction {
         action: "suspend".to_string(),
+        reason: "this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured".to_string()
     })
 }
 
