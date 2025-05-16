@@ -12,9 +12,9 @@ jobs:
           - runner: ubuntu-latest
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          #- runner: blacksmith-32vcpu-ubuntu-2404-arm
-          #  arch: aarch64
-          #  target: aarch64-unknown-linux-gnu
+          - runner: blacksmith-16vcpu-ubuntu-2404-arm
+            arch: aarch64
+            target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
     # can't run in container because see below
     # For some dumb reason we can't run these tests in the dev container

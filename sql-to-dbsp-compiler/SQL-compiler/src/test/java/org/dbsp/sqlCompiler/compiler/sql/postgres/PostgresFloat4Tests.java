@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.postgres;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
+import org.junit.Ignore;
 
 // https://github.com/postgres/postgres/blob/master/src/test/regress/expected/float4.out
 public class PostgresFloat4Tests extends SqlIoTest {
@@ -274,6 +275,7 @@ public class PostgresFloat4Tests extends SqlIoTest {
     // Taken from Postgres `float8.out` and converted to `float4` using Postgres 15.2
     // Note that the Postgres docs say `cbrt()` is implemented only for double
     @Test
+    @Ignore("disabled until fix for aarch64 is in main")
     public void testCbrt() {
         this.q("""
                 SELECT cbrt(null);

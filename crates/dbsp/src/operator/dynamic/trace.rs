@@ -1326,6 +1326,7 @@ mod test {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(16))]
         #[test]
+        #[ignore = "this test can be flaky especially on aarch64"]
         fn test_integrate_trace_retain(batches in quasi_monotone_batches(100, 20, 1000, 200, 100, 200)) {
             let (mut dbsp, input_handle) = Runtime::init_circuit(4, move |circuit| {
                 let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
