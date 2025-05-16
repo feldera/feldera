@@ -6,14 +6,14 @@
       // A fix for monaco-editor
       return
     }
-    toastError(new Error(event.message, { cause: { name: 'Window error' } }))
+    // toastError(new Error(event.message, { cause: { name: 'Window error' } }))
   })
   window.addEventListener('unhandledrejection', (event) => {
-    toastError(new Error(event.reason, { cause: { name: 'Unhandled rejection' } }))
+    // toastError(new Error(event.reason, { cause: { name: 'Unhandled rejection' } }))
   })
   window.addEventListener('rejectionhandled', (event) => {
     if (event.reason) {
-      toastError(new Error(event.reason, { cause: { name: 'Rejection handled' } }))
+      // toastError(new Error(event.reason, { cause: { name: 'Rejection handled' } }))
     }
   })
   let { children } = $props()
@@ -22,7 +22,7 @@
 <svelte:boundary
   onerror={(error) => {
     if (error instanceof Error) {
-      toastError(error)
+      // toastError(error)
     }
   }}
 >

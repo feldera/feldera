@@ -14,7 +14,6 @@
   } from '$lib/compositions/health/systemErrors'
   import { extractErrorMarkers, felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
   import {
-    postPipelineAction,
     programStatusOf,
     type ExtendedPipeline,
     type Pipeline,
@@ -44,6 +43,7 @@
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   let {
     preloaded,
@@ -63,6 +63,7 @@
 
   const { updatePipelines } = useUpdatePipelineList()
 
+  const api = usePipelineManager()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const handleActionSuccess = async (
     pipelineName: string,
@@ -74,7 +75,7 @@
     )
     await Promise.allSettled(cbs.map((x) => x(pipelineName)))
     if (action === 'start_paused_start') {
-      postPipelineAction(pipelineName, 'start')
+      api.postPipelineAction(pipelineName, 'start')
     }
   }
   const handleDeletePipeline = async (pipelineName: string) => {
@@ -92,6 +93,7 @@
   )
 
   let metrics = useAggregatePipelineStats(pipeline, 1000, 64000)
+
   let files = $derived.by(() => {
     const current = pipeline.current
     const patch = pipeline.patch
@@ -169,6 +171,7 @@ example = "1.0"`
     ]
   })
   let pipelineName = $derived(pipeline.current.name)
+
   $effect.pre(() => {
     currentPipelineFile[pipelineName] ??= 'program.sql'
   })
@@ -250,13 +253,13 @@ example = "1.0"`
                   return
                 }
                 const newUrl = `${base}/pipelines/${encodeURIComponent(name)}/`
-                pipeline.patch({ name }).then(() => {
+                return pipeline.patch({ name }).then(() => {
                   goto(newUrl, { replaceState: true })
                 })
               }}
               disabled={editDisabled}
               class="inline overflow-hidden overflow-ellipsis"
-              inputClass="input flex -ml-1 mr-2 py-0 pl-1 text-base"
+              inputClass="input flex -ml-1 mr-2 py-0 pl-1 text-base mt-1"
             >
               <span class="text-base">
                 {pipeline.current.name}

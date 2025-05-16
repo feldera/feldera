@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { deleteApiKey, getApiKeys } from '$lib/services/pipelineManager'
   import { asyncReadable } from '@square/svelte-store'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import NewApiKeyForm from '$lib/components/apiKey/NewApiKeyForm.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
-  const apiKeys = asyncReadable([], getApiKeys, { reloadable: true })
+  const api = usePipelineManager()
+  const apiKeys = asyncReadable([], api.getApiKeys, { reloadable: true })
 
   const globalDialog = useGlobalDialog()
   let thisDialog = globalDialog.dialog
@@ -26,7 +27,7 @@
     {#each $apiKeys as key}
       {#snippet deleteDialog()}
         <DeleteDialog
-          {...deleteDialogProps('Delete', (name) => `${name} API key`, deleteApiKey)(key.name)}
+          {...deleteDialogProps('Delete', (name) => `${name} API key`, api.deleteApiKey)(key.name)}
           onClose={() => (globalDialog.dialog = thisDialog)}
         ></DeleteDialog>
       {/snippet}

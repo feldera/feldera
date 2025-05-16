@@ -1,14 +1,17 @@
 import {
-  getExtendedPipeline,
-  patchPipeline,
   type ExtendedPipeline,
   type Pipeline,
   type PipelineThumb
 } from '$lib/services/pipelineManager'
 import { untrack } from 'svelte'
 import invariant from 'tiny-invariant'
+import {
+  usePipelineManager,
+  type PipelineManagerApi
+} from '$lib/compositions/usePipelineManager.svelte'
 
 export const writablePipeline = (
+  api: PipelineManagerApi,
   pipeline: { current: ExtendedPipeline },
   set: (pipeline: ExtendedPipeline) => void
 ) => {
@@ -24,7 +27,7 @@ export const writablePipeline = (
       return pipeline.current
     },
     async patch(newPipeline: Partial<Pipeline>) {
-      const res = await patchPipeline(pipelineName, newPipeline)
+      const res = await api.patchPipeline(pipelineName, newPipeline)
       set(res)
       return res
     },
@@ -45,9 +48,10 @@ export const useRefreshPipeline = (
   onNotFound?: () => void
 ) => {
   const pipelineName = $derived(getPipeline().current.name)
+  const api = usePipelineManager()
   const reload = async () => {
     const requestedPipelineName = pipelineName
-    let loaded = await getExtendedPipeline(requestedPipelineName, {
+    let loaded = await api.getExtendedPipeline(requestedPipelineName, {
       onNotFound: () => {
         if (requestedPipelineName !== pipelineName) {
           return

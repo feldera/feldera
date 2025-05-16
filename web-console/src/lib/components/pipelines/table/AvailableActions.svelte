@@ -1,7 +1,5 @@
 <script lang="ts">
   import {
-    deletePipeline,
-    postPipelineAction,
     type PipelineAction,
     type PipelineStatus,
     type PipelineThumb
@@ -14,6 +12,7 @@
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import { isPipelineEditable } from '$lib/functions/pipelines/status'
   import { useToast } from '$lib/compositions/useToastNotification'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   let {
     pipelines,
     selectedPipelines = $bindable()
@@ -83,19 +82,20 @@
       )
   )
   const globalDialog = useGlobalDialog()
+  const api = usePipelineManager()
   let postPipelinesAction = (action: PipelineAction) => {
-    selectedPipelines.forEach((pipelineName) => postPipelineAction(pipelineName, action))
+    selectedPipelines.forEach((pipelineName) => api.postPipelineAction(pipelineName, action))
     selectedPipelines = []
   }
   const { toastError } = useToast()
   let deletePipelines = () => {
     selected.forEach(async (pipeline) => {
       if (!isPipelineEditable(pipeline.status)) {
-        await postPipelineAction(pipeline.name, 'shutdown').then((waitFor) =>
-          waitFor().catch(toastError)
-        )
+        await api
+          .postPipelineAction(pipeline.name, 'shutdown')
+          .then((waitFor) => waitFor().catch(toastError))
       }
-      return deletePipeline(pipeline.name)
+      return api.deletePipeline(pipeline.name)
     })
     updatePipelines((ps) => ps.filter((p) => !selectedPipelines.includes(p.name)))
     selectedPipelines = []

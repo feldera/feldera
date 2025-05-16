@@ -30,11 +30,7 @@
     pushAsCircularBuffer,
     SplitNewlineTransformStream
   } from '$lib/functions/pipelines/changeStream'
-  import {
-    pipelineLogsStream,
-    type ExtendedPipeline,
-    type PipelineStatus
-  } from '$lib/services/pipelineManager'
+  import { type ExtendedPipeline, type PipelineStatus } from '$lib/services/pipelineManager'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { untrack } from 'svelte'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
@@ -42,6 +38,7 @@
   import Dayjs from 'dayjs'
   import { unionName, type NamesInUnion } from '$lib/functions/common/union'
   import { match } from 'ts-pattern'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   let pipelineName = $derived(pipeline.current.name)
@@ -102,11 +99,12 @@
       )
       .exhaustive()
 
+  const api = usePipelineManager()
   const startStream = (pipelineName: string) => {
     if ('open' in streams[pipelineName].stream) {
       return
     }
-    pipelineLogsStream(pipelineName).then((result) => {
+    api.pipelineLogsStream(pipelineName).then((result) => {
       if (result instanceof Error) {
         streams[pipelineName].stream = { closed: {} }
         streams[pipelineName].rows.push(result.message)

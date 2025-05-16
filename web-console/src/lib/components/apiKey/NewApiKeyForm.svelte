@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { postApiKey } from '$lib/services/pipelineManager'
   import { superForm, setError } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
   import { Field, FieldErrors, Control, Label } from 'formsnap'
@@ -7,12 +6,14 @@
   import * as va from 'valibot'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   let { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
 
   const schema = va.object({
     name: va.pipe(va.string(), va.minLength(1, 'Specify API key name'))
   })
+  const api = usePipelineManager()
   const form = superForm(
     { name: '' },
     {
@@ -23,7 +24,7 @@
           return
         }
         onSubmit?.()
-        postApiKey(form.data.name).then(
+        api.postApiKey(form.data.name).then(
           (response) => {
             lastGenerated.push({ name: response.name, key: response.api_key })
             onSuccess?.()

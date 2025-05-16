@@ -4,6 +4,7 @@
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import JSONbig from 'true-json-bigint'
   import MultiJSONDialog from '$lib/components/dialogs/MultiJSONDialog.svelte'
+  import { useToast } from '$lib/compositions/useToastNotification'
 
   let {
     pipeline,
@@ -17,6 +18,7 @@
   } = $props()
 
   const globalDialog = useGlobalDialog()
+  const { toastError } = useToast()
 </script>
 
 <button
@@ -45,10 +47,15 @@
       }
     }}
     onApply={async (json) => {
-      await pipeline.patch({
-        runtimeConfig: JSONbig.parse(json.runtimeConfig),
-        programConfig: JSONbig.parse(json.programConfig)
-      })
+      let patch: Partial<Pipeline> = {}
+      try {
+        patch.runtimeConfig = JSONbig.parse(json.runtimeConfig)
+        patch.programConfig = JSONbig.parse(json.programConfig)
+      } catch (e) {
+        toastError(e as any)
+        throw e
+      }
+      await pipeline.patch(patch)
     }}
     onClose={() => (globalDialog.dialog = null)}
   >

@@ -1,12 +1,13 @@
 import { goto } from '$app/navigation'
 import { base } from '$app/paths'
-import { getExtendedPipeline } from '$lib/services/pipelineManager'
+import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
 
 export const prerender = false
 
 export const load = async ({ params, route, url, fetch, parent }) => {
   await parent()
-  const preloadedPipeline = await getExtendedPipeline(decodeURIComponent(params.pipelineName), {
+  const api = usePipelineManager()
+  const preloadedPipeline = await api.getExtendedPipeline(decodeURIComponent(params.pipelineName), {
     fetch,
     onNotFound: () => {
       goto(`${base}/`)

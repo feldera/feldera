@@ -3,11 +3,9 @@ import { groupBy } from '$lib/functions/common/array'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
 import type { ErrorResponse } from '$lib/services/manager'
 import {
-  getExtendedPipeline,
   type CompilerOutput,
   type ExtendedPipeline,
   type Pipeline,
-  type PipelineStatus,
   type SqlCompilerMessage
 } from '$lib/services/pipelineManager'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
@@ -88,10 +86,10 @@ export const programErrorReport = (pipeline: Pipeline) => (pipelineName: string,
       '\n```'
   }) as ReportDetails
 
-const fetchedProgramErrorReport = async (pipelineName: string, message: string) => {
-  const pipeline = await getExtendedPipeline(pipelineName)
-  return programErrorReport(pipeline)(pipelineName, message)
-}
+// const fetchedProgramErrorReport = async (pipelineName: string, message: string) => {
+//   const pipeline = await getExtendedPipeline(pipelineName)
+//   return programErrorReport(pipeline)(pipelineName, message)
+// }
 
 export const showSqlCompilerMessage = (e: SqlCompilerMessage) =>
   `${e.warning ? 'warning' : 'error'}: ${e.error_type ? e.error_type + '\n' : ''}${e.message}${e.snippet ? '\n' + e.snippet : ''}`

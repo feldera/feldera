@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
   import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
   import { Switch } from '@skeletonlabs/skeleton-svelte'
