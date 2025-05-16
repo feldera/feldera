@@ -227,6 +227,7 @@ Example of reading data from AWS MSK with IAM SASL.
 - AWS credentials must either be set as Environment Variables or present in `~/.aws/credentials`.
 - `sasl.mechanism` must be set to `OAUTHBEARER`.
 - `security.protocol` must be set to `SASL_SSL`.
+- `region` field must be set when the `sasl.mechanism` is `OAUTHBEARER`.
 
 Other protocols and mechanisms aren't supported.
 :::
@@ -243,6 +244,7 @@ CREATE TABLE INPUT (
               "bootstrap.servers": "broker-1.kafka.region.amazonaws.com:9098,broker-2.kafka.region.amazonaws.com:9098",
               "sasl.mechanism": "OAUTHBEARER",
               "security.protocol": "SASL_SSL",
+              "region": "<AWS_REGION>",
               "topic": "<TOPIC>"
           }
       },

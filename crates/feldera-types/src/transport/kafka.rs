@@ -52,6 +52,9 @@ pub struct KafkaInputConfig {
     /// Where to begin reading the topic.
     #[serde(default)]
     pub start_from: KafkaStartFromConfig,
+
+    /// The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
+    pub region: Option<String>,
 }
 
 impl KafkaInputConfig {
@@ -179,6 +182,8 @@ impl KafkaInputConfig {
         // standard location (e.g., /etc/ssl/).
         self.set_option_if_missing("ssl.ca.location", "probe");
 
+        validate_oauthbearer(&self.kafka_options, &self.region)?;
+
         Ok(())
     }
 }
@@ -303,6 +308,9 @@ pub struct KafkaOutputConfig {
 
     /// If specified, this service is used to provide defaults for the Kafka options.
     pub kafka_service: Option<String>,
+
+    /// The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
+    pub region: Option<String>,
 }
 
 /// Fault tolerance configuration for Kafka output connector.
@@ -344,6 +352,8 @@ impl KafkaOutputConfig {
         // We set the ssl.ca.location to "probe" so that librdkafka can find the CA certificates in a
         // standard location (e.g., /etc/ssl/).
         self.set_option_if_missing("ssl.ca.location", "probe");
+
+        validate_oauthbearer(&self.kafka_options, &self.region)?;
 
         Ok(())
     }
@@ -415,6 +425,9 @@ mod compat {
         /// Options passed directly to `rdkafka`.
         #[serde(flatten)]
         kafka_options: BTreeMap<String, String>,
+
+        /// The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
+        region: Option<String>,
     }
 
     impl TryFrom<KafkaInputConfigCompat> for super::KafkaInputConfig {
@@ -479,7 +492,20 @@ mod compat {
                 group_join_timeout_secs: compat.group_join_timeout_secs,
                 poller_threads: compat.poller_threads,
                 start_from,
+                region: compat.region,
             })
         }
+    }
+}
+
+fn validate_oauthbearer(
+    kafka_options: &BTreeMap<String, String>,
+    region: &Option<String>,
+) -> AnyResult<()> {
+    match kafka_options.get("sasl.mechanism").map(|v| v.eq_ignore_ascii_case("oauthbearer")) {
+        Some(true) if region.is_none() => {
+            Err(AnyError::msg("sasl.mechanism is oauthbearer, but region is not set: currently oauthbearer only supports AWS MSK"))
+        }
+        _ => Ok(()),
     }
 }

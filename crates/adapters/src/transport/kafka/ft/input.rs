@@ -1,4 +1,5 @@
 use crate::transport::kafka::ft::count_partitions_in_topic;
+use crate::transport::kafka::generate_oauthbearer_token;
 use crate::transport::InputCommandReceiver;
 use crate::{
     transport::{
@@ -9,7 +10,6 @@ use crate::{
 };
 use crate::{InputBuffer, ParseError, Parser};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
-use aws_msk_iam_sasl_signer::generate_auth_token;
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
 use feldera_adapterlib::transport::{InputEndpoint, InputReaderCommand, Resume};
@@ -80,16 +80,15 @@ struct KafkaFtInputContext {
 
     deferred_logging: DeferredLogging,
 
-    // True if the sasl.mechanism is oauthbearer.
-    oauthbearer: bool,
+    kafka_config: Arc<KafkaInputConfig>,
 }
 
 impl KafkaFtInputContext {
-    fn new(oauthbearer: bool) -> Self {
+    fn new(kafka_config: Arc<KafkaInputConfig>) -> Self {
         Self {
             endpoint: Mutex::new(Weak::new()),
             deferred_logging: DeferredLogging::new(),
-            oauthbearer,
+            kafka_config,
         }
     }
 }
@@ -109,32 +108,10 @@ impl ClientContext for KafkaFtInputContext {
     }
 
     fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
-        // TODO: Currently, OAUTHBEARER only works with AWS MSK.
-        if self.oauthbearer {
-            let region = {
-                let region = std::env::var("AWS_REGION").ok();
-                let default = std::env::var("AWS_DEFAULT_REGION").ok();
-                aws_types::region::Region::new(
-                    region.or(default).unwrap_or("us-east-1".to_string()),
-                )
-            };
-            let (token, expiration_time_ms) =
-            // TODO: Set a timeout here.
-                { futures::executor::block_on(async { generate_auth_token(region).await }) }?;
-
-            return Ok(OAuthToken {
-                token,
-                principal_name: "".to_string(),
-                lifetime_ms: expiration_time_ms,
-            });
-        }
-
-        // Return a default / empty token.
-        Ok(OAuthToken {
-            token: "".to_string(),
-            principal_name: "".to_string(),
-            lifetime_ms: i64::MAX,
-        })
+        generate_oauthbearer_token(
+            &self.kafka_config.kafka_options,
+            self.kafka_config.region.clone(),
+        )
     }
 }
 
@@ -553,12 +530,7 @@ impl KafkaFtInputReader {
         //
         // This has the desirable side effect of ensuring that we can reach the
         // broker and failing with an error if we cannot.
-        let context = KafkaFtInputContext::new(
-            config
-                .kafka_options
-                .get("sasl.mechanism")
-                .is_some_and(|s| s.to_uppercase() == "OAUTHBEARER"),
-        );
+        let context = KafkaFtInputContext::new(config.clone());
         let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)?;
 
         // IMPORTANT: Poll before trying to fetch metadata. Necessary so that OAUTHBREAKER token

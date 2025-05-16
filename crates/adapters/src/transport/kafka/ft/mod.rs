@@ -9,8 +9,7 @@ mod input;
 mod output;
 
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
-use aws_msk_iam_sasl_signer::generate_auth_token;
-use feldera_types::transport::kafka::{default_redpanda_server, KafkaLogLevel};
+use feldera_types::transport::kafka::{default_redpanda_server, KafkaLogLevel, KafkaOutputConfig};
 use rdkafka::client::OAuthToken;
 use rdkafka::{
     client::Client as KafkaClient,
@@ -38,7 +37,7 @@ use uuid::Uuid;
 pub use input::KafkaFtInputEndpoint;
 pub use output::KafkaOutputEndpoint as KafkaFtOutputEndpoint;
 
-use super::{rdkafka_loglevel_from, DeferredLogging};
+use super::{generate_oauthbearer_token, rdkafka_loglevel_from, DeferredLogging};
 
 #[cfg(test)]
 pub mod test;
@@ -430,18 +429,18 @@ where
 {
     error_cb: F,
     deferred_logging: DeferredLogging,
-    oauthbearer: bool,
+    kafka_config: KafkaOutputConfig,
 }
 
 impl<F> DataConsumerContext<F>
 where
     F: Fn(AnyError) + Send + Sync,
 {
-    fn new(error_cb: F, oauthbearer: bool) -> Self {
+    fn new(error_cb: F, kafka_config: KafkaOutputConfig) -> Self {
         Self {
             error_cb,
             deferred_logging: DeferredLogging::new(),
-            oauthbearer,
+            kafka_config,
         }
     }
 }
@@ -469,30 +468,10 @@ where
     }
 
     fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
-        // TODO: Currently, OAUTHBEARER only works with AWS MSK.
-        if self.oauthbearer {
-            let region = {
-                let region = std::env::var("AWS_REGION").ok();
-                let default = std::env::var("AWS_DEFAULT_REGION").ok();
-                aws_types::region::Region::new(
-                    region.or(default).unwrap_or("us-east-1".to_string()),
-                )
-            };
-            let (token, expiration_time_ms) =
-                { futures::executor::block_on(async { generate_auth_token(region).await }) }?;
-
-            return Ok(OAuthToken {
-                token,
-                principal_name: "".to_string(),
-                lifetime_ms: expiration_time_ms,
-            });
-        }
-
-        Ok(OAuthToken {
-            token: "".to_string(),
-            principal_name: "".to_string(),
-            lifetime_ms: i64::MAX,
-        })
+        generate_oauthbearer_token(
+            &self.kafka_config.kafka_options,
+            self.kafka_config.region.clone(),
+        )
     }
 }
 

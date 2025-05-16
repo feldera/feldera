@@ -1,10 +1,9 @@
-use crate::transport::kafka::{build_headers, kafka_send};
+use crate::transport::kafka::{build_headers, generate_oauthbearer_token, kafka_send};
 use crate::{
     transport::{kafka::DeferredLogging, Step},
     AsyncErrorCallback, OutputEndpoint,
 };
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
-use aws_msk_iam_sasl_signer::generate_auth_token;
 use feldera_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::client::OAuthToken;
 use rdkafka::message::OwnedHeaders;
@@ -94,7 +93,7 @@ fn span(topic: &str) -> EnteredSpan {
 impl KafkaOutputEndpoint {
     pub fn new(config: KafkaOutputConfig) -> AnyResult<Self> {
         let _guard = span(&config.topic);
-        let ft = config.fault_tolerance.unwrap_or_default();
+        let ft = config.clone().fault_tolerance.unwrap_or_default();
         let mut common = CommonConfig::new(
             &config.kafka_options,
             &ft.consumer_options,
@@ -117,11 +116,6 @@ impl KafkaOutputEndpoint {
         let max_message_size = message_max_bytes - MAX_MESSAGE_OVERHEAD;
         debug!("Configured max message size: {max_message_size} ('message.max.bytes={message_max_bytes}')");
 
-        let oauthbearer = config
-            .kafka_options
-            .get("sasl.mechanism")
-            .is_some_and(|s| s.to_uppercase() == "OAUTHBEARER");
-
         // Initialize our producer.
         //
         // This makes first contact with the broker and gives up after a
@@ -132,13 +126,7 @@ impl KafkaOutputEndpoint {
         // Since we initialize transactions, this has the effect of achieving
         // mutual exclusion with other instances of ourselves and any other
         // producers cooperating with us by using the same `transactional.id`.
-        let context = DataProducerContext::new(
-            // NOTE: Currently, OAUTHBEARER only works with AWS MSK.
-            config
-                .kafka_options
-                .get("sasl.mechanism")
-                .is_some_and(|s| s.to_uppercase() == "OAUTHBEARER"),
-        );
+        let context = DataProducerContext::new(config.clone());
         let kafka_producer =
             ThreadedProducer::from_config_and_context(&common.producer_config, context)?;
         kafka_producer
@@ -152,8 +140,11 @@ impl KafkaOutputEndpoint {
 
         // Read the number of partitions and the next step number.  We do this
         // after initializing transactions to avoid a race.
-        let (n_partitions, next_step) =
-            Self::read_next_step(&config.topic, &common.seekable_consumer_config, oauthbearer)?;
+        let (n_partitions, next_step) = Self::read_next_step(
+            &config.topic,
+            &common.seekable_consumer_config,
+            config.clone(),
+        )?;
 
         Ok(Self {
             kafka_producer,
@@ -173,9 +164,9 @@ impl KafkaOutputEndpoint {
     fn read_next_step(
         topic: &str,
         seekable_consumer_config: &ClientConfig,
-        oauthbearer: bool,
+        kafka_config: KafkaOutputConfig,
     ) -> AnyResult<(usize, Step)> {
-        let context = DataConsumerContext::new(|error| warn!("{error}"), oauthbearer);
+        let context = DataConsumerContext::new(|error| warn!("{error}"), kafka_config);
         let consumer = BaseConsumer::from_config_and_context(seekable_consumer_config, context)?;
         let n_partitions = count_partitions_in_topic(&consumer, topic)?;
         let mut next_step = 0;
@@ -334,15 +325,15 @@ struct DataProducerContext {
 
     deferred_logging: DeferredLogging,
 
-    oauthbearer: bool,
+    kafka_config: KafkaOutputConfig,
 }
 
 impl DataProducerContext {
-    fn new(oauthbearer: bool) -> Self {
+    fn new(kafka_config: KafkaOutputConfig) -> Self {
         Self {
             async_error_callback: RwLock::new(None),
             deferred_logging: DeferredLogging::new(),
-            oauthbearer,
+            kafka_config,
         }
     }
 }
@@ -366,30 +357,10 @@ impl ClientContext for DataProducerContext {
     }
 
     fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
-        // TODO: Currently, OAUTHBEARER only works with AWS MSK.
-        if self.oauthbearer {
-            let region = {
-                let region = std::env::var("AWS_REGION").ok();
-                let default = std::env::var("AWS_DEFAULT_REGION").ok();
-                aws_types::region::Region::new(
-                    region.or(default).unwrap_or("us-east-1".to_string()),
-                )
-            };
-            let (token, expiration_time_ms) =
-                { futures::executor::block_on(async { generate_auth_token(region).await }) }?;
-
-            return Ok(OAuthToken {
-                token,
-                principal_name: "".to_string(),
-                lifetime_ms: expiration_time_ms,
-            });
-        }
-
-        Ok(OAuthToken {
-            token: "".to_string(),
-            principal_name: "".to_string(),
-            lifetime_ms: i64::MAX,
-        })
+        generate_oauthbearer_token(
+            &self.kafka_config.kafka_options,
+            self.kafka_config.region.clone(),
+        )
     }
 }
 
