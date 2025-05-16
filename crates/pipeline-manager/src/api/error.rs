@@ -19,6 +19,7 @@ pub enum ApiError {
     InvalidChecksumParam { value: String, error: String },
     InvalidVersionParam { value: String, error: String },
     InvalidPipelineAction { action: String },
+    UnsupportedPipelineAction { action: String },
     InvalidConnectorAction { action: String },
 }
 
@@ -31,6 +32,7 @@ impl DetailedError for ApiError {
             Self::InvalidChecksumParam { .. } => Cow::from("InvalidChecksumParam"),
             Self::InvalidVersionParam { .. } => Cow::from("InvalidVersionParam"),
             Self::InvalidPipelineAction { .. } => Cow::from("InvalidPipelineAction"),
+            Self::UnsupportedPipelineAction { .. } => Cow::from("UnsupportedPipelineAction"),
             Self::InvalidConnectorAction { .. } => Cow::from("InvalidConnectorAction"),
         }
     }
@@ -56,6 +58,9 @@ impl Display for ApiError {
             }
             Self::InvalidPipelineAction { action } => {
                 write!(f, "Invalid pipeline action '{action}'; valid actions are: 'start', 'pause', or 'shutdown'")
+            }
+            Self::UnsupportedPipelineAction { action } => {
+                write!(f, "Unsupported pipeline action '{action}'")
             }
             Self::InvalidConnectorAction { action } => {
                 write!(
@@ -84,6 +89,7 @@ impl ResponseError for ApiError {
             Self::InvalidChecksumParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidVersionParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidPipelineAction { .. } => StatusCode::BAD_REQUEST,
+            Self::UnsupportedPipelineAction { .. } => StatusCode::METHOD_NOT_ALLOWED,
             Self::InvalidConnectorAction { .. } => StatusCode::BAD_REQUEST,
         }
     }
