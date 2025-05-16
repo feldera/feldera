@@ -609,6 +609,7 @@ where
         .service(pause)
         .service(shutdown)
         .service(status)
+        .service(suspendable)
         .service(completion_token)
         .service(completion_status)
         .service(query)
@@ -660,6 +661,22 @@ async fn status(state: WebData<ServerState>) -> impl Responder {
         Some(controller) => {
             let status = controller.status().global_metrics.get_state();
             Ok(HttpResponse::Ok().json(status))
+        }
+        None => Err(missing_controller_error(&state)),
+    }
+}
+
+/// Retrieve whether a pipeline is suspendable or not.
+#[get("/suspendable")]
+async fn suspendable(state: WebData<ServerState>) -> impl Responder {
+    match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            let is_suspendable: bool = controller.status().suspend_error.lock().is_ok_and(|e| {
+                e.is_none() // It is suspendable if there is no suspend error
+            });
+            Ok(HttpResponse::Ok().json(json!({
+                "suspendable": is_suspendable
+            })))
         }
         None => Err(missing_controller_error(&state)),
     }

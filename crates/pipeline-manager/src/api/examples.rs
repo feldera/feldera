@@ -321,6 +321,12 @@ pub(crate) fn error_invalid_pipeline_action() -> ErrorResponse {
     })
 }
 
+pub(crate) fn error_unsupported_pipeline_action() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&ApiError::UnsupportedPipelineAction {
+        action: "suspend".to_string(),
+    })
+}
+
 pub(crate) fn error_illegal_pipeline_action() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::IllegalPipelineAction {
             hint: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.".to_string(),

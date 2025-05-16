@@ -3611,6 +3611,10 @@ export type $OpenApiTs = {
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
+        /**
+         * Action is not supported
+         */
+        '405': ErrorResponse
         '500': ErrorResponse
         /**
          * Action is not implemented because it is only available in the Enterprise edition
