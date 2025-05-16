@@ -1367,7 +1367,8 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "Checkpoint a running or paused pipeline.",
+        "summary": "Initiates checkpoint for a running or paused pipeline.",
+        "description": "Returns a sequence number that can be used with `/checkpoint_status` to\ndetermine when the checkpoint has completed.",
         "operationId": "checkpoint_pipeline",
         "parameters": [
           {
@@ -1382,7 +1383,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Checkpoint completed"
+            "description": "Checkpoint initiated"
           },
           "404": {
             "description": "Pipeline with that name does not exist",
