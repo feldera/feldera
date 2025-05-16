@@ -196,6 +196,7 @@ mod tests {
             validate_runtime_config(&json!({ "fault_tolerance": {} }), true)
                 .unwrap()
                 .fault_tolerance
+                .model
                 .is_some()
         );
 
