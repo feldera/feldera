@@ -245,6 +245,51 @@ mod test {
         }
     }
 
+    // See https://github.com/feldera/feldera/issues/4028
+    #[test]
+    fn issue4028() {
+        // Changes to the edges relation.
+        let insert_edges = (0..100)
+            .map(|i| Tup2(Tup2(i, i + 1), 1))
+            .collect::<Vec<_>>();
+        let delete_edges = (0..100)
+            .map(|i| Tup2(Tup2(i, i + 1), -1))
+            .collect::<Vec<_>>();
+
+        let (root, (edges_handle, paths_handle)) = RootCircuit::build(move |circuit| {
+            let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
+
+            let paths = circuit
+                .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+                    let edges = edges.delta0(child);
+
+                    let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
+                    let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+
+                    Ok(edges.plus(
+                        &paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                    ))
+                })
+                .unwrap();
+
+            let paths_handle = paths.integrate().output();
+
+            Ok((edges_handle, paths_handle))
+        })
+        .unwrap();
+
+        for _ in 0..10 {
+            edges_handle.append(&mut insert_edges.clone());
+            root.step().unwrap();
+
+            edges_handle.append(&mut delete_edges.clone());
+            root.step().unwrap();
+
+            let paths = paths_handle.consolidate();
+            assert!(paths.is_empty());
+        }
+    }
+
     // Somewhat lame multiple recursion example to test RecursiveStreams impl for
     // tuples: compute forward and backward reachability at the same time.
     #[test]
