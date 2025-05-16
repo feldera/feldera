@@ -26,6 +26,8 @@ use chrono::{DateTime, Utc};
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
+#[cfg(feature = "feldera-enterprise")]
+use feldera_types::suspend::SuspendableResponse;
 use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -898,6 +900,7 @@ pub(crate) async fn post_pipeline_action(
             }
             #[cfg(feature = "feldera-enterprise")]
             {
+                use crate::runner::error::RunnerError;
                 // Check whether the pipeline can be suspended
                 let response = state
                     .runner
@@ -911,22 +914,25 @@ pub(crate) async fn post_pipeline_action(
                         None,
                     )
                     .await?;
-                let mut is_suspendable = false;
-                if response.status().is_success() {
+                let suspendable_response = if response.status().is_success() {
                     let body = response.into_body();
                     if let Ok(b) = body.try_into_bytes() {
-                        if let Ok(s) = std::str::from_utf8(&b) {
-                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-                                if v == json!({
-                                   "suspendable": true
-                                }) {
-                                    is_suspendable = true;
-                                }
-                            }
+                        if let Ok(v) = serde_json::from_slice::<SuspendableResponse>(&b) {
+                            v
+                        } else {
+                            Err(RunnerError::PipelineInteractionInvalidResponse { error: format!("Pipeline returned an invalid response to a /suspendable request: {}", String::from_utf8_lossy(&b)) })?
                         }
+                    } else {
+                        Err(RunnerError::PipelineInteractionInvalidResponse {
+                            error: format!(
+                                "Error processing pipelines's response to a /suspendable request: failed to extract response body"
+                            ),
+                        })?
                     }
-                }
-                if is_suspendable {
+                } else {
+                    return Ok(response);
+                };
+                if suspendable_response.suspendable {
                     state
                         .db
                         .lock()
@@ -934,8 +940,17 @@ pub(crate) async fn post_pipeline_action(
                         .set_deployment_desired_status_suspended(*tenant_id, &pipeline_name)
                         .await?
                 } else {
+                    let reasons = suspendable_response
+                        .reasons
+                        .iter()
+                        .map(|reason| format!("   - {}", reason.to_string()))
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     Err(ManagerError::from(ApiError::UnsupportedPipelineAction {
                         action: action.clone(),
+                        reason: format!(
+                            "this pipeline does not support the suspend operation for the following reason(s):\n{reasons}"
+                        ),
                     }))?
                 }
             }
