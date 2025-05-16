@@ -3747,6 +3747,7 @@ dependencies = [
  "async-trait",
  "atomic",
  "awc",
+ "aws-config 0.55.3",
  "aws-credential-types 1.2.3",
  "aws-msk-iam-sasl-signer",
  "aws-sdk-s3",

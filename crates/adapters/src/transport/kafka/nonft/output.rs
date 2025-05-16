@@ -1,9 +1,9 @@
 use crate::transport::kafka::{
-    build_headers, kafka_send, rdkafka_loglevel_from, DeferredLogging, PemToLocation,
+    build_headers, generate_oauthbearer_token, kafka_send, rdkafka_loglevel_from,
+    validate_aws_msk_region, DeferredLogging, PemToLocation,
 };
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
-use aws_msk_iam_sasl_signer::generate_auth_token;
 use feldera_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::client::OAuthToken;
 use rdkafka::message::{Header, OwnedHeaders};
@@ -14,6 +14,7 @@ use rdkafka::{
     types::RDKafkaErrorCode,
     ClientConfig, ClientContext,
 };
+use std::collections::HashMap;
 use std::error::Error;
 use std::{sync::RwLock, time::Duration};
 use tracing::span::EnteredSpan;
@@ -34,16 +35,23 @@ struct KafkaOutputContext {
 
     deferred_logging: DeferredLogging,
 
-    oauthbearer: bool,
+    oauthbearer_config: HashMap<String, String>,
 }
 
 impl KafkaOutputContext {
-    fn new(oauthbearer: bool) -> Self {
-        Self {
-            oauthbearer,
+    fn new(kafka_config: &KafkaOutputConfig) -> AnyResult<Self> {
+        let mut oauthbearer_config = HashMap::new();
+        if let Some(region) =
+            validate_aws_msk_region(&kafka_config.kafka_options, kafka_config.region.clone())?
+        {
+            oauthbearer_config.insert("region".to_owned(), region);
+        };
+
+        Ok(Self {
+            oauthbearer_config,
             async_error_callback: RwLock::new(None),
             deferred_logging: DeferredLogging::new(),
-        }
+        })
     }
 }
 
@@ -71,30 +79,7 @@ impl ClientContext for KafkaOutputContext {
     }
 
     fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
-        // TODO: Currently, OAUTHBEARER only works with AWS MSK.
-        if self.oauthbearer {
-            let region = {
-                let region = std::env::var("AWS_REGION").ok();
-                let default = std::env::var("AWS_DEFAULT_REGION").ok();
-                aws_types::region::Region::new(
-                    region.or(default).unwrap_or("us-east-1".to_string()),
-                )
-            };
-            let (token, expiration_time_ms) =
-                { futures::executor::block_on(async { generate_auth_token(region).await }) }?;
-
-            return Ok(OAuthToken {
-                token,
-                principal_name: "".to_string(),
-                lifetime_ms: expiration_time_ms,
-            });
-        }
-
-        Ok(OAuthToken {
-            token: "".to_string(),
-            principal_name: "".to_string(),
-            lifetime_ms: i64::MAX,
-        })
+        generate_oauthbearer_token(&self.oauthbearer_config)
     }
 }
 
@@ -147,12 +132,7 @@ impl KafkaOutputEndpoint {
         }
 
         // Context object to intercept message delivery events.
-        let context = KafkaOutputContext::new(
-            config
-                .kafka_options
-                .get("sasl.mechanism")
-                .is_some_and(|s| s.to_uppercase() == "OAUTHBEARER"),
-        );
+        let context = KafkaOutputContext::new(&config)?;
 
         let message_max_bytes = client_config
             .get("message.max.bytes")

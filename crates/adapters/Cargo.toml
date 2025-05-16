@@ -39,6 +39,7 @@ feldera-adapterlib = { workspace = true }
 feldera-datagen = { workspace = true }
 feldera-iceberg = { workspace = true, optional = true }
 awc = { workspace = true, features = ["compress-gzip", "compress-brotli", "cookies", "rustls-0_23-webpki-roots"] }
+aws-config = { workspace = true }
 async-stream = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 circular-queue = { workspace = true, features = ["serde_support"] }

@@ -99,6 +99,8 @@ Example of writing data to AWS MSK with IAM SASL.
 - Ensure that the defined output topic either exists in AWS MSK or, automatic topic creation is enabled.
 - `sasl.mechanism` must be set to `OAUTHBEARER`.
 - `security.protocol` must be set to `SASL_SSL`.
+- When the `sasl.mechanism` is `OAUTHBEARER`, the AWS region for MSK must either be set via the environment
+  variable `AWS_REGION` or the `region` field in connector definition as in the example below.
 
 Other protocols and mechanisms aren't supported.
 :::
@@ -115,6 +117,7 @@ WITH (
               "bootstrap.servers": "broker-1.kafka.region.amazonaws.com:9098,broker-2.kafka.region.amazonaws.com:9098",
               "sasl.mechanism": "OAUTHBEARER",
               "security.protocol": "SASL_SSL",
+              "region": "<AWS_REGION>",
               "topic": "<TOPIC>"
           }
       },

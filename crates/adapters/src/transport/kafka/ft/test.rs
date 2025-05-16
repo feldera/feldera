@@ -1136,6 +1136,7 @@ fn test_offset(
                 group_join_timeout_secs: default_group_join_timeout_secs(),
                 poller_threads: None,
                 start_from: start_from.clone(),
+                region: None,
             }),
             format: Some(FormatConfig {
                 name: Cow::from("csv"),
