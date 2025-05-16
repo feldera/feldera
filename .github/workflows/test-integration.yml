@@ -13,9 +13,9 @@ jobs:
           - runner: [self-hosted, skylake40]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: blacksmith-32vcpu-ubuntu-2404-arm
-            arch: aarch64
-            target: aarch64-unknown-linux-gnu
+          #- runner: blacksmith-32vcpu-ubuntu-2204-arm
+          #  arch: aarch64
+          #  target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
 
     container:
