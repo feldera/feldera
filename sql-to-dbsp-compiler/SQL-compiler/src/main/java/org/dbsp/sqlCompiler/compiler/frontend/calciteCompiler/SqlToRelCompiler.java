@@ -818,7 +818,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 else
                     retval = this.typeFactory.createRelStruct(
                             udtObject.getTypeName(), result.getFieldList(), result.isNullable());
-                ProgramIdentifier name = new ProgramIdentifier(retval.getFullTypeString(), false);
+                ProgramIdentifier name = new ProgramIdentifier(retval.getFullTypeString());
                 if (!this.udt.containsKey(name))
                     Utilities.putNew(this.udt, name, retval);
                 return retval;
@@ -1270,6 +1270,10 @@ public class SqlToRelCompiler implements IWritesLogs {
                 } else {
                     columnDefinition.put(columnName, id);
                 }
+            } else {
+                String name = field.getName();
+                // This is a heuristic
+                nameIsQuoted = ProgramIdentifier.needsQuotes(name);
             }
 
             String actualColumnName = field.getName();
@@ -1852,7 +1856,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 } catch (NumberFormatException ignored) {
                     ProgramIdentifier canonical =
                             new ProgramIdentifier(options.canonicalName(
-                                    val.getString(), false), false);
+                                    val.getString(), false));
                     for (int i = 0; i < columns.size(); i++) {
                         if (columns.get(i).getName().equals(canonical)) {
                             emitFinal = i;

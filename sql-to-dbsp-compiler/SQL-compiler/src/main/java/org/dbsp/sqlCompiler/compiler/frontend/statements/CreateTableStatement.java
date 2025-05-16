@@ -63,8 +63,8 @@ public class CreateTableStatement extends CreateRelationStatement {
     }
 
     @Override
-    public JsonNode asJson() {
-        JsonNode node = super.asJson();
+    public JsonNode asJson(boolean addColumnCaseSensitivity) {
+        JsonNode node = super.asJson(addColumnCaseSensitivity);
         ObjectNode object = (ObjectNode) node;
         object.put("materialized", this.isMaterialized());
         ArrayNode fk = object.putArray("foreign_keys");

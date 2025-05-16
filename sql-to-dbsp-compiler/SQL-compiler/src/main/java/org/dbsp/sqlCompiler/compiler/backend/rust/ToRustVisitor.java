@@ -533,7 +533,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(registerFunction)
                     .append("::<_, ");
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
-            JsonNode j = tableDescription.asJson();
+            JsonNode j = tableDescription.asJson(true);
             j = this.stripProperties(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
             operator.originalRowType.accept(this.innerVisitor);
@@ -623,7 +623,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.generateStructHelpers(upsertStruct, operator.metadata);
 
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
-            JsonNode j = tableDescription.asJson();
+            JsonNode j = tableDescription.asJson(true);
             j = this.stripProperties(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
             String registerFunction = operator.metadata.materialized ?
@@ -833,7 +833,7 @@ public class ToRustVisitor extends CircuitVisitor {
             } else {
                 this.computeHash(operator);
                 IHasSchema description = this.metadata.getViewDescription(operator.viewName);
-                JsonNode j = description.asJson();
+                JsonNode j = description.asJson(true);
                 j = this.stripProperties(j);
                 DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
                 String registerFunction = switch (operator.metadata.viewKind) {

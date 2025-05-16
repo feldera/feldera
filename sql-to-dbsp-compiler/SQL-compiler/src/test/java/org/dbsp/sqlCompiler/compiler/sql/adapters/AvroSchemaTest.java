@@ -106,7 +106,7 @@ public class AvroSchemaTest {
                 """
                {
                  "name" : "FooBar",
-                 "case_sensitive" : false,
+                 "case_sensitive" : true,
                  "fields" : [ {
                    "name" : "foo",
                    "case_sensitive" : false,
@@ -128,10 +128,10 @@ public class AvroSchemaTest {
                """
                {
                  "name" : "Employee",
-                 "case_sensitive" : false,
+                 "case_sensitive" : true,
                  "fields" : [ {
                    "name" : "Name",
-                   "case_sensitive" : false,
+                   "case_sensitive" : true,
                    "columntype" : {
                      "nullable" : false,
                      "precision" : -1,
@@ -140,7 +140,7 @@ public class AvroSchemaTest {
                    "unused" : false
                  }, {
                    "name" : "Age",
-                   "case_sensitive" : false,
+                   "case_sensitive" : true,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "INTEGER"
@@ -151,7 +151,7 @@ public class AvroSchemaTest {
                """
                {
                  "name" : "User",
-                 "case_sensitive" : false,
+                 "case_sensitive" : true,
                  "fields" : [ {
                    "name" : "first_name",
                    "case_sensitive" : false,
@@ -191,10 +191,10 @@ public class AvroSchemaTest {
                """
                {
                  "name" : "Type2",
-                 "case_sensitive" : false,
+                 "case_sensitive" : true,
                  "fields" : [ {
                    "name" : "myString",
-                   "case_sensitive" : false,
+                   "case_sensitive" : true,
                    "columntype" : {
                      "nullable" : false,
                      "precision" : -1,
@@ -203,7 +203,7 @@ public class AvroSchemaTest {
                    "unused" : false
                  }, {
                    "name" : "myBoolean",
-                   "case_sensitive" : false,
+                   "case_sensitive" : true,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "BOOLEAN"
@@ -211,7 +211,7 @@ public class AvroSchemaTest {
                    "unused" : false
                  }, {
                    "name" : "myInt",
-                   "case_sensitive" : false,
+                   "case_sensitive" : true,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "INTEGER"
@@ -219,7 +219,7 @@ public class AvroSchemaTest {
                    "unused" : false
                  }, {
                    "name" : "myLong",
-                   "case_sensitive" : false,
+                   "case_sensitive" : true,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "BIGINT"
@@ -227,7 +227,7 @@ public class AvroSchemaTest {
                    "unused" : false
                  }, {
                    "name" : "myFloat",
-                   "case_sensitive" : false,
+                   "case_sensitive" : true,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "REAL"
@@ -235,7 +235,7 @@ public class AvroSchemaTest {
                    "unused" : false
                  }, {
                    "name" : "myDouble",
-                   "case_sensitive" : false,
+                   "case_sensitive" : true,
                    "columntype" : {
                      "nullable" : false,
                      "type" : "DOUBLE"
@@ -243,7 +243,7 @@ public class AvroSchemaTest {
                    "unused" : false
                  }, {
                    "name" : "myBytes",
-                   "case_sensitive" : false,
+                   "case_sensitive" : true,
                    "columntype" : {
                      "nullable" : false,
                      "precision" : 1,
@@ -260,7 +260,7 @@ public class AvroSchemaTest {
             String json = expected[i];
             Schema schema = schemaParser.parse(avro);
             AvroSchemaWrapper wrapper = new AvroSchemaWrapper(new JavaTypeFactoryImpl(), schema);
-            Assert.assertEquals(json, wrapper.asJson().toPrettyString());
+            Assert.assertEquals(json, wrapper.asJson(true).toPrettyString());
         }
     }
 }

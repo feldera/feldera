@@ -676,10 +676,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ArrayNode inputs = mapper.createArrayNode();
         for (IHasSchema input: this.metadata.inputTables.values())
-            inputs.add(input.asJson());
+            inputs.add(input.asJson(false));
         ArrayNode outputs = mapper.createArrayNode();
         for (IHasSchema output: this.metadata.outputViews.values())
-            outputs.add(output.asJson());
+            outputs.add(output.asJson(false));
         ObjectNode ios = mapper.createObjectNode();
         ios.set("inputs", inputs);
         ios.set("outputs", outputs);

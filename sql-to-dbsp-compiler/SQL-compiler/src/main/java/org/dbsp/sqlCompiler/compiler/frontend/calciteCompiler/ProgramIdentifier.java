@@ -5,15 +5,24 @@ import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.util.IJson;
 import org.dbsp.util.Utilities;
 
+import java.util.Locale;
 import java.util.Objects;
 
 public final class ProgramIdentifier implements IJson {
     private final String name;
     private final boolean isQuoted;
 
+    public static boolean needsQuotes(String name) {
+        return !name.equals(name.toLowerCase(Locale.ENGLISH));
+    }
+
     public ProgramIdentifier(String name, boolean isQuoted) {
         this.name = name;
         this.isQuoted = isQuoted;
+    }
+
+    public ProgramIdentifier(String name) {
+        this(name, needsQuotes(name));
     }
 
     public static final ProgramIdentifier EMPTY = new ProgramIdentifier("", false);

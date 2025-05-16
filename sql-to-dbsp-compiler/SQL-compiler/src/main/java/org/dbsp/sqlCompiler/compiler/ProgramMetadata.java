@@ -31,11 +31,11 @@ public class ProgramMetadata implements IJson {
         for (IHasSchema input: this.inputTables.values()) {
             if (input.is(DeclareViewStatement.class))
                 continue;
-            inputs.add(input.asJson());
+            inputs.add(input.asJson(false));
         }
         ArrayNode outputs = mapper.createArrayNode();
         for (IHasSchema output: this.outputViews.values())
-            outputs.add(output.asJson());
+            outputs.add(output.asJson(false));
         ObjectNode ios = mapper.createObjectNode();
         ios.set("inputs", inputs);
         ios.set("outputs", outputs);

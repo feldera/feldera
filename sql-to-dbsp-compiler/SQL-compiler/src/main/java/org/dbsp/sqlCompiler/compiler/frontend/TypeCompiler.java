@@ -71,6 +71,7 @@ import org.dbsp.util.Utilities;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 public class TypeCompiler implements ICompilerComponent {
@@ -250,7 +251,7 @@ public class TypeCompiler implements ICompilerComponent {
                         // we will get an exception below where we create the struct.
                         fieldName = fieldNameGen.freshName(fieldName, true);
                     fields.add(new DBSPTypeStruct.Field(
-                            CalciteObject.create(dt), new ProgramIdentifier(fieldName, false), index++, type));
+                            CalciteObject.create(dt), new ProgramIdentifier(fieldName), index++, type));
                 }
                 String saneName = this.compiler.generateStructName(new ProgramIdentifier("*", false), fields);
                 struct = new DBSPTypeStruct(node, new ProgramIdentifier(saneName, false), saneName, fields, nullable);
