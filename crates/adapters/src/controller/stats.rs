@@ -44,10 +44,13 @@ use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use feldera_adapterlib::{
-    errors::{controller::SuspendError, journal::ControllerError},
+    errors::journal::ControllerError,
     transport::{InputReader, Resume},
 };
-use feldera_types::config::{FtModel, PipelineConfig};
+use feldera_types::{
+    config::{FtModel, PipelineConfig},
+    suspend::SuspendError,
+};
 use memory_stats::memory_stats;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
 use metrics_util::{debugging::DebugValue, CompositeKey};

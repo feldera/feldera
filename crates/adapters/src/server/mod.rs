@@ -34,6 +34,7 @@ use feldera_types::query_params::{MetricsFormat, MetricsParameters};
 use feldera_types::secret_resolver::{
     resolve_secret_references_in_connector_config, DEFAULT_SECRETS_DIRECTORY_PATH,
 };
+use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::{
     config::{default_max_batch_size, TransportConfig},
     transport::http::HttpInputConfig,
@@ -671,12 +672,16 @@ async fn status(state: WebData<ServerState>) -> impl Responder {
 async fn suspendable(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
-            let is_suspendable: bool = controller.status().suspend_error.lock().is_ok_and(|e| {
-                e.is_none() // It is suspendable if there is no suspend error
-            });
-            Ok(HttpResponse::Ok().json(json!({
-                "suspendable": is_suspendable
-            })))
+            let suspend_error = controller.status().suspend_error.lock().unwrap().clone();
+
+            let reasons = match suspend_error {
+                Some(SuspendError::Permanent(errors)) => Some(errors.clone()),
+                _ => None,
+            };
+            Ok(HttpResponse::Ok().json(SuspendableResponse::new(
+                reasons.is_none(),
+                reasons.unwrap_or_default(),
+            )))
         }
         None => Err(missing_controller_error(&state)),
     }
