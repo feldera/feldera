@@ -215,11 +215,13 @@ where
                         break;
                     }
                 }
-                debug_assert!(any_values, "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those");
-                if self.has_mut[index] {
-                    builder.push_key_mut(self.cursors[index].key_mut());
-                } else {
-                    builder.push_key(self.cursors[index].key());
+                debug_assert!(time_map_func.is_some() || any_values, "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those");
+                if any_values {
+                    if self.has_mut[index] {
+                        builder.push_key_mut(self.cursors[index].key_mut());
+                    } else {
+                        builder.push_key(self.cursors[index].key());
+                    }
                 }
                 self.cursors[index].step_key();
                 if !self.cursors[index].key_valid() {
