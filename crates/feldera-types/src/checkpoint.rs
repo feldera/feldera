@@ -10,3 +10,17 @@ pub struct CheckpointStatus {
     /// Most recently failed checkpoint, and the associated error.
     pub failure: Option<(u64, String)>,
 }
+
+/// Response to a checkpoint request.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
+pub struct CheckpointResponse {
+    pub checkpoint_sequence_number: u64,
+}
+
+impl CheckpointResponse {
+    pub fn new(checkpoint_sequence_number: u64) -> Self {
+        Self {
+            checkpoint_sequence_number,
+        }
+    }
+}

@@ -1368,7 +1368,7 @@
           "Pipeline interaction"
         ],
         "summary": "Initiates checkpoint for a running or paused pipeline.",
-        "description": "Returns a sequence number that can be used with `/checkpoint_status` to\ndetermine when the checkpoint has completed.",
+        "description": "Returns a checkpoint sequence number that can be used with `/checkpoint_status` to\ndetermine when the checkpoint has completed.",
         "operationId": "checkpoint_pipeline",
         "parameters": [
           {
@@ -1383,7 +1383,127 @@
         ],
         "responses": {
           "200": {
-            "description": "Checkpoint initiated"
+            "description": "Checkpoint initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Shutdown",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/checkpoint_status": {
+      "get": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Retrieve status of checkpoint activity in a pipeline.",
+        "operationId": "get_checkpoint_status",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Checkpoint status retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointStatus"
+                }
+              }
+            }
           },
           "404": {
             "description": "Pipeline with that name does not exist",
@@ -3545,6 +3665,50 @@
             }
           }
         ]
+      },
+      "CheckpointResponse": {
+        "type": "object",
+        "description": "Response to a checkpoint request.",
+        "required": [
+          "checkpoint_sequence_number"
+        ],
+        "properties": {
+          "checkpoint_sequence_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "CheckpointStatus": {
+        "type": "object",
+        "description": "Checkpoint status returned by the `/checkpoint_status` endpoint.",
+        "properties": {
+          "failure": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Most recently failed checkpoint, and the associated error.",
+            "nullable": true
+          },
+          "success": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Most recently successful checkpoint.",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
       },
       "Chunk": {
         "type": "object",

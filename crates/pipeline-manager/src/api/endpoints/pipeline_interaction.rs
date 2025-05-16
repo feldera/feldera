@@ -671,7 +671,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
 
 /// Initiates checkpoint for a running or paused pipeline.
 ///
-/// Returns a sequence number that can be used with `/checkpoint_status` to
+/// Returns a checkpoint sequence number that can be used with `/checkpoint_status` to
 /// determine when the checkpoint has completed.
 #[utoipa::path(
     context_path = "/v0",
@@ -681,7 +681,8 @@ pub(crate) async fn get_pipeline_circuit_profile(
     ),
     responses(
         (status = OK
-            , description = "Checkpoint initiated"),
+            , description = "Checkpoint initiated"
+            , body = CheckpointResponse),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse

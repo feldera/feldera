@@ -30,6 +30,8 @@ use awc::error::SendRequestError;
 use awc::{http, ClientRequest, ClientResponse};
 use aws_sdk_cognitoidentityprovider::config::Region;
 use chrono::Utc;
+#[cfg(feature = "feldera-enterprise")]
+use feldera_types::checkpoint::{CheckpointResponse, CheckpointStatus};
 use feldera_types::completion_token::{
     CompletionStatus, CompletionStatusResponse, CompletionTokenResponse,
 };
@@ -3441,20 +3443,51 @@ async fn pipeline_orchestration_scenarios() {
 #[serial]
 async fn checkpoint() {
     let config = setup().await;
-    create_and_deploy_test_pipeline(&config, "").await;
-    let mut response = config.post_no_body("/v0/pipelines/test/checkpoint").await;
-    let value: Value = response.json().await.unwrap();
-    assert_ne!(value["error_code"], json!("InvalidPipelineAction"));
+    create_and_deploy_test_pipeline(
+        &config,
+        "create table t(x int) with ('materialized' = 'true');",
+    )
+    .await;
 
     #[cfg(not(feature = "feldera-enterprise"))]
     {
+        let mut response = config.post_no_body("/v0/pipelines/test/checkpoint").await;
+        let value: Value = response.json().await.unwrap();
+        assert_ne!(value["error_code"], json!("InvalidPipelineAction"));
+
         assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
         assert_eq!(value["error_code"], json!("EnterpriseFeature"));
     }
 
     #[cfg(feature = "feldera-enterprise")]
     {
-        assert_ne!(response.status(), StatusCode::NOT_IMPLEMENTED);
+        for _ in 0..10 {
+            let mut response = config.post_no_body("/v0/pipelines/test/checkpoint").await;
+            assert_ne!(response.status(), StatusCode::NOT_IMPLEMENTED);
+
+            assert!(response.status().is_success());
+
+            let resp: CheckpointResponse = response.json().await.unwrap();
+            let sequence_number = resp.checkpoint_sequence_number;
+
+            let start = Instant::now();
+            loop {
+                let mut response = config
+                    .get(format!("/v0/pipelines/test/checkpoint_status"))
+                    .await;
+                assert!(response.status().is_success());
+                let checkpoint_status = response.json::<CheckpointStatus>().await.unwrap();
+                if checkpoint_status.success == Some(sequence_number) {
+                    println!("Checkpoint completed successfully.");
+                    break;
+                }
+
+                if start.elapsed() > Duration::from_secs(10) {
+                    panic!("Timeout waiting for checkpoint to complete. Current checkpoint status: {checkpoint_status:?}");
+                }
+                sleep(Duration::from_millis(100)).await;
+            }
+        }
     }
 }
 
