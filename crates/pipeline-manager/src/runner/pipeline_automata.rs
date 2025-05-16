@@ -10,7 +10,6 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_deployment_config, validate_program_info, validate_runtime_config,
 };
-use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
@@ -27,32 +26,19 @@ use tokio::{sync::Notify, time::timeout};
 #[derive(Debug, PartialEq)]
 enum State {
     TransitionToProvisioning {
-        version_guard: Version,
         deployment_config: serde_json::Value,
     },
     TransitionToInitializing {
-        version_guard: Version,
         deployment_location: String,
     },
-    TransitionToPaused {
-        version_guard: Version,
-    },
-    TransitionToRunning {
-        version_guard: Version,
-    },
-    TransitionToUnavailable {
-        version_guard: Version,
-    },
+    TransitionToPaused,
+    TransitionToRunning,
+    TransitionToUnavailable,
     TransitionToFailed {
-        version_guard: Version,
         error: ErrorResponse,
     },
-    TransitionToShuttingDown {
-        version_guard: Version,
-    },
-    TransitionToShutdown {
-        version_guard: Version,
-    },
+    TransitionToShuttingDown,
+    TransitionToShutdown,
     Unchanged,
 }
 
@@ -95,6 +81,11 @@ where
     /// Maximum time to wait for the pipeline resources to be provisioned.
     /// This can differ significantly between the type of runner.
     default_provisioning_timeout: Duration,
+
+    /// How often has the automaton encountered a database error during operation.
+    /// This will decide its backoff timeout. It will be reset to zero if a run
+    /// cycle succeeds.
+    database_error_counter: u64,
 }
 
 impl<T: PipelineExecutor> PipelineAutomaton<T> {
@@ -152,6 +143,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             first_run_cycle: true,
             provision_called: None,
             default_provisioning_timeout,
+            database_error_counter: 0,
         }
     }
 
@@ -167,32 +159,52 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             match self.do_run().await {
                 Ok(new_poll_timeout) => {
                     poll_timeout = new_poll_timeout;
+                    self.database_error_counter = 0; // Cycle succeeded
                 }
                 Err(e) => {
-                    // Only database errors can bubble up here. They are always fatal
-                    // to the automaton because the database itself is used to update
-                    // the pipeline status and communicate failures to the user.
+                    // Only database errors can bubble up here. The database itself
+                    // is used to update the pipeline status and communication failures
+                    // to the user, as such it does not have a way to communicate the
+                    // database errors here. There are two categories of database errors:
+                    // not being able to reach the database (e.g., due to temporary outage),
+                    // or a database operation is expected to succeed but is not.
                     //
-                    // TODO: as a consequence, if the database is temporarily unreachable,
-                    //       the pipeline automatons will terminate. It is not possible to
-                    //       recreate a pipeline automaton currently except by restarting
-                    //       the runner. There could be a retry strategy here for the database,
-                    //       where it not immediately terminates but instead waits in hopes
-                    //       of the database returning.
+                    // As we cannot communicate the errors, instead we log the error and
+                    // backoff before trying again. In the case of a temporary outage,
+                    // it should again be reachable eventually. In the case of a failing
+                    // database operation, it might be that the user can change the operation
+                    // by setting a different desired state (e.g., shutting it down).
+                    // In the latter case, it needs to still be investigated why a database
+                    // operation did not work, and the relevant operation fixed.
                     match &e {
                         // Pipeline deletions should not lead to errors in the logs.
                         DBError::UnknownPipeline { pipeline_id } => {
                             info!("Automaton ended: pipeline {pipeline_id}");
+
+                            // By leaving the run loop, the automaton will consume itself.
+                            // As such, the pipeline_handle it owns will be dropped,
+                            // which in turn will shut down by itself as a consequence.
+                            return Err(ManagerError::from(e));
                         }
-                        _ => {
-                            error!("Automaton ended (unexpected): pipeline {pipeline_id} -- due to database error: {e}")
+                        e => {
+                            let backoff_timeout = match self.database_error_counter {
+                                0 => Duration::from_secs(5),
+                                1..=5 => Duration::from_secs(10),
+                                6..=10 => Duration::from_secs(30),
+                                11..=15 => Duration::from_secs(60),
+                                16..=20 => Duration::from_secs(120),
+                                21..=25 => Duration::from_secs(300),
+                                26..=30 => Duration::from_secs(600),
+                                _ => Duration::from_secs(1200),
+                            };
+                            self.database_error_counter += 1;
+                            error!(
+                                "Automaton of pipeline {pipeline_id} encountered a database error: {e} -- retrying run cycle in {} seconds...",
+                                backoff_timeout.as_secs()
+                            );
+                            poll_timeout = backoff_timeout;
                         }
                     };
-
-                    // By leaving the run loop, the automaton will consume itself.
-                    // As such, the pipeline_handle it owns will be dropped,
-                    // which in turn will shut down by itself as a consequence.
-                    return Err(ManagerError::from(e));
                 }
             }
         }
@@ -270,9 +282,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
             // Provisioning
             (PipelineStatus::Provisioning, PipelineDesiredStatus::Shutdown) => {
-                State::TransitionToShuttingDown {
-                    version_guard: pipeline.version,
-                }
+                State::TransitionToShuttingDown
             }
             (
                 PipelineStatus::Provisioning,
@@ -300,9 +310,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
             // Initializing
             (PipelineStatus::Initializing, PipelineDesiredStatus::Shutdown) => {
-                State::TransitionToShuttingDown {
-                    version_guard: pipeline.version,
-                }
+                State::TransitionToShuttingDown
             }
             (
                 PipelineStatus::Initializing,
@@ -314,9 +322,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
             // Paused
             (PipelineStatus::Paused, PipelineDesiredStatus::Shutdown) => {
-                State::TransitionToShuttingDown {
-                    version_guard: pipeline.version,
-                }
+                State::TransitionToShuttingDown
             }
             (PipelineStatus::Paused, PipelineDesiredStatus::Paused) => {
                 self.probe_initialized_pipeline(pipeline).await
@@ -328,9 +334,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
             // Running
             (PipelineStatus::Running, PipelineDesiredStatus::Shutdown) => {
-                State::TransitionToShuttingDown {
-                    version_guard: pipeline.version,
-                }
+                State::TransitionToShuttingDown
             }
             (PipelineStatus::Running, PipelineDesiredStatus::Paused) => {
                 self.perform_action_initialized_pipeline(pipeline, false)
@@ -342,9 +346,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
             // Unavailable
             (PipelineStatus::Unavailable, PipelineDesiredStatus::Shutdown) => {
-                State::TransitionToShuttingDown {
-                    version_guard: pipeline.version,
-                }
+                State::TransitionToShuttingDown
             }
             (
                 PipelineStatus::Unavailable,
@@ -353,9 +355,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
             // Failed
             (PipelineStatus::Failed, PipelineDesiredStatus::Shutdown) => {
-                State::TransitionToShuttingDown {
-                    version_guard: pipeline.version,
-                }
+                State::TransitionToShuttingDown
             }
             (PipelineStatus::Failed, PipelineDesiredStatus::Paused) => State::Unchanged,
             (PipelineStatus::Failed, PipelineDesiredStatus::Running) => State::Unchanged,
@@ -367,17 +367,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         };
 
         // Store the transition in the database
-        if transition != State::Unchanged {
-            debug!(
-                "Performing database operation to store {transition:?} for pipeline {}...",
-                pipeline.id
-            );
-        }
+        let version_guard = pipeline.version;
         let new_status = match transition {
-            State::TransitionToProvisioning {
-                version_guard,
-                deployment_config,
-            } => {
+            State::TransitionToProvisioning { deployment_config } => {
                 match self
                     .db
                     .lock()
@@ -428,7 +420,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
             }
             State::TransitionToInitializing {
-                version_guard,
                 deployment_location,
             } => {
                 self.db
@@ -443,7 +434,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .await?;
                 PipelineStatus::Initializing
             }
-            State::TransitionToPaused { version_guard } => {
+            State::TransitionToPaused => {
                 self.db
                     .lock()
                     .await
@@ -451,7 +442,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .await?;
                 PipelineStatus::Paused
             }
-            State::TransitionToRunning { version_guard } => {
+            State::TransitionToRunning => {
                 self.db
                     .lock()
                     .await
@@ -463,7 +454,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .await?;
                 PipelineStatus::Running
             }
-            State::TransitionToUnavailable { version_guard } => {
+            State::TransitionToUnavailable => {
                 self.db
                     .lock()
                     .await
@@ -475,10 +466,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .await?;
                 PipelineStatus::Unavailable
             }
-            State::TransitionToFailed {
-                version_guard,
-                error,
-            } => {
+            State::TransitionToFailed { error } => {
                 self.db
                     .lock()
                     .await
@@ -491,7 +479,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .await?;
                 PipelineStatus::Failed
             }
-            State::TransitionToShuttingDown { version_guard } => {
+            State::TransitionToShuttingDown => {
                 self.db
                     .lock()
                     .await
@@ -503,7 +491,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .await?;
                 PipelineStatus::ShuttingDown
             }
-            State::TransitionToShutdown { version_guard } => {
+            State::TransitionToShutdown => {
                 self.db
                     .lock()
                     .await
@@ -696,7 +684,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         match &pipeline.program_status {
             ProgramStatus::SqlError => {
                 return Ok(State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &DBError::StartFailedDueToFailedCompilation {
                             compiler_error:
@@ -708,7 +695,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
             ProgramStatus::RustError => {
                 return Ok(State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &DBError::StartFailedDueToFailedCompilation {
                             compiler_error:
@@ -720,7 +706,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
             ProgramStatus::SystemError => {
                 return Ok(State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &DBError::StartFailedDueToFailedCompilation {
                             compiler_error:
@@ -770,7 +755,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Ok(runtime_config) => runtime_config,
             Err(e) => {
                 return Ok(State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &RunnerError::AutomatonInvalidRuntimeConfig {
                             value: pipeline.runtime_config.clone(),
@@ -785,7 +769,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let (inputs, outputs) = match &pipeline.program_info {
             None => {
                 return Ok(State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &RunnerError::AutomatonMissingProgramInfo,
                     ),
@@ -796,7 +779,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     Ok(program_info) => program_info,
                     Err(e) => {
                         return Ok(State::TransitionToFailed {
-                            version_guard: pipeline.version,
                             error: ErrorResponse::from_error_nolog(
                                 &RunnerError::AutomatonInvalidProgramInfo {
                                     value: program_info.clone(),
@@ -825,7 +807,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Ok(deployment_config) => deployment_config,
             Err(error) => {
                 return Ok(State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &RunnerError::AutomatonFailedToSerializeDeploymentConfig {
                             error: error.to_string(),
@@ -835,10 +816,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
         };
 
-        Ok(State::TransitionToProvisioning {
-            version_guard: pipeline.version,
-            deployment_config,
-        })
+        Ok(State::TransitionToProvisioning { deployment_config })
     }
 
     /// Starts the pipeline provisioning by calling `provision()`
@@ -857,7 +835,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // version has changed, provisioning will fail.
         if pipeline.platform_version != self.platform_version {
             return State::TransitionToFailed {
-                version_guard: pipeline.version,
                 error: ErrorResponse::from_error_nolog(
                     &RunnerError::AutomatonCannotProvisionDifferentPlatformVersion {
                         pipeline_platform_version: pipeline.platform_version.clone(),
@@ -871,7 +848,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let deployment_config = match &pipeline.deployment_config {
             None => {
                 return State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &RunnerError::AutomatonMissingDeploymentConfig,
                     ),
@@ -881,7 +857,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 Ok(deployment_config) => deployment_config,
                 Err(e) => {
                     return State::TransitionToFailed {
-                        version_guard: pipeline.version,
                         error: ErrorResponse::from_error_nolog(
                             &RunnerError::AutomatonInvalidDeploymentConfig {
                                 value: deployment_config.clone(),
@@ -895,7 +870,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let program_binary_url = match pipeline.program_binary_url.clone() {
             None => {
                 return State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(
                         &RunnerError::AutomatonMissingProgramBinaryUrl,
                     ),
@@ -927,7 +901,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 State::Unchanged
             }
             Err(e) => State::TransitionToFailed {
-                version_guard: pipeline.version,
                 error: ErrorResponse::from_error_nolog(&e),
             },
         }
@@ -946,7 +919,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         );
         match self.pipeline_handle.is_provisioned().await {
             Ok(Some(location)) => State::TransitionToInitializing {
-                version_guard: pipeline.version,
                 deployment_location: location,
             },
             Ok(None) => {
@@ -961,7 +933,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         pipeline.id
                     );
                     State::TransitionToFailed {
-                        version_guard: pipeline.version,
                         error: RunnerError::AutomatonProvisioningTimeout {
                             timeout: provisioning_timeout,
                         }
@@ -977,7 +948,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     pipeline.id
                 );
                 State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(&e),
                 }
             }
@@ -994,7 +964,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Check deployment when initialized
         if let Err(e) = self.pipeline_handle.check().await {
             return State::TransitionToFailed {
-                version_guard: pipeline.version,
                 error: ErrorResponse::from_error_nolog(&e),
             };
         }
@@ -1004,7 +973,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Ok(deployment_location) => deployment_location,
             Err(e) => {
                 return State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(&e),
                 };
             }
@@ -1013,13 +981,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .check_pipeline_status(pipeline.id, deployment_location)
             .await
         {
-            StatusCheckResult::Paused => State::TransitionToPaused {
-                version_guard: pipeline.version,
-            },
+            StatusCheckResult::Paused => State::TransitionToPaused,
             StatusCheckResult::Running => {
                 // After initialization, it should not become running automatically
                 State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: RunnerError::AutomatonAfterInitializationBecameRunning.into(),
                 }
             }
@@ -1037,7 +1002,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         pipeline.id
                     );
                     State::TransitionToFailed {
-                        version_guard: pipeline.version,
                         error: RunnerError::AutomatonInitializingTimeout {
                             timeout: Self::DEFAULT_INITIALIZING_TIMEOUT,
                         }
@@ -1047,10 +1011,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     State::Unchanged
                 }
             }
-            StatusCheckResult::Error(error) => State::TransitionToFailed {
-                version_guard: pipeline.version,
-                error,
-            },
+            StatusCheckResult::Error(error) => State::TransitionToFailed { error },
         }
     }
 
@@ -1066,7 +1027,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Ok(deployment_location) => deployment_location,
             Err(e) => {
                 return State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(&e),
                 };
             }
@@ -1075,7 +1035,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Check deployment when initialized
         if let Err(e) = self.pipeline_handle.check().await {
             return State::TransitionToFailed {
-                version_guard: pipeline.version,
                 error: ErrorResponse::from_error_nolog(&e),
             };
         }
@@ -1089,23 +1048,16 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Ok((status, body)) => {
                 if status == StatusCode::OK {
                     if is_start {
-                        State::TransitionToRunning {
-                            version_guard: pipeline.version,
-                        }
+                        State::TransitionToRunning
                     } else {
-                        State::TransitionToPaused {
-                            version_guard: pipeline.version,
-                        }
+                        State::TransitionToPaused
                     }
                 } else if status == StatusCode::SERVICE_UNAVAILABLE {
                     warn!("Unable to perform action '{action}' on pipeline {} because pipeline indicated it is not (yet) ready", pipeline.id);
-                    State::TransitionToUnavailable {
-                        version_guard: pipeline.version,
-                    }
+                    State::TransitionToUnavailable
                 } else {
                     error!("Error response to action '{action}' on pipeline {}. Status: {status}. Body: {body}", pipeline.id);
                     State::TransitionToFailed {
-                        version_guard: pipeline.version,
                         error: Self::error_response_from_json(self.pipeline_id, status, &body),
                     }
                 }
@@ -1115,9 +1067,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     "Unable to reach pipeline {} to perform action '{action}' due to: {e}",
                     pipeline.id
                 );
-                State::TransitionToUnavailable {
-                    version_guard: pipeline.version,
-                }
+                State::TransitionToUnavailable
             }
         }
     }
@@ -1132,7 +1082,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Check deployment when initialized
         if let Err(e) = self.pipeline_handle.check().await {
             return State::TransitionToFailed {
-                version_guard: pipeline.version,
                 error: ErrorResponse::from_error_nolog(&e),
             };
         }
@@ -1142,7 +1091,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Ok(deployment_location) => deployment_location,
             Err(e) => {
                 return State::TransitionToFailed {
-                    version_guard: pipeline.version,
                     error: ErrorResponse::from_error_nolog(&e),
                 };
             }
@@ -1162,9 +1110,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     // new status. If then API endpoint /v0/pipelines/{name}/start is called
                     // before the automaton starts up, this case will occur. In that case, we
                     // transition to paused such that the automaton tries again to start.
-                    State::TransitionToPaused {
-                        version_guard: pipeline.version,
-                    }
+                    State::TransitionToPaused
                 }
             }
             StatusCheckResult::Running => {
@@ -1172,24 +1118,17 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     State::Unchanged
                 } else {
                     // The same possible mismatch as above can occur but the other way around
-                    State::TransitionToRunning {
-                        version_guard: pipeline.version,
-                    }
+                    State::TransitionToRunning
                 }
             }
             StatusCheckResult::Unavailable => {
                 if pipeline.deployment_status == PipelineStatus::Unavailable {
                     State::Unchanged
                 } else {
-                    State::TransitionToUnavailable {
-                        version_guard: pipeline.version,
-                    }
+                    State::TransitionToUnavailable
                 }
             }
-            StatusCheckResult::Error(error) => State::TransitionToFailed {
-                version_guard: pipeline.version,
-                error,
-            },
+            StatusCheckResult::Error(error) => State::TransitionToFailed { error },
         }
     }
 
@@ -1205,9 +1144,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             State::Unchanged
         } else {
             self.provision_called = None;
-            State::TransitionToShutdown {
-                version_guard: pipeline.version,
-            }
+            State::TransitionToShutdown
         }
     }
 }
