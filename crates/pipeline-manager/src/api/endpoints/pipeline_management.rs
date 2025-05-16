@@ -13,6 +13,8 @@ use crate::db::types::program::{ProgramConfig, ProgramError, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
+#[cfg(feature = "feldera-enterprise")]
+use actix_http::body::MessageBody;
 use actix_web::{
     delete, get,
     http::header::{CacheControl, CacheDirective},
@@ -847,6 +849,13 @@ pub(crate) async fn delete_pipeline(
                 ("Illegal action" = (value = json!(examples::error_illegal_pipeline_action()))),
             )
         ),
+        (status = METHOD_NOT_ALLOWED
+            , description = "Action is not supported"
+            , body = ErrorResponse
+            , examples(
+                ("Unsupported action" = (value = json!(examples::error_unsupported_pipeline_action()))),
+            )
+        ),
         (status = NOT_IMPLEMENTED
             , description = "Action is not implemented because it is only available in the Enterprise edition"
             , body = ErrorResponse
@@ -858,6 +867,7 @@ pub(crate) async fn delete_pipeline(
 #[post("/pipelines/{pipeline_name}/{action}")]
 pub(crate) async fn post_pipeline_action(
     state: WebData<ServerState>,
+    _client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ManagerError> {
@@ -887,12 +897,48 @@ pub(crate) async fn post_pipeline_action(
                 )))?
             }
             #[cfg(feature = "feldera-enterprise")]
-            state
-                .db
-                .lock()
-                .await
-                .set_deployment_desired_status_suspended(*tenant_id, &pipeline_name)
-                .await?
+            {
+                // Check whether the pipeline can be suspended
+                let response = state
+                    .runner
+                    .forward_http_request_to_pipeline_by_name(
+                        _client.as_ref(),
+                        *tenant_id,
+                        &pipeline_name,
+                        actix_http::Method::GET,
+                        "suspendable",
+                        "",
+                        None,
+                    )
+                    .await?;
+                let mut is_suspendable = false;
+                if response.status().is_success() {
+                    let body = response.into_body();
+                    if let Ok(b) = body.try_into_bytes() {
+                        if let Ok(s) = std::str::from_utf8(&b) {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                                if v == json!({
+                                   "suspendable": true
+                                }) {
+                                    is_suspendable = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if is_suspendable {
+                    state
+                        .db
+                        .lock()
+                        .await
+                        .set_deployment_desired_status_suspended(*tenant_id, &pipeline_name)
+                        .await?
+                } else {
+                    Err(ManagerError::from(ApiError::UnsupportedPipelineAction {
+                        action: action.clone(),
+                    }))?
+                }
+            }
         }
         "shutdown" => {
             state

@@ -3544,6 +3544,27 @@
               }
             }
           },
+          "405": {
+            "description": "Action is not supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Unsupported action": {
+                    "value": {
+                      "message": "Unsupported pipeline action 'suspend'",
+                      "error_code": "UnsupportedPipelineAction",
+                      "details": {
+                        "action": "suspend"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "500": {
             "description": "",
             "content": {
