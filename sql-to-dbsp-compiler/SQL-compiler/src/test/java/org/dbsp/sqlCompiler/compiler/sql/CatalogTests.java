@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -30,6 +32,99 @@ public class CatalogTests extends BaseSQLTests {
         result.ioOptions.emitHandles = false;
         result.languageOptions.unrestrictedIOTypes = false;
         return result;
+    }
+
+    @Test
+    public void issue4019a() {
+        this.getCCS("""
+                CREATE TABLE row_tbl(
+                id INT,
+                c1 INT NOT NULL,
+                c2 VARCHAR,
+                c3 VARCHAR);
+                
+                CREATE VIEW row_arg_max_distinct AS SELECT
+                ARG_MAX(DISTINCT ROW(c1, c2, c3), c2) AS c1
+                FROM row_tbl;""");
+    }
+
+    @Test
+    public void issue4019b() {
+        this.getCCS("""
+                CREATE TABLE row_tbl(
+                id INT,
+                c1 INT NOT NULL,
+                c2 VARCHAR,
+                c3 VARCHAR);
+                
+                CREATE MATERIALIZED VIEW row_array_agg_distinct AS SELECT
+                ARRAY_AGG(DISTINCT ROW(c2, c3)) AS c1, ARRAY_AGG(DISTINCT c1) AS c2
+                FROM row_tbl;""");
+    }
+
+    @Test
+    public void issue4019() {
+        var ccs = this.getCCS("""
+                CREATE TABLE input (
+                  "someField" VARCHAR NOT NULL
+                ) WITH (
+                  'connectors' = '[
+                    {
+                      "transport": {
+                          "name": "kafka_input",
+                          "config": {
+                              "topic": "input-topic",
+                              "start_from": "earliest",
+                              "bootstrap.servers": "broker:29092"
+                          }
+                      },
+                    "format": {
+                      "name": "avro",
+                      "config": {
+                        "registry_urls": ["http://schema-registry:8082"],
+                        "update_format": "raw"
+                      }
+                    }
+                  }]',
+                  'materialized' = 'true'
+                );
+                
+                CREATE VIEW output ("someField")
+                WITH (
+                  'connectors' = '[
+                  {
+                    "transport": {
+                        "name": "kafka_output",
+                        "config": {
+                            "topic": "output-topic",
+                            "auto.offset.reset": "earliest",
+                            "bootstrap.servers": "broker:29092"
+                        }
+                    },
+                    "format": {
+                      "name": "avro",
+                      "config": {
+                        "registry_urls": ["http://schema-registry:8082"],
+                        "update_format": "raw"
+                      }
+                    }
+                  }
+                  ]'
+                )
+                AS SELECT
+                  "someField" AS "someField"
+                FROM input;""");
+        var node = ccs.compiler.getIOMetadataAsJson();
+        ArrayNode outputs = (ArrayNode) node.get("outputs");
+        for (var out: outputs) {
+            if (out.get("name").asText().equals("output")) {
+                ArrayNode fields = (ArrayNode) out.get("fields");
+                Assert.assertEquals(1, fields.size());
+                JsonNode field = fields.get(0);
+                Assert.assertTrue(field.get("case_sensitive").asBoolean());
+                Assert.assertEquals("someField", field.get("name").asText());
+            }
+        }
     }
 
     @Test

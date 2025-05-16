@@ -1433,7 +1433,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     String fieldName = lit.value;
                     Utilities.enforce(tuple.originalStruct != null);
                     DBSPTypeStruct.Field field = tuple.originalStruct.getField(
-                            new ProgramIdentifier(fieldName, false));
+                            new ProgramIdentifier(fieldName));
                     Utilities.enforce(field != null);
                     int fieldIndex = field.index;
                     return op0.field(fieldIndex).applyCloneIfNeeded();
@@ -1740,7 +1740,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     }
 
     private DBSPExpression compileUdfOrConstructor(CalciteObject node, RexCall call, DBSPType type, List<DBSPExpression> ops) {
-        ProgramIdentifier function = new ProgramIdentifier(call.op.getName(), false);  // no lowercase applied
+        ProgramIdentifier function = new ProgramIdentifier(call.op.getName());  // no lowercase applied
         boolean isConstructor = this.compiler.isStructConstructor(function);
         if (isConstructor) {
             DBSPTypeStruct struct = this.compiler.getStructByName(function);

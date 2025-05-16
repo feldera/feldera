@@ -628,6 +628,7 @@ macro_rules! deserialize_table_record {
                 }
 
                 thread_local! {
+                    // maps LOWERCASE column names to field indexes.
                     static FIELD_MAP: LazyCell<HashMap<String, usize>> = LazyCell::new(|| {
                         let mut map = HashMap::new();
                         let mut _idx = 0usize;

@@ -283,7 +283,7 @@ public class Utilities {
 
     public static ProgramIdentifier toIdentifier(List<String> qualifiedName) {
         String id = Utilities.last(qualifiedName);
-        return new ProgramIdentifier(id, false);
+        return new ProgramIdentifier(id);
     }
 
     /** True when a simple identifier is quoted. */

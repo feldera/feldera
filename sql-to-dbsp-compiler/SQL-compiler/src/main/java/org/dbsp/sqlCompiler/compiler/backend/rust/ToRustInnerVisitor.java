@@ -34,7 +34,6 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -169,7 +168,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -1164,16 +1162,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             ProgramIdentifier name = field.name;
             String simpleName = name.name();
             if (metadata == null) {
-                switch (SqlToRelCompiler.UNQUOTED_CASING) {
-                    case TO_UPPER:
-                        simpleName = name.name().toUpperCase(Locale.ENGLISH);
-                        break;
-                    case TO_LOWER:
-                        simpleName = name.name().toLowerCase(Locale.ENGLISH);
-                        break;
-                    default:
-                        break;
-                }
+                simpleName = this.options.canonicalName(name);
             }
             this.builder
                     .append(field.getSanitizedName())

@@ -132,7 +132,12 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
         }
     }
 
-    default JsonNode asJson() {
+    /** The schema as a JSON objects.
+     *
+     * @param addColumnCaseSensitivity If true, include case sensitivity information
+     *                                 about the fields of nested structures.
+     */
+    default JsonNode asJson(boolean addColumnCaseSensitivity) {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ObjectNode result = mapper.createObjectNode();
         result.put("name", this.getName().name());
@@ -153,6 +158,8 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             try {
                 String json = mapper.writeValueAsString(object);
                 JsonNode repr = mapper.readTree(json);
+                if (addColumnCaseSensitivity)
+                    this.addColumnCaseSensitivity(repr);
                 column.set("columntype", repr);
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
@@ -175,6 +182,38 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             result.set("properties", props.asJson());
         }
         return result;
+    }
+
+    default void addColumnCaseSensitivity(JsonNode repr) {
+        JsonNode component = repr.get("component");
+        if (component != null) {
+            this.addColumnCaseSensitivity(component);
+            return;
+        }
+        JsonNode key = repr.get("key");
+        if (key != null) {
+            this.addColumnCaseSensitivity(key);
+            return;
+        }
+        JsonNode value = repr.get("value");
+        if (value != null) {
+            this.addColumnCaseSensitivity(value);
+            return;
+        }
+        JsonNode fields = repr.get("fields");
+        if (fields != null) {
+            ArrayNode fieldsArray = (ArrayNode) fields;
+            for (JsonNode field: fieldsArray) {
+                ObjectNode obj = (ObjectNode) field;
+                String name = field.get("name").asText();
+                boolean caseSensitive = ProgramIdentifier.needsQuotes(name);
+                obj.put("case_sensitive", caseSensitive);
+                JsonNode type = field.get("type");
+                if (type instanceof ObjectNode) {
+                    this.addColumnCaseSensitivity(type);
+                }
+            }
+        }
     }
 
     default DBSPTypeStruct getRowTypeAsStruct(TypeCompiler compiler) {

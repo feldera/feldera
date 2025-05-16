@@ -1032,7 +1032,7 @@ public class MetadataTests extends BaseSQLTests {
                     "case_sensitive" : false,
                     "fields" : [ {
                       "name" : "xCol",
-                      "case_sensitive" : false,
+                      "case_sensitive" : true,
                       "columntype" : {
                         "nullable" : false,
                         "type" : "INTEGER"

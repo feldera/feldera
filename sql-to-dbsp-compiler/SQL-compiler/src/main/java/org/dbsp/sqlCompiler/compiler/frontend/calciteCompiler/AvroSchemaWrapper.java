@@ -38,14 +38,14 @@ public class AvroSchemaWrapper implements IHasSchema {
 
     @Override
     public ProgramIdentifier getName() {
-        return new ProgramIdentifier(this.name, false);
+        return new ProgramIdentifier(this.name);
     }
 
     @Override
     public List<RelColumnMetadata> getColumns() {
         RelDataType rowType = this.convertRecord(this.schema);
         return Linq.map(rowType.getFieldList(), f -> new RelColumnMetadata(
-                CalciteObject.EMPTY, f, false, false,
+                CalciteObject.EMPTY, f, false, ProgramIdentifier.needsQuotes(f.getName()),
                 null, null, null, null));
     }
 
