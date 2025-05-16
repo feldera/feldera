@@ -1506,25 +1506,21 @@ fn suspend_multiple_barriers(n_inputs: usize) {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore)]
 fn suspend_barrier2() {
     suspend_multiple_barriers(2);
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore)]
 fn suspend_barrier3() {
     suspend_multiple_barriers(3);
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore)]
 fn suspend_barrier4() {
     suspend_multiple_barriers(4);
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore)]
 fn suspend_barrier5() {
     suspend_multiple_barriers(5);
 }
