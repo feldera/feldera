@@ -3554,10 +3554,11 @@
                 "examples": {
                   "Unsupported action": {
                     "value": {
-                      "message": "Unsupported pipeline action 'suspend'",
+                      "message": "Unsupported pipeline action 'suspend': this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured",
                       "error_code": "UnsupportedPipelineAction",
                       "details": {
-                        "action": "suspend"
+                        "action": "suspend",
+                        "reason": "this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured"
                       }
                     }
                   }
