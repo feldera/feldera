@@ -941,7 +941,7 @@ mod test {
         let avro2_1: AvroValue = AvroValue::Record(vec![
             ("id".to_string(), AvroValue::Long(1)),
             (
-                "name".to_string(),
+                "nAmE".to_string(),
                 AvroValue::Union(0, Box::new(AvroValue::String("foo".to_string()))),
             ),
             ("b".to_string(), AvroValue::Boolean(false)),

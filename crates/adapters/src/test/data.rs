@@ -309,7 +309,7 @@ deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", 1] {
 pub struct TestStruct2 {
     #[serde(rename = "id")]
     pub field: i64,
-    #[serde(rename = "name")]
+    #[serde(rename = "nAmE")]
     pub field_0: Option<String>,
     #[serde(rename = "b")]
     pub field_1: bool,
@@ -403,7 +403,7 @@ impl TestStruct2 {
     pub fn arrow_schema() -> Arc<Schema> {
         Arc::new(Schema::new(vec![
             arrow::datatypes::Field::new("id", DataType::Int64, false),
-            arrow::datatypes::Field::new("name", DataType::Utf8, true),
+            arrow::datatypes::Field::new("nAmE", DataType::Utf8, true),
             arrow::datatypes::Field::new("b", DataType::Boolean, false),
             arrow::datatypes::Field::new(
                 "ts",
@@ -438,7 +438,7 @@ impl TestStruct2 {
             "connect.name": "test_namespace.TestStruct2",
             "fields": [
                 { "name": "id", "type": "long" },
-                { "name": "name", "type": ["string", "null"] },
+                { "name": "nAmE", "type": ["string", "null"] },
                 { "name": "b", "type": "boolean" },
                 { "name": "ts", "type": "long", "logicalType": "timestamp-micros" },
                 { "name": "dt", "type": "int", "logicalType": "date" },
@@ -477,7 +477,7 @@ impl TestStruct2 {
     pub fn schema() -> Vec<Field> {
         vec![
             Field::new("id".into(), ColumnType::bigint(false)),
-            Field::new("name".into(), ColumnType::varchar(true)),
+            Field::new("\"nAmE\"".into(), ColumnType::varchar(true)),
             Field::new("b".into(), ColumnType::boolean(false)),
             Field::new("ts".into(), ColumnType::timestamp(false)),
             Field::new("dt".into(), ColumnType::date(false)),
@@ -496,7 +496,7 @@ impl TestStruct2 {
     pub fn schema_with_lateness() -> Vec<Field> {
         let fields = vec![
             Field::new("id".into(), ColumnType::bigint(false)).with_lateness("1000"),
-            Field::new("name".into(), ColumnType::varchar(true)),
+            Field::new("\"nAmE\"".into(), ColumnType::varchar(true)),
             Field::new("b".into(), ColumnType::boolean(false)),
             Field::new("ts".into(), ColumnType::timestamp(false))
                 .with_lateness("interval '10 days'"),
@@ -597,7 +597,7 @@ impl TestStruct2 {
 
 serialize_table_record!(TestStruct2[8]{
     r#field["id"]: i64,
-    r#field_0["name"]: Option<String>,
+    r#field_0["nAmE"]: Option<String>,
     r#field_1["b"]: bool,
     r#field_2["ts"]: Timestamp,
     r#field_3["dt"]: Date,
@@ -609,7 +609,7 @@ serialize_table_record!(TestStruct2[8]{
 
 deserialize_table_record!(TestStruct2["TestStruct", 8] {
     (r#field, "id", false, i64, None),
-    (r#field_0, "name", false, Option<String>, Some(None)),
+    (r#field_0, "nAmE", true, Option<String>, Some(None)),
     (r#field_1, "b", false, bool, None),
     (r#field_2, "ts", false, Timestamp, None),
     (r#field_3, "dt", false, Date, None),

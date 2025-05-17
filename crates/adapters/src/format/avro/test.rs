@@ -449,7 +449,7 @@ fn test_non_null_to_nullable() {
         "connect.name": "test_namespace.TestStruct2",
         "fields": [
             { "name": "id", "type": "long" },
-            { "name": "name", "type": "string" },
+            { "name": "nAmE", "type": "string" },
             { "name": "b", "type": "boolean" },
             { "name": "ts", "type": "long", "logicalType": "timestamp-micros" },
             { "name": "dt", "type": "int", "logicalType": "date" },
@@ -525,7 +525,7 @@ fn test_ms_time() {
         "connect.name": "test_namespace.TestStruct2",
         "fields": [
             { "name": "id", "type": "long" },
-            { "name": "name", "type": ["string", "null"] },
+            { "name": "nAmE", "type": ["string", "null"] },
             { "name": "b", "type": "boolean" },
             { "name": "ts", "type": "long", "logicalType": "timestamp-millis" },
             { "name": "dt", "type": "int", "logicalType": "date" },

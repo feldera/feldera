@@ -415,7 +415,7 @@ stream: test_input
 transport:
     name: datagen
     config:
-        plan: [ { limit: 10, fields: { "name": { null_percentage: 100 } } } ]
+        plan: [ { limit: 10, fields: { "nAmE": { null_percentage: 100 } } } ]
 "#;
     let (endpoint, consumer, zset) =
         mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
@@ -437,7 +437,7 @@ stream: test_input
 transport:
     name: datagen
     config:
-        plan: [ { limit: 100, fields: { "name": { null_percentage: 50 } } } ]
+        plan: [ { limit: 100, fields: { "nAmE": { null_percentage: 50 } } } ]
 "#;
     let (endpoint, consumer, zset) =
         mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
@@ -463,7 +463,7 @@ stream: test_input
 transport:
     name: datagen
     config:
-        plan: [ { limit: 2, fields: { "name": { "strategy": "word" } } } ]
+        plan: [ { limit: 2, fields: { "nAmE": { "strategy": "word" } } } ]
 "#;
     let (endpoint, consumer, zset) =
         mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
