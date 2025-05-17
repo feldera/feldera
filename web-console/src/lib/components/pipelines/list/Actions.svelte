@@ -203,7 +203,7 @@
       'Suspend',
       (name) => `${name} pipeline`,
       (pipelineName: string) => {
-        return postPipelineAction(pipelineName, 'suspend').then(() => {
+        return api.postPipelineAction(pipelineName, 'suspend').then(() => {
           onActionSuccess?.(pipelineName, 'suspend')
           pipeline.optimisticUpdate({ status: 'Suspending' })
         })
