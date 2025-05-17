@@ -1,9 +1,11 @@
 use crate::transport::kafka::{
-    build_headers, kafka_send, rdkafka_loglevel_from, DeferredLogging, PemToLocation,
+    build_headers, generate_oauthbearer_token, kafka_send, rdkafka_loglevel_from, DeferredLogging,
+    PemToLocation,
 };
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use feldera_types::transport::kafka::KafkaOutputConfig;
+use rdkafka::client::OAuthToken;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::{
     config::FromClientConfigAndContext,
@@ -12,6 +14,7 @@ use rdkafka::{
     types::RDKafkaErrorCode,
     ClientConfig, ClientContext,
 };
+use std::error::Error;
 use std::{sync::RwLock, time::Duration};
 use tracing::span::EnteredSpan;
 use tracing::{debug, info_span};
@@ -30,11 +33,14 @@ struct KafkaOutputContext {
     async_error_callback: RwLock<Option<AsyncErrorCallback>>,
 
     deferred_logging: DeferredLogging,
+
+    kafka_config: KafkaOutputConfig,
 }
 
 impl KafkaOutputContext {
-    fn new() -> Self {
+    fn new(kafka_config: KafkaOutputConfig) -> Self {
         Self {
+            kafka_config,
             async_error_callback: RwLock::new(None),
             deferred_logging: DeferredLogging::new(),
         }
@@ -42,6 +48,12 @@ impl KafkaOutputContext {
 }
 
 impl ClientContext for KafkaOutputContext {
+    const ENABLE_REFRESH_OAUTH_TOKEN: bool = true;
+
+    fn log(&self, level: rdkafka::config::RDKafkaLogLevel, fac: &str, log_message: &str) {
+        self.deferred_logging.log(level, fac, log_message);
+    }
+
     fn error(&self, error: KafkaError, reason: &str) {
         let fatal = match error.rdkafka_error_code() {
             Some(code) => code == RDKafkaErrorCode::Fatal,
@@ -58,8 +70,11 @@ impl ClientContext for KafkaOutputContext {
         }
     }
 
-    fn log(&self, level: rdkafka::config::RDKafkaLogLevel, fac: &str, log_message: &str) {
-        self.deferred_logging.log(level, fac, log_message);
+    fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
+        generate_oauthbearer_token(
+            &self.kafka_config.kafka_options,
+            self.kafka_config.region.clone(),
+        )
     }
 }
 
@@ -112,7 +127,7 @@ impl KafkaOutputEndpoint {
         }
 
         // Context object to intercept message delivery events.
-        let context = KafkaOutputContext::new();
+        let context = KafkaOutputContext::new(config.clone());
 
         let message_max_bytes = client_config
             .get("message.max.bytes")

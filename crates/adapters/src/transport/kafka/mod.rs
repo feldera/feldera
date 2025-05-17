@@ -1,6 +1,8 @@
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
+use aws_msk_iam_sasl_signer::generate_auth_token;
 use feldera_types::transport::kafka::{KafkaHeader, KafkaLogLevel};
 use parquet::data_type::AsBytes;
+use rdkafka::client::OAuthToken;
 use rdkafka::message::{Header, OwnedHeaders, ToBytes};
 use rdkafka::producer::{BaseRecord, ProducerContext, ThreadedProducer};
 use rdkafka::{
@@ -11,6 +13,8 @@ use rdkafka::{
 };
 use sha2::Digest;
 use std::cmp::min;
+use std::collections::BTreeMap;
+use std::error::Error;
 use std::io::Write;
 use std::path::PathBuf;
 #[cfg(test)]
@@ -285,4 +289,36 @@ where
 
 fn is_retriable_send_error(error: RDKafkaErrorCode) -> bool {
     error == RDKafkaErrorCode::QueueFull
+}
+
+fn is_oauthbearer(config: &BTreeMap<String, String>) -> bool {
+    config
+        .get("sasl.mechanism")
+        .is_some_and(|s| s.eq_ignore_ascii_case("OAUTHBEARER"))
+}
+
+fn generate_oauthbearer_token(
+    config: &BTreeMap<String, String>,
+    region: Option<String>,
+) -> Result<OAuthToken, Box<dyn Error>> {
+    // TODO: Currently, OAUTHBEARER only works with AWS MSK.
+    if is_oauthbearer(config) {
+        let region = region
+            .map(aws_types::region::Region::new)
+            .ok_or("region is required for OAUTHBEARER as it currently only works with AWS MSK")?;
+        let (token, expiration_time_ms) =
+            { futures::executor::block_on(async { generate_auth_token(region).await }) }?;
+
+        return Ok(OAuthToken {
+            token,
+            principal_name: "".to_string(),
+            lifetime_ms: expiration_time_ms,
+        });
+    }
+
+    Ok(OAuthToken {
+        token: "".to_string(),
+        principal_name: "".to_string(),
+        lifetime_ms: i64::MAX,
+    })
 }

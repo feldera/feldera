@@ -32,6 +32,8 @@ lcov.info
 .DS_Store
 sql-to-dbsp-compiler/SQL-compiler/pom.xml-E
 
+crates/dbsp-enterprise
+
 **/benches/galen_data/
 **/benches/gdelt-data/
 **/benches/ldbc-graphalytics-data/

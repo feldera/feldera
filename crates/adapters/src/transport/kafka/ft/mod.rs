@@ -9,7 +9,8 @@ mod input;
 mod output;
 
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
-use feldera_types::transport::kafka::{default_redpanda_server, KafkaLogLevel};
+use feldera_types::transport::kafka::{default_redpanda_server, KafkaLogLevel, KafkaOutputConfig};
+use rdkafka::client::OAuthToken;
 use rdkafka::{
     client::Client as KafkaClient,
     config::RDKafkaLogLevel,
@@ -21,6 +22,7 @@ use rdkafka::{
     util::Timeout,
     ClientConfig, ClientContext, Offset, TopicPartitionList,
 };
+use std::error::Error;
 use std::{
     collections::BTreeMap,
     fmt::{Display, Formatter, Result as FmtResult},
@@ -35,7 +37,7 @@ use uuid::Uuid;
 pub use input::KafkaFtInputEndpoint;
 pub use output::KafkaOutputEndpoint as KafkaFtOutputEndpoint;
 
-use super::{rdkafka_loglevel_from, DeferredLogging};
+use super::{generate_oauthbearer_token, rdkafka_loglevel_from, DeferredLogging};
 
 #[cfg(test)]
 pub mod test;
@@ -427,16 +429,18 @@ where
 {
     error_cb: F,
     deferred_logging: DeferredLogging,
+    kafka_config: KafkaOutputConfig,
 }
 
 impl<F> DataConsumerContext<F>
 where
     F: Fn(AnyError) + Send + Sync,
 {
-    fn new(error_cb: F) -> Self {
+    fn new(error_cb: F, kafka_config: KafkaOutputConfig) -> Self {
         Self {
             error_cb,
             deferred_logging: DeferredLogging::new(),
+            kafka_config,
         }
     }
 }
@@ -445,6 +449,8 @@ impl<F> ClientContext for DataConsumerContext<F>
 where
     F: Fn(AnyError) + Send + Sync,
 {
+    const ENABLE_REFRESH_OAUTH_TOKEN: bool = true;
+
     fn error(&self, error: KafkaError, reason: &str) {
         let fatal = error
             .rdkafka_error_code()
@@ -459,6 +465,13 @@ where
 
     fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
         self.deferred_logging.log(level, fac, log_message);
+    }
+
+    fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
+        generate_oauthbearer_token(
+            &self.kafka_config.kafka_options,
+            self.kafka_config.region.clone(),
+        )
     }
 }
 

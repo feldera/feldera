@@ -1,4 +1,5 @@
 use crate::transport::kafka::ft::count_partitions_in_topic;
+use crate::transport::kafka::generate_oauthbearer_token;
 use crate::transport::InputCommandReceiver;
 use crate::{
     transport::{
@@ -15,6 +16,7 @@ use feldera_adapterlib::transport::{InputEndpoint, InputReaderCommand, Resume};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{KafkaInputConfig, KafkaStartFromConfig};
+use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::base_consumer::PartitionQueue;
 use rdkafka::message::BorrowedMessage;
@@ -27,6 +29,7 @@ use rdkafka::{
 use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
+use std::error::Error;
 use std::hash::Hasher;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
@@ -76,18 +79,27 @@ struct KafkaFtInputContext {
     endpoint: Mutex<Weak<KafkaFtInputReaderInner>>,
 
     deferred_logging: DeferredLogging,
+
+    kafka_config: Arc<KafkaInputConfig>,
 }
 
 impl KafkaFtInputContext {
-    fn new() -> Self {
+    fn new(kafka_config: Arc<KafkaInputConfig>) -> Self {
         Self {
             endpoint: Mutex::new(Weak::new()),
             deferred_logging: DeferredLogging::new(),
+            kafka_config,
         }
     }
 }
 
 impl ClientContext for KafkaFtInputContext {
+    const ENABLE_REFRESH_OAUTH_TOKEN: bool = true;
+
+    fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
+        self.deferred_logging.log(level, fac, log_message);
+    }
+
     fn error(&self, error: KafkaError, reason: &str) {
         // eprintln!("Kafka error: {error}");
         if let Some(endpoint) = self.endpoint.lock().unwrap().upgrade() {
@@ -95,8 +107,11 @@ impl ClientContext for KafkaFtInputContext {
         }
     }
 
-    fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
-        self.deferred_logging.log(level, fac, log_message);
+    fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
+        generate_oauthbearer_token(
+            &self.kafka_config.kafka_options,
+            self.kafka_config.region.clone(),
+        )
     }
 }
 
@@ -515,8 +530,12 @@ impl KafkaFtInputReader {
         //
         // This has the desirable side effect of ensuring that we can reach the
         // broker and failing with an error if we cannot.
-        let context = KafkaFtInputContext::new();
+        let context = KafkaFtInputContext::new(config.clone());
         let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)?;
+
+        // IMPORTANT: Poll before trying to fetch metadata. Necessary so that OAUTHBREAKER token
+        // is set.
+        kafka_consumer.poll(std::time::Duration::from_nanos(0));
         let partition_count = count_partitions_in_topic(&kafka_consumer, &config.topic)?;
 
         let inner = Arc::new(KafkaFtInputReaderInner {
