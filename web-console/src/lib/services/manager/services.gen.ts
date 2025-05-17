@@ -469,6 +469,7 @@ export const getPipelineOutputConnectorStatus = (
  * The desired state is set based on the `action` path parameter:
  * - `/start` sets desired state to `Running`
  * - `/pause` sets desired state to `Paused`
+ * - `/suspend` sets desired state to `Suspended`
  * - `/shutdown` sets desired state to `Shutdown`
  *
  * The endpoint returns immediately after setting the desired state.
@@ -480,6 +481,9 @@ export const getPipelineOutputConnectorStatus = (
  * - A shutdown pipeline can be started through calling either `/start` or `/pause`
  * - Both starting as running and resuming a pipeline is done by calling `/start`
  * - Both starting as paused and pausing a pipeline is done by calling `/pause`
+ * - `/shutdown` cannot be cancelled: the pipeline must reach `Shutdown` before another action
+ * - `/suspend` can only be cancelled using `/shutdown`: otherwise, the pipeline must reach
+ * `Suspended` first
  */
 export const postPipelineAction = (options: Options<PostPipelineActionData>) => {
   return (options?.client ?? client).post<PostPipelineActionResponse, PostPipelineActionError>({

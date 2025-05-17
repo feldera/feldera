@@ -56,11 +56,11 @@ public class MultiCrateTests extends BaseSQLTests {
                 c6 INT NOT NULL,
                 c7 BIGINT,
                 c8 BIGINT NOT NULL);
-                
+
                 CREATE MATERIALIZED VIEW int_array_agg AS SELECT
                 ARRAY_AGG(c1) AS c1, ARRAY_AGG(c2) AS c2, ARRAY_AGG(c3) AS c3, ARRAY_AGG(c4) AS c4, ARRAY_AGG(c5) AS c5, ARRAY_AGG(c6) AS c6, ARRAY_AGG(c7) AS c7, ARRAY_AGG(c8) AS c8
                 FROM int0_tbl;
-                
+
                 CREATE MATERIALIZED VIEW int_array_agg_where AS SELECT
                 ARRAY_AGG(c1) FILTER(WHERE (c5+C6)> 3) AS f_c1, ARRAY_AGG(c2) FILTER(WHERE (c5+C6)> 3) AS f_c2, ARRAY_AGG(c3) FILTER(WHERE (c5+C6)> 3) AS f_c3, ARRAY_AGG(c4) FILTER(WHERE (c5+C6)> 3) AS f_c4, ARRAY_AGG(c5) FILTER(WHERE (c5+C6)> 3) AS f_c5, ARRAY_AGG(c6) FILTER(WHERE (c5+C6)> 3) AS f_c6,  ARRAY_AGG(c7) FILTER(WHERE (c5+C6)> 3) AS f_c7,  ARRAY_AGG(c8) FILTER(WHERE (c5+C6)> 3) AS f_c8
                 FROM int0_tbl;""";
@@ -91,6 +91,18 @@ public class MultiCrateTests extends BaseSQLTests {
         File file = createInputScript(sql);
         this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
+   
+    @Test @Ignore
+    public void testMultiCrateLarge() throws IOException, SQLException, InterruptedException {
+        File file = new File("../extra/current_pipeline.sql");
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
+    }
+
+    @Test @Ignore
+    public void testMultiCrateLarge2() throws IOException, SQLException, InterruptedException {
+        File file = new File("../extra/slicer-q1.sql");
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
+    }
 
     @Test
     public void testJoin() throws IOException, SQLException, InterruptedException {
@@ -98,7 +110,7 @@ public class MultiCrateTests extends BaseSQLTests {
                 CREATE TABLE t1 (
                     val BIGINT
                 );
-                
+
                 CREATE VIEW v1 AS SELECT COUNT(*) FROM t1
                     LEFT JOIN t1 AS t2 ON t1.val=t2.val
                     LEFT JOIN t1 AS t3 ON t2.val=t3.val
@@ -263,7 +275,7 @@ public class MultiCrateTests extends BaseSQLTests {
                       }
                    }
                 }
-                
+
                 pub fn g(x: i32) -> Result<Tup2<i32, i32>, Box<dyn std::error::Error>> {
                    Ok(Tup2::new(x-1, x+1))
                 }""");

@@ -6046,6 +6046,37 @@ impl CircuitHandle {
     }
 
     pub fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        // if Runtime::worker_index() == 0 {
+        //     self.circuit.to_dot_file(
+        //         |node| {
+        //             Some(crate::utils::DotNodeAttributes::new().with_label(&format!(
+        //                 "{}-{}",
+        //                 node.local_id(),
+        //                 node.name()
+        //             )))
+        //         },
+        //         |edge| {
+        //             let style = if edge.is_dependency() {
+        //                 Some("dotted".to_string())
+        //             } else {
+        //                 None
+        //             };
+        //             let label = if let Some(stream) = &edge.stream {
+        //                 Some(format!("consumers: {}", stream.num_consumers()))
+        //             } else {
+        //                 None
+        //             };
+        //             Some(
+        //                 crate::utils::DotEdgeAttributes::new(edge.stream_id())
+        //                     .with_style(style)
+        //                     .with_label(label),
+        //             )
+        //         },
+        //         "commit.dot",
+        //     );
+        //     info!("CircuitHandle::commit: circuit written to commit.dot");
+        // }
+
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
                 let start = Instant::now();

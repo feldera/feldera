@@ -76,6 +76,8 @@ export const programStatusOf = (status: PipelineStatus) =>
       'Unavailable',
       'Running',
       'Paused',
+      'Suspending',
+      'Suspended',
       'ShuttingDown',
       { PipelineError: P.any },
       'Shutdown',
@@ -314,13 +316,21 @@ const consolidatePipelineStatus = (
     .with(['Shutdown', 'Shutdown', 'Success'], () => 'Shutdown' as const)
     .with(['Provisioning', P.any, P._], () => 'Provisioning' as const)
     .with(['Initializing', P.any, P._], () => 'Initializing' as const)
+    .with(['ShuttingDown', P.any, P._], () => 'ShuttingDown' as const)
     .with(['Paused', 'Running', P._], () => 'Resuming' as const)
     .with(['Paused', 'Shutdown', P._], () => 'ShuttingDown' as const)
+    .with(['Paused', 'Suspended', P._], () => 'Suspending' as const)
     .with(['Paused', P.any, P._], () => 'Paused' as const)
     .with(['Running', 'Paused', P._], () => 'Pausing' as const)
     .with(['Running', 'Shutdown', P._], () => 'ShuttingDown' as const)
+    .with(['Running', 'Suspended', P._], () => 'Suspending' as const)
+    .with(['SuspendingCircuit', P._, P._], () => 'Suspending' as const)
+    .with(['SuspendingCompute', P._, P._], () => 'Suspending' as const)
     .with(['Running', P.any, P._], () => 'Running' as const)
-    .with(['ShuttingDown', P.any, P._], () => 'ShuttingDown' as const)
+    .with(['Suspended', 'Shutdown', P._], () => 'ShuttingDown' as const)
+    .with(['Suspended', 'Paused', P._], () => 'Provisioning' as const)
+    .with(['Suspended', 'Running', P._], () => 'Provisioning' as const)
+    .with(['Suspended', P.any, P._], () => 'Suspended' as const)
     .with(
       ['Failed', P.any, P._],
       P.when(() => nonNull(pipelineError)),
@@ -347,7 +357,7 @@ export const deletePipeline = async (pipeline_name: string) => {
   )({ path: { pipeline_name } })
 }
 
-export type PipelineAction = 'start' | 'pause' | 'shutdown' | 'start_paused'
+export type PipelineAction = 'start' | 'pause' | 'shutdown' | 'start_paused' | 'suspend'
 
 export const postPipelineAction = async (
   pipeline_name: string,
@@ -365,7 +375,8 @@ export const postPipelineAction = async (
         start: 'Running',
         pause: 'Paused',
         shutdown: 'Shutdown',
-        start_paused: 'Paused'
+        start_paused: 'Paused',
+        suspend: 'Suspended'
       } satisfies Record<PipelineAction, PipelineStatus>
     )[action]
     const ignoreStatuses: NamesInUnion<PipelineStatus>[] = [

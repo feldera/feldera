@@ -66,6 +66,7 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         deployment_desired_status: PipelineDesiredStatus::Shutdown,
         deployment_error: None,
         refresh_version: Version(4),
+        suspend_info: None,
     }
 }
 
@@ -128,6 +129,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         deployment_desired_status: PipelineDesiredStatus::Shutdown,
         deployment_error: None,
         refresh_version: Version(1),
+        suspend_info: None,
     }
 }
 
@@ -316,6 +318,13 @@ pub(crate) fn error_cannot_delete_non_shutdown_pipeline() -> ErrorResponse {
 pub(crate) fn error_invalid_pipeline_action() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&ApiError::InvalidPipelineAction {
         action: "dance".to_string(),
+    })
+}
+
+pub(crate) fn error_unsupported_pipeline_action() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&ApiError::UnsupportedPipelineAction {
+        action: "suspend".to_string(),
+        reason: "this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured".to_string()
     })
 }
 

@@ -46,13 +46,11 @@ use dbsp::{
     DBSPHandle,
 };
 use enum_map::EnumMap;
-use feldera_adapterlib::errors::controller::{
-    PermanentSuspendError, SuspendError, TemporarySuspendError,
-};
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
 use feldera_types::format::json::JsonLines;
+use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
@@ -195,7 +193,7 @@ impl Controller {
     pub fn with_config<F>(
         circuit_factory: F,
         config: &PipelineConfig,
-        error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
@@ -630,7 +628,7 @@ impl CircuitThread {
     fn new<F>(
         circuit_factory: F,
         config: PipelineConfig,
-        error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
@@ -843,7 +841,7 @@ impl CircuitThread {
         debug!("circuit thread: calling 'circuit.step'");
         self.circuit
             .step()
-            .unwrap_or_else(|e| self.controller.error(e.into()));
+            .unwrap_or_else(|e| self.controller.error(Arc::new(e.into())));
         debug!("circuit thread: 'circuit.step' returned");
 
         // If bootstrapping has completed, update the status flag.
@@ -903,8 +901,10 @@ impl CircuitThread {
     }
 
     fn checkpoint(&mut self) {
-        fn inner(this: &mut CircuitThread) -> Result<Checkpoint, ControllerError> {
-            this.controller.can_suspend()?;
+        fn inner(this: &mut CircuitThread) -> Result<Checkpoint, Arc<ControllerError>> {
+            this.controller
+                .can_suspend()
+                .map_err(|e| Arc::new(ControllerError::SuspendError(e)))?;
 
             // Replace the input adapter configuration in the pipeline configuration
             // by the current inputs. (HTTP input adapters might have been added or
@@ -939,7 +939,7 @@ impl CircuitThread {
             let checkpoint = this
                 .circuit
                 .commit()
-                .map_err(ControllerError::from)
+                .map_err(|e| Arc::new(ControllerError::from(e)))
                 .and_then(|circuit| {
                     let checkpoint = Checkpoint {
                         circuit: Some(circuit),
@@ -958,6 +958,7 @@ impl CircuitThread {
                             &StoragePath::from(STATE_FILE),
                         )
                         .map(|()| checkpoint)
+                        .map_err(Arc::new)
                 })?;
             if let Some(ft) = &mut this.ft {
                 ft.checkpointed()?;
@@ -966,7 +967,16 @@ impl CircuitThread {
         }
 
         let result = match inner(self) {
-            Err(ControllerError::SuspendError(error @ SuspendError::Temporary(_))) => {
+            Err(e)
+                if matches!(
+                    e.as_ref(),
+                    ControllerError::SuspendError(SuspendError::Temporary(_))
+                ) =>
+            {
+                let ControllerError::SuspendError(error) = e.as_ref() else {
+                    unreachable!()
+                };
+
                 self.checkpoint_delay_warning
                     .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)))
                     .check(|elapsed| {
@@ -979,7 +989,7 @@ impl CircuitThread {
             }
             Err(error) => {
                 warn!("checkpoint failed: {error}");
-                Err(Arc::new(error))
+                Err(error)
             }
             Ok(checkpoint) => Ok(checkpoint),
         };
@@ -1000,6 +1010,9 @@ impl CircuitThread {
                 CheckpointRequest::CheckpointCommand(callback) => callback(result.clone()),
                 CheckpointRequest::SuspendCommand(callback) => {
                     self.controller.status.set_state(PipelineState::Terminated);
+                    if let Err(e) = &result {
+                        self.controller.error(e.clone());
+                    }
                     callback(result.clone().map(|_| ()))
                 }
             }
@@ -2257,7 +2270,7 @@ pub struct ControllerInner {
     next_output_id: Atomic<EndpointId>,
     circuit_thread_unparker: Unparker,
     backpressure_thread_unparker: Unparker,
-    error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+    error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     session_ctxt: SessionContext,
     fault_tolerance: Option<FtModel>,
 
@@ -2270,7 +2283,7 @@ impl ControllerInner {
         config: PipelineConfig,
         catalog: Box<dyn CircuitCatalog>,
         lir: LirCircuit,
-        error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
         processed_records: u64,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(config.clone(), processed_records));
@@ -2970,7 +2983,7 @@ impl ControllerInner {
         }
     }
 
-    fn error(&self, error: ControllerError) {
+    fn error(&self, error: Arc<ControllerError>) {
         (self.error_cb)(error);
     }
 
@@ -2986,21 +2999,24 @@ impl ControllerInner {
     ) {
         self.status
             .input_transport_error(endpoint_id, fatal, &error);
-        self.error(ControllerError::input_transport_error(
+        self.error(Arc::new(ControllerError::input_transport_error(
             endpoint_name,
             fatal,
             error,
-        ));
+        )));
     }
 
     pub fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: ParseError) {
         self.status.parse_error(endpoint_id);
-        self.error(ControllerError::parse_error(endpoint_name, error));
+        self.error(Arc::new(ControllerError::parse_error(endpoint_name, error)));
     }
 
     pub fn encode_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: AnyError) {
         self.status.encode_error(endpoint_id);
-        self.error(ControllerError::encode_error(endpoint_name, error));
+        self.error(Arc::new(ControllerError::encode_error(
+            endpoint_name,
+            error,
+        )));
     }
 
     /// Process an output transport error.
@@ -3015,11 +3031,11 @@ impl ControllerInner {
     ) {
         self.status
             .output_transport_error(endpoint_id, fatal, &error);
-        self.error(ControllerError::output_transport_error(
+        self.error(Arc::new(ControllerError::output_transport_error(
             endpoint_name,
             fatal,
             error,
-        ));
+        )));
     }
 
     /// Update counters after receiving a new input batch.

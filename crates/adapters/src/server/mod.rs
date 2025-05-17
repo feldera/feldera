@@ -34,6 +34,7 @@ use feldera_types::query_params::{MetricsFormat, MetricsParameters};
 use feldera_types::secret_resolver::{
     resolve_secret_references_in_connector_config, DEFAULT_SECRETS_DIRECTORY_PATH,
 };
+use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::{
     config::{default_max_batch_size, TransportConfig},
     transport::http::HttpInputConfig,
@@ -155,7 +156,7 @@ impl CheckpointState {
 }
 
 struct ServerState {
-    phase: RwLock<PipelinePhase>,
+    phase: Arc<RwLock<PipelinePhase>>,
     metadata: RwLock<String>,
     controller: Mutex<Option<Controller>>,
     prometheus: RwLock<Option<PrometheusMetrics>>,
@@ -169,7 +170,7 @@ struct ServerState {
 impl ServerState {
     fn new(terminate_sender: Option<Sender<()>>) -> Self {
         Self {
-            phase: RwLock::new(PipelinePhase::Initializing),
+            phase: Arc::new(RwLock::new(PipelinePhase::Initializing)),
             metadata: RwLock::new(String::new()),
             controller: Mutex::new(None),
             checkpoint_state: Arc::new(Mutex::new(CheckpointState::default())),
@@ -436,7 +437,7 @@ fn is_fatal_controller_error(error: &ControllerError) -> bool {
 }
 
 /// Handle errors from the controller.
-fn error_handler(state: &Weak<ServerState>, error: ControllerError) {
+fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>) {
     error!("{error}");
 
     let state = match state.upgrade() {
@@ -450,7 +451,7 @@ fn error_handler(state: &Weak<ServerState>, error: ControllerError) {
         if let Ok(mut controller) = state.controller.lock() {
             if let Some(controller) = controller.take() {
                 if let Ok(mut phase) = state.phase.write() {
-                    *phase = PipelinePhase::Failed(Arc::new(error));
+                    *phase = PipelinePhase::Failed(error);
                 }
 
                 controller.initiate_stop();
@@ -580,7 +581,7 @@ fn do_bootstrap(
         circuit_factory,
         &config,
         Box::new(move |e| error_handler(&weak_state_ref, e))
-            as Box<dyn Fn(ControllerError) + Send + Sync>,
+            as Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     )?;
 
     *state.prometheus.write().unwrap() = Some(
@@ -609,6 +610,7 @@ where
         .service(pause)
         .service(shutdown)
         .service(status)
+        .service(suspendable)
         .service(completion_token)
         .service(completion_status)
         .service(query)
@@ -660,6 +662,26 @@ async fn status(state: WebData<ServerState>) -> impl Responder {
         Some(controller) => {
             let status = controller.status().global_metrics.get_state();
             Ok(HttpResponse::Ok().json(status))
+        }
+        None => Err(missing_controller_error(&state)),
+    }
+}
+
+/// Retrieve whether a pipeline is suspendable or not.
+#[get("/suspendable")]
+async fn suspendable(state: WebData<ServerState>) -> impl Responder {
+    match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            let suspend_error = controller.status().suspend_error.lock().unwrap().clone();
+
+            let reasons = match suspend_error {
+                Some(SuspendError::Permanent(errors)) => Some(errors.clone()),
+                _ => None,
+            };
+            Ok(HttpResponse::Ok().json(SuspendableResponse::new(
+                reasons.is_none(),
+                reasons.unwrap_or_default(),
+            )))
         }
         None => Err(missing_controller_error(&state)),
     }
@@ -966,6 +988,42 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
         Ok(HttpResponse::Ok().json("Pipeline suspended"))
     }
 
+    let receiver = match &*state.controller.lock().unwrap() {
+        Some(controller) => {
+            let (sender, receiver) = oneshot::channel();
+            let phase = state.phase.clone();
+            controller.start_suspend(Box::new(move |suspend| {
+                if suspend.is_ok() {
+                    *phase.write().unwrap() = PipelinePhase::Suspended;
+                }
+                if sender.send(suspend).is_err() {
+                    error!("`/suspend` result could not be sent");
+                }
+            }));
+            receiver
+        }
+        None => {
+            match missing_controller_error(&state) {
+                PipelineError::Suspended => {
+                    // Ensure idempotence.
+                    return success();
+                }
+                other => {
+                    return Err(other);
+                }
+            }
+        }
+    };
+
+    let result = receiver.await.unwrap();
+
+    // If the pipeline is already suspended, ignore the error. The controller
+    // can return a ControllerExit error when flushing any remaining suspend requests after
+    // the first successful suspend operation.
+    if !matches!(*state.phase.read().unwrap(), PipelinePhase::Suspended) {
+        result?;
+    }
+
     let Some(controller) = state.controller.lock().unwrap().take() else {
         match missing_controller_error(&state) {
             PipelineError::Suspended => {
@@ -975,20 +1033,8 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
             other => return Err(other),
         }
     };
-    let (sender, receiver) = oneshot::channel();
-    controller.start_suspend(Box::new(move |suspend| {
-        if sender.send(suspend).is_err() {
-            error!("`/suspend` result could not be sent");
-        }
-    }));
-    receiver.await.unwrap()?;
-    controller.stop()?;
-    if let Ok(mut phase) = state.phase.write() {
-        if !matches!(*phase, PipelinePhase::Failed(_)) {
-            *phase = PipelinePhase::Suspended;
-        }
-    }
 
+    controller.stop()?;
     success()
 }
 

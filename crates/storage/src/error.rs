@@ -8,10 +8,11 @@ use thiserror::Error;
 use uuid::Uuid;
 
 /// An error that can occur when using the storage backend.
-#[derive(Clone, Error, Debug)]
+#[derive(Clone, Error, Debug, Serialize)]
 pub enum StorageError {
     /// I/O error.
     #[error("{0}")]
+    #[serde(serialize_with = "serialize_io_error")]
     StdIo(ErrorKind),
 
     /// A process already locked the provided storage directory.
@@ -49,6 +50,7 @@ pub enum StorageError {
 
     /// Error accessing object store.
     #[error("Error accessing object store: {message}")]
+    #[serde(serialize_with = "serialize_object_store_error")]
     ObjectStore { kind: ErrorKind, message: String },
 
     /// The requested storage backend is not available.
@@ -90,20 +92,27 @@ impl From<ObjectStoreError> for StorageError {
     }
 }
 
-impl Serialize for StorageError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            Self::StdIo(error) => {
-                let mut ser = serializer.serialize_struct("IOError", 1)?;
-                ser.serialize_field("kind", &error.to_string())?;
-                ser.end()
-            }
-            error => error.serialize(serializer),
-        }
-    }
+fn serialize_io_error<S>(kind: &ErrorKind, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut ser = serializer.serialize_struct("IOError", 1)?;
+    ser.serialize_field("kind", &kind.to_string())?;
+    ser.end()
+}
+
+fn serialize_object_store_error<S>(
+    kind: &ErrorKind,
+    message: &String,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut ser = serializer.serialize_struct("ObjectStoreError", 2)?;
+    ser.serialize_field("kind", &kind.to_string())?;
+    ser.serialize_field("message", message)?;
+    ser.end()
 }
 
 impl StorageError {

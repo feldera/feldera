@@ -130,7 +130,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
             visitor.push(this.parent);
         if (this.operator.is(DBSPSumOperator.class)) {
             // Special case for sum, which normally takes references.
-            this.builder()
+           this.builder()
                     .append("let ")
                     .append(name)
                     .append(" = ")
@@ -142,6 +142,9 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 this.builder().append(this.inputName(i));
             }
             this.builder().append("])").append(";").newline();
+            this.builder().newline()
+                    .append(operator.getNodeName(true))
+                    .append(".set_persistent_id(hash);");
         } else {
             visitor.generateOperator(this.operator);
         }

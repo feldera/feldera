@@ -407,6 +407,14 @@ public class ToRustVisitor extends CircuitVisitor {
                 .decrease()
                 .append("}).unwrap();")
                 .newline();
+        for (int i = 0; i < operator.outputCount(); i++) {
+            OutputPort port = operator.internalOutputs.get(i);
+            if (port != null) {
+                this.computeHash(port.operator);
+                this.tagStream(port.operator.to(DBSPSimpleOperator.class));
+            }
+        }
+
         return VisitDecision.STOP;
     }
 
@@ -707,6 +715,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ");
         operator.error.accept(this.innerVisitor);
         this.builder.append(");");
+        this.builder.newline()
+                .append(operator.getOutput(0).getName(this.preferHash))
+                .append(".set_persistent_id(hash);");
         return VisitDecision.STOP;
     }
 
@@ -775,7 +786,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(this.getInputName(operator, 0))
                 .append(".")
                 .append(operator.operation)
-                .append("(");
+                .append("_persistent(hash, ");
         // This part is different from a standard operator.
         operator.init.accept(this.innerVisitor);
         this.builder.append(", ");
@@ -1238,9 +1249,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(" = ");
         this.builder.append(this.getInputName(operator, 0))
                 .append(".");
-        this.builder.append(operator.operation)
-                .append("(&");
-        this.builder.append(this.getInputName(operator, 1))
+        this.operationCall(operator);
+        this.builder.append("&")
+                .append(this.getInputName(operator, 1))
                 // FIXME: temporary workaround until the compiler learns about TypedBox
                 .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
                 .append(", ");

@@ -2246,7 +2246,7 @@ if applicable, is set by the runner.`
 
 export const $PipelineDesiredStatus = {
   type: 'string',
-  enum: ['Shutdown', 'Paused', 'Running']
+  enum: ['Shutdown', 'Paused', 'Running', 'Suspended']
 } as const
 
 export const $PipelineFieldSelector = {
@@ -2501,30 +2501,30 @@ or until it transitions to become failed after the pre-defined timeout
 period expires.
 
 * State transitions labeled with API endpoint names (\`/start\`, \`/pause\`,
-\`/shutdown\`) are triggered by invoking corresponding endpoint,
+\`/suspend\`, \`/shutdown\`) are triggered by invoking corresponding endpoint,
 e.g., \`POST /v0/pipelines/{name}/start\`. Note that these only express
 desired state, and are applied asynchronously by the automata.
 
 \`\`\`text
 Shutdown◄────────────────────┐
 │                        │
-/start or /pause│                    ShuttingDown ◄────── Failed
+/start or /pause │                   ShuttingDown ◄─────── Failed
 │                        ▲                  ▲
 ▼              /shutdown │                  │
-⌛Provisioning ──────────────────┤        Shutdown, Provisioning,
-│                        │        Initializing, Paused,
-│                        │         Running, Unavailable
-▼                        │    (all states except ShuttingDown
-⌛Initializing ──────────────────┤      can transition to Failed)
+⌛Provisioning ──────────────────┤     All states except ShuttingDown
+│                        │        can transition to Failed
 │                        │
-┌─────────┼────────────────────────┴─┐
-│         ▼                          │
-│       Paused  ◄──────► Unavailable │
-│       │    ▲                ▲      │
-│ /start│    │/pause          │      │
-│       ▼    │                │      │
-│      Running ◄──────────────┘      │
-└────────────────────────────────────┘
+▼                        │
+⌛Initializing ──────────────────┤
+│                        │────────────────────────────────────────────────────────────────┐
+┌─────────┼────────────────────────┴─┐                  │                         │                 │
+│         ▼                          │                  │                         │                 │
+│       Paused  ◄──────► Unavailable │                  │                         │                 │
+│       │    ▲                ▲      │                  │                         │                 │
+│ /start│    │/pause          │      │──────────> SuspendingCircuit ───> SuspendingCompute ───> Suspended
+│       ▼    │                │      │ /suspend                                                     │ /start or /pause
+│      Running ◄──────────────┘      │                                                              ▼
+└────────────────────────────────────┘                                                        ⌛Provisioning
 \`\`\`
 
 ### Desired and actual status
@@ -2536,10 +2536,12 @@ would like the pipeline to do, and the **current** status, which
 represents the actual state of the pipeline.  The pipeline runner
 service continuously monitors both fields and steers the pipeline
 towards the desired state specified by the user.
-Only three of the states in the pipeline automaton above can be
-used as desired statuses: \`Paused\`, \`Running\`, and \`Shutdown\`.
-These statuses are selected by invoking REST endpoints shown
-in the diagram.
+
+Only four of the states in the pipeline automaton above can be
+used as desired statuses: \`Paused\`, \`Running\`, \`Suspended\` and
+\`Shutdown\`. These statuses are selected by invoking REST endpoints
+shown in the diagram (respectively, \`/pause\`, \`/start\`, \`/suspend\`
+and \`/shutdown\`).
 
 The user can monitor the current state of the pipeline via the
 \`GET /v0/pipelines/{name}\` endpoint. In a typical scenario,
@@ -2556,6 +2558,9 @@ processing data, or \`Failed\`, indicating an error.`,
     'Paused',
     'Running',
     'Unavailable',
+    'SuspendingCircuit',
+    'SuspendingCompute',
+    'Suspended',
     'Failed',
     'ShuttingDown'
   ]

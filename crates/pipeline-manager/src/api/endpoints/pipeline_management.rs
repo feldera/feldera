@@ -1,6 +1,8 @@
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
+#[cfg(not(feature = "feldera-enterprise"))]
+use crate::common_error::CommonError;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::pipeline::{
@@ -11,6 +13,8 @@ use crate::db::types::program::{ProgramConfig, ProgramError, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
+#[cfg(feature = "feldera-enterprise")]
+use actix_http::body::MessageBody;
 use actix_web::{
     delete, get,
     http::header::{CacheControl, CacheDirective},
@@ -22,6 +26,8 @@ use chrono::{DateTime, Utc};
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
+#[cfg(feature = "feldera-enterprise")]
+use feldera_types::suspend::SuspendableResponse;
 use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -808,6 +814,7 @@ pub(crate) async fn delete_pipeline(
 /// The desired state is set based on the `action` path parameter:
 /// - `/start` sets desired state to `Running`
 /// - `/pause` sets desired state to `Paused`
+/// - `/suspend` sets desired state to `Suspended`
 /// - `/shutdown` sets desired state to `Shutdown`
 ///
 /// The endpoint returns immediately after setting the desired state.
@@ -819,12 +826,15 @@ pub(crate) async fn delete_pipeline(
 /// - A shutdown pipeline can be started through calling either `/start` or `/pause`
 /// - Both starting as running and resuming a pipeline is done by calling `/start`
 /// - Both starting as paused and pausing a pipeline is done by calling `/pause`
+/// - `/shutdown` cannot be cancelled: the pipeline must reach `Shutdown` before another action
+/// - `/suspend` can only be cancelled using `/shutdown`: otherwise, the pipeline must reach
+///   `Suspended` first
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("action" = String, Path, description = "Pipeline action (one of: start, pause, shutdown)")
+        ("action" = String, Path, description = "Pipeline action (one of: start, pause, suspend, shutdown)")
     ),
     responses(
         (status = ACCEPTED
@@ -841,6 +851,17 @@ pub(crate) async fn delete_pipeline(
                 ("Illegal action" = (value = json!(examples::error_illegal_pipeline_action()))),
             )
         ),
+        (status = METHOD_NOT_ALLOWED
+            , description = "Action is not supported"
+            , body = ErrorResponse
+            , examples(
+                ("Unsupported action" = (value = json!(examples::error_unsupported_pipeline_action()))),
+            )
+        ),
+        (status = NOT_IMPLEMENTED
+            , description = "Action is not implemented because it is only available in the Enterprise edition"
+            , body = ErrorResponse
+        ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline management"
@@ -848,6 +869,7 @@ pub(crate) async fn delete_pipeline(
 #[post("/pipelines/{pipeline_name}/{action}")]
 pub(crate) async fn post_pipeline_action(
     state: WebData<ServerState>,
+    _client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ManagerError> {
@@ -868,6 +890,70 @@ pub(crate) async fn post_pipeline_action(
                 .await
                 .set_deployment_desired_status_paused(*tenant_id, &pipeline_name)
                 .await?
+        }
+        "suspend" => {
+            #[cfg(not(feature = "feldera-enterprise"))]
+            {
+                Err(ManagerError::from(CommonError::EnterpriseFeature(
+                    "suspend",
+                )))?
+            }
+            #[cfg(feature = "feldera-enterprise")]
+            {
+                use crate::runner::error::RunnerError;
+                // Check whether the pipeline can be suspended
+                let response = state
+                    .runner
+                    .forward_http_request_to_pipeline_by_name(
+                        _client.as_ref(),
+                        *tenant_id,
+                        &pipeline_name,
+                        actix_http::Method::GET,
+                        "suspendable",
+                        "",
+                        None,
+                    )
+                    .await?;
+                let suspendable_response = if response.status().is_success() {
+                    let body = response.into_body();
+                    if let Ok(b) = body.try_into_bytes() {
+                        if let Ok(v) = serde_json::from_slice::<SuspendableResponse>(&b) {
+                            v
+                        } else {
+                            Err(RunnerError::PipelineInteractionInvalidResponse { error: format!("Pipeline returned an invalid response to a /suspendable request: {}", String::from_utf8_lossy(&b)) })?
+                        }
+                    } else {
+                        Err(RunnerError::PipelineInteractionInvalidResponse {
+                            error: format!(
+                                "Error processing pipelines's response to a /suspendable request: failed to extract response body"
+                            ),
+                        })?
+                    }
+                } else {
+                    return Ok(response);
+                };
+                if suspendable_response.suspendable {
+                    state
+                        .db
+                        .lock()
+                        .await
+                        .set_deployment_desired_status_suspended(*tenant_id, &pipeline_name)
+                        .await?
+                } else {
+                    let reasons = suspendable_response
+                        .reasons
+                        .iter()
+                        .map(|reason| format!("   - {}", reason.to_string()))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    Err(ManagerError::from(ApiError::UnsupportedPipelineAction {
+                        action: action.clone(),
+                        reason: format!(
+                            "this pipeline does not support the suspend operation for the following reason(s):\n{reasons}"
+                        ),
+                    }))?
+                }
+            }
         }
         "shutdown" => {
             state

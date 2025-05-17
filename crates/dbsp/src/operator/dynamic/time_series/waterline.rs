@@ -31,11 +31,12 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
     #[track_caller]
     pub fn dyn_waterline_mono(
         &self,
+        persistent_id: Option<&str>,
         init: Box<dyn Fn() -> Box<DynData>>,
         extract_ts: Box<dyn Fn(&DynData, &DynData, &mut DynData)>,
         least_upper_bound: LeastUpperBoundFunc<DynData>,
     ) -> Stream<RootCircuit, Box<DynData>> {
-        self.dyn_waterline(init, extract_ts, least_upper_bound)
+        self.dyn_waterline(persistent_id, init, extract_ts, least_upper_bound)
     }
 }
 
@@ -43,11 +44,12 @@ impl Stream<RootCircuit, MonoZSet> {
     #[track_caller]
     pub fn dyn_waterline_mono(
         &self,
+        persistent_id: Option<&str>,
         init: Box<dyn Fn() -> Box<DynData>>,
         extract_ts: Box<dyn Fn(&DynData, &DynUnit, &mut DynData)>,
         least_upper_bound: LeastUpperBoundFunc<DynData>,
     ) -> Stream<RootCircuit, Box<DynData>> {
-        self.dyn_waterline(init, extract_ts, least_upper_bound)
+        self.dyn_waterline(persistent_id, init, extract_ts, least_upper_bound)
     }
 }
 
@@ -120,6 +122,7 @@ where
     #[track_caller]
     pub fn dyn_waterline<TS>(
         &self,
+        persistent_id: Option<&str>,
         init: Box<dyn Fn() -> Box<TS>>,
         extract_ts: Box<dyn Fn(&B::Key, &B::Val, &mut TS)>,
         least_upper_bound: LeastUpperBoundFunc<TS>,
@@ -131,23 +134,27 @@ where
         self.circuit().region("waterline", || {
             let least_upper_bound_clone = least_upper_bound.fork();
 
-            let local_waterline = self.stream_fold(init(), move |mut old_waterline, batch| {
-                let mut ts = clone_box(old_waterline.as_ref());
-                let mut new_waterline = clone_box(old_waterline.as_ref());
+            let local_waterline = self.stream_fold_persistent(
+                persistent_id,
+                init(),
+                move |mut old_waterline, batch| {
+                    let mut ts = clone_box(old_waterline.as_ref());
+                    let mut new_waterline = clone_box(old_waterline.as_ref());
 
-                let mut cursor = batch.cursor();
+                    let mut cursor = batch.cursor();
 
-                while cursor.key_valid() {
-                    while cursor.val_valid() {
-                        extract_ts(cursor.key(), cursor.val(), &mut ts);
-                        least_upper_bound_clone(&old_waterline, &mut ts, &mut new_waterline);
-                        new_waterline.clone_to(&mut old_waterline);
-                        cursor.step_val();
+                    while cursor.key_valid() {
+                        while cursor.val_valid() {
+                            extract_ts(cursor.key(), cursor.val(), &mut ts);
+                            least_upper_bound_clone(&old_waterline, &mut ts, &mut new_waterline);
+                            new_waterline.clone_to(&mut old_waterline);
+                            cursor.step_val();
+                        }
+                        cursor.step_key();
                     }
-                    cursor.step_key();
-                }
-                new_waterline
-            });
+                    new_waterline
+                },
+            );
 
             if let Some(runtime) = Runtime::runtime() {
                 let num_workers = runtime.num_workers();

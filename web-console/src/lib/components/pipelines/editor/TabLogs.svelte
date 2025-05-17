@@ -95,6 +95,8 @@
         'Running',
         'Pausing',
         'Paused',
+        'Suspended',
+        'Suspending',
         'Resuming',
         'PipelineError',
         'Unavailable',

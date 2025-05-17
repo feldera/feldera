@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
@@ -778,7 +777,7 @@ public class StreamingTests extends StreamingTestBase {
         compiler.options.ioOptions.quiet = false;  // show warnings
         compiler.submitStatementForCompilation(OtherTests.ddl);
         compiler.submitStatementsForCompilation(query);
-        DBSPCircuit circuit = getCircuit(compiler);
+        var ccs = this.getCCS(compiler);
         CircuitVisitor visitor = new CircuitVisitor(compiler) {
             boolean found = false;
 
@@ -793,7 +792,7 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertTrue(this.found);
             }
         };
-        visitor.apply(circuit);
+        ccs.visit(visitor);
         TestUtil.assertMessagesContain(compiler, "View 'w' used in LATENESS statement not found");
     }
 
