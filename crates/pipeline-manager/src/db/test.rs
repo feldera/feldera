@@ -2916,6 +2916,7 @@ impl Storage for Mutex<DbModel> {
             deployment_config: None,
             deployment_location: None,
             refresh_version: Version(1),
+            suspend_info: None,
         };
 
         // Insert into state
@@ -3279,6 +3280,23 @@ impl Storage for Mutex<DbModel> {
         Ok(pipeline.id)
     }
 
+    async fn set_deployment_desired_status_suspended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<PipelineId, DBError> {
+        let new_desired_status = PipelineDesiredStatus::Suspended;
+        let mut pipeline = self
+            .help_transit_deployment_desired_status(tenant_id, pipeline_name, &new_desired_status)
+            .await?;
+        pipeline.deployment_desired_status = new_desired_status;
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(pipeline.id)
+    }
+
     async fn transit_deployment_status_to_provisioning(
         &self,
         tenant_id: TenantId,
@@ -3439,6 +3457,69 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_status = new_status;
         pipeline.deployment_status_since = Utc::now();
         pipeline.deployment_error = Some(deployment_error.clone());
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
+    }
+
+    async fn transit_deployment_status_to_suspending_circuit(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+    ) -> Result<(), DBError> {
+        let new_status = PipelineStatus::SuspendingCircuit;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_error = None;
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
+    }
+
+    async fn transit_deployment_status_to_suspending_compute(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        suspend_info: serde_json::Value,
+    ) -> Result<(), DBError> {
+        let new_status = PipelineStatus::SuspendingCompute;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_config = None;
+        pipeline.deployment_location = None;
+        pipeline.deployment_error = None;
+        pipeline.suspend_info = Some(suspend_info);
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
+    }
+
+    async fn transit_deployment_status_to_suspended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+    ) -> Result<(), DBError> {
+        let new_status = PipelineStatus::Suspended;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
         self.lock()
             .await
             .pipelines

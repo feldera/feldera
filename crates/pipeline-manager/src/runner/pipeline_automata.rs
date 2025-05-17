@@ -1435,6 +1435,7 @@ mod test {
             _: &PipelineConfig,
             _: &str,
             _: Version,
+            _: Option<serde_json::Value>,
         ) -> Result<(), ManagerError> {
             Ok(())
         }
@@ -1449,6 +1450,14 @@ mod test {
 
         async fn shutdown(&mut self) -> Result<(), ManagerError> {
             Ok(())
+        }
+
+        async fn suspend_compute(&mut self) -> Result<(), ManagerError> {
+            Ok(())
+        }
+
+        async fn is_compute_suspended(&mut self) -> Result<bool, ManagerError> {
+            Ok(true)
         }
     }
 
