@@ -9,9 +9,7 @@ use apache_avro::{
     },
     Schema as AvroSchema,
 };
-use feldera_types::program_schema::{
-    canonical_identifier, ColumnType, Field, Relation, SqlIdentifier, SqlType,
-};
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 
 /// Indicates whether the field has an optional type (`["null", T]`) and,
 /// if so, whether the non-null element of the union is at position 0 or 1.
@@ -46,7 +44,7 @@ fn lookup_field<'a>(fields: &'a [RecordField], field: &'a Field) -> Option<&'a R
     // TODO: check `record_field.aliases`.
     fields
         .iter()
-        .find(|&record_field| canonical_identifier(&record_field.name) == name)
+        .find(|&record_field| record_field.name == name)
 }
 
 /// Check that Avro schema can be deserialized into a struct with
