@@ -156,7 +156,7 @@ impl CheckpointState {
 }
 
 struct ServerState {
-    phase: RwLock<PipelinePhase>,
+    phase: Arc<RwLock<PipelinePhase>>,
     metadata: RwLock<String>,
     controller: Mutex<Option<Controller>>,
     prometheus: RwLock<Option<PrometheusMetrics>>,
@@ -170,7 +170,7 @@ struct ServerState {
 impl ServerState {
     fn new(terminate_sender: Option<Sender<()>>) -> Self {
         Self {
-            phase: RwLock::new(PipelinePhase::Initializing),
+            phase: Arc::new(RwLock::new(PipelinePhase::Initializing)),
             metadata: RwLock::new(String::new()),
             controller: Mutex::new(None),
             checkpoint_state: Arc::new(Mutex::new(CheckpointState::default())),
@@ -991,7 +991,11 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
     let receiver = match &*state.controller.lock().unwrap() {
         Some(controller) => {
             let (sender, receiver) = oneshot::channel();
+            let phase = state.phase.clone();
             controller.start_suspend(Box::new(move |suspend| {
+                if suspend.is_ok() {
+                    *phase.write().unwrap() = PipelinePhase::Suspended;
+                }
                 if sender.send(suspend).is_err() {
                     error!("`/suspend` result could not be sent");
                 }
@@ -1011,7 +1015,14 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
         }
     };
 
-    receiver.await.unwrap()?;
+    let result = receiver.await.unwrap();
+
+    // If the pipeline is already suspended, ignore the error. The controller
+    // can return a ControllerExit error when flushing any remaining suspend requests after
+    // the first successful suspend operation.
+    if !matches!(*state.phase.read().unwrap(), PipelinePhase::Suspended) {
+        result?;
+    }
 
     let Some(controller) = state.controller.lock().unwrap().take() else {
         match missing_controller_error(&state) {
@@ -1024,12 +1035,6 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
     };
 
     controller.stop()?;
-    if let Ok(mut phase) = state.phase.write() {
-        if !matches!(*phase, PipelinePhase::Failed(_)) {
-            *phase = PipelinePhase::Suspended;
-        }
-    }
-
     success()
 }
 
