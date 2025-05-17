@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -30,6 +32,71 @@ public class CatalogTests extends BaseSQLTests {
         result.ioOptions.emitHandles = false;
         result.languageOptions.unrestrictedIOTypes = false;
         return result;
+    }
+
+    @Test
+    public void issue4019() {
+        var ccs = this.getCCS("""
+                CREATE TABLE input (
+                  "someField" VARCHAR NOT NULL
+                ) WITH (
+                  'connectors' = '[
+                    {
+                      "transport": {
+                          "name": "kafka_input",
+                          "config": {
+                              "topic": "input-topic",
+                              "start_from": "earliest",
+                              "bootstrap.servers": "broker:29092"
+                          }
+                      },
+                    "format": {
+                      "name": "avro",
+                      "config": {
+                        "registry_urls": ["http://schema-registry:8082"],
+                        "update_format": "raw"
+                      }
+                    }
+                  }]',
+                  'materialized' = 'true'
+                );
+                
+                CREATE VIEW output
+                WITH (
+                  'connectors' = '[
+                  {
+                    "transport": {
+                        "name": "kafka_output",
+                        "config": {
+                            "topic": "output-topic",
+                            "auto.offset.reset": "earliest",
+                            "bootstrap.servers": "broker:29092"
+                        }
+                    },
+                    "format": {
+                      "name": "avro",
+                      "config": {
+                        "registry_urls": ["http://schema-registry:8082"],
+                        "update_format": "raw"
+                      }
+                    }
+                  }
+                  ]'
+                )
+                AS SELECT
+                  "someField" AS "someField"
+                FROM input;""");
+        var node = ccs.compiler.getIOMetadataAsJson();
+        ArrayNode outputs = (ArrayNode) node.get("outputs");
+        for (var out: outputs) {
+            if (out.get("name").asText().equals("output")) {
+                ArrayNode fields = (ArrayNode) out.get("fields");
+                Assert.assertEquals(1, fields.size());
+                JsonNode field = fields.get(0);
+                Assert.assertTrue(field.get("case_sensitive").asBoolean());
+                Assert.assertEquals("someField", field.get("name").asText());
+            }
+        }
     }
 
     @Test

@@ -169,6 +169,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -1269,6 +1270,10 @@ public class SqlToRelCompiler implements IWritesLogs {
                 } else {
                     columnDefinition.put(columnName, id);
                 }
+            } else {
+                String name = field.getName();
+                // This is a heuristic
+                nameIsQuoted = !name.equals(name.toLowerCase(Locale.ROOT));
             }
 
             String actualColumnName = field.getName();
