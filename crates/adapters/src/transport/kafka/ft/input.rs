@@ -7,7 +7,7 @@ use crate::{
     },
     InputConsumer, TransportInputEndpoint,
 };
-use crate::{InputBuffer, ParseError, Parser};
+use crate::{InputBuffer, Parser};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
@@ -299,7 +299,6 @@ impl KafkaFtInputReaderInner {
                 for (partition, receiver) in receivers.iter().enumerate() {
                     let max = receiver.max_offset();
                     while let Some(mut msg) = receiver.read(max) {
-                        consumer.parse_errors(msg.errors);
                         total_records += msg.buffer.len();
                         hasher.add(partition, &msg.buffer);
                         msg.buffer.flush();
@@ -366,7 +365,6 @@ impl KafkaFtInputReaderInner {
                                 receivers.iter().zip(offsets.iter_mut()).enumerate()
                             {
                                 if let Some(mut msg) = receiver.read(i64::MAX) {
-                                    consumer.parse_errors(msg.errors);
                                     total += msg.buffer.len();
                                     hasher.add(partition, &msg.buffer);
                                     msg.buffer.flush();
@@ -607,7 +605,6 @@ impl Metadata {
 struct Msg {
     offset: i64,
     buffer: Option<Box<dyn InputBuffer>>,
-    errors: Vec<ParseError>,
 }
 
 impl PartialEq for Msg {
@@ -734,12 +731,9 @@ impl PartitionReceiver {
                     let payload = message.payload().unwrap_or(&[]);
                     let (buffer, errors) = parser.parse(payload);
                     let len = buffer.len();
-                    self.messages.lock().unwrap().insert(Msg {
-                        offset,
-                        buffer,
-                        errors,
-                    });
+                    self.messages.lock().unwrap().insert(Msg { offset, buffer });
                     consumer.buffered(len, payload.len());
+                    consumer.parse_errors(errors);
                 } else {
                     tracing::error!(
                         "Received message in partition {} at out-of-order offset {offset} (expected offset {next_offset} or greater; initial offset for this partition was {})",
