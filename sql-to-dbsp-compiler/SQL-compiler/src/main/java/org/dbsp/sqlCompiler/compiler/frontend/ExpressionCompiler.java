@@ -389,10 +389,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // Use the inferred Calcite type for the output as the common type
                 commonBase = typeWithNull;
                 expressionResultType = commonBase;
-            } else if (opcode == DBSPOpcode.NULLIF) {
-                // use the Calcite type
-                expressionResultType = type;
-                assert type.mayBeNull;
             }
             if (opcode.isComparison()) {
                 expressionResultType = DBSPTypeBool.create(anyNull);
@@ -1677,8 +1673,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
                         + " not yet implemented", 1265,
                         "Perhaps you can use DATE_ADD or addition between a date and an interval?", node);
-            case NULLIF:
-                return makeBinaryExpression(node, type, DBSPOpcode.NULLIF, ops);
+            case NULLIF: {
+                // The return type is the type of arg0, but the comparison may introduce casts
+                validateArgCount(node, operationName, ops.size(), 2);
+                boolean anyNull = Linq.any(ops, o -> o.getType().mayBeNull);
+                var cmp = makeBinaryExpression(node, DBSPTypeBool.create(anyNull), DBSPOpcode.EQ, ops.get(0), ops.get(1));
+                return new DBSPIfExpression(node, cmp.wrapBoolIfNeeded(), type.none(), ops.get(0).cast(node, type, false));
+            }
             case DOT:
             default:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
