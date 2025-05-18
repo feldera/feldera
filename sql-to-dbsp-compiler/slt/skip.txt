@@ -13,3 +13,5 @@ SELECT ALL 12 / + + 0 * - MAX ( + CASE - 75 WHEN ( 44 ) * - 15 - - ( - + 55 ) * 
 SELECT DISTINCT - 27 + 0 + 47 - - 3, - 72 * + + 23 * - - NULLIF ( ( 36 ), 23 * + MIN ( - 66 ) * - 84 * 58 * 48 * - - 61 / - ( 58 ) ) * COUNT ( * ) + + 95 + + COUNT ( DISTINCT + 42 ) col1
 // test/random/expr/slt_good_75.test: test 2171, multiplication overflow
 SELECT ALL 90 * 81, CASE - 90 WHEN + ( - 58 ) * - - 85 * - 90 * - COALESCE ( + - 74, + MAX ( DISTINCT - 38 ) * + - 97 * + - 26, - 6 ) * 86 * - 30 / - 62 THEN + COUNT ( ALL COALESCE ( + 73, - 23, 37 ) ) - - 75 ELSE NULL END + - 70 AS col1
+// test/random/expr/slt_good_8.test: test 1857, multiplication overflow
+SELECT 95 / CASE + MIN ( DISTINCT - - 3 ) WHEN - 74 * + - 77 * + 71 * + 93 * + - ( - 82 ) / + + 21 + - 2 THEN 64 / 75 WHEN MIN ( DISTINCT + 16 ) THEN NULL ELSE NULL END
