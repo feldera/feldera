@@ -145,52 +145,6 @@ where
 }
 
 #[doc(hidden)]
-pub fn nullif__<T>(left: T, right: T) -> Option<T>
-where
-    T: Eq,
-{
-    if left == right {
-        None
-    } else {
-        Some(left)
-    }
-}
-
-#[doc(hidden)]
-pub fn nullif_N_<T>(left: Option<T>, right: T) -> Option<T>
-where
-    T: Eq,
-{
-    match left {
-        None => None,
-        Some(left) => nullif__(left, right),
-    }
-}
-
-#[doc(hidden)]
-pub fn nullif__N<T>(left: T, right: Option<T>) -> Option<T>
-where
-    T: Eq,
-{
-    match right {
-        None => Some(left),
-        Some(right) => nullif__(left, right),
-    }
-}
-
-#[doc(hidden)]
-pub fn nullif_N_N<T>(left: Option<T>, right: Option<T>) -> Option<T>
-where
-    T: Eq,
-{
-    if left == right {
-        None
-    } else {
-        left
-    }
-}
-
-#[doc(hidden)]
 #[inline(always)]
 pub(crate) fn lt<T>(left: T, right: T) -> bool
 where

@@ -138,4 +138,13 @@ public class Regression1Tests extends SqlIoTest {
                     transaction
                 WINDOW window_30_day AS (PARTITION BY customer_id ORDER BY ts RANGE BETWEEN INTERVAL 30 DAYS PRECEDING AND CURRENT ROW);""");
     }
+
+    @Test
+    public void issue4032() {
+        this.getCCS("""
+                CREATE VIEW V AS SELECT CASE COUNT ( * ) WHEN - 4 THEN - 75 + - 53 WHEN + 13 / - + 76
+                THEN - 84 * ( - NULLIF ( COALESCE ( + + 54, COUNT ( * ) + + MAX ( ALL + 61 ), + - CASE -
+                COUNT ( * ) WHEN - - COUNT ( * ) - 96 THEN - - 34 ELSE NULL END - + + 7 + - 77 / + 73 ), + 51 ) ) / + - 59 *
+                NULLIF ( + 42, ( 23 ) ) WHEN CASE + 19 WHEN - 96 THEN NULL WHEN - COUNT ( * ) - 38 THEN 9 END THEN NULL END AS col2""");
+    }
 }

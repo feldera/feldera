@@ -43,7 +43,6 @@ public enum DBSPOpcode {
     MAX("max", false),
     MIN("min", false),
     CONCAT("||", false),
-    NULLIF("nullif", false),
     IS_DISTINCT("is_distinct", false),
     SQL_INDEX("[]", false),
     MAP_INDEX("[]", false),
@@ -115,7 +114,7 @@ public enum DBSPOpcode {
         return switch (this) {
             case WRAP_BOOL, MAP_CONVERT, ARRAY_CONVERT, CONTROLLED_FILTER_GTE, AGG_LTE, AGG_GTE, AGG_ADD, AGG_MIN,
                  AGG_MAX, AGG_XOR, AGG_OR, AGG_AND, IS_DISTINCT, CONCAT, MIN, MAX, OR, AND, IS_NOT_FALSE, IS_NOT_TRUE,
-                 INDICATOR, NULLIF -> false;
+                 INDICATOR -> false;
             case NEG, INTERVAL_DIV, INTERVAL_MUL, TS_SUB, TS_ADD, SHIFT_LEFT, RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
                  SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,
                  ADD, TYPEDBOX, IS_TRUE, IS_FALSE, NOT, UNARY_PLUS -> true;
