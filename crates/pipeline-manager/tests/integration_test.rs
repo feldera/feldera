@@ -23,6 +23,7 @@
 //! ```text
 //! TEST_DBSP_URL=http://localhost:8080 cargo test --test integration_test --package=pipeline-manager  -- --nocapture
 //! ```
+use std::future::Future;
 use std::time::{Duration, Instant, SystemTime};
 
 use actix_http::{encoding::Decoder, Payload, StatusCode};
@@ -54,6 +55,24 @@ use pipeline_manager::runner::pipeline_executor::LOGS_END_MESSAGE;
 const TEST_DBSP_URL_VAR: &str = "TEST_DBSP_URL";
 const MANAGER_INITIALIZATION_TIMEOUT: Duration = Duration::from_secs(100);
 
+/// Wait for a condition to be true by periodically checking it.
+pub async fn wait_for_condition<F, Fut>(description: &str, mut check: F, timeout: Duration)
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = bool>,
+{
+    let start = Instant::now();
+
+    while start.elapsed() < timeout {
+        if check().await {
+            return;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    panic!("Timeout waiting for {description}");
+}
+
 struct TestConfig {
     dbsp_url: String,
     client: awc::Client,
@@ -64,6 +83,8 @@ struct TestConfig {
     resume_timeout: Duration,
     shutdown_timeout: Duration,
     failed_timeout: Duration,
+    #[cfg(feature = "feldera-enterprise")]
+    suspend_timeout: Duration,
 }
 
 impl TestConfig {
@@ -290,6 +311,28 @@ impl TestConfig {
         resp
     }
 
+    /// Pause or unpause a connector.
+    async fn connector_action(
+        &self,
+        pipeline_name: &str,
+        table_name: &str,
+        connector_name: &str,
+        action: &str,
+    ) {
+        let encoded_table_name = urlencoding::encode(table_name).to_string();
+
+        // Pause the connector
+        assert_eq!(
+                    self
+                        .post_no_body(format!(
+                            "/v0/pipelines/{pipeline_name}/tables/{encoded_table_name}/connectors/{connector_name}/{action}"
+                        ))
+                        .await
+                        .status(),
+                    StatusCode::OK
+                );
+    }
+
     async fn read_response_json(
         &self,
         response: &mut ClientResponse<Decoder<Payload>>,
@@ -483,28 +526,14 @@ impl TestConfig {
         }
         assert!(
             response.status().is_success(),
-            "Unexpected reponse to GET /pipeline/{pipeline_name}: {:?}",
+            "Unexpected response to GET /pipeline/{pipeline_name}: {:?}",
             response
         );
 
         println!("Shutting down pipeline {pipeline_name}");
-        let response = config
-            .post_no_body(format!("/v0/pipelines/{pipeline_name}/shutdown"))
-            .await;
-        assert_eq!(
-            StatusCode::ACCEPTED,
-            response.status(),
-            "Unexpected response to pipeline shutdown: {:?}",
-            response
-        );
+        config.shutdown_pipeline(pipeline_name).await;
 
         // Delete pipeline once it is confirmed it is shutdown
-        self.wait_for_deployment_status(
-            pipeline_name,
-            PipelineStatus::Shutdown,
-            config.shutdown_timeout,
-        )
-        .await;
         let response = config
             .delete(format!("/v0/pipelines/{pipeline_name}"))
             .await;
@@ -580,6 +609,56 @@ impl TestConfig {
                 response
             )
         }
+    }
+
+    async fn shutdown_pipeline(&self, pipeline_name: &str) {
+        let response = self
+            .post_no_body(&format!("/v0/pipelines/{pipeline_name}/shutdown"))
+            .await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        self.wait_for_deployment_status(
+            pipeline_name,
+            PipelineStatus::Shutdown,
+            self.shutdown_timeout,
+        )
+        .await;
+    }
+
+    #[cfg(feature = "feldera-enterprise")]
+    async fn suspend_and_resume(&self, pipeline_name: &str) {
+        let response = self
+            .post_no_body(format!("/v0/pipelines/{pipeline_name}/suspend"))
+            .await;
+        assert_eq!(
+            StatusCode::ACCEPTED,
+            response.status(),
+            "Unexpected response to pipeline suspend: {:?}",
+            response
+        );
+
+        self.wait_for_deployment_status(
+            pipeline_name,
+            PipelineStatus::Suspended,
+            self.suspend_timeout,
+        )
+        .await;
+
+        println!("Suspended pipeline {pipeline_name}");
+
+        let response = self
+            .post_no_body(format!("/v0/pipelines/{pipeline_name}/start"))
+            .await;
+        assert_eq!(
+            StatusCode::ACCEPTED,
+            response.status(),
+            "Unexpected response to pipeline resume: {:?}",
+            response
+        );
+
+        self.wait_for_deployment_status(pipeline_name, PipelineStatus::Running, self.start_timeout)
+            .await;
+
+        println!("Resumed pipeline {pipeline_name}");
     }
 }
 
@@ -678,6 +757,14 @@ async fn setup_for_pipeline(pipeline_name: Option<&str>) -> TestConfig {
             .parse::<u64>()
             .unwrap(),
     );
+    #[cfg(feature = "feldera-enterprise")]
+    let suspend_timeout = Duration::from_secs(
+        std::env::var("TEST_SUSPEND_TIMEOUT")
+            .unwrap_or("120".to_string())
+            .parse::<u64>()
+            .unwrap(),
+    );
+
     let config = TestConfig {
         dbsp_url,
         client,
@@ -688,6 +775,8 @@ async fn setup_for_pipeline(pipeline_name: Option<&str>) -> TestConfig {
         resume_timeout,
         shutdown_timeout,
         failed_timeout,
+        #[cfg(feature = "feldera-enterprise")]
+        suspend_timeout,
     };
     if let Some(pipeline_name) = pipeline_name {
         config.delete_pipeline_if_exists(pipeline_name).await;
@@ -1131,11 +1220,7 @@ async fn deploy_pipeline() {
     );
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 /// Tests that pipeline panics are correctly reported by providing a SQL program
@@ -1183,11 +1268,7 @@ async fn pipeline_panic() {
     );
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 /// Tests starting a pipeline, shutting it down, starting it again, and then shutting it down again.
@@ -1211,11 +1292,7 @@ async fn pipeline_restart() {
         .await;
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 
     // Start the pipeline
     let response = config.post_no_body("/v0/pipelines/test/start").await;
@@ -1225,11 +1302,7 @@ async fn pipeline_restart() {
         .await;
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 /// Tests that the pipeline runtime configuration is validated and stored correctly,
@@ -1706,11 +1779,7 @@ not_a_number,true,ΑαΒβΓγΔδ
     );
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 /// Test completion tokens with a pipeline that has no output connectors.
@@ -1777,11 +1846,7 @@ async fn completion_tokens() {
     }
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 /// Test completion tokens with a pipeline with output connectors.
@@ -2019,11 +2084,7 @@ as select * from t1;
     // assert_eq!(&output4, &expected_output);
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 /// Table with column of type MAP.
@@ -2069,11 +2130,7 @@ async fn map_column() {
     );
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
@@ -2119,11 +2176,7 @@ async fn parse_datetime() {
     );
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
@@ -2166,11 +2219,7 @@ async fn quoted_columns() {
     );
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
@@ -2249,11 +2298,7 @@ async fn primary_keys() {
     );
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 /// Test case-sensitive table ingress/egress behavior.
@@ -2335,11 +2380,7 @@ create materialized view "v1" as select * from table1;"#,
     );
 
     // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
@@ -2425,11 +2466,7 @@ async fn duplicate_outputs() {
         .await;
 
     // Shutdown the pipeline
-    let response2 = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response2.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
@@ -2547,11 +2584,7 @@ async fn upsert() {
         .await;
 
     // Shutdown the pipeline
-    let response2 = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response2.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
@@ -3003,12 +3036,23 @@ async fn basic_orchestration_info(
         .as_u64()
         .unwrap();
 
-    let connector_paused = config
+    let connector_paused =
+        connector_paused(config, pipeline_name, table_name, connector_name).await;
+    (pipeline_paused, connector_paused, num_processed)
+}
+
+/// Check if a connector is in the PAUSED state.
+async fn connector_paused(
+    config: &TestConfig,
+    pipeline_name: &str,
+    table_name: &str,
+    connector_name: &str,
+) -> bool {
+    config
         .input_connector_stats_json(pipeline_name, table_name, connector_name)
         .await["paused"]
         .as_bool()
-        .unwrap();
-    (pipeline_paused, connector_paused, num_processed)
+        .unwrap()
 }
 
 /// Tests the orchestration of the pipeline, which means the starting and pausing of the
@@ -3027,8 +3071,6 @@ async fn pipeline_orchestration_basic() {
         // Case-sensitive table name with special characters that need to be encoded
         ("\"numbers +C0_-,.!%()&/\"", "aA0_-"),
     ] {
-        let encoded_table_name = urlencoding::encode(table_name).to_string();
-
         // One table with one connector
         let config = setup().await;
         let sql = format!("
@@ -3055,15 +3097,9 @@ async fn pipeline_orchestration_basic() {
         assert_eq!(num_processed, 0);
 
         // Pause the connector
-        assert_eq!(
-            config
-                .post_no_body(format!(
-                    "/v0/pipelines/test/tables/{encoded_table_name}/connectors/{connector_name}/pause"
-                ))
-                .await
-                .status(),
-            StatusCode::OK
-        );
+        config
+            .connector_action("test", table_name, connector_name, "pause")
+            .await;
 
         // Pipeline is paused, connector is paused
         sleep(Duration::from_millis(500)).await;
@@ -3093,15 +3129,9 @@ async fn pipeline_orchestration_basic() {
         assert_eq!(num_processed, 0);
 
         // Start the connector
-        assert_eq!(
-            config
-                .post_no_body(format!(
-                    "/v0/pipelines/test/tables/{encoded_table_name}/connectors/{connector_name}/start"
-                ))
-                .await
-                .status(),
-            StatusCode::OK
-        );
+        config
+            .connector_action("test", table_name, connector_name, "start")
+            .await;
 
         // Pipeline is running, connector is running
         sleep(Duration::from_millis(500)).await;
@@ -3425,16 +3455,7 @@ async fn pipeline_orchestration_scenarios() {
         );
 
         // Shutdown for the next scenario
-        assert_eq!(
-            config
-                .post_no_body("/v0/pipelines/test/shutdown")
-                .await
-                .status(),
-            StatusCode::ACCEPTED
-        );
-        config
-            .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-            .await;
+        config.shutdown_pipeline("test").await;
     }
 }
 
@@ -3488,6 +3509,7 @@ async fn checkpoint() {
                 sleep(Duration::from_millis(100)).await;
             }
         }
+        config.shutdown_pipeline("test").await;
     }
 }
 
@@ -3700,4 +3722,175 @@ async fn pipeline_stats() {
             "transmitted_records": 0
         })
     );
+}
+
+/// Test suspend and resume functionality.
+#[actix_web::test]
+#[serial]
+async fn suspend() {
+    #[cfg(not(feature = "feldera-enterprise"))]
+    {
+        let config = setup().await;
+        create_and_deploy_test_pipeline(
+            &config,
+            "create table t(x int) with ('materialized' = 'true');",
+        )
+        .await;
+
+        let mut response = config.post_no_body("/v0/pipelines/test/suspend").await;
+        let value: Value = response.json().await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(value["error_code"], json!("EnterpriseFeature"));
+    }
+
+    #[cfg(feature = "feldera-enterprise")]
+    {
+        enterprise_suspend().await;
+    }
+}
+
+/// Test suspend and resume functionality.
+///
+/// * Start with three input connectors, all paused.
+/// * Suspend and resume the pipeline; unpause connector1
+/// * Suspend and resume the pipeline; unpause connector2, which automatically unpauses connector1.
+///
+/// Check for expected outputs after each step.
+#[cfg(feature = "feldera-enterprise")]
+async fn enterprise_suspend() {
+    let config = setup().await;
+    let pipeline_name = "test";
+
+    create_and_deploy_test_pipeline(
+        &config,
+        r#"create table t1 (
+    x int
+) with (
+    'materialized' = 'true',
+    'connectors' = '[{
+        "name": "c1",
+        "paused": true,
+        "transport": {
+            "name": "datagen",
+            "config": {
+                "plan": [{
+                    "limit": 1,
+                    "fields": {
+                        "x": { "values": [1] }
+                    }
+                }]
+            }
+        }
+    },
+    {
+        "name": "c2",
+        "paused": true,
+        "labels": ["label1"],
+        "transport": {
+            "name": "datagen",
+            "config": {
+                "plan": [{
+                    "limit": 3,
+                    "fields": {
+                        "x": { "values": [2,3,4] }
+                    }
+                }]
+            }
+        }
+    },
+    {
+        "name": "c3",
+        "paused": true,
+        "start_after": ["label1"],
+        "transport": {
+            "name": "datagen",
+            "config": {
+                "plan": [{
+                    "limit": 5,
+                    "fields": {
+                        "x": { "values": [5,6,7,8,9] }
+                    }
+                }]
+            }
+        }
+    }]'
+);"#,
+    )
+    .await;
+
+    // Suspend and resume:
+    // Expected connector state: paused, paused, paused.
+    config.suspend_and_resume(pipeline_name).await;
+
+    assert!(connector_paused(&config, pipeline_name, "t1", "c1").await);
+    assert!(connector_paused(&config, pipeline_name, "t1", "c2").await);
+    assert!(connector_paused(&config, pipeline_name, "t1", "c3").await);
+
+    // Unpause connector1.
+    config
+        .connector_action(pipeline_name, "t1", "c1", "start")
+        .await;
+
+    // Receive data from connector1.
+    wait_for_condition(
+        "1 records from connector 1",
+        || async {
+            config
+                .adhoc_query_json(pipeline_name, "select count(*) from t1")
+                .await
+                == json!([{"count(*)": 1}])
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    // Suspend and resume:
+    // Expected connector state: running (eoi), paused, paused.
+    config.suspend_and_resume(pipeline_name).await;
+
+    assert!(!connector_paused(&config, pipeline_name, "t1", "c1").await);
+    assert!(connector_paused(&config, pipeline_name, "t1", "c2").await);
+    assert!(connector_paused(&config, pipeline_name, "t1", "c3").await);
+
+    // Unpause connector2.
+    config
+        .connector_action(pipeline_name, "t1", "c2", "start")
+        .await;
+
+    // Receive data from connectors 2 and 3.
+    // Receive data from connector1.
+    wait_for_condition(
+        "1 records from connector 1",
+        || async {
+            config
+                .adhoc_query_json(pipeline_name, "select count(*) from t1")
+                .await
+                == json!([{"count(*)": 9}])
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    // Suspend and resume:
+    config.suspend_and_resume(pipeline_name).await;
+
+    // Expected connector state: running (eoi), running (eoi), running (eoi).
+    assert!(!connector_paused(&config, pipeline_name, "t1", "c1").await);
+    assert!(!connector_paused(&config, pipeline_name, "t1", "c2").await);
+    assert!(!connector_paused(&config, pipeline_name, "t1", "c3").await);
+
+    // Sleep for 5 seconds to allow data to be received;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    // Check that no more data was received.
+    assert_eq!(
+        config
+            .adhoc_query_json(pipeline_name, "select count(*) from t1")
+            .await,
+        json!([{"count(*)": 9}])
+    );
+
+    // Cleanup
+    //config.shutdown_pipeline(pipeline_name).await;
 }
