@@ -124,7 +124,7 @@ export const isMetricsAvailable = (status: PipelineStatus) => {
     .with('Initializing', () => 'soon' as const)
     .with('Paused', () => 'yes' as const)
     .with('Suspended', () => 'soon' as const)
-    .with('Suspending', () => 'soon' as const)
+    .with('Suspending', () => 'yes' as const)
     .with('Running', () => 'yes' as const)
     .with('Pausing', () => 'yes' as const)
     .with('Resuming', () => 'yes' as const)
