@@ -84,6 +84,7 @@
         'SystemError',
         'Shutdown',
         'ShuttingDown',
+        'Suspended',
         () => false
       )
       .with(
@@ -92,7 +93,6 @@
         'Running',
         'Pausing',
         'Paused',
-        'Suspended',
         'Suspending',
         'Resuming',
         'PipelineError',

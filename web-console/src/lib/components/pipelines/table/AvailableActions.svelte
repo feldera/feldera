@@ -98,9 +98,9 @@
   let deletePipelines = () => {
     selected.forEach(async (pipeline) => {
       if (!isPipelineCodeEditable(pipeline.status)) {
-        await api.postPipelineAction(pipeline.name, 'shutdown').then((waitFor) =>
-          waitFor().catch(toastError)
-        )
+        await api
+          .postPipelineAction(pipeline.name, 'shutdown')
+          .then((waitFor) => waitFor().catch(toastError))
       }
       return api.deletePipeline(pipeline.name)
     })
@@ -170,8 +170,8 @@
         return postPipelinesAction('suspend')
       },
       selectedPipelines.length === 1
-        ? "The pipeline's state will be preserved in the persistent storage, and the allocated compute resources will be released. The pipeline can be resumed from the preserved state, avoiding historic backfill."
-        : "These pipelines' state will be preserved in the persistent storage, and the allocated compute resources will be released. The pipelines can be resumed from the preserved state, avoiding historic backfill."
+        ? "The pipeline's state will be preserved in persistent storage. Pipeline's compute resources will be released until it is resumed."
+        : "These pipelines' states will be preserved in persistent storage. Each pipeline's compute resources will be released until it is resumed."
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>

@@ -208,7 +208,7 @@
           pipeline.optimisticUpdate({ status: 'Suspending' })
         })
       },
-      "The pipeline's state will be preserved in the persistent storage, and the allocated compute resources will be released. The pipeline can be resumed from the preserved state, avoiding historic backfill."
+      "The pipeline's state will be preserved in persistent storage. Pipeline's compute resources will be released until it is resumed."
     )(pipeline.current.name)}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
