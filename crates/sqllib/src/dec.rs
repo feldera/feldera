@@ -14,7 +14,7 @@ use feldera_types::serde_with_context::{
     serde_config::DecimalFormat, SerializeWithContext, SqlSerdeConfig,
 };
 use num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, One, Zero};
-use rkyv::{string::StringResolver, DeserializeUnsized, Fallible, SerializeUnsized};
+use rkyv::Fallible;
 use serde::de::Unexpected;
 use serde::ser::Error as SerError;
 use serde::{Serialize, Serializer};
@@ -335,32 +335,33 @@ impl SerializeWithContext<SqlSerdeConfig> for SqlDecimal {
 deserialize_without_context!(SqlDecimal);
 
 impl rkyv::Archive for SqlDecimal {
-    type Archived = ();
-    type Resolver = StringResolver;
+    type Archived = Self;
+    type Resolver = ();
 
     #[inline]
-    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
-        unimplemented!();
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, out: *mut Self::Archived) {
+        out.write(*self);
     }
 }
 
-impl<S: Fallible + ?Sized> rkyv::Serialize<S> for SqlDecimal
-where
-    str: SerializeUnsized<S>,
-{
+impl<S: Fallible + ?Sized> rkyv::Serialize<S> for SqlDecimal {
     #[inline]
     fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        unimplemented!();
+        Ok(())
     }
 }
 
-impl<D: Fallible + ?Sized> rkyv::Deserialize<SqlDecimal, D> for ()
-where
-    str: DeserializeUnsized<str, D>,
-{
+impl<D: Fallible + ?Sized> rkyv::Deserialize<SqlDecimal, D> for SqlDecimal {
     #[inline]
     fn deserialize(&self, _: &mut D) -> Result<SqlDecimal, D::Error> {
-        unimplemented!();
+        Ok(*self)
+    }
+}
+
+impl<C: Fallible> rkyv::CheckBytes<C> for SqlDecimal {
+    type Error = core::convert::Infallible;
+    unsafe fn check_bytes<'a>(value: *const Self, _ctx: &mut C) -> Result<&'a Self, Self::Error> {
+        Ok(&*value)
     }
 }
 
@@ -1002,6 +1003,24 @@ mod test {
         let total_size = SizeOf::size_of(&d);
         assert_eq!(36, total_size.total_bytes());
         assert_eq!(0, total_size.shared_bytes());
+    }
+
+    #[test]
+    fn rkyv_serialize_deserialize_sqldecimal() {
+        let d = SqlDecimal::from_i128_with_scale(0x0, 1);
+        let archived = dbsp::storage::file::to_bytes(&d).unwrap();
+        let deserialized: SqlDecimal = rkyv::from_bytes(&archived).unwrap();
+        assert_eq!(d, deserialized);
+
+        let d = SqlDecimal::from_i128_with_scale(12309182309182093812i128, 10);
+        let archived = dbsp::storage::file::to_bytes(&d).unwrap();
+        let deserialized: SqlDecimal = rkyv::from_bytes(&archived).unwrap();
+        assert_eq!(d, deserialized);
+
+        let d = SqlDecimal::from_i128_with_scale(0xffff_ffff_ffff_ffff_ffffi128, 10);
+        let archived = dbsp::storage::file::to_bytes(&d).unwrap();
+        let deserialized: SqlDecimal = rkyv::from_bytes(&archived).unwrap();
+        assert_eq!(d, deserialized);
     }
 
     #[derive(Debug, Eq, PartialEq)]
