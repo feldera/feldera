@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use aws_msk_iam_sasl_signer::generate_auth_token;
+use dbsp::circuit::tokio::TOKIO;
 use feldera_types::transport::kafka::{KafkaHeader, KafkaLogLevel};
 use parquet::data_type::AsBytes;
 use rdkafka::client::OAuthToken;
@@ -305,7 +306,7 @@ fn validate_aws_msk_region(
         // Try to load the region from the environment, but if it isn't set,
         // load it from the configuration.
         // If both are none, return an error.
-        let region = futures::executor::block_on(async {
+        let region = TOKIO.block_on(async {
                 aws_config::load_from_env()
                     .await
                     .region()
@@ -340,7 +341,7 @@ fn generate_oauthbearer_token(
 ) -> Result<OAuthToken, Box<dyn Error>> {
     if let Some(region) = config.get("region").cloned() {
         let (token, expiration_time_ms) = {
-            futures::executor::block_on(async {
+            TOKIO.block_on(async {
                 generate_auth_token(aws_types::region::Region::new(region)).await
             })
         }?;
