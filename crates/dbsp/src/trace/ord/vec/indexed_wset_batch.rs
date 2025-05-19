@@ -1,18 +1,20 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
+    circuit::checkpointer::Checkpoint,
     dynamic::{
         DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, LeanVec, WeightTrait,
         WeightTraitTyped, WithFactory,
     },
     trace::{
+        deserialize_indexed_wset,
         layers::{
             Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, MergeCursor, Serializer, WeightedItem,
+        serialize_indexed_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder,
+        Cursor, Deserializer, Filter, MergeCursor, Serializer, WeightedItem,
     },
     utils::Tup2,
-    DBData, DBWeight, NumEntries,
+    DBData, DBWeight, Error, NumEntries,
 };
 use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;
@@ -962,5 +964,21 @@ where
 
     fn step_val(&mut self) {
         self.val_index += 1;
+    }
+}
+
+impl<K, V, R> Checkpoint for VecIndexedWSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
+        Ok(serialize_indexed_wset(self))
+    }
+
+    fn restore(&mut self, data: &[u8]) -> Result<(), Error> {
+        *self = deserialize_indexed_wset(&self.factories, data);
+        Ok(())
     }
 }

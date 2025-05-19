@@ -1,20 +1,21 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
+    circuit::checkpointer::Checkpoint,
     dynamic::{DataTrait, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
         cursor::DelegatingCursor,
-        merge_batches_by_reference,
+        deserialize_indexed_wset, merge_batches_by_reference,
         ord::{
             fallback::utils::BuildTo,
             file::indexed_wset_batch::FileIndexedWSetBuilder,
             merge_batcher::MergeBatcher,
             vec::indexed_wset_batch::{VecIndexedWSet, VecIndexedWSetBuilder},
         },
-        Batch, BatchLocation, BatchReader, Builder, FileIndexedWSet, FileIndexedWSetFactories,
-        Filter, MergeCursor,
+        serialize_indexed_wset, Batch, BatchLocation, BatchReader, Builder, FileIndexedWSet,
+        FileIndexedWSetFactories, Filter, MergeCursor,
     },
-    DBWeight, NumEntries,
+    DBWeight, Error, NumEntries,
 };
 use feldera_storage::StoragePath;
 use rand::Rng;
@@ -650,5 +651,21 @@ where
 {
     fn deserialize(&self, _deserializer: &mut D) -> Result<FallbackIndexedWSet<K, V, R>, D::Error> {
         unimplemented!();
+    }
+}
+
+impl<K, V, R> Checkpoint for FallbackIndexedWSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
+        Ok(serialize_indexed_wset(self))
+    }
+
+    fn restore(&mut self, data: &[u8]) -> Result<(), Error> {
+        *self = deserialize_indexed_wset(&self.factories, data);
+        Ok(())
     }
 }
