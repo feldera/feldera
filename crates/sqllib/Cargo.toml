@@ -27,7 +27,7 @@ chrono = { workspace = true }
 like = { workspace = true }
 paste = { workspace = true }
 regex = { workspace = true }
-rkyv = { workspace = true, features = ["std", "size_64"] }
+rkyv = { workspace = true, features = ["std", "size_64", "validation"] }
 hex = { workspace = true }
 num-traits = { workspace = true }
 flate2 = { workspace = true }
