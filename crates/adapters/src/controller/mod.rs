@@ -1203,25 +1203,51 @@ impl CircuitThread {
             }
         }
 
-        let mut input_metadata = HashMap::new();
+        // Save metadata for checkpointing this step.
+        self.input_metadata = match self.ft.as_ref().and_then(|ft| ft.replay_step.as_ref()) {
+            None => {
+                // Common case: We just completed a normal step.  Collect its
+                // metadata.
+                let mut input_metadata = HashMap::new();
 
-        let statuses = self.controller.status.input_status();
-        for (&endpoint_id, (_name, results)) in step_metadata.iter() {
-            let Some(endpoint) = statuses.get(&endpoint_id) else {
-                // The endpoint has been removed, so there's nothing to record
-                // in the checkpoint.
-                continue;
-            };
-            input_metadata.insert(endpoint.endpoint_name.clone(), results.resume.clone());
-            let barrier = results
-                .resume
-                .as_ref()
-                .is_some_and(|resume| resume.is_barrier());
-            endpoint.set_barrier(barrier);
-        }
-        drop(statuses);
+                let statuses = self.controller.status.input_status();
+                for (&endpoint_id, (_name, results)) in step_metadata.iter() {
+                    let Some(endpoint) = statuses.get(&endpoint_id) else {
+                        // The endpoint has been removed, so there's nothing to record
+                        // in the checkpoint.
+                        continue;
+                    };
+                    input_metadata.insert(endpoint.endpoint_name.clone(), results.resume.clone());
+                    let barrier = results
+                        .resume
+                        .as_ref()
+                        .is_some_and(|resume| resume.is_barrier());
+                    endpoint.set_barrier(barrier);
+                }
+                drop(statuses);
 
-        self.input_metadata = input_metadata;
+                input_metadata
+            }
+            Some(replay_step) => {
+                // Special case: We just replayed a step.  Make a copy of the
+                // metadata to handle the corner case where we execute a
+                // checkpoint immediately after we finish replaying but before
+                // we execute our first non-replayed step.  See the
+                // `ft_immediate_checkpoints` test.
+                replay_step
+                    .input_logs
+                    .iter()
+                    .map(|(name, log)| {
+                        (
+                            name.clone(),
+                            Some(Resume::Seek {
+                                seek: log.metadata.clone(),
+                            }),
+                        )
+                    })
+                    .collect()
+            }
+        };
 
         if let Some(ft) = &mut self.ft {
             ft.write_step(step_metadata, self.step)?;

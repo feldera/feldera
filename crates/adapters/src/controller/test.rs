@@ -19,6 +19,7 @@ use std::{
     time::Duration,
 };
 use tempfile::{NamedTempFile, TempDir};
+use tokio::sync::oneshot;
 use tracing::info;
 
 use proptest::prelude::*;
@@ -279,6 +280,7 @@ struct FtTestRound {
     n_records: usize,
     do_checkpoint: bool,
     pause_afterward: bool,
+    immedate_checkpoint: bool,
 }
 
 impl FtTestRound {
@@ -287,6 +289,7 @@ impl FtTestRound {
             n_records,
             do_checkpoint: true,
             pause_afterward: false,
+            immedate_checkpoint: false,
         }
     }
     fn without_checkpoint(n_records: usize) -> Self {
@@ -294,12 +297,26 @@ impl FtTestRound {
             n_records,
             do_checkpoint: false,
             pause_afterward: false,
+            immedate_checkpoint: false,
         }
     }
     fn with_pause_afterward(self) -> Self {
         Self {
             pause_afterward: true,
             ..self
+        }
+    }
+
+    /// Requests a checkpoint immediately upon resume, without waiting for
+    /// records to be replayed.  This helps catch regression for bugs in
+    /// handling this case (usually because the initial input positions are
+    /// written as empty instead of as a copy of the previous positions).
+    fn immediate_checkpoint() -> Self {
+        Self {
+            n_records: 0,
+            do_checkpoint: false,
+            pause_afterward: false,
+            immedate_checkpoint: true,
         }
     }
 }
@@ -456,12 +473,18 @@ outputs:
             n_records,
             do_checkpoint,
             pause_afterward,
+            immedate_checkpoint,
         },
     ) in rounds.iter().cloned().enumerate()
     {
         println!(
-            "--- round {round}: {}add {n_records} records{}, {} --- ",
+            "--- round {round}: {}{}add {n_records} records{}, {} --- ",
             if paused { "unpause the input, " } else { "" },
+            if immedate_checkpoint {
+                "immediately initiate a checkpoint, "
+            } else {
+                ""
+            },
             if pause_afterward {
                 ", then pause the input"
             } else {
@@ -503,13 +526,19 @@ outputs:
         .unwrap();
         controller.start();
 
-        // Wait for replay for finish and then check that the input endpoint's
-        // pause state matches what it should be.
-        wait(|| !controller.is_replaying(), 1000).unwrap();
-        assert_eq!(
-            controller.is_input_endpoint_paused("test_input1").unwrap(),
-            paused
-        );
+        let (sender, receiver) = oneshot::channel();
+        if immedate_checkpoint {
+            println!("start checkpoint in background");
+            controller.start_checkpoint(Box::new(move |result| sender.send(result).unwrap()));
+        } else {
+            // Wait for replay for finish and then check that the input endpoint's
+            // pause state matches what it should be.
+            wait(|| !controller.is_replaying(), 1000).unwrap();
+            assert_eq!(
+                controller.is_input_endpoint_paused("test_input1").unwrap(),
+                paused
+            );
+        }
 
         // Wait for the records that are not in the checkpoint to be
         // processed or replayed.
@@ -546,7 +575,10 @@ outputs:
         }
 
         // Checkpoint, if requested.
-        if do_checkpoint {
+        if immedate_checkpoint {
+            println!("wait for checkpoint to complete");
+            receiver.blocking_recv().unwrap().unwrap();
+        } else if do_checkpoint {
             println!("checkpoint");
             controller.checkpoint().unwrap();
         }
@@ -561,7 +593,7 @@ outputs:
         // in `checkpointed_records..total_records`.
         check_file_contents(&output_path, checkpointed_records..total_records);
 
-        if do_checkpoint {
+        if do_checkpoint || immedate_checkpoint {
             checkpointed_records = total_records;
         }
         println!();
@@ -729,6 +761,26 @@ fn ft_with_checkpoints() {
         FtTestRound::with_checkpoint(2500),
         FtTestRound::with_checkpoint(2500),
         FtTestRound::with_checkpoint(2500),
+        FtTestRound::with_checkpoint(2500),
+    ]);
+}
+
+#[test]
+fn ft_immediate_checkpoints() {
+    test_ft(&[
+        FtTestRound::with_checkpoint(2500),
+        FtTestRound::without_checkpoint(2500),
+        FtTestRound::immediate_checkpoint(),
+        FtTestRound::without_checkpoint(2500),
+        FtTestRound::with_checkpoint(2500),
+        FtTestRound::immediate_checkpoint(),
+        FtTestRound::without_checkpoint(2500),
+        FtTestRound::without_checkpoint(2500),
+        FtTestRound::without_checkpoint(2500),
+        FtTestRound::immediate_checkpoint(),
+        FtTestRound::with_checkpoint(2500),
+        FtTestRound::with_checkpoint(2500),
+        FtTestRound::immediate_checkpoint(),
         FtTestRound::with_checkpoint(2500),
     ]);
 }
