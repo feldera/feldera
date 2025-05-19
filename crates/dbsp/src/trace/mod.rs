@@ -1160,3 +1160,95 @@ where
     }
     builder.done()
 }
+
+fn serialize_indexed_wset<B, K, V, R>(batch: &B) -> Vec<u8>
+where
+    B: BatchReader<Key = K, Val = V, Time = (), R = R>,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    let mut s = Serializer::default();
+    let mut offsets = Vec::with_capacity(2 * batch.len());
+    let mut cursor = batch.cursor();
+    offsets.push(batch.len());
+
+    while cursor.key_valid() {
+        offsets.push(cursor.key().serialize(&mut s).unwrap());
+        while cursor.val_valid() {
+            offsets.push(cursor.val().serialize(&mut s).unwrap());
+            offsets.push(cursor.weight().serialize(&mut s).unwrap());
+
+            cursor.step_val();
+        }
+        cursor.step_key();
+        offsets.push(0);
+    }
+    let _offset = s.serialize_value(&offsets).unwrap();
+    s.into_serializer().into_inner().into_vec()
+}
+
+fn deserialize_indexed_wset<B, K, V, R>(factories: &B::Factories, data: &[u8]) -> B
+where
+    B: Batch<Key = K, Val = V, Time = (), R = R>,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    let offsets = unsafe { archived_root::<Vec<usize>>(data) };
+    let len = offsets[0];
+
+    let mut builder = B::Builder::with_capacity(factories, len as usize);
+    let mut key = factories.key_factory().default_box();
+    let mut val = factories.val_factory().default_box();
+    let mut diff = factories.weight_factory().default_box();
+
+    let mut current_offset = 1;
+
+    while current_offset < offsets.len() {
+        unsafe { key.deserialize_from_bytes(data, offsets[current_offset] as usize) };
+        current_offset += 1;
+        while offsets[current_offset] != 0 {
+            unsafe { val.deserialize_from_bytes(data, offsets[current_offset] as usize) };
+            current_offset += 1;
+            unsafe { diff.deserialize_from_bytes(data, offsets[current_offset] as usize) };
+            builder.push_val_diff(&val, &diff);
+            current_offset += 1;
+        }
+
+        current_offset += 1;
+        builder.push_key(&key);
+    }
+    builder.done()
+}
+
+#[cfg(test)]
+mod serialize_test {
+    use crate::{
+        algebra::OrdIndexedZSet as DynOrdIndexedZSet,
+        dynamic::DynData,
+        indexed_zset,
+        trace::{deserialize_indexed_wset, serialize_indexed_wset, BatchReader},
+        DynZWeight, OrdIndexedZSet,
+    };
+
+    #[test]
+    fn test_serialize_indexed_wset() {
+        let test1: OrdIndexedZSet<u64, u64> = indexed_zset! {};
+        let test2 = indexed_zset! { 1 => { 1 => 1 } };
+        let test3 =
+            indexed_zset! { 1 => { 1 => 1, 2 => 2, 3 => 3 }, 2 => { 1 => 1, 2 => 2, 3 => 3 } };
+
+        for test in [test1, test2, test3] {
+            let serialized = serialize_indexed_wset(&*test);
+            let deserialized = deserialize_indexed_wset::<
+                DynOrdIndexedZSet<DynData, DynData>,
+                DynData,
+                DynData,
+                DynZWeight,
+            >(&test.factories(), &serialized);
+
+            assert_eq!(&*test, &deserialized);
+        }
+    }
+}
