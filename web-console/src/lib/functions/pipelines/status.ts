@@ -119,7 +119,7 @@ export const isPipelineConfigEditable = (status: PipelineStatus) =>
 export const isMetricsAvailable = (status: PipelineStatus) => {
   return match(status)
     .with('Shutdown', () => 'no' as const)
-    .with('Preparing', () => 'no' as const)
+    .with('Preparing', () => 'soon' as const)
     .with('Provisioning', () => 'soon' as const)
     .with('Initializing', () => 'soon' as const)
     .with('Paused', () => 'yes' as const)

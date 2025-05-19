@@ -30,6 +30,12 @@ export const useAggregatePipelineStats = (
       return Promise.resolve()
     }
     if (metricsAvailable === 'soon') {
+      metrics[pipelineName] = accumulatePipelineMetrics(
+        Date.now(),
+        refetchMs,
+        keepMs
+      )(metrics[pipelineName], { status: null })
+
       getMetrics = () => metrics
       return Promise.resolve()
     }

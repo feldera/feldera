@@ -11,6 +11,7 @@
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { Segment } from '@skeletonlabs/skeleton-svelte'
   import { useIsScreenLg } from '$lib/compositions/layout/useIsMobile.svelte'
+  import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -71,9 +72,13 @@
         </div>
         {#snippet age()}
           <div class="w-96 pt-2">
-            Active for
-            {formatElapsedTime(new Date(global.start_time * 1000))}
-            since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}
+            {#if global.start_time === 0}
+              Pipeline is not active
+            {:else}
+              Active for
+              {formatElapsedTime(new Date(global.start_time * 1000))}
+              since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}
+            {/if}
           </div>
         {/snippet}
         {#snippet updated()}
@@ -133,7 +138,7 @@
           </div>
         {/if}
       </div>
-      <div class="flex w-full flex-col gap-4 md:flex-row">
+      <div class="flex w-full flex-col gap-4 xl:flex-row">
         <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
           <PipelineThroughputGraph
             {pipeline}
@@ -149,6 +154,14 @@
             refetchMs={1000}
             keepMs={60 * 1000}
           ></PipelineMemoryGraph>
+        </div>
+        <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
+          <PipelineStorageGraph
+            {pipeline}
+            metrics={metrics.current}
+            refetchMs={1000}
+            keepMs={60 * 1000}
+          ></PipelineStorageGraph>
         </div>
       </div>
     </div>

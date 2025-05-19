@@ -48,16 +48,30 @@ const reconcileHistoricData = (
   return [...oldData.slice(sliceAt), newData]
 }
 
+const addZeroMetrics = (previous: PipelineMetrics) => ({
+  ...previous,
+  tables: new Map(),
+  views: new Map(),
+  global: previous.global.length
+    ? ((m) => [
+        ...previous.global,
+        {
+          ...m,
+          rss_bytes: 0,
+          timeMs: Date.now(),
+          start_time: 0
+        }
+      ])(previous.global.at(-1))
+    : []
+})
+
 export const accumulatePipelineMetrics =
   (newTimestamp: number, refetchMs: number, keepMs?: number) => (oldData: any, x: any) => {
     const { status: newData } = x
     invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
     invariant(((v: any): v is ControllerStatus | null => true)(newData))
     if (!newData) {
-      return {
-        ...emptyPipelineMetrics,
-        lastTimestamp: undefined
-      }
+      return oldData ? addZeroMetrics(oldData) : oldData
     }
     const globalWithTimestamp = {
       ...newData.global_metrics,
