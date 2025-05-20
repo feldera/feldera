@@ -4,13 +4,15 @@ use crate::db::{error::DBError, types::pipeline::PipelineId};
 use actix_web::http::header;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
-use openssl::ssl::{SslConnector, SslMethod};
+use log::warn;
+use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
 use serde::Deserialize;
 use std::{
     env,
     fs::{canonicalize, create_dir_all},
     path::{Path, PathBuf},
+    sync::Once,
 };
 
 /// The default `platform_version` is formed using three compilation environment variables:
@@ -214,6 +216,11 @@ pub struct DatabaseConfig {
     /// If the argument is not set, tries to connect without TLS.
     #[arg(long, env = "FELDERA_DB_TLS_CERT_PATH")]
     pub db_tls_certificate_path: Option<String>,
+
+    /// Disables TLS certificate verification.
+    #[serde(default)]
+    #[arg(long, env = "FELDERA_DB_TLS_DISABLE_VERIFY")]
+    pub disable_tls_verify: bool,
 }
 
 impl DatabaseConfig {
@@ -221,6 +228,7 @@ impl DatabaseConfig {
         Self {
             db_connection_string,
             db_tls_certificate_path,
+            disable_tls_verify: false,
         }
     }
 
@@ -251,34 +259,41 @@ impl DatabaseConfig {
     /// Database connection string.
     fn database_connection_string(&self) -> String {
         if self.db_connection_string.starts_with("postgres") {
-            // this starts_with works for `postgres://` and `postgres-embed`
+            // this starts_with works for `postgres://`, `postgres-embed` and `postgres-pg-client-embed`
             self.db_connection_string.clone()
         } else {
             panic!("Invalid connection string {}", self.db_connection_string)
         }
     }
 
-    pub(crate) fn tls_connector(&self) -> Result<Option<MakeTlsConnector>, DBError> {
+    pub(crate) fn tls_connector(&self) -> Result<MakeTlsConnector, DBError> {
         let mut builder =
             SslConnector::builder(SslMethod::tls()).map_err(|e| DBError::TlsConnection {
                 hint: "Unable to build TLS Connector to connect to PostgreSQL".to_string(),
                 openssl_error: Some(e),
             })?;
-        match &self.db_tls_certificate_path {
-            Some(ca_path) => {
-                builder
-                    .set_ca_file(ca_path)
-                    .map_err(|e| DBError::TlsConnection {
-                        hint: format!(
-                            "Unable to find TLS certificate at {:?}",
-                            self.db_tls_certificate_path
-                        ),
-                        openssl_error: Some(e),
-                    })?;
-                Ok(Some(MakeTlsConnector::new(builder.build())))
-            }
-            None => Ok(None),
+
+        if self.disable_tls_verify {
+            static ONCE: Once = Once::new();
+            ONCE.call_once(|| {
+                warn!("PostgreSQL TLS verification is disabled -- not recommended for production environments.");
+            });
+            builder.set_verify(SslVerifyMode::NONE);
         }
+
+        if let Some(ca_path) = &self.db_tls_certificate_path {
+            builder
+                .set_ca_file(ca_path)
+                .map_err(|e| DBError::TlsConnection {
+                    hint: format!(
+                        "Unable to find TLS certificate at {:?}",
+                        self.db_tls_certificate_path
+                    ),
+                    openssl_error: Some(e),
+                })?;
+        }
+
+        Ok(MakeTlsConnector::new(builder.build()))
     }
 }
 

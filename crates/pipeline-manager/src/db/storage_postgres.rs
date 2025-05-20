@@ -21,7 +21,7 @@ use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use log::{debug, info, log, Level};
-use tokio_postgres::{NoTls, Row};
+use tokio_postgres::Row;
 use uuid::Uuid;
 
 mod embedded {
@@ -1153,11 +1153,7 @@ impl StoragePostgres {
         let mgr_config = deadpool_postgres::ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         };
-        let mgr = if let Some(tls_connector) = tls {
-            Manager::from_config(config.clone(), tls_connector, mgr_config)
-        } else {
-            Manager::from_config(config.clone(), NoTls, mgr_config)
-        };
+        let mgr = Manager::from_config(config.clone(), tls, mgr_config);
         let pool = Pool::builder(mgr).max_size(16).build().unwrap();
         #[cfg(feature = "pg-embed")]
         return Ok(Self {
