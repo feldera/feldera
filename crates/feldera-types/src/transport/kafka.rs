@@ -182,6 +182,10 @@ impl KafkaInputConfig {
         // standard location (e.g., /etc/ssl/).
         self.set_option_if_missing("ssl.ca.location", "probe");
 
+        // Enable client context `stats` callback so we can periodically check
+        // up on librdkafka memory usage.
+        self.set_option_if_missing("statistics.interval.ms", "10000");
+
         Ok(())
     }
 }
@@ -350,6 +354,10 @@ impl KafkaOutputConfig {
         // We set the ssl.ca.location to "probe" so that librdkafka can find the CA certificates in a
         // standard location (e.g., /etc/ssl/).
         self.set_option_if_missing("ssl.ca.location", "probe");
+
+        // Enable client context `stats` callback so we can periodically check
+        // up on librdkafka memory usage.
+        self.set_option_if_missing("statistics.interval.ms", "10000");
 
         Ok(())
     }

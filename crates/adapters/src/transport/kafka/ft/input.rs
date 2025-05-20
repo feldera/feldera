@@ -1,4 +1,5 @@
 use crate::transport::kafka::ft::count_partitions_in_topic;
+use crate::transport::kafka::MemoryUseReporter;
 use crate::transport::kafka::{generate_oauthbearer_token, validate_aws_msk_region};
 use crate::transport::InputCommandReceiver;
 use crate::{
@@ -81,6 +82,10 @@ struct KafkaFtInputContext {
     deferred_logging: DeferredLogging,
 
     oauthbearer_config: HashMap<String, String>,
+
+    memory_use_reporter: Mutex<MemoryUseReporter>,
+
+    topic: String,
 }
 
 impl KafkaFtInputContext {
@@ -96,6 +101,8 @@ impl KafkaFtInputContext {
             endpoint: Mutex::new(Weak::new()),
             deferred_logging: DeferredLogging::new(),
             oauthbearer_config,
+            topic: kafka_config.topic.clone(),
+            memory_use_reporter: Mutex::new(MemoryUseReporter::new()),
         })
     }
 }
@@ -116,6 +123,11 @@ impl ClientContext for KafkaFtInputContext {
 
     fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
         generate_oauthbearer_token(&self.oauthbearer_config)
+    }
+
+    fn stats(&self, statistics: rdkafka::Statistics) {
+        let _guard = span(&self.topic);
+        self.memory_use_reporter.lock().unwrap().update(&statistics);
     }
 }
 
@@ -503,8 +515,8 @@ impl KafkaFtInputReaderInner {
     }
 }
 
-fn span(config: &KafkaInputConfig) -> EnteredSpan {
-    info_span!("kafka_input", topic = config.topic).entered()
+fn span(topic: &str) -> EnteredSpan {
+    info_span!("kafka_input", topic = topic).entered()
 }
 
 impl KafkaFtInputReader {
@@ -513,7 +525,7 @@ impl KafkaFtInputReader {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
-        let _guard = span(config);
+        let _guard = span(&config.topic);
 
         // Create Kafka consumer configuration.
         debug!("Starting Kafka input endpoint: {:?}", config);
@@ -551,7 +563,7 @@ impl KafkaFtInputReader {
             let endpoint = inner.clone();
             let config = config.clone();
             move || {
-                let _guard = span(&config);
+                let _guard = span(&config.topic);
                 if let Err(e) = endpoint.poller_thread(
                     config,
                     &consumer,

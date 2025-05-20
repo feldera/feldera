@@ -1,5 +1,6 @@
 use crate::transport::kafka::{
     build_headers, generate_oauthbearer_token, kafka_send, validate_aws_msk_region,
+    MemoryUseReporter,
 };
 use crate::{
     transport::{kafka::DeferredLogging, Step},
@@ -20,6 +21,7 @@ use rdkafka::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::Mutex;
 use std::{cmp::max, sync::RwLock, time::Duration};
 use tracing::span::EnteredSpan;
 use tracing::{debug, info, info_span, warn};
@@ -89,7 +91,7 @@ pub struct KafkaOutputEndpoint {
     state: State,
 }
 
-fn span(topic: &str) -> EnteredSpan {
+pub fn span(topic: &str) -> EnteredSpan {
     info_span!("kafka_output", ft = true, topic = String::from(topic)).entered()
 }
 
@@ -326,6 +328,10 @@ struct DataProducerContext {
     deferred_logging: DeferredLogging,
 
     oauthbearer_config: HashMap<String, String>,
+
+    memory_use_reporter: Mutex<MemoryUseReporter>,
+
+    topic: String,
 }
 
 impl DataProducerContext {
@@ -341,6 +347,8 @@ impl DataProducerContext {
             async_error_callback: RwLock::new(None),
             deferred_logging: DeferredLogging::new(),
             oauthbearer_config,
+            topic: kafka_config.topic.clone(),
+            memory_use_reporter: Mutex::new(MemoryUseReporter::new()),
         })
     }
 }
@@ -365,6 +373,11 @@ impl ClientContext for DataProducerContext {
 
     fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
         generate_oauthbearer_token(&self.oauthbearer_config)
+    }
+
+    fn stats(&self, statistics: rdkafka::Statistics) {
+        let _guard = span(&self.topic);
+        self.memory_use_reporter.lock().unwrap().update(&statistics);
     }
 }
 
