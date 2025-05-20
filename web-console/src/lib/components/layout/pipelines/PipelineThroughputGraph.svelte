@@ -2,7 +2,7 @@
   import { calcPipelineThroughput, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
 
   import { Chart } from 'svelte-echarts'
-  import { init, use } from 'echarts/core'
+  import { init, use, type EChartsType } from 'echarts/core'
   import { LineChart } from 'echarts/charts'
   import { GridComponent, TitleComponent, TooltipComponent } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
@@ -32,9 +32,35 @@
   let primaryColor = rgbToHex(
     getComputedStyle(document.body).getPropertyValue('--color-primary-500').trim()
   )
-  const options: EChartsOption = $derived({
+
+  let ref: EChartsType | undefined = $state()
+
+  $effect(() => {
+    throughput.series
+    if (!ref) {
+      return
+    }
+    ref.setOption({
+      series: [
+        {
+          data: throughput.series
+        }
+      ],
+      xAxis: {
+        min: Date.now() - keepMs,
+        max: Date.now()
+      },
+      yAxis: {
+        interval: (throughput.yMax - throughput.yMin) / 2,
+        min: throughput.yMin,
+        max: throughput.yMax
+      }
+    })
+  })
+
+  const options: EChartsOption = {
     animationDuration: 0,
-    animationDurationUpdate: refetchMs * 1.5,
+    animationDurationUpdate: refetchMs,
     animationEasingUpdate: 'linear' as const,
     dataLabels: { enabled: false },
     grid: {
@@ -45,8 +71,8 @@
     },
     xAxis: {
       type: 'time' as const,
-      min: Date.now() - keepMs,
-      max: Date.now(),
+      min: Date.now() - keepMs - refetchMs,
+      max: Date.now() - refetchMs,
       minInterval: 25000,
       maxInterval: 25000,
       axisLabel: {
@@ -55,8 +81,11 @@
     },
     yAxis: {
       type: 'value' as const,
+      // svelte-ignore state_referenced_locally
       interval: (throughput.yMax - throughput.yMin) / 2,
+      // svelte-ignore state_referenced_locally
       min: throughput.yMin,
+      // svelte-ignore state_referenced_locally
       max: throughput.yMax,
       axisLabel: {
         formatter(val: number) {
@@ -81,14 +110,14 @@
     series: [
       {
         type: 'line' as const,
-        // symbol: 'none',
         itemStyle: {
           opacity: 0
         },
+        // svelte-ignore state_referenced_locally
         data: throughput.series
       }
     ]
-  })
+  }
 </script>
 
 <div class="absolute h-full w-full py-4">
@@ -96,6 +125,6 @@
     Throughput: {formatQty(throughput.current)} records/s
   </div>
   {#key pipelineName}
-    <Chart {init} {options} />
+    <Chart init={(dom, theme, opts) => (ref = init(dom, theme, opts))} {options} />
   {/key}
 </div>
