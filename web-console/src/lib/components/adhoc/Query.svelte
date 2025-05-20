@@ -207,7 +207,7 @@
             {#snippet item({ index, style }: { index: number; style?: string })}
               {@const row = rows[index]}
               {#if !row}{:else if 'cells' in row}
-                <tr {style} class="{itemHeight} whitespace-nowrap odd:bg-white odd:even:bg-black">
+                <tr {style} class="{itemHeight} whitespace-nowrap odd:bg-white odd:dark:bg-black">
                   {#each row.cells as value}
                     <SQLValue
                       {value}

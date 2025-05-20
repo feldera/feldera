@@ -9,8 +9,7 @@
 
 <script lang="ts">
   import { type ExtendedPipeline } from '$lib/services/pipelineManager'
-  import Query, { type Row } from '$lib/components/adhoc/Query.svelte'
-  import { type QueryData } from '$lib/components/adhoc/Query.svelte'
+  import Query, { type Row, type QueryData } from '$lib/components/adhoc/Query.svelte'
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
   import type { SQLValueJS } from '$lib/types/sql.ts'
   import {
