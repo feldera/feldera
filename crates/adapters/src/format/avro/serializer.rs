@@ -606,9 +606,14 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
                 //     rounded_decimal.mantissa()
                 // );
 
-                Ok(AvroValue::Decimal(Decimal::from(
-                    rounded_decimal.mantissa()?.to_be_bytes(),
-                )))
+                let mantissa = rounded_decimal.mantissa();
+                match mantissa {
+                    Ok(value) => Ok(AvroValue::Decimal(value.to_be_bytes())),
+                    Err(e) => AvroSerializerError::custom(format!(
+                        "Error converting DECIMAL value {} to Avro: {}",
+                        value, e
+                    )),
+                }
             }
             _ => Err(AvroSerializerError::incompatible("string", schema)),
         })
