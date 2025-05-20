@@ -14,6 +14,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.tools.RelBuilder;
+import org.apache.calcite.tools.RelBuilderFactory;
 import org.apache.calcite.util.Pair;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -22,28 +23,29 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /** Adapts SetOpToFilterRule for the case when all filters are projected with a constant.
  * That rule does not work in this case, since that requires filters as direct inputs to the union.
  *
  * <p>Plan before:
- * LogicalUnion(all=[false]), id = 127
- *  LogicalProject(EXPR$0=[true]), id = 121
- *    LogicalFilter(condition=[=($cor0.arg1, $1)]), id = 82
- *      LogicalTableScan(table=[[schema, fact_2]]), id = 81
- *  LogicalProject(EXPR$0=[true]), id = 123
- *    LogicalFilter(condition=[AND(=($1, 'admin'), =($cor0.arg1, 'member'))]), id = 96
- *      LogicalTableScan(table=[[schema, fact_2]]), id = 85
- *  LogicalProject(EXPR$0=[true]), id = 126
- *    LogicalFilter(condition=[AND(=($1, 'eng'), =($cor0.arg1, 'member'))]), id = 100
- *      LogicalTableScan(table=[[schema, fact_2]]), id = 90
+ * LogicalUnion(all=[false])
+ *  LogicalProject(EXPR$0=[true])
+ *    LogicalFilter(condition=[=($cor0.arg1, $1)])
+ *      LogicalTableScan(table=[[schema, fact_2]])
+ *  LogicalProject(EXPR$0=[true])
+ *    LogicalFilter(condition=[AND(=($1, 'admin'), =($cor0.arg1, 'member'))])
+ *      LogicalTableScan(table=[[schema, fact_2]])
+ *  LogicalProject(EXPR$0=[true])
+ *    LogicalFilter(condition=[AND(=($1, 'eng'), =($cor0.arg1, 'member'))])
+ *      LogicalTableScan(table=[[schema, fact_2]])
  *
  * <p>Plan after:
- * LogicalAggregate(group=[{0}]), id = 306
- *   LogicalProject($f0=[true]), id = 304
- *     LogicalFilter(condition=[OR(=($cor0.arg1, $1), AND(=($1, 'admin'), =($cor0.arg1, 'member')), AND(=($1, 'eng'), =($cor0.arg1, 'member')))]), id = 302
- *       LogicalTableScan(table=[[schema, fact_2]]), id = 76
+ * LogicalAggregate(group=[{0}])
+ *   LogicalProject($f0=[true])
+ *     LogicalFilter(condition=[OR(=($cor0.arg1, $1), AND(=($1, 'admin'), =($cor0.arg1, 'member')), AND(=($1, 'eng'), =($cor0.arg1, 'member')))])
+ *       LogicalTableScan(table=[[schema, fact_2]])
  */
 public class SetopOptimizerRule
         extends RelRule<SetopOptimizerRule.Config>
@@ -67,7 +69,6 @@ public class SetopOptimizerRule
             return;
         }
 
-        final RelBuilder builder = call.builder();
         RexLiteral literal = null;
         for (int i = 0; i < inputs.size(); i++) {
             RelNode input = inputs.get(i).stripped();
@@ -110,6 +111,7 @@ public class SetopOptimizerRule
             return;
         }
 
+        final RelBuilder builder = call.builder();
         int branchCount = 0;
         for (Map.Entry<Pair<RelNode, @Nullable Integer>, List<@Nullable RexNode>> entry
                 : sourceToConds.entrySet()) {
@@ -123,9 +125,8 @@ public class SetopOptimizerRule
                 continue;
             }
 
-            List<RexNode> condsNonNull = conds.stream().map(e -> {
+            List<RexNode> condsNonNull = conds.stream().peek(e -> {
                 assert e != null;
-                return e;
             }).collect(Collectors.toList());
 
             RexNode combinedCond = combineConditions(builder, condsNonNull, setOp);
@@ -182,9 +183,88 @@ public class SetopOptimizerRule
         throw new IllegalStateException("unreachable code");
     }
 
+    @SuppressWarnings({"ConstantValue", "unused"})
+    public static final class SetopOptimizerRuleConfig implements SetopOptimizerRule.Config {
+        private final GenericRuleConfigState<SetopOptimizerRule> state;
+
+        private SetopOptimizerRuleConfig(SetopOptimizerRuleConfig.Builder builder) {
+            this.state = new GenericRuleConfigState<>(
+                    SetopOptimizerRule.Config.super.relBuilderFactory(),
+                    builder.description,
+                    SetopOptimizerRule.Config.super.operandSupplier(),
+                    builder.matchHandler);
+        }
+
+        private SetopOptimizerRuleConfig(GenericRuleConfigState<SetopOptimizerRule> state) {
+            this.state = state;
+        }
+
+        @Override @javax.annotation.Nullable
+        public RelBuilderFactory relBuilderFactory() {
+            return this.state.relBuilderFactory();
+        }
+
+        @Override
+        public @javax.annotation.Nullable java.lang.@org.checkerframework.checker.nullness.qual.Nullable String description() {
+            return this.state.description();
+        }
+
+        @Override
+        public RelRule.OperandTransform operandSupplier() {
+            return this.state.operandSupplier();
+        }
+
+        @Override
+        public RelRule.MatchHandler<SetopOptimizerRule> matchHandler() {
+            return this.state.matchHandler();
+        }
+
+        public SetopOptimizerRuleConfig withRelBuilderFactory(RelBuilderFactory value) {
+            return new SetopOptimizerRuleConfig(this.state.withRelBuilderFactory(value));
+        }
+
+        public SetopOptimizerRuleConfig withDescription(@javax.annotation.Nullable java.lang.@org.checkerframework.checker.nullness.qual.Nullable String value) {
+            return new SetopOptimizerRuleConfig(this.state.withDescription(description()));
+        }
+
+        public SetopOptimizerRuleConfig withOperandSupplier(RelRule.OperandTransform value) {
+            return new SetopOptimizerRuleConfig(this.state.withOperandSupplier(value));
+        }
+
+        public SetopOptimizerRuleConfig withMatchHandler(RelRule.MatchHandler<SetopOptimizerRule> value) {
+            return new SetopOptimizerRuleConfig(this.state.withMatchHandler(value));
+        }
+
+        @Override
+        public String toString() {
+            return this.state.toString();
+        }
+
+        public static SetopOptimizerRuleConfig.Builder builder() {
+            return new SetopOptimizerRuleConfig.Builder();
+        }
+
+        public static final class Builder {
+            private final @javax.annotation.Nullable
+            @Nullable String description = null;
+            private @javax.annotation.Nullable RelRule.MatchHandler<SetopOptimizerRule> matchHandler;
+
+            private Builder() {}
+
+            public SetopOptimizerRuleConfig.Builder withMatchHandler(RelRule.MatchHandler<SetopOptimizerRule> matchHandler) {
+                this.matchHandler = Objects.requireNonNull(matchHandler, "matchHandler");
+                return this;
+            }
+
+            public SetopOptimizerRuleConfig build() {
+                return new SetopOptimizerRuleConfig(this);
+            }
+        }
+    }
+    
     /** Rule configuration. */
     public interface Config extends RelRule.Config {
-        Config UNION = ImmutableSetopOptimizerRule.Config.builder()
+        Config UNION = SetopOptimizerRuleConfig.builder()
                 .withMatchHandler(SetopOptimizerRule::match)
                 .build()
                 .withOperandSupplier(
@@ -195,7 +275,7 @@ public class SetopOptimizerRule
                                         .anyInputs()))
                 .as(Config.class);
 
-        Config INTERSECT = ImmutableSetopOptimizerRule.Config.builder()
+        Config INTERSECT = SetopOptimizerRuleConfig.builder()
                 .withMatchHandler(SetopOptimizerRule::match)
                 .build()
                 .withOperandSupplier(
@@ -210,10 +290,6 @@ public class SetopOptimizerRule
             return new SetopOptimizerRule(this);
         }
 
-        /** Forwards a call to {@link #onMatch(RelOptRuleCall)}. */
         MatchHandler<SetopOptimizerRule> matchHandler();
-
-        /** Sets {@link #matchHandler()}. */
-        Config withMatchHandler(MatchHandler<SetopOptimizerRule> matchHandler);
     }
 }

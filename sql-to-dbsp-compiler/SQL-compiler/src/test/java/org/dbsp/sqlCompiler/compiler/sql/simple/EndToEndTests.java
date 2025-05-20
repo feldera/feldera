@@ -885,16 +885,6 @@ public class EndToEndTests extends BaseSQLTests {
                                 DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)))));
     }
 
-    @Test @Ignore
-    public void argMinTest() {
-        String query = "SELECT ARG_MIN(T.COL2, T.COL3) FROM T";
-        this.testAggregate(query,
-                new DBSPZSetExpression(
-                        new DBSPTupleExpression(new DBSPBoolLiteral(false, true))),
-                new DBSPZSetExpression(
-                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeBool.create(true)))));
-    }
-
     @Test
     public void maxConst() {
         String query = "SELECT MAX(6) FROM T";
