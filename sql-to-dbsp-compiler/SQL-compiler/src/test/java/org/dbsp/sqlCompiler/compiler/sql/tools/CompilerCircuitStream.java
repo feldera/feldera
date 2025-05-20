@@ -1,9 +1,16 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Linq;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 
 /**
@@ -63,6 +70,42 @@ public class CompilerCircuitStream extends CompilerCircuit {
         DBSPType outputType = this.circuit.getSingleOutputType();
         Change output = TableParser.parseChangeTable(expected, outputType);
         this.stream.addPair(input, output);
+    }
+
+    /** Execute some insert/delete statements using HSQLDB and compare the result
+     * with the one produced by the circuit.
+     * @param program program that creates the circuit.
+     * @param script program that inserts data in tables */
+    public void compareDB(String program, String script) throws ClassNotFoundException, SQLException {
+        Class.forName("org.hsqldb.jdbcDriver");
+        // a new instance of the database for each script
+        String jdbcUrl = "jdbc:hsqldb:mem:db";
+        Connection connection = DriverManager.getConnection(jdbcUrl, "", "");
+        program += script;
+        // not very robust
+        String[] stats = program.split(";");
+        for (String stat: stats) {
+            try (Statement s = connection.createStatement()) {
+                s.execute(stat);
+            }
+        }
+        List<DBSPSinkOperator> sinks = Linq.where(
+                Linq.list(circuit.sinkOperators.values()), o -> !o.metadata.system);
+        String view = sinks.get(0).viewName.toString();
+        String query = "SELECT * FROM " + view;
+        try (Statement stmt = connection.createStatement()) {
+            ResultSet rs = stmt.executeQuery(query);
+            Change change = TableParser.fromResultSet(rs, this.circuit.getSingleOutputType());
+            this.stream.addPair(this.toChange(script), change);
+        }
+
+        try (Statement s = connection.createStatement()) {
+            s.execute("DROP SCHEMA PUBLIC CASCADE;");
+        }
+        try (Statement s = connection.createStatement()) {
+            s.execute("SHUTDOWN;");
+        }
+        connection.close();
     }
 
     public void addChange(InputOutputChange ioChange) {

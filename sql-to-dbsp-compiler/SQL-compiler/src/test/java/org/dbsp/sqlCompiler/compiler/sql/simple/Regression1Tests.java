@@ -1,11 +1,16 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.util.Linq;
+import org.junit.Ignore;
 import org.junit.Test;
 
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.function.Function;
 
 public class Regression1Tests extends SqlIoTest {
     @Test
@@ -95,6 +100,99 @@ public class Regression1Tests extends SqlIoTest {
         return !v.equals("NULL");
     }
 
+    @Test @Ignore("Until bug is fixed")
+    public void issue3972() {
+        this.getCC("""
+                CREATE TABLE tbl(
+                row_row ROW(v2 ROW(v21 VARIANT NULL, v22 VARIANT)));
+                CREATE MATERIALIZED VIEW v AS SELECT
+                tbl.row_row[1] AS row_row2
+                FROM tbl;""");
+    }
+
+    @Test
+    public void testHsqlDb() throws SQLException, ClassNotFoundException {
+        var ccs = this.getCCS("""
+                CREATE TABLE t(x int);
+                CREATE VIEW V AS SELECT * FROM T;""");
+        String program = ccs.compiler.sources.getWholeProgram();
+        ccs.compareDB(program, "INSERT INTO T VALUES(0);");
+        ccs.compareDB(program, "INSERT INTO T VALUES(1);");
+    }
+
+    @Test
+    public void decorrelateTest() throws SQLException, ClassNotFoundException {
+        // Test for the CalciteOptimizer rule CorrelateUnionSwap
+        String tables = """
+                CREATE TABLE f1 (
+                    arg0 varchar(10) not null,
+                    arg1 varchar(10) not null
+                );
+                CREATE TABLE f2 (
+                    arg0 varchar(10) not null,
+                    arg1 varchar(10) not null
+                );
+                CREATE TABLE f3 (
+                    arg0 varchar(10) not null,
+                    arg1 varchar(10) not null
+                );
+                CREATE TABLE f4 (
+                    arg0 varchar(10) not null
+                );
+                CREATE TABLE f5 (
+                    arg0 varchar(10) not null,
+                    arg1 varchar(10) not null
+                );""";
+        var ccs = this.getCCS(tables + """
+                CREATE VIEW e as (
+                  SELECT
+                    f4.arg0 out0_val,
+                    f1.arg0 out1_val
+                  FROM
+                    f1,
+                    f4
+                  WHERE
+                    NOT EXISTS (
+                      SELECT
+                        true
+                      FROM
+                        f3
+                      WHERE
+                        NOT EXISTS (
+                          SELECT
+                            true
+                          FROM
+                            f2
+                          WHERE
+                            f3.arg1 = f2.arg1
+                        )
+                        and f4.arg0 = f3.arg0
+                    )
+                );
+                """);
+        String program = ccs.compiler.sources.getWholeProgram();
+
+        Function<Integer, String> values =
+                v -> "('" + ((v >> 1) % 2) + "', '" + (v % 2) + "');";
+
+        for (int f1 = 0; f1 < 4; f1++) {
+            for (int f2 = 0; f2 < 4; f2++) {
+                for (int f3 = 0; f3 < 4; f3++) {
+                    for (int f4 = 0; f4 < 2; f4++) {
+                        for (int f5 = 0; f5 < 4; f5++) {
+                            String builder = "INSERT INTO f1 VALUES" + values.apply(f1) +
+                                    "INSERT INTO f2 VALUES" + values.apply(f2) +
+                                    "INSERT INTO f3 VALUES" + values.apply(f3) +
+                                    "INSERT INTO f4 VALUES('" + f4 + "');" +
+                                    "INSERT INTO f5 VALUES" + values.apply(f5);
+                            ccs.compareDB(program, builder);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     @Test
     public void issue4010() {
         this.getCCS("""
@@ -146,5 +244,59 @@ public class Regression1Tests extends SqlIoTest {
                 THEN - 84 * ( - NULLIF ( COALESCE ( + + 54, COUNT ( * ) + + MAX ( ALL + 61 ), + - CASE -
                 COUNT ( * ) WHEN - - COUNT ( * ) - 96 THEN - - 34 ELSE NULL END - + + 7 + - 77 / + 73 ), + 51 ) ) / + - 59 *
                 NULLIF ( + 42, ( 23 ) ) WHEN CASE + 19 WHEN - 96 THEN NULL WHEN - COUNT ( * ) - 38 THEN 9 END THEN NULL END AS col2""");
+    }
+
+    @Test
+    public void testExcept() {
+        // Tests that the ExceptOptimizerRule is sound.
+        // Note: currently this optimization does not exist.
+        String sql = """
+                CREATE TABLE F(ARG0 VARCHAR, ARG1 INT NOT NULL);
+                CREATE TABLE G(ARG1 INT NOT NULL);
+                
+                CREATE LOCAL VIEW V0 AS SELECT true
+                FROM G WHERE NOT EXISTS(
+                SELECT true
+                FROM F
+                WHERE F.arg1 = G.arg1);
+                
+                CREATE LOCAL VIEW V1 AS SELECT true FROM ((SELECT arg1 FROM G) EXCEPT (SELECT arg1 FROM F));
+                
+                CREATE VIEW DIFF AS (SELECT * FROM V0 EXCEPT SELECT * FROM V1) UNION ALL (SELECT * FROM V1 EXCEPT SELECT * FROM V0)""";
+
+        for (int i = 0; i < 2; i++) {
+            DBSPCompiler compiler = this.testCompiler();
+            if (i == 1)
+                compiler.options.ioOptions.skipCalciteOptimizations = "Desugar EXCEPT";
+            this.prepareInputs(compiler);
+            compiler.submitStatementsForCompilation(sql);
+            var ccs = new CompilerCircuitStream(compiler, this);
+            final String empty = """
+                     r | weight
+                    ------------""";
+            ccs.step("INSERT INTO F VALUES('a', 1);", empty);
+            ccs.step("INSERT INTO F VALUES('b', 1);", empty);
+            ccs.step("""
+                    INSERT INTO F VALUES('a', 1);
+                    INSERT INTO G VALUES(1)""", empty);
+            ccs.step("""
+                    INSERT INTO F VALUES('a', 1);
+                    INSERT INTO G VALUES(2)""", empty);
+            ccs.step("""
+                    INSERT INTO F VALUES('a', 2);
+                    INSERT INTO G VALUES(1)""", empty);
+            ccs.step("""
+                    INSERT INTO F VALUES('a', 1), ('b', 2);
+                    INSERT INTO G VALUES(1)""", empty);
+            ccs.step("""
+                    INSERT INTO F VALUES('a', 1), ('a', 2);
+                    INSERT INTO G VALUES(1), (2);""", empty);
+            ccs.step("""
+                    INSERT INTO F VALUES('a', 1), ('b', 1), ('a', 2);
+                    INSERT INTO G VALUES(1), (2);""", empty);
+            ccs.step("""
+                    INSERT INTO F VALUES('a', 1);
+                    INSERT INTO G VALUES(1), (2);""", empty);
+        }
     }
 }

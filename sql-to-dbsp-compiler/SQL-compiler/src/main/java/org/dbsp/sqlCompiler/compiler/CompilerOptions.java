@@ -198,6 +198,9 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(hidden = true, names = "--input_circuit",
                 description = "Do not process the circuit, return immediately after creation.  Used for testing")
         public boolean inputCircuit = false;
+        @Parameter(hidden = true, names = "--skip_calcite_optimization",
+                description = "Calcite optimizer steps whose names match this regex are not applied.  Used for testing")
+        public String skipCalciteOptimizations = "";
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {

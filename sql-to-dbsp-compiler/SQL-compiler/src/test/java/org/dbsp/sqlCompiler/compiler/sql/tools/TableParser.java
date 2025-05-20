@@ -38,6 +38,9 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -49,6 +52,7 @@ import java.util.regex.Pattern;
 
 /** Helper class for tests which is used to parse the expected output from queries */
 public class TableParser {
+    // Many of these are postgres specific
     static final SimpleDateFormat[] TIMESTAMP_INPUT_FORMAT = {
             new SimpleDateFormat("EEE MMM d HH:mm:ss.SSS yyyy"),
             new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy G"),
@@ -471,5 +475,34 @@ public class TableParser {
         if (inHeader)
             throw new RuntimeException("Could not find end of header for table " + table);
         return new Change(result);
+    }
+
+    public static Change fromResultSet(ResultSet data, DBSPType outputType) throws SQLException {
+        ResultSetMetaData metaData = data.getMetaData();
+        int columnCount = metaData.getColumnCount();
+        StringBuilder builder = new StringBuilder();
+        // column headers
+        for (int i = 0; i < columnCount; i++) {
+            if (i > 0)
+                builder.append("\t");
+            builder.append(metaData.getColumnName(i + 1));
+        }
+        builder.append("\tweight");
+        while (data.next()) {
+            builder.append(System.lineSeparator());
+            for (int i = 0; i < columnCount; i++) {
+                if (i > 0)
+                    builder.append("\t");
+                Object value = data.getObject(i+1);
+                if (value == null)
+                    builder.append("NULL");
+                else {
+                    builder.append(" ").append(value);
+                }
+            }
+            builder.append("\t1");
+        }
+
+        return parseChangeTable(builder.toString(), outputType);
     }
 }

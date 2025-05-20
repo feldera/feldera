@@ -7,11 +7,13 @@ import org.apache.calcite.plan.hep.HepProgram;
 import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
+import org.apache.calcite.rel.core.Correlate;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
 import org.apache.calcite.sql2rel.RelDecorrelator;
 import org.apache.calcite.tools.RelBuilder;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
@@ -23,6 +25,25 @@ public class CalciteOptimizer implements IWritesLogs {
     final List<CalciteOptimizerStep> steps;
     final int level;
     final RelBuilder builder;
+
+    public static RelNode stripRecursively(RelNode node) {
+        RelNode stripped = node.stripped();
+        List<RelNode> strippedInputs = new ArrayList<>();
+        for (RelNode input : stripped.getInputs()) {
+            strippedInputs.add(stripRecursively(input));
+        }
+        return stripped.copy(node.getTraitSet(), strippedInputs);
+    }
+
+    public static boolean containsCorrelate(RelNode node) {
+        if (node instanceof Correlate)
+            return true;
+        for (RelNode input : node.getInputs()) {
+            if (containsCorrelate(input))
+                return true;
+        }
+        return false;
+    }
 
     public interface CalciteOptimizerStep {
         /** Name of the optimizer step */
@@ -97,8 +118,10 @@ public class CalciteOptimizer implements IWritesLogs {
         this.createOptimizer();
     }
 
-    RelNode apply(RelNode rel) {
+    RelNode apply(RelNode rel, CompilerOptions options) {
         for (CalciteOptimizerStep step: this.steps) {
+            if (step.getName().matches(options.ioOptions.skipCalciteOptimizations))
+                continue;
             RelNode optimized = step.optimize(rel, this.level);
             if (rel != optimized) {
                 Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
@@ -171,6 +194,14 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.MINUS_FILTER_TO_FILTER,
                 CoreRules.UNION_FILTER_TO_FILTER
         ));
+        this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 1", 2,
+                new InnerDecorrelator(InnerDecorrelator.Config.DEFAULT)));
+        this.addStep(new SimpleOptimizerStep("Correlate/Union", 2,
+                new CorrelateUnionSwap(CorrelateUnionSwap.Config.DEFAULT)));
+        this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 2", 2,
+                new InnerDecorrelator(InnerDecorrelator.Config.DEFAULT)));
+        this.addStep(new SimpleOptimizerStep("Desugar EXCEPT", 2,
+                new ExceptOptimizerRule(ExceptOptimizerRule.ExceptOptimizerRuleConfig.DEFAULT)));
 
         this.addStep(new CalciteOptimizerStep() {
             @Override

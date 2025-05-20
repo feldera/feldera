@@ -708,7 +708,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 cluster, null);
         CalciteOptimizer optimizer = new CalciteOptimizer(
                 this.options.languageOptions.optimizationLevel, relBuilder);
-        rel = optimizer.apply(rel);
+        rel = optimizer.apply(rel, this.options);
         RelNode finalRel1 = rel;
         Logger.INSTANCE.belowLevel(this, level)
                 .append("After optimizer ")
@@ -1250,7 +1250,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             String queryFieldName = fieldPairs.getValue();
             RelDataTypeField field = fieldList.get(index);
             Objects.requireNonNull(field);
-            boolean nameIsQuoted = false;
+            boolean nameIsQuoted;
             SqlIdentifier id = null;
             if (columnNames != null) {
                 id = (SqlIdentifier) columnNames.get(index);
