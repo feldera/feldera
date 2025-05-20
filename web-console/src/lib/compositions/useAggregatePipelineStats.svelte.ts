@@ -39,6 +39,10 @@ export const useAggregatePipelineStats = (
       getMetrics = () => metrics
       return Promise.resolve()
     }
+    if (metricsAvailable === 'missing') {
+      getMetrics = () => metrics
+      return Promise.resolve()
+    }
     let requestTimestamp = Date.now()
     return api.getPipelineStats(pipelineName).then((stats) => {
       let responseTimestamp = Date.now()
