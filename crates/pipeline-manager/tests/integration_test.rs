@@ -626,6 +626,9 @@ impl TestConfig {
 
     #[cfg(feature = "feldera-enterprise")]
     async fn suspend_and_resume(&self, pipeline_name: &str) {
+        // TODO: remove this delay once we've fixed suspend in k8s.
+        tokio::time::sleep(Duration::from_millis(10_000)).await;
+
         let response = self
             .post_no_body(format!("/v0/pipelines/{pipeline_name}/suspend"))
             .await;
