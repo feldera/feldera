@@ -32,12 +32,13 @@ pub struct S3InputEndpoint {
 impl S3InputEndpoint {
     pub fn new(config: S3InputConfig) -> AnyResult<Self> {
         if !config.no_sign_request {
-            if config.aws_access_key_id.is_none() {
-                bail!("the 'aws_access_key_id' property is missing; either set it or use 'no_sign_request=true' to bypass AWS authentication for a public bucket");
-            }
-
-            if config.aws_secret_access_key.is_none() {
-                bail!("the 'aws_secret_access_key' property is missing; either set it or use 'no_sign_request=true' to bypass AWS authentication for a public bucket");
+            match (&config.aws_access_key_id, &config.aws_secret_access_key) {
+                (None, None) => {
+                    tracing::info!("both 'aws_access_key_id' and 'aws_secret_access_key' are not set; reading credentials from the environment");
+                },
+                (Some(_), None) => bail!("'aws_access_key_id' set but 'aws_secret_access_key' not set; either set both or unset both to read from the environment"),
+                (None, Some(_)) => bail!("'aws_secret_access_key' set but 'aws_access_key_id' not set; either set both or unset both to read from the environment"),
+                _ => {}
             }
         }
 
@@ -478,24 +479,35 @@ impl<T> BufferedReceiver<T> {
 }
 
 fn to_s3_config(config: &Arc<S3InputConfig>) -> aws_sdk_s3::Config {
-    let config_builder = if let Some(endpoint) = &config.endpoint_url {
-        aws_sdk_s3::Config::builder()
-            .region(aws_types::region::Region::new(config.region.clone()))
-            .endpoint_url(endpoint)
-    } else {
-        aws_sdk_s3::Config::builder().region(aws_types::region::Region::new(config.region.clone()))
-    };
+    let mut config_builder =
+        aws_sdk_s3::Config::builder().region(aws_types::region::Region::new(config.region.clone()));
+
+    if let Some(endpoint) = &config.endpoint_url {
+        config_builder = config_builder.endpoint_url(endpoint);
+    }
+
     if config.no_sign_request {
-        config_builder.build()
-    } else {
+        return config_builder.build();
+    }
+
+    if let (Some(access_key), Some(secret_key)) =
+        (&config.aws_access_key_id, &config.aws_secret_access_key)
+    {
         let credentials = aws_sdk_s3::config::Credentials::new(
-            config.aws_access_key_id.as_ref().unwrap().clone(),
-            config.aws_secret_access_key.as_ref().unwrap().clone(),
+            access_key,
+            secret_key,
             None,
             None,
             "credential-provider",
         );
+
         config_builder.credentials_provider(credentials).build()
+    } else {
+        let provider = TOKIO.block_on(async {
+            aws_config::default_provider::credentials::default_provider().await
+        });
+
+        config_builder.credentials_provider(provider).build()
     }
 }
 
