@@ -4,16 +4,14 @@ use super::{
     BlockLocation, FileId, FileReader, FileWriter, HasFileId, StorageCacheFlags, StorageError,
     IOV_MAX, MUTABLE_EXTENSION,
 };
-use crate::circuit::metrics::{
-    FILES_CREATED, FILES_DELETED, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
-};
+use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
 use crate::storage::{buffer_cache::FBuf, init};
 use feldera_storage::{
     append_to_path, StorageBackend, StorageBackendFactory, StorageFileType, StoragePath,
     StoragePathPart,
 };
 use feldera_types::config::{StorageBackendConfig, StorageCacheConfig, StorageConfig};
-use metrics::{counter, histogram};
+use metrics::counter;
 use std::ffi::OsString;
 use std::fs::{create_dir_all, DirEntry};
 use std::io::{ErrorKind, IoSlice, Write};
@@ -26,7 +24,6 @@ use std::{
         atomic::{AtomicBool, AtomicI64, Ordering},
         Arc,
     },
-    time::Instant,
 };
 use tracing::warn;
 
@@ -146,13 +143,7 @@ impl HasFileId for PosixWriter {
 impl FileWriter for PosixWriter {
     fn write_block(&mut self, data: FBuf) -> Result<Arc<FBuf>, StorageError> {
         let block = Arc::new(data);
-        let request_start = Instant::now();
         self.write(&block)?;
-
-        counter!(TOTAL_BYTES_WRITTEN).increment(block.len() as u64);
-        counter!(WRITES_SUCCESS).increment(1);
-        histogram!(WRITE_LATENCY).record(request_start.elapsed().as_secs_f64());
-
         Ok(block)
     }
 
