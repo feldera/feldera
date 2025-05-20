@@ -29,7 +29,7 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     marker::PhantomData,
     ops::Range,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 use tracing::{debug, error, warn};
@@ -41,6 +41,7 @@ pub use output::KafkaOutputEndpoint as KafkaFtOutputEndpoint;
 use super::{
     generate_oauthbearer_token, rdkafka_loglevel_from, validate_aws_msk_region, DeferredLogging,
 };
+use crate::transport::kafka::MemoryUseReporter;
 
 #[cfg(test)]
 pub mod test;
@@ -114,6 +115,10 @@ fn kafka_config(
     // We set the ssl.ca.location to "probe" so that librdkafka can find the CA certificates in a
     // standard location (e.g., /etc/ssl/).
     set_option_if_missing(&mut settings, "ssl.ca.location", "probe");
+
+    // Enable client context `stats` callback so we can periodically check
+    // up on librdkafka memory usage.
+    set_option_if_missing(&mut settings, "statistics.interval.ms", "10000");
 
     let mut config = ClientConfig::new();
     for (key, value) in settings {
@@ -433,6 +438,8 @@ where
     error_cb: F,
     deferred_logging: DeferredLogging,
     oauthbearer_config: HashMap<String, String>,
+    memory_use_reporter: Mutex<MemoryUseReporter>,
+    topic: String,
 }
 
 impl<F> DataConsumerContext<F>
@@ -451,6 +458,8 @@ where
             error_cb,
             deferred_logging: DeferredLogging::new(),
             oauthbearer_config,
+            topic: kafka_config.topic.clone(),
+            memory_use_reporter: Mutex::new(MemoryUseReporter::new()),
         })
     }
 }
@@ -479,6 +488,11 @@ where
 
     fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
         generate_oauthbearer_token(&self.oauthbearer_config)
+    }
+
+    fn stats(&self, statistics: rdkafka::Statistics) {
+        let _guard = output::span(&self.topic);
+        self.memory_use_reporter.lock().unwrap().update(&statistics);
     }
 }
 

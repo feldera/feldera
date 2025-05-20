@@ -59,7 +59,7 @@ aws-types = { workspace = true }
 actix = { workspace = true }
 actix-web = { workspace = true, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
 mime = { workspace = true }
-size-of = { workspace = true, optional = true }
+size-of = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 proptest = { workspace = true, optional = true }

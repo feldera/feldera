@@ -1,6 +1,6 @@
 use crate::transport::kafka::{
     build_headers, generate_oauthbearer_token, kafka_send, rdkafka_loglevel_from,
-    validate_aws_msk_region, DeferredLogging, PemToLocation,
+    validate_aws_msk_region, DeferredLogging, MemoryUseReporter, PemToLocation,
 };
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
@@ -16,6 +16,7 @@ use rdkafka::{
 };
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::Mutex;
 use std::{sync::RwLock, time::Duration};
 use tracing::span::EnteredSpan;
 use tracing::{debug, info_span};
@@ -36,6 +37,10 @@ struct KafkaOutputContext {
     deferred_logging: DeferredLogging,
 
     oauthbearer_config: HashMap<String, String>,
+
+    memory_use_reporter: Mutex<MemoryUseReporter>,
+
+    topic: String,
 }
 
 impl KafkaOutputContext {
@@ -51,6 +56,8 @@ impl KafkaOutputContext {
             oauthbearer_config,
             async_error_callback: RwLock::new(None),
             deferred_logging: DeferredLogging::new(),
+            topic: kafka_config.topic.clone(),
+            memory_use_reporter: Mutex::new(MemoryUseReporter::new()),
         })
     }
 }
@@ -81,6 +88,11 @@ impl ClientContext for KafkaOutputContext {
     fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
         generate_oauthbearer_token(&self.oauthbearer_config)
     }
+
+    fn stats(&self, statistics: rdkafka::Statistics) {
+        let _guard = span(&self.topic);
+        self.memory_use_reporter.lock().unwrap().update(&statistics);
+    }
 }
 
 impl ProducerContext for KafkaOutputContext {
@@ -106,13 +118,13 @@ pub struct KafkaOutputEndpoint {
     max_message_size: usize,
 }
 
-fn span(config: &KafkaOutputConfig) -> EnteredSpan {
-    info_span!("kafka_output", ft = false, topic = config.topic.clone()).entered()
+fn span(topic: &str) -> EnteredSpan {
+    info_span!("kafka_output", ft = false, topic = topic).entered()
 }
 
 impl KafkaOutputEndpoint {
     pub fn new(mut config: KafkaOutputConfig, endpoint_name: &str) -> AnyResult<Self> {
-        let _guard = span(&config);
+        let _guard = span(&config.topic);
         // Create Kafka producer configuration.
         config.validate()?;
         debug!("Starting Kafka output endpoint: {config:?}");
@@ -166,7 +178,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         // retry indefinitely.
         //
         // We don't actually care about the metadata.
-        let _guard = span(&self.config);
+        let _guard = span(&self.config.topic);
         self.kafka_producer
             .context()
             .deferred_logging
@@ -196,7 +208,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
-        let _guard = span(&self.config);
+        let _guard = span(&self.config.topic);
         let record = <BaseRecord<(), [u8], ()>>::to(&self.config.topic)
             .payload(buffer)
             .headers(self.headers.clone());
@@ -209,7 +221,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         val: Option<&[u8]>,
         headers: &[(&str, Option<&[u8]>)],
     ) -> AnyResult<()> {
-        let _guard = span(&self.config);
+        let _guard = span(&self.config.topic);
         let mut record = <BaseRecord<[u8], [u8], ()>>::to(&self.config.topic);
 
         if let Some(key) = key {
