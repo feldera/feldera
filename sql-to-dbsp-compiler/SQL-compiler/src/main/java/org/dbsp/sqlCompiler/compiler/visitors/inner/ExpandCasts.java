@@ -23,6 +23,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -228,6 +229,18 @@ public class ExpandCasts extends InnerRewriteVisitor {
         } else if (type.is(IsDateType.class) && source.getType().is(DBSPTypeBinary.class)) {
             throw new UnsupportedException(
                     "Cast function cannot convert BINARY value to " + type.asSqlString(), expression.getNode());
+        } else if (type.is(DBSPTypeRuntimeDecimal.class)) {
+            Utilities.enforce(sourceType.is(DBSPTypeDecimal.class));
+            // at runtime both TypeDecimal and TypeRuntimeDecimal are the same type
+            this.pop(expression);
+            result = source;
+            if (type.mayBeNull && !sourceType.mayBeNull)
+                result = source.some();
+            else if (!type.mayBeNull && sourceType.mayBeNull)
+                result = source.unwrap();
+            // else do nothing
+            this.map(expression, result);
+            return VisitDecision.STOP;
         }
         if (result == null)
             // Default implementation

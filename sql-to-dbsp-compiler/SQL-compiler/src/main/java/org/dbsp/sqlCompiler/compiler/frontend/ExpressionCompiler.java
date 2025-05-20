@@ -94,7 +94,6 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -680,14 +679,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     }
 
     @SuppressWarnings("SameParameterValue")
-    void ensureDecimal(CalciteObject node, List<DBSPExpression> ops, int argument) {
-        DBSPExpression arg = ops.get(argument);
-        DBSPType expected = new DBSPTypeRuntimeDecimal(arg.getType().getNode(), arg.getType().mayBeNull);
-        if (!arg.getType().is(DBSPTypeDecimal.class) && !arg.getType().is(DBSPTypeRuntimeDecimal.class))
-            ops.set(argument, arg.cast(node, expected, false));
-    }
-
-    @SuppressWarnings("SameParameterValue")
     void nullLiteralToNullArray(List<DBSPExpression> ops, int arg) {
         if (ops.get(arg).is(DBSPNullLiteral.class)) {
             ops.set(arg, new DBSPTypeArray(DBSPTypeNull.INSTANCE, true).nullValue());
@@ -1173,8 +1164,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "format_date":
                         return compileFunction(call, node, type, ops, 2);
                     case "bround":
+                        validateArgCount(node, opName, ops.size(), 2);
                         this.ensureInteger(node, ops, 1);
-                        this.ensureDecimal(node, ops, 0);
+                        DBSPExpression op0 = ops.get(0);
+                        if (!op0.getType().is(DBSPTypeDecimal.class)) {
+                            op0 = op0.cast(node, type, false);
+                            ops.set(0, op0);
+                        }
                         return compileStrictFunction(call, node, type, ops, 2);
                     case "replace":
                         validateArgCount(node, opName, ops.size(), 3);
