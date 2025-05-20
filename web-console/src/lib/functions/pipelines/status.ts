@@ -137,7 +137,7 @@ export const isMetricsAvailable = (status: PipelineStatus) => {
       { CompilingRust: P.any },
       () => 'no' as const
     )
-    .with('Unavailable', () => 'soon' as const)
+    .with('Unavailable', () => 'missing' as const)
     .with('SqlError', () => 'no' as const)
     .with('RustError', () => 'no' as const)
     .with('SystemError', () => 'no' as const)
