@@ -13,8 +13,9 @@ a file system or an object stores like [AWS S3](https://aws.amazon.com/s3/),
 [Google GCS](https://cloud.google.com/storage), or
 [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
-The Delta Lake input connector does not yet support [fault
-tolerance](/pipelines/fault-tolerance).
+The Delta Lake input connector supports suspend and resume and
+at-least-once [fault tolerance](/pipelines/fault-tolerance), but not
+exactly once fault tolerance.
 
 ## Delta Lake input connector configuration
 
