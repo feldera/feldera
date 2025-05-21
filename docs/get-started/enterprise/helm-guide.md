@@ -20,9 +20,8 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
 
 * The Feldera Helm chart and Docker images are hosted on
   [AWS ECR public registry](https://gallery.ecr.aws/feldera).
-  We will use the chart and images by referring to their online repository
-  naming `public.ecr.aws/feldera/<image>:<version>-<arch>`.
-  Where `<arch>` is the architecture of the image, either `amd64` or `arm64`.
+  We will use the chart and multi-arch images by referring to their online repository
+  naming `public.ecr.aws/feldera/<image>:<version>`.
 
 ## Installing Feldera Enterprise
 
@@ -44,7 +43,7 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    helm upgrade --install feldera \
        oci://public.ecr.aws/feldera/feldera-chart --version 0.50.0 \
        --namespace feldera --create-namespace \
-       --set felderaVersion="0.59.0-amd64" \
+       --set felderaVersion="0.64.0" \
        --set felderaAccountId="${ACCOUNT_ID}" \
        --set felderaLicenseKey="${LICENSE_KEY}" \
        --set felderaDatabaseSecretRef="feldera-db-insecure-secret"
