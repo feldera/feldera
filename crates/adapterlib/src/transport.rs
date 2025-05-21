@@ -509,6 +509,10 @@ pub trait InputConsumer: Send + Sync + DynClone {
 
     /// Returns a hasher, if the fault tolerance model calls for hashing, and
     /// `None` otherwise.
+    ///
+    /// This is just a convenience method.  Connectors can do hashing any way
+    /// they like, as long as they do it the same way for new data and for
+    /// replays.
     fn hasher(&self) -> Option<Xxh3Default> {
         match self.pipeline_fault_tolerance() {
             Some(FtModel::ExactlyOnce) => Some(Xxh3Default::new()),
@@ -607,6 +611,11 @@ pub enum Resume {
         replay: RmpValue,
 
         /// Hash of the input records in this step, for verification on replay.
+        ///
+        /// The input adapter can compute this in any way convenient to it, as
+        /// long as it does so the same way for reading data initially and on
+        /// replay.  On replay, the controller checks that the replayed value
+        /// matches the original one and fails the circuit if it differs.
         hash: u64,
     },
 }
