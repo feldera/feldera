@@ -47,13 +47,13 @@ public final class CrateGenerator {
         if (o == null || getClass() != o.getClass()) return false;
 
         CrateGenerator that = (CrateGenerator) o;
-        return baseDirectory.equals(that.baseDirectory) && crateName.equals(that.crateName);
+        return this.baseDirectory.equals(that.baseDirectory) && this.crateName.equals(that.crateName);
     }
 
     @Override
     public int hashCode() {
-        int result = baseDirectory.hashCode();
-        result = 31 * result + crateName.hashCode();
+        int result = this.baseDirectory.hashCode();
+        result = 31 * result + this.crateName.hashCode();
         return result;
     }
 

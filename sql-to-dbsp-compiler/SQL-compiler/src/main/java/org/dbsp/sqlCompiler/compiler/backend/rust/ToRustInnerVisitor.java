@@ -180,8 +180,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     protected final CompilerOptions options;
     /** Set by binary expressions */
     int visitingChild;
-    /** List of objects that should refer to declarations when generating code. */
-    protected final Map<String, DBSPComparatorItem> comparatorDeclarations;
 
     public ToRustInnerVisitor(DBSPCompiler compiler, IIndentStream builder, boolean compact) {
         super(compiler);
@@ -189,13 +187,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.compact = compact;
         this.options = compiler.options;
         this.visitingChild = 0;
-        this.comparatorDeclarations = new HashMap<>();
-    }
-
-    void setComparatorDeclarations(List<DBSPComparatorItem> comparatorDeclarations) {
-        this.comparatorDeclarations.clear();
-        for (var item: comparatorDeclarations)
-            Utilities.putNew(this.comparatorDeclarations, item.getName(), item);
     }
 
     @SuppressWarnings("SameReturnValue")
@@ -476,28 +467,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPFieldComparatorExpression expression) {
-        if (this.comparatorDeclarations.containsKey(expression.getComparatorStructName())) {
-            this.builder.append(expression.getComparatorStructName());
-            return VisitDecision.STOP;
-        }
-
-        this.push(expression);
-        expression.source.accept(this);
-        boolean hasSource = expression.source.is(DBSPFieldComparatorExpression.class);
-        if (hasSource)
-            this.builder.newline().append(".then(");
-        this.builder.append("Extract::new(move |r: &");
-        expression.comparedValueType().accept(this);
-        this.builder.append("| r.")
-                .append(expression.fieldNo);
-        if (!expression.comparedValueType().to(DBSPTypeTuple.class).getFieldType(expression.fieldNo).hasCopy())
-            this.builder.append(".clone()");
-        this.builder.append(")");
-        if (!expression.ascending)
-            this.builder.append(".rev()");
-        if (hasSource)
-            this.builder.append(")");
-        this.pop(expression);
+        this.builder.append(expression.getComparatorStructName());
         return VisitDecision.STOP;
     }
 

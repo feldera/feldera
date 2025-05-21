@@ -128,7 +128,6 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             };
             use size_of::*;
             use ::serde::{Deserialize,Serialize};
-            use compare::{Compare, Extract};
             use std::{
                 cell::LazyCell,
                 collections::BTreeMap,

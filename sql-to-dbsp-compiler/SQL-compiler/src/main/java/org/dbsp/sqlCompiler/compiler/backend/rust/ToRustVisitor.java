@@ -205,7 +205,6 @@ public class ToRustVisitor extends CircuitVisitor {
                 this.perCircuitDeclarations.add(decl.getName());
             }
         }
-        this.innerVisitor.setComparatorDeclarations(comparators.newDeclarations);
 
         if (operator.is(DBSPViewDeclarationOperator.class))
             // No output produced for view declarations
