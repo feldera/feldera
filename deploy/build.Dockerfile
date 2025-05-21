@@ -18,6 +18,8 @@ RUN apt-get update --fix-missing && apt-get install -y \
     cmake \
     # rdkafka dependency needs libsasl2-dev and a CXX compiler
     libsasl2-dev build-essential \
+    # bindgen needs this (at least the dec crate uses bindgen)
+    libclang-dev \
     # To install rust
     curl  \
     # For running the SQL compiler
