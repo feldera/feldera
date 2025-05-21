@@ -108,6 +108,33 @@ duplicate output to those connectors, but it will not drop output.
 Feldera does not yet support fault tolerance or suspend and resume in
 pipelines that use the SQL `NOW` function.
 
+The following table documents input connector support for fault
+tolerance.
+
+|Input connector|Suspend and resume|At-least-once FT|Exactly once FT|
+|--------------:|:----------------:|---------------:|--------------:|
+|[Datagen]|☑|☑|☑|
+|[Debezium]|☑|☑|☑|
+|[Delta Lake]|☑|☑|☐|
+|[HTTP GET (URL)]|☑|☑|☑|
+|[HTTP]|☑|☑|☑|
+|[Iceberg]|☐|☐|☐|
+|[Kafka]|☑|☑|☑|
+|[PostgreSQL]|☐|☐|☐|
+|[Pub/Sub]|☐|☐|☐|
+|[S3]|☑|☑|☑|
+
+[Datagen]: /connectors/sources/datagen.md
+[Debezium]: /connectors/sources/debezium.md
+[Delta Lake]: /connectors/sources/delta.md
+[HTTP GET (URL)]: /connectors/sources/http-get.md
+[HTTP]: /connectors/sources/http.md
+[Iceberg]: /connectors/sources/iceberg.md
+[Kafka]: /connectors/sources/kafka.md
+[PostgreSQL]: /connectors/sources/postgresql.md
+[Pub/Sub]: /connectors/sources/pubsub.md
+[S3]: /connectors/sources/s3.md
+
 ## Enabling suspend and resume and fault tolerance
 
 To enable suspend and resume or fault tolerance in an enterprise
@@ -178,8 +205,6 @@ request writing a checkpoint immediately.  If automatic checkpoints
 are disabled, then the user should occasionally invoke this API to
 ensure that the checkpoint feature is useful.
 
-<!-- Uncomment this when Delta Lake supports checkpointing (see
-https://github.com/feldera/feldera/issues/3884):
 > ⚠️ Writing a checkpoint should ordinarily be a fairly fast operation
 that takes a second or less.  However, the [Delta Lake input
 connector](../connectors/sources/delta.md) can only checkpoint at some
@@ -187,4 +212,4 @@ input positions.  When a checkpoint is requested between those points,
 Feldera will execute steps that draw input only from those connectors
 until they advance to a point at which a checkpoint is possible, and
 then write the checkpoint.  In some cases, this can take minutes or
-longer.  -->
+longer.
