@@ -34,6 +34,24 @@ public class MultiCrateTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue4049() throws SQLException, IOException, InterruptedException {
+        String sql = """
+                CREATE TABLE tbl(c1 INT);
+                CREATE MATERIALIZED VIEW v AS
+                SELECT c1
+                FROM tbl
+                ORDER BY c1 ASC
+                LIMIT 3;
+                CREATE MATERIALIZED VIEW v1 AS
+                SELECT c1
+                FROM tbl
+                ORDER BY c1 NULLS LAST
+                LIMIT 3;""";
+        File file = createInputScript(sql);
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
+    }
+
+    @Test
     public void testMultiCrate() throws IOException, SQLException, InterruptedException {
         String sql = """
                  CREATE TABLE T (C0 INT NOT NULL, C1 DOUBLE NOT NULL, C2 INT, C3 INT LATENESS 2, C4 INT, C5 INT);
