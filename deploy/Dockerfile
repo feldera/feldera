@@ -13,6 +13,8 @@ ARG TARGETARCH
 ENV OPENSSL_NO_VENDOR=1
 ENV OPENSSL_STATIC=1
 RUN apt update --fix-missing && apt install \
+  # bindgen needs this (at least the dec crate uses bindgen)
+  libclang-dev \
   # pkg-config is required for cargo to find libssl
   libssl-dev pkg-config \
   cmake \

@@ -8,7 +8,7 @@ jobs:
     name: Build Compiler
     runs-on: [self-hosted, skylake40]
     container:
-      image: ghcr.io/feldera/feldera-dev:f4797ad926773a38483275405728a9eb3b9005b5
+      image: ghcr.io/feldera/feldera-dev:sha-2151999cad3499a8e87ba804ffa6750f925309d9
       options: --user=ubuntu
     steps:
       - name: Checkout repository
