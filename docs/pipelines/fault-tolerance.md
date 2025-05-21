@@ -206,7 +206,7 @@ are disabled, then the user should occasionally invoke this API to
 ensure that the checkpoint feature is useful.
 
 > ⚠️ Writing a checkpoint should ordinarily be a fairly fast operation
-that takes a second or less.  However, the [Delta Lake input
+that takes several seconds.  However, the [Delta Lake input
 connector](../connectors/sources/delta.md) can only checkpoint at some
 input positions.  When a checkpoint is requested between those points,
 Feldera will execute steps that draw input only from those connectors
