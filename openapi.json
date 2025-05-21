@@ -5312,7 +5312,7 @@
               "workers": {
                 "type": "integer",
                 "format": "int32",
-                "description": "Number of DBSP worker threads.\n\nEach DBSP \"foreground\" worker thread is paired with a \"background\"\nthread for LSM merging, making the total number of threads twice the\nspecified number.",
+                "description": "Number of DBSP worker threads.\n\nEach DBSP \"foreground\" worker thread is paired with a \"background\"\nthread for LSM merging, making the total number of threads twice the\nspecified number.\n\nThe typical sweet spot for the number of workers is between 4 and 16.\nEach worker increases overall memory consumption for data structures\nused during a step.",
                 "default": 8,
                 "minimum": 0
               }
@@ -6284,7 +6284,7 @@
           "workers": {
             "type": "integer",
             "format": "int32",
-            "description": "Number of DBSP worker threads.\n\nEach DBSP \"foreground\" worker thread is paired with a \"background\"\nthread for LSM merging, making the total number of threads twice the\nspecified number.",
+            "description": "Number of DBSP worker threads.\n\nEach DBSP \"foreground\" worker thread is paired with a \"background\"\nthread for LSM merging, making the total number of threads twice the\nspecified number.\n\nThe typical sweet spot for the number of workers is between 4 and 16.\nEach worker increases overall memory consumption for data structures\nused during a step.",
             "default": 8,
             "minimum": 0
           }

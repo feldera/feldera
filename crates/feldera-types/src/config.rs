@@ -326,6 +326,10 @@ pub struct RuntimeConfig {
     /// Each DBSP "foreground" worker thread is paired with a "background"
     /// thread for LSM merging, making the total number of threads twice the
     /// specified number.
+    ///
+    /// The typical sweet spot for the number of workers is between 4 and 16.
+    /// Each worker increases overall memory consumption for data structures
+    /// used during a step.
     pub workers: u16,
 
     /// Storage configuration.
