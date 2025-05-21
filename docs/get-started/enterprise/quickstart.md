@@ -7,13 +7,13 @@ in a Kubernetes cluster.
 
 2. **Installation using Helm:**
    ```bash
-   ACCOUNT_ID="00000000-0000-0000-0000-000000000000"  # Set to own
-   LICENSE_KEY="00000000-0000-0000-0000-000000000000"  # Set to own
+   ACCOUNT_ID="00000000-0000-0000-0000-000000000000"  # Set to your own
+   LICENSE_KEY="00000000-0000-0000-0000-000000000000"  # Set to your own
 
    helm upgrade --install feldera \
-       oci://public.ecr.aws/feldera/feldera-chart --version 0.59.0 \
+       oci://public.ecr.aws/feldera/feldera-chart --version 0.64.0 \
        --namespace feldera --create-namespace \
-       --set felderaVersion="0.59.0-amd64" \
+       --set felderaVersion="0.64.0" \
        --set felderaAccountId="${ACCOUNT_ID}" \
        --set felderaLicenseKey="${LICENSE_KEY}" \
        --set felderaDatabaseSecretRef="feldera-db-insecure-secret"
