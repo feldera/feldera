@@ -87,9 +87,16 @@
         '_configurations',
         '_shutdown'
       ])
-      .with('Pausing', 'Resuming', 'Unavailable', () => [
+      .with('Pausing', 'Resuming', () => [
         '_suspend',
         '_status_spinner',
+        '_saveFile',
+        '_configurations',
+        '_shutdown'
+      ])
+      .with('Unavailable', () => [
+        '_suspend',
+        '_spacer_long',
         '_saveFile',
         '_configurations',
         '_shutdown'

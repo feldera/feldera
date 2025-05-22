@@ -6,7 +6,7 @@
 </script>
 
 <div class="flex flex-col gap-2">
-  Mode
+  Theme
   <Segment
     bind:value={darkMode.current}
     base="flex items-stretch overflow-hidden"
