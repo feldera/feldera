@@ -4,6 +4,7 @@
 from tests.aggregate_tests.aggtst_base import *  # noqa: F403
 from tests.orderby_tests.sqlite_runner import discover_sqlite_tests  # noqa: F403
 from tests.orderby_tests.test_check import *  # noqa: F403
+from tests.orderby_tests.orderby import * # noqa: F403
 
 
 def main():
