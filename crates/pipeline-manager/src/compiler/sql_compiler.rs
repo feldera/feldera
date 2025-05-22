@@ -390,6 +390,7 @@ pub(crate) async fn perform_sql_compilation(
         .arg("-je")
         .arg("--alltables")
         .arg("--ignoreOrder")
+        .arg("--nowstream")
         .arg("--crates") // Generate multiple crates instead of a single main.rs
         .arg(crate_name_pipeline_base(pipeline_id));
     #[cfg(feature = "feldera-enterprise")]
