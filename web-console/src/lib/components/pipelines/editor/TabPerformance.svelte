@@ -10,8 +10,9 @@
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { Segment } from '@skeletonlabs/skeleton-svelte'
-  import { useIsScreenLg } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -31,31 +32,70 @@
       ((d) => (d ? ` ${d}s` : ''))(d.seconds()))(
       Dayjs.duration(now.current.valueOf() - timestamp.valueOf())
     )
-  let statusTab: 'age' | 'updated' | 'id' = $state('age')
-  let isLg = useIsScreenLg()
+  let statusTab: 'age' | 'updated' = $state('age')
+  let isXl = useIsScreenXl()
 </script>
 
+{#snippet pipelineId()}
+  <ClipboardCopyButton
+    value={pipeline.current.id}
+    class="ml-auto h-8 w-auto border-[1px] border-surface-200-800"
+  >
+    <span class="text-base font-normal text-surface-950-50"
+      ><span class="hidden sm:inline">Copy pipeline ID</span><span class="inline sm:hidden">
+        Pipeline ID</span
+      ></span
+    >
+  </ClipboardCopyButton>
+  <Tooltip
+    placement="top"
+    class="z-10 text-nowrap rounded bg-white text-base text-surface-950-50 dark:bg-black"
+  >
+    {pipeline.current.id}
+  </Tooltip>
+{/snippet}
+
 {#if isMetricsAvailable(pipeline.current.status) === 'no'}
-  <div>Pipeline is not running</div>
-  <br />
-  Pipeline ID: {pipeline.current.id}
-  <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"></ClipboardCopyButton>
+  <div class="flex justify-between">
+    <div>Pipeline is not running</div>
+    {@render pipelineId()}
+  </div>
+{:else if pipeline.current.status === 'Unavailable'}
+  <div class="flex justify-between">
+    <div>
+      Pipeline is unavailable for {formatElapsedTime(
+        new Date(pipeline.current.deploymentStatusSince)
+      )} since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}. You can
+      attempt to suspend or shut it down.
+    </div>
+    {@render pipelineId()}
+  </div>
+{:else if !global && pipeline.current.status === 'Suspended'}
+  <div class="flex justify-between">
+    <div>
+      Pipeline is suspended for {formatElapsedTime(
+        new Date(pipeline.current.deploymentStatusSince)
+      )} since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}. The
+      performance metrics cannot be retrieved.
+    </div>
+    {@render pipelineId()}
+  </div>
 {:else if !global}
-  <div>Pipeline is running, but has not reported usage telemetry yet</div>
-  <br />
-  Pipeline ID: {pipeline.current.id}
-  <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"></ClipboardCopyButton>
+  <div class="flex justify-between">
+    <div>Pipeline is running, but has not reported usage telemetry yet</div>
+    {@render pipelineId()}
+  </div>
 {:else}<div class="flex h-full flex-col gap-2 overflow-y-auto overflow-x-clip scrollbar">
     <div class="flex w-full flex-col gap-4">
-      <div class="flex max-w-[1600px] flex-wrap gap-4 pt-2">
+      <div class="flex flex-wrap gap-4 pt-2">
         <div class="flex flex-col">
-          <div class="text-nowrap text-start font-semibold">Records Ingested</div>
+          <div class="text-nowrap text-start text-sm">Records Ingested</div>
           <div class="pt-2">
             {formatQty(global.total_input_records)}
           </div>
         </div>
         <div class="flex flex-col">
-          <div class="text-nowrap text-start font-semibold">
+          <div class="text-nowrap text-start text-sm">
             <span class="hidden sm:inline">Records</span> Processed
           </div>
           <div class="pt-2">
@@ -63,7 +103,7 @@
           </div>
         </div>
         <div class="flex flex-col">
-          <div class="text-nowrap text-start font-semibold">
+          <div class="text-nowrap text-start text-sm">
             <span class="hidden sm:inline">Records</span> Buffered
           </div>
           <div class="pt-2">
@@ -71,70 +111,67 @@
           </div>
         </div>
         {#snippet age()}
-          <div class="w-96 pt-2">
-            {#if global.start_time === 0}
-              Pipeline is not active
+          <div class="w-64 pt-2">
+            {#if global.start_time > 0}
+              Deployed on {Dayjs(global.start_time * 1000).format('MMM D, YYYY h:mm A')}
             {:else}
-              Active for
-              {formatElapsedTime(new Date(global.start_time * 1000))}
-              since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}
+              Not deployed
             {/if}
           </div>
         {/snippet}
         {#snippet updated()}
-          <div class="w-96 pt-2">
-            {getDeploymentStatusLabel(pipeline.current.status)} for
-            {formatElapsedTime(new Date(pipeline.current.deploymentStatusSince))}
-            since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}
+          <div class="w-64 text-nowrap pt-2">
+            {getDeploymentStatusLabel(pipeline.current.status)} since {Dayjs(
+              pipeline.current.deploymentStatusSince
+            ).format('MMM D, YYYY h:mm A')}
           </div>
         {/snippet}
-        {#snippet id()}
-          <div class="w-[340px] pt-2">
-            <span class=" break-all">{pipeline.current.id}</span>
-            <ClipboardCopyButton value={pipeline.current.id} class=" -mt-2 h-4 pb-0"
-            ></ClipboardCopyButton>
-          </div>
-        {/snippet}
-        {#if isLg.current}
+        {#if isXl.current}
           <div class="flex flex-col">
-            <div class="text-start font-semibold">Deployment age</div>
+            <div class="text-start text-sm">
+              Deployment age -
+
+              {#if global.start_time > 0}
+                {formatElapsedTime(new Date(global.start_time * 1000))}
+              {:else}
+                N/A
+              {/if}
+            </div>
             {@render age()}
           </div>
           <div class="flex flex-col">
-            <div class="text-start font-semibold">Last status update</div>
+            <div class="text-start text-sm">
+              Last status update - {formatElapsedTime(
+                new Date(pipeline.current.deploymentStatusSince)
+              )}
+            </div>
             {@render updated()}
           </div>
-          <div class="flex flex-col">
-            <div class="text-start font-semibold">Pipeline ID</div>
-            {@render id()}
-          </div>
+          {@render pipelineId()}
         {:else}
           <div>
             <Segment
               bind:value={statusTab}
-              background="preset-filled-surface-50-950 w-fit flex-none -mt-3"
+              background="preset-filled-surface-50-950 w-fit flex-none -mt-3 overflow-visible"
               indicatorBg="bg-white-dark shadow"
               indicatorText=""
               border="p-1"
               rounded="rounded"
             >
               <Segment.Item value="age" base="btn cursor-pointer z-[1] px-5 py-4 h-6">
-                <div class="text-start font-semibold">Age</div>
+                <div class="text-start text-sm">Age</div>
               </Segment.Item>
               <Segment.Item value="updated" base="btn cursor-pointer z-[1] px-5 py-4 h-6">
-                <div class="text-start font-semibold">Last status update</div>
+                <div class="text-start text-sm">Last status update</div>
               </Segment.Item>
-              <Segment.Item value="id" base="btn cursor-pointer z-[1] px-5 py-4 h-6">
-                <div class="text-start font-semibold">Pipeline ID</div>
+              <Segment.Item value="id" base="">
+                <span class="pointer-events-auto">{@render pipelineId()}</span>
               </Segment.Item>
             </Segment>
             {#if statusTab === 'age'}
               {@render age()}
             {:else if statusTab === 'updated'}
-              {@render updated()}
-            {:else}
-              {@render id()}
-            {/if}
+              {@render updated()}{/if}
           </div>
         {/if}
       </div>
