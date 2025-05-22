@@ -82,8 +82,8 @@ CREATE FUNCTION ndec2ndec(i DECIMAL(7, 2) NOT NULL) RETURNS DECIMAL(7, 2) NOT NU
 CREATE FUNCTION str2str(i VARCHAR) RETURNS VARCHAR;
 CREATE FUNCTION nstr2nstr(i VARCHAR NOT NULL) RETURNS VARCHAR NOT NULL;
 
--- CREATE FUNCTION struct2struct(i my_struct) RETURNS my_struct;
--- CREATE FUNCTION nstruct2nstruct(i my_struct NOT NULL) RETURNS my_struct NOT NULL;
+CREATE FUNCTION struct2struct(i my_struct) RETURNS my_struct;
+CREATE FUNCTION nstruct2nstruct(i my_struct NOT NULL) RETURNS my_struct NOT NULL;
 
 CREATE MATERIALIZED VIEW v AS
 SELECT
@@ -211,10 +211,10 @@ pub fn var2var(i: Option<Variant>) -> Result<Option<Variant>, Box<dyn std::error
 pub fn nvar2nvar(i: Variant) -> Result<Variant, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn dec2dec(i: Option<Decimal>) -> Result<Option<Decimal>, Box<dyn std::error::Error>> {
+pub fn dec2dec(i: Option<SqlDecimal>) -> Result<Option<SqlDecimal>, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn ndec2ndec(i: Decimal) -> Result<Decimal, Box<dyn std::error::Error>> {
+pub fn ndec2ndec(i: SqlDecimal) -> Result<SqlDecimal, Box<dyn std::error::Error>> {
     Ok(i)
 }
 pub fn str2str(i: Option<SqlString>) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
@@ -223,12 +223,12 @@ pub fn str2str(i: Option<SqlString>) -> Result<Option<SqlString>, Box<dyn std::e
 pub fn nstr2nstr(i: SqlString) -> Result<SqlString, Box<dyn std::error::Error>> {
     Ok(i)
 }
-// pub fn struct2struct(i: Option<struct_1>) -> Result<Option<struct_2>, Box<dyn std::error::Error>> {
-//    Ok(i)
-// }
-// pub fn nstruct2nstruct(i: struct_0) -> Result<struct_0, Box<dyn std::error::Error>> {
-//     Ok(i)
-//  }
+pub fn struct2struct(i: Option<Tup2<Option<i32>, Option<SqlString>>>) -> Result<Option<Tup2<Option<i32>, Option<SqlString>>>, Box<dyn std::error::Error>> {
+    Ok(i)
+}
+pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<Option<i32>, Option<SqlString>>, Box<dyn std::error::Error>> {
+    Ok(i)
+}
         """
 
         pipeline = PipelineBuilder(
