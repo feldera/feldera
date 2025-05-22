@@ -24,6 +24,8 @@ public abstract class IAggregate extends DBSPExpression implements IDBSPInnerNod
 
     /** True if these two aggregates are "compatible", i.e. they
      * can be implemented in a single operator.  For example, all linear
-     * aggregates are compatible with each other. */
-    public abstract boolean compatible(IAggregate other);
+     * aggregates are compatible with each other.
+     * @param other   Aggregate to check compatibility with.
+     * @param appendOnlySources  True if the current aggregate may depend on some append-only sources. */
+    public abstract boolean compatible(IAggregate other, boolean appendOnlySources);
 }

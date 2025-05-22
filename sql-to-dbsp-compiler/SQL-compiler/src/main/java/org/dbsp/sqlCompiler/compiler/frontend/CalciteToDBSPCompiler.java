@@ -346,7 +346,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
-    static Shuffle reorderAggregates(List<IAggregate> aggregates) {
+    Shuffle reorderAggregates(List<IAggregate> aggregates) {
         if (aggregates.size() == 1)
             return new IdShuffle(aggregates.size());
         // We make a new list for each AggregateBase which is not compatible with any other previous aggregate
@@ -357,7 +357,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             for (List<Integer> group : groups) {
                 int index = Utilities.last(group);
                 IAggregate inGroup = aggregates.get(index);
-                if (inGroup.compatible(aggregate)) {
+                if (inGroup.compatible(aggregate, this.dependsOnAppendOnlyTables)) {
                     // This implicitly relies on the transitivity of compability
                     group.add(i);
                     added = true;
@@ -391,7 +391,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * @param canReorder    If true the aggregates can be reordered.  In this case
      *                      the AggregateList will contain the permutation applied.
      */
-    public static AggregateList createAggregates(
+    public AggregateList createAggregates(
             DBSPCompiler compiler,
             RelNode node, List<AggregateCall> aggregates, List<RexLiteral> constants, DBSPTypeTuple resultType,
             DBSPType inputRowType, int groupCount, ImmutableBitSet groupKeys,
@@ -422,7 +422,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         simple = shuffle.shuffle(simple);
         for (IAggregate implementation: simple) {
             // A list of compatible aggregates
-            if (!currentGroup.isEmpty() && !Utilities.last(currentGroup).compatible(implementation)) {
+            if (!currentGroup.isEmpty() &&
+                    !Utilities.last(currentGroup).compatible(implementation, this.dependsOnAppendOnlyTables)) {
                 DBSPAggregateList aggregate = new DBSPAggregateList(obj, rowVar, currentGroup);
                 results.add(aggregate);
                 currentGroup = new ArrayList<>();
@@ -996,7 +997,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Multiple queries can share an input.
             // Or the input may have been created by a CREATE TABLE statement.
             Utilities.putNew(this.nodeOperator, scan, source);
-            source.to(DBSPSourceTableOperator.class).refer(scan);
+            DBSPSourceTableOperator table = source.to(DBSPSourceTableOperator.class);
+            this.dependsOnAppendOnlyTables = this.dependsOnAppendOnlyTables || table.metadata.isAppendOnly();
+            table.refer(scan);
         } else {
             // Try a view if no table with this name exists.
             source = this.getCircuit().getView(tableName);
@@ -2845,7 +2848,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPType groupKeyType = this.partitionKeys().getType();
             DBSPType inputType = lastOperator.getOutputZSetElementType();
 
-            AggregateList aggregates = CalciteToDBSPCompiler.createAggregates(
+            AggregateList aggregates = this.compiler.createAggregates(
                     this.compiler.compiler,
                     this.window, this.aggregateCalls, this.window.constants, tuple, inputType,
                     0, this.group.keys, true, false);
@@ -3040,7 +3043,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 List<DBSPType> types = Linq.map(
                         this.aggregateCalls, c -> this.compiler.convertType(c.type, false));
                 DBSPTypeTuple tuple = new DBSPTypeTuple(types);
-                AggregateList folds = CalciteToDBSPCompiler.createAggregates(this.compiler.compiler,
+                AggregateList folds = this.compiler.createAggregates(this.compiler.compiler,
                         this.window, this.aggregateCalls, this.window.constants, tuple, this.inputRowType, 0,
                         ImmutableBitSet.of(), false, false);
                 Utilities.enforce(folds.permutation().isIdentityPermutation());
@@ -3529,7 +3532,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 metadata.isPrimaryKey, lateness, watermark, defaultValue, metadata.defaultValuePosition);
     }
 
+    // We track whether any of the inputs of the current view are append-only tables.
+    // This is used to heuristically choose how min/max operators are compiled.
+    boolean dependsOnAppendOnlyTables = false;
+
     private DBSPNode compileCreateView(CreateViewStatement view) {
+        this.dependsOnAppendOnlyTables = false;
         RelNode rel = view.getRel();
         this.go(rel);
         DBSPSimpleOperator op = this.getOperator(rel);
