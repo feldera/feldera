@@ -1,9 +1,13 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Linq;
+import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -13,6 +17,37 @@ import java.time.format.DateTimeFormatter;
 import java.util.function.Function;
 
 public class Regression1Tests extends SqlIoTest {
+    @Test
+    public void issue4053() {
+        var cc = this.getCC("""
+                CREATE TABLE tbl(t0 int, t1 int NOT NULL);
+                CREATE VIEW V AS SELECT
+                 SUM(t0),
+                 SUM(t1),
+                 MAX(t0),
+                 MAX(t1),
+                 MAX(t0 + t1)
+                FROM tbl;""");
+        int[] streamAggregates = { 0 };
+        int[] linearAggregates = { 0 };
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPStreamAggregateOperator operator) {
+                streamAggregates[0]++;
+            }
+
+            @Override
+            public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
+                linearAggregates[0]++;
+            }
+        };
+        cc.visit(visitor);
+        // 3 max
+        Assert.assertEquals(3, streamAggregates[0]);
+        // 1 for the two sums
+        Assert.assertEquals(1, linearAggregates[0]);
+    }
+
     @Test
     public void issue3952() {
         var ccs = this.getCCS("""
