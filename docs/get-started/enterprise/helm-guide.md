@@ -140,13 +140,16 @@ You can connect to an external PostgreSQL database with the following steps:
    kubectl apply -n feldera -f feldera-db-secret.yaml
    ```
 
-3. **Add the TLS Certificate (`.pem` file) in a configmap**: We use the Amazon bundled `.pem` file
+3. **Optional: Add the TLS Certificate (`.pem` file) in a configmap**: We use the Amazon bundled `.pem` file
    as an example (in case you want to connect to Amazon RDS):
 
    ```bash
    wget https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
    kubectl create configmap postgres-pem -n feldera --from-file=postgresql-ca.pem=global-bundle.pem
    ```
+
+   This step is optional, if no certificate is provided feldera will use the system certificates
+   (`ca-certificates` package from debian 12) to validate the TLS connection.
 
    _Note:_ If necessary, you can override the file (`postgresql-ca.pem`) and configmap (`postgres-pem`)
    names by adjusting `postgresTlsCertificateFile` and `postgresTlsConfigMapRef` in `values.yaml`.
@@ -156,9 +159,11 @@ You can connect to an external PostgreSQL database with the following steps:
    ```
    --set postgresExternal=true
    --set felderaDatabaseSecretRef="feldera-db-secret"
+   --set postgresTlsConfigMapRef="postgres-pem"
    ```
 
-   _Note:_ it must be a new installation.
+   _Note:_ it must be a new installation. If you skip step 3, you must not set the `postgresTlsConfigMapRef`
+   variable.
 
 ### Feldera installation overview
 
