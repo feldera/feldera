@@ -397,7 +397,7 @@
                         "storage_mb_max": null,
                         "storage_class": null
                       },
-                      "clock_resolution_usecs": 100000,
+                      "clock_resolution_usecs": 1000000,
                       "pin_cpus": [],
                       "provisioning_timeout_secs": null,
                       "max_parallel_connector_init": null,
@@ -552,7 +552,7 @@
                     "storage_mb_max": null,
                     "storage_class": null
                   },
-                  "clock_resolution_usecs": 100000,
+                  "clock_resolution_usecs": 1000000,
                   "pin_cpus": [],
                   "provisioning_timeout_secs": null,
                   "max_parallel_connector_init": null,
@@ -613,7 +613,7 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000,
+                    "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -769,7 +769,7 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000,
+                    "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -888,7 +888,7 @@
                     "storage_mb_max": null,
                     "storage_class": null
                   },
-                  "clock_resolution_usecs": 100000,
+                  "clock_resolution_usecs": 1000000,
                   "pin_cpus": [],
                   "provisioning_timeout_secs": null,
                   "max_parallel_connector_init": null,
@@ -949,7 +949,7 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000,
+                    "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -1022,7 +1022,7 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000,
+                    "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -1262,7 +1262,7 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000,
+                    "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -2610,7 +2610,7 @@
                       "storage_mb_max": null,
                       "storage_class": null
                     },
-                    "clock_resolution_usecs": 100000,
+                    "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -5217,8 +5217,8 @@
               "clock_resolution_usecs": {
                 "type": "integer",
                 "format": "int64",
-                "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  The pipeline will update the clock value and trigger incremental recomputation\nat most each `clock_resolution_usecs` microseconds.\n\nIt is set to 100 milliseconds (100,000 microseconds) by default.\n\nSet to `null` to disable periodic clock updates.",
-                "default": 100000,
+                "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  The pipeline will update the clock value and trigger incremental recomputation\nat most each `clock_resolution_usecs` microseconds.\n\nIt is set to 1 second (1,000,000 microseconds) by default.\n\nSet to `null` to disable periodic clock updates.",
+                "default": 1000000,
                 "nullable": true,
                 "minimum": 0
               },
@@ -5252,7 +5252,7 @@
               "max_parallel_connector_init": {
                 "type": "integer",
                 "format": "int64",
-                "description": "The maximum number of connectors initialized in parallel during pipeline\nstartup.\n\nAt startup, the pipeline must initialize all of its input and output connectors.\nDepending on the number and types of connectors, this can take a long time.\nTo accelerate the process, multiple connectors are initialized concurrently.\nThis option controls the maximum number of connectors that can be intitialized\nin parallel.\n\nThe default is 10.",
+                "description": "The maximum number of connectors initialized in parallel during pipeline\nstartup.\n\nAt startup, the pipeline must initialize all of its input and output connectors.\nDepending on the number and types of connectors, this can take a long time.\nTo accelerate the process, multiple connectors are initialized concurrently.\nThis option controls the maximum number of connectors that can be initialized\nin parallel.\n\nThe default is 10.",
                 "default": null,
                 "nullable": true,
                 "minimum": 0
@@ -6193,8 +6193,8 @@
           "clock_resolution_usecs": {
             "type": "integer",
             "format": "int64",
-            "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  The pipeline will update the clock value and trigger incremental recomputation\nat most each `clock_resolution_usecs` microseconds.\n\nIt is set to 100 milliseconds (100,000 microseconds) by default.\n\nSet to `null` to disable periodic clock updates.",
-            "default": 100000,
+            "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  The pipeline will update the clock value and trigger incremental recomputation\nat most each `clock_resolution_usecs` microseconds.\n\nIt is set to 1 second (1,000,000 microseconds) by default.\n\nSet to `null` to disable periodic clock updates.",
+            "default": 1000000,
             "nullable": true,
             "minimum": 0
           },
@@ -6228,7 +6228,7 @@
           "max_parallel_connector_init": {
             "type": "integer",
             "format": "int64",
-            "description": "The maximum number of connectors initialized in parallel during pipeline\nstartup.\n\nAt startup, the pipeline must initialize all of its input and output connectors.\nDepending on the number and types of connectors, this can take a long time.\nTo accelerate the process, multiple connectors are initialized concurrently.\nThis option controls the maximum number of connectors that can be intitialized\nin parallel.\n\nThe default is 10.",
+            "description": "The maximum number of connectors initialized in parallel during pipeline\nstartup.\n\nAt startup, the pipeline must initialize all of its input and output connectors.\nDepending on the number and types of connectors, this can take a long time.\nTo accelerate the process, multiple connectors are initialized concurrently.\nThis option controls the maximum number of connectors that can be initialized\nin parallel.\n\nThe default is 10.",
             "default": null,
             "nullable": true,
             "minimum": 0
@@ -7087,6 +7087,24 @@
                 "type": "string",
                 "enum": [
                   "ad_hoc_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/ClockConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "clock_input"
                 ]
               }
             }

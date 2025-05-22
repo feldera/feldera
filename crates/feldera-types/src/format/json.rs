@@ -209,6 +209,8 @@ pub enum JsonFlavor {
     /// (For internal use only)
     #[serde(skip)]
     ParquetConverter,
+    /// Used by the clock input connector.
+    ClockInput,
     /// Datagen format.
     /// (For internal use only)
     #[serde(rename = "datagen")]
