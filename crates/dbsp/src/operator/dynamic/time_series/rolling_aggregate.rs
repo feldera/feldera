@@ -844,11 +844,10 @@ where
                 while range_cursor.key_valid() {
                     while range_cursor.val_valid() {
                         let weight = **range_cursor.weight();
-                        if !weight.is_zero() {
-                            val.from_refs(range_cursor.key(), range_cursor.val());
-                            retraction_builder.push_val_diff_mut(&mut *val, &mut weight.neg());
-                            any_values = true;
-                        }
+                        debug_assert!(weight != 0);
+                        val.from_refs(range_cursor.key(), range_cursor.val());
+                        retraction_builder.push_val_diff_mut(&mut *val, &mut weight.neg());
+                        any_values = true;
                         range_cursor.step_val();
                     }
                     range_cursor.step_key();
@@ -1009,6 +1008,7 @@ mod test {
         {
             while partition_cursor.val_valid() {
                 let w = *partition_cursor.weight().downcast_checked::<ZWeight>();
+                debug_assert!(w != 0);
                 agg = if let Some(a) = agg {
                     Some(a + *partition_cursor.val().downcast_checked::<i64>() * w)
                 } else {
