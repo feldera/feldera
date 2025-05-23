@@ -306,9 +306,7 @@ where
 
                 // Find the next timestamp in `cursor2` with non-zero weight.
                 cursor2.seek_val_with(&|v| v > delta2.val());
-                while cursor2.val_valid() && **cursor2.weight() == 0 {
-                    cursor2.step_val()
-                }
+                debug_assert!(!cursor2.val_valid() || **cursor2.weight() != 0);
 
                 // Enumerate all timestamps in `delayed_cursor1` preceding the current
                 // position of `cursor2`.
@@ -374,10 +372,7 @@ where
             cursor2
                 .seek_val_with_reverse(&|v| (self.tscmp_func)(cursor1.val(), v) != Ordering::Less);
 
-            // Ignore zero weights.
-            while cursor2.val_valid() && **cursor2.weight() == 0 {
-                cursor2.step_val_reverse();
-            }
+            debug_assert!(!cursor2.val_valid() || **cursor2.weight() != 0);
 
             // The weight of the result is the product of input weights.
             // If there is no matching RHS value, then asof-join behaves like

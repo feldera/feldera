@@ -532,8 +532,9 @@ where
             } else {
                 while delta_cursor.val_valid() {
                     let new_weight = **delta_cursor.weight();
+                    debug_assert!(!new_weight.is_zero());
 
-                    if new_weight.ge0() && !new_weight.is_zero() {
+                    if new_weight.ge0() {
                         builder.push_val_diff(delta_cursor.val(), ZWeight::one().erase());
                         any_values = true;
                     }

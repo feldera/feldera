@@ -546,6 +546,7 @@ where
             }
         });
 
+        debug_assert!(!self.weight.is_zero());
         &self.weight
     }
 

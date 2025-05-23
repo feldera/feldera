@@ -77,7 +77,7 @@
 //! [`partitioned_rolling_aggregate`](`crate::Stream::partitioned_rolling_aggregate`).
 use crate::{
     algebra::{HasOne, ZCursor},
-    dynamic::{DataTrait, DynOpt, Weight},
+    dynamic::{DataTrait, DynOpt},
     operator::dynamic::{aggregate::AggCombineFunc, time_series::Range},
     DBData, ZWeight,
 };
@@ -165,13 +165,6 @@ where
     A: DataTrait + ?Sized,
     TS: PrimInt + DBData,
 {
-    /// Helper function: skip values with zero weights.
-    fn skip_zero_weights(&mut self) {
-        while self.val_valid() && Weight::is_zero(self.weight()) {
-            self.step_val();
-        }
-    }
-
     /// Computes aggregate over time range in a radix tree.
     ///
     /// Combine all aggregate values for timestamps in `range`
@@ -194,7 +187,7 @@ where
         result.set_none();
 
         // Discussion:
-        // Starting from the root or the tree every time is
+        // Starting from the root of the tree every time is
         // wasteful: in practice, this method is invoked for
         // ranges with monotonically increasing left bounds,
         // so we could cache the cursor to the start of the
@@ -208,10 +201,8 @@ where
             return;
         }
 
-        self.skip_zero_weights();
-        if !self.val_valid() {
-            return;
-        }
+        debug_assert!(self.val_valid() && **self.weight() != 0);
+
         let node = clone_box(self.val());
         self.aggregate_range_inner(&Prefix::full_range(), node.deref(), range, combine, result)
     }
@@ -269,8 +260,7 @@ where
                 } else if child_prefix.contains(range.from) || child_prefix.contains(range.to) {
                     // Slot overlaps with range -- descend down the child tree.
                     self.seek_key(child_prefix.erase());
-                    self.skip_zero_weights();
-                    debug_assert!(self.key_valid());
+                    debug_assert!(self.key_valid() && **self.weight() != 0);
                     debug_assert_eq!(**self.key(), child_prefix);
 
                     self.val().clone_to(&mut *child_node);
@@ -288,17 +278,15 @@ where
         W: Write,
     {
         while self.key_valid() {
-            self.skip_zero_weights();
-            if self.val_valid() {
-                let indent = self.key().prefix_len as usize / RADIX_BITS as usize;
-                writeln!(
-                    writer,
-                    "{:indent$}[{}] => {}",
-                    "",
-                    self.key().deref(),
-                    self.val()
-                )?;
-            }
+            debug_assert!(self.val_valid() && **self.weight() != 0);
+            let indent = self.key().prefix_len as usize / RADIX_BITS as usize;
+            writeln!(
+                writer,
+                "{:indent$}[{}] => {}",
+                "",
+                self.key().deref(),
+                self.val()
+            )?;
             self.step_key();
         }
 
@@ -323,51 +311,49 @@ where
         expected_prefixes.insert(Prefix::full_range());
 
         while self.key_valid() {
-            self.skip_zero_weights();
-            if self.val_valid() {
-                // Tree should only contain nodes with unit weights.
-                assert_eq!(**self.weight(), ZWeight::one());
-                let node_prefix = self.key();
-                assert!(expected_prefixes.remove(node_prefix));
-                let node = clone_box(self.val());
-                for child_idx in 0..RADIX {
-                    if let Some(child_ptr) = node.slot(child_idx).get() {
-                        assert!(node_prefix.contains(child_ptr.child_prefix().key));
-                        assert!(node_prefix.prefix_len < child_ptr.child_prefix().prefix_len);
-                        // Child node is at the right index.
-                        assert_eq!(
-                            child_idx,
-                            node_prefix.slot_of_timestamp(child_ptr.child_prefix().key)
-                        );
+            debug_assert!(self.val_valid() && **self.weight() != 0);
+            // Tree should only contain nodes with unit weights.
+            assert_eq!(**self.weight(), ZWeight::one());
+            let node_prefix = self.key();
+            assert!(expected_prefixes.remove(node_prefix));
+            let node = clone_box(self.val());
+            for child_idx in 0..RADIX {
+                if let Some(child_ptr) = node.slot(child_idx).get() {
+                    assert!(node_prefix.contains(child_ptr.child_prefix().key));
+                    assert!(node_prefix.prefix_len < child_ptr.child_prefix().prefix_len);
+                    // Child node is at the right index.
+                    assert_eq!(
+                        child_idx,
+                        node_prefix.slot_of_timestamp(child_ptr.child_prefix().key)
+                    );
 
-                        if child_ptr.child_prefix().is_leaf() {
-                            // Validate leaf: key must be part of `contents`.
-                            let agg = contents.remove(&child_ptr.child_prefix().key).unwrap();
-                            assert_eq!(&*agg, child_ptr.child_agg());
-                        } else {
-                            // Validate intermediate node value.
-                            let mut accumulator: Option<Box<A>> = None;
-                            for (_, key_agg) in contents
-                                .iter()
-                                .filter(|(&k, _)| child_ptr.child_prefix().contains(k))
-                            {
-                                match &mut accumulator {
-                                    None => accumulator = Some(clone_box(key_agg)),
-                                    Some(x) => combine(x, key_agg),
-                                }
+                    if child_ptr.child_prefix().is_leaf() {
+                        // Validate leaf: key must be part of `contents`.
+                        let agg = contents.remove(&child_ptr.child_prefix().key).unwrap();
+                        assert_eq!(&*agg, child_ptr.child_agg());
+                    } else {
+                        // Validate intermediate node value.
+                        let mut accumulator: Option<Box<A>> = None;
+                        for (_, key_agg) in contents
+                            .iter()
+                            .filter(|(&k, _)| child_ptr.child_prefix().contains(k))
+                        {
+                            match &mut accumulator {
+                                None => accumulator = Some(clone_box(key_agg)),
+                                Some(x) => combine(x, key_agg),
                             }
-                            let accumulator = accumulator.unwrap();
-                            assert_eq!(&*accumulator, child_ptr.child_agg());
-                            expected_prefixes.insert(child_ptr.child_prefix().clone());
                         }
+                        let accumulator = accumulator.unwrap();
+                        assert_eq!(&*accumulator, child_ptr.child_agg());
+                        expected_prefixes.insert(child_ptr.child_prefix().clone());
                     }
                 }
+            }
 
-                // We expect at most one value for each key.
-                self.step_val();
-                self.skip_zero_weights();
-                assert!(!self.val_valid());
-            };
+            // We expect at most one value for each key.
+            self.step_val();
+            assert!(!self.val_valid());
+
             self.step_key();
         }
 

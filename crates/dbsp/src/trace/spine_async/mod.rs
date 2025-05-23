@@ -1082,14 +1082,8 @@ where
             cursor.seek_key(key);
             if let Some(current_key) = cursor.get_key() {
                 if current_key == key {
-                    while cursor.val_valid() {
-                        let weight = cursor.weight();
-                        if !weight.is_zero() {
-                            sample.push_ref(key);
-                            break;
-                        }
-                        cursor.step_val();
-                    }
+                    debug_assert!(cursor.val_valid() && !cursor.weight().is_zero());
+                    sample.push_ref(key);
                 }
             }
         }
