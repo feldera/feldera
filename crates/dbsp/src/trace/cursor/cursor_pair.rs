@@ -1,6 +1,6 @@
 //! A generic cursor implementation merging pairs of different cursors.
 
-use std::{cmp::Ordering, marker::PhantomData};
+use std::{any::TypeId, cmp::Ordering, marker::PhantomData};
 
 use crate::dynamic::{DataTrait, Factory, WeightTrait};
 
@@ -32,6 +32,7 @@ where
     R: WeightTrait + ?Sized,
     C1: Cursor<K, V, T, R> + ?Sized,
     C2: Cursor<K, V, T, R> + ?Sized,
+    T: 'static,
 {
     pub fn new(cursor1: &'a mut C1, cursor2: &'a mut C2) -> Self {
         let key_order = match (cursor1.key_valid(), cursor2.key_valid()) {
@@ -48,7 +49,7 @@ where
 
         let weight = cursor1.weight_factory().default_box();
 
-        Self {
+        let mut result = Self {
             cursor1,
             cursor2,
             key_order,
@@ -57,7 +58,11 @@ where
             val_direction: Direction::Forward,
             weight,
             _phantom: PhantomData,
-        }
+        };
+
+        result.skip_zero_weight_keys_forward();
+
+        result
     }
 
     /// True if current key belongs to `cursor1` only.
@@ -151,6 +156,91 @@ where
             (true, true) => self.cursor1.val().cmp(self.cursor2.val()),
         };
     }
+
+    fn is_zero_weight(&mut self) -> bool {
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            debug_assert!(self.key_valid());
+            debug_assert!(self.val_valid());
+            // debug_assert!(self.cursors[self.current_val[0]].val_valid());
+            self.weight.as_mut().set_zero();
+
+            if self.current_val1() || self.current_val12() {
+                self.cursor1
+                    .map_times(&mut |_, w| self.weight.add_assign(w));
+            }
+
+            if self.current_val2() || self.current_val12() {
+                self.cursor2
+                    .map_times(&mut |_, w| self.weight.add_assign(w));
+            }
+            self.weight.is_zero()
+        } else {
+            false
+        }
+    }
+
+    fn skip_zero_weight_vals_forward(&mut self) {
+        debug_assert_eq!(self.val_direction, Direction::Forward);
+
+        while self.val_valid() && self.is_zero_weight() {
+            if self.current_val1() || self.current_val12() {
+                self.cursor1.step_val();
+            }
+
+            if self.current_val2() || self.current_val12() {
+                self.cursor2.step_val();
+            }
+
+            self.update_val_order_forward();
+        }
+    }
+    fn skip_zero_weight_vals_reverse(&mut self) {
+        debug_assert_eq!(self.val_direction, Direction::Backward);
+
+        while self.val_valid() && self.is_zero_weight() {
+            if self.current_val1() || self.current_val12() {
+                self.cursor1.step_val_reverse();
+            }
+
+            if self.current_val2() || self.current_val12() {
+                self.cursor2.step_val_reverse();
+            }
+
+            self.update_val_order_reverse();
+        }
+    }
+    fn skip_zero_weight_keys_forward(&mut self) {
+        while self.key_valid() {
+            self.skip_zero_weight_vals_forward();
+            if self.val_valid() {
+                break;
+            }
+            if self.key_order != Ordering::Greater {
+                self.cursor1.step_key();
+            }
+            if self.key_order != Ordering::Less {
+                self.cursor2.step_key();
+            }
+            self.val_direction = Direction::Forward;
+            self.update_key_order_forward();
+        }
+    }
+    fn skip_zero_weight_keys_reverse(&mut self) {
+        while self.key_valid() {
+            self.skip_zero_weight_vals_forward();
+            if self.val_valid() {
+                break;
+            }
+            if self.key_order != Ordering::Less {
+                self.cursor1.step_key_reverse();
+            }
+            if self.key_order != Ordering::Greater {
+                self.cursor2.step_key_reverse();
+            }
+            self.val_direction = Direction::Forward;
+            self.update_key_order_reverse();
+        }
+    }
 }
 
 impl<K, V, T, R, C1, C2> Cursor<K, V, T, R> for CursorPair<'_, K, V, T, R, C1, C2>
@@ -162,6 +252,7 @@ where
     R: WeightTrait + ?Sized,
     C1: Cursor<K, V, T, R> + ?Sized,
     C2: Cursor<K, V, T, R> + ?Sized,
+    T: 'static,
 {
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.cursor1.weight_factory()
@@ -230,18 +321,22 @@ where
         T: PartialEq<()>,
     {
         debug_assert!(self.val_valid());
-        self.weight.set_zero();
+        debug_assert!(!self.weight.is_zero());
 
-        if self.current_val1() || self.current_val12() {
-            self.cursor1
-                .map_times(&mut |_, w| self.weight.add_assign(w));
-        }
+        // self.weight.set_zero();
 
-        if self.current_val2() || self.current_val12() {
-            self.cursor2
-                .map_times(&mut |_, w| self.weight.add_assign(w));
-        }
+        // if self.current_val1() || self.current_val12() {
+        //     self.cursor1
+        //         .map_times(&mut |_, w| self.weight.add_assign(w));
+        // }
 
+        // if self.current_val2() || self.current_val12() {
+        //     self.cursor2
+        //         .map_times(&mut |_, w| self.weight.add_assign(w));
+        // }
+
+        // Weight should already be computed by `is_zero_weight`, which is always
+        // called as part of every operation that moves the cursor.
         &self.weight
     }
 
@@ -250,8 +345,6 @@ where
         T: PartialEq<()>,
     {
         while self.val_valid() {
-            // This will store current weight in `self.weight`, so we can use it below.
-            self.weight();
             let val = self.val();
             logic(val, &self.weight);
             self.step_val();
@@ -271,6 +364,7 @@ where
 
         self.update_key_order_forward();
         self.val_direction = Direction::Forward;
+        self.skip_zero_weight_keys_forward();
     }
 
     fn step_key_reverse(&mut self) {
@@ -285,6 +379,7 @@ where
 
         self.update_key_order_reverse();
         self.val_direction = Direction::Forward;
+        self.skip_zero_weight_keys_reverse();
     }
 
     fn seek_key(&mut self, key: &K) {
@@ -295,6 +390,7 @@ where
 
         self.val_direction = Direction::Forward;
         self.update_key_order_forward();
+        self.skip_zero_weight_keys_forward();
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
@@ -306,7 +402,12 @@ where
         self.val_direction = Direction::Forward;
         self.update_key_order_forward();
 
-        result1 || result2
+        if result1 || result2 {
+            self.skip_zero_weight_vals_forward();
+            self.val_valid()
+        } else {
+            false
+        }
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -317,6 +418,7 @@ where
 
         self.val_direction = Direction::Forward;
         self.update_key_order_forward();
+        self.skip_zero_weight_keys_forward();
     }
 
     fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -327,6 +429,7 @@ where
 
         self.val_direction = Direction::Forward;
         self.update_key_order_reverse();
+        self.skip_zero_weight_keys_reverse();
     }
 
     fn seek_key_reverse(&mut self, key: &K) {
@@ -337,6 +440,7 @@ where
 
         self.val_direction = Direction::Forward;
         self.update_key_order_reverse();
+        self.skip_zero_weight_keys_reverse();
     }
 
     // value methods
@@ -356,6 +460,7 @@ where
             }
             self.update_val_order_forward();
         }
+        self.skip_zero_weight_vals_forward();
     }
 
     fn step_val_reverse(&mut self) {
@@ -374,6 +479,7 @@ where
             }
             self.update_val_order_reverse();
         }
+        self.skip_zero_weight_vals_reverse();
     }
 
     fn seek_val(&mut self, val: &V) {
@@ -388,6 +494,7 @@ where
             self.cursor2.seek_val(val);
             self.update_val_order_forward();
         }
+        self.skip_zero_weight_vals_forward();
     }
 
     fn seek_val_reverse(&mut self, val: &V) {
@@ -402,6 +509,7 @@ where
             self.cursor2.seek_val_reverse(val);
             self.update_val_order_reverse();
         }
+        self.skip_zero_weight_vals_reverse();
     }
 
     fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
@@ -416,6 +524,7 @@ where
             self.cursor2.seek_val_with(predicate);
             self.update_val_order_forward();
         }
+        self.skip_zero_weight_vals_forward();
     }
 
     fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
@@ -430,6 +539,7 @@ where
             self.cursor2.seek_val_with_reverse(predicate);
             self.update_val_order_reverse();
         }
+        self.skip_zero_weight_vals_reverse();
     }
 
     // rewinding methods
@@ -439,6 +549,7 @@ where
         self.key_direction = Direction::Forward;
         self.val_direction = Direction::Forward;
         self.update_key_order_forward();
+        self.skip_zero_weight_keys_forward();
     }
 
     fn fast_forward_keys(&mut self) {
@@ -448,6 +559,7 @@ where
         self.key_direction = Direction::Backward;
         self.val_direction = Direction::Forward;
         self.update_key_order_reverse();
+        self.skip_zero_weight_keys_reverse();
     }
 
     fn rewind_vals(&mut self) {
@@ -462,6 +574,7 @@ where
             self.cursor2.rewind_vals();
             self.update_val_order_forward();
         }
+        self.skip_zero_weight_vals_forward();
     }
 
     fn fast_forward_vals(&mut self) {
@@ -476,5 +589,6 @@ where
             self.cursor2.fast_forward_vals();
             self.update_val_order_reverse();
         }
+        self.skip_zero_weight_vals_reverse();
     }
 }
