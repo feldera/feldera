@@ -149,15 +149,12 @@ where
 
             // Read the current value of the aggregate, be careful to skip entries with weight 0.
             if output_trace_cursor.seek_key_exact(&key) {
-                while output_trace_cursor.val_valid() {
-                    if **output_trace_cursor.weight() == 0 {
-                        output_trace_cursor.step_val();
-                    } else {
-                        output_trace_cursor.val().clone_to(&mut old);
-                        retract = true;
-                        break;
-                    }
-                }
+                debug_assert!(
+                    output_trace_cursor.val_valid() && **output_trace_cursor.weight() != 0
+                );
+
+                output_trace_cursor.val().clone_to(&mut old);
+                retract = true;
             };
 
             // If there is an existing value, start from it, otherwise start from finit().
