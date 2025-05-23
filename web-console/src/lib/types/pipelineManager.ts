@@ -155,3 +155,14 @@ export type TimeSeriesEntry = {
    */
   s: BigNumber
 }
+
+type Relations = {
+  tables: string[]
+  views: string[]
+}
+
+export type PipelineChangesDiff = {
+  deleted: Relations
+  modified: Relations
+  new: Relations
+}
