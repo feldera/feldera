@@ -15,6 +15,7 @@ import {
   getAuthorizationHeader,
   patchPipeline,
   pipelineLogsStream,
+  getSuspendDiff,
   pipelineTimeSeriesStream,
   postApiKey,
   postPipeline,
@@ -169,6 +170,10 @@ export const usePipelineManager = () => {
     downloadPipelineSupportBundle: reportError(
       downloadPipelineSupportBundle,
       (pipelineName) => `Failed to download support bundle for ${pipelineName} pipeline`
+    ),
+    getSuspendDiff: reportError(
+      getSuspendDiff,
+      () => `Failed to retrieve the changes required to re-start the pipeline`
     )
   }
 }

@@ -63,7 +63,9 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
-  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  import type { PipelineChangesDiff } from '$lib/types/pipelineManager'
+  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
+  import ReviewPipelineChanges from '../editor/ReviewPipelineChanges.svelte'
 
   let {
     pipeline,
@@ -440,6 +442,39 @@ groups related actions into multi-action dropdowns when multiple options are ava
       standaloneButton: _activate
     }
   }
+  let usePipelineChangesReview = () => {
+    let pipelineChanges:
+      | {
+          value: PipelineChangesDiff
+          resolve: () => void
+          reject: () => void
+        }
+      | undefined = $state(undefined)
+    let changesAccepted: Promise<void> | undefined = $state()
+
+    return {
+      onApply: () => pipelineChanges?.resolve(),
+      onCancel: () => pipelineChanges?.reject(),
+      get diff() {
+        return pipelineChanges!.value
+      },
+      inspectPipelineChanges: async () => {
+        const api = usePipelineManager()
+        const diff = await api.getSuspendDiff()
+        globalDialog.dialog = pipelineChangesDialog
+        globalDialog.onclose = () => pipelineChanges?.reject()
+        changesAccepted = new Promise((resolve, reject) => {
+          pipelineChanges = {
+            resolve,
+            reject,
+            value: diff
+          }
+        })
+        return changesAccepted
+      }
+    }
+  }
+  const pipelineChangesReview = usePipelineChangesReview()
 </script>
 
 {#snippet clearDialog()}
@@ -585,6 +620,30 @@ groups related actions into multi-action dropdowns when multiple options are ava
 
 {#snippet _multiStop()}
   {@render _multiAction('stop')}
+{/snippet}
+
+{#snippet pipelineChangesDialog()}
+  <GenericDialog
+    onApply={() => {
+      pipelineChangesReview.onApply()
+      globalDialog.dialog = null
+    }}
+    onClose={() => {
+      globalDialog.onclose?.()
+      globalDialog.dialog = null
+    }}
+  >
+    {#snippet title()}
+      Review pipeline changes
+    {/snippet}
+    <ReviewPipelineChanges
+      changes={pipelineChangesReview.diff}
+      onskip={() => {
+        pipelineChangesReview.onApply()
+        globalDialog.dialog = null
+      }}
+    ></ReviewPipelineChanges>
+  </GenericDialog>
 {/snippet}
 
 {#snippet _delete()}

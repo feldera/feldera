@@ -1,5 +1,4 @@
 import type { Snippet } from 'svelte'
-import DangerDialog from '$lib/components/dialogs/DangerDialog.svelte'
 
 type DialogAction = { name: string; callback: () => void | Promise<any>; 'data-testid'?: string }
 
@@ -10,15 +9,23 @@ export type GlobalDialogContent = {
   onSuccess: DialogAction
 }
 
-let globalDialogState = $state(null as null | Snippet)
+let globalDialog = $state(null as null | Snippet)
+let onclose: (() => void) | null = $state(null)
 
 export const useGlobalDialog = () => {
   return {
     get dialog() {
-      return globalDialogState
+      return globalDialog
     },
-    set dialog(value: typeof globalDialogState) {
-      globalDialogState = value
+    set dialog(value: typeof globalDialog) {
+      onclose = null
+      globalDialog = value
+    },
+    get onclose() {
+      return onclose
+    },
+    set onclose(value: typeof onclose) {
+      onclose = value
     }
   }
 }
