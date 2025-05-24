@@ -5572,11 +5572,13 @@ where
     }
 
     fn metrics(&self) {
-        self.operator.borrow().metrics()
+        // Avoid producing duplicate metrics for input and output parts of the operator;
+        // otherwise it will be double-counted in circuit-level metrics.
     }
 
-    fn metadata(&self, output: &mut OperatorMeta) {
-        self.operator.borrow().metadata(output)
+    fn metadata(&self, _output: &mut OperatorMeta) {
+        // Avoid producing duplicate metadata for input and output parts of the operator;
+        // otherwise it will be double-counted in circuit-level metrics.
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
