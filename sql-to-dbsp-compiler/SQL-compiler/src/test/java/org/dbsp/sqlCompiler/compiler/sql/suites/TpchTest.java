@@ -12,7 +12,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
-import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
 

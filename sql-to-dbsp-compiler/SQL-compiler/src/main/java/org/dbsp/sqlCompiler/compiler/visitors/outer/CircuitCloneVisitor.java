@@ -58,6 +58,8 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     /** Stack of circuits under construction.  Not the same as 'current': current
      * has nodes from the *old* circuit, whereas these are nodes in the *new* circuit. */
     protected final List<ICircuit> underConstruction;
+    /** True if the rewriting never changes the output type of an operator */
+    protected boolean preservesTypes = true;
 
     public CircuitCloneVisitor(DBSPCompiler compiler, boolean force) {
         super(compiler);
@@ -65,6 +67,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         this.circuitRemap = new HashMap<>();
         this.force = force;
         this.underConstruction = new ArrayList<>();
+    }
+
+    public CircuitCloneVisitor withPreservesTypes(boolean preservesTypes) {
+        this.preservesTypes = preservesTypes;
+        return this;
     }
 
     public OutputPort mapped(OutputPort original) {
@@ -108,9 +115,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         if (!old.equals(newOp)) {
             long derivedFrom = old.node().derivedFrom;
             newOp.node().setDerivedFrom(derivedFrom);
-            Utilities.enforce(old.outputType().sameType(newOp.outputType()),
-                    "Replacing operator with type\n" + old.outputType() +
-                            " with new type\n" + newOp.outputType());
+            if (this.preservesTypes) {
+                Utilities.enforce(old.outputType().sameType(newOp.outputType()),
+                        "Replacing operator with type\n" + old.outputType() +
+                                " with new type\n" + newOp.outputType());
+            }
         }
     }
 

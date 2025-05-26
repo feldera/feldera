@@ -62,6 +62,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeLazy;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -268,6 +269,23 @@ public abstract class InnerRewriteVisitor
         DBSPType[] args = this.transform(type.typeArgs);
         this.pop(type);
         DBSPType result = new DBSPTypeUser(type.getNode(), type.code, type.name, type.mayBeNull, args);
+        this.map(type, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeSemigroup type) {
+        this.push(type);
+        DBSPType[] args = this.transform(type.typeArgs);
+        this.pop(type);
+        Utilities.enforce(args.length % 2 == 0);
+        DBSPType[] semigroupTypes = new DBSPType[args.length / 2];
+        DBSPType[] elementTypes = new DBSPType[args.length / 2];
+        for (int i = 0; i < args.length / 2; i++) {
+            semigroupTypes[i] = args[i];
+            elementTypes[i] = args[i  + args.length / 2];
+        }
+        DBSPType result = new DBSPTypeSemigroup(semigroupTypes, elementTypes);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -1172,9 +1190,15 @@ public abstract class InnerRewriteVisitor
         DBSPExpression result;
         if (fields == null)
             result = expression.getType().none();
-        else
-            result = new DBSPTupleExpression(
-                    expression.getNode(), expression.getTypeAsTuple(), fields);
+        else {
+            DBSPTypeTuple originalType = expression.getTypeAsTuple();
+            DBSPTypeTuple type = new DBSPTypeTuple(
+                    originalType.getNode(), originalType.mayBeNull, originalType.originalStruct,
+                    Linq.map(fields, DBSPExpression::getType, DBSPType.class));
+            if (type.sameType(originalType))
+                type = originalType;
+            result = new DBSPTupleExpression(expression.getNode(), type, fields);
+        }
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -1393,9 +1417,10 @@ public abstract class InnerRewriteVisitor
         DBSPExpression zero = this.transform(fold.zero);
         DBSPClosureExpression increment = this.transform(fold.increment).to(DBSPClosureExpression.class);
         DBSPClosureExpression postProcessing = this.transform(fold.postProcess).to(DBSPClosureExpression.class);
+        DBSPTypeUser semiGroup = this.transform(fold.semigroup).to(DBSPTypeUser.class);
         this.pop(fold);
         DBSPFold result = new DBSPFold(
-                fold.getNode(), fold.getType(), fold.semigroup,
+                fold.getNode(), fold.getType(), semiGroup,
                 zero, increment, postProcessing);
         this.map(fold, result);
         return VisitDecision.STOP;

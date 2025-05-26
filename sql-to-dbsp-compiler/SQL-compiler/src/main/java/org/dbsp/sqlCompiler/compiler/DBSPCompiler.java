@@ -177,7 +177,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.start();
     }
 
-    public void getDataflow(Appendable appendable, DBSPCircuit circuit) throws IOException {
+    public void getDataflow(Appendable appendable, DBSPCircuit circuit) {
         IIndentStream result = new IndentStream(appendable).setIndentAmount(2);
         result.append("{").increase();
         result.appendJsonLabelAndColon("calcite_plan");

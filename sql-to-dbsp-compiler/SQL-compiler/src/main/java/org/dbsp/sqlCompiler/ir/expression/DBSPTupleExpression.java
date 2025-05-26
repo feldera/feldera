@@ -175,7 +175,7 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
         for (int index = 0; index < this.size(); index++) {
             DBSPExpression field = this.get(index);
             DBSPExpression oField = o.get(index);
-            if (!field.equals(oField))
+            if (field != oField)
                 return false;
         }
         return true;

@@ -38,7 +38,7 @@ import java.util.List;
 
 /** Represents a Semigroup trait implementation. */
 public class DBSPTypeSemigroup extends DBSPTypeUser {
-    public DBSPTypeSemigroup(DBSPType[] elementTypes, DBSPType[] semigroupTypes) {
+    public DBSPTypeSemigroup(DBSPType[] semigroupTypes, DBSPType[] elementTypes) {
         super(CalciteObject.EMPTY, DBSPTypeCode.SEMIGROUP, "Semigroup" + elementTypes.length, false,
                 Linq.concat(semigroupTypes, elementTypes));
         if (elementTypes.length != semigroupTypes.length)
@@ -73,6 +73,6 @@ public class DBSPTypeSemigroup extends DBSPTypeUser {
         Utilities.enforce(typeArgs.size() % 2 == 0);
         DBSPType[] elementTypes = typeArgs.subList(0, typeArgs.size() / 2).toArray(new DBSPType[0]);
         DBSPType[] semigroupTypes = typeArgs.subList(typeArgs.size() / 2, typeArgs.size()).toArray(new DBSPType[0]);
-        return new DBSPTypeSemigroup(semigroupTypes, elementTypes);
+        return new DBSPTypeSemigroup(elementTypes, semigroupTypes);
     }
 }

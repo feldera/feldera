@@ -155,7 +155,7 @@ public abstract class DBSPLiteral extends DBSPExpression
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPLiteral that = (DBSPLiteral) o;
-        return this.sameValue(that);
+        return this.sameValue(that) && this.hasSameType(that);
     }
 
     public abstract String toSqlString();
