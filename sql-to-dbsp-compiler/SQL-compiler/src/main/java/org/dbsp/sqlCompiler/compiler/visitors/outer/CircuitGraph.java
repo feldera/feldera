@@ -11,7 +11,6 @@ import org.dbsp.util.graph.DFSOrder;
 import org.dbsp.util.graph.DiGraph;
 import org.dbsp.util.graph.Port;
 import org.dbsp.util.Utilities;
-import org.locationtech.jts.util.Assert;
 
 import java.util.ArrayList;
 import java.util.HashMap;

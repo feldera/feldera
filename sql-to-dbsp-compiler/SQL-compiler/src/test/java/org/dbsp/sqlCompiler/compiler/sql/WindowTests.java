@@ -102,7 +102,7 @@ public class WindowTests extends ScottBaseTests {
         }
     }
 
-    static QueriesAndOutput q0 = new QueriesAndOutput(new String[]{
+    static final QueriesAndOutput q0 = new QueriesAndOutput(new String[]{
             "LEAD(sal, 1) OVER (PARTITION BY deptno ORDER BY sal DESC) AS next_highest",
             "SUM(sal) OVER (PARTITION BY deptno) AS total_by_dept",
             """
@@ -131,7 +131,7 @@ public class WindowTests extends ScottBaseTests {
             | 7902  | 2975.00      | 10875.00      | 3000.00      | 3000.00      |
             | 7934  |              | 8750.00       | 1300.00      | 5000.00      |""");
 
-    static QueriesAndOutput q1 = new QueriesAndOutput(new String[] {
+    static final QueriesAndOutput q1 = new QueriesAndOutput(new String[] {
             "SUM(sal) OVER (PARTITION BY deptno) AS total_by_dept",
             "LEAD(sal, 1) OVER (PARTITION BY deptno ORDER BY sal DESC) AS next_highest",
             "AVG(sal) OVER (PARTITION BY deptno) AS avg_by_dept",

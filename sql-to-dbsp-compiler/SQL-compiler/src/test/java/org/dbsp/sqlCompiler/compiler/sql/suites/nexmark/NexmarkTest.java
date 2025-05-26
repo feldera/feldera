@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.suites.nexmark;
 
-import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;

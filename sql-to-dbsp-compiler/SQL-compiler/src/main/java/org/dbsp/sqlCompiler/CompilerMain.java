@@ -40,10 +40,8 @@ import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
-import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;

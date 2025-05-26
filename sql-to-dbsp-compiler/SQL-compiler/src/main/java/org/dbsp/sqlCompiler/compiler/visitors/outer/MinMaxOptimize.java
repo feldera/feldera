@@ -132,11 +132,10 @@ public class MinMaxOptimize extends Passes {
             if (!this.isAppendOnly.test(operator.input())) {
                 if (aggregates.size() == 1) {
                     this.standardMinMax(operator, aggregates.get(0));
-                    return;
                 } else {
                     super.postorder(operator);
-                    return;
                 }
+                return;
             }
 
             // Handle min/max for append-only streams, implemented using a ChainAggregate

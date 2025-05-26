@@ -61,6 +61,7 @@ public final class DBSPBinaryLiteral extends DBSPLiteral {
 
     public DBSPBinaryLiteral(CalciteObject node, DBSPType type, @Nullable byte[] value) {
         super(node, type, value == null);
+        Utilities.enforce(type.is(DBSPTypeBinary.class));
         this.value = value;
     }
 

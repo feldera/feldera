@@ -249,7 +249,7 @@ public class NonLinearAggregate extends IAggregate {
                 accumulator, rowVar,
                 weightVar);
         DBSPClosureExpression postClosure = new DBSPTupleExpression(posts).closure(postAccumulator);
-        DBSPTypeUser semigroup = new DBSPTypeSemigroup(semigroups, accumulatorTypes);
+        DBSPTypeUser semigroup = new DBSPTypeSemigroup(accumulatorTypes, semigroups);
         return new NonLinearAggregate(node, new DBSPTupleExpression(zeros),
                 accumFunction, postClosure, new DBSPTupleExpression(emptySetResults), semigroup);
     }
