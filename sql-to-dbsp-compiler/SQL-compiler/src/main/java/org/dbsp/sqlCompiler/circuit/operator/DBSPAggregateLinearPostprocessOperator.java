@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -16,6 +15,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Objects;
 
 public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOperator {
     public final DBSPClosureExpression postProcess;
@@ -47,16 +47,12 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        throw new InternalCompilerError("Should not be called");
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType, List<OutputPort> inputs, boolean force) {
+        if (this.mustReplace(force, function, inputs, outputType))
             return new DBSPAggregateLinearPostprocessOperator(
-                    this.getRelNode(), this.outputType.to(DBSPTypeIndexedZSet.class),
-                    this.getFunction(), this.postProcess, newInputs.get(0))
+                    this.getRelNode(), outputType.to(DBSPTypeIndexedZSet.class),
+                    Objects.requireNonNull(function), this.postProcess, inputs.get(0))
                     .copyAnnotations(this);
         return this;
     }

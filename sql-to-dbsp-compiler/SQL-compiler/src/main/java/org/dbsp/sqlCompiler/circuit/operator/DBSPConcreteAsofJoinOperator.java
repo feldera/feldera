@@ -99,30 +99,19 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPConcreteAsofJoinOperator(this.getRelNode(),
-                outputType.to(DBSPTypeZSet.class), Objects.requireNonNull(expression),
-                this.leftTimestamp, this.rightTimestamp,
-                this.comparator, this.isMultiset, this.isLeft, this.left(), this.right());
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
         Utilities.enforce(newInputs.size() == 2);
-        if (force || this.inputsDiffer(newInputs))
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPConcreteAsofJoinOperator(
                     this.getRelNode(), this.getOutputZSetType(),
-                    this.getFunction(), this.leftTimestamp, this.rightTimestamp,
+                    Objects.requireNonNull(function), this.leftTimestamp, this.rightTimestamp,
                     this.comparator, this.isMultiset, this.isLeft,
                     newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
+        }
         return this;
-    }
-
-    @Override
-    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
-        return new DBSPConcreteAsofJoinOperator(this.getRelNode(), this.getOutputZSetType(), function,
-                this.leftTimestamp, this.rightTimestamp, this.comparator, this.isMultiset, this.isLeft, left, right);
     }
 
     @Override

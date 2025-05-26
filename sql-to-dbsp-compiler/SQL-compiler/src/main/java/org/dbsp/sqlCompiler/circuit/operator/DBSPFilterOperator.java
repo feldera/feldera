@@ -54,16 +54,13 @@ public final class DBSPFilterOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPFilterOperator(this.getRelNode(), Objects.requireNonNull(expression), this.input())
-                .copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPFilterOperator(
-                    this.getRelNode(), this.getFunction(), newInputs.get(0)).copyAnnotations(this);
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            return new DBSPFilterOperator(this.getRelNode(), Objects.requireNonNull(function), newInputs.get(0))
+                    .copyAnnotations(this);
+        }
         return this;
     }
 

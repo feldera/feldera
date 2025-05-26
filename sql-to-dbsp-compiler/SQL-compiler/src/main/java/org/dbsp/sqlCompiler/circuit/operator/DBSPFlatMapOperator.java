@@ -67,20 +67,15 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPFlatMapOperator(
-                this.getRelNode(), Objects.requireNonNull(expression),
-                outputType.to(DBSPTypeZSet.class), this.input())
-                .copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPFlatMapOperator(
-                    this.getRelNode(), this.getFunction(),
-                    this.getOutputZSetType(), newInputs.get(0))
+                    this.getRelNode(), Objects.requireNonNull(function),
+                    outputType.to(DBSPTypeZSet.class), newInputs.get(0))
                     .copyAnnotations(this);
+        }
         return this;
     }
 

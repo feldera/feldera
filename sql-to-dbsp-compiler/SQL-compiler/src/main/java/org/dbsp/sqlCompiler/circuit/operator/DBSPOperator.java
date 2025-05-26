@@ -28,6 +28,8 @@ import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.util.HashString;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -38,8 +40,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Predicate;
 
 /** Base class for DBSPOperators */
@@ -62,6 +66,10 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
      * have been deleted by optimizations).
      * @param outputNumber port number. */
     public abstract boolean hasOutput(int outputNumber);
+
+    static DBSPClosureExpression toClosure(@Nullable DBSPExpression expression) {
+        return Objects.requireNonNull(expression).to(DBSPClosureExpression.class);
+    }
 
     public DBSPOperator copyAnnotations(DBSPOperator source) {
         if (source != this)

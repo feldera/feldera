@@ -141,7 +141,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         if (function != operator.function ||
             !outputType.sameType(operator.outputType) ||
             Linq.different(sources, operator.inputs)) {
-            DBSPSimpleOperator result = operator.withFunction(function, outputType).withInputs(sources, false);
+            DBSPSimpleOperator result = operator.with(function, outputType, sources, false);
             this.map(operator, result);
         } else {
             super.replace(operator);

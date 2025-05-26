@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 /** Base class for the many kinds of joins we have, some incremental,
@@ -36,8 +37,11 @@ public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
     }
 
     /** Replace inputs and function, preserve output type */
-    public abstract DBSPJoinBaseOperator withFunctionAndInputs(
-            DBSPExpression function, OutputPort left, OutputPort right);
+    public final DBSPJoinBaseOperator withFunctionAndInputs(
+            DBSPExpression function, OutputPort left, OutputPort right) {
+        return this.with(function, this.outputType, Linq.list(left, right), false)
+                .to(DBSPJoinBaseOperator.class);
+    }
 
     public DBSPType getKeyType() {
         return left().getOutputIndexedZSetType().keyType;

@@ -80,24 +80,17 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
-                this.getRelNode(),
-                this.partitioningFunction,
-                expression, this.aggregate, this.lower, this.upper,
-                outputType.to(DBSPTypeIndexedZSet.class),
-                this.left(), this.right()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
                     this.getRelNode(),
-                    this.partitioningFunction, this.function, this.aggregate,
-                    this.lower, this.upper, this.getOutputIndexedZSetType(),
+                    this.partitioningFunction,
+                    function, this.aggregate, this.lower, this.upper,
+                    outputType.to(DBSPTypeIndexedZSet.class),
                     newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+        }
         return this;
     }
 

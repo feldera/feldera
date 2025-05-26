@@ -55,12 +55,6 @@ public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
         this.addInput(source);
     }
 
-    // Default implementation.
-    @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return this;
-    }
-
     /** The only input of this operator. */
     public OutputPort input() {
         return this.inputs.get(0);

@@ -19,7 +19,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;

@@ -11,9 +11,11 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.List;
 
 /** Implements the LAG/LEAD operators for an SQL OVER Window.  The LEAD/LAG operator
@@ -69,12 +71,14 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.size() == 1, "Expected 1 input " + newInputs);
-        if (force || this.inputsDiffer(newInputs)) {
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            Utilities.enforce(newInputs.size() == 1, "Expected 1 input " + newInputs);
             return new DBSPLagOperator(this.getRelNode(), this.offset,
-                    this.projection, this.getFunction(), this.comparator,
-                    this.getOutputIndexedZSetType(), newInputs.get(0))
+                    this.projection, toClosure(function), this.comparator,
+                    outputType.to(DBSPTypeIndexedZSet.class), newInputs.get(0))
                     .copyAnnotations(this);
         }
         return this;

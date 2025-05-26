@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -79,19 +80,15 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPIntegrateTraceRetainKeysOperator(
-                this.getRelNode(), Objects.requireNonNull(expression),
-                this.left(), this.right()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
             return new DBSPIntegrateTraceRetainKeysOperator(
-                    this.getRelNode(), this.getFunction(),
+                    this.getRelNode(), toClosure(function),
                     newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+        }
         return this;
     }
 

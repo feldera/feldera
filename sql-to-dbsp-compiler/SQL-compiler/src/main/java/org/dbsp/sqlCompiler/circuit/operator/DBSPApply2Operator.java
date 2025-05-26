@@ -14,7 +14,6 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import java.util.Objects;
 
 /** Equivalent to the apply2 operator from DBSP
  * which applies an arbitrary function to its 2 inputs.
@@ -38,19 +37,13 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPApply2Operator(
-                this.getRelNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
-                this.left(), this.right())
-                .copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs " + newInputs);
-        if (force || this.inputsDiffer(newInputs)) {
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+           List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs " + newInputs);
             return new DBSPApply2Operator(
-                    this.getRelNode(), this.getClosureFunction(),
+                    this.getRelNode(), toClosure(function),
                     newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         }

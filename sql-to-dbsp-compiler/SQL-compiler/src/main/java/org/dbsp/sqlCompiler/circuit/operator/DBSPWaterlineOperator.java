@@ -15,7 +15,6 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import java.util.Objects;
 
 /** Given a stream, it computes function(extractTS(stream), delay(this, init)).
  * This operator is special: the output is replicated for all workers.
@@ -40,21 +39,14 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPWaterlineOperator(this.getRelNode(), this.init,
-                this.extractTs,
-                Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
-                this.input()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPWaterlineOperator(this.getRelNode(), this.init,
-                    this.extractTs,
-                    this.getClosureFunction(),
-                    newInputs.get(0))
+                    this.extractTs, toClosure(function), newInputs.get(0))
                     .copyAnnotations(this);
+        }
         return this;
     }
 

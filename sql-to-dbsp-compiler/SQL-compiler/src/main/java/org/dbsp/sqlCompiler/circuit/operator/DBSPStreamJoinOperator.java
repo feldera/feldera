@@ -58,26 +58,16 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPStreamJoinOperator(
-                this.getRelNode(), outputType.to(DBSPTypeZSet.class),
-                Objects.requireNonNull(expression),
-                this.isMultiset, this.left(), this.right()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPStreamJoinOperator(
-                    this.getRelNode(), this.getOutputZSetType(),
-                    this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1))
-                    .copyAnnotations(this);
+                    this.getRelNode(), outputType.to(DBSPTypeZSet.class),
+                    Objects.requireNonNull(function),
+                    this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+        }
         return this;
-    }
-
-    @Override
-    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
-        return new DBSPStreamJoinOperator(this.getRelNode(), this.getOutputZSetType(), function, this.isMultiset, left, right);
     }
 
     // equivalent inherited from base class

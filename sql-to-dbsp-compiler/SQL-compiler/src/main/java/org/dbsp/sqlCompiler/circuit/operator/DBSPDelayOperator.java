@@ -26,17 +26,14 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPDelayOperator(this.getRelNode(), this.function, newInputs.get(0))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            return new DBSPDelayOperator(this.getRelNode(), function, newInputs.get(0))
                     .copyAnnotations(this);
+        }
         return this;
-    }
-
-    @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression function, DBSPType unusedOutputType) {
-        return new DBSPDelayOperator(this.getRelNode(), function, this.input())
-                .copyAnnotations(this);
     }
 
     @Override

@@ -60,18 +60,14 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPConstantOperator(this.getRelNode(), Objects.requireNonNull(expression),
-                this.incremental, this.isMultiset)
-                .copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPConstantOperator(this.getRelNode(), this.getFunction(),
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            return new DBSPConstantOperator(this.getRelNode(), Objects.requireNonNull(function),
                     this.incremental, this.isMultiset)
                     .copyAnnotations(this);
+        }
         return this;
     }
 

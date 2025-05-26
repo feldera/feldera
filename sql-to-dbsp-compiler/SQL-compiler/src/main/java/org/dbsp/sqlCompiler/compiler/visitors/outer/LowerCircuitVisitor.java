@@ -210,7 +210,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         if (node.getFunction().is(DBSPFlatmap.class)) {
             List<OutputPort> sources = Linq.map(node.inputs, this::mapped);
             DBSPExpression function = rewriteFlatmap(node.getFunction().to(DBSPFlatmap.class), this.compiler);
-            result = node.withFunction(function, node.outputType).withInputs(sources, this.force);
+            result = node.with(function, node.outputType, sources, this.force);
             this.map(node, result);
         } else {
             super.postorder(node);
@@ -230,8 +230,9 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression block = new DBSPBlockExpression(
                 Linq.list(new DBSPExpressionStatement(print)),
                 func.body);
-        DBSPSimpleOperator instrumented = node.withFunction(block.closure(func.parameters), func.getResultType())
-                .withInputs(Linq.map(node.inputs, this::mapped), false);
+        DBSPSimpleOperator instrumented = node.with(
+                block.closure(func.parameters), func.getResultType(),
+                Linq.map(node.inputs, this::mapped), false);
         this.map(node, instrumented);
     }
 
@@ -249,8 +250,9 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression block = new DBSPBlockExpression(
                 Linq.list(new DBSPExpressionStatement(print)),
                 func.body);
-        DBSPSimpleOperator instrumented = node.withFunction(block.closure(func.parameters), func.getResultType())
-                .withInputs(Linq.map(node.inputs, this::mapped), false);
+        DBSPSimpleOperator instrumented = node.with(
+                block.closure(func.parameters), func.getResultType(),
+                Linq.map(node.inputs, this::mapped), false);
         this.map(node, instrumented);
     }
 

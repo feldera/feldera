@@ -35,7 +35,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -101,20 +100,15 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType type) {
-        DBSPTypeIndexedZSet ixOutputType = type.to(DBSPTypeIndexedZSet.class);
-        return new DBSPMapIndexOperator(
-                this.getRelNode(), Objects.requireNonNull(expression),
-                ixOutputType, this.input()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.size() == 1);
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
             return new DBSPMapIndexOperator(
-                    this.getRelNode(), this.getFunction(),
-                    this.getOutputIndexedZSetType(), newInputs.get(0)).copyAnnotations(this);
+                    this.getRelNode(), Objects.requireNonNull(function),
+                    ixOutputType, newInputs.get(0)).copyAnnotations(this);
+        }
         return this;
     }
 

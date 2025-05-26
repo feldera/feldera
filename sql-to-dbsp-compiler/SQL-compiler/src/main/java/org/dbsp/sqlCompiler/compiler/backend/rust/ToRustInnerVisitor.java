@@ -165,7 +165,6 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -2116,13 +2115,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (!expression.getType().mayBeNull) {
                 // If the result is not null, we need to unwrap().
                 // This should really not happen.
-                Utilities.enforce(false);
-
-                this.compiler.reportWarning(expression.getSourcePosition(), "Potential crash",
-                        "Expecting a non-null field from a possibly nullable struct");
-                expression.expression.accept(this);
-                this.builder.append(".unwrap().")
-                        .append(expression.fieldNo);
+                throw new InternalCompilerError(
+                        "Accessing nullable field produces a non-nullable result"
+                                + System.lineSeparator() + Utilities.getCurrentStackTrace());
             } else {
                 expression.expression.accept(this);
                 if (!expression.expression.is(DBSPFieldExpression.class))

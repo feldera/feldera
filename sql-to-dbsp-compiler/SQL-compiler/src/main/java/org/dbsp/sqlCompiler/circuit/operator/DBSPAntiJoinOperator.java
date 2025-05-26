@@ -41,17 +41,14 @@ public final class DBSPAntiJoinOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPAntiJoinOperator(
-                this.getRelNode(), this.left(), this.right()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPAntiJoinOperator(
                     this.getRelNode(), newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
+        }
         return this;
     }
 

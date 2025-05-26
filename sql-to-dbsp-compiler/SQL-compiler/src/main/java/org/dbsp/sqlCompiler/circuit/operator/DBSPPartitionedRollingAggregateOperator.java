@@ -54,21 +54,16 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPPartitionedRollingAggregateOperator(
-                this.getRelNode(), this.partitioningFunction,
-                (DBSPAggregator) expression, this.aggregate, this.lower, this.upper,
-                outputType.to(DBSPTypeIndexedZSet.class),
-                this.input()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPPartitionedRollingAggregateOperator(
-                    this.getRelNode(), this.partitioningFunction, this.getAggregator(), this.aggregate,
-                    this.lower, this.upper, this.getOutputIndexedZSetType(),
+                    this.getRelNode(), this.partitioningFunction,
+                    function != null ? function.to(DBSPAggregator.class) : null, this.aggregate,
+                    this.lower, this.upper, outputType.to(DBSPTypeIndexedZSet.class),
                     newInputs.get(0)).copyAnnotations(this);
+            }
         return this;
     }
 
