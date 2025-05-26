@@ -8,11 +8,13 @@ use feldera_types::serde_with_context::{
 };
 use flate2::read::GzDecoder;
 use hex::ToHex;
+use rkyv::Fallible;
 use serde::{
     de::{Error as _, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use size_of::SizeOf;
+use smallvec::{smallvec, SmallVec};
 use std::{
     borrow::Cow,
     cmp::{min, Ordering},
@@ -20,28 +22,46 @@ use std::{
     io::Read,
 };
 
+/// Values smaller than this size are allocated on the stack
+const THRESHOLD: usize = 32; // up to 256 bits
+type CompactVec = SmallVec<[u8; THRESHOLD]>;
+
 /// A ByteArray object, representing a SQL value with type
 /// `BINARY` or `VARBINARY`.
-#[derive(
-    Debug,
-    Default,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    SizeOf,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
-#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ByteArray {
-    data: Vec<u8>,
+    data: CompactVec,
+}
+
+impl SizeOf for ByteArray {
+    fn size_of_children(&self, context: &mut size_of::Context) {
+        self.data.size_of_children(context);
+    }
+}
+
+impl rkyv::Archive for ByteArray {
+    type Archived = Self;
+    type Resolver = ();
+
+    #[inline]
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        unimplemented!();
+    }
+}
+
+impl<S: Fallible + ?Sized> rkyv::Serialize<S> for ByteArray {
+    #[inline]
+    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        Ok(())
+    }
+}
+
+impl<D: Fallible + ?Sized> rkyv::Deserialize<ByteArray, D> for ByteArray {
+    #[inline]
+    fn deserialize(&self, _: &mut D) -> Result<ByteArray, D::Error> {
+        unimplemented!();
+    }
 }
 
 impl SerializeWithContext<SqlSerdeConfig> for ByteArray {
@@ -91,7 +111,7 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
     {
         match config.binary_format {
             BinaryFormat::Array => {
-                let data = Vec::<u8>::deserialize(deserializer)?;
+                let data = CompactVec::deserialize(deserializer)?;
                 Ok(Self { data })
             }
             BinaryFormat::Base64 => {
@@ -99,7 +119,7 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
                 let data = BASE64_STANDARD
                     .decode(&*str)
                     .map_err(|e| D::Error::custom(format!("invalid base64 string: {e}")))?;
-                Ok(Self { data })
+                Ok(Self { data: data.into() })
             }
             BinaryFormat::Bytes => deserializer.deserialize_bytes(ByteVisitor),
             BinaryFormat::PgHex => Err(D::Error::custom(
@@ -135,7 +155,7 @@ impl From<&[u8]> for ByteArray {
 impl ByteArray {
     /// Create a ByteArray from a slice of bytes
     pub fn new(d: &[u8]) -> Self {
-        Self { data: d.to_vec() }
+        Self { data: d.into() }
     }
 
     pub fn with_size(d: &[u8], size: i32) -> Self {
@@ -147,7 +167,7 @@ impl ByteArray {
                 Ordering::Equal => ByteArray::new(d),
                 Ordering::Greater => ByteArray::new(&d[..size]),
                 Ordering::Less => {
-                    let mut data: Vec<u8> = vec![0; size];
+                    let mut data: CompactVec = smallvec![0; size];
                     data[..d.len()].copy_from_slice(d);
                     ByteArray { data }
                 }
@@ -157,13 +177,13 @@ impl ByteArray {
 
     pub fn zero(size: usize) -> Self {
         Self {
-            data: vec![0; size],
+            data: smallvec![0; size],
         }
     }
 
     /// Create a ByteArray from a Vector of bytes
     pub fn from_vec(d: Vec<u8>) -> Self {
-        Self { data: d }
+        Self { data: d.into() }
     }
 
     /// Length of the byte array in bytes
@@ -255,7 +275,7 @@ pub fn binary_position__(needle: ByteArray, haystack: ByteArray) -> i32 {
     haystack
         .data
         .windows(needle.data.len())
-        .position(|window| window == needle.data)
+        .position(|window| *window == *needle.data)
         .map(|v| v + 1)
         .unwrap_or(0) as i32
 }

@@ -3,8 +3,7 @@
 #![allow(clippy::let_and_return)]
 #![allow(clippy::unnecessary_cast)]
 
-use crate::binary::ByteArray;
-use crate::{FromInteger, SqlDecimal, ToInteger, Weight};
+use crate::{ByteArray, FromInteger, SqlDecimal, ToInteger, Weight};
 use dbsp::algebra::{FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt, F32, F64};
 use num::PrimInt;
 use num_traits::CheckedAdd;
