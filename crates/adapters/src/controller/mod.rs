@@ -773,6 +773,10 @@ impl CircuitThread {
 
         self.finish_replaying();
 
+        // Request the first step even if there is no explicit trigger to make sure
+        // the pipeline initializes output snapshots used by ad hoc queries.
+        self.controller.request_step();
+
         loop {
             // Run received commands.  Commands can initiate checkpoint
             // requests, so attempt to execute those afterward.  Executing a
