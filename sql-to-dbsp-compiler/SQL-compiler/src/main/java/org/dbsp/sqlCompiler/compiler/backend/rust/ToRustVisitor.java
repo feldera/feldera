@@ -804,11 +804,12 @@ public class ToRustVisitor extends CircuitVisitor {
         if (!this.useHandles) {
             DBSPType type = operator.originalRowType;
             this.generateStructHelpers(type, null);
+            this.computeHash(operator);
             if (operator.isIndex()) {
                 DBSPTypeRawTuple raw = operator.originalRowType.to(DBSPTypeRawTuple.class);
                 Utilities.enforce(raw.size() == 2);
 
-                this.builder.append("catalog.register_index");
+                this.builder.append("catalog.register_index_persistent");
                 this.builder.append("::<").increase();
                 operator.getOutputIndexedZSetType().keyType.accept(this.innerVisitor);
                 this.builder.append(",").newline();
@@ -818,7 +819,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 this.builder.append(",").newline();
                 raw.tupFields[1].accept(this.innerVisitor);
                 this.builder.decrease().append(">");
-                this.builder.append("(").newline()
+                this.builder.append("(hash, ").newline()
                         .append(this.getInputName(operator, 0))
                         .append(".clone()")
                         .append(", &SqlIdentifier::from(\"");
@@ -841,7 +842,6 @@ public class ToRustVisitor extends CircuitVisitor {
                 this.builder.append("));")
                         .newline();
             } else {
-                this.computeHash(operator);
                 IHasSchema description = this.metadata.getViewDescription(operator.viewName);
                 JsonNode j = description.asJson(true);
                 j = this.stripProperties(j);
