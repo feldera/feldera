@@ -43,12 +43,9 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return this;
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression expression, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
         return this;
     }
 

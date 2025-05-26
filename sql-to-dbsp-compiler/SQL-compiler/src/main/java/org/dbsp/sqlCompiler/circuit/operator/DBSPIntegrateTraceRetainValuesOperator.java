@@ -59,19 +59,15 @@ public final class DBSPIntegrateTraceRetainValuesOperator
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPIntegrateTraceRetainValuesOperator(
-                this.getRelNode(), Objects.requireNonNull(expression),
-                this.left(), this.right());
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
             return new DBSPIntegrateTraceRetainValuesOperator(
-                    this.getRelNode(), this.getFunction(),
+                    this.getRelNode(), Objects.requireNonNull(function),
                     newInputs.get(0), newInputs.get(1));
+        }
         return this;
     }
 

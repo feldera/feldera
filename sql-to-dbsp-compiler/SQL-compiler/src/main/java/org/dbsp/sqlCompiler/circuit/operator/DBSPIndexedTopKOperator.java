@@ -6,7 +6,6 @@ import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -22,6 +21,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Objects;
 
 /** Apply a topK operation to each of the groups in an indexed collection.
  * This always sorts the elements of each group.
@@ -98,16 +98,6 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPIndexedTopKOperator(this.getRelNode(), this.numbering,
-                    this.getFunction().to(DBSPComparatorExpression.class),
-                    this.limit, this.equalityComparator, this.outputProducer,
-                    newInputs.get(0)).copyAnnotations(this);
-        return this;
-    }
-
-    @Override
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;
@@ -121,8 +111,16 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        throw new UnimplementedException();
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            return new DBSPIndexedTopKOperator(this.getRelNode(), this.numbering,
+                    Objects.requireNonNull(function).to(DBSPComparatorExpression.class),
+                    this.limit, this.equalityComparator, this.outputProducer,
+                    newInputs.get(0)).copyAnnotations(this);
+        }
+        return this;
     }
 
     @Override

@@ -61,20 +61,15 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
-        return new DBSPStreamAggregateOperator(this.getRelNode(),
-                ixOutputType, (DBSPAggregator) expression, this.aggregate, this.input())
-                .copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPStreamAggregateOperator(
-                    this.getRelNode(), this.getOutputIndexedZSetType(),
-                    this.getAggregator(), this.aggregate, newInputs.get(0))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
+            return new DBSPStreamAggregateOperator(this.getRelNode(),
+                    ixOutputType, (DBSPAggregator) function, this.aggregate, newInputs.get(0))
                     .copyAnnotations(this);
+        }
         return this;
     }
 

@@ -54,16 +54,13 @@ public final class DBSPSubtractOperator extends DBSPBinaryOperator {
         visitor.pop(this);
     }
 
-    @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return this;
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+           List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPSubtractOperator(
                     this.getRelNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+        }
         return this;
     }
 

@@ -64,12 +64,9 @@ public final class DBSPSumOperator extends DBSPSimpleOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return this;
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression unused, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
         boolean different = force;
         if (newInputs.size() != this.inputs.size())
             // Sum can have any number of inputs

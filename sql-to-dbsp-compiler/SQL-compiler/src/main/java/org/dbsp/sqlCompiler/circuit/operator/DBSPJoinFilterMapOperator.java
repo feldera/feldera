@@ -47,20 +47,15 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPJoinFilterMapOperator(
-                this.getRelNode(), outputType.to(DBSPTypeZSet.class),
-                Objects.requireNonNull(expression), this.filter, this.map,
-                this.isMultiset, this.left(), this.right()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPJoinFilterMapOperator(
-                    this.getRelNode(), this.getOutputZSetType(),
-                    this.getFunction(), this.filter, this.map,
+                    this.getRelNode(), outputType.to(DBSPTypeZSet.class),
+                    Objects.requireNonNull(function), this.filter, this.map,
                     this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+        }
         return this;
     }
 
@@ -95,12 +90,6 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
             visitor.property("map");
             this.map.accept(visitor);
         }
-    }
-
-    @Override
-    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
-        return new DBSPJoinFilterMapOperator(this.getRelNode(), this.getOutputZSetType(), function,
-                this.filter, this.map, this.isMultiset, left, right);
     }
 
     @SuppressWarnings("unused")

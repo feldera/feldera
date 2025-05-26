@@ -34,7 +34,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -68,21 +67,15 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPMapOperator(
-                this.getRelNode(), Objects.requireNonNull(expression),
-                outputType.to(DBSPTypeZSet.class), this.input())
-                .copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.size() == 1);
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPMapOperator(
-                    this.getRelNode(), this.getFunction(),
-                    this.getOutputZSetType(), newInputs.get(0))
+                    this.getRelNode(), Objects.requireNonNull(function),
+                    outputType.to(DBSPTypeZSet.class), newInputs.get(0))
                     .copyAnnotations(this);
+        }
         return this;
     }
 

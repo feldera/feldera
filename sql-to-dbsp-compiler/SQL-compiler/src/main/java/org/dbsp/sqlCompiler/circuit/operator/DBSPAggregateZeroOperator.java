@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
@@ -10,8 +11,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import java.util.List;
+import java.util.Objects;
 
 /** This operator represents a computation that is used aftr a global
  * aggregation (no group-by) to replace empty results with the expected zero.
@@ -52,11 +55,14 @@ public class DBSPAggregateZeroOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPAggregateZeroOperator(this.getRelNode(), this.getFunction(),
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            return new DBSPAggregateZeroOperator(this.getRelNode(), Objects.requireNonNull(function),
                     newInputs.get(0))
                     .copyAnnotations(this);
+        }
         return this;
     }
 

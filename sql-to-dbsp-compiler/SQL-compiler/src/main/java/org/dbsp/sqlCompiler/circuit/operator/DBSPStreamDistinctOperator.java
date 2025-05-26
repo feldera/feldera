@@ -30,8 +30,10 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
-import javax.annotation.CheckReturnValue;
+import javax.annotation.Nullable;
 import java.util.List;
 
 public final class DBSPStreamDistinctOperator extends DBSPUnaryOperator {
@@ -48,12 +50,14 @@ public final class DBSPStreamDistinctOperator extends DBSPUnaryOperator {
         visitor.pop(this);
     }
 
-    @CheckReturnValue
     @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPStreamDistinctOperator(
                     this.getRelNode(), newInputs.get(0)).copyAnnotations(this);
+        }
         return this;
     }
 

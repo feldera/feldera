@@ -28,20 +28,15 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPStreamJoinIndexOperator(
-                this.getRelNode(), outputType.to(DBSPTypeIndexedZSet.class),
-                Objects.requireNonNull(expression),
-                this.isMultiset, this.left(), this.right()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPStreamJoinIndexOperator(
-                    this.getRelNode(), this.getOutputIndexedZSetType(),
-                    this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1))
-                    .copyAnnotations(this);
+                    this.getRelNode(), outputType.to(DBSPTypeIndexedZSet.class),
+                    Objects.requireNonNull(function),
+                    this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+        }
         return this;
     }
 
@@ -52,12 +47,6 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
         if (!decision.stop())
             visitor.postorder(this);
         visitor.pop(this);
-    }
-
-    @Override
-    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
-        return new DBSPStreamJoinIndexOperator(
-                this.getRelNode(), this.getOutputIndexedZSetType(), function, this.isMultiset, left, right);
     }
 
     // equivalent inherited from base class

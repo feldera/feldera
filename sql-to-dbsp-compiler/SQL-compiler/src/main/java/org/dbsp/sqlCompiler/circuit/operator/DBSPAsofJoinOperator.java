@@ -86,31 +86,17 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPAsofJoinOperator(this.getRelNode(),
-                outputType.to(DBSPTypeZSet.class), Objects.requireNonNull(expression),
-                this.leftTimestampIndex, this.rightTimestampIndex,
-                this.comparator, this.isMultiset, this.isLeft, this.left(), this.right());
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.size() == 2);
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPAsofJoinOperator(
-                    this.getRelNode(), this.getOutputZSetType(),
-                    this.getFunction(), this.leftTimestampIndex, this.rightTimestampIndex,
-                    this.comparator, this.isMultiset, this.isLeft,
-                    newInputs.get(0), newInputs.get(1))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
+            return new DBSPAsofJoinOperator(this.getRelNode(),
+                    outputType.to(DBSPTypeZSet.class), Objects.requireNonNull(function),
+                    this.leftTimestampIndex, this.rightTimestampIndex,
+                    this.comparator, this.isMultiset, this.isLeft, newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
+        }
         return this;
-    }
-
-    @Override
-    public DBSPJoinBaseOperator withFunctionAndInputs(DBSPExpression function, OutputPort left, OutputPort right) {
-        return new DBSPAsofJoinOperator(this.getRelNode(), this.getOutputZSetType(), function,
-                this.leftTimestampIndex, this.rightTimestampIndex,
-                this.comparator, this.isMultiset, this.isLeft, left, right);
     }
 
     @Override

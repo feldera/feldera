@@ -60,20 +60,15 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPHopOperator(
-                this.getRelNode(), this.timestampIndex, this.interval, this.start, this.size,
-                outputType.to(DBSPTypeZSet.class), this.input())
-                .copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPHopOperator(
                     this.getRelNode(), this.timestampIndex, this.interval, this.start, this.size,
-                    this.getOutputZSetType(), newInputs.get(0))
+                    outputType.to(DBSPTypeZSet.class), newInputs.get(0))
                     .copyAnnotations(this);
+        }
         return this;
     }
 

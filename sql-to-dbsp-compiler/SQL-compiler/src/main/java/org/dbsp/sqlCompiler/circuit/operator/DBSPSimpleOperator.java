@@ -22,6 +22,7 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
@@ -121,8 +122,22 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
                     " but it returns\n" + type, this);
     }
 
-    /** Return a version of this operator with the function replaced. */
-    public abstract DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType);
+    /** Return a version of this operator with the specified parts replaced.
+     * @param function    Function to use for operator.
+     * @param outputType  New operator output type.
+     * @param inputs      New inputs.
+     * @param force       If false and all fields are the same, return original. */
+    @CheckReturnValue
+    public abstract DBSPSimpleOperator with(
+            @Nullable DBSPExpression function,
+            DBSPType outputType,
+            List<OutputPort> inputs,
+            boolean force);
+
+    @CheckReturnValue
+    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression function, DBSPType outputType) {
+        return this.with(function, outputType, this.inputs, false);
+    }
 
     protected void checkParameterCount(DBSPExpression function, int expected) {
         DBSPClosureExpression closure = function.to(DBSPClosureExpression.class);
@@ -190,7 +205,13 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
      * @param force      If true always return a new operator.
      *                   If false and the inputs are the same this may return this.
      */
-    public abstract DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force);
+    public final DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
+        return this.with(this.function, this.outputType, newInputs, force);
+    }
+
+    protected boolean mustReplace(boolean force, @Nullable DBSPExpression function, List<OutputPort> inputs, DBSPType outputType) {
+        return force || function != this.function || this.inputsDiffer(inputs) || !this.outputType.sameType(outputType);
+    }
 
     public String getOutputName() {
         return this.getNodeName(false);

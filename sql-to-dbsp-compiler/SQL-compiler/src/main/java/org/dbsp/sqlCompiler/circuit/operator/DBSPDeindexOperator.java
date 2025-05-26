@@ -13,7 +13,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
-import javax.annotation.CheckReturnValue;
+import javax.annotation.Nullable;
 import java.util.List;
 
 /** The inverse of the map_index operator.  This operator simply drops the index
@@ -44,12 +44,14 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator {
         visitor.pop(this);
     }
 
-    @CheckReturnValue
     @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPDeindexOperator(this.getRelNode(), newInputs.get(0))
                     .copyAnnotations(this);
+        }
         return this;
     }
 

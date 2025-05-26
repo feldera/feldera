@@ -112,7 +112,6 @@ public class AggregateCompiler implements ICompilerComponent {
     private final ImmutableBitSet groups;
     private final AggregateCall call;
     private final boolean linearAllowed;
-    private final List<RexLiteral> constants;
 
     public AggregateCompiler(
             RelNode node,
@@ -124,7 +123,6 @@ public class AggregateCompiler implements ICompilerComponent {
             ImmutableBitSet groups,
             boolean linearAllowed) {
         this.aggregateNode = node;
-        this.constants = constants;
         this.node = CalciteObject.create(node, call);
         this.linearAllowed = linearAllowed;
         this.call = call;
@@ -139,7 +137,7 @@ public class AggregateCompiler implements ICompilerComponent {
         this.aggFunction = call.getAggregation();
         this.filterArgument = call.filterArg;
         List<Integer> argList = call.getArgList();
-        ExpressionCompiler eComp = new ExpressionCompiler(this.aggregateNode, this.v, this.constants, this.compiler);
+        ExpressionCompiler eComp = new ExpressionCompiler(this.aggregateNode, this.v, constants, this.compiler);
         if (argList.isEmpty()) {
             this.aggArgument = null;
         } else if (argList.size() == 1) {

@@ -50,19 +50,13 @@ public final class DBSPViewDeclarationOperator
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return new DBSPViewDeclarationOperator(this.viewDeclaration, this.sourceName,
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression unused, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, unused, newInputs, outputType))
+            return new DBSPViewDeclarationOperator(this.viewDeclaration, this.sourceName,
                 outputType.to(DBSPTypeZSet.class), this.originalRowType,
                 this.metadata, this.tableName).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.isEmpty());
-        if (force)
-            return new DBSPViewDeclarationOperator(
-                    this.viewDeclaration, this.sourceName, this.getOutputZSetType(), this.originalRowType,
-                    this.metadata, this.tableName).copyAnnotations(this);
         return this;
     }
 
