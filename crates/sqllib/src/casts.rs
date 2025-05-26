@@ -2799,7 +2799,15 @@ pub fn cast_to_bytes_bytes(value: ByteArray, precision: i32) -> SqlResult<ByteAr
 
 #[doc(hidden)]
 pub fn cast_to_bytes_bytesN(value: Option<ByteArray>, precision: i32) -> SqlResult<ByteArray> {
-    Ok(ByteArray::with_size(value.unwrap().as_slice(), precision))
+    match value {
+        None => Err(cast_null("BINARY")),
+        Some(value) => cast_to_bytes_bytes(value, precision),
+    }
+}
+
+#[doc(hidden)]
+pub fn cast_to_bytesN_bytes(value: ByteArray, precision: i32) -> SqlResult<Option<ByteArray>> {
+    r2o(cast_to_bytes_bytes(value, precision))
 }
 
 #[doc(hidden)]
@@ -2808,14 +2816,9 @@ pub fn cast_to_bytesN_bytesN(
     precision: i32,
 ) -> SqlResult<Option<ByteArray>> {
     match value {
-        None => Err(cast_null("BINARY")),
-        Some(value) => Ok(Some(ByteArray::with_size(value.as_slice(), precision))),
+        None => Ok(None),
+        Some(value) => cast_to_bytesN_bytes(value, precision),
     }
-}
-
-#[doc(hidden)]
-pub fn cast_to_bytesN_bytes(value: ByteArray, precision: i32) -> SqlResult<Option<ByteArray>> {
-    Ok(Some(ByteArray::with_size(value.as_slice(), precision)))
 }
 
 #[doc(hidden)]
@@ -2951,7 +2954,6 @@ macro_rules! cast_from_variant_numeric {
                 }
             }
         }
-
     };
 }
 
