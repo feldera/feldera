@@ -212,6 +212,18 @@ pub struct AvroEncoderConfig {
     /// nullability of columns.
     pub schema: Option<String>,
 
+    /// Optional name of the field used for Change Data Capture (CDC) annotations.
+    ///
+    /// When set (e.g., "op"), the specified field will be added to each record
+    /// to indicate the type of change:
+    /// - `"I"` for insert operations
+    /// - `"U"` for upserts
+    /// - `"D"` for deletions
+    ///
+    /// If not set, CDC metadata will not be included in the records.
+    /// Only works with the `raw` update format.
+    pub cdc_field: Option<String>,
+
     /// Avro namespace for the generated Avro schemas.
     pub namespace: Option<String>,
 

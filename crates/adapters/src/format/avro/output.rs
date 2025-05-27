@@ -6,6 +6,8 @@ use crate::util::{indexed_operation_type, IndexedOperationType};
 use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, RecordFormat, SerCursor};
 use actix_web::HttpRequest;
 use anyhow::{anyhow, bail, Result as AnyResult};
+use apache_avro::schema::RecordField;
+use apache_avro::Schema;
 use apache_avro::{to_avro_datum, types::Value as AvroValue, Schema as AvroSchema};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
@@ -118,6 +120,12 @@ pub(crate) struct AvroEncoder {
     skip_schema_id: bool,
 
     update_format: AvroUpdateFormat,
+
+    /// CDC Field.
+    cdc_field: Option<String>,
+
+    /// Avro Schema when the CDC field is Some.
+    value_avro_schema_with_cdc: Option<AvroSchema>,
 }
 
 /// `true` - this config will create messages with key and value components.
@@ -147,7 +155,6 @@ impl AvroEncoder {
         topic: Option<String>,
     ) -> Result<Self, ControllerError> {
         debug!("Creating Avro encoder; config: {config:#?}");
-
         match config.update_format {
             AvroUpdateFormat::Raw | AvroUpdateFormat::ConfluentJdbc => (),
             AvroUpdateFormat::Debezium => {
@@ -156,6 +163,13 @@ impl AvroEncoder {
                     "'debezium' data change event format is not yet supported by the Avro encoder",
                 ));
             }
+        }
+
+        if config.cdc_field.is_some() && config.update_format != AvroUpdateFormat::Raw {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "`cdc_field` is only supported with 'raw' data change event format",
+            ));
         }
 
         if let Some(key_mode) = &config.key_mode {
@@ -209,6 +223,39 @@ impl AvroEncoder {
                     &serde_yaml::to_string(&config).unwrap_or_default(),
                 )
             })?,
+        };
+
+        let value_avro_schema_with_cdc = match &config.cdc_field {
+            Some(field) => {
+                let mut sch = value_avro_schema.clone();
+                if let AvroSchema::Record(ref mut record_schema) = sch {
+                    if record_schema
+                        .fields
+                        .iter()
+                        .any(|f| f.name.eq_ignore_ascii_case(field))
+                    {
+                        return Err(ControllerError::invalid_encoder_configuration(
+                            endpoint_name,
+                            &format!(
+                                "avro schema already contains `{field}` field specified for CDC in `cdc_field`",
+                            ),
+                        ));
+                    }
+
+                    record_schema.fields.push(
+                        RecordField::builder()
+                            .name(field.to_owned())
+                            .schema(AvroSchema::String)
+                            .build(),
+                    );
+                };
+
+                let str = serde_json::to_string(&sch)
+                    .expect("unreachable: failed to serialize avro schema to string");
+
+                Some(Schema::parse_str(&str).expect("unreachable: failed to parse avro schema"))
+            }
+            None => None,
         };
 
         debug!(
@@ -322,12 +369,21 @@ impl AvroEncoder {
                 }
             };
 
-            value_schema_id = publish_schema(
-                endpoint_name,
-                &value_avro_schema,
-                &value_subject,
-                sr_settings,
-            )?;
+            match value_avro_schema_with_cdc {
+                Some(ref cdc_sch) => {
+                    value_schema_id =
+                        publish_schema(endpoint_name, cdc_sch, &value_subject, sr_settings)?
+                }
+                None => {
+                    value_schema_id = publish_schema(
+                        endpoint_name,
+                        &value_avro_schema,
+                        &value_subject,
+                        sr_settings,
+                    )?
+                }
+            };
+
             if let Some(key_avro_schema) = &key_avro_schema {
                 key_schema_id = publish_schema(
                     endpoint_name,
@@ -356,6 +412,8 @@ impl AvroEncoder {
             key_buffer,
             skip_schema_id: config.skip_schema_id,
             update_format: config.update_format,
+            cdc_field: config.cdc_field,
+            value_avro_schema_with_cdc,
         })
     }
 
@@ -487,14 +545,33 @@ impl AvroEncoder {
                 match operation_type {
                     IndexedOperationType::Insert | IndexedOperationType::Upsert => {
                         // println!("schema: {:#?}", self.value_avro_schema);
-                        let avro_value = cursor
+                        let mut avro_value = cursor
                             .val_to_avro(&self.value_avro_schema, &HashMap::new())
                             .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
+
+                        if let (Some(field_name), AvroValue::Record(ref mut items)) =
+                            (&self.cdc_field, &mut avro_value)
+                        {
+                            items.push((
+                                field_name.to_owned(),
+                                AvroValue::String(
+                                    match operation_type {
+                                        IndexedOperationType::Insert => "I",
+                                        _ => "U",
+                                    }
+                                    .to_owned(),
+                                ),
+                            ));
+                        }
 
                         Self::serialize_avro_value(
                             self.skip_schema_id,
                             avro_value,
-                            &self.value_avro_schema,
+                            if let Some(ref cdc_sch) = self.value_avro_schema_with_cdc {
+                                cdc_sch
+                            } else {
+                                &self.value_avro_schema
+                            },
                             &mut self.value_buffer,
                         )?;
                     }
@@ -505,14 +582,33 @@ impl AvroEncoder {
             if w == -1 {
                 match operation_type {
                     IndexedOperationType::Delete if self.update_format == AvroUpdateFormat::Raw => {
-                        let avro_value = cursor
+                        let mut avro_value = cursor
                             .val_to_avro(&self.value_avro_schema, &HashMap::new())
                             .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
+
+                        if let (Some(field_name), AvroValue::Record(ref mut items)) =
+                            (&self.cdc_field, &mut avro_value)
+                        {
+                            items.push((
+                                field_name.to_owned(),
+                                AvroValue::String(
+                                    match operation_type {
+                                        IndexedOperationType::Delete => "D",
+                                        _ => unreachable!(),
+                                    }
+                                    .to_owned(),
+                                ),
+                            ));
+                        }
 
                         Self::serialize_avro_value(
                             self.skip_schema_id,
                             avro_value,
-                            &self.value_avro_schema,
+                            if let Some(ref cdc_sch) = self.value_avro_schema_with_cdc {
+                                cdc_sch
+                            } else {
+                                &self.value_avro_schema
+                            },
                             &mut self.value_buffer,
                         )?;
                     }
