@@ -1,5 +1,4 @@
 pub mod adhoc;
-pub mod clock;
 pub mod datagen;
 pub mod delta_table;
 pub mod file;
