@@ -33,7 +33,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /* Tests manually adapted from
@@ -896,7 +895,6 @@ public class PostgresNumericTests extends SqlIoTest {
     }
 
     @Test
-    @Ignore("disabled until fix for aarch64 is in main")
     public void testExp() {
         this.qs("""
                 --
