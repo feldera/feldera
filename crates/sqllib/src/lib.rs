@@ -50,6 +50,7 @@ pub use regex::Regex;
 #[doc(hidden)]
 pub use source::{SourcePosition, SourcePositionRange};
 
+use lexical_core::*;
 use std::sync::LazyLock;
 
 // Re-export these types, so they can be used in UDFs without having to import the dbsp crate directly.
@@ -1816,4 +1817,68 @@ where
         cursor.step_key();
     }
     false
+}
+
+/// Convert a REAL value to a string, with 6 digits of precision
+/// This is used to make tests involving FP values more robust; instead
+/// of comparing FP values, we only compare such strings.
+pub fn to_string_f_(value: F32) -> SqlString {
+    static F32_OPTIONS: LazyLock<WriteFloatOptions> = LazyLock::new(|| {
+        lexical_core::WriteFloatOptions::builder()
+            // Only write up to 6 significant digits, IE, `1.234567` becomes `1.23456`.
+            .max_significant_digits(std::num::NonZeroUsize::new(6))
+            .min_significant_digits(std::num::NonZeroUsize::new(0))
+            // Trim the trailing `.0` from integral float strings.
+            .trim_floats(true)
+            .build()
+            .unwrap()
+    });
+
+    let mut buffer = [0u8; 128]; // Allocate buffer
+    let bytes = value
+        .into_inner()
+        .to_lexical_with_options::<{ crate::format::STANDARD }>(&mut buffer, &F32_OPTIONS);
+    String::from_utf8_lossy(bytes).into_owned().into()
+}
+
+some_function1!(to_string_f, F32, SqlString);
+
+/// Convert a DOUBLE value to a string, with 15 digits of precision.
+/// This is used to make tests involving FP values more robust; instead
+/// of comparing FP values, we only compare such strings.
+pub fn to_string_d_(value: F64) -> SqlString {
+    static F64_OPTIONS: LazyLock<WriteFloatOptions> = LazyLock::new(|| {
+        lexical_core::WriteFloatOptions::builder()
+            .max_significant_digits(std::num::NonZeroUsize::new(14))
+            .min_significant_digits(std::num::NonZeroUsize::new(0))
+            .trim_floats(true)
+            .build()
+            .unwrap()
+    });
+
+    let mut buffer = [0u8; 128];
+    let bytes = value
+        .into_inner()
+        .to_lexical_with_options::<{ crate::format::STANDARD }>(&mut buffer, &F64_OPTIONS);
+    String::from_utf8_lossy(bytes).into_owned().into()
+}
+
+some_function1!(to_string_d, F64, SqlString);
+
+#[test]
+pub fn check() {
+    assert_eq!("1.2", to_string_f_(1.2f32.into()).str());
+    assert_eq!("1.2", to_string_d_(1.2f64.into()).str());
+    assert_eq!("1.23e-10", to_string_f_(0.000000000123f32.into()).str());
+    assert_eq!("1.23e-10", to_string_d_(0.000000000123f64.into()).str());
+    assert_eq!("1.23e10", to_string_f_(12300000000f32.into()).str());
+    assert_eq!("1.23e10", to_string_d_(12300000000f64.into()).str());
+    assert_eq!(
+        Some(SqlString::from("1.23e10")),
+        to_string_fN(Some(12300000000f32.into()))
+    );
+    assert_eq!(
+        Some(SqlString::from("1.23e10")),
+        to_string_dN(Some(12300000000f64.into()))
+    );
 }

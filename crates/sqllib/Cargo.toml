@@ -36,6 +36,7 @@ base64 = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
 arcstr = { workspace = true, features = ["serde"] }
 ryu = { workspace = true }
+lexical-core = { version = "1.0.5" }
 
 [dev-dependencies]
 serde_json = { workspace = true }

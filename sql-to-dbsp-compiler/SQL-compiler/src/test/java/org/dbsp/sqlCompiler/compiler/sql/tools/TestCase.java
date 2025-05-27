@@ -172,8 +172,11 @@ public class TestCase {
                     for (int index = 0; index < tuple.size(); index++) {
                         DBSPType fieldType = tuple.getFieldType(index);
                         if (fieldType.is(DBSPTypeFP.class)) {
-                            converted[index] = var.deref().field(index)
-                                    .cast(CalciteObject.EMPTY, DBSPTypeString.varchar(fieldType.mayBeNull), false);
+                            String converterFunction = "to_string_" + fieldType.to(DBSPTypeFP.class).shortName() +
+                                    fieldType.nullableUnderlineSuffix();
+                            converted[index] = new DBSPApplyExpression(
+                                    converterFunction, DBSPTypeString.varchar(fieldType.mayBeNull),
+                                    var.deref().field(index));
                             foundFp = true;
                         } else {
                             converted[index] = var.deref().field(index).applyCloneIfNeeded();
