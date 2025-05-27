@@ -213,6 +213,8 @@ However, exactly one of `registry_urls` and `schema` properties must be specifie
 | `registry_username`            | string          | | Username used to authenticate with the registry.Requires `registry_urls` to be set. This option is mutually exclusive with token-based authentication (see `registry_authorization_token`).|
 | `registry_password`            | string          | | Password used to authenticate with the registry. Requires `registry_urls` to be set.|
 | `registry_authorization_token` | string          | | Token used to authenticate with the registry. Requires `registry_urls` to be set. This option is mutually exclusive with password-based authentication (see `registry_username` and `registry_password`).|
+| `cdc_field`                    | string          | | When set, the specified field will be added to each record to indicate the type of change. `I` for Insert, `U` for Upsert and `D` for Delete.|
+
 
 ### Examples
 
@@ -322,4 +324,42 @@ with (
 as select * from my_table;
 
 create index my_index on my_view(id);
+```
+
+#### Emitting change data capture (CDC) metadata
+
+Avro output encoder can be configured to include CDC metadata by setting
+the parameter `cdc_field`. In this example, we set the `cdc_field` to "op".
+Each output record will contain the field "op" which will have one of the
+following values:
+
+- `I`: **Insert**
+- `D`: **Delete**
+- `U`: **Upsert**
+
+```sql
+create materialized view pizzas with (
+   'connectors' = '[
+    {
+      "index": "idx1",
+      "transport": {
+          "name": "kafka_output",
+          "config": {
+              "bootstrap.servers": "localhost:29092",
+              "topic": "pizzas"
+          }
+      },
+      "format": {
+          "name": "avro",
+          "config": {
+              "registry_urls": ["http://localhost:18081"],
+              "update_format": "raw",
+              "cdc_field": "op",
+              "subject_name_strategy": "topic_name"
+          }
+      }
+    }
+   ]'
+) as select * from tbl order by order_number desc limit 10;
+create index idx1 on pizzas(order_number);
 ```
