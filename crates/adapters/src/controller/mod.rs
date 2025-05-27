@@ -960,6 +960,9 @@ impl CircuitThread {
                         .map(|()| checkpoint)
                         .map_err(Arc::new)
                 })?;
+            if let Err(error) = this.circuit.gc_checkpoint() {
+                warn!("error removing old checkpoints: {error}");
+            }
             if let Some(ft) = &mut this.ft {
                 ft.checkpointed()?;
             }
