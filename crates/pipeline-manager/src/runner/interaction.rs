@@ -14,6 +14,11 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
+/// Max non-streaming HTTP response body returned by the pipeline.
+/// The awc default is 2MiB, which is not enough to, for example, retrieve
+/// a large circuit profile.
+const RESPONSE_SIZE_LIMIT: usize = 20 * 1024 * 1024;
+
 pub(crate) struct CachedPipelineDescr {
     pipeline: ExtendedPipelineDescrMonitoring,
     instantiated: Instant,
@@ -222,11 +227,13 @@ impl RunnerInteraction {
         }
 
         // Copy over the original response body
-        let response_body = original_response.body().await.map_err(|e| {
-            RunnerError::PipelineInteractionInvalidResponse {
+        let response_body = original_response
+            .body()
+            .limit(RESPONSE_SIZE_LIMIT)
+            .await
+            .map_err(|e| RunnerError::PipelineInteractionInvalidResponse {
                 error: format!("unable to reconstruct response body due to: {e}"),
-            }
-        })?;
+            })?;
         Ok(response_builder.body(response_body))
     }
 
