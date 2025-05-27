@@ -21,7 +21,6 @@ use crate::catalog::OutputCollectionHandles;
 use crate::controller::checkpoint::CheckpointOffsets;
 use crate::controller::journal::Journal;
 use crate::create_integrated_output_endpoint;
-use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::util::run_on_thread_pool;
@@ -782,10 +781,11 @@ impl CircuitThread {
             if self.checkpoint_requested() {
                 self.checkpoint();
             }
-
-            if self.controller.state() == PipelineState::Terminated {
-                break;
-            }
+            let running = match self.controller.state() {
+                PipelineState::Running => true,
+                PipelineState::Paused => false,
+                PipelineState::Terminated => break,
+            };
 
             // Backpressure in the output pipeline: wait for room in output buffers to
             // become available.
@@ -800,6 +800,7 @@ impl CircuitThread {
                 self.last_checkpoint,
                 self.replaying(),
                 self.circuit.bootstrap_in_progress(),
+                running,
                 self.checkpoint_requested(),
             ) {
                 Action::Step => {
@@ -1598,6 +1599,9 @@ impl FtState {
 
 /// Decides when to trigger a step.
 struct StepTrigger {
+    /// Time when `clock_resolution` expires.
+    tick: Option<Instant>,
+
     /// Time when `max_buffering_delay` expires.
     buffer_timeout: Option<Instant>,
 
@@ -1610,6 +1614,9 @@ struct StepTrigger {
     /// Minimum number of records to receive before unconditionally triggering a
     /// step.
     min_batch_size_records: u64,
+
+    /// Time between clock ticks.
+    clock_resolution: Option<Duration>,
 
     /// Time between automatic checkpoints.
     checkpoint_interval: Option<Duration>,
@@ -1634,12 +1641,15 @@ impl StepTrigger {
         let config = &controller.status.pipeline_config.global;
         let max_buffering_delay = Duration::from_micros(config.max_buffering_delay_usecs);
         let min_batch_size_records = config.min_batch_size_records;
+        let clock_resolution = config.clock_resolution_usecs.map(Duration::from_micros);
         let checkpoint_interval = config.fault_tolerance.checkpoint_interval();
         Self {
             controller,
+            tick: clock_resolution.map(|delay| Instant::now() + delay),
             buffer_timeout: None,
             max_buffering_delay,
             min_batch_size_records,
+            clock_resolution,
             checkpoint_interval,
         }
     }
@@ -1658,6 +1668,7 @@ impl StepTrigger {
         last_checkpoint: Instant,
         replaying: bool,
         bootstrapping: bool,
+        running: bool,
         checkpoint_requested: bool,
     ) -> Action {
         // If any input endpoints are blocking suspend, then those are the only
@@ -1676,32 +1687,36 @@ impl StepTrigger {
             buffered_records[false]
         };
 
+        // `self.tick` but `None` if we're not running.
+        let tick = running.then_some(self.tick).flatten();
+
         // Time of the next checkpoint.
         let checkpoint = self
             .checkpoint_interval
             .map(|interval| last_checkpoint + interval);
 
-        fn step(trigger: &mut StepTrigger) -> Action {
+        fn step(trigger: &mut StepTrigger, now: Instant) -> Action {
+            trigger.tick = trigger.clock_resolution.map(|delay| now + delay);
             trigger.buffer_timeout = None;
             Action::Step
         }
 
         let now = Instant::now();
-
         if replaying || bootstrapping {
-            step(self)
+            step(self, now)
         } else if checkpoint.is_some_and(|t| now >= t) && !checkpoint_requested {
             Action::Checkpoint
         } else if self.controller.status.unset_step_requested()
             || buffered_records > self.min_batch_size_records
+            || tick.is_some_and(|t| now >= t)
             || self.buffer_timeout.is_some_and(|t| now >= t)
         {
-            step(self)
+            step(self, now)
         } else {
             if buffered_records > 0 && self.buffer_timeout.is_none() {
                 self.buffer_timeout = Some(now + self.max_buffering_delay);
             }
-            let wakeup = [self.buffer_timeout, checkpoint]
+            let wakeup = [tick, self.buffer_timeout, checkpoint]
                 .into_iter()
                 .flatten()
                 .min();
@@ -2364,8 +2379,6 @@ impl ControllerInner {
             pool_size as usize,
             source_tasks.chain(sink_tasks),
         )?;
-
-        let _ = controller.connect_input("now", &now_endpoint_config(&config));
 
         let backpressure_thread =
             BackpressureThread::new(controller.clone(), backpressure_thread_parker);

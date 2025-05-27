@@ -6,7 +6,6 @@
 //! that the entire configuration tree can be deserialized from a JSON file.
 
 use crate::transport::adhoc::AdHocInputConfig;
-use crate::transport::clock::ClockConfig;
 use crate::transport::datagen::DatagenInputConfig;
 use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
@@ -46,8 +45,6 @@ pub const fn default_max_queued_records() -> u64 {
 pub const fn default_max_batch_size() -> u64 {
     10_000
 }
-
-pub const DEFAULT_CLOCK_RESOLUTION_USECS: u64 = 1_000_000;
 
 /// Pipeline deployment configuration.
 /// It represents configuration entries directly provided by the user
@@ -388,7 +385,7 @@ pub struct RuntimeConfig {
     /// inputs.  The pipeline will update the clock value and trigger incremental recomputation
     /// at most each `clock_resolution_usecs` microseconds.
     ///
-    /// It is set to 1 second (1,000,000 microseconds) by default.
+    /// It is set to 100 milliseconds (100,000 microseconds) by default.
     ///
     /// Set to `null` to disable periodic clock updates.
     pub clock_resolution_usecs: Option<u64>,
@@ -413,7 +410,7 @@ pub struct RuntimeConfig {
     /// At startup, the pipeline must initialize all of its input and output connectors.
     /// Depending on the number and types of connectors, this can take a long time.
     /// To accelerate the process, multiple connectors are initialized concurrently.
-    /// This option controls the maximum number of connectors that can be initialized
+    /// This option controls the maximum number of connectors that can be intitialized
     /// in parallel.
     ///
     /// The default is 10.
@@ -543,7 +540,10 @@ impl Default for RuntimeConfig {
             min_batch_size_records: 0,
             max_buffering_delay_usecs: 0,
             resources: ResourceConfig::default(),
-            clock_resolution_usecs: { Some(DEFAULT_CLOCK_RESOLUTION_USECS) },
+            clock_resolution_usecs: {
+                // Every 100 ms.
+                Some(100_000)
+            },
             pin_cpus: Vec::new(),
             provisioning_timeout_secs: None,
             max_parallel_connector_init: None,
@@ -1057,7 +1057,6 @@ pub enum TransportConfig {
     HttpOutput,
     /// Ad hoc input: cannot be instantiated through API
     AdHocInput(AdHocInputConfig),
-    ClockInput(ClockConfig),
 }
 
 impl TransportConfig {
@@ -1081,7 +1080,6 @@ impl TransportConfig {
             TransportConfig::HttpOutput => "http_output".to_string(),
             TransportConfig::AdHocInput(_) => "adhoc_input".to_string(),
             TransportConfig::RedisOutput(_) => "redis_output".to_string(),
-            TransportConfig::ClockInput(_) => "clock".to_string(),
         }
     }
 }

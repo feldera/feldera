@@ -261,9 +261,6 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 binary_format: BinaryFormat::Base64,
                 uuid_format: UuidFormat::String,
             },
-            JsonFlavor::ClockInput => {
-                SqlSerdeConfig::default().with_timestamp_format(TimestampFormat::MillisSinceEpoch)
-            }
             JsonFlavor::Postgres => Self {
                 time_format: TimeFormat::default(), // H-M-S
                 date_format: DateFormat::default(), // Y-m-d

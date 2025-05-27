@@ -22,7 +22,6 @@
 //! ```
 use adhoc::AdHocInputEndpoint;
 use anyhow::Result as AnyResult;
-use clock::ClockEndpoint;
 use http::HttpInputEndpoint;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
@@ -33,7 +32,6 @@ pub mod http;
 
 pub mod url;
 
-pub mod clock;
 mod s3;
 
 #[cfg(feature = "with-kafka")]
@@ -94,7 +92,6 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::Nexmark(_) => return Ok(None),
         TransportConfig::HttpInput(config) => Box::new(HttpInputEndpoint::new(config)),
         TransportConfig::AdHocInput(config) => Box::new(AdHocInputEndpoint::new(config)),
-        TransportConfig::ClockInput(config) => Box::new(ClockEndpoint::new(config)?),
         TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)
