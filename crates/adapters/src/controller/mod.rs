@@ -783,9 +783,11 @@ impl CircuitThread {
                 self.checkpoint();
             }
 
-            if self.controller.state() == PipelineState::Terminated {
-                break;
-            }
+            let running = match self.controller.state() {
+                PipelineState::Running => true,
+                PipelineState::Paused => false,
+                PipelineState::Terminated => break,
+            };
 
             // Backpressure in the output pipeline: wait for room in output buffers to
             // become available.
@@ -800,6 +802,7 @@ impl CircuitThread {
                 self.last_checkpoint,
                 self.replaying(),
                 self.circuit.bootstrap_in_progress(),
+                running,
                 self.checkpoint_requested(),
             ) {
                 Action::Step => {
@@ -1616,6 +1619,10 @@ struct StepTrigger {
 
     /// Time between automatic checkpoints.
     checkpoint_interval: Option<Duration>,
+
+    /// The circuit needs to perform an initial step even if there are no
+    /// new inputs in order to initialize state snapshot for ad hoc queries.
+    needs_first_step: bool,
 }
 
 /// Action for the controller to take.
@@ -1644,6 +1651,7 @@ impl StepTrigger {
             max_buffering_delay,
             min_batch_size_records,
             checkpoint_interval,
+            needs_first_step: true,
         }
     }
 
@@ -1661,6 +1669,7 @@ impl StepTrigger {
         last_checkpoint: Instant,
         replaying: bool,
         bootstrapping: bool,
+        running: bool,
         checkpoint_requested: bool,
     ) -> Action {
         // If any input endpoints are blocking suspend, then those are the only
@@ -1685,6 +1694,7 @@ impl StepTrigger {
             .map(|interval| last_checkpoint + interval);
 
         fn step(trigger: &mut StepTrigger) -> Action {
+            trigger.needs_first_step = false;
             trigger.buffer_timeout = None;
             Action::Step
         }
@@ -1697,6 +1707,7 @@ impl StepTrigger {
             Action::Checkpoint
         } else if self.controller.status.unset_step_requested()
             || buffered_records > self.min_batch_size_records
+            || (running && self.needs_first_step)
             || self.buffer_timeout.is_some_and(|t| now >= t)
         {
             step(self)
