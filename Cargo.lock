@@ -4585,6 +4585,7 @@ dependencies = [
  "geo",
  "hex",
  "itertools 0.14.0",
+ "lexical-core",
  "like",
  "metrics",
  "num",
