@@ -119,7 +119,12 @@ class View(SqlObject):
     def validate(self, pipeline: Pipeline):
         """Check that the data received matches the expected data"""
         if not self.local:  # If it's not a local view, perform validation
+            if DEBUG:
+                print(f"Querying view `{self.name}`...")
             data = list(pipeline.query(f"SELECT * FROM {self.name};"))
+            if DEBUG:
+                print(f"Received data from view `{self.name}`: \n{data}")
+
             expected = self.get_data()
 
             tc = unittest.TestCase()
