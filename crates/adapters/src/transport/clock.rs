@@ -22,6 +22,7 @@ use feldera_adapterlib::{
         InputConsumer, InputEndpoint, InputReader, InputReaderCommand, Resume,
         TransportInputEndpoint,
     },
+    PipelineState,
 };
 use feldera_types::{
     config::{
@@ -167,12 +168,15 @@ impl ClockReader {
         mut receiver: UnboundedReceiver<InputReaderCommand>,
     ) {
         let mut next_tick: Option<Instant> = None;
+        let mut pipeline_state = PipelineState::Paused;
         loop {
             select! {
                 // When the next clock tick is scheduled, wakeup at `next_tick` time.
                 _ = sleep_until(next_tick.unwrap_or_else(Instant::now)), if next_tick.is_some() => {
                     next_tick = None;
-                    consumer.request_step();
+                    if pipeline_state == PipelineState::Running {
+                        consumer.request_step();
+                    }
                 }
                 message = receiver.recv() => match message {
                     None => {
@@ -196,11 +200,13 @@ impl ClockReader {
                         consumer.replayed(1, 0);
                     }
                     Some(InputReaderCommand::Extend) => {
+                        pipeline_state = PipelineState::Running;
                         // Schedule a step, so we can feed the initial timestamp to the circuit.
                         consumer.request_step();
                     }
                     Some(InputReaderCommand::Pause) => {
                         // Stop timer.
+                        pipeline_state = PipelineState::Paused;
                         next_tick = None;
                     }
                     Some(InputReaderCommand::Queue { .. }) => {
