@@ -176,7 +176,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     init_logging();
 
     let mut circuit_config = CircuitConfig::with_workers(4).with_mode(Mode::Persistent);
-    let path = tempfile::tempdir().unwrap().into_path();
+    let path = tempfile::tempdir().unwrap().keep();
     println!("Running replay_test in {}", path.display());
 
     let config = StorageConfig {

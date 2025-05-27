@@ -946,7 +946,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn storage_no_cleanup() {
         // Case 1: storage specified, runtime should not clean up storage when exiting
-        let path = tempfile::tempdir().unwrap().into_path();
+        let path = tempfile::tempdir().unwrap().keep();
         let path_clone = path.clone();
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
