@@ -1,10 +1,11 @@
-import sys
 import sqlite3
-from types import ModuleType
 import re
 
-from tests.aggregate_tests.aggtst_base import Table, View, TstAccumulator, DEBUG
-from tests.aggregate_tests.atest_register_tests import register_tests_in_module
+from tests.aggregate_tests.aggtst_base import Table, View, DEBUG
+from tests.aggregate_tests.atest_run import discover_tests
+
+
+sqlite_db_path = ":memory:"  # Create an in-memory database
 
 
 class SQLiteRunner:
@@ -14,8 +15,11 @@ class SQLiteRunner:
         self.con = con
         self.cur = con.cursor()
 
-    def run_table(self, table: Table):
-        self.cur.execute(table.get_sql())
+    def fill_table(self, table: Table):
+        """Inserts the data from `table` into the SQLite table with the same name"""
+        self.cur.execute(
+            table.get_sql()
+        )  # Get table definition from `get_sql` and create a table in SQLite with the same name
         for row in table.get_data():
             values = list(row["insert"].values())
             placeholders = ", ".join(["?"] * len(values))
@@ -23,8 +27,8 @@ class SQLiteRunner:
             self.cur.execute(sql, values)
         self.con.commit()
 
-    def run_view(self, view: View):
-        # Rewrite view query for SQLite
+    def create_view(self, view: View):
+        """Rewrite the view query for SQLite"""
         sqlite_sql = re.sub(
             r"CREATE\s+(MATERIALIZED|LOCAL)\s+VIEW",
             "CREATE VIEW",
@@ -34,11 +38,23 @@ class SQLiteRunner:
         self.cur.execute(sqlite_sql)
         self.con.commit()
 
-    def run_all(self, tables: list[Table], views: list[View]):
+    def evaluate_view(self, view: View):
+        """Create view in SQLite and return normalized results"""
+        self.create_view(view)
+
+        self.cur.execute(f"SELECT * FROM {view.name}")
+        columns = [desc[0] for desc in self.cur.description]
+        rows = self.cur.fetchall()
+
+        # Normalize the result from SQLite as lists of dictionaries
+        return normalize_sqlite_rows(columns, rows)
+
+    def evaluate_views(self, tables: list[Table], views: list[View]):
+        """Execute all tables and views in SQLite and update expected data with the view results"""
         for table in tables:
             if DEBUG:
                 print(f"\nCreating and inserting into table in SQLite: `{table.name}`")
-            self.run_table(table)
+            self.fill_table(table)
 
         for view in views:
             if DEBUG:
@@ -46,14 +62,7 @@ class SQLiteRunner:
                 print(f"Expected Data for `{view.name}` before SQLite run: {view.data}")
                 print(f"\nCreating view in SQLite: `{view.name}`")
 
-            self.run_view(view)
-
-            self.cur.execute(f"SELECT * FROM {view.name}")
-            columns = [desc[0] for desc in self.cur.description]
-            rows = self.cur.fetchall()
-
-            # Normalize the result from SQLite as lists of dictionaries
-            normalized_rows = normalize_sqlite_rows(columns, rows)
+            normalized_rows = self.evaluate_view(view)
             if DEBUG:
                 print(f"Results from view `{view.name}` in SQLite: \n{normalized_rows}")
 
@@ -61,25 +70,15 @@ class SQLiteRunner:
             view.data = normalized_rows
 
 
-def discover_and_run_sqlite_tests(
-    class_name: str, dir_name: str, sqlite_db_path=":memory:"
-):
+def discover_sqlite_tests(class_name: str, dir_name: str):
     """Find all tests loaded by the current module and register them"""
-    ta = TstAccumulator()
-    loaded = []
-    for key, module in sys.modules.items():
-        if isinstance(module, ModuleType):
-            if not module.__name__.startswith(f"tests.{dir_name}"):
-                continue
-            loaded.append(module)
-    for module in loaded:
-        register_tests_in_module(module, ta, class_name)
+    ta = discover_tests(class_name, dir_name)
 
     # Connect to SQLite to run tables/views
     con = sqlite3.connect(sqlite_db_path)
     runner = SQLiteRunner(con)
-    runner.run_all(ta.tables, ta.views)
-    con.close()
+    runner.evaluate_views(ta.tables, ta.views)
+    con.close()  # Close the connection to SQLite and delete the database
 
     return ta
 
