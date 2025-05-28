@@ -1,3 +1,4 @@
+use crate::api::error::ApiError;
 use crate::config::ApiServerConfig;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
@@ -61,8 +62,13 @@ impl From<ExtendedPipelineDescrMonitoring> for CachedPipelineDescr {
 }
 
 /// Formats the URL to reach the pipeline.
-pub fn format_pipeline_url(location: &str, endpoint: &str, query_string: &str) -> String {
-    format!("http://{location}/{endpoint}?{query_string}")
+pub fn format_pipeline_url(
+    protocol: &str,
+    location: &str,
+    endpoint: &str,
+    query_string: &str,
+) -> String {
+    format!("{protocol}://{location}/{endpoint}?{query_string}")
 }
 
 /// Formats the error message displayed when a request to a pipeline timed out.
@@ -190,7 +196,7 @@ impl RunnerInteraction {
         timeout: Option<Duration>,
     ) -> Result<HttpResponse, ManagerError> {
         // Perform request to the pipeline
-        let url = format_pipeline_url(location, endpoint, query_string);
+        let url = format_pipeline_url("http", location, endpoint, query_string);
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
         let mut original_response = client
             .request(method, &url)
@@ -295,6 +301,26 @@ impl RunnerInteraction {
         }
     }
 
+    pub(crate) async fn forward_websocket_request_to_pipeline_by_name(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        endpoint: &str,
+        request: HttpRequest,
+        body: Payload,
+    ) -> Result<HttpResponse, ManagerError> {
+        let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
+        let url = format_pipeline_url("ws", &location, endpoint, request.query_string());
+        actix_ws_proxy::start(&request, url, body)
+            .await
+            .map_err(|e| {
+                ApiError::UnableToConnect {
+                    reason: format!("Unable to proxy web-socket connection to pipeline {e}"),
+                }
+                .into()
+            })
+    }
+
     /// Forwards the provided HTTP request to the pipeline, for which the
     /// request body can be streaming, and the response body is streaming.
     /// The response has all headers.
@@ -315,7 +341,7 @@ impl RunnerInteraction {
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
 
         // Build new request to pipeline
-        let url = format_pipeline_url(&location, endpoint, request.query_string());
+        let url = format_pipeline_url("http", &location, endpoint, request.query_string());
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
         let mut new_request = client
             .request(request.method().clone(), &url)

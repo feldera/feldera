@@ -21,6 +21,7 @@ pub enum ApiError {
     InvalidPipelineAction { action: String },
     UnsupportedPipelineAction { action: String, reason: String },
     InvalidConnectorAction { action: String },
+    UnableToConnect { reason: String },
 }
 
 impl DetailedError for ApiError {
@@ -34,6 +35,7 @@ impl DetailedError for ApiError {
             Self::InvalidPipelineAction { .. } => Cow::from("InvalidPipelineAction"),
             Self::UnsupportedPipelineAction { .. } => Cow::from("UnsupportedPipelineAction"),
             Self::InvalidConnectorAction { .. } => Cow::from("InvalidConnectorAction"),
+            Self::UnableToConnect { .. } => Cow::from("UnableToConnect"),
         }
     }
 }
@@ -68,6 +70,9 @@ impl Display for ApiError {
                     "Invalid connector action '{action}'; valid actions are: 'start' or 'pause'"
                 )
             }
+            Self::UnableToConnect { reason } => {
+                write!(f, "Error forwarding connection to pipeline: {reason}")
+            }
         }
     }
 }
@@ -91,6 +96,7 @@ impl ResponseError for ApiError {
             Self::InvalidPipelineAction { .. } => StatusCode::BAD_REQUEST,
             Self::UnsupportedPipelineAction { .. } => StatusCode::METHOD_NOT_ALLOWED,
             Self::InvalidConnectorAction { .. } => StatusCode::BAD_REQUEST,
+            Self::UnableToConnect { .. } => StatusCode::BAD_REQUEST,
         }
     }
 

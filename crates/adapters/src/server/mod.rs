@@ -1,7 +1,7 @@
 use crate::controller::{CompletionToken, ControllerMetric};
 use crate::format::{get_input_format, get_output_format};
 use crate::{
-    adhoc::stream_adhoc_result,
+    adhoc::{adhoc_websocket, stream_adhoc_result},
     controller::ConnectorConfig,
     ensure_default_crypto_provider,
     transport::http::{
@@ -315,7 +315,10 @@ pub fn run_server(
                 srv.call(req).map(|res| {
                     match &res {
                         Ok(response) => {
-                            let level = if response.status().is_success() {
+                            let level = if response.status().is_success()
+                                || response.status().is_redirection()
+                                || response.status().is_informational()
+                            {
                                 Level::DEBUG
                             } else {
                                 Level::ERROR
@@ -688,14 +691,37 @@ async fn suspendable(state: WebData<ServerState>) -> impl Responder {
 }
 
 #[get("/query")]
-async fn query(state: WebData<ServerState>, args: Query<AdhocQueryArgs>) -> impl Responder {
+async fn query(
+    state: WebData<ServerState>,
+    args: Query<AdhocQueryArgs>,
+    request: HttpRequest,
+    stream: web::Payload,
+) -> impl Responder {
+    let conn_upgrade = request
+        .headers()
+        .get(header::CONNECTION)
+        .and_then(|val| val.to_str().ok())
+        .map_or(false, |conn| conn.to_ascii_lowercase().contains("upgrade"));
+    let upgr_websocket = request
+        .headers()
+        .get(header::UPGRADE)
+        .and_then(|val| val.to_str().ok())
+        .map_or(false, |upgrade| upgrade.eq_ignore_ascii_case("websocket"));
+    let is_websocket = conn_upgrade && upgr_websocket;
+
     let session_ctxt = {
         let controller = state.controller.lock().unwrap();
         controller.as_ref().map(|c| c.session_context())
     };
 
     match session_ctxt.transpose()? {
-        Some(session) => Ok(stream_adhoc_result(args.into_inner(), session).await),
+        Some(session) => {
+            if !is_websocket {
+                stream_adhoc_result(args.into_inner(), session).await
+            } else {
+                adhoc_websocket(session, request, stream).await
+            }
+        }
         None => Err(missing_controller_error(&state)),
     }
 }

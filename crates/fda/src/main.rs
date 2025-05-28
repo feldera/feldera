@@ -1180,17 +1180,10 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             shell(format, name, client2).await
         }
         PipelineAction::Query { name, sql, stdin } => {
-            let format_str = match format {
-                OutputFormat::Text => "text",
-                OutputFormat::Json => "json",
-                OutputFormat::ArrowIpc => "arrow_ipc",
-                OutputFormat::Parquet => "parquet",
-            };
-
             let response = client
                 .pipeline_adhoc_sql()
                 .pipeline_name(name)
-                .format(format_str)
+                .format(format!("{format}"))
                 .sql(sql.unwrap_or_else(|| {
                     if stdin {
                         let mut program_code = String::new();

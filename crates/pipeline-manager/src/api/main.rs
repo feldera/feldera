@@ -372,7 +372,8 @@ pub fn log_response(
         Ok(response) => {
             let req = response.request();
             let level = if response.status().is_success()
-                || response.status() == StatusCode::NOT_MODIFIED
+                || response.status().is_informational()
+                || response.status().is_redirection()
             {
                 if req.method() == Method::GET && req.path() == "/healthz" {
                     Level::Trace
