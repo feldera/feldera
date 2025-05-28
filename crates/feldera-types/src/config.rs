@@ -415,6 +415,9 @@ pub struct RuntimeConfig {
     ///
     /// The default is 10.
     pub max_parallel_connector_init: Option<u64>,
+
+    /// Specification of additional (sidecar) containers.
+    pub init_containers: Option<serde_yaml::Value>,
 }
 
 /// Accepts "true" and "false" and converts them to the new format.
@@ -547,6 +550,7 @@ impl Default for RuntimeConfig {
             pin_cpus: Vec::new(),
             provisioning_timeout_secs: None,
             max_parallel_connector_init: None,
+            init_containers: None,
         }
     }
 }
