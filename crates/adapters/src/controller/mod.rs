@@ -783,11 +783,9 @@ impl CircuitThread {
                 self.checkpoint();
             }
 
-            let running = match self.controller.state() {
-                PipelineState::Running => true,
-                PipelineState::Paused => false,
-                PipelineState::Terminated => break,
-            };
+            if self.controller.state() == PipelineState::Terminated {
+                break;
+            }
 
             // Backpressure in the output pipeline: wait for room in output buffers to
             // become available.
@@ -802,7 +800,6 @@ impl CircuitThread {
                 self.last_checkpoint,
                 self.replaying(),
                 self.circuit.bootstrap_in_progress(),
-                running,
                 self.checkpoint_requested(),
             ) {
                 Action::Step => {
@@ -1676,7 +1673,6 @@ impl StepTrigger {
         last_checkpoint: Instant,
         replaying: bool,
         bootstrapping: bool,
-        running: bool,
         checkpoint_requested: bool,
     ) -> Action {
         // If any input endpoints are blocking suspend, then those are the only
@@ -1714,7 +1710,7 @@ impl StepTrigger {
             Action::Checkpoint
         } else if self.controller.status.unset_step_requested()
             || buffered_records > self.min_batch_size_records
-            || (running && self.needs_first_step)
+            || self.needs_first_step
             || self.buffer_timeout.is_some_and(|t| now >= t)
         {
             step(self)
