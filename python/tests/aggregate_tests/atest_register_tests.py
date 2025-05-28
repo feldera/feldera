@@ -1,5 +1,8 @@
-from tests.aggregate_tests.aggtst_base import DEBUG, TstAccumulator
+import sys
+from types import ModuleType
 import inspect
+
+from tests.aggregate_tests.aggtst_base import DEBUG, TstAccumulator
 
 
 def register_tests_in_module(module, ta: TstAccumulator, class_name: str):
@@ -17,3 +20,17 @@ def register_tests_in_module(module, ta: TstAccumulator, class_name: str):
                 instance.register(ta)
                 if DEBUG:
                     print(f"Registering {name}")
+
+
+def discover_tests(class_name: str, dir_name: str):
+    """Find all tests loaded by the current module and register them"""
+    ta = TstAccumulator()
+    loaded = []
+    for key, module in sys.modules.items():
+        if isinstance(module, ModuleType):
+            if not module.__name__.startswith(f"tests.{dir_name}"):
+                continue
+            loaded.append(module)
+    for module in loaded:
+        register_tests_in_module(module, ta, class_name)
+    return ta
