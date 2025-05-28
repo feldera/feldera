@@ -213,7 +213,7 @@ However, exactly one of `registry_urls` and `schema` properties must be specifie
 | `registry_username`            | string          | | Username used to authenticate with the registry.Requires `registry_urls` to be set. This option is mutually exclusive with token-based authentication (see `registry_authorization_token`).|
 | `registry_password`            | string          | | Password used to authenticate with the registry. Requires `registry_urls` to be set.|
 | `registry_authorization_token` | string          | | Token used to authenticate with the registry. Requires `registry_urls` to be set. This option is mutually exclusive with password-based authentication (see `registry_username` and `registry_password`).|
-| `cdc_field`                    | string          | | When set, the specified field will be added to each record to indicate the type of change. `I` for Insert, `U` for Upsert and `D` for Delete.|
+| `cdc_field`                    | string          | | <p>Optional name of the field used for Change Data Capture (CDC) annotations.</p> <p>Use this setting with data sinks that expect operation type (insert, delete, or update) encoded as a column in the Avro record, such as the [Iceberg Sink Kafka Connector](/connectors/sinks/iceberg).</p> <p> When set (e.g., `"cdc_field": "op"`), the specified field will be added to each record to indicate the type of change: <ul><li>`"I"` for insert operations</li> <li>`"U"` for upserts</li> <li>`"D"` for deletions</li></ul> </p> <p>If not set, CDC metadata will not be included in the records. Only works with the `raw` update format.</p>|
 
 
 ### Examples
@@ -336,6 +336,11 @@ following values:
 - `I`: **Insert**
 - `D`: **Delete**
 - `U`: **Upsert**
+
+The [Iceberg Sink Kafka Connector](/connectors/sink/iceberg) utilizes the CDC
+metadata to maintain the materialized view in Iceberg.
+
+Example:
 
 ```sql
 create materialized view pizzas with (

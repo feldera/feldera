@@ -214,7 +214,11 @@ pub struct AvroEncoderConfig {
 
     /// Optional name of the field used for Change Data Capture (CDC) annotations.
     ///
-    /// When set (e.g., "op"), the specified field will be added to each record
+    /// Use this setting with data sinks that expect operation type
+    /// (insert, delete, or update) encoded as a column in the Avro record, such
+    /// as the [Iceberg Sink Kafka Connector](https://docs.feldera.com/connectors/sinks/iceberg).
+    ///
+    /// When set (e.g., `"cdc_field": "op"`), the specified field will be added to each record
     /// to indicate the type of change:
     /// - `"I"` for insert operations
     /// - `"U"` for upserts
