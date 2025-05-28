@@ -281,6 +281,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             pin_cpus: Vec::new(),
             provisioning_timeout_secs: val.val14,
             max_parallel_connector_init: None,
+            init_containers: None,
         })
         .unwrap()
     }
@@ -1024,6 +1025,7 @@ async fn pipeline_versioning() {
         pin_cpus: Vec::new(),
         provisioning_timeout_secs: None,
         max_parallel_connector_init: None,
+        init_containers: None,
     })
     .unwrap();
     handle
@@ -1527,6 +1529,7 @@ async fn pipeline_provision_version_guard() {
                     pin_cpus: Vec::new(),
                     provisioning_timeout_secs: None,
                     max_parallel_connector_init: None,
+                    init_containers: None,
                 })
                 .unwrap(),
             ),

@@ -1864,6 +1864,7 @@ impl ControllerInit {
                 pin_cpus: config.global.pin_cpus,
                 provisioning_timeout_secs: config.global.provisioning_timeout_secs,
                 max_parallel_connector_init: config.global.max_parallel_connector_init,
+                init_containers: config.global.init_containers,
             },
 
             // Adapter configuration has to come from the checkpoint.

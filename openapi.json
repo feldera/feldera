@@ -400,7 +400,8 @@
                       "clock_resolution_usecs": 100000,
                       "pin_cpus": [],
                       "provisioning_timeout_secs": null,
-                      "max_parallel_connector_init": null
+                      "max_parallel_connector_init": null,
+                      "init_containers": null
                     },
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
                     "udf_rust": "",
@@ -462,7 +463,8 @@
                       "clock_resolution_usecs": 100000,
                       "pin_cpus": [],
                       "provisioning_timeout_secs": 1200,
-                      "max_parallel_connector_init": 10
+                      "max_parallel_connector_init": 10,
+                      "init_containers": null
                     },
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
                     "udf_rust": "",
@@ -553,7 +555,8 @@
                   "clock_resolution_usecs": 100000,
                   "pin_cpus": [],
                   "provisioning_timeout_secs": null,
-                  "max_parallel_connector_init": null
+                  "max_parallel_connector_init": null,
+                  "init_containers": null
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -613,7 +616,8 @@
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
-                    "max_parallel_connector_init": null
+                    "max_parallel_connector_init": null,
+                    "init_containers": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -768,7 +772,8 @@
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
-                    "max_parallel_connector_init": null
+                    "max_parallel_connector_init": null,
+                    "init_containers": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -886,7 +891,8 @@
                   "clock_resolution_usecs": 100000,
                   "pin_cpus": [],
                   "provisioning_timeout_secs": null,
-                  "max_parallel_connector_init": null
+                  "max_parallel_connector_init": null,
+                  "init_containers": null
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -946,7 +952,8 @@
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
-                    "max_parallel_connector_init": null
+                    "max_parallel_connector_init": null,
+                    "init_containers": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1018,7 +1025,8 @@
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
-                    "max_parallel_connector_init": null
+                    "max_parallel_connector_init": null,
+                    "init_containers": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1257,7 +1265,8 @@
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
-                    "max_parallel_connector_init": null
+                    "max_parallel_connector_init": null,
+                    "init_containers": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -2604,7 +2613,8 @@
                     "clock_resolution_usecs": 100000,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
-                    "max_parallel_connector_init": null
+                    "max_parallel_connector_init": null,
+                    "init_containers": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -5228,6 +5238,10 @@
                   "checkpoint_interval_secs": 60
                 }
               },
+              "init_containers": {
+                "description": "Specification of additional (sidecar) containers.",
+                "nullable": true
+              },
               "max_buffering_delay_usecs": {
                 "type": "integer",
                 "format": "int64",
@@ -6199,6 +6213,10 @@
               "model": "none",
               "checkpoint_interval_secs": 60
             }
+          },
+          "init_containers": {
+            "description": "Specification of additional (sidecar) containers.",
+            "nullable": true
           },
           "max_buffering_delay_usecs": {
             "type": "integer",
