@@ -1721,7 +1721,7 @@
             }
           },
           {
-            "name": "completion_token",
+            "name": "token",
             "in": "query",
             "description": "Completion token returned by the '/ingress' or '/completion_status' endpoint.",
             "required": true,

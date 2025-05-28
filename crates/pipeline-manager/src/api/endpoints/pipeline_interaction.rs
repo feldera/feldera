@@ -973,7 +973,7 @@ pub(crate) async fn completion_token(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("completion_token" = String, Query, description = "Completion token returned by the '/ingress' or '/completion_status' endpoint."),
+        ("token" = String, Query, description = "Completion token returned by the '/ingress' or '/completion_status' endpoint."),
     ),
     responses(
         (status = OK
