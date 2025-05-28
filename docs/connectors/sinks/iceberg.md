@@ -1,15 +1,13 @@
-# Iceberg output connector
+# Iceberg Sink Kafka Connector
 
-:::caution Experimental feature
 Direct Iceberg output is not currently supported in Feldera.
-However, you can write to Iceberg indirectly via Kafka Connect.
-:::
+However, you can write to Iceberg indirectly via the Iceberg Sink Kafka Connect Connector.
 
-### Writing to Iceberg via Kafka Connect
+## Writing to Iceberg via Kafka Connect
 
 Feldera enables integration with Apache Iceberg by first writing
 change data capture (CDC) records to Kafka, and then using the
-Iceberg Sink Connector for Kafka Connect to persist these changes
+[Iceberg Sink Connector for Kafka Connect](https://github.com/databricks/iceberg-kafka-connect) to persist these changes
 to Iceberg tables.
 
 #### Workflow
@@ -21,27 +19,19 @@ to Iceberg tables.
 ##### Avro format configuration
 
 The Avro format must be configured with:
+- An index on the identifying columns of the view, consistent with `iceberg.tables.default-id-columns`. 
 - `update_format` set to `raw`
 - `cdc_field` defined (e.g. set to `op`)
   - This `cdc_field` should match the `iceberg.tables.cdc-field` config in Iceberg sink connector for Kafka Connect.
-  - If `cdc_field` is not set, the Iceberg table will not be materialized.
+  - If `cdc_field` is not set, it will be append-only log of output records without any CDC metadata.
   - Each output record will contain the field `op` which will have one of the following values:
     - `I` for **Insert**
     - `D` for **Delete**
     - `U` for **Upsert**
 
-Sample setup with `datagen` as a data source:
+Example:
 
 ```sql
-create table tbl (
-    order_number int not null primary key,
-    pizza_name varchar,
-    quantity int,
-    toppings varchar array
-) with (
-        'connectors' = '[{ "transport": { "name": "datagen", "config": { "plan": [{ "limit": 100, "rate": 5 }] } } }]'
-);
-
 create materialized view pizzas with (
    'connectors' = '[
     {
@@ -67,6 +57,11 @@ create materialized view pizzas with (
 ) as select * from tbl order by order_number desc limit 10;
 create index idx1 on pizzas(order_number);
 ```
+
+:::important
+The index attribute is required and ensures proper materialization of the Iceberg table.
+For more information, see documentation](/connectors/unique_keys#views-with-unique-keys).
+:::
 
 #### Iceberg sink connector configuration for Kafka Connect
 
@@ -99,3 +94,12 @@ Connect.
     "value.converter.schemas.enable": "true"
 }
 ```
+- Ensure that `iceberg.tables.default-id-columns` is consistent with the index
+  definition in Feldera.
+- Ensure that the Iceberg table is accessible from Kafka Connect.
+- Ensure that `iceberg.tables.auto-create-enabled` is set to `true` if the
+  table doesn't already exist.
+- Ensure that `iceberg.tables.evolve-schema-enabled` is set to `true` if you
+  want schema to evolve as the schema of the output view evolves.
+- Ensure that `iceberg.tables.cdc-field` is set to the same value as `cdc_field`
+  in the output connector configuration in Feldera.
