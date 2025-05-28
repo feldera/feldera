@@ -601,7 +601,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         location: &str,
         endpoint: &str,
     ) -> Result<(StatusCode, serde_json::Value), ManagerError> {
-        let url = format_pipeline_url(location, endpoint, "");
+        let url = format_pipeline_url("http", location, endpoint, "");
         let response = self
             .client
             .request(method, &url)

@@ -79,6 +79,7 @@ actix-web-static-files = { workspace = true }
 actix-files = { workspace = true }
 actix-cors = { workspace = true }
 actix-web-httpauth = { workspace = true }
+actix-ws-proxy = "0.1.2"
 jsonwebtoken = { workspace = true }
 static-files = { workspace = true }
 utoipa = { workspace = true, features = ["actix_extras", "chrono", "uuid"] }

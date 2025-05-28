@@ -46,6 +46,7 @@ awc = { workspace = true, features = ["compress-gzip", "compress-brotli", "cooki
 aws-config = { workspace = true }
 async-stream = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
+bytestring = "1.4.0"
 circular-queue = { workspace = true, features = ["serde_support"] }
 crossbeam = { workspace = true }
 dbsp = { workspace = true }
@@ -62,6 +63,7 @@ aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
 aws-types = { workspace = true }
 actix = { workspace = true }
 actix-web = { workspace = true, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
+actix-ws = { workspace = true }
 mime = { workspace = true }
 size-of = { workspace = true }
 futures = { workspace = true }

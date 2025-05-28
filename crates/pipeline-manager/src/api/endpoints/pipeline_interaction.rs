@@ -10,7 +10,7 @@ use crate::error::ManagerError;
 use actix_http::StatusCode;
 use actix_web::{
     get,
-    http::Method,
+    http::{header, Method},
     post,
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
@@ -846,6 +846,7 @@ pub(crate) async fn get_pipeline_heap_profile(
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
         ("sql" = String, Query, description = "SQL query to execute"),
+        ("websocket" = bool, Query, description = "Establish websocket connection for interaction."),
         ("format" = AdHocResultFormat, Query, description = "Input data format, e.g., 'text', 'json' or 'parquet'"),
     ),
     responses(
@@ -883,18 +884,41 @@ pub(crate) async fn pipeline_adhoc_sql(
     body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    state
-        .runner
-        .forward_streaming_http_request_to_pipeline_by_name(
-            client.as_ref(),
-            *tenant_id,
-            &pipeline_name,
-            "query",
-            request,
-            body,
-            Some(Duration::MAX),
-        )
-        .await
+    let is_websocket = request
+        .headers()
+        .get(header::CONNECTION)
+        .and_then(|val| val.to_str().ok())
+        .map_or(false, |conn| conn.to_ascii_lowercase().contains("upgrade"))
+        && request
+            .headers()
+            .get(header::UPGRADE)
+            .and_then(|val| val.to_str().ok())
+            .map_or(false, |upgrade| upgrade.eq_ignore_ascii_case("websocket"));
+    if is_websocket {
+        state
+            .runner
+            .forward_websocket_request_to_pipeline_by_name(
+                *tenant_id,
+                &pipeline_name,
+                "query",
+                request,
+                body,
+            )
+            .await
+    } else {
+        state
+            .runner
+            .forward_streaming_http_request_to_pipeline_by_name(
+                client.as_ref(),
+                *tenant_id,
+                &pipeline_name,
+                "query",
+                request,
+                body,
+                Some(Duration::MAX),
+            )
+            .await
+    }
 }
 
 /// Generate a completion token for an input connector.
