@@ -100,7 +100,7 @@ Connect.
 - Ensure that `iceberg.tables.auto-create-enabled` is set to `true` if the
   table doesn't already exist.
 - Ensure that `iceberg.tables.evolve-schema-enabled` is set to `true` if you
-  want to dynamically update the Iceberg table schema to match the SQL view 
+  want to dynamically update the Iceberg table schema to match the SQL view
   declaration.
 - Ensure that `iceberg.tables.cdc-field` is set to the same value as `cdc_field`
   in the output connector configuration in Feldera.
