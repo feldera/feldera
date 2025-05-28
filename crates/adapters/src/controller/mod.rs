@@ -1503,6 +1503,13 @@ impl FtState {
                 let mut add_inputs = HashMap::new();
                 let mut changed_inputs = HashMap::new();
                 let inputs = self.controller.status.inputs.read().unwrap();
+
+                // Stop recording if the controller is shutting down. Avoid race with
+                // `stop`, which removes input endpoints from the pipeline. Without this
+                // check we may end up recording these endpoints in `remove_inputs`.
+                if self.controller.state() == PipelineState::Terminated {
+                    return Ok(());
+                }
                 self.input_endpoints
                     .retain(|endpoint_id, (endpoint_name, paused)| {
                         if let Some(endpoint) = inputs.get(endpoint_id) {
@@ -2941,6 +2948,14 @@ impl ControllerInner {
     }
 
     fn stop(&self) {
+        // We need to disconnect endpoints to make sure the controller gets deallocated;
+        // otherwise circular referenced between endpoints and the controller will leave
+        // a cycle of garbage.
+
+        // Mark pipeline as terminated before removing endpoints, so endpoint removal doesn't
+        // end up getting recorded in the journal.
+        self.status.set_state(PipelineState::Terminated);
+
         // Prevent nested panic when stopping the pipeline in response to a panic.
         let Ok(mut inputs) = self.status.inputs.write() else {
             error!("Error shutting down the pipeline: failed to acquire a poisoned lock. This indicates that the pipeline is an inconsistent state.");
@@ -2951,8 +2966,6 @@ impl ControllerInner {
             ep.reader.disconnect();
         }
         inputs.clear();
-
-        self.status.set_state(PipelineState::Terminated);
 
         self.unpark_circuit();
         self.unpark_backpressure();
