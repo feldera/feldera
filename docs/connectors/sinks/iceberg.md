@@ -19,7 +19,7 @@ to Iceberg tables.
 ##### Avro format configuration
 
 The Avro format must be configured with:
-- An index on the identifying columns of the view, consistent with `iceberg.tables.default-id-columns`. 
+- An index on the identifying columns of the view, consistent with `iceberg.tables.default-id-columns`.
 - `update_format` set to `raw`
 - `cdc_field` defined (e.g. set to `op`)
   - This `cdc_field` should match the `iceberg.tables.cdc-field` config in Iceberg sink connector for Kafka Connect.
