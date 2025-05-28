@@ -2940,6 +2940,15 @@ impl ControllerInner {
 
     fn start(&self) {
         self.status.set_state(PipelineState::Running);
+
+        // Usually, it is sufficient to unpark the backpressure thread,
+        // which will unpause connectors, which will in turn produce new
+        // inputs, which will wake up the circuit thread. We unpark
+        // the circuit thread manually to address the corner case where
+        // the pipeline doesn't yet have any inputs, yet the circuit needs
+        // to make the first step to initialize view snapshots used for
+        // ad hoc queries (see `trigger()`).
+        self.unpark_circuit();
         self.unpark_backpressure();
     }
 
