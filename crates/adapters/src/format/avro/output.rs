@@ -434,12 +434,6 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
         })
     }
 
-    fn value_schema(&self) -> Schema {
-        self.value_avro_schema_with_cdc
-            .clone()
-            .unwrap_or(self.value_avro_schema.clone())
-    }
-
     fn view_name(&self) -> &SqlIdentifier {
         &self.value_sql_schema.name
     }
@@ -592,7 +586,9 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                         Self::serialize_avro_value(
                             self.skip_schema_id,
                             avro_value,
-                            &self.value_schema(),
+                            self.value_avro_schema_with_cdc
+                                .as_ref()
+                                .unwrap_or(&self.value_avro_schema),
                             &mut self.value_buffer,
                         )?;
                     }
@@ -621,7 +617,9 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                         Self::serialize_avro_value(
                             self.skip_schema_id,
                             avro_value,
-                            &self.value_schema(),
+                            self.value_avro_schema_with_cdc
+                                .as_ref()
+                                .unwrap_or(&self.value_avro_schema),
                             &mut self.value_buffer,
                         )?;
                     }
