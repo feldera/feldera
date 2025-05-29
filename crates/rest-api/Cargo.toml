@@ -1,14 +1,17 @@
 [package]
 name = "feldera-rest-api"
-version = "0.50.0"
-edition = "2021"
-license = "MIT"
 description = "REST API bindings for Feldera"
-homepage = "https://github.com/feldera/feldera"
-repository = "https://github.com/feldera/feldera"
 keywords = ["incremental", "api", "rest", "database", "sql"]
-categories = ["database", "api-bindings", "network-programming"]
 publish = true
+categories = ["database", "api-bindings", "network-programming"]
+edition = { workspace = true }
+version = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
+readme = { workspace = true }
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }

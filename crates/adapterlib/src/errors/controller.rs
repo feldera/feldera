@@ -621,7 +621,7 @@ pub enum ControllerError {
 
     /// Invalid controller configuration.
     Config {
-        config_error: ConfigError,
+        config_error: Box<ConfigError>,
     },
 
     /// Unknown input endpoint name.
@@ -726,12 +726,16 @@ pub enum ControllerError {
 impl ResponseError for ControllerError {
     fn status_code(&self) -> StatusCode {
         match self {
-            Self::Config {
-                config_error: ConfigError::UnknownInputStream { .. },
-            } => StatusCode::NOT_FOUND,
-            Self::Config {
-                config_error: ConfigError::UnknownOutputStream { .. },
-            } => StatusCode::NOT_FOUND,
+            Self::Config { config_error }
+                if matches!(**config_error, ConfigError::UnknownInputStream { .. }) =>
+            {
+                StatusCode::NOT_FOUND
+            }
+            Self::Config { config_error }
+                if matches!(**config_error, ConfigError::UnknownOutputStream { .. }) =>
+            {
+                StatusCode::NOT_FOUND
+            }
             Self::Config { .. } => StatusCode::BAD_REQUEST,
             Self::UnknownInputEndpoint { .. } => StatusCode::NOT_FOUND,
             Self::UnknownOutputEndpoint { .. } => StatusCode::NOT_FOUND,
@@ -1082,7 +1086,7 @@ impl ControllerError {
         E: ToString,
     {
         Self::Config {
-            config_error: ConfigError::pipeline_config_parse_error(error),
+            config_error: Box::new(ConfigError::pipeline_config_parse_error(error)),
         }
     }
 
@@ -1091,7 +1095,11 @@ impl ControllerError {
         E: ToString,
     {
         Self::Config {
-            config_error: ConfigError::parser_config_parse_error(endpoint_name, error, config),
+            config_error: Box::new(ConfigError::parser_config_parse_error(
+                endpoint_name,
+                error,
+                config,
+            )),
         }
     }
 
@@ -1100,127 +1108,167 @@ impl ControllerError {
         E: ToString,
     {
         Self::Config {
-            config_error: ConfigError::encoder_config_parse_error(endpoint_name, error, config),
+            config_error: Box::new(ConfigError::encoder_config_parse_error(
+                endpoint_name,
+                error,
+                config,
+            )),
         }
     }
 
     pub fn duplicate_input_endpoint(endpoint_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::duplicate_input_endpoint(endpoint_name),
+            config_error: Box::new(ConfigError::duplicate_input_endpoint(endpoint_name)),
         }
     }
 
     pub fn duplicate_input_stream(stream_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::duplicate_input_stream(stream_name),
+            config_error: Box::new(ConfigError::duplicate_input_stream(stream_name)),
         }
     }
 
     pub fn unknown_input_format(endpoint_name: &str, format_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_input_format(endpoint_name, format_name),
+            config_error: Box::new(ConfigError::unknown_input_format(
+                endpoint_name,
+                format_name,
+            )),
         }
     }
 
     pub fn unknown_input_transport(endpoint_name: &str, transport_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_input_transport(endpoint_name, transport_name),
+            config_error: Box::new(ConfigError::unknown_input_transport(
+                endpoint_name,
+                transport_name,
+            )),
         }
     }
 
     pub fn duplicate_output_endpoint(endpoint_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::duplicate_output_endpoint(endpoint_name),
+            config_error: Box::new(ConfigError::duplicate_output_endpoint(endpoint_name)),
         }
     }
 
     pub fn duplicate_output_stream(stream_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::duplicate_output_stream(stream_name),
+            config_error: Box::new(ConfigError::duplicate_output_stream(stream_name)),
         }
     }
 
     pub fn unknown_output_format(endpoint_name: &str, format_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_output_format(endpoint_name, format_name),
+            config_error: Box::new(ConfigError::unknown_output_format(
+                endpoint_name,
+                format_name,
+            )),
         }
     }
 
     pub fn unknown_output_transport(endpoint_name: &str, transport_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_output_transport(endpoint_name, transport_name),
+            config_error: Box::new(ConfigError::unknown_output_transport(
+                endpoint_name,
+                transport_name,
+            )),
         }
     }
 
     pub fn unknown_input_stream(endpoint_name: &str, stream_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_input_stream(endpoint_name, stream_name),
+            config_error: Box::new(ConfigError::unknown_input_stream(
+                endpoint_name,
+                stream_name,
+            )),
         }
     }
 
     pub fn unknown_output_stream(endpoint_name: &str, stream_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_output_stream(endpoint_name, stream_name),
+            config_error: Box::new(ConfigError::unknown_output_stream(
+                endpoint_name,
+                stream_name,
+            )),
         }
     }
 
     pub fn unknown_index(endpoint_name: &str, index_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_index(endpoint_name, index_name),
+            config_error: Box::new(ConfigError::unknown_index(endpoint_name, index_name)),
         }
     }
 
     pub fn not_an_index(endpoint_name: &str, index_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::not_an_index(endpoint_name, index_name),
+            config_error: Box::new(ConfigError::not_an_index(endpoint_name, index_name)),
         }
     }
 
     pub fn input_format_not_supported(endpoint_name: &str, error: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::input_format_not_supported(endpoint_name, error),
+            config_error: Box::new(ConfigError::input_format_not_supported(
+                endpoint_name,
+                error,
+            )),
         }
     }
 
     pub fn output_format_not_supported(endpoint_name: &str, error: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::output_format_not_supported(endpoint_name, error),
+            config_error: Box::new(ConfigError::output_format_not_supported(
+                endpoint_name,
+                error,
+            )),
         }
     }
 
     pub fn input_format_not_specified(endpoint_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::input_format_not_specified(endpoint_name),
+            config_error: Box::new(ConfigError::input_format_not_specified(endpoint_name)),
         }
     }
 
     pub fn output_format_not_specified(endpoint_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::output_format_not_specified(endpoint_name),
+            config_error: Box::new(ConfigError::output_format_not_specified(endpoint_name)),
         }
     }
 
     pub fn invalid_encoder_configuration(endpoint_name: &str, error: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::invalid_encoder_configuration(endpoint_name, error),
+            config_error: Box::new(ConfigError::invalid_encoder_configuration(
+                endpoint_name,
+                error,
+            )),
         }
     }
 
     pub fn invalid_parser_configuration(endpoint_name: &str, error: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::invalid_parser_configuration(endpoint_name, error),
+            config_error: Box::new(ConfigError::invalid_parser_configuration(
+                endpoint_name,
+                error,
+            )),
         }
     }
 
     pub fn invalid_transport_configuration(endpoint_name: &str, error: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::invalid_transport_configuration(endpoint_name, error),
+            config_error: Box::new(ConfigError::invalid_transport_configuration(
+                endpoint_name,
+                error,
+            )),
         }
     }
 
     pub fn invalid_output_buffer_configuration(endpoint_name: &str, error: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::invalid_output_buffer_configuration(endpoint_name, error),
+            config_error: Box::new(ConfigError::invalid_output_buffer_configuration(
+                endpoint_name,
+                error,
+            )),
         }
     }
 
@@ -1337,7 +1385,9 @@ impl ControllerError {
 
 impl From<ConfigError> for ControllerError {
     fn from(config_error: ConfigError) -> Self {
-        Self::Config { config_error }
+        Self::Config {
+            config_error: Box::new(config_error),
+        }
     }
 }
 

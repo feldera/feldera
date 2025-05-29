@@ -1,11 +1,15 @@
 [package]
 name = "feldera-storage"
-version = "0.50.0"
-edition = "2021"
 description = "Storage crate for feldera"
-homepage = "https://github.com/feldera/feldera"
-repository = "https://github.com/feldera/feldera"
-license = "MIT OR Apache-2.0"
+readme = "README.md"
+
+edition = { workspace = true }
+version = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
 
 [dependencies]
 feldera-types = { workspace = true }

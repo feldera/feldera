@@ -1,13 +1,16 @@
 [package]
 name = "feldera-types"
-version = "0.50.0"
-edition = "2021"
-license = "MIT"
 description = "Public API types for Feldera"
-homepage = "https://github.com/feldera/feldera"
-repository = "https://github.com/feldera/feldera"
-keywords = ["DBSP", "streaming", "analytics", "database"]
 categories = ["database", "api-bindings", "network-programming"]
+readme = "README.md"
+keywords = { workspace = true }
+edition = { workspace = true }
+version = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
 
 [features]
 testing = ["proptest", "proptest-derive"]

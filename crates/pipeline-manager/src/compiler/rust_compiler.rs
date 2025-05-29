@@ -207,10 +207,10 @@ async fn attempt_end_to_end_rust_compilation(
             compilation_info,
         )) => {
             info!(
-                "Rust compilation success: pipeline {} (program version: {}) ({}; source checksum: {}; integrity checksum: {})",
+                "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; integrity checksum: {})",
                 pipeline.id,
                 pipeline.program_version,
-                format!("took {:.2}s", duration.as_secs_f64()),
+                duration.as_secs_f64(),
                 truncate_sha256_checksum(&source_checksum),
                 truncate_sha256_checksum(&integrity_checksum),
             );

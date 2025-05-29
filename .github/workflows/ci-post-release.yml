@@ -20,7 +20,7 @@ jobs:
   adjust-versions:
     runs-on: [self-hosted, skylake40]
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-2151999cad3499a8e87ba804ffa6750f925309d9
+      image: ghcr.io/feldera/feldera-dev:sha-adccd0011c9ab1bb2c4aaba5bc765a4491584ee1
       options: --user=ubuntu
       volumes:
         - /sccache:/sccache
@@ -39,15 +39,8 @@ jobs:
           echo "CURRENT_VERSION=$(cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version')" >> $GITHUB_ENV
       - name: Bump cargo versions
         run: |
-          cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p feldera-types
-          cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p feldera-storage
-          cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p feldera-ir
-          cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p dbsp
-          cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p feldera-rest-api
-          cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p fda
-          cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p pipeline-manager
-          cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }} -p feldera-sqllib
-          cargo run --release  --locked --bin pipeline-manager -- --dump-openapi
+          cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }}
+          cargo run --release --locked --bin pipeline-manager -- --dump-openapi
       - name: Determine next version based on pipeline-manager
         run: |
           echo "NEXT_VERSION=$(cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version')" >> $GITHUB_ENV
@@ -63,5 +56,5 @@ jobs:
         with:
           message: "ci: Prepare for v${{ env.NEXT_VERSION }}"
           author_name: feldera-ci
-          author_email: feldera-ci-noreply@feldera.io
+          author_email: dev@feldera.com
           push: origin main

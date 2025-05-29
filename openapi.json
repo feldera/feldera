@@ -3,6 +3,10 @@
   "info": {
     "title": "Feldera API",
     "description": "\nWith Feldera, users create data pipelines out of SQL programs.\nA SQL program comprises tables and views, and includes as well the definition of\ninput and output connectors for each respectively. A connector defines a data\nsource or data sink to feed input data into tables or receive output data\ncomputed by the views respectively.\n\n## Pipeline\n\nThe API is centered around the **pipeline**, which most importantly consists\nout of the SQL program, but also has accompanying metadata and configuration parameters\n(e.g., compilation profile, number of workers, etc.).\n\n* A pipeline is identified and referred to by its user-provided unique name.\n* The pipeline program is asynchronously compiled when the pipeline is first created or\n  when its program is subsequently updated.\n* Pipeline deployment is only possible once the program is successfully compiled.\n* A pipeline cannot be updated while it is deployed.\n\n## Concurrency\n\nEach pipeline has a version, which is incremented each time its core fields are updated.\nThe version is monotonically increasing. There is additionally a program version which covers\nonly the program-related core fields, and is used by the compiler to discern when to recompile.",
+    "contact": {
+      "name": "Feldera Team",
+      "email": "dev@feldera.com"
+    },
     "license": {
       "name": "MIT OR Apache-2.0"
     },

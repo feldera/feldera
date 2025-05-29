@@ -367,8 +367,8 @@ fn test_linear_circuit() {
         Arc::new(linear_circuit1),
         Arc::new(linear_circuit2),
         sequence(0, 2),
-        repeat(()).take(2).collect(),
-        repeat(()).take(2).collect(),
+        std::iter::repeat_n((), 2).collect(),
+        std::iter::repeat_n((), 2).collect(),
         sequence(3, 5),
     );
 }
@@ -664,7 +664,7 @@ fn test_join_circuit() {
     test_replay::<(), TestData2<u64, u64>, TestData1<u64>, (), TestData1<u64>, TestData1<u64>>(
         Arc::new(join_circuit1),
         Arc::new(join_circuit2),
-        repeat(()).take(2).collect(),
+        std::iter::repeat_n((), 2).collect(),
         std::iter::zip(sequence(0, 2), sequence(2, 4)).collect(),
         std::iter::zip(sequence(2, 4), sequence(0, 2)).collect(),
         sequence(1, 3),
@@ -766,10 +766,10 @@ fn test_aggregate_circuit() {
     test_replay::<(), TestData1<u64>, (), (), TestData1<u64>, TestData2<u64, u64>>(
         Arc::new(aggregate_circuit1),
         Arc::new(aggregate_circuit2),
-        repeat(()).take(5).collect(),
+        std::iter::repeat_n((), 5).collect(),
         sequence(0, 5),
         sequence(5, 10),
-        repeat(()).take(5).collect(),
+        std::iter::repeat_n((), 5).collect(),
     );
 }
 
@@ -856,10 +856,10 @@ fn test_recursive_circuit1() {
     >(
         Arc::new(recursive_circuit1),
         Arc::new(recursive_circuit2),
-        repeat(()).take(5).collect(),
+        std::iter::repeat_n((), 5).collect(),
         chain(0, 5),
         chain(5, 10),
-        repeat(()).take(5).collect(),
+        std::iter::repeat_n((), 5).collect(),
     );
 }
 
@@ -994,10 +994,10 @@ fn test_lag_circuit() {
     >(
         Arc::new(lag_circuit1),
         Arc::new(lag_circuit2),
-        repeat(()).take(10).collect(),
+        std::iter::repeat_n((), 10).collect(),
         sequence(0, 10),
         sequence(10, 20),
-        repeat(()).take(10).collect(),
+        std::iter::repeat_n((), 10).collect(),
     );
 }
 
@@ -1154,9 +1154,9 @@ fn test_rolling_circuit() {
     >(
         Arc::new(rolling_circuit1),
         Arc::new(rolling_circuit2),
-        repeat(()).take(20).collect(),
+        std::iter::repeat_n((), 20).collect(),
         sequence(0, 20),
         sequence(20, 40),
-        repeat(()).take(20).collect(),
+        std::iter::repeat_n((), 20).collect(),
     );
 }

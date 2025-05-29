@@ -1793,7 +1793,7 @@ impl ControllerInit {
                 return Self::without_resume(config, None);
             } else {
                 return Err(ControllerError::Config {
-                    config_error: ConfigError::FtRequiresStorage,
+                    config_error: Box::new(ConfigError::FtRequiresStorage),
                 });
             }
         };

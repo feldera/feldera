@@ -1,14 +1,17 @@
 [package]
 name = "dbsp_nexmark"
-version = "0.1.0"
-edition = "2021"
-license = "MIT OR Apache-2.0"
-description = "Nexmark benchmark for DBSP continuous streaming data analytics"
-homepage = "https://github.com/feldera/feldera"
-repository = "https://github.com/feldera/feldera"
 keywords = ["DBSP", "streaming", "analytics", "Nexmark", "benchmark"]
 categories = []
 publish = false
+
+edition = { workspace = true }
+version = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
+readme = { workspace = true }
 
 [features]
 with-kafka = ["rdkafka"]

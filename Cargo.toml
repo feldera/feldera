@@ -1,3 +1,15 @@
+[workspace.package]
+authors = ["Feldera Team <dev@feldera.com>"]
+version = "0.50.0"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/feldera/feldera"
+repository = "https://github.com/feldera/feldera"
+keywords = ["ivm", "analytics", "database", "incremental", "sql"]
+readme = "README.md"
+# Define Minimum Supported Rust Version (MSRV)
+rust-version = "1.87.0"
+edition = "2021"
+
 [workspace]
 members = [
   "crates/adapterlib",
