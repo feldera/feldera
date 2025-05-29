@@ -375,7 +375,8 @@ const literature = {
     label: 'Literature',
     items: [
         'literature/papers',
-        'literature/videos'
+        'literature/videos',
+        'literature/blog'
     ]
 };
 
