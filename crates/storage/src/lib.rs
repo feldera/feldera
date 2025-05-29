@@ -150,7 +150,9 @@ impl dyn StorageBackend {
                 return variable_provider.create(config, &options.backend);
             }
         }
-        Err(StorageError::BackendNotSupported(options.backend.clone()))
+        Err(StorageError::BackendNotSupported(Box::new(
+            options.backend.clone(),
+        )))
     }
 
     fn is_tmpfs(_path: &Path) -> bool {

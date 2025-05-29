@@ -1,7 +1,13 @@
 [package]
 name = "feldera-datagen"
-version = "0.1.0"
-edition = "2021"
+edition = { workspace = true }
+version = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
+readme = { workspace = true }
 
 [dependencies]
 feldera-types = { workspace = true }

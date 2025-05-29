@@ -56,7 +56,7 @@ pub enum StorageError {
     /// The requested storage backend is not available.
     #[error("The requested storage backend ({0:?}) is not available in the open-source version of feldera"
     )]
-    BackendNotSupported(StorageBackendConfig),
+    BackendNotSupported(Box<StorageBackendConfig>),
 }
 
 impl From<std::io::Error> for StorageError {

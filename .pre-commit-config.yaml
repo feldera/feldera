@@ -1,47 +1,47 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 default_language_version:
-    rust: 1.83.0
+  rust: 1.87.0
 repos:
-    - repo: local
-      hooks:
-          - id: cargo-clippy
-            name: Clippy Fixes
-            description: Run the Clippy linter on the package.
-            entry: cargo clippy --fix
-            language: rust
-            files: \.rs$
-            pass_filenames: false
-          - id: cargo-fmt
-            name: Cargo Format
-            description: Run the Formatter
-            entry: cargo fmt --all
-            language: rust
-            files: \.rs$
-            pass_filenames: false
-          - id: cargo-machete
-            name: Cargo Machete
-            entry: bash -c 'cd crates && cargo machete --fix'
-            language: rust
-            files: \.rs$
-            pass_filenames: false
-    - repo: https://github.com/pre-commit/pre-commit-hooks
-      rev: v5.0.0
-      hooks:
-          - id: trailing-whitespace
-            exclude: 'crates/pipeline-manager/migrations/.*|.*\.patch|.*\.svg|.*\.java'
-    - repo: local
-      hooks:
-          - id: update-openapi
-            name: Update OpenAPI
-            entry: cargo run --bin=pipeline-manager -- --dump-openapi
-            language: system
-            files: \.rs$
-            pass_filenames: false
-    - repo: https://github.com/astral-sh/ruff-pre-commit
-      rev: v0.9.10
-      hooks:
-          - id: ruff
-            args: [--fix]
-            files: python/
-          - id: ruff-format
+  - repo: local
+    hooks:
+      - id: cargo-clippy
+        name: Clippy Fixes
+        description: Run the Clippy linter on the package.
+        entry: cargo clippy --fix
+        language: rust
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-fmt
+        name: Cargo Format
+        description: Run the Formatter
+        entry: cargo fmt --all
+        language: rust
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-machete
+        name: Cargo Machete
+        entry: bash -c 'cd crates && cargo machete --fix'
+        language: rust
+        files: \.rs$
+        pass_filenames: false
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: 'crates/pipeline-manager/migrations/.*|.*\.patch|.*\.svg|.*\.java'
+  - repo: local
+    hooks:
+      - id: update-openapi
+        name: Update OpenAPI
+        entry: cargo run --bin=pipeline-manager -- --dump-openapi
+        language: system
+        files: \.rs$
+        pass_filenames: false
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: python/
+      - id: ruff-format

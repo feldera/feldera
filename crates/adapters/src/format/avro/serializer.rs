@@ -31,11 +31,11 @@ pub enum AvroSerializerError {
     OutOfBounds {
         value: String,
         typ: String,
-        schema: AvroSchema,
+        schema: Box<AvroSchema>,
     },
     Incompatible {
         typ: String,
-        schema: AvroSchema,
+        schema: Box<AvroSchema>,
     },
     MapKeyNotAString {
         key: Option<String>,
@@ -62,14 +62,14 @@ impl AvroSerializerError {
         AvroSerializerError::OutOfBounds {
             value: value.to_string(),
             typ: typ.to_string(),
-            schema: schema.clone(),
+            schema: Box::new(schema.clone()),
         }
     }
 
     fn incompatible(typ: &str, schema: &AvroSchema) -> Self {
         AvroSerializerError::Incompatible {
             typ: typ.to_string(),
-            schema: schema.clone(),
+            schema: Box::new(schema.clone()),
         }
     }
 

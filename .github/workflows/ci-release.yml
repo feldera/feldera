@@ -23,7 +23,7 @@ jobs:
 
       - name: Determine version to release based on pipeline-manager
         run: |
-          echo "CURRENT_VERSION=$(cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version')" >> $GITHUB_ENV
+          echo "CURRENT_VERSION=$(cargo metadata --format-version=1 --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version')" >> $GITHUB_ENV
 
       - name: Check if version is already released (do we have git tag for this version?)
         run: |
