@@ -5,6 +5,8 @@ on:
     inputs:
       sha:
         description: "SHA to release (a recent commit from main that hasn't been released yet)"
+  schedule:
+    - cron: "0 8 * * *" # Runs at 00:00 PT (08:00 UTC) daily
 
 env:
   REGISTRY: ghcr.io
@@ -15,6 +17,11 @@ jobs:
     env:
       SHA_TO_RELEASE: ${{ github.event.inputs.sha || github.sha }}
     steps:
+      - name: Set SHA from main branch if scheduled
+        if: github.event_name == 'schedule'
+        run: |
+          echo "SHA_TO_RELEASE=$(git ls-remote origin refs/heads/main | cut -f1)" >> $GITHUB_ENV
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
