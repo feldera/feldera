@@ -4556,9 +4556,9 @@ dependencies = [
 
 [[package]]
 name = "feldera-size-of"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3d32b0525ecf8a0e65a7440e99046fd94e20ee209ee69d02e6b7ed6e6048952"
+checksum = "455f1fb701df8cf0a60bf9000342e90fe3eb5f22bfaa843cd047f3f1e8deeb0e"
 dependencies = [
  "arcstr",
  "chrono",
