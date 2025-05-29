@@ -8806,6 +8806,7 @@ dependencies = [
  "rend",
  "rkyv_derive",
  "seahash",
+ "smallvec",
  "tinyvec",
  "uuid",
 ]

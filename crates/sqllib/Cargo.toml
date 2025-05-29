@@ -31,7 +31,7 @@ chrono = { workspace = true }
 like = { workspace = true }
 paste = { workspace = true }
 regex = { workspace = true }
-rkyv = { workspace = true, features = ["std", "size_64", "validation"] }
+rkyv = { workspace = true, features = ["std", "size_64", "validation", "smallvec"] }
 hex = { workspace = true }
 num-traits = { workspace = true }
 flate2 = { workspace = true }
@@ -41,7 +41,7 @@ uuid = { workspace = true, features = ["v4", "std"] }
 arcstr = { workspace = true, features = ["serde"] }
 ryu = { workspace = true }
 lexical-core = { version = "1.0.5" }
-smallvec = { version = "1.15.0", features = ["serde"] }
+smallvec = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

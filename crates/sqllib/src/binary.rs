@@ -8,7 +8,6 @@ use feldera_types::serde_with_context::{
 };
 use flate2::read::GzDecoder;
 use hex::ToHex;
-use rkyv::Fallible;
 use serde::{
     de::{Error as _, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
@@ -28,7 +27,21 @@ type CompactVec = SmallVec<[u8; THRESHOLD]>;
 
 /// A ByteArray object, representing a SQL value with type
 /// `BINARY` or `VARBINARY`.
-#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[serde(transparent)]
 pub struct ByteArray {
     data: CompactVec,
@@ -37,30 +50,6 @@ pub struct ByteArray {
 impl SizeOf for ByteArray {
     fn size_of_children(&self, context: &mut size_of::Context) {
         self.data.size_of_children(context);
-    }
-}
-
-impl rkyv::Archive for ByteArray {
-    type Archived = Self;
-    type Resolver = ();
-
-    #[inline]
-    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
-        unimplemented!();
-    }
-}
-
-impl<S: Fallible + ?Sized> rkyv::Serialize<S> for ByteArray {
-    #[inline]
-    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        Ok(())
-    }
-}
-
-impl<D: Fallible + ?Sized> rkyv::Deserialize<ByteArray, D> for ByteArray {
-    #[inline]
-    fn deserialize(&self, _: &mut D) -> Result<ByteArray, D::Error> {
-        unimplemented!();
     }
 }
 
