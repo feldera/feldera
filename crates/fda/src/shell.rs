@@ -1,5 +1,3 @@
-use crate::cli::{Cli, Commands, OutputFormat};
-use crate::{handle_errors_fatal, pipeline, UGPRADE_NOTICE};
 use clap::Parser;
 use directories::ProjectDirs;
 use feldera_rest_api::Client;
@@ -11,6 +9,9 @@ use rustyline::error::ReadlineError;
 use rustyline::{DefaultEditor, ExternalPrinter};
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
+
+use crate::cli::{Cli, Commands, OutputFormat};
+use crate::{handle_errors_fatal, pipeline, UPGRADE_NOTICE};
 
 const NEWLINE: &str = if cfg!(windows) { "\r\n" } else { "\n" };
 
@@ -243,7 +244,7 @@ async fn handle_sql_response_error(err: Error<ErrorResponse>) {
         }
         Error::InvalidRequest(s) => {
             eprintln!("ERROR: Invalid request ({})", s);
-            eprintln!("{}", UGPRADE_NOTICE);
+            eprintln!("{}", UPGRADE_NOTICE);
         }
         Error::CommunicationError(e) => {
             if e.is_timeout() {
@@ -263,14 +264,14 @@ async fn handle_sql_response_error(err: Error<ErrorResponse>) {
                 "ERROR: Unable to read the error returned from the server ({})",
                 e
             );
-            eprintln!("{}", UGPRADE_NOTICE);
+            eprintln!("{}", UPGRADE_NOTICE);
         }
         Error::InvalidResponsePayload(_b, e) => {
             eprintln!(
                 "ERROR: Unable to parse the error returned from the server ({})",
                 e
             );
-            eprintln!("{}", UGPRADE_NOTICE);
+            eprintln!("{}", UPGRADE_NOTICE);
         }
         Error::UnexpectedResponse(r) => {
             if r.status() == StatusCode::UNAUTHORIZED {
@@ -279,16 +280,16 @@ async fn handle_sql_response_error(err: Error<ErrorResponse>) {
                 eprintln!("ERROR: Unauthorized. Check your API key.");
             } else {
                 eprintln!("ERROR: Unexpected response from the server: {:?}", r);
-                eprintln!("{}", UGPRADE_NOTICE);
+                eprintln!("{}", UPGRADE_NOTICE);
             }
         }
         Error::PreHookError(e) => {
             eprint!("ERROR: Unable to execute authentication pre-hook ({})", e);
-            eprintln!("{}", UGPRADE_NOTICE);
+            eprintln!("{}", UPGRADE_NOTICE);
         }
         Error::PostHookError(e) => {
             eprint!("ERROR: Unable to execute authentication post-hook ({})", e);
-            eprintln!("{}", UGPRADE_NOTICE);
+            eprintln!("{}", UPGRADE_NOTICE);
         }
     };
 }

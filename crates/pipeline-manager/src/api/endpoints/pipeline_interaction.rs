@@ -837,6 +837,20 @@ pub(crate) async fn get_pipeline_heap_profile(
         .await
 }
 
+/// Check if the request is a WebSocket upgrade request.
+fn request_is_websocket(request: &HttpRequest) -> bool {
+    request
+        .headers()
+        .get(header::CONNECTION)
+        .and_then(|val| val.to_str().ok())
+        .is_some_and(|conn| conn.to_ascii_lowercase().contains("upgrade"))
+        && request
+            .headers()
+            .get(header::UPGRADE)
+            .and_then(|val| val.to_str().ok())
+            .is_some_and(|upgrade| upgrade.eq_ignore_ascii_case("websocket"))
+}
+
 /// Execute an ad-hoc SQL query in a running or paused pipeline.
 ///
 /// The evaluation is not incremental.
@@ -846,7 +860,6 @@ pub(crate) async fn get_pipeline_heap_profile(
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
         ("sql" = String, Query, description = "SQL query to execute"),
-        ("websocket" = bool, Query, description = "Establish websocket connection for interaction."),
         ("format" = AdHocResultFormat, Query, description = "Input data format, e.g., 'text', 'json' or 'parquet'"),
     ),
     responses(
@@ -884,17 +897,7 @@ pub(crate) async fn pipeline_adhoc_sql(
     body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    let is_websocket = request
-        .headers()
-        .get(header::CONNECTION)
-        .and_then(|val| val.to_str().ok())
-        .map_or(false, |conn| conn.to_ascii_lowercase().contains("upgrade"))
-        && request
-            .headers()
-            .get(header::UPGRADE)
-            .and_then(|val| val.to_str().ok())
-            .map_or(false, |upgrade| upgrade.eq_ignore_ascii_case("websocket"));
-    if is_websocket {
+    if request_is_websocket(&request) {
         state
             .runner
             .forward_websocket_request_to_pipeline_by_name(
