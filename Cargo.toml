@@ -192,6 +192,7 @@ serial_test = "3"
 sha2 = "0.10.8"
 size-of = { version = "0.1.5", features = ["time-std", "ordered-float"], package = "feldera-size-of" }
 sltsqlvalue = { path = "sql-to-dbsp-compiler/lib/sltsqlvalue" }
+smallvec = { version = "1.15.0", features = ["serde"] }
 snap = "1.1.1"
 static-files = "0.2.3"
 static_assertions = "1.1.0"
