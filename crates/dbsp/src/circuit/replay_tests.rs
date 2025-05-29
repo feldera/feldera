@@ -9,7 +9,7 @@ use crate::{
     utils::{Tup2, Tup3},
     CmpFunc, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
 };
-use std::{fmt::Debug, iter::repeat, marker::PhantomData, sync::Arc};
+use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 use super::{dbsp_handle::Mode, CircuitConfig, CircuitStorageConfig};
 
