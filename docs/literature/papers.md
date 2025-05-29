@@ -9,6 +9,11 @@ The following publications and awards describe Feldera's theoretical foundation,
 
 ## Publications
 
+* [DBSP: automatic incremental view maintenance for rich query languages](https://rdcu.be/elhs5)
+  *Mihai Budiu, Leonid Ryzhyk, Gerd Zellweger, Ben Pfaff, Lalith Suresh, Simon Kassing, Abhinav Gyawali,
+  Matei Budiu, Tej Chajed, Frank McSherry, and Val Tannen*, VLDB Journal, Vol 34 no 39, April 2025.
+  A longer version of the paper.
+
 * [DBSP: Incremental Computation on Streams and Its Applications to Databases](https://sigmodrecord.org/?smd_process_download=1&download_id=13708)
   *Mihai Budiu, Tej Chajed, Frank McSherry, Leonid Ryzhyk, and Val Tannen*
   SIGMOD Research Highlights, Vol. 53, March, 2024
