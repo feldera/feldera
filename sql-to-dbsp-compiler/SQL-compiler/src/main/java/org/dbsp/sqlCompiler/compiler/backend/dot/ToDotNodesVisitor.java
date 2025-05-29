@@ -59,7 +59,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
-        String name = node.operation;
+        String name = node.operation + " " + node.tableName;
         this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
                 .append(node.getIdString())

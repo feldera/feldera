@@ -260,7 +260,8 @@ public class ImplementNow extends Passes {
             DBSPExpression function = operator.getFunction();
             cn.apply(function);
             if (cn.found()) {
-                DBSPSimpleOperator join = this.createJoin(operator.input().simpleNode(), operator);
+                OutputPort input = this.mapped(operator.input());
+                DBSPSimpleOperator join = this.createJoin(input.simpleNode(), operator);
                 RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
                 function = rn.apply(function).to(DBSPExpression.class);
                 DBSPSimpleOperator result = new DBSPMapOperator(

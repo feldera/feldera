@@ -744,7 +744,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
             if (toCompile == null)
                 return;
             for (File c: toCompile) {
-                if (!c.getName().contains("oso3.sql")) continue;
+                if (!c.getName().contains("failing.sql")) continue;
                 if (c.getName().contains("sql")) {
                     System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());
