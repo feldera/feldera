@@ -690,6 +690,19 @@ async fn suspendable(state: WebData<ServerState>) -> impl Responder {
     }
 }
 
+fn request_is_websocket(request: &HttpRequest) -> bool {
+    request
+        .headers()
+        .get(header::CONNECTION)
+        .and_then(|val| val.to_str().ok())
+        .is_some_and(|conn| conn.to_ascii_lowercase().contains("upgrade"))
+        && request
+            .headers()
+            .get(header::UPGRADE)
+            .and_then(|val| val.to_str().ok())
+            .is_some_and(|upgrade| upgrade.eq_ignore_ascii_case("websocket"))
+}
+
 #[get("/query")]
 async fn query(
     state: WebData<ServerState>,
@@ -697,18 +710,6 @@ async fn query(
     request: HttpRequest,
     stream: web::Payload,
 ) -> impl Responder {
-    let conn_upgrade = request
-        .headers()
-        .get(header::CONNECTION)
-        .and_then(|val| val.to_str().ok())
-        .map_or(false, |conn| conn.to_ascii_lowercase().contains("upgrade"));
-    let upgr_websocket = request
-        .headers()
-        .get(header::UPGRADE)
-        .and_then(|val| val.to_str().ok())
-        .map_or(false, |upgrade| upgrade.eq_ignore_ascii_case("websocket"));
-    let is_websocket = conn_upgrade && upgr_websocket;
-
     let session_ctxt = {
         let controller = state.controller.lock().unwrap();
         controller.as_ref().map(|c| c.session_context())
@@ -716,7 +717,7 @@ async fn query(
 
     match session_ctxt.transpose()? {
         Some(session) => {
-            if !is_websocket {
+            if !request_is_websocket(&request) {
                 stream_adhoc_result(args.into_inner(), session).await
             } else {
                 adhoc_websocket(session, request, stream).await

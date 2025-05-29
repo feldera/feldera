@@ -5,8 +5,6 @@ use std::fs::File;
 use std::io::{ErrorKind, Read, Write};
 use std::path::PathBuf;
 
-use arrow::ipc::reader::StreamReader;
-use arrow::util::pretty::pretty_format_batches;
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use env_logger::Env;
@@ -27,12 +25,14 @@ use tokio::process::Command;
 use tokio::runtime::Handle;
 use tokio::time::{sleep, timeout, Duration};
 
+mod adhoc;
 mod cli;
 mod shell;
 
-pub(crate) const UGPRADE_NOTICE: &str =
+pub(crate) const UPGRADE_NOTICE: &str =
     "Try upgrading to the latest CLI version to resolve this issue or report it on github.com/feldera/feldera if you're already on the latest version.";
 
+use crate::adhoc::handle_adhoc_query;
 use crate::cli::*;
 use crate::shell::shell;
 
@@ -190,7 +190,7 @@ fn handle_errors_fatal(
             Error::InvalidRequest(s) => {
                 eprintln!("{}: ", msg);
                 error!("Invalid request ({})", s);
-                error!("{}", UGPRADE_NOTICE);
+                error!("{}", UPGRADE_NOTICE);
             }
             Error::CommunicationError(e) => {
                 eprint!("{}: ", msg);
@@ -210,7 +210,7 @@ fn handle_errors_fatal(
                     "Unable to read the detailed error returned from {server} ({})",
                     e
                 );
-                error!("{}", UGPRADE_NOTICE);
+                error!("{}", UPGRADE_NOTICE);
             }
             Error::InvalidResponsePayload(b, e) => {
                 eprintln!("{}", msg);
@@ -219,7 +219,7 @@ fn handle_errors_fatal(
                     debug!("Parse Error: {:?}", e.to_string());
                     debug!("Response payload: {:?}", String::from_utf8_lossy(&b));
                 }
-                error!("{}", UGPRADE_NOTICE);
+                error!("{}", UPGRADE_NOTICE);
             }
             Error::UnexpectedResponse(r) => {
                 if r.status() == StatusCode::UNAUTHORIZED {
@@ -234,7 +234,7 @@ fn handle_errors_fatal(
                     warn!(
                         "Unexpected error response from {server} -- this can happen if you're running different fda and feldera versions."
                     );
-                    warn!("{}", UGPRADE_NOTICE);
+                    warn!("{}", UPGRADE_NOTICE);
 
                     eprint!("{}", msg);
                     let h = Handle::current();
@@ -256,12 +256,12 @@ fn handle_errors_fatal(
             Error::PreHookError(e) => {
                 eprintln!("{}: ", msg);
                 error!("Unable to execute authentication pre-hook ({})", e);
-                error!("{}", UGPRADE_NOTICE);
+                error!("{}", UPGRADE_NOTICE);
             }
             Error::PostHookError(e) => {
                 eprintln!("{}: ", msg);
                 eprint!("ERROR: Unable to execute authentication post-hook ({})", e);
-                eprintln!("{}", UGPRADE_NOTICE);
+                eprintln!("{}", UPGRADE_NOTICE);
             }
         };
         std::process::exit(exit_code);
@@ -1180,87 +1180,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             shell(format, name, client2).await
         }
         PipelineAction::Query { name, sql, stdin } => {
-            let response = client
-                .pipeline_adhoc_sql()
-                .pipeline_name(name)
-                .format(format!("{format}"))
-                .sql(sql.unwrap_or_else(|| {
-                    if stdin {
-                        let mut program_code = String::new();
-                        let mut stdin_stream = std::io::stdin();
-                        if stdin_stream.read_to_string(&mut program_code).is_ok() {
-                            debug!("Read SQL from stdin");
-                            program_code
-                        } else {
-                            eprintln!("Failed to read SQL from stdin");
-                            std::process::exit(1);
-                        }
-                    } else {
-                        eprintln!("`query` command expects a SQL query or a pipe from stdin. For example, `fda query p1 'select * from foo'` or `echo 'select * from foo' | fda query p1`");
-                        std::process::exit(1);
-                    }
-                }))
-                .send()
-                .await
-                .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
-                    "Failed to execute SQL query",
-                    1,
-                ))
-                .unwrap();
-
-            match format {
-                OutputFormat::Text | OutputFormat::Json => {
-                    let mut byte_stream = response.into_inner();
-                    while let Some(chunk) = byte_stream.next().await {
-                        let mut buffer = Vec::new();
-                        match chunk {
-                            Ok(chunk) => buffer.extend_from_slice(&chunk),
-                            Err(e) => {
-                                eprintln!("ERROR: Unable to read server response: {}", e);
-                                debug!("Detailed response error: {:?}", e);
-                                std::process::exit(1);
-                            }
-                        }
-                        let text = String::from_utf8_lossy(&buffer);
-                        print!("{}", text);
-                    }
-                    println!()
-                }
-                OutputFormat::ArrowIpc => {
-                    let mut ipc_bytes: Vec<u8> = Vec::new();
-                    let mut byte_stream = response.into_inner();
-                    while let Some(chunk) = byte_stream.next().await {
-                        match chunk {
-                            Ok(chunk) => ipc_bytes.write_all(chunk.as_ref()).unwrap(),
-                            Err(e) => {
-                                eprintln!("ERROR: Unable to read server response: {}", e);
-                                debug!("Detailed response error: {:?}", e);
-                                std::process::exit(1);
-                            }
-                        }
-                    }
-                    let reader = StreamReader::try_new(ipc_bytes.as_slice(), None).unwrap();
-                    let results = reader.collect::<Result<Vec<_>, _>>();
-                    println!("{}", pretty_format_batches(&results.unwrap()).unwrap());
-                }
-                OutputFormat::Parquet => {
-                    let (path, mut result_file) =
-                        unique_file("result", "parquet").expect("Failed to create parquet file");
-                    let mut byte_stream = response.into_inner();
-                    while let Some(chunk) = byte_stream.next().await {
-                        match chunk {
-                            Ok(chunk) => result_file.write_all(chunk.as_ref()).unwrap(),
-                            Err(e) => {
-                                eprintln!("ERROR: Unable to read server response: {}", e);
-                                std::process::exit(1);
-                            }
-                        }
-                    }
-                    result_file.flush().unwrap();
-                    println!("Query result saved to '{}'", path.display());
-                }
-            }
+            handle_adhoc_query(client, format, name, sql, stdin).await
         }
     }
 }

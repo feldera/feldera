@@ -3636,10 +3636,7 @@
       },
       "AdhocQueryArgs": {
         "type": "object",
-        "description": "URL-encoded arguments to the `/query` endpoint.",
-        "required": [
-          "sql"
-        ],
+        "description": "Arguments to the `/query` endpoint.\n\nThe arguments can be provided in two ways:\n\n- In case a normal HTTP connection is established to the endpoint,\nthese arguments are passed as URL-encoded parameters.\nNote: this mode is deprecated and will be removed in the future.\n\n- If a Websocket connection is opened to `/query`, the arguments are passed\nto the server over the websocket as a JSON encoded string.",
         "properties": {
           "format": {
             "$ref": "#/components/schemas/AdHocResultFormat"

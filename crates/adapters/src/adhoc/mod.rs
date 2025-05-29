@@ -14,6 +14,7 @@ use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_types::config::PipelineConfig;
 use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs};
 use futures_util::StreamExt;
+use serde_json::json;
 use std::convert::Infallible;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
@@ -66,9 +67,25 @@ pub(crate) fn create_session_context(
     Ok(SessionContext::from(state))
 }
 
+/// Helper for for closing the websocket session
+///
+/// Note that adding a `description` to the `CloseReason` is currently
+/// buggy https://github.com/actix/actix-extras/issues/508
+///
+/// (It's actually very bad to add it because
+/// websocket packets will be corrupted, don't.)
+async fn ws_close(ws_session: WsSession, code: CloseCode) {
+    let _r = ws_session
+        .close(Some(CloseReason {
+            code,
+            description: None, // Must be None for now!
+        }))
+        .await;
+}
+
 async fn adhoc_query_handler(
     df: DataFrame,
-    ws_session: &mut WsSession,
+    mut ws_session: WsSession,
     args: AdhocQueryArgs,
 ) -> Result<(), Closed> {
     match args.format {
@@ -81,8 +98,7 @@ async fn adhoc_query_handler(
                     }
                     Err(e) => {
                         ws_session.text(format!("ERROR: {}", e)).await?;
-                        // Just end the current client query if the request encountered an error
-                        // but keep connection open for further queries.
+                        ws_close(ws_session, CloseCode::Error).await;
                         break;
                     }
                 }
@@ -93,12 +109,14 @@ async fn adhoc_query_handler(
             while let Some(res) = stream.next().await {
                 match res {
                     Ok(byte_string) => {
+                        tracing::info!("stream_json_query got byte string {byte_string}");
                         ws_session.text(byte_string).await?;
                     }
                     Err(json_err) => {
                         ws_session
                             .text(serde_json::to_string(&json_err).unwrap())
                             .await?;
+                        ws_close(ws_session, CloseCode::Error).await;
                         break;
                     }
                 }
@@ -115,14 +133,13 @@ async fn adhoc_query_handler(
                         ws_session
                             .text(
                                 serde_json::to_string(&PipelineError::AdHocQueryError {
-                                    error:
-                                        "Error while streaming query results in arrow-ipc format"
-                                            .to_string(),
+                                    error: err.to_string(),
                                     df: Some(err),
                                 })
                                 .unwrap(),
                             )
                             .await?;
+                        ws_close(ws_session, CloseCode::Error).await;
                         break;
                     }
                 }
@@ -139,13 +156,13 @@ async fn adhoc_query_handler(
                         ws_session
                             .text(
                                 serde_json::to_string(&PipelineError::AdHocQueryError {
-                                    error: "Error while streaming query results in parquet format"
-                                        .to_string(),
+                                    error: err.to_string(),
                                     df: Some(err),
                                 })
                                 .unwrap(),
                             )
                             .await?;
+                        ws_close(ws_session, CloseCode::Error).await;
                         break;
                     }
                 }
@@ -201,44 +218,42 @@ pub async fn adhoc_websocket(
                             match df {
                                 Ok(df) => {
                                     // If the query is successful, we handle it based on the format.
-                                    if adhoc_query_handler(df, &mut ws_session, args)
+                                    if adhoc_query_handler(df, ws_session.clone(), args)
                                         .await
                                         .is_err()
                                     {
+                                        // Connection was closed, we exit the loop.
+                                        return;
+                                    } else {
+                                        ws_close(ws_session, CloseCode::Normal).await;
                                         return;
                                     }
                                 }
                                 Err(e) => {
-                                    if ws_session
+                                    let _r = ws_session
                                         .text(serde_json::to_string(&e).unwrap_or(e.to_string()))
-                                        .await
-                                        .is_err()
-                                    {
-                                        return;
-                                    }
+                                        .await;
+                                    ws_close(ws_session, CloseCode::Error).await;
+                                    return;
                                 }
                             }
                         }
                         Err(e) => {
                             let _r = ws_session
-                                .close(Some(CloseReason {
-                                    code: CloseCode::Error,
-                                    description: Some(
-                                        serde_json::to_string(&e).unwrap_or(e.to_string()),
-                                    ),
-                                }))
+                                .text(serde_json::to_string(&e).unwrap_or(e.to_string()))
                                 .await;
+                            ws_close(ws_session, CloseCode::Error).await;
                             return;
                         }
                     }
                 }
                 Ok(AggregatedMessage::Binary(_)) => {
                     let _r = ws_session
-                        .close(Some(CloseReason {
-                            code: CloseCode::Unsupported,
-                            description: Some("Binary requests are not supported".into()),
-                        }))
+                        .text(json!({
+                            "error": "Binary requests are not supported. Please use text messages."
+                        }).to_string())
                         .await;
+                    ws_close(ws_session, CloseCode::Error).await;
                     break;
                 }
                 Ok(AggregatedMessage::Ping(msg)) => {
@@ -255,7 +270,7 @@ pub async fn adhoc_websocket(
 }
 
 /// Stream the result of an ad-hoc query using a HTTP streaming response.
-pub async fn stream_adhoc_result(
+pub(crate) async fn stream_adhoc_result(
     args: AdhocQueryArgs,
     session: SessionContext,
 ) -> Result<HttpResponse, PipelineError> {
@@ -272,7 +287,7 @@ pub async fn stream_adhoc_result(
         AdHocResultFormat::Text => Ok(HttpResponse::Ok()
             .content_type(mime::TEXT_PLAIN)
             .streaming::<_, Infallible>(infallible_from_bytestring(stream_text_query(df), |e| {
-                format!("ERROR: {}", e.to_string()).into()
+                format!("ERROR: {}", e).into()
             }))),
         AdHocResultFormat::Json => Ok(HttpResponse::Ok()
             .content_type(mime::APPLICATION_JSON)

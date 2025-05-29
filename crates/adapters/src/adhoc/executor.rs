@@ -43,7 +43,7 @@ pub(crate) fn infallible_from_bytestring(
     fallible_stream.map(move |r| {
         Ok(match r {
             Ok(bytes) => bytes.into_bytes(),
-            Err(e) => map_err(e).into(),
+            Err(e) => map_err(e),
         })
     })
 }
@@ -96,47 +96,20 @@ pub(crate) fn stream_json_query(
     df: DataFrame,
 ) -> impl Stream<Item = Result<ByteString, PipelineError>> {
     try_stream! {
-        let stream_exec = match execute_stream(df).await {
-            Ok(res) => res.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None }),
-            Err(e) => {
-                yield format!("ERROR: {}", e).into();
-                return;
-            }
-        };
-
-        match stream_exec {
-            Ok(mut stream) => {
-                while let Some(batch) = stream.next().await {
-                    let batch_result = batch.map_err(PipelineError::from);
-                    match batch_result {
-                        Ok(batch) => {
-                            let mut buf = Vec::with_capacity(4096);
-                            let builder = WriterBuilder::new().with_explicit_nulls(true);
-                            let mut writer = builder.build::<_, LineDelimited>(&mut buf);
-                            if let Err(e) = writer.write(&batch).map_err(DataFusionError::from).map_err(PipelineError::from) {
-                                yield serde_json::to_string(&e).unwrap().into();
-                                return;
-                            }
-                            if let Err(e) = writer.finish().map_err(DataFusionError::from).map_err(PipelineError::from) {
-                                yield serde_json::to_string(&e).unwrap().into();
-                                return;
-                            }
-                            yield buf.try_into().map_err(|_| PipelineError::AdHocQueryError {
-                                error: "Failed to encode query result buffer as UTF-8".to_string(),
-                                df: None,
-                            })?;
-                        }
-                        Err(e) => {
-                            yield serde_json::to_string(&e).unwrap().into();
-                            return;
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                yield serde_json::to_string(&e).unwrap().into();
-                return;
-            }
+        let stream_executor = execute_stream(df).await.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None })?;
+        let mut stream = stream_executor
+            .map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: Some(e) })?;
+        while let Some(batch) = stream.next().await {
+            let batch = batch.map_err(PipelineError::from)?;
+            let mut buf = Vec::with_capacity(4096);
+            let builder = WriterBuilder::new().with_explicit_nulls(true);
+            let mut writer = builder.build::<_, LineDelimited>(&mut buf);
+            writer.write(&batch).map_err(DataFusionError::from).map_err(PipelineError::from)?;
+            writer.finish().map_err(DataFusionError::from).map_err(PipelineError::from)?;
+            yield buf.try_into().map_err(|_| PipelineError::AdHocQueryError {
+                error: "Failed to encode query result buffer as UTF-8".to_string(),
+                df: None,
+            })?;
         }
     }
 }
