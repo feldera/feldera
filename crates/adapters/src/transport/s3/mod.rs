@@ -550,7 +550,6 @@ transport:
         bucket_name: test-bucket
         region: us-west-1
         prefix: ''
-        streaming: true
 format:
     name: csv
 "#;
@@ -565,7 +564,6 @@ transport:
         bucket_name: test-bucket
         region: us-west-1
         key: obj1
-        streaming: false
 format:
     name: csv
 "#;
