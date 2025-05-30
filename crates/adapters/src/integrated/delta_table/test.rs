@@ -741,6 +741,22 @@ async fn test_follow(
 
     let mut total_count = split_at;
 
+    let expected_output = data[0..total_count]
+        .iter()
+        .filter_map(|x| {
+            if x.bigint % 2 == 0 {
+                let mut x = x.clone();
+                x.unused = None;
+                Some(x)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    wait_for_output_records::<DeltaTestStruct>(&mut output_table, &expected_output, &datafusion)
+        .await;
+
     // Write remaining data in 10 chunks, wait for it to show up in the output table.
     for chunk in data[split_at..].chunks(std::cmp::max(data[split_at..].len() / 10, 1)) {
         total_count += chunk.len();
@@ -1156,8 +1172,6 @@ async fn delta_table_follow_file_test() {
 }
 
 #[tokio::test]
-#[ignore]
-// TODO: fix underlying bug and enable this test
 async fn delta_table_snapshot_and_follow_file_test_suspend() {
     delta_table_follow_file_test_common(true, true).await
 }
