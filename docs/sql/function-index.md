@@ -144,6 +144,7 @@
 * `MAP` (aggregate): [aggregates](aggregates.md#map)
 * `MAP_CONTAINS_KEY`: [map](map.md#map_contains_key)
 * `MAX` (aggregate): [aggregates](aggregates.md#max), [aggregates](aggregates.md#window-max)
+* `MD5`: [string](string.md#md5), [binary](binary.md#md5)
 * `MIN` (aggregate): [aggregates](aggregates.md#min), [aggregates](aggregates.md#window-min)
 * `MINUTE`: [datetime](datetime.md#date_minute), [datetime](datetime.md#time_minute), [datetime](datetime.md#timestamp_minute)
 * `MOD`: [integer](integer.md#mod)

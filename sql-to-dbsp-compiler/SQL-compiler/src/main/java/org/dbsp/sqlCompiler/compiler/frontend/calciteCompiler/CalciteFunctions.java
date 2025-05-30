@@ -316,6 +316,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "decimal#trunc,decimal#trunc2,float#trunc", false),
             new Func(SqlLibraryOperators.MAP_CONTAINS_KEY, "MAP_CONTAINS_KEY", SqlLibrary.SPARK,
                     "map#map_contains_key", false),
+            new Func(SqlLibraryOperators.MD5, "MD5", SqlLibrary.SPARK,
+                    "string#md5,binary#md5", false),
             // new Func(SqlLibraryOperators.SAFE_ORDINAL, "SAFE_ORDINAL", SqlLibrary.BIG_QUERY, "array", false),
     };
 
