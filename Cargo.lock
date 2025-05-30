@@ -4657,6 +4657,7 @@ dependencies = [
  "itertools 0.14.0",
  "lexical-core",
  "like",
+ "md-5",
  "metrics",
  "num",
  "num-traits",
