@@ -303,11 +303,12 @@ impl S3InputReader {
         let (tx, mut rx) = mpsc::channel(8);
         let config_clone = config.clone();
         let client_clone = client.clone();
+        let consumer_clone = consumer.clone();
 
         tokio::spawn(async move {
             let mut start_after = match start_position {
                 Some((key, Some(offset))) => {
-                    tx.send(Ok((key.clone(), offset))).await?;
+                    tx.send((key.clone(), offset)).await?;
                     Some(key)
                 }
                 Some((key, None)) => Some(key),
@@ -329,7 +330,16 @@ impl S3InputReader {
                             Ok(ret) => ret,
                             Err(e) => {
                                 error!("Could not fetch object keys (Error: {e:?}).");
-                                tx.send(Err(e)).await?;
+                                match e.downcast_ref::<ListObjectsV2Error>() {
+                                    // We consider a missing bucket a fatal error
+                                    Some(ListObjectsV2Error::NoSuchBucket(_)) => {
+                                        consumer_clone.error(true, e)
+                                    }
+                                    _ => consumer_clone.error(
+                                        false,
+                                        anyhow!("error retrieving object list: {e:?}"),
+                                    ),
+                                }
                                 break;
                             }
                         }
@@ -339,7 +349,7 @@ impl S3InputReader {
                     };
                 continuation_token = next_token;
                 for key in objects_to_fetch {
-                    tx.send(Ok((key, 0))).await?;
+                    tx.send((key, 0)).await?;
                 }
                 if continuation_token.is_none() {
                     break;
@@ -388,7 +398,7 @@ impl S3InputReader {
                 // Poll the object stream.
                 get_obj = rx.recv(), if running => {
                     match get_obj {
-                        Some(Ok((key, start_offset))) => {
+                        Some((key, start_offset)) => {
                             let result = client
                                 .get_object(
                                     &config.bucket_name,
@@ -437,15 +447,6 @@ impl S3InputReader {
                             }
                             if added_chunks {
                                 queue.back_mut().unwrap().end_offset = None;
-                            }
-                        }
-                        Some(Err(e)) => {
-                            match e.downcast_ref::<ListObjectsV2Error>() {
-                                // We consider a missing bucket a fatal error
-                                Some(ListObjectsV2Error::NoSuchBucket(_)) => {
-                                    consumer.error(true, e)
-                                },
-                                _ => consumer.error(false, anyhow!("error retrieving object list: {e:?}"))
                             }
                         }
                         None => {

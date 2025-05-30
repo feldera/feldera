@@ -372,7 +372,7 @@ impl<I, O> Drop for JobQueue<I, O> {
 /// At this point any tasks that are not yet running will be canceled; however
 /// tasks that are a already running will be allowed to finish; however tasks that
 /// are already running will continue running, since we don't have a way to cancel them.
-/// The function doesn't wait for these tasks to finish; thery will continue running
+/// The function doesn't wait for these tasks to finish; they will continue running
 /// in the background after the function returns.
 ///
 // TODO:
