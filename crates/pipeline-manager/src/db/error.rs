@@ -78,6 +78,9 @@ pub enum DBError {
         value: serde_json::Value,
         error: String,
     },
+    EditNotAllowedWhileSuspendedError {
+        not_allowed: Vec<String>,
+    },
     InvalidErrorResponse {
         value: serde_json::Value,
         error: String,
@@ -426,6 +429,13 @@ impl Display for DBError {
             DBError::InvalidProgramError { value, error } => {
                 write!(f, "JSON for 'program_error' field:\n{value:#}\n\n... is not valid due to: {error}")
             }
+            DBError::EditNotAllowedWhileSuspendedError { not_allowed } => {
+                write!(
+                    f,
+                    "The following edits are not allowed while suspended: {}",
+                    not_allowed.join(", ")
+                )
+            }
             DBError::InvalidErrorResponse { value, error } => {
                 write!(f, "JSON for 'deployment_error' field:\n{value:#}\n\n... is not valid due to: {error}")
             }
@@ -588,6 +598,9 @@ impl DetailedError for DBError {
             Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
             Self::InvalidDeploymentConfig { .. } => Cow::from("InvalidDeploymentConfig"),
             Self::InvalidProgramError { .. } => Cow::from("InvalidProgramError"),
+            Self::EditNotAllowedWhileSuspendedError { .. } => {
+                Cow::from("EditNotAllowedWhileSuspendedError")
+            }
             Self::InvalidErrorResponse { .. } => Cow::from("InvalidErrorResponse"),
             Self::FailedToSerializeRuntimeConfig { .. } => {
                 Cow::from("FailedToSerializeRuntimeConfig")
@@ -664,6 +677,7 @@ impl ResponseError for DBError {
             Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidProgramError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::EditNotAllowedWhileSuspendedError { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidErrorResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::FailedToSerializeRuntimeConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::FailedToSerializeProgramConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,

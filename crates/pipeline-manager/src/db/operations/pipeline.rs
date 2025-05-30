@@ -535,6 +535,58 @@ pub(crate) async fn update_pipeline(
         return Ok(current.version);
     }
 
+    // While suspended, some fields are not allowed to be edited
+    if current.deployment_status == PipelineStatus::Suspended {
+        let mut not_allowed = vec![];
+        if name.as_ref().is_some_and(|v| *v != current.name) {
+            not_allowed.push("`name`")
+        }
+        if description
+            .as_ref()
+            .is_some_and(|v| *v != current.description)
+        {
+            not_allowed.push("`description`")
+        }
+        // `platform_version` can be updated
+        // Some fields of `runtime_config` are not allowed to be updated
+        if let Some(runtime_config) = &runtime_config {
+            if runtime_config.get("workers") != current.runtime_config.get("workers") {
+                not_allowed.push("`runtime_config.workers`");
+            }
+            if runtime_config.get("storage") != current.runtime_config.get("storage") {
+                not_allowed.push("`runtime_config.storage`");
+            }
+            if runtime_config.get("fault_tolerance")
+                != current.runtime_config.get("fault_tolerance")
+            {
+                not_allowed.push("`runtime_config.fault_tolerance`");
+            }
+        }
+        if program_code
+            .as_ref()
+            .is_some_and(|v| *v != current.program_code)
+        {
+            not_allowed.push("`program_code`")
+        }
+        if udf_rust.as_ref().is_some_and(|v| *v != current.udf_rust) {
+            not_allowed.push("`udf_rust`")
+        }
+        if udf_toml.as_ref().is_some_and(|v| *v != current.udf_toml) {
+            not_allowed.push("`udf_toml`")
+        }
+        if program_config
+            .as_ref()
+            .is_some_and(|v| *v != current.program_config)
+        {
+            not_allowed.push("`program_config`")
+        }
+        if !not_allowed.is_empty() {
+            return Err(DBError::EditNotAllowedWhileSuspendedError {
+                not_allowed: not_allowed.iter_mut().map(|s| s.to_string()).collect(),
+            });
+        }
+    }
+
     // Otherwise, one of the fields is non-null and different, and as such it should be updated
     let stmt = txn
         .prepare_cached(
