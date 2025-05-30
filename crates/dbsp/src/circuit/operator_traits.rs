@@ -436,7 +436,7 @@ where
 {
     /// Consume inputs.
     ///
-    /// The operator must be prepated to handle any combination of
+    /// The operator must be prepared to handle any combination of
     /// owned and borrowed inputs.
     fn eval<'a, Iter>(&'a mut self, inputs: Iter) -> impl Future<Output = O>
     where
@@ -459,7 +459,7 @@ where
 ///
 /// [Z1]: crate::operator::Z1
 /// [Z1Nested]: crate::operator::Z1Nested
-/// [Z1Trace]: crate::operator::trace::Z1Trace
+/// [Z1Trace]: crate::operator::dynamic::trace::Z1Trace
 pub trait StrictOperator<O>: Operator {
     /// Returns the output value computed based on data consumed by the operator
     /// during previous timestamps.  This method is invoked **before**
