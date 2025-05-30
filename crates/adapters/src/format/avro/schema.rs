@@ -10,6 +10,7 @@ use apache_avro::{
     Schema as AvroSchema,
 };
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
+use tracing::warn;
 
 /// Indicates whether the field has an optional type (`["null", T]`) and,
 /// if so, whether the non-null element of the union is at position 0 or 1.
@@ -74,12 +75,14 @@ pub fn validate_struct_schema(
             }
         };
 
-        validate_field_schema(&avro_field.schema, &field.columntype).map_err(|e| {
-            format!(
-                "error validating schema for column '{}': {e}",
-                field.name.name()
-            )
-        })?;
+        validate_field_schema(&avro_field.name, &avro_field.schema, &field.columntype).map_err(
+            |e| {
+                format!(
+                    "error validating schema for column '{}': {e}",
+                    field.name.name()
+                )
+            },
+        )?;
     }
 
     Ok(())
@@ -88,6 +91,7 @@ pub fn validate_struct_schema(
 /// Check that Avro schema can be deserialized into an array with
 /// specified element type.
 fn validate_array_schema(
+    name: &str,
     avro_schema: &AvroSchema,
     component_schema: &ColumnType,
 ) -> Result<(), String> {
@@ -98,7 +102,7 @@ fn validate_array_schema(
         ));
     };
 
-    validate_field_schema(&array_schema.items, component_schema)
+    validate_field_schema(name, &array_schema.items, component_schema)
         .map_err(|e| format!("error validating array element schema: {e}"))?;
 
     Ok(())
@@ -106,7 +110,11 @@ fn validate_array_schema(
 
 /// Check that Avro schema can be deserialized into a map with
 /// specified value type (assumes that map keys are strings).
-fn validate_map_schema(avro_schema: &AvroSchema, value_schema: &ColumnType) -> Result<(), String> {
+fn validate_map_schema(
+    name: &str,
+    avro_schema: &AvroSchema,
+    value_schema: &ColumnType,
+) -> Result<(), String> {
     let AvroSchema::Map(map_schema) = avro_schema else {
         return Err(format!(
             "expected schema of type 'map', but found {}",
@@ -114,7 +122,7 @@ fn validate_map_schema(avro_schema: &AvroSchema, value_schema: &ColumnType) -> R
         ));
     };
 
-    validate_field_schema(&map_schema.types, value_schema)
+    validate_field_schema(name, &map_schema.types, value_schema)
         .map_err(|e| format!("error validating map value schema: {e}"))?;
 
     Ok(())
@@ -196,15 +204,11 @@ fn validate_date_schema(avro_schema: &AvroSchema) -> Result<(), String> {
 /// Check that Avro schema can be deserialized a SQL column with the given
 /// column type.
 pub fn validate_field_schema(
+    name: &str,
     avro_schema: &AvroSchema,
     field_schema: &ColumnType,
 ) -> Result<(), String> {
-    if field_schema.nullable {
-        let avro_inner = schema_unwrap_optional(avro_schema).0;
-        let mut field_schema = field_schema.clone();
-        field_schema.nullable = false;
-        return validate_field_schema(avro_inner, &field_schema);
-    };
+    let (avro_schema, optional) = schema_unwrap_optional(avro_schema);
 
     let expected = match field_schema.typ {
         SqlType::Boolean => AvroSchema::Boolean,
@@ -239,7 +243,11 @@ pub fn validate_field_schema(
             if field_schema.component.is_none() {
                 return Err("internal error: relation schema contains an array field with a missing component type".to_string());
             }
-            return validate_array_schema(avro_schema, field_schema.component.as_ref().unwrap());
+            return validate_array_schema(
+                name,
+                avro_schema,
+                field_schema.component.as_ref().unwrap(),
+            );
         }
         SqlType::Struct => {
             return validate_struct_schema(
@@ -265,7 +273,7 @@ pub fn validate_field_schema(
                 ));
             }
 
-            return validate_map_schema(avro_schema, value_type);
+            return validate_map_schema(name, avro_schema, value_type);
         }
         SqlType::Null => AvroSchema::Null,
         SqlType::Uuid => AvroSchema::String,
@@ -277,6 +285,10 @@ pub fn validate_field_schema(
             schema_json(&expected),
             schema_json(avro_schema)
         ));
+    }
+
+    if matches!(optional, OptionalField::Optional(_)) && !field_schema.nullable {
+        warn!("Avro schema defines field '{name}' as nullable, but the corresponding SQL column is non-nullable. This may lead to parsing errors if the input data includes null values.");
     }
 
     Ok(())

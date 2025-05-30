@@ -515,6 +515,82 @@ fn test_non_null_to_nullable() {
     run_parser_test(vec![test]);
 }
 
+/// Deserializing optional fields into non-NULL-able columns.
+#[test]
+fn test_nullable_to_non_nullable() {
+    // Make `name` column non-optional.
+    let schema_str = r#"{
+        "type": "record",
+        "name": "TestStruct2",
+        "connect.name": "test_namespace.TestStruct2",
+        "fields": [
+            { "name": "id", "type": ["long", "null"] },
+            { "name": "nAmE", "type": ["string", "null"] },
+            { "name": "b", "type": "boolean" },
+            { "name": "ts", "type": "long", "logicalType": "timestamp-micros" },
+            { "name": "dt", "type": "int", "logicalType": "date" },
+            {
+                "name": "es",
+                "type":
+                    [{
+                        "type": "record",
+                        "name": "EmbeddedStruct",
+                        "fields": [
+                            { "name": "a", "type": "boolean" }
+                        ]
+                    }, "null"]
+            },
+            {
+                "name": "m",
+                "type":
+                    [{
+                        "type": "map",
+                        "values": "long"
+                    }, "null"]
+            },
+            {
+                "name": "dec",
+                "type": {
+                    "type": "bytes",
+                    "logicalType": "decimal",
+                    "precision": 10,
+                    "scale": 3
+                }
+            }
+
+        ]
+    }"#;
+
+    let schema = AvroSchema::parse_str(schema_str).unwrap();
+    let vals = [TestStruct2 {
+        field: 1,
+        field_0: Some("test".to_string()),
+        ..Default::default()
+    }];
+    let input_batches = vals
+        .iter()
+        .map(|v| (serialize_record(v, &schema), vec![]))
+        .collect::<Vec<_>>();
+    let expected_output = vals
+        .iter()
+        .map(|v| MockUpdate::Insert(v.clone()))
+        .collect::<Vec<_>>();
+
+    let test = TestCase {
+        relation_schema: TestStruct2::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Raw,
+            schema: Some(schema_str.to_string()),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches,
+        expected_output,
+    };
+
+    run_parser_test(vec![test]);
+}
+
 /// Deserialize timestamp encoded as timestamp-millis instead of micros.
 #[test]
 fn test_ms_time() {
