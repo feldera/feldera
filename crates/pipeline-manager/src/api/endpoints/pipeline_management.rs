@@ -427,6 +427,21 @@ pub struct PatchPipelineInternal {
     pub program_config: Option<serde_json::Value>,
 }
 
+/// Default for the `checkpoint` query parameter when POST a pipeline action.
+fn default_pipeline_suspend_checkpoint() -> bool {
+    true
+}
+
+/// Query parameters to POST a pipeline action.
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct ActionParameters {
+    /// The `checkpoint` parameter determines whether the pipeline needs
+    /// to perform a checkpoint before setting desired status to `Suspended`.
+    #[serde(default = "default_pipeline_suspend_checkpoint")]
+    #[allow(dead_code)] // Only used in enterprise edition
+    checkpoint: bool,
+}
+
 /// Retrieve the list of pipelines.
 /// Configure which fields are included using the `selector` query parameter.
 #[utoipa::path(
@@ -834,7 +849,8 @@ pub(crate) async fn delete_pipeline(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("action" = String, Path, description = "Pipeline action (one of: start, pause, suspend, shutdown)")
+        ("action" = String, Path, description = "Pipeline action (one of: start, pause, suspend, shutdown)"),
+        ActionParameters
     ),
     responses(
         (status = ACCEPTED
@@ -872,6 +888,7 @@ pub(crate) async fn post_pipeline_action(
     _client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<(String, String)>,
+    _query: web::Query<ActionParameters>,
 ) -> Result<HttpResponse, ManagerError> {
     let (pipeline_name, action) = path.into_inner();
     let pipeline_id = match action.as_str() {
@@ -924,15 +941,33 @@ pub(crate) async fn post_pipeline_action(
                         }
                     } else {
                         Err(RunnerError::PipelineInteractionInvalidResponse {
-                            error: format!(
-                                "Error processing pipelines's response to a /suspendable request: failed to extract response body"
-                            ),
+                            error: "Error processing pipelines's response to a /suspendable request: failed to extract response body".to_string(),
                         })?
                     }
                 } else {
                     return Ok(response);
                 };
                 if suspendable_response.suspendable {
+                    if _query.checkpoint {
+                        let status_code = state
+                            .runner
+                            .forward_http_request_to_pipeline_by_name(
+                                _client.as_ref(),
+                                *tenant_id,
+                                &pipeline_name,
+                                actix_http::Method::POST,
+                                "checkpoint",
+                                "",
+                                Some(std::time::Duration::from_secs(120)),
+                            )
+                            .await?
+                            .status();
+                        if status_code != actix_http::StatusCode::OK {
+                            Err(RunnerError::PipelineInteractionInvalidResponse {
+                                error: format!("Unable to perform the checkpoint before setting target state to be Suspended ({status_code})"),
+                            })?;
+                        }
+                    }
                     state
                         .db
                         .lock()

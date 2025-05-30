@@ -92,6 +92,50 @@ export const $AuthProvider = {
   ]
 } as const
 
+export const $CheckpointResponse = {
+  type: 'object',
+  description: 'Response to a checkpoint request.',
+  required: ['checkpoint_sequence_number'],
+  properties: {
+    checkpoint_sequence_number: {
+      type: 'integer',
+      format: 'int64',
+      minimum: 0
+    }
+  }
+} as const
+
+export const $CheckpointStatus = {
+  type: 'object',
+  description: 'Checkpoint status returned by the `/checkpoint_status` endpoint.',
+  properties: {
+    failure: {
+      type: 'array',
+      items: {
+        allOf: [
+          {
+            type: 'integer',
+            format: 'int64',
+            minimum: 0
+          },
+          {
+            type: 'string'
+          }
+        ]
+      },
+      description: 'Most recently failed checkpoint, and the associated error.',
+      nullable: true
+    },
+    success: {
+      type: 'integer',
+      format: 'int64',
+      description: 'Most recently successful checkpoint.',
+      nullable: true,
+      minimum: 0
+    }
+  }
+} as const
+
 export const $Chunk = {
   type: 'object',
   description: `A set of updates to a SQL table or view.
@@ -122,6 +166,18 @@ depending on the data format used.`,
       type: 'string',
       description: 'Text payload, e.g., CSV.',
       nullable: true
+    }
+  }
+} as const
+
+export const $ClockConfig = {
+  type: 'object',
+  required: ['clock_resolution_usecs'],
+  properties: {
+    clock_resolution_usecs: {
+      type: 'integer',
+      format: 'int64',
+      minimum: 0
     }
   }
 } as const
@@ -993,6 +1049,7 @@ specify a particular model.`,
 
 The default is 60 seconds.  Values less than 1 or greater than 3600 will
 be forced into that range.`,
+      nullable: true,
       minimum: 0
     },
     model: {
@@ -1477,6 +1534,12 @@ messagee`,
       nullable: true,
       minimum: 0
     },
+    region: {
+      type: 'string',
+      description:
+        'The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).',
+      nullable: true
+    },
     start_from: {
       $ref: '#/components/schemas/KafkaStartFromConfig'
     },
@@ -1548,6 +1611,12 @@ Defaults to 60.`,
           $ref: '#/components/schemas/KafkaLogLevel'
         }
       ],
+      nullable: true
+    },
+    region: {
+      type: 'string',
+      description:
+        'The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).',
       nullable: true
     },
     topic: {
@@ -2060,10 +2129,10 @@ queries depends on the real-time clock and can change over time without any exte
 inputs.  The pipeline will update the clock value and trigger incremental recomputation
 at most each \`clock_resolution_usecs\` microseconds.
 
-It is set to 100 milliseconds (100,000 microseconds) by default.
+It is set to 1 second (1,000,000 microseconds) by default.
 
 Set to \`null\` to disable periodic clock updates.`,
-          default: 100000,
+          default: 1000000,
           nullable: true,
           minimum: 0
         },
@@ -2085,6 +2154,10 @@ The default value is \`true\`.`,
             checkpoint_interval_secs: 60
           }
         },
+        init_containers: {
+          description: 'Specification of additional (sidecar) containers.',
+          nullable: true
+        },
         max_buffering_delay_usecs: {
           type: 'integer',
           format: 'int64',
@@ -2102,7 +2175,7 @@ startup.
 At startup, the pipeline must initialize all of its input and output connectors.
 Depending on the number and types of connectors, this can take a long time.
 To accelerate the process, multiple connectors are initialized concurrently.
-This option controls the maximum number of connectors that can be intitialized
+This option controls the maximum number of connectors that can be initialized
 in parallel.
 
 The default is 10.`,
@@ -2197,7 +2270,11 @@ Setting this value will override the default of the runner.`,
 
 Each DBSP "foreground" worker thread is paired with a "background"
 thread for LSM merging, making the total number of threads twice the
-specified number.`,
+specified number.
+
+The typical sweet spot for the number of workers is between 4 and 16.
+Each worker increases overall memory consumption for data structures
+used during a step.`,
           default: 8,
           minimum: 0
         }
@@ -3228,10 +3305,10 @@ queries depends on the real-time clock and can change over time without any exte
 inputs.  The pipeline will update the clock value and trigger incremental recomputation
 at most each \`clock_resolution_usecs\` microseconds.
 
-It is set to 100 milliseconds (100,000 microseconds) by default.
+It is set to 1 second (1,000,000 microseconds) by default.
 
 Set to \`null\` to disable periodic clock updates.`,
-      default: 100000,
+      default: 1000000,
       nullable: true,
       minimum: 0
     },
@@ -3253,6 +3330,10 @@ The default value is \`true\`.`,
         checkpoint_interval_secs: 60
       }
     },
+    init_containers: {
+      description: 'Specification of additional (sidecar) containers.',
+      nullable: true
+    },
     max_buffering_delay_usecs: {
       type: 'integer',
       format: 'int64',
@@ -3270,7 +3351,7 @@ startup.
 At startup, the pipeline must initialize all of its input and output connectors.
 Depending on the number and types of connectors, this can take a long time.
 To accelerate the process, multiple connectors are initialized concurrently.
-This option controls the maximum number of connectors that can be intitialized
+This option controls the maximum number of connectors that can be initialized
 in parallel.
 
 The default is 10.`,
@@ -3365,7 +3446,11 @@ Setting this value will override the default of the runner.`,
 
 Each DBSP "foreground" worker thread is paired with a "background"
 thread for LSM merging, making the total number of threads twice the
-specified number.`,
+specified number.
+
+The typical sweet spot for the number of workers is between 4 and 16.
+Each worker increases overall memory consumption for data structures
+used during a step.`,
       default: 8,
       minimum: 0
     }
@@ -3789,20 +3874,20 @@ is limited to 256 MiB.`,
 the minimum estimated number of bytes to write it to storage.
 
 This is provided for debugging and fine-tuning and should ordinarily be
-left unset.  If it is set, it should ordinarily be greater than or equal
-to \`min_storage_bytes\`.
-
-A value of 0 will write even empty batches to storage, and nonzero
-values provide a threshold.  \`usize::MAX\` would effectively disable
-storage for such batches.  The default is 10,485,760 (10 MiB).`,
+left unset.  A value of 0 will write even empty batches to storage, and
+nonzero values provide a threshold.  \`usize::MAX\`, the default,
+effectively disables storage for such batches.  If it is set to another
+value, it should ordinarily be greater than or equal to
+\`min_storage_bytes\`.`,
       default: null,
       nullable: true,
       minimum: 0
     },
     min_storage_bytes: {
       type: 'integer',
-      description: `For a batch of data maintained as a persistent index during a pipeline
-run, the minimum estimated number of bytes to write it to storage.
+      description: `For a batch of data maintained as part of a persistent index during a
+pipeline run, the minimum estimated number of bytes to write it to
+storage.
 
 This is provided for debugging and fine-tuning and should ordinarily be
 left unset.
@@ -4047,6 +4132,19 @@ export const $TransportConfig = {
         name: {
           type: 'string',
           enum: ['ad_hoc_input']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
+          $ref: '#/components/schemas/ClockConfig'
+        },
+        name: {
+          type: 'string',
+          enum: ['clock_input']
         }
       }
     }

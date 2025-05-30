@@ -58,6 +58,27 @@ export type AuthProvider =
     }
 
 /**
+ * Response to a checkpoint request.
+ */
+export type CheckpointResponse = {
+  checkpoint_sequence_number: number
+}
+
+/**
+ * Checkpoint status returned by the `/checkpoint_status` endpoint.
+ */
+export type CheckpointStatus = {
+  /**
+   * Most recently failed checkpoint, and the associated error.
+   */
+  failure?: Array<number & string> | null
+  /**
+   * Most recently successful checkpoint.
+   */
+  success?: number | null
+}
+
+/**
  * A set of updates to a SQL table or view.
  *
  * The `sequence_number` field stores the offset of the chunk relative to the
@@ -81,6 +102,10 @@ export type Chunk = {
    * Text payload, e.g., CSV.
    */
   text_data?: string | null
+}
+
+export type ClockConfig = {
+  clock_resolution_usecs: number
 }
 
 /**
@@ -755,7 +780,7 @@ export type FtConfig = {
    * The default is 60 seconds.  Values less than 1 or greater than 3600 will
    * be forced into that range.
    */
-  checkpoint_interval_secs?: number
+  checkpoint_interval_secs?: number | null
   model?: FtModel | 'none'
 }
 
@@ -1132,6 +1157,10 @@ export type KafkaInputConfig = {
    * messagee
    */
   poller_threads?: number | null
+  /**
+   * The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
+   */
+  region?: string | null
   start_from?: KafkaStartFromConfig
   /**
    * Topic to subscribe to.
@@ -1188,6 +1217,10 @@ export type KafkaOutputConfig = {
    */
   kafka_service?: string | null
   log_level?: KafkaLogLevel | null
+  /**
+   * The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
+   */
+  region?: string | null
   /**
    * Topic to write to.
    */
@@ -1556,7 +1589,7 @@ export type PipelineConfig = {
    * inputs.  The pipeline will update the clock value and trigger incremental recomputation
    * at most each `clock_resolution_usecs` microseconds.
    *
-   * It is set to 100 milliseconds (100,000 microseconds) by default.
+   * It is set to 1 second (1,000,000 microseconds) by default.
    *
    * Set to `null` to disable periodic clock updates.
    */
@@ -1569,6 +1602,10 @@ export type PipelineConfig = {
   cpu_profiler?: boolean
   fault_tolerance?: FtConfig
   /**
+   * Specification of additional (sidecar) containers.
+   */
+  init_containers?: unknown
+  /**
    * Maximal delay in microseconds to wait for `min_batch_size_records` to
    * get buffered by the controller, defaults to 0.
    */
@@ -1580,7 +1617,7 @@ export type PipelineConfig = {
    * At startup, the pipeline must initialize all of its input and output connectors.
    * Depending on the number and types of connectors, this can take a long time.
    * To accelerate the process, multiple connectors are initialized concurrently.
-   * This option controls the maximum number of connectors that can be intitialized
+   * This option controls the maximum number of connectors that can be initialized
    * in parallel.
    *
    * The default is 10.
@@ -1628,6 +1665,10 @@ export type PipelineConfig = {
    * Each DBSP "foreground" worker thread is paired with a "background"
    * thread for LSM merging, making the total number of threads twice the
    * specified number.
+   *
+   * The typical sweet spot for the number of workers is between 4 and 16.
+   * Each worker increases overall memory consumption for data structures
+   * used during a step.
    */
   workers?: number
 } & {
@@ -2224,7 +2265,7 @@ export type RuntimeConfig = {
    * inputs.  The pipeline will update the clock value and trigger incremental recomputation
    * at most each `clock_resolution_usecs` microseconds.
    *
-   * It is set to 100 milliseconds (100,000 microseconds) by default.
+   * It is set to 1 second (1,000,000 microseconds) by default.
    *
    * Set to `null` to disable periodic clock updates.
    */
@@ -2237,6 +2278,10 @@ export type RuntimeConfig = {
   cpu_profiler?: boolean
   fault_tolerance?: FtConfig
   /**
+   * Specification of additional (sidecar) containers.
+   */
+  init_containers?: unknown
+  /**
    * Maximal delay in microseconds to wait for `min_batch_size_records` to
    * get buffered by the controller, defaults to 0.
    */
@@ -2248,7 +2293,7 @@ export type RuntimeConfig = {
    * At startup, the pipeline must initialize all of its input and output connectors.
    * Depending on the number and types of connectors, this can take a long time.
    * To accelerate the process, multiple connectors are initialized concurrently.
-   * This option controls the maximum number of connectors that can be intitialized
+   * This option controls the maximum number of connectors that can be initialized
    * in parallel.
    *
    * The default is 10.
@@ -2296,6 +2341,10 @@ export type RuntimeConfig = {
    * Each DBSP "foreground" worker thread is paired with a "background"
    * thread for LSM merging, making the total number of threads twice the
    * specified number.
+   *
+   * The typical sweet spot for the number of workers is between 4 and 16.
+   * Each worker increases overall memory consumption for data structures
+   * used during a step.
    */
   workers?: number
 }
@@ -2509,17 +2558,17 @@ export type StorageOptions = {
    * the minimum estimated number of bytes to write it to storage.
    *
    * This is provided for debugging and fine-tuning and should ordinarily be
-   * left unset.  If it is set, it should ordinarily be greater than or equal
-   * to `min_storage_bytes`.
-   *
-   * A value of 0 will write even empty batches to storage, and nonzero
-   * values provide a threshold.  `usize::MAX` would effectively disable
-   * storage for such batches.  The default is 10,485,760 (10 MiB).
+   * left unset.  A value of 0 will write even empty batches to storage, and
+   * nonzero values provide a threshold.  `usize::MAX`, the default,
+   * effectively disables storage for such batches.  If it is set to another
+   * value, it should ordinarily be greater than or equal to
+   * `min_storage_bytes`.
    */
   min_step_storage_bytes?: number | null
   /**
-   * For a batch of data maintained as a persistent index during a pipeline
-   * run, the minimum estimated number of bytes to write it to storage.
+   * For a batch of data maintained as part of a persistent index during a
+   * pipeline run, the minimum estimated number of bytes to write it to
+   * storage.
    *
    * This is provided for debugging and fine-tuning and should ordinarily be
    * left unset.
@@ -2607,6 +2656,10 @@ export type TransportConfig =
   | {
       config: AdHocInputConfig
       name: 'ad_hoc_input'
+    }
+  | {
+      config: ClockConfig
+      name: 'clock_input'
     }
 
 export type name2 = 'file_input'
@@ -2803,9 +2856,22 @@ export type CheckpointPipelineData = {
   }
 }
 
-export type CheckpointPipelineResponse = unknown
+export type CheckpointPipelineResponse = CheckpointResponse
 
 export type CheckpointPipelineError = ErrorResponse
+
+export type GetCheckpointStatusData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type GetCheckpointStatusResponse = CheckpointStatus
+
+export type GetCheckpointStatusError = ErrorResponse
 
 export type GetPipelineCircuitProfileData = {
   path: {
@@ -2833,7 +2899,7 @@ export type CompletionStatusData = {
     /**
      * Completion token returned by the '/ingress' or '/completion_status' endpoint.
      */
-    completion_token: string
+    token: string
   }
 }
 
@@ -3111,6 +3177,13 @@ export type PostPipelineActionData = {
      */
     pipeline_name: string
   }
+  query?: {
+    /**
+     * The `checkpoint` parameter determines whether the pipeline needs
+     * to perform a checkpoint before setting desired status to `Suspended`.
+     */
+    checkpoint?: boolean
+  }
 }
 
 export type PostPipelineActionResponse = unknown
@@ -3322,9 +3395,26 @@ export type $OpenApiTs = {
       req: CheckpointPipelineData
       res: {
         /**
-         * Checkpoint completed
+         * Checkpoint initiated
          */
-        '200': unknown
+        '200': CheckpointResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/checkpoint_status': {
+    get: {
+      req: GetCheckpointStatusData
+      res: {
+        /**
+         * Checkpoint status retrieved successfully
+         */
+        '200': CheckpointStatus
         /**
          * Pipeline with that name does not exist
          */

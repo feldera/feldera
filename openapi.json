@@ -3502,6 +3502,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "checkpoint",
+            "in": "query",
+            "description": "The `checkpoint` parameter determines whether the pipeline needs\nto perform a checkpoint before setting desired status to `Suspended`.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -3783,6 +3792,19 @@
             "type": "string",
             "description": "Text payload, e.g., CSV.",
             "nullable": true
+          }
+        }
+      },
+      "ClockConfig": {
+        "type": "object",
+        "required": [
+          "clock_resolution_usecs"
+        ],
+        "properties": {
+          "clock_resolution_usecs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
