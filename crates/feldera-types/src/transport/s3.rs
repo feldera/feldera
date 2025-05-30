@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+fn default_max_concurrent_fetches() -> u32 {
+    8
+}
+
 /// Configuration for reading data from AWS S3.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct S3InputConfig {
@@ -29,4 +33,13 @@ pub struct S3InputConfig {
     /// The endpoint URL used to communicate with this service. Can be used to make this connector
     /// talk to non-AWS services with an S3 API.
     pub endpoint_url: Option<String>,
+
+    /// Controls the number of S3 objects fetched in parallel.
+    ///
+    /// Increasing this value can improve throughput by enabling greater concurrency.
+    /// However, higher concurrency may lead to timeouts or increased memory usage due to in-memory buffering.
+    ///
+    /// Recommended range: 1–10. Default: 8.
+    #[serde(default = "default_max_concurrent_fetches")]
+    pub max_concurrent_fetches: u32,
 }
