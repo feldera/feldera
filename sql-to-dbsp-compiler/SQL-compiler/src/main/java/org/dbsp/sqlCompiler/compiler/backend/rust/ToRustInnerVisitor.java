@@ -595,6 +595,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("None::<");
             constructor.getType().withMayBeNull(false).accept(this);
             this.builder.append(">");
+            this.pop(constructor);
+            return VisitDecision.STOP;
         }
         if (constructor.getType().mayBeNull)
             this.builder.append("Some(");

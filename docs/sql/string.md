@@ -160,6 +160,14 @@ addition to the normal way of `''`.
     <td><code>lower('TOM')</code> => <code>tom</code></td>
   </tr>
   <tr>
+    <td><a id="md5"></a><code>MD5</code>(string)</td>
+    <td>
+        Calculates an MD5 128-bit checksum of string and returns it as a hex <code>VARCHAR</code> value.
+        If the input is NULL, NULL is returned.
+    </td>
+    <td><code>SELECT md5('Feldera')</code> => <code></code></td>
+  </tr>
+  <tr>
     <td><a id="overlay"></a><code>OVERLAY ( string PLACING newsubstring FROM start [ FOR remove ] )</code></td>
     <td>Replaces the substring of string that starts at the start'th character and extends for remove characters with newsubstring. If count is omitted, it defaults to the length of newsubstring.  If 'start' is nott positive, the original string is unchanged.  If 'start' is bigger than the length of 'string', the result is the concatenation of the two strings.  If 'remove' is negative it is considered 0.</td>
     <td><code>overlay('Txxxxas' placing 'hom' from 2 for 4)</code> => <code>Thomas</code></td>

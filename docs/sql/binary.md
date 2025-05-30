@@ -54,6 +54,14 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td><code>SELECT gunzip(x'1f8b08000000000000ff4b4bcd49492d4a0400218115ac07000000')</code> => <code>feldera</code></td>
   </tr>
   <tr>
+    <td><a id="md5"></a><code>MD5</code>(binary)</td>
+    <td>
+        Calculates an MD5 128-bit checksum of the argument and returns it as a hex <code>VARCHAR</code> value.
+        If the input is NULL, NULL is returned.
+    </td>
+    <td><code>SELECT md5(x'0123456789ABCDEF')</code> => <code></code></td>
+  </tr>
+  <tr>
     <td><a id="octet_length"></a><code>OCTET_LENGTH</code>(binary)</td>
     <td>Returns the number of bytes in the binary</td>
     <td><code>OCTET_LENGTH(x'0abc')</code> => <code>2</code></td>

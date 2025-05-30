@@ -14,6 +14,7 @@ authors = { workspace = true }
 rust-version = { workspace = true }
 readme = { workspace = true }
 
+# Add all dependencies in ../../Cargo.toml and use here { workspace = true }
 [dependencies]
 thiserror = { workspace = true }
 dbsp = { workspace = true }
@@ -40,7 +41,8 @@ base64 = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
 arcstr = { workspace = true, features = ["serde"] }
 ryu = { workspace = true }
-lexical-core = { version = "1.0.5" }
+md-5 = { workspace = true }
+lexical-core = { workspace = true }
 smallvec = { workspace = true }
 
 [dev-dependencies]

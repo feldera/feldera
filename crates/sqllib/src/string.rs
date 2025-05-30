@@ -13,6 +13,7 @@ use crate::{
 use core::fmt::Error;
 use feldera_types::{deserialize_without_context, serialize_without_context};
 use like::{Escape, Like};
+use md5::{Digest, Md5};
 use regex::Regex;
 use rkyv::{
     string::{ArchivedString, StringResolver},
@@ -734,3 +735,13 @@ mod tests {
         assert!(total_size.shared_bytes() >= 26);
     }
 }
+
+#[doc(hidden)]
+pub fn md5_s(source: SqlString) -> SqlString {
+    let mut hasher = Md5::new();
+    hasher.update(source.str());
+    let result = hasher.finalize();
+    SqlString::from(format!("{:x}", result))
+}
+
+some_polymorphic_function1!(md5, s, SqlString, SqlString);

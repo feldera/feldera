@@ -757,6 +757,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return new DBSPStaticExpression(lit.getNode(), init).borrow();
     }
 
+    /** Check for polymorphic strict functions: if any operand is the NULL literal, replace with NULL */
+    @Nullable
+    DBSPExpression strictnessCheck(List<DBSPExpression> ops, DBSPType resultType) {
+        for (DBSPExpression op: ops) {
+            if (op.is(DBSPLiteral.class) && op.to(DBSPLiteral.class).isNull())
+                return resultType.none();
+        }
+        return null;
+    }
+
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = CalciteObject.create(this.context, call);
@@ -925,6 +935,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         "_" + left.getType().baseTypeWithSuffix() +
                         "_" + right.getType().baseTypeWithSuffix();
                 boolean resultIsNull = left.getType().mayBeNull || right.getType().mayBeNull;
+                DBSPExpression expr = this.strictnessCheck(ops, type.withMayBeNull(resultIsNull));
+                if (expr != null)
+                    return expr;
                 return new DBSPApplyExpression(node, functionName, type.withMayBeNull(resultIsNull), left, right)
                         .cast(node, type, false);
             }
@@ -1000,17 +1013,25 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             return result;
                         return result.castToNullable();
                     }
-                    case "numeric_inc":
-                    case "sign": {
+                    case "numeric_inc", "sign", "md5": {
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
                         return compilePolymorphicFunction(true, call, node, type,
                                 ops, 1);
                     }
                     case "st_distance": {
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
                         return compilePolymorphicFunction(true, call, node, type,
                                 ops, 2);
                     }
                     case "log10":
                     case "ln": {
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
                         // Cast to Double
                         this.ensureDouble(node, ops, 0);
                         // See: https://github.com/feldera/feldera/issues/1363
@@ -1020,6 +1041,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compilePolymorphicFunction(true, call, node, type, ops, 1);
                     }
                     case "log": {
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
                         // Turn the arguments into Double
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureDouble(node, ops, i);
@@ -1027,6 +1051,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "power": {
                         validateArgCount(node, operationName, ops.size(), 2);
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
                         // convert integer to double
                         DBSPExpression firstArg = ops.get(0);
                         if (firstArg.type.is(DBSPTypeInteger.class))
@@ -1084,11 +1111,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "csc":
                     case "csch":
                     case "exp": {
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
                         this.ensureDouble(node, ops, 0);
                         return compilePolymorphicFunction(true, call, node, type, ops, 1);
                     }
                     case "is_inf":
                     case "is_nan": {
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
                         // Turn the argument into Double
                         if (!ops.get(0).type.is(DBSPTypeReal.class)) {
                             this.ensureDouble(node, ops, 0);
@@ -1096,6 +1129,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compilePolymorphicFunction(true, call, node, type, ops, 1);
                     }
                     case "atan2": {
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureDouble(node, ops, i);
                         return compilePolymorphicFunction(true, call, node, type, ops, 2);
@@ -1229,6 +1265,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compileFunction(call, node, type, ops, 1);
                     case "parse_json":
                     case "to_json":
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
                         return compilePolymorphicFunction(false, call, node, type, ops, 1);
                     case "sequence":
                         for (int i = 0; i < ops.size(); i++)
@@ -1380,6 +1419,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case FLOOR:
             case CEIL: {
+                DBSPExpression expr = this.strictnessCheck(ops, type);
+                if (expr != null)
+                    return expr;
                 if (call.operands.size() == 2) {
                     return compileKeywordFunction(call, node, null, type, ops, 1, 2);
                 } else if (call.operands.size() == 1) {

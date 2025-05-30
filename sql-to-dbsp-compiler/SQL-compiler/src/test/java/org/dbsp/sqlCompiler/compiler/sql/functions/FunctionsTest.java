@@ -1782,6 +1782,54 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void testNulls() {
+        this.qs("""
+                SELECT sign(null);
+                 sign
+                ------------
+                 null
+                (1 row)
+                
+                SELECT st_distance(null, st_point(0,0));
+                 sign
+                ------------
+                 null
+                (1 row)"""
+        );
+    }
+
+    @Test
+    public void testMD5() {
+        this.qs("""
+                SELECT MD5(x'0123456789ABCDEF');
+                 md5
+                ------------
+                 a1cd1d1fc6491068d91007283ed84489
+                (1 row)
+
+                SELECT MD5('Feldera');
+                 md5
+                ------------
+                 841afc2f65b5763600818ef42a56d7d1
+                (1 row)
+
+                SELECT MD5(null);
+                 md5
+                --------
+                NULL
+                (1 row)"""
+        );
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x VARCHAR, y VARBINARY);
+                CREATE VIEW V AS SELECT MD5(x), MD5(y) FROM T;""");
+        ccs.step("INSERT INTO T VALUES('Feldera', x'0123456789ABCDEF');",
+                """
+                         s                                | binary                           | weight
+                        ------------------------------------------------------------------------------
+                         841afc2f65b5763600818ef42a56d7d1 | a1cd1d1fc6491068d91007283ed84489 | 1""");
+    }
+
+    @Test
     public void testGunzipRuntimeFail() {
         this.runtimeConstantFail("SELECT GUNZIP(x'1100'::bytea)", "failed to decompress gzipped data");
     }

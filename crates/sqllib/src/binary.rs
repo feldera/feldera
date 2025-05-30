@@ -1,6 +1,9 @@
 //! byte arrays (binary objects in SQL)
 
-use crate::{some_function1, some_function2, some_function3, some_function4, SqlString};
+use crate::{
+    some_function1, some_function2, some_function3, some_function4, some_polymorphic_function1,
+    SqlString,
+};
 use base64::prelude::*;
 use dbsp::NumEntries;
 use feldera_types::serde_with_context::{
@@ -8,6 +11,7 @@ use feldera_types::serde_with_context::{
 };
 use flate2::read::GzDecoder;
 use hex::ToHex;
+use md5::{Digest, Md5};
 use serde::{
     de::{Error as _, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
@@ -357,3 +361,13 @@ pub fn to_int_(source: ByteArray) -> i32 {
 }
 
 some_function1!(to_int, ByteArray, i32);
+
+#[doc(hidden)]
+pub fn md5_bytes(source: ByteArray) -> SqlString {
+    let mut hasher = Md5::new();
+    hasher.update(source.data);
+    let result = hasher.finalize();
+    SqlString::from(format!("{:x}", result))
+}
+
+some_polymorphic_function1!(md5, bytes, ByteArray, SqlString);
