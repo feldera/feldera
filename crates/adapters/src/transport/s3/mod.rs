@@ -20,6 +20,7 @@ use mockall::automock;
 use tracing::{error, info_span, Instrument};
 
 use crate::transport::InputEndpoint;
+use anyhow::anyhow;
 use feldera_types::transport::s3::S3InputConfig;
 use serde::{Deserialize, Serialize};
 
@@ -144,7 +145,7 @@ impl S3Api for S3Client {
 }
 
 #[async_trait::async_trait]
-trait S3Api: Send {
+trait S3Api: Send + Sync {
     /// Get all object keys inside a bucket
     async fn get_object_keys(
         &self,
@@ -198,9 +199,9 @@ impl S3InputReader {
         parser: Box<dyn Parser>,
     ) -> S3InputReader {
         let s3_config = to_s3_config(config);
-        let client = Box::new(S3Client {
+        let client = Arc::new(S3Client {
             inner: aws_sdk_s3::Client::from_conf(s3_config),
-        }) as Box<dyn S3Api>;
+        }) as Arc<dyn S3Api>;
         Self::new_inner(config, consumer, parser, client)
     }
 
@@ -208,7 +209,7 @@ impl S3InputReader {
         config: &Arc<S3InputConfig>,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        s3_client: Box<dyn S3Api>,
+        s3_client: Arc<dyn S3Api>,
     ) -> S3InputReader {
         let (sender, receiver) = unbounded_channel();
         std::thread::spawn({
@@ -226,7 +227,7 @@ impl S3InputReader {
     }
 
     async fn worker_task(
-        client: Box<dyn S3Api>,
+        client: Arc<dyn S3Api>,
         config: Arc<S3InputConfig>,
         consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
@@ -298,14 +299,13 @@ impl S3InputReader {
         // to make it so that no more than 8 objects are fetched while waiting
         // for object processing.
         let (tx, mut rx) = mpsc::channel(8);
+        let config_clone = config.clone();
+        let client_clone = client.clone();
+
         tokio::spawn(async move {
             let mut start_after = match start_position {
                 Some((key, Some(offset))) => {
-                    let result = client
-                        .get_object(&config.bucket_name, &key, offset, None)
-                        .await
-                        .map(|object| (key.clone(), object, offset));
-                    tx.send(result).await?;
+                    tx.send(Ok((key.clone(), offset))).await?;
                     Some(key)
                 }
                 Some((key, None)) => Some(key),
@@ -314,10 +314,10 @@ impl S3InputReader {
             let mut continuation_token = None;
             loop {
                 let (objects_to_fetch, next_token): (Vec<String>, Option<String>) =
-                    if let Some(prefix) = &config.prefix {
-                        let result = client
+                    if let Some(prefix) = &config_clone.prefix {
+                        let result = client_clone
                             .get_object_keys(
-                                &config.bucket_name,
+                                &config_clone.bucket_name,
                                 prefix,
                                 start_after.take(),
                                 continuation_token.take(),
@@ -333,15 +333,11 @@ impl S3InputReader {
                         }
                     } else {
                         // We checked that either key or prefix is set.
-                        (vec![config.key.as_ref().unwrap().clone()], None)
+                        (vec![config_clone.key.as_ref().unwrap().clone()], None)
                     };
                 continuation_token = next_token;
-                for key in &objects_to_fetch {
-                    let result = client
-                        .get_object(&config.bucket_name, key, 0, None)
-                        .await
-                        .map(|object| (key.clone(), object, 0));
-                    tx.send(result).await?;
+                for key in objects_to_fetch {
+                    tx.send(Ok((key, 0))).await?;
                 }
                 if continuation_token.is_none() {
                     break;
@@ -390,7 +386,23 @@ impl S3InputReader {
                 // Poll the object stream.
                 get_obj = rx.recv(), if running => {
                     match get_obj {
-                        Some(Ok((key, mut object, start_offset))) => {
+                        Some(Ok((key, start_offset))) => {
+                            let result = client
+                                .get_object(
+                                    &config.bucket_name,
+                                    &key,
+                                    start_offset,
+                                    None,
+                                )
+                                .await;
+                            let mut object = match result {
+                                Ok(ret) => ret,
+                                Err(e) => {
+                                    consumer.error(false, anyhow!("Could not fetch object '{key}' (Error: {e:?})."));
+                                    continue;
+                                }
+                            };
+
                             splitter.seek(start_offset);
                             let mut eoi = false;
                             let mut added_chunks = false;
@@ -430,7 +442,7 @@ impl S3InputReader {
                                 Some(ListObjectsV2Error::NoSuchBucket(_)) => {
                                     consumer.error(true, e)
                                 },
-                                _ => consumer.error(false, e)
+                                _ => consumer.error(false, anyhow!("error retrieving object list: {e:?}"))
                             }
                         }
                         None => {
@@ -595,7 +607,7 @@ format:
             &transport_config,
             Box::new(consumer.clone()),
             Box::new(parser.clone()),
-            Box::new(mock),
+            Arc::new(mock),
         )) as Box<dyn crate::InputReader>;
         (reader, consumer, parser, input_handle)
     }
