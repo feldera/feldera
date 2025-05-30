@@ -271,8 +271,10 @@ impl S3InputReader {
                         splitter.reset();
                         let mut eoi = false;
                         while !eoi {
-                            match object.body.next().await.transpose()? {
-                                Some(bytes) => splitter.append(&bytes),
+                            match object.body.next().await {
+                                Some(Err(e)) => consumer
+                                    .error(false, anyhow!("error replaying object '{key}': {e:?}")),
+                                Some(Ok(bytes)) => splitter.append(&bytes),
                                 None => eoi = true,
                             };
                             while let Some(chunk) = splitter.next(eoi) {
@@ -398,7 +400,7 @@ impl S3InputReader {
                             let mut object = match result {
                                 Ok(ret) => ret,
                                 Err(e) => {
-                                    consumer.error(false, anyhow!("Could not fetch object '{key}' (Error: {e:?})."));
+                                    consumer.error(false, anyhow!("could not fetch object '{key}': {e:?}"));
                                     continue;
                                 }
                             };
@@ -407,8 +409,9 @@ impl S3InputReader {
                             let mut eoi = false;
                             let mut added_chunks = false;
                             while !eoi {
-                                match object.body.next().await.transpose()? {
-                                    Some(bytes) => splitter.append(&bytes),
+                                match object.body.next().await {
+                                    Some(Err(e)) => consumer.error(false, anyhow!("error reading object '{key}': {e:?}")),
+                                    Some(Ok(bytes)) => splitter.append(&bytes),
                                     None => eoi = true,
                                 };
                                 loop {
