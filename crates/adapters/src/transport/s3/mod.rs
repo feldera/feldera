@@ -4,27 +4,31 @@ use std::{
     sync::Arc,
 };
 
-use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
-use feldera_adapterlib::transport::Resume;
-use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver, UnboundedSender};
-use xxhash_rust::xxh3::Xxh3Default;
-
+use crate::transport::InputEndpoint;
 use crate::{
     format::StreamSplitter, InputBuffer, InputConsumer, InputReader, Parser, TransportInputEndpoint,
 };
+use anyhow::anyhow;
 use anyhow::{bail, Result as AnyResult};
+use async_channel::{bounded, unbounded, Receiver, SendError, Sender};
+use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use dbsp::circuit::tokio::TOKIO;
+use feldera_adapterlib::{transport::Resume, PipelineState};
+use feldera_types::transport::s3::S3InputConfig;
 use feldera_types::{config::FtModel, program_schema::Relation};
+use futures::future::join_all;
 #[cfg(test)]
 use mockall::automock;
-use tracing::{error, info_span, Instrument};
-
-use crate::transport::InputEndpoint;
-use anyhow::anyhow;
-use feldera_types::transport::s3::S3InputConfig;
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch::{channel as watch_channel, error::RecvError, Receiver as WatchReceiver};
+use tokio::sync::Mutex;
+use tracing::{error, info_span, Instrument};
+use xxhash_rust::xxh3::Xxh3Default;
 
 use super::InputReaderCommand;
+
+/// Number of object paths to buffer in memory.
+const OBJECT_QUEUE_LEN: usize = 100_000;
 
 pub struct S3InputEndpoint {
     config: Arc<S3InputConfig>,
@@ -49,6 +53,10 @@ impl S3InputEndpoint {
 
         if config.key.is_some() && config.prefix.is_some() {
             bail!("connector configuration specifies both 'key' and 'prefix' properties; please specify only one");
+        }
+
+        if config.max_concurrent_fetches == 0 {
+            bail!("invalid 'max_concurrent_fetches' value: 'max_concurrent_fetches' must be greater than 0");
         }
 
         Ok(Self {
@@ -166,12 +174,12 @@ trait S3Api: Send + Sync {
 }
 
 struct S3InputReader {
-    sender: UnboundedSender<InputReaderCommand>,
+    sender: Sender<InputReaderCommand>,
 }
 
 impl InputReader for S3InputReader {
     fn request(&self, command: InputReaderCommand) {
-        let _ = self.sender.send(command);
+        let _ = self.sender.send_blocking(command);
     }
 
     fn is_closed(&self) -> bool {
@@ -211,7 +219,7 @@ impl S3InputReader {
         parser: Box<dyn Parser>,
         s3_client: Arc<dyn S3Api>,
     ) -> S3InputReader {
-        let (sender, receiver) = unbounded_channel();
+        let (sender, receiver) = unbounded();
         std::thread::spawn({
             let config = config.clone();
             move || {
@@ -231,7 +239,7 @@ impl S3InputReader {
         config: Arc<S3InputConfig>,
         consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
-        command_receiver: UnboundedReceiver<InputReaderCommand>,
+        command_receiver: Receiver<InputReaderCommand>,
     ) -> anyhow::Result<()> {
         let mut splitter = StreamSplitter::new(parser.splitter());
 
@@ -265,9 +273,17 @@ impl S3InputReader {
                     let mut num_records = 0;
                     let mut hasher = Xxh3Default::new();
                     for (key, (start, end)) in metadata.offsets {
-                        let mut object = client
+                        let mut object = match client
                             .get_object(&config.bucket_name, &key, start, end)
-                            .await?;
+                            .await
+                        {
+                            Ok(object) => object,
+                            Err(e) => {
+                                consumer
+                                    .error(false, anyhow!("error replaying object '{key}': {e:?}"));
+                                continue;
+                            }
+                        };
                         splitter.reset();
                         let mut eoi = false;
                         while !eoi {
@@ -296,15 +312,12 @@ impl S3InputReader {
             }
         }
 
-        // The worker thread fetches objects in the background while already retrieved
-        // objects are being fed to the InputConsumer. We use a bounded channel
-        // to make it so that no more than 8 objects are fetched while waiting
-        // for object processing.
-        let (tx, mut rx) = mpsc::channel(8);
+        let (tx, rx) = bounded(OBJECT_QUEUE_LEN);
         let config_clone = config.clone();
         let client_clone = client.clone();
         let consumer_clone = consumer.clone();
 
+        // This task fetches object list and sends it to the channel created above.
         tokio::spawn(async move {
             let mut start_after = match start_position {
                 Some((key, Some(offset))) => {
@@ -356,61 +369,50 @@ impl S3InputReader {
                 }
             }
             drop(tx); // We're done. Close the channel.
-            Ok::<(), mpsc::error::SendError<_>>(())
+            Ok::<(), SendError<_>>(())
         });
 
-        let mut running = false;
-        let mut queue = VecDeque::<QueuedBuffer>::new();
-        loop {
-            tokio::select! {
-                command = command_receiver.recv() => {
-                    match command {
-                        Some(command @ InputReaderCommand::Seek(_))
-                            | Some(command @ InputReaderCommand::Replay { ..}) => {
-                                unreachable!("{command:?} must be at the beginning of the command stream")
+        let (status_sender, status_receiver) = watch_channel(PipelineState::Paused);
+
+        let queue = Arc::new(Mutex::new(VecDeque::<QueuedBuffer>::new()));
+
+        let mut join_handles = Vec::new();
+
+        let bucket_name = config.bucket_name.clone();
+
+        // Spawn reader tasks that dequeue object names from the channel, fetch and parse them.
+        for _i in 0..config.max_concurrent_fetches {
+            let rx = rx.clone();
+            let client = client.clone();
+            let bucket_name = bucket_name.clone();
+            let mut parser = parser.fork();
+            let consumer = consumer.clone();
+            let queue = queue.clone();
+            let mut status_receiver = status_receiver.clone();
+
+            let handle = tokio::task::spawn(async move {
+                let mut splitter = StreamSplitter::new(parser.splitter());
+
+                loop {
+                    let msg = { rx.recv().await };
+
+                    match msg {
+                        Ok((key, start_offset)) => {
+                            if wait_running(&mut status_receiver).await.is_err() {
+                                // channel closed
+                                return;
                             }
-                        Some(InputReaderCommand::Extend) => running = true,
-                        Some(InputReaderCommand::Pause) => running = false,
-                        Some(InputReaderCommand::Queue{..}) => {
-                            let mut total = 0;
-                            let mut hasher = consumer.hasher();
-                            let mut offsets = BTreeMap::<String, (u64, Option<u64>)>::new();
-                            while total < consumer.max_batch_size() {
-                                let Some(QueuedBuffer { key, start_offset, end_offset, mut buffer }) = queue.pop_front() else {
-                                    break
-                                };
-                                total += buffer.len();
-                                if let Some(hasher) = hasher.as_mut() {
-                                    buffer.hash(hasher);
-                                }
-                                buffer.flush();
-                                offsets.entry(key)
-                                    .and_modify(|value| value.1 = end_offset)
-                                    .or_insert((start_offset, end_offset));
-                            }
-                            consumer.extended(total, Some(Resume::new_metadata_only(serde_json::to_value(&Metadata { offsets }).unwrap(), hasher)));
-                        }
-                        Some(InputReaderCommand::Disconnect) | None => {
-                            return Ok(())
-                        }
-                    }
-                },
-                // Poll the object stream.
-                get_obj = rx.recv(), if running => {
-                    match get_obj {
-                        Some((key, start_offset)) => {
+
                             let result = client
-                                .get_object(
-                                    &config.bucket_name,
-                                    &key,
-                                    start_offset,
-                                    None,
-                                )
+                                .get_object(&bucket_name, &key, start_offset, None)
                                 .await;
                             let mut object = match result {
                                 Ok(ret) => ret,
                                 Err(e) => {
-                                    consumer.error(false, anyhow!("could not fetch object '{key}': {e:?}"));
+                                    consumer.error(
+                                        false,
+                                        anyhow!("could not fetch object '{key}': {e:?}"),
+                                    );
                                     continue;
                                 }
                             };
@@ -420,14 +422,17 @@ impl S3InputReader {
                             let mut added_chunks = false;
                             while !eoi {
                                 match object.body.next().await {
-                                    Some(Err(e)) => consumer.error(false, anyhow!("error reading object '{key}': {e:?}")),
+                                    Some(Err(e)) => consumer.error(
+                                        false,
+                                        anyhow!("error reading object '{key}': {e:?}"),
+                                    ),
                                     Some(Ok(bytes)) => splitter.append(&bytes),
                                     None => eoi = true,
                                 };
                                 loop {
                                     let start_offset = splitter.position();
                                     let Some(chunk) = splitter.next(eoi) else {
-                                        break
+                                        break;
                                     };
                                     let (buffer, errors) = parser.parse(chunk);
                                     consumer.buffered(buffer.len(), chunk.len());
@@ -435,7 +440,7 @@ impl S3InputReader {
 
                                     consumer.parse_errors(errors);
                                     if !buffer.is_empty() {
-                                        queue.push_back(QueuedBuffer {
+                                        queue.lock().await.push_back(QueuedBuffer {
                                             key: key.clone(),
                                             start_offset,
                                             end_offset: Some(end_offset),
@@ -446,19 +451,86 @@ impl S3InputReader {
                                 }
                             }
                             if added_chunks {
-                                queue.back_mut().unwrap().end_offset = None;
+                                queue.lock().await.back_mut().unwrap().end_offset = None;
                             }
                         }
-                        None => {
-                            // End of input.
-                            consumer.eoi();
-                            running = false;
-                        }
+                        Err(_) => break, // Channel closed
                     }
                 }
+            });
+            join_handles.push(handle);
+        }
+
+        // Wait for end of input.
+        let consumer_clone = consumer.clone();
+        tokio::task::spawn(async move {
+            _ = join_all(join_handles).await;
+            // All reader threads terminated means that we either reached the end of input or
+            // the connector is terminating.
+            if *status_receiver.borrow() != PipelineState::Terminated {
+                consumer_clone.eoi();
+            }
+        });
+
+        loop {
+            match command_receiver.recv().await {
+                Some(command @ InputReaderCommand::Seek(_))
+                | Some(command @ InputReaderCommand::Replay { .. }) => {
+                    unreachable!("{command:?} must be at the beginning of the command stream")
+                }
+                Some(InputReaderCommand::Extend) => {
+                    let _ = status_sender.send_replace(PipelineState::Running);
+                }
+                Some(InputReaderCommand::Pause) => {
+                    let _ = status_sender.send_replace(PipelineState::Paused);
+                }
+                Some(InputReaderCommand::Queue { .. }) => {
+                    let mut total = 0;
+                    let mut hasher = consumer.hasher();
+                    let mut offsets = BTreeMap::<String, (u64, Option<u64>)>::new();
+                    while total < consumer.max_batch_size() {
+                        let Some(QueuedBuffer {
+                            key,
+                            start_offset,
+                            end_offset,
+                            mut buffer,
+                        }) = queue.lock().await.pop_front()
+                        else {
+                            break;
+                        };
+                        total += buffer.len();
+                        if let Some(hasher) = hasher.as_mut() {
+                            buffer.hash(hasher);
+                        }
+                        buffer.flush();
+                        offsets
+                            .entry(key)
+                            .and_modify(|value| value.1 = end_offset)
+                            .or_insert((start_offset, end_offset));
+                    }
+                    consumer.extended(
+                        total,
+                        Some(Resume::new_metadata_only(
+                            serde_json::to_value(&Metadata { offsets }).unwrap(),
+                            hasher,
+                        )),
+                    );
+                }
+                Some(InputReaderCommand::Disconnect) | None => return Ok(()),
             };
         }
     }
+}
+
+/// Block until the state is `Running`.
+async fn wait_running(receiver: &mut WatchReceiver<PipelineState>) -> Result<(), RecvError> {
+    // An error indicates that the channel was closed.  It's ok to ignore
+    // the error as this situation will be handled by the top-level select,
+    // which will abort the worker thread.
+    receiver
+        .wait_for(|state| state == &PipelineState::Running)
+        .await
+        .map(|_| ())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -469,12 +541,12 @@ struct Metadata {
 /// Wraps [UnboundedReceiver] with a one-message buffer, to allow received messages to be
 /// put back and received again later.
 struct BufferedReceiver<T> {
-    receiver: UnboundedReceiver<T>,
+    receiver: Receiver<T>,
     buffer: Option<T>,
 }
 
 impl<T> BufferedReceiver<T> {
-    fn new(receiver: UnboundedReceiver<T>) -> Self {
+    fn new(receiver: Receiver<T>) -> Self {
         Self {
             receiver,
             buffer: None,
@@ -484,7 +556,7 @@ impl<T> BufferedReceiver<T> {
     async fn recv(&mut self) -> Option<T> {
         match self.buffer.take() {
             Some(value) => Some(value),
-            None => self.receiver.recv().await,
+            None => self.receiver.recv().await.ok(),
         }
     }
 
@@ -550,7 +622,7 @@ mod test {
     use serde::{Deserialize, Serialize};
     use std::sync::Arc;
 
-    #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
+    #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone, PartialOrd, Ord)]
     struct TestStruct {
         i: i64,
     }
@@ -616,7 +688,7 @@ format:
         (reader, consumer, parser, input_handle)
     }
 
-    fn run_test(config_str: &str, mock: super::MockS3Client, test_data: Vec<TestStruct>) {
+    fn run_test(config_str: &str, mock: super::MockS3Client, mut test_data: Vec<TestStruct>) {
         let (reader, consumer, parser, input_handle) = test_setup(config_str, mock);
         // No outputs should be produced at this point.
         assert!(parser.state().data.is_empty());
@@ -634,9 +706,20 @@ format:
         .unwrap();
 
         assert_eq!(test_data.len(), input_handle.state().flushed.len());
-        for (i, upd) in input_handle.state().flushed.iter().enumerate() {
-            assert_eq!(upd.unwrap_insert(), &test_data[i]);
-        }
+
+        let mut outputs = input_handle
+            .state()
+            .flushed
+            .iter()
+            .map(|upd| upd.unwrap_insert())
+            .cloned()
+            .collect::<Vec<_>>();
+
+        // Objects can be ingested in any order.
+        test_data.sort();
+        outputs.sort();
+
+        assert_eq!(outputs, test_data);
     }
 
     #[test]
@@ -737,9 +820,19 @@ format:
         .unwrap();
 
         assert_eq!(test_data.len(), input_handle.state().flushed.len());
-        for (i, upd) in input_handle.state().flushed.iter().enumerate() {
-            assert_eq!(upd.unwrap_insert(), &test_data[i]);
-        }
+
+        let mut outputs = input_handle
+            .state()
+            .flushed
+            .iter()
+            .map(|upd| upd.unwrap_insert())
+            .cloned()
+            .collect::<Vec<_>>();
+
+        // Objects can be ingested in any order.
+        outputs.sort();
+
+        assert_eq!(outputs, test_data);
     }
 
     #[test]
