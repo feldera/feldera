@@ -38,6 +38,7 @@ num-traits = { workspace = true }
 flate2 = { workspace = true }
 metrics = { workspace = true }
 base64 = { workspace = true }
+base58 = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
 arcstr = { workspace = true, features = ["serde"] }
 ryu = { workspace = true }

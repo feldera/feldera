@@ -107,6 +107,8 @@ pub enum BinaryFormat {
     Array,
     /// Serialize as base64-encoded string.
     Base64,
+    /// Serialize as base58-encoded string.
+    Base58,
     /// Serialize as a byte slice (`&[u8]``)
     Bytes,
     /// Serialize as a hexadecimal-encoded string, beginning with `\x`.
@@ -247,6 +249,9 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 binary_format: BinaryFormat::Array,
                 uuid_format: UuidFormat::String,
             },
+            JsonFlavor::Blockchain => {
+                SqlSerdeConfig::default().with_binary_format(BinaryFormat::Base58)
+            }
             JsonFlavor::ParquetConverter => Self {
                 time_format: TimeFormat::Nanos,
                 date_format: DateFormat::String("%Y-%m-%d"),

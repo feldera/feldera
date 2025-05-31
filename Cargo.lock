@@ -1808,6 +1808,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "349a06037c7bf932dd7e7d1f653678b2038b9ad46a74102f1fc7bd7872678cce"
 
 [[package]]
+name = "base58"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6107fe1be6682a68940da878d9e9f5e90ca5745b3dec9fd1bb393c8777d4f581"
+
+[[package]]
 name = "base64"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4645,6 +4651,7 @@ name = "feldera-sqllib"
 version = "0.52.0"
 dependencies = [
  "arcstr",
+ "base58",
  "base64 0.22.1",
  "chrono",
  "dbsp",
