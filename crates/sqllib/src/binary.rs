@@ -4,6 +4,7 @@ use crate::{
     some_function1, some_function2, some_function3, some_function4, some_polymorphic_function1,
     SqlString,
 };
+use base58::{FromBase58, ToBase58};
 use base64::prelude::*;
 use dbsp::NumEntries;
 use feldera_types::serde_with_context::{
@@ -69,6 +70,7 @@ impl SerializeWithContext<SqlSerdeConfig> for ByteArray {
         match context.binary_format {
             BinaryFormat::Array => self.data.serialize(serializer),
             BinaryFormat::Base64 => serializer.serialize_str(&BASE64_STANDARD.encode(&self.data)),
+            BinaryFormat::Base58 => serializer.serialize_str(&self.data.to_base58()),
             BinaryFormat::Bytes => serializer.serialize_bytes(&self.data),
             BinaryFormat::PgHex => {
                 serializer.serialize_str(&format!("\\x{}", hex::encode(&self.data)))
@@ -114,11 +116,58 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
                     .map_err(|e| D::Error::custom(format!("invalid base64 string: {e}")))?;
                 Ok(Self { data: data.into() })
             }
+            BinaryFormat::Base58 => {
+                let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+                let data = str
+                    .from_base58()
+                    .map_err(|e| D::Error::custom(format!("invalid base58 string: {e:?}")))?;
+                Ok(Self { data: data.into() })
+            }
             BinaryFormat::Bytes => deserializer.deserialize_bytes(ByteVisitor),
             BinaryFormat::PgHex => Err(D::Error::custom(
                 "binary format Postgres Hexadecimal is not supported for input",
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod test_binary_deserializer {
+    use feldera_types::{
+        format::json::JsonFlavor,
+        serde_with_context::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig},
+    };
+
+    use super::ByteArray;
+
+    #[test]
+    fn test_base58() {
+        let encoded = "4F85ZySpwyY6FuH7mQYyyr5b8nV9zFRBLj92AJa37w6y";
+
+        let decoded = ByteArray::deserialize_with_context(
+            serde_json::Value::String(encoded.to_string()),
+            &SqlSerdeConfig::from(JsonFlavor::Blockchain),
+        )
+        .unwrap();
+
+        assert_eq!(
+            decoded,
+            ByteArray::from(b"012345678901234567890123456789ab".as_slice())
+        );
+
+        let mut reencoded = Vec::<u8>::new();
+
+        decoded
+            .serialize_with_context(
+                &mut serde_json::Serializer::new(&mut reencoded),
+                &SqlSerdeConfig::from(JsonFlavor::Blockchain),
+            )
+            .unwrap();
+
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&reencoded).unwrap(),
+            serde_json::Value::String(encoded.to_string())
+        );
     }
 }
 

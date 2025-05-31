@@ -205,6 +205,10 @@ pub enum JsonFlavor {
     KafkaConnectJsonConverter,
     #[serde(rename = "pandas")]
     Pandas,
+    /// JSON format used to represent blockchain data.
+    /// Uses Base58 encoding for binary data such as Bitcoin addresses.
+    #[serde(rename = "blockchain")]
+    Blockchain,
     /// Parquet to-json format.
     /// (For internal use only)
     #[serde(skip)]
