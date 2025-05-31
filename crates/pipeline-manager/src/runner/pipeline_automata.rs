@@ -1340,11 +1340,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             pipeline.id
                         );
                         State::TransitionToFailed {
-                            error: RunnerError::AutomatonInitializingTimeout {
-                                // TODO: new error
-                                timeout,
-                            }
-                            .into(),
+                            error: RunnerError::AutomatonSuspendingComputeTimeout { timeout }
+                                .into(),
                         }
                     } else {
                         State::Unchanged
