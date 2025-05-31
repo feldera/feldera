@@ -44,6 +44,9 @@ pub enum RunnerError {
     AutomatonInitializingTimeout {
         timeout: Duration,
     },
+    AutomatonSuspendingComputeTimeout {
+        timeout: Duration,
+    },
     AutomatonAfterInitializationBecameRunning,
     AutomatonImpossibleDesiredStatus {
         current_status: PipelineStatus,
@@ -55,6 +58,9 @@ pub enum RunnerError {
         error: String,
     },
     RunnerDeploymentCheckError {
+        error: String,
+    },
+    RunnerSuspendComputeError {
         error: String,
     },
     RunnerDeploymentShutdownError {
@@ -116,6 +122,9 @@ impl DetailedError for RunnerError {
             RunnerError::AutomatonInitializingTimeout { .. } => {
                 Cow::from("AutomatonInitializingTimeout")
             }
+            RunnerError::AutomatonSuspendingComputeTimeout { .. } => {
+                Cow::from("AutomatonSuspendingComputeTimeout")
+            }
             RunnerError::AutomatonAfterInitializationBecameRunning => {
                 Cow::from("AutomatonAfterInitializationBecameRunning")
             }
@@ -128,6 +137,7 @@ impl DetailedError for RunnerError {
             RunnerError::RunnerDeploymentCheckError { .. } => {
                 Cow::from("RunnerDeploymentCheckError")
             }
+            RunnerError::RunnerSuspendComputeError { .. } => Cow::from("RunnerSuspendComputeError"),
             RunnerError::RunnerDeploymentShutdownError { .. } => {
                 Cow::from("RunnerDeploymentShutdownError")
             }
@@ -250,6 +260,16 @@ impl Display for RunnerError {
                     timeout.as_secs()
                 }
             }
+            Self::AutomatonSuspendingComputeTimeout { timeout } => {
+                writedoc! {
+                    f,
+                    "
+                    The pipeline could not suspend its compute resources within the timeout of {}s.
+                    This can happen if Kubernetes takes too long to scale down these resources.
+                    ",
+                    timeout.as_secs()
+                }
+            }
             Self::AutomatonAfterInitializationBecameRunning => {
                 write!(
                     f,
@@ -272,6 +292,9 @@ impl Display for RunnerError {
             }
             Self::RunnerDeploymentCheckError { error } => {
                 write!(f, "Deployment check failed: one or more deployment resources encountered a fatal error.\n\n{error}")
+            }
+            Self::RunnerSuspendComputeError { error } => {
+                write!(f, "Compute suspend operation failed: {error}")
             }
             Self::RunnerDeploymentShutdownError { error } => {
                 write!(f, "Deployment shutdown failed (will retry): {error}")
@@ -363,10 +386,12 @@ impl ResponseError for RunnerError {
             }
             Self::AutomatonProvisioningTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonInitializingTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonSuspendingComputeTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonAfterInitializationBecameRunning => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonImpossibleDesiredStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerDeploymentProvisionError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerDeploymentCheckError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerSuspendComputeError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerDeploymentShutdownError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerInteractionShutdown { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::RunnerInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
