@@ -189,6 +189,46 @@ fn validate_time_schema(avro_schema: &AvroSchema) -> Result<(), String> {
     Ok(())
 }
 
+/// Check that Avro schema can be deserialized as SQL `VARBINARY` type.
+fn validate_varbinary_schema(avro_schema: &AvroSchema) -> Result<(), String> {
+    if !matches!(avro_schema, AvroSchema::Bytes | AvroSchema::Fixed(_)) {
+        return Err(format!(
+            "invalid Avro schema for a column of type 'VARBINARY': expected 'bytes' or 'fixed', but found {}",
+            schema_json(avro_schema)
+        ));
+    }
+
+    Ok(())
+}
+
+/// Check that Avro schema can be deserialized as SQL `BINARY(n)` type.
+fn validate_binary_schema(
+    avro_schema: &AvroSchema,
+    column_type: &ColumnType,
+) -> Result<(), String> {
+    let Some(n) = column_type.precision else {
+        return Err("internal error: 'BINARY' schema with undefined precision".to_string());
+    };
+
+    match avro_schema {
+        AvroSchema::Bytes => Ok(()),
+        AvroSchema::Fixed(fixed_schema) => {
+            if fixed_schema.size as i64 != n {
+                return Err(format!(
+                    "invalid Avro schema for a column of type 'BINARY({n})': expected size {n}, but found {}",
+                    fixed_schema.size
+                ));
+            }
+
+            Ok(())
+        }
+        _ => Err(format!(
+            "invalid Avro schema for a column of type 'BINARY({n})': expected 'bytes' or 'fixed({n})' but found {}",
+            schema_json(avro_schema)
+        )),
+    }
+}
+
 /// Check that Avro schema can be deserialized as SQL `DATE` type.
 fn validate_date_schema(avro_schema: &AvroSchema) -> Result<(), String> {
     if avro_schema != &AvroSchema::Int && avro_schema != &AvroSchema::Date {
@@ -220,7 +260,12 @@ pub fn validate_field_schema(
             return validate_decimal_schema(avro_schema, field_schema);
         }
         SqlType::Char | SqlType::Varchar => AvroSchema::String,
-        SqlType::Binary | SqlType::Varbinary => AvroSchema::Bytes,
+        SqlType::Binary => {
+            return validate_binary_schema(avro_schema, field_schema);
+        }
+        SqlType::Varbinary => {
+            return validate_varbinary_schema(avro_schema);
+        }
         SqlType::Time => {
             return validate_time_schema(avro_schema);
         }

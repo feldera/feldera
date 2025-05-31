@@ -2,7 +2,7 @@ use apache_avro::schema::{Name, NamesRef, RecordSchema};
 use apache_avro::Decimal;
 use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use feldera_sqllib::SqlDecimal;
-use feldera_types::serde_with_context::serde_config::{DecimalFormat, UuidFormat};
+use feldera_types::serde_with_context::serde_config::{BinaryFormat, DecimalFormat, UuidFormat};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use serde::ser::{
     Error as _, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
@@ -24,6 +24,7 @@ pub fn avro_ser_config() -> SqlSerdeConfig {
         .with_date_format(DateFormat::DaysSinceEpoch)
         .with_decimal_format(DecimalFormat::String)
         .with_uuid_format(UuidFormat::String)
+        .with_binary_format(BinaryFormat::Bytes)
 }
 
 #[derive(Debug)]
@@ -622,6 +623,15 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
         serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::Bytes => Ok(AvroValue::Bytes(v.to_vec())),
+            AvroSchema::Fixed(fixed_schema) => {
+                if v.len() == fixed_schema.size {
+                    Ok(AvroValue::Fixed(fixed_schema.size, v.to_vec()))
+                } else {
+                    Err(AvroSerializerError::Custom {
+                        error: format!("Error serializing byte array to Avro: Avro schema specifies size {}, but byte array has length {}", fixed_schema.size, v.len()),
+                    })
+                }
+            }
             _ => Err(AvroSerializerError::incompatible("byte array", schema)),
         })
     }

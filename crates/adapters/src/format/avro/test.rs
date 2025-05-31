@@ -15,10 +15,13 @@ use crate::{
 use apache_avro::{from_avro_datum, schema::ResolvedSchema, to_avro_datum, Schema as AvroSchema};
 use dbsp::{utils::Tup2, OrdIndexedZSet};
 use dbsp::{DBData, OrdZSet};
+use feldera_sqllib::ByteArray;
 use feldera_types::{
+    deserialize_table_record,
     format::avro::{AvroEncoderConfig, AvroEncoderKeyMode},
-    program_schema::Relation,
+    program_schema::{ColumnType, Field, Relation, SqlIdentifier},
     serde_with_context::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig},
+    serialize_table_record,
 };
 use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
@@ -27,7 +30,13 @@ use feldera_types::{
 use proptest::prelude::*;
 use proptest::proptest;
 use serde::Serialize;
-use std::{borrow::Cow, collections::HashMap, fmt::Debug, hash::Hash};
+use size_of::SizeOf;
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+    fmt::Debug,
+    hash::Hash,
+};
 use std::{iter::repeat, sync::Arc};
 
 #[derive(Debug)]
@@ -581,6 +590,98 @@ fn test_nullable_to_non_nullable() {
         config: AvroParserConfig {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(schema_str.to_string()),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches,
+        expected_output,
+    };
+
+    run_parser_test(vec![test]);
+}
+
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct TestBinary {
+    binary32: ByteArray,
+    varbinary: ByteArray,
+}
+
+impl TestBinary {
+    pub fn avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "TestBinary",
+            "connect.name": "test_namespace.TestBinary",
+            "fields": [
+                { "name": "binary32", "type": {"type": "fixed", "name": "binary32", "size": 32} },
+                { "name": "varbinary", "type": "bytes" }
+            ]
+        }"#
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("binary32".into(), ColumnType::fixed(32, false)),
+            Field::new("varbinary".into(), ColumnType::varbinary(false)),
+        ]
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("TestBinary", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+}
+
+serialize_table_record!(TestBinary[2]{
+    r#binary32["binary32"]: ByteArray,
+    r#varbinary["varbinary"]: ByteArray
+});
+
+deserialize_table_record!(TestBinary["TestBinary", 2] {
+    (r#binary32, "binary32", false, ByteArray, None),
+    (r#varbinary, "varbinary", false, ByteArray, None)
+});
+
+#[test]
+fn test_parse_binary() {
+    let schema = AvroSchema::parse_str(TestBinary::avro_schema()).unwrap();
+    let vals = [TestBinary {
+        binary32: ByteArray::new(b"012345678901234567890123456789ab"),
+        varbinary: ByteArray::new(b"foobar"),
+    }];
+    let input_batches = vals
+        .iter()
+        .map(|v| (serialize_record(v, &schema), vec![]))
+        .collect::<Vec<_>>();
+    let expected_output = vals
+        .iter()
+        .map(|v| MockUpdate::Insert(v.clone()))
+        .collect::<Vec<_>>();
+
+    let test = TestCase {
+        relation_schema: TestBinary::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Raw,
+            schema: Some(TestBinary::avro_schema().to_string()),
             skip_schema_id: false,
             registry_config: Default::default(),
         },
