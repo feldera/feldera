@@ -44,7 +44,7 @@ pub const fn avro_de_config() -> &'static SqlSerdeConfig {
         date_format: DateFormat::DaysSinceEpoch,
         decimal_format: DecimalFormat::String,
         variant_format: VariantFormat::JsonString,
-        binary_format: BinaryFormat::Array,
+        binary_format: BinaryFormat::Bytes,
         // Both Debezium and JDBC connectors use string encoding for UUIDs.
         // Avro doesn't have a built-in UUID type, and it's possible that some
         // other formats use byte array encoding. If we have to support those, this
