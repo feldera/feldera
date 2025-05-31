@@ -26,7 +26,7 @@
   import LogsStreamList from '$lib/components/pipelines/editor/LogsStreamList.svelte'
 
   import {
-    parseCancellable,
+    BatchingWritableStream,
     pushAsCircularBuffer,
     SplitNewlineTransformStream
   } from '$lib/functions/pipelines/changeStream'
@@ -113,36 +113,38 @@
         tryRestartStream(pipelineName, 5000)
         return
       }
-      const { cancel } = parseCancellable(
-        result,
-        {
-          pushChanges: (changes: string[]) => {
-            const droppedNum = pushAsCircularBuffer(
-              () => streams[pipelineName].rows,
-              bufferSize,
-              (v: string) => v
-            )(changes)
-            streams[pipelineName].firstRowIndex += droppedNum
-          },
-          onParseEnded: (reason) => {
-            streams[pipelineName].stream = { closed: {} }
-            if (reason === 'cancelled' || !areLogsExpected(pipelineStatusName)) {
-              return
-            }
-            tryRestartStream(pipelineName, 5000)
-          },
-          onBytesSkipped(bytes) {
-            streams[pipelineName].totalSkippedBytes += bytes
-          }
+      const sink = new BatchingWritableStream({
+        pushChanges: (changes: string[]) => {
+          const droppedNum = pushAsCircularBuffer(
+            () => streams[pipelineName].rows,
+            bufferSize,
+            (v: string) => v
+          )(changes)
+          streams[pipelineName].firstRowIndex += droppedNum.offset
         },
-        new SplitNewlineTransformStream(),
-        {
-          bufferSize: 16 * 1024 * 1024
+        onParseEnded: (reason) => {
+          streams[pipelineName].stream = { closed: {} }
+          if (reason === 'cancelled' || !areLogsExpected(pipelineStatusName)) {
+            return
+          }
+          tryRestartStream(pipelineName, 5000)
         }
-      )
+        // onBytesSkipped(bytes) {
+        //   streams[pipelineName].totalSkippedBytes += bytes
+        // }
+      })
+      result.stream.pipeThrough(new SplitNewlineTransformStream()).pipeTo(sink)
       streams[pipelineName] = {
         firstRowIndex: 0,
-        stream: { open: result.stream, stop: cancel },
+        stream: {
+          open: result.stream,
+          stop: () => {
+            try {
+              result.cancel()
+            } catch {}
+            sink.abort()
+          }
+        },
         rows: [],
         rowBoundaries: [],
         totalSkippedBytes: 0

@@ -37,7 +37,7 @@
     "@skeletonlabs/skeleton": "^3.0.0-next.10",
     "@skeletonlabs/skeleton-svelte": "^1.0.0-next.18",
     "@square/svelte-store": "^1.0.18",
-    "@streamparser/json": "^0.0.21",
+    "@streamparser/json": "^0.0.22",
     "@svelte-bin/clipboard": "^0.1.4",
     "@sveltejs/adapter-auto": "^3.3.1",
     "@sveltejs/adapter-static": "^3.0.8",

@@ -54,72 +54,94 @@
         pipelinesRelations[pipelineName][relationName].cancelStream = undefined
         return undefined
       }
-      const { cancel } = parseCancellable(
-        result,
-        {
-          pushChanges: (rows: XgressEntry[]) => {
-            const initialLen = changeStream[pipelineName].rows.length
-            const lastRelationName = ((headerIdx) =>
-              headerIdx !== undefined
-                ? ((header) => (header && 'relationName' in header ? header.relationName : null))(
-                    changeStream[pipelineName].rows[headerIdx]
-                  )
-                : null)(changeStream[pipelineName].headers.at(-1))
-            const offset = pushAsCircularBuffer(
-              () => changeStream[pipelineName].rows,
-              bufferSize,
-              (v: Row) => v
-            )(
-              [
-                ...(relationName !== lastRelationName
-                  ? ([
-                      {
-                        relationName,
-                        columns: Object.keys(
-                          ((row) => ('insert' in row ? row.insert : row.delete))(rows[0])
-                        ).map((name) => {
-                          return pipelinesRelations[pipelineName][relationName].fields[
-                            normalizeCaseIndependentName({ name })
-                          ]
-                        })
-                      }
-                    ] as Row[])
-                  : [])
-              ].concat(rows)
+
+      const sink = new BatchingWritableStream({
+        pushChanges: (rows: XgressEntry[]) => {
+          const initialLen = changeStream[pipelineName].rows.length
+          const lastRelationName = ((headerIdx) =>
+            headerIdx !== undefined
+              ? ((header) => (header && 'relationName' in header ? header.relationName : null))(
+                  changeStream[pipelineName].rows[headerIdx]
+                )
+              : null)(changeStream[pipelineName].headers.at(-1))
+          const push = pushAsCircularBuffer(
+            () => changeStream[pipelineName].rows,
+            bufferSize,
+            (v: Row) => v
+          )(
+            [
+              ...(relationName !== lastRelationName
+                ? ([
+                    {
+                      relationName,
+                      columns: Object.keys(
+                        ((row) => ('insert' in row ? row.insert : row.delete))(rows[0])
+                      ).map((name) => {
+                        return pipelinesRelations[pipelineName][relationName].fields[
+                          normalizeCaseIndependentName({ name })
+                        ]
+                      })
+                    }
+                  ] as Row[])
+                : [])
+            ].concat(rows)
+          )
+          let pushOffset = push.offset
+          let replacementHeader: Row[] = []
+          if (push.offset > 0) {
+            // Re-insert the header of the beginning of the list, if needed
+            const firstHeaderIndex = Math.max(
+              changeStream[pipelineName].headers.findIndex((v) => v > push.offset) - 1,
+              0
             )
-            if (relationName !== lastRelationName) {
-              changeStream[pipelineName].headers.push(initialLen)
+            const row = changeStream[pipelineName].rows.at(
+              changeStream[pipelineName].headers[firstHeaderIndex]
+            )
+            const firstNewRow = changeStream[pipelineName].rows.at(push.offset)
+            if (row && 'relationName' in row && firstNewRow && !('relationName' in firstNewRow)) {
+              replacementHeader = [row]
+              --pushOffset
+              changeStream[pipelineName].headers.splice(firstHeaderIndex + 1, 0, pushOffset)
             }
-            changeStream[pipelineName].headers = changeStream[pipelineName].headers
-              .map((i) => i - offset)
-              .filter((i) => i >= 0)
-          },
-          onBytesSkipped: (skippedBytes) => {
-            pushAsCircularBuffer(
-              () => changeStream[pipelineName].rows,
-              bufferSize,
-              (v) => v
-            )([{ relationName, skippedBytes }])
-            changeStream[pipelineName].totalSkippedBytes += skippedBytes
-          },
-          onParseEnded: () =>
-            (pipelinesRelations[pipelineName][relationName].cancelStream = undefined)
+          }
+          push(replacementHeader)
+          if (relationName !== lastRelationName) {
+            changeStream[pipelineName].headers.push(initialLen)
+          }
+          changeStream[pipelineName].headers = changeStream[pipelineName].headers
+            .map((i) => i - pushOffset)
+            .filter((i) => i >= 0)
         },
-        new CustomJSONParserTransformStream<XgressEntry>({
-          paths: ['$.json_data.*'],
-          separator: ''
-        }),
-        {
-          bufferSize: 8 * 1024 * 1024
-        }
-      )
-      return () => {
-        cancel()
+        onParseEnded: () =>
+          (pipelinesRelations[pipelineName][relationName].cancelStream = undefined)
+      })
+
+      result.stream
+        .pipeThrough(
+          new CustomJSONParserTransformStream<XgressEntry>({
+            paths: ['$.json_data.*'],
+            separator: '',
+            onBytesSkipped: (skippedBytes) => {
+              pushAsCircularBuffer(
+                () => changeStream[pipelineName].rows,
+                bufferSize,
+                (v) => v
+              )([{ relationName, skippedBytes }])
+              changeStream[pipelineName].totalSkippedBytes += skippedBytes
+            }
+          })
+        )
+        .pipeTo(sink)
+      return async () => {
+        try {
+          result.cancel()
+        } catch {}
+        await sink.abort()
       }
     })
     return () => {
-      request.then((cancel) => {
-        cancel?.()
+      request.then(async (cancel) => {
+        await cancel?.()
         pipelinesRelations[pipelineName][relationName].cancelStream = undefined
         ;({ rows: changeStream[pipelineName].rows, headers: changeStream[pipelineName].headers } =
           filterOutRows(
@@ -173,8 +195,8 @@
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type { Field, Relation } from '$lib/services/manager'
   import {
+    BatchingWritableStream,
     CustomJSONParserTransformStream,
-    parseCancellable,
     pushAsCircularBuffer
   } from '$lib/functions/pipelines/changeStream'
   import JSONbig from 'true-json-bigint'
