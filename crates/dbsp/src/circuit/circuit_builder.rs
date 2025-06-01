@@ -994,6 +994,10 @@ pub trait Node: Any {
     /// operators, which don't have an output stream).
     fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>>;
 
+    fn flush(&mut self);
+
+    fn is_flush_complete(&self) -> bool;
+
     /// Notify the node about start of a clock epoch.
     ///
     /// The node should forward the notification to its inner operator.
@@ -1743,6 +1747,10 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     ///
     /// This method should only be used by schedulers.
     fn eval_node(&self, id: NodeId) -> impl Future<Output = Result<(), SchedulerError>>;
+
+    fn flush_node(&self, id: NodeId);
+
+    fn is_flush_complete(&self, id: NodeId) -> bool;
 
     /// Evaluate closure `f` inside a new circuit region.
     ///
@@ -3249,6 +3257,20 @@ where
         Ok(())
     }
 
+    fn flush_node(&self, id: NodeId) {
+        let circuit = self.inner();
+        debug_assert!(id.0 < circuit.nodes.borrow().len());
+
+        circuit.nodes.borrow()[id.0].borrow_mut().flush();
+    }
+
+    fn is_flush_complete(&self, id: NodeId) -> bool {
+        let circuit = self.inner();
+        debug_assert!(id.0 < circuit.nodes.borrow().len());
+
+        circuit.nodes.borrow()[id.0].borrow().is_flush_complete()
+    }
+
     #[track_caller]
     fn region<F, T>(&self, name: &str, f: F) -> T
     where
@@ -4105,6 +4127,14 @@ where
         })
     }
 
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
+    }
+
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
         if scope == 0 {
@@ -4245,6 +4275,14 @@ where
             self.output_stream.put(self.operator.eval().await);
             Ok(())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -4393,6 +4431,14 @@ where
         })
     }
 
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
+    }
+
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
@@ -4530,6 +4576,14 @@ where
 
             Ok(())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -4728,6 +4782,14 @@ where
         })
     }
 
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
+    }
+
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
@@ -4924,6 +4986,14 @@ where
         })
     }
 
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
+    }
+
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
@@ -5092,6 +5162,14 @@ where
 
             Ok(())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -5285,6 +5363,14 @@ where
         })
     }
 
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
+    }
+
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
@@ -5461,6 +5547,14 @@ where
         })
     }
 
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
+    }
+
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
     }
@@ -5618,6 +5712,14 @@ where
         })
     }
 
+    fn flush(&mut self) {
+        self.operator.borrow_mut().flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.borrow().is_flush_complete()
+    }
+
     fn clock_start(&mut self, scope: Scope) {
         self.operator.borrow_mut().clock_start(scope)
     }
@@ -5773,6 +5875,14 @@ where
 
             Ok(())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.borrow_mut().flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.borrow().is_flush_complete()
     }
 
     // Don't call `clock_start`/`clock_end` on the operator.  `FeedbackOutputNode`
@@ -5981,6 +6091,12 @@ where
 
     fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
         Box::pin(async { self.executor.run(&self.circuit).await })
+    }
+
+    fn flush(&mut self) {}
+
+    fn is_flush_complete(&self) -> bool {
+        true
     }
 
     fn clock_start(&mut self, scope: Scope) {
