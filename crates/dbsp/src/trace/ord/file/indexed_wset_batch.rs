@@ -13,11 +13,11 @@ use crate::{
         },
     },
     trace::{
-        cursor::{CursorFactory, CursorFactoryWrapper, Pending, PushCursor},
+        cursor::{CursorFactory, CursorFactoryWrapper, Pending, Position, PushCursor},
         merge_batches_by_reference,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        VecIndexedWSetFactories, WeightedItem,
+        FileValBatch, VecIndexedWSetFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
@@ -436,6 +436,7 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    type Timed<T: crate::Timestamp> = FileValBatch<K, V, T, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FileIndexedWSetBuilder<K, V, R>;
 
@@ -810,6 +811,13 @@ where
     fn fast_forward_vals(&mut self) {
         self.move_val(|val_cursor| val_cursor.move_last());
     }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.key_cursor.len(),
+            offset: self.key_cursor.absolute_position(),
+        })
+    }
 }
 
 /// A builder for batches from ordered update tuples.
@@ -825,6 +833,7 @@ where
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, R>,
     weight: Box<R>,
+    num_tuples: usize,
 }
 
 impl<K, V, R> Builder<FileIndexedWSet<K, V, R>> for FileIndexedWSetBuilder<K, V, R>
@@ -848,6 +857,7 @@ where
             )
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
+            num_tuples: 0,
         }
     }
 
@@ -864,6 +874,7 @@ where
 
     fn push_val(&mut self, val: &V) {
         self.writer.write1((val, &*self.weight)).unwrap_storage();
+        self.num_tuples += 1;
     }
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
@@ -874,6 +885,11 @@ where
     fn push_val_diff(&mut self, val: &V, weight: &R) {
         debug_assert!(!weight.is_zero());
         self.writer.write1((val, weight)).unwrap_storage();
+        self.num_tuples += 1;
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.num_tuples
     }
 }
 

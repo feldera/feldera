@@ -1,6 +1,12 @@
-use crate::algebra::ZBatchReader;
+use crate::algebra::{ZBatch, ZBatchReader};
 use crate::circuit::circuit_builder::StreamId;
-use crate::dynamic::DynData;
+use crate::circuit::metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL};
+use crate::circuit::splitter_output_chunk_size;
+use crate::dynamic::{DynData, WeightTrait};
+use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
+use crate::operator::dynamic::concat::dyn_accumulate_concat;
+use crate::trace::spine_async::WithSnapshot;
+use crate::trace::{Spine, SpineSnapshot, Trace};
 use crate::{
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
@@ -27,9 +33,12 @@ use crate::{
     utils::Tup2,
     DBData, ZWeight,
 };
-use crate::{NestedCircuit, Runtime};
+use crate::{NestedCircuit, Position, Runtime};
+use async_stream::stream;
 use minitrace::trace;
 use size_of::{Context, SizeOf};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::{
     borrow::Cow,
     cmp::{min, Ordering},
@@ -40,7 +49,6 @@ use std::{
 };
 
 use super::{MonoIndexedZSet, MonoZSet};
-
 circuit_cache_key!(AntijoinId<C, D>((StreamId, StreamId) => Stream<C, D>));
 
 pub trait TraceJoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized>:
@@ -78,28 +86,29 @@ impl<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized> TraceJoinFuncs<K
         }
     }
 }
-pub trait JoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, O: ?Sized>:
-    Fn(&K, &V1, &V2, &mut O)
+pub trait JoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized>:
+    Fn(&K, &V1, &V2, &mut OK, &mut OV)
 {
-    fn fork(&self) -> JoinFunc<K, V1, V2, O>;
+    fn fork(&self) -> JoinFunc<K, V1, V2, OK, OV>;
 }
 
-impl<K: ?Sized, V1: ?Sized, V2: ?Sized, O: ?Sized, F> JoinFuncTrait<K, V1, V2, O> for F
+impl<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized, F> JoinFuncTrait<K, V1, V2, OK, OV>
+    for F
 where
-    F: Fn(&K, &V1, &V2, &mut O) + Clone + 'static,
+    F: Fn(&K, &V1, &V2, &mut OK, &mut OV) + Clone + 'static,
 {
-    fn fork(&self) -> JoinFunc<K, V1, V2, O> {
+    fn fork(&self) -> JoinFunc<K, V1, V2, OK, OV> {
         Box::new(self.clone())
     }
 }
 
-pub type JoinFunc<K, V1, V2, O> = Box<dyn JoinFuncTrait<K, V1, V2, O>>;
+pub type JoinFunc<K, V1, V2, OK, OV> = Box<dyn JoinFuncTrait<K, V1, V2, OK, OV>>;
 
 pub struct StreamJoinFactories<I1, I2, O>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader,
-    O: ZSet,
+    O: IndexedZSet,
 {
     pub left_factories: I1::Factories,
     pub right_factories: I2::Factories,
@@ -110,34 +119,62 @@ impl<I1, I2, O> StreamJoinFactories<I1, I2, O>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader<Key = I1::Key>,
-    O: ZSet,
+    O: IndexedZSet,
 {
-    pub fn new<KType, V1Type, V2Type, VType>() -> Self
+    pub fn new<KType, V1Type, V2Type, OKType, OVType>() -> Self
     where
         KType: DBData + Erase<I1::Key>,
         V1Type: DBData + Erase<I1::Val>,
         V2Type: DBData + Erase<I2::Val>,
-        VType: DBData + Erase<O::Key>,
+        OKType: DBData + Erase<O::Key>,
+        OVType: DBData + Erase<O::Val>,
     {
         Self {
             left_factories: BatchReaderFactories::new::<KType, V1Type, ZWeight>(),
             right_factories: BatchReaderFactories::new::<KType, V2Type, ZWeight>(),
-            output_factories: BatchReaderFactories::new::<VType, (), ZWeight>(),
+            output_factories: BatchReaderFactories::new::<OKType, OVType, ZWeight>(),
+        }
+    }
+}
+
+pub struct StreamAntijoinFactories<I1, I2>
+where
+    I1: IndexedZSet,
+    I2: IndexedZSet,
+{
+    pub left_factories: I1::Factories,
+    pub right_factories: I2::Factories,
+}
+
+impl<I1, I2> StreamAntijoinFactories<I1, I2>
+where
+    I1: IndexedZSet,
+    I2: IndexedZSet<Key = I1::Key>,
+{
+    pub fn new<KType, V1Type, V2Type>() -> Self
+    where
+        KType: DBData + Erase<I1::Key>,
+        V1Type: DBData + Erase<I1::Val>,
+        V2Type: DBData + Erase<I2::Val>,
+    {
+        Self {
+            left_factories: BatchReaderFactories::new::<KType, V1Type, ZWeight>(),
+            right_factories: BatchReaderFactories::new::<KType, V2Type, ZWeight>(),
         }
     }
 }
 
 pub struct JoinFactories<I1, I2, T, O>
 where
-    I1: IndexedZSetReader,
-    I2: IndexedZSetReader,
+    I1: IndexedZSet,
+    I2: IndexedZSet,
     O: IndexedZSet,
     T: Timestamp,
 {
     pub left_factories: I1::Factories,
     pub right_factories: I2::Factories,
-    pub left_trace_factories: <T::ValBatch<I1::Key, I1::Val, I1::R> as BatchReader>::Factories,
-    pub right_trace_factories: <T::ValBatch<I1::Key, I2::Val, I1::R> as BatchReader>::Factories,
+    pub left_trace_factories: <T::TimedBatch<I1> as BatchReader>::Factories,
+    pub right_trace_factories: <T::TimedBatch<I2> as BatchReader>::Factories,
     pub output_factories: O::Factories,
     pub timed_item_factory:
         &'static dyn Factory<DynPair<DynDataTyped<T>, WeightedItem<O::Key, O::Val, O::R>>>,
@@ -147,8 +184,8 @@ where
 
 impl<I1, I2, T, O> JoinFactories<I1, I2, T, O>
 where
-    I1: IndexedZSetReader,
-    I2: IndexedZSetReader<Key = I1::Key>,
+    I1: IndexedZSet,
+    I2: IndexedZSet<Key = I1::Key>,
     O: IndexedZSet,
     T: Timestamp,
 {
@@ -176,8 +213,8 @@ where
 
 impl<I1, I2, T, O> Clone for JoinFactories<I1, I2, T, O>
 where
-    I1: IndexedZSetReader,
-    I2: IndexedZSetReader,
+    I1: IndexedZSet,
+    I2: IndexedZSet,
     O: IndexedZSet,
     T: Timestamp,
 {
@@ -307,7 +344,7 @@ where
         &self,
         factories: &StreamJoinFactories<I1, I2, OrdZSet<V>>,
         other: &Stream<C, I2>,
-        join: JoinFunc<I1::Key, I1::Val, I2::Val, V>,
+        join: JoinFunc<I1::Key, I1::Val, I2::Val, V, DynUnit>,
     ) -> Stream<C, OrdZSet<V>>
     where
         I1: IndexedZSet,
@@ -323,12 +360,12 @@ where
         &self,
         factories: &StreamJoinFactories<I1, I2, Z>,
         other: &Stream<C, I2>,
-        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
     ) -> Stream<C, Z>
     where
         I1: IndexedZSet,
         I2: IndexedZSet<Key = I1::Key>,
-        Z: ZSet,
+        Z: IndexedZSet,
     {
         self.circuit().add_binary_operator(
             Join::new(&factories.output_factories, join, Location::caller()),
@@ -343,7 +380,7 @@ where
         &self,
         factories: &StreamJoinFactories<I1, I2, Z>,
         other: &Stream<C, I2>,
-        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, DynUnit>,
     ) -> Stream<C, Z>
     where
         I1: IndexedZSet,
@@ -361,16 +398,66 @@ where
         &self,
         output_factories: &Z::Factories,
         other: &Stream<C, I2>,
-        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
         location: &'static Location<'static>,
     ) -> Stream<C, Z>
     where
         I1: IndexedZSetReader + Clone,
         I2: IndexedZSetReader<Key = I1::Key> + Clone,
-        Z: ZSet,
+        Z: IndexedZSet,
     {
         self.circuit()
             .add_binary_operator(Join::new(output_factories, join, location), self, other)
+    }
+
+    pub fn dyn_stream_antijoin<I2>(
+        &self,
+        factories: &StreamAntijoinFactories<I1, OrdZSet<I2::Key>>,
+        other: &Stream<C, I2>,
+    ) -> Self
+    where
+        I1: IndexedZSet,
+        I2: IndexedZSet<Key = I1::Key> + DynFilterMap,
+    {
+        self.circuit().region("stream_antijoin", || {
+            let stream1 = self.dyn_shard(&factories.left_factories);
+
+            // Project away values, leave keys only.
+            let other_keys = other.try_sharded_version().dyn_map(
+                &factories.right_factories,
+                Box::new(|item: <I2 as DynFilterMap>::DynItemRef<'_>, output| {
+                    <I2 as DynFilterMap>::item_ref_keyval(item)
+                        .0
+                        .clone_to(output.fst_mut())
+                }),
+            );
+
+            // `dyn_map` above preserves keys.
+            other_keys.mark_sharded_if(other);
+
+            let stream2 = other_keys
+                .dyn_stream_distinct(&factories.right_factories)
+                .dyn_shard(&factories.right_factories);
+
+            //map_func: Box<dyn Fn(B::DynItemRef<'_>, &mut DynPair<K, DynUnit>)>,
+
+            let join_factories = StreamJoinFactories {
+                left_factories: factories.left_factories.clone(),
+                right_factories: factories.right_factories.clone(),
+                output_factories: factories.left_factories.clone(),
+            };
+
+            let join_stream = stream1.dyn_stream_join_generic(
+                &join_factories,
+                &stream2,
+                Box::new(move |k: &I1::Key, v1: &I1::Val, _v2, ok, ov| {
+                    k.clone_to(ok);
+                    v1.clone_to(ov);
+                }),
+            );
+
+            stream1.minus(&join_stream).mark_sharded()
+        })
     }
 }
 
@@ -397,7 +484,7 @@ impl<I1> Stream<RootCircuit, I1> {
         other_factories: &I2::Factories,
         output_factories: &Z::Factories,
         other: &Stream<RootCircuit, I2>,
-        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, DynUnit>,
     ) -> Stream<RootCircuit, Z>
     where
         I1: IndexedZSet,
@@ -591,13 +678,13 @@ where
             let left = self.dyn_shard(&factories.left_factories);
             let right = other.dyn_shard(&factories.right_factories);
 
-            let left_trace =
-                left.dyn_trace(&factories.left_trace_factories, &factories.left_factories);
-            let right_trace =
-                right.dyn_trace(&factories.right_trace_factories, &factories.right_factories);
+            let left_trace = left
+                .dyn_accumulate_trace(&factories.left_trace_factories, &factories.left_factories);
+            let right_trace = right
+                .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
-                JoinTrace::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.right_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
@@ -605,13 +692,13 @@ where
                     join_funcs.left,
                     Location::caller(),
                     self.circuit().clone(),
-                ),
-                &left,
+                )),
+                &left.dyn_accumulate(&factories.left_factories),
                 &right_trace,
             );
 
             let right = self.circuit().add_binary_operator(
-                JoinTrace::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.left_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
@@ -619,9 +706,9 @@ where
                     join_funcs.right,
                     Location::caller(),
                     self.circuit().clone(),
-                ),
-                &right,
-                &left_trace.delay_trace(),
+                )),
+                &right.dyn_accumulate(&factories.right_factories),
+                &left_trace.accumulate_delay_trace(),
             );
 
             left.plus(&right)
@@ -698,17 +785,23 @@ where
                             .output_factories
                             .val_factory()
                             .default_box();
-                        stream1
-                            .minus(&stream1.dyn_join_generic(
-                                &factories.join_factories,
-                                &stream2,
-                                TraceJoinFuncs::new(move |k: &I1::Key, v1: &I1::Val, _v2, cb| {
-                                    k.clone_to(&mut key);
-                                    v1.clone_to(&mut val);
-                                    cb(key.as_mut(), val.as_mut())
-                                }),
-                            ))
-                            .mark_sharded()
+
+                        let join_stream = stream1.dyn_join_generic(
+                            &factories.join_factories,
+                            &stream2,
+                            TraceJoinFuncs::new(move |k: &I1::Key, v1: &I1::Val, _v2, cb| {
+                                k.clone_to(&mut key);
+                                v1.clone_to(&mut val);
+                                cb(key.as_mut(), val.as_mut())
+                            }),
+                        );
+
+                        // stream1 - join_stream.
+                        dyn_accumulate_concat(
+                            &factories.join_factories.left_factories,
+                            [(stream1, true), (join_stream, false)],
+                        )
+                        .mark_sharded()
                     })
                 },
             )
@@ -815,10 +908,10 @@ pub struct Join<I1, I2, Z>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader,
-    Z: ZSet,
+    Z: IndexedZSet,
 {
     output_factories: Z::Factories,
-    join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+    join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
     location: &'static Location<'static>,
     _types: PhantomData<(I1, I2, Z)>,
 }
@@ -827,11 +920,11 @@ impl<I1, I2, Z> Join<I1, I2, Z>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader,
-    Z: ZSet,
+    Z: IndexedZSet,
 {
     pub fn new(
         output_factories: &Z::Factories,
-        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
         location: &'static Location<'static>,
     ) -> Self {
         Self {
@@ -847,7 +940,7 @@ impl<I1, I2, Z> Operator for Join<I1, I2, Z>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader,
-    Z: ZSet,
+    Z: IndexedZSet,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("Join")
@@ -866,7 +959,7 @@ impl<I1, I2, Z> BinaryOperator<I1, I2, Z> for Join<I1, I2, Z>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader<Key = I1::Key>,
-    Z: ZSet,
+    Z: IndexedZSet,
 {
     #[trace]
     async fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
@@ -892,9 +985,9 @@ where
                             let v2 = cursor2.val();
 
                             let (kv, w) = output.split_mut();
-                            let (k, _v) = kv.split_mut();
+                            let (k, v) = kv.split_mut();
 
-                            (self.join_func)(cursor1.key(), v1, v2, k);
+                            (self.join_func)(cursor1.key(), v1, v2, k, v);
                             **w = w1.mul_by_ref(&w2);
 
                             batch.push_val(output.as_mut());
@@ -924,7 +1017,7 @@ where
     Z: ZSet,
 {
     output_factories: Z::Factories,
-    join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+    join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, DynUnit>,
     location: &'static Location<'static>,
     _types: PhantomData<(I1, I2, Z)>,
 }
@@ -937,7 +1030,7 @@ where
 {
     pub fn new(
         output_factories: &Z::Factories,
-        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, DynUnit>,
         location: &'static Location<'static>,
     ) -> Self {
         Self {
@@ -999,7 +1092,13 @@ where
                             let w2 = **cursor2.weight();
                             let v2 = cursor2.val();
 
-                            (self.join_func)(cursor1.key(), v1, v2, output.as_mut());
+                            (self.join_func)(
+                                cursor1.key(),
+                                v1,
+                                v2,
+                                output.as_mut(),
+                                ().erase_mut(),
+                            );
 
                             builder
                                 .push_val_diff_mut(().erase_mut(), w1.mul_by_ref(&w2).erase_mut());
@@ -1026,7 +1125,7 @@ struct JoinStats {
     lhs_tuples: usize,
     rhs_tuples: usize,
     output_tuples: usize,
-    produced_tuples: usize,
+    output_batch_stats: BatchSizeStats,
 }
 
 impl JoinStats {
@@ -1035,15 +1134,20 @@ impl JoinStats {
             lhs_tuples: 0,
             rhs_tuples: 0,
             output_tuples: 0,
-            produced_tuples: 0,
+            output_batch_stats: BatchSizeStats::new(),
         }
+    }
+
+    pub fn add_output_batch<Z: ZBatch>(&mut self, batch: &Z) {
+        self.output_batch_stats.add_batch(batch.len())
     }
 }
 
-pub struct JoinTrace<I, T, Z, Clk>
+pub struct JoinTrace<I, B, T, Z, Clk>
 where
-    I: IndexedZSet,
-    T: BatchReader,
+    I: ZBatch,
+    B: ZBatch,
+    T: ZBatchReader,
     Z: IndexedZSet,
 {
     right_factories: T::Factories,
@@ -1053,22 +1157,25 @@ where
     clock: Clk,
     timed_items_factory:
         &'static dyn Factory<DynPairs<DynDataTyped<T::Time>, WeightedItem<Z::Key, Z::Val, Z::R>>>,
-    join_func: TraceJoinFunc<I::Key, I::Val, T::Val, Z::Key, Z::Val>,
+    join_func: RefCell<TraceJoinFunc<I::Key, I::Val, T::Val, Z::Key, Z::Val>>,
     location: &'static Location<'static>,
-    // Future update batches computed ahead of time, indexed by time
-    // when each batch should be output.
-    output_batchers: HashMap<T::Time, Z::Batcher>,
+    delta: RefCell<Option<SpineSnapshot<I>>>,
+    flush: RefCell<bool>,
+    // Future updates computed ahead of time, indexed by time
+    // when each set of updates should be output.
+    future_outputs: RefCell<HashMap<T::Time, Spine<Z>>>,
     // True if empty input batch was received at the current clock cycle.
-    empty_input: bool,
+    empty_input: RefCell<bool>,
     // True if empty output was produced at the current clock cycle.
-    empty_output: bool,
-    stats: JoinStats,
-    _types: PhantomData<(I, T, Z)>,
+    empty_output: RefCell<bool>,
+    stats: RefCell<JoinStats>,
+    _types: PhantomData<(I, B, T, Z)>,
 }
 
-impl<I, T, Z, Clk> JoinTrace<I, T, Z, Clk>
+impl<I, B, T, Z, Clk> JoinTrace<I, B, T, Z, Clk>
 where
-    I: IndexedZSet,
+    I: ZBatch,
+    B: ZBatch,
     T: ZBatchReader,
     Z: IndexedZSet,
 {
@@ -1091,20 +1198,23 @@ where
             timed_item_factory,
             timed_items_factory,
             clock,
-            join_func,
+            join_func: RefCell::new(join_func),
             location,
-            output_batchers: HashMap::new(),
-            empty_input: false,
-            empty_output: false,
-            stats: JoinStats::new(),
+            delta: RefCell::new(None),
+            flush: RefCell::new(false),
+            future_outputs: RefCell::new(HashMap::new()),
+            empty_input: RefCell::new(false),
+            empty_output: RefCell::new(false),
+            stats: RefCell::new(JoinStats::new()),
             _types: PhantomData,
         }
     }
 }
 
-impl<I, T, Z, Clk> Operator for JoinTrace<I, T, Z, Clk>
+impl<I, B, T, Z, Clk> Operator for JoinTrace<I, B, T, Z, Clk>
 where
-    I: IndexedZSet,
+    I: ZBatch,
+    B: ZBatch,
     T: ZBatchReader,
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
@@ -1119,27 +1229,31 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
-            self.empty_input = false;
-            self.empty_output = false;
+            *self.empty_input.borrow_mut() = false;
+            *self.empty_output.borrow_mut() = false;
         }
     }
 
     fn clock_end(&mut self, _scope: Scope) {
         debug_assert!(self
-            .output_batchers
+            .future_outputs
+            .borrow()
             .keys()
             .all(|time| !time.less_equal(&self.clock.time())));
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
+        let stats = self.stats.borrow();
         let total_size: usize = self
-            .output_batchers
+            .future_outputs
+            .borrow()
             .values()
-            .map(|batcher| batcher.tuples())
+            .map(|spine| spine.len())
             .sum();
 
         let batch_sizes = MetaItem::Array(
-            self.output_batchers
+            self.future_outputs
+                .borrow()
                 .values()
                 .map(|batcher| {
                     let size = batcher.size_of();
@@ -1157,7 +1271,7 @@ where
 
         let bytes = {
             let mut context = Context::new();
-            for batcher in self.output_batchers.values() {
+            for batcher in self.future_outputs.borrow().values() {
                 batcher.size_of_with_context(&mut context);
             }
 
@@ -1166,8 +1280,8 @@ where
 
         // Find the percentage of consolidated outputs
         let output_redundancy = MetaItem::Percent {
-            numerator: (self.stats.output_tuples - self.stats.produced_tuples) as u64,
-            denominator: self.stats.output_tuples as u64,
+            numerator: (stats.output_tuples - stats.output_batch_stats.total_size()) as u64,
+            denominator: stats.output_tuples as u64,
         };
 
         meta.extend(metadata! {
@@ -1176,12 +1290,16 @@ where
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
-            "left inputs" => self.stats.lhs_tuples,
-            "right inputs" => self.stats.rhs_tuples,
-            "computed outputs" => self.stats.output_tuples,
-            "produced outputs" => self.stats.produced_tuples,
+            "left inputs" => stats.lhs_tuples,
+            "right inputs" => stats.rhs_tuples,
+            "computed outputs" => stats.output_tuples,
+            OUTPUT_BATCHES_LABEL => stats.output_batch_stats.metadata(),
             "output redundancy" => output_redundancy,
         });
+    }
+
+    fn flush(&mut self) {
+        *self.flush.borrow_mut() = true;
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
@@ -1189,345 +1307,568 @@ where
         // We're in a stable state if input and output at the current clock cycle are
         // both empty, and there are no precomputed outputs before the end of the
         // clock epoch.
-        self.empty_input
-            && self.empty_output
+        *self.empty_input.borrow()
+            && *self.empty_output.borrow()
             && self
-                .output_batchers
+                .future_outputs
+                .borrow()
                 .keys()
                 .all(|time| !time.less_equal(&epoch_end))
     }
 }
 
-impl<I, T, Z, Clk> BinaryOperator<I, T, Z> for JoinTrace<I, T, Z, Clk>
+/// A cursor that iterates over matching keys in two cursors.
+/// It enumerates all keys in one cursor, and for each key
+/// checks if the other cursor has a matching key.
+///
+/// The `swap` flag indicates which cursor is the primary one:
+/// - If `swap` is `true`, the `trace_cursor` is the primary cursor,
+///   and `delta_cursor` is the secondary cursor.
+/// - If `swap` is `false`, the `delta_cursor` is the primary cursor.
+///
+/// This is used to optimize the join operation by iterating over the smaller cursor.
+struct JointKeyCursor<'a, C1, K, V1, V2, T, R>
 where
-    I: IndexedZSet,
-    T: ZBatchReader<Key = I::Key>,
+    C1: Cursor<K, V1, (), R>,
+    K: DataTrait + ?Sized,
+    V1: DataTrait + ?Sized,
+    V2: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    delta_cursor: C1,
+    trace_cursor: Box<dyn Cursor<K, V2, T, R> + 'a>,
+    swap: bool,
+    phantom: PhantomData<fn(&K, &V1, &V2, &T, &R)>,
+}
+
+impl<'a, C1, K, V1, V2, T, R> JointKeyCursor<'a, C1, K, V1, V2, T, R>
+where
+    C1: Cursor<K, V1, (), R>,
+    K: DataTrait + ?Sized,
+    V1: DataTrait + ?Sized,
+    V2: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    pub fn new(left: C1, right: Box<dyn Cursor<K, V2, T, R> + 'a>, swap: bool) -> Self {
+        Self {
+            delta_cursor: left,
+            trace_cursor: right,
+            swap,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn next(&mut self) -> bool {
+        if self.swap {
+            while self.trace_cursor.key_valid() {
+                if self.delta_cursor.seek_key_exact(self.trace_cursor.key()) {
+                    return true;
+                }
+                self.trace_cursor.step_key();
+            }
+        } else {
+            while self.delta_cursor.key_valid() {
+                if self.trace_cursor.seek_key_exact(self.delta_cursor.key()) {
+                    return true;
+                }
+                self.delta_cursor.step_key();
+            }
+        }
+        false
+    }
+
+    pub fn step_key(&mut self) {
+        if self.swap {
+            self.trace_cursor.step_key();
+        } else {
+            self.delta_cursor.step_key();
+        }
+    }
+
+    pub fn position(&self) -> Option<Position> {
+        if self.swap {
+            self.trace_cursor.position()
+        } else {
+            self.delta_cursor.position()
+        }
+    }
+}
+
+impl<I, B, T, Z, Clk> StreamingBinaryOperator<Option<Spine<I>>, T, Z> for JoinTrace<I, B, T, Z, Clk>
+where
+    I: ZBatch<Time = ()>,
+    B: ZBatch<Key = I::Key>,
+    T: ZBatchReader<Key = B::Key, Val = B::Val, Time = B::Time> + WithSnapshot<Batch = B>,
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
 {
     #[trace]
-    async fn eval(&mut self, index: &I, trace: &T) -> Z {
-        self.stats.lhs_tuples += index.len();
-        self.stats.rhs_tuples = trace.len();
+    fn eval(
+        self: Rc<Self>,
+        delta: &Option<Spine<I>>,
+        trace: &T,
+    ) -> impl futures::Stream<Item = (Z, bool, Option<Position>)> + 'static {
+        let chunk_size = splitter_output_chunk_size();
 
-        self.empty_input = index.is_empty();
+        let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
-        // Buffer to collect output tuples.
-        // One allocation per clock tick is acceptable; however the actual output can be
-        // larger than `index.len()`.  If re-allocations becomes a problem, we
-        // may need to do something smarter, like a chain of buffers.
-        // TODO: Sub-scopes can cause a lot of inner clock cycles to be set off, so this
-        //       actually could be significant
-        let mut output_tuples = self.timed_items_factory.default_box();
-
-        let mut index_cursor = index.cursor();
-
-        let fetched = if Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.fetch_join) {
-            trace.fetch(index).await
+        let trace = if *self.flush.borrow() {
+            Some(trace.ro_snapshot())
         } else {
             None
         };
-        let mut trace_cursor = if let Some(fetched) = fetched.as_ref() {
-            fetched.get_cursor()
-        } else {
-            Box::new(trace.cursor())
-        };
 
-        let time = self.clock.time();
+        // Delta can arrive before flush: store it in `self` until we need to use it.
+        if let Some(delta) = delta {
+            *self.delta.borrow_mut() = Some(delta);
+        }
 
-        let mut val = self.right_factories.val_factory().default_box();
+        stream! {
+            if *self.flush.borrow() {
+                *self.flush.borrow_mut() = false;
+            } else {
+                // println!("yield empty");
+                yield(Z::dyn_empty(&self.output_factories), true, None);
+                return;
+            }
 
-        let mut timed_item = self.timed_item_factory.default_box();
+            let delta = self.delta.borrow_mut().take().expect("no input delta provided before flush");
+            let delta_len = delta.len();
 
-        while index_cursor.key_valid() {
-            if trace_cursor.seek_key_exact(index_cursor.key()) {
-                //println!("key: {}", index_cursor.key(index));
+            let trace = trace.unwrap();
+            let trace_len = trace.len();
 
-                while index_cursor.val_valid() {
-                    let w1 = **index_cursor.weight();
-                    let v1 = index_cursor.val();
-                    //println!("v1: {}, w1: {}", v1, w1);
+            *self.empty_input.borrow_mut() = delta.is_empty();
+            *self.empty_output.borrow_mut() = true;
+            self.stats.borrow_mut().lhs_tuples += delta.len();
+            self.stats.borrow_mut().rhs_tuples = trace.len();
 
-                    while trace_cursor.val_valid() {
-                        // FIXME: this clone is only needed to avoid borrow checker error due to
-                        // borrowing `trace_cursor` below.
-                        trace_cursor.val().clone_to(val.as_mut());
+            let fetched = if Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.fetch_join) {
+                trace.fetch(&delta).await
+            } else {
+                None
+            };
 
-                        (self.join_func)(index_cursor.key(), v1, &val, &mut |k, v| {
-                            trace_cursor.map_times(&mut |ts: &T::Time, w2: &T::R| {
-                                let (time_ref, item) = timed_item.split_mut();
-                                let (kv, w) = item.split_mut();
-                                let (key, val) = kv.split_mut();
+            let delta_cursor = delta.cursor();
 
-                                **w = w1.mul_by_ref(&**w2);
-                                k.clone_to(key);
-                                v.clone_to(val);
-                                **time_ref = ts.join(&time);
-                                output_tuples.push_val(timed_item.as_mut());
+            let trace_cursor = if let Some(fetched) = fetched.as_ref() {
+                fetched.get_cursor()
+            } else {
+                Box::new(trace.cursor())
+            };
+
+            let mut val = self.right_factories.val_factory().default_box();
+
+            let mut joint_cursor =
+                JointKeyCursor::new(delta_cursor, trace_cursor, fetched.is_none() && (delta_len > trace_len));
+
+            let batch = if size_of::<T::Time>() != 0 {
+                let time = self.clock.time();
+
+                // Buffer to collect output tuples.
+                // One allocation per clock tick is acceptable; however the actual output can be
+                // larger than `index.len()`.  If re-allocations becomes a problem, we
+                // may need to do something smarter, like a chain of buffers.
+                // TODO: Sub-scopes can cause a lot of inner clock cycles to be set off, so this
+                //       actually could be significant
+                let mut output_tuples = self.timed_items_factory.default_box();
+                output_tuples.reserve(chunk_size);
+
+                let mut timed_item = self.timed_item_factory.default_box();
+
+                while joint_cursor.next() {
+                    //println!("key: {}", index_cursor.key(index));
+
+                    while joint_cursor.delta_cursor.val_valid() {
+                        let w1 = **joint_cursor.delta_cursor.weight();
+                        let v1 = joint_cursor.delta_cursor.val();
+                        //println!("v1: {}, w1: {}", v1, w1);
+
+                        while joint_cursor.trace_cursor.val_valid() {
+                            // FIXME: this clone is only needed to avoid borrow checker error due to
+                            // borrowing `trace_cursor` below.
+                            joint_cursor.trace_cursor.val().clone_to(val.as_mut());
+
+                            (self.join_func.borrow_mut())(joint_cursor.delta_cursor.key(), v1, &val, &mut |k, v| {
+                                    joint_cursor.trace_cursor
+                                        .map_times(&mut |ts: &T::Time, w2: &T::R| {
+                                            let (time_ref, item) = timed_item.split_mut();
+                                            let (kv, w) = item.split_mut();
+                                            let (key, val) = kv.split_mut();
+
+                                            **w = w1.mul_by_ref(&**w2);
+                                            k.clone_to(key);
+                                            v.clone_to(val);
+                                            **time_ref = ts.join(&time);
+                                            output_tuples.push_val(timed_item.as_mut());
+                                        });
                             });
-                        });
-                        trace_cursor.step_val();
+                            joint_cursor.trace_cursor.step_val();
+                        }
+                        joint_cursor.trace_cursor.rewind_vals();
+                        joint_cursor.delta_cursor.step_val();
                     }
-                    trace_cursor.rewind_vals();
-                    index_cursor.step_val();
+
+                    joint_cursor.step_key();
                 }
+
+                self.stats.borrow_mut().output_tuples += output_tuples.len();
+
+                // Sort `output_tuples` by timestamp and push all tuples for each unique
+                // timestamp to the appropriate spine.
+                output_tuples.sort_by_key();
+
+                let mut batch = self.output_factories.weighted_items_factory().default_box();
+                let mut start: usize = 0;
+
+                while start < output_tuples.len() {
+                    let batch_time = output_tuples[start].fst().deref().clone();
+
+                    let run_length =
+                        output_tuples.advance_while(start, output_tuples.len(), &|tuple| {
+                            tuple.fst().deref() == &batch_time
+                        });
+                    batch.reserve(run_length);
+
+                    for i in start..start + run_length {
+                        batch.push_val(unsafe { output_tuples.index_mut_unchecked(i) }.snd_mut());
+                    }
+
+                    start += run_length;
+
+                    self.future_outputs.borrow_mut().entry(batch_time).or_insert_with(|| {
+                        let mut spine = <Spine<Z> as Trace>::new(&self.output_factories);
+                        spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch));
+                        spine
+                    });
+                    batch.clear();
+                }
+
+                // Consolidate the spine for the current timestamp and return it.
+                let output = self.future_outputs.borrow_mut()
+                    .remove(&time)
+                    .and_then(|spine| spine.consolidate())
+                    .unwrap_or_else(|| Z::dyn_empty(&self.output_factories));
+
+                output
+            } else {
+                let mut output_tuples = self.output_factories.weighted_items_factory().default_box();
+                output_tuples.reserve(chunk_size);
+                let mut batcher = Z::Batcher::new_batcher(&self.output_factories, ());
+
+                let mut output_tuple = self.output_factories.weighted_item_factory().default_box();
+
+                while joint_cursor.next() {
+                    //println!("key: {}", index_cursor.key(index));
+
+                    while joint_cursor.delta_cursor.val_valid() {
+                        let w1 = **joint_cursor.delta_cursor.weight();
+                        let v1 = joint_cursor.delta_cursor.val();
+                        //println!("v1: {}, w1: {}", v1, w1);
+
+                        while joint_cursor.trace_cursor.val_valid() {
+                            // FIXME: this clone is only needed to avoid borrow checker error due to
+                            // borrowing `trace_cursor` below.
+                            joint_cursor.trace_cursor.val().clone_to(val.as_mut());
+
+                            (self.join_func.borrow_mut())(joint_cursor.delta_cursor.key(), v1, &val, &mut |k, v| {
+                                joint_cursor.trace_cursor
+                                    .map_times(&mut |_ts: &T::Time, w2: &T::R| {
+                                        let (kv, w) = output_tuple.split_mut();
+                                        let (key, val) = kv.split_mut();
+
+                                        **w = w1.mul_by_ref(&**w2);
+                                        k.clone_to(key);
+                                        v.clone_to(val);
+                                        output_tuples.push_val(output_tuple.as_mut());
+                                    });
+                            });
+
+                            // Push a sufficiently large chunk of update to the batcher. The batcher
+                            // will consolidate the updates and possibly merge them with previous updates.
+                            // Yield if the batcher has accumulated enough tuples. The divisor of 3 guarantees that
+                            // the output batch won't exceed `chunk_size` by more than 33%. Alternatively we could
+                            // push every individual output tuple to the batcher, but that's probably inefficient.
+                            if output_tuples.len() >= chunk_size / 3 {
+                                self.stats.borrow_mut().output_tuples += output_tuples.len();
+                                batcher.push_batch(&mut output_tuples);
+
+                                if batcher.tuples() >= chunk_size {
+                                    *self.empty_output.borrow_mut() = false;
+                                    let batch = batcher.seal();
+                                    self.stats.borrow_mut().add_output_batch(&batch);
+
+                                    yield (batch, false, joint_cursor.position());
+                                    batcher = Z::Batcher::new_batcher(&self.output_factories, ());
+                                }
+                            }
+
+                            joint_cursor.trace_cursor.step_val();
+                        }
+
+                        joint_cursor.trace_cursor.rewind_vals();
+                        joint_cursor.delta_cursor.step_val();
+
+                    }
+                    joint_cursor.step_key();
+                }
+
+                self.stats.borrow_mut().output_tuples += output_tuples.len();
+                batcher.push_batch(&mut output_tuples);
+                batcher.seal()
+            };
+
+            // println!(
+            //     "{}: join produces {} outputs (final = {:?}):{:?}",
+            //     Runtime::worker_index(),
+            //     batch.len(),
+            //     self.state.is_none(),
+            //     batch
+            // );
+
+            self.stats.borrow_mut().add_output_batch(&batch);
+
+            if !batch.is_empty() {
+                *self.empty_output.borrow_mut() = false;
             }
-            index_cursor.step_key();
+
+            yield (batch, true, joint_cursor.position())
         }
-
-        self.stats.output_tuples += output_tuples.len();
-
-        // Sort `output_tuples` by timestamp and push all tuples for each unique
-        // timestamp to the appropriate batcher.
-        // Skip this step when using unit timestamps.
-        if size_of::<T::Time>() != 0 {
-            output_tuples.sort_by_key();
-        }
-
-        let mut batch = self.output_factories.weighted_items_factory().default_box();
-        let mut start: usize = 0;
-
-        while start < output_tuples.len() {
-            let batch_time = output_tuples[start].fst().deref().clone();
-
-            let run_length = output_tuples.advance_while(start, output_tuples.len(), &|tuple| {
-                tuple.fst().deref() == &batch_time
-            });
-            batch.reserve(run_length);
-
-            for i in start..start + run_length {
-                batch.push_val(unsafe { output_tuples.index_mut_unchecked(i) }.snd_mut());
-            }
-
-            start += run_length;
-
-            self.output_batchers
-                .entry(batch_time)
-                .or_insert_with(|| Z::Batcher::new_batcher(&self.output_factories, ()))
-                .push_batch(&mut batch);
-            batch.clear();
-        }
-
-        // Finalize the batch for the current timestamp and return it.
-        let batcher = self
-            .output_batchers
-            .remove(&time)
-            .unwrap_or_else(|| Z::Batcher::new_batcher(&self.output_factories, ()));
-
-        let result = batcher.seal();
-        self.stats.produced_tuples += result.len();
-        self.empty_output = result.is_empty();
-
-        result
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::{
+        circuit::CircuitConfig,
         indexed_zset,
         operator::Generator,
-        typed_batch::{OrdIndexedZSet, OrdZSet},
+        typed_batch::{OrdZSet, TypedBatch},
         utils::Tup2,
-        zset, Circuit, RootCircuit, Runtime, Stream,
+        zset, Circuit, DBData, RootCircuit, Runtime, Stream, ZWeight,
     };
-    use std::{
-        sync::{Arc, Mutex},
-        vec,
-    };
+    use std::vec;
 
-    #[test]
-    fn join_test() {
-        let circuit = RootCircuit::build(move |circuit| {
-            let mut input1 = vec![
-                zset! {
-                    Tup2(1, "a".to_string()) => 1i64,
-                    Tup2(1, "b".to_string()) => 2,
-                    Tup2(2, "c".to_string()) => 3,
-                    Tup2(2, "d".to_string()) => 4,
-                    Tup2(3, "e".to_string()) => 5,
-                    Tup2(3, "f".to_string()) => -2,
-                },
-                zset! {Tup2(1, "a".to_string()) => 1},
-                zset! {Tup2(1, "a".to_string()) => 1},
-                zset! {Tup2(4, "n".to_string()) => 2},
-                zset! {Tup2(1, "a".to_string()) => 0},
-            ]
-            .into_iter();
-            let mut input2 = vec![
-                zset! {
-                    Tup2(2, "g".to_string()) => 3i64,
-                    Tup2(2, "h".to_string()) => 4,
-                    Tup2(3, "i".to_string()) => 5,
-                    Tup2(3, "j".to_string()) => -2,
-                    Tup2(4, "k".to_string()) => 5,
-                    Tup2(4, "l".to_string()) => -2,
-                },
-                zset! {Tup2(1, "b".to_string()) => 1},
-                zset! {Tup2(4, "m".to_string()) => 1},
-                zset! {},
-                zset! {},
-            ]
-            .into_iter();
-            let mut outputs = vec![
-                zset! {
-                    Tup2(2, "c g".to_string()) => 9i64,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
-                },
-                zset! {
-                    Tup2(1, "a b".to_string()) => 1,
-                },
-                zset! {},
-                zset! {},
-                zset! {},
-            ]
-            .into_iter();
-            let inc_outputs_vec = vec![
-                zset! {
-                    Tup2(2, "c g".to_string()) => 9,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
-                },
-                zset! {
-                    Tup2(1, "a b".to_string()) => 2,
-                    Tup2(1, "b b".to_string()) => 2,
-                },
-                zset! {
-                    Tup2(1, "a b".to_string()) => 1,
-                },
-                zset! {
-                    Tup2(4, "n k".to_string()) => 10,
-                    Tup2(4, "n l".to_string()) => -4,
-                    Tup2(4, "n m".to_string()) => 2,
-                },
-                zset! {},
-            ];
-            let inc_filtered_outputs_vec = vec![
-                zset! {
-                    Tup2(2, "c g".to_string()) => 9,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
-                },
-                zset! {
-                    Tup2(1, "b b".to_string()) => 2,
-                },
-                zset! {},
-                zset! {
-                    Tup2(4, "n k".to_string()) => 10,
-                    Tup2(4, "n l".to_string()) => -4,
-                    Tup2(4, "n m".to_string()) => 2,
-                },
-                zset! {},
-            ];
+    fn do_join_test(workers: usize, transaction: bool) {
+        let mut input1 = vec![
+            vec![
+                Tup2(Tup2(1, "a".to_string()), 1i64),
+                Tup2(Tup2(1, "b".to_string()), 2),
+                Tup2(Tup2(2, "c".to_string()), 3),
+                Tup2(Tup2(2, "d".to_string()), 4),
+                Tup2(Tup2(3, "e".to_string()), 5),
+                Tup2(Tup2(3, "f".to_string()), -2),
+            ],
+            vec![Tup2(Tup2(1, "a".to_string()), 1)],
+            vec![Tup2(Tup2(1, "a".to_string()), 1)],
+            vec![Tup2(Tup2(4, "n".to_string()), 2)],
+            vec![Tup2(Tup2(1, "a".to_string()), 0)],
+        ]
+        .into_iter();
+        let mut input2 = vec![
+            vec![
+                Tup2(Tup2(2, "g".to_string()), 3i64),
+                Tup2(Tup2(2, "h".to_string()), 4),
+                Tup2(Tup2(3, "i".to_string()), 5),
+                Tup2(Tup2(3, "j".to_string()), -2),
+                Tup2(Tup2(4, "k".to_string()), 5),
+                Tup2(Tup2(4, "l".to_string()), -2),
+            ],
+            vec![Tup2(Tup2(1, "b".to_string()), 1)],
+            vec![Tup2(Tup2(4, "m".to_string()), 1)],
+            vec![],
+            vec![],
+        ]
+        .into_iter();
 
-            //let mut inc_outputs = inc_outputs_vec.clone().into_iter();
-            let mut inc_outputs2 = inc_outputs_vec.into_iter();
-            let mut inc_filtered_outputs = inc_filtered_outputs_vec.into_iter();
+        let inc_outputs_vec = vec![
+            zset! {
+                Tup2(2, "c g".to_string()) => 9,
+                Tup2(2, "c h".to_string()) => 12,
+                Tup2(2, "d g".to_string()) => 12,
+                Tup2(2, "d h".to_string()) => 16,
+                Tup2(3, "e i".to_string()) => 25,
+                Tup2(3, "e j".to_string()) => -10,
+                Tup2(3, "f i".to_string()) => -10,
+                Tup2(3, "f j".to_string()) => 4
+            },
+            zset! {
+                Tup2(1, "a b".to_string()) => 2,
+                Tup2(1, "b b".to_string()) => 2,
+            },
+            zset! {
+                Tup2(1, "a b".to_string()) => 1,
+            },
+            zset! {
+                Tup2(4, "n k".to_string()) => 10,
+                Tup2(4, "n l".to_string()) => -4,
+                Tup2(4, "n m".to_string()) => 2,
+            },
+            zset! {},
+        ];
+        let inc_filtered_outputs_vec = vec![
+            zset! {
+                Tup2(2, "c g".to_string()) => 9,
+                Tup2(2, "c h".to_string()) => 12,
+                Tup2(2, "d g".to_string()) => 12,
+                Tup2(2, "d h".to_string()) => 16,
+                Tup2(3, "e i".to_string()) => 25,
+                Tup2(3, "e j".to_string()) => -10,
+                Tup2(3, "f i".to_string()) => -10,
+                Tup2(3, "f j".to_string()) => 4
+            },
+            zset! {
+                Tup2(1, "b b".to_string()) => 2,
+            },
+            zset! {},
+            zset! {
+                Tup2(4, "n k".to_string()) => 10,
+                Tup2(4, "n l".to_string()) => -4,
+                Tup2(4, "n m".to_string()) => 2,
+            },
+            zset! {},
+        ];
 
-            let index1: Stream<_, OrdIndexedZSet<u64, String>> = circuit
-                .add_source(Generator::new(move || {
-                    if Runtime::worker_index() == 0 {
-                        input1.next().unwrap()
-                    } else {
-                        <OrdZSet<_>>::empty()
-                    }
-                }))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
-            let index2: Stream<_, OrdIndexedZSet<u64, String>> = circuit
-                .add_source(Generator::new(move || {
-                    if Runtime::worker_index() == 0 {
-                        input2.next().unwrap()
-                    } else {
-                        <OrdZSet<_>>::empty()
-                    }
-                }))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
-            index1
-                .stream_join(&index2, |&k: &u64, s1, s2| {
-                    Tup2(k, format!("{} {}", s1, s2))
-                })
+        let outputs = vec![
+            zset! {
+                Tup2(2, "c g".to_string()) => 9i64,
+                Tup2(2, "c h".to_string()) => 12,
+                Tup2(2, "d g".to_string()) => 12,
+                Tup2(2, "d h".to_string()) => 16,
+                Tup2(3, "e i".to_string()) => 25,
+                Tup2(3, "e j".to_string()) => -10,
+                Tup2(3, "f i".to_string()) => -10,
+                Tup2(3, "f j".to_string()) => 4
+            },
+            zset! {
+                Tup2(1, "a b".to_string()) => 1,
+            },
+            zset! {},
+            zset! {},
+            zset! {},
+        ];
+
+        let (
+            mut circuit,
+            (input_handle1, input_handle2, join_output, join_flatmap_output, stream_join_output),
+        ) = Runtime::init_circuit(
+            CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
+            move |circuit| {
+                let (input1, input_handle1) = circuit.add_input_zset::<Tup2<u64, String>>();
+                let index1 = input1.map_index(|Tup2(k, v)| (*k, v.clone()));
+
+                let (input2, input_handle2) = circuit.add_input_zset::<Tup2<u64, String>>();
+                let index2 = input2.map_index(|Tup2(k, v)| (*k, v.clone()));
+
+                let stream_join_output = circuit
+                    .non_incremental(
+                        &(index1.clone(), index2.clone()),
+                        |_child, (index1, index2)| {
+                            Ok(index1.stream_join(index2, |&k: &u64, s1, s2| {
+                                Tup2(k, format!("{} {}", s1, s2))
+                            }))
+                        },
+                    )
+                    .unwrap()
+                    .accumulate_output();
+
+                /*index1
+                .join_incremental(&index2, |&k: &u64, s1, s2| Tup2(k, format!("{} {}", s1, s2)))
                 .gather(0)
                 .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
                     if Runtime::worker_index() == 0 {
-                        assert_eq!(fm, &outputs.next().unwrap())
+                        assert_eq!(fm, &inc_outputs.next().unwrap())
                     }
-                });
-            /*index1
-            .join_incremental(&index2, |&k: &u64, s1, s2| Tup2(k, format!("{} {}", s1, s2)))
-            .gather(0)
-            .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
-                if Runtime::worker_index() == 0 {
-                    assert_eq!(fm, &inc_outputs.next().unwrap())
-                }
-            });*/
+                });*/
 
-            index1
-                .join(&index2, |&k: &u64, s1, s2| {
-                    Tup2(k, format!("{} {}", s1, s2))
-                })
-                .gather(0)
-                .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
-                    if Runtime::worker_index() == 0 {
-                        assert_eq!(fm, &inc_outputs2.next().unwrap())
-                    }
-                });
+                let join_output = index1
+                    .join(&index2, |&k: &u64, s1, s2| {
+                        Tup2(k, format!("{} {}", s1, s2))
+                    })
+                    .accumulate_output();
 
-            index1
-                .join_flatmap(&index2, |&k: &u64, s1, s2| {
-                    if s1.as_str() == "a" {
-                        None
-                    } else {
-                        Some(Tup2(k, format!("{} {}", s1, s2)))
-                    }
-                })
-                .gather(0)
-                .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
-                    if Runtime::worker_index() == 0 {
-                        assert_eq!(fm, &inc_filtered_outputs.next().unwrap())
-                    }
-                });
+                let join_flatmap_output = index1
+                    .join_flatmap(&index2, |&k: &u64, s1, s2| {
+                        if s1.as_str() == "a" {
+                            None
+                        } else {
+                            Some(Tup2(k, format!("{} {}", s1, s2)))
+                        }
+                    })
+                    .accumulate_output();
 
-            Ok(())
-        })
-        .unwrap()
-        .0;
+                Ok((
+                    input_handle1,
+                    input_handle2,
+                    join_output,
+                    join_flatmap_output,
+                    stream_join_output,
+                ))
+            },
+        )
+        .unwrap();
 
-        for _ in 0..5 {
-            circuit.step().unwrap();
+        if transaction {
+            let inc_output = TypedBatch::merge_batches(inc_outputs_vec.clone());
+            let inc_filtered_output = TypedBatch::merge_batches(inc_filtered_outputs_vec.clone());
+
+            circuit.start_transaction().unwrap();
+
+            for _ in 0..5 {
+                input_handle1.append(&mut input1.next().unwrap());
+                input_handle2.append(&mut input2.next().unwrap());
+                circuit.step().unwrap();
+            }
+
+            circuit.commit_transaction().unwrap();
+
+            assert_eq!(join_output.concat().consolidate(), inc_output);
+            assert_eq!(
+                join_flatmap_output.concat().consolidate(),
+                inc_filtered_output
+            );
+        } else {
+            let mut inc_output_vec = inc_outputs_vec.clone().into_iter();
+            let mut inc_filtered_outputs_vec = inc_filtered_outputs_vec.clone().into_iter();
+            let mut output = outputs.clone().into_iter();
+
+            for _ in 0..5 {
+                input_handle1.append(&mut input1.next().unwrap());
+                input_handle2.append(&mut input2.next().unwrap());
+                circuit.transaction().unwrap();
+
+                assert_eq!(
+                    join_output.concat().consolidate(),
+                    inc_output_vec.next().unwrap()
+                );
+                assert_eq!(
+                    join_flatmap_output.concat().consolidate(),
+                    inc_filtered_outputs_vec.next().unwrap()
+                );
+                assert_eq!(
+                    stream_join_output.concat().consolidate(),
+                    output.next().unwrap()
+                );
+            }
         }
-    }
 
-    fn do_join_test_mt(workers: usize) {
-        let hruntime = Runtime::run(workers, |_parker| {
-            join_test();
-        })
-        .expect("failed to run test");
-
-        hruntime.join().unwrap();
+        circuit.kill().unwrap()
     }
 
     #[test]
     fn join_test_mt() {
-        do_join_test_mt(1);
-        do_join_test_mt(2);
-        do_join_test_mt(4);
-        do_join_test_mt(16);
+        do_join_test(1, false);
+        do_join_test(2, false);
+        do_join_test(4, false);
+        do_join_test(16, false);
+    }
+
+    #[test]
+    fn join_test_mt_one_transaction() {
+        do_join_test(1, true);
+        do_join_test(2, true);
+        do_join_test(4, true);
+        do_join_test(16, true);
     }
 
     // Compute pairwise reachability relation between graph nodes as the
@@ -1607,66 +1948,296 @@ mod test {
 
         for _ in 0..8 {
             //eprintln!("{}", i);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
-    #[test]
-    fn antijoin_test() {
-        let output = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
-        let output_clone = output.clone();
 
-        let (mut circuit, (input1, input2)) = Runtime::init_circuit(4, move |circuit| {
-            let (input1, input_handle1) = circuit.add_input_indexed_zset::<u64, u64>();
-            let (input2, input_handle2) = circuit.add_input_indexed_zset::<u64, u64>();
+    fn antijoin_test(transaction: bool) {
+        let inputs1 = [
+            vec![
+                Tup2(1, Tup2(0, 1)),
+                Tup2(1, Tup2(1, 2)),
+                Tup2(2, Tup2(0, 1)),
+                Tup2(2, Tup2(1, 1)),
+            ],
+            vec![Tup2(3, Tup2(1, 1))],
+            vec![],
+            vec![Tup2(2, Tup2(2, 1)), Tup2(4, Tup2(1, 1))],
+            vec![],
+        ];
 
-            input1.antijoin(&input2).gather(0).inspect(move |batch| {
-                if Runtime::worker_index() == 0 {
-                    *output_clone.lock().unwrap() = batch.clone();
-                }
-            });
+        let inputs2 = vec![
+            vec![],
+            vec![],
+            vec![Tup2(1, Tup2(1, 3))],
+            vec![Tup2(2, Tup2(5, 1))],
+            // Issue https://github.com/feldera/feldera/issues/3365. Multiple values per key in the right-hand input shouldn't
+            // produce outputs with negative weights.
+            vec![Tup2(2, Tup2(6, 1))],
+        ];
 
-            Ok((input_handle1, input_handle2))
-        })
+        let expected_outputs = vec![
+            indexed_zset! {1 => {0 => 1, 1 => 2}, 2 => {0 => 1, 1 => 1}},
+            indexed_zset! {3 => {1 => 1}},
+            indexed_zset! { 1 => {0 => -1, 1 => -2}},
+            indexed_zset! {2 => { 0 => -1, 1 => -1}, 4 => {1 => 1}},
+            indexed_zset! {},
+        ];
+
+        let (mut circuit, (input1, input2, output)) = Runtime::init_circuit(
+            CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+            move |circuit| {
+                let (input1, input_handle1) = circuit.add_input_indexed_zset::<u64, u64>();
+                let (input2, input_handle2) = circuit.add_input_indexed_zset::<u64, u64>();
+
+                let output = input1.antijoin(&input2).accumulate_output();
+
+                Ok((input_handle1, input_handle2, output))
+            },
+        )
         .unwrap();
 
-        input1.append(&mut vec![
-            Tup2(1, Tup2(0, 1)),
-            Tup2(1, Tup2(1, 2)),
-            Tup2(2, Tup2(0, 1)),
-            Tup2(2, Tup2(1, 1)),
-        ]);
-        circuit.step().unwrap();
-        assert_eq!(
-            &*output.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => 1, 1 => 2}, 2 => { 0 => 1, 1 => 1 } }
-        );
+        if transaction {
+            circuit.start_transaction().unwrap();
+            for i in 0..inputs1.len() {
+                input1.append(&mut inputs1[i].clone());
+                input2.append(&mut inputs2[i].clone());
+                circuit.step().unwrap();
+            }
 
-        input1.append(&mut vec![Tup2(3, Tup2(1, 1))]);
-        circuit.step().unwrap();
-        assert_eq!(&*output.lock().unwrap(), &indexed_zset! { 3 => { 1 => 1 } });
+            circuit.commit_transaction().unwrap();
 
-        input2.append(&mut vec![Tup2(1, Tup2(1, 3))]);
-        circuit.step().unwrap();
-        assert_eq!(
-            &*output.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => -1, 1 => -2 } }
-        );
-
-        input2.append(&mut vec![Tup2(2, Tup2(5, 1))]);
-        input1.append(&mut vec![Tup2(2, Tup2(2, 1)), Tup2(4, Tup2(1, 1))]);
-        circuit.step().unwrap();
-        assert_eq!(
-            &*output.lock().unwrap(),
-            &indexed_zset! { 2 => { 0 => -1, 1 => -1 }, 4 => { 1 => 1 } }
-        );
-
-        // Issue https://github.com/feldera/feldera/issues/3365. Multiple values per key in the right-hand input shouldn't
-        // produce outputs with negative weights.
-        input2.append(&mut vec![Tup2(2, Tup2(6, 1))]);
-        circuit.step().unwrap();
-        assert_eq!(&*output.lock().unwrap(), &indexed_zset! {});
+            assert_eq!(
+                output.concat().consolidate(),
+                TypedBatch::merge_batches(expected_outputs)
+            );
+        } else {
+            for i in 0..inputs1.len() {
+                input1.append(&mut inputs1[i].clone());
+                input2.append(&mut inputs2[i].clone());
+                circuit.transaction().unwrap();
+                assert_eq!(output.concat().consolidate(), expected_outputs[i]);
+            }
+        }
 
         circuit.kill().unwrap();
+    }
+
+    #[test]
+    fn antijoin_test_small_steps() {
+        antijoin_test(false);
+    }
+
+    #[test]
+    fn antijoin_test_big_step() {
+        antijoin_test(true);
+    }
+
+    use proptest::{collection::vec, prelude::*};
+
+    fn proptest_antijoin<K: DBData, V: DBData>(
+        mut left_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
+        mut right_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
+        transaction: bool,
+    ) {
+        let (mut dbsp, (left_handle, right_handle, output_handle, expected_output_handle)) =
+            Runtime::init_circuit(
+                CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+                move |circuit| {
+                    let (left_input, left_handle) = circuit.add_input_indexed_zset::<K, V>();
+                    let (right_input, right_handle) = circuit.add_input_indexed_zset::<K, V>();
+
+                    let output_handle = left_input.antijoin(&right_input).accumulate_output();
+                    let expected_output_handle = circuit
+                        .non_incremental(&(left_input, right_input), |_child, (left, right)| {
+                            Ok(left
+                                .integrate()
+                                .stream_antijoin(&right.integrate())
+                                .differentiate())
+                        })
+                        .unwrap()
+                        .accumulate_output();
+
+                    Ok((
+                        left_handle,
+                        right_handle,
+                        output_handle,
+                        expected_output_handle,
+                    ))
+                },
+            )
+            .unwrap();
+
+        if transaction {
+            dbsp.start_transaction().unwrap();
+        }
+
+        for step in 0..left_inputs.len() {
+            left_handle.append(&mut left_inputs[step]);
+            right_handle.append(&mut right_inputs[step]);
+
+            if !transaction {
+                dbsp.transaction().unwrap();
+                let output = output_handle.concat().consolidate();
+
+                assert_eq!(output, expected_output_handle.concat().consolidate())
+            } else {
+                dbsp.step().unwrap();
+            }
+        }
+
+        if transaction {
+            dbsp.commit_transaction().unwrap();
+            let output = output_handle.concat().consolidate();
+
+            assert_eq!(output, expected_output_handle.concat().consolidate())
+        }
+    }
+
+    fn proptest_join<K: DBData, V: DBData>(
+        mut left_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
+        mut right_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
+        f: impl Fn(&K, &V, &V) -> V + Clone + Send + 'static,
+        transaction: bool,
+    ) {
+        let (mut dbsp, (left_handle, right_handle, output_handle, expected_output_handle)) =
+            Runtime::init_circuit(
+                CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+                move |circuit| {
+                    let (left_input, left_handle) = circuit.add_input_indexed_zset::<K, V>();
+                    let (right_input, right_handle) = circuit.add_input_indexed_zset::<K, V>();
+
+                    let output_handle =
+                        left_input.join(&right_input, f.clone()).accumulate_output();
+
+                    let f = f.clone();
+                    let expected_output_handle = circuit
+                        .non_incremental(
+                            &(left_input, right_input),
+                            move |_child, (left, right)| {
+                                Ok(left
+                                    .integrate()
+                                    .stream_join(&right.integrate(), f)
+                                    .differentiate())
+                            },
+                        )
+                        .unwrap()
+                        .accumulate_output();
+
+                    Ok((
+                        left_handle,
+                        right_handle,
+                        output_handle,
+                        expected_output_handle,
+                    ))
+                },
+            )
+            .unwrap();
+
+        if transaction {
+            dbsp.start_transaction().unwrap();
+        }
+
+        for step in 0..left_inputs.len() {
+            left_handle.append(&mut left_inputs[step]);
+            right_handle.append(&mut right_inputs[step]);
+
+            if !transaction {
+                dbsp.transaction().unwrap();
+                let output = output_handle.concat().consolidate();
+
+                assert_eq!(output, expected_output_handle.concat().consolidate())
+            } else {
+                dbsp.step().unwrap();
+            }
+        }
+
+        if transaction {
+            dbsp.commit_transaction().unwrap();
+            let output = output_handle.concat().consolidate();
+
+            assert_eq!(output, expected_output_handle.concat().consolidate())
+        }
+    }
+
+    fn generate_test_indexed_zset(
+        max_key: i32,
+        max_val: i32,
+        max_weight: ZWeight,
+        max_tuples: usize,
+    ) -> BoxedStrategy<Vec<Tup2<i32, Tup2<i32, ZWeight>>>> {
+        vec(
+            (0..max_key, 0..max_val, -max_weight..max_weight)
+                .prop_map(|(x, y, z)| Tup2(x, Tup2(y, z))),
+            0..max_tuples,
+        )
+        .boxed()
+    }
+
+    fn generate_antijoin_test_data(
+        max_key: i32,
+        max_val: i32,
+        max_weight: ZWeight,
+        max_tuples: usize,
+    ) -> BoxedStrategy<(
+        Vec<Vec<Tup2<i32, Tup2<i32, ZWeight>>>>,
+        Vec<Vec<Tup2<i32, Tup2<i32, ZWeight>>>>,
+    )> {
+        (
+            vec(
+                generate_test_indexed_zset(max_key, max_val, max_weight, max_tuples),
+                10,
+            ),
+            vec(
+                generate_test_indexed_zset(max_key, max_val, max_weight, max_tuples),
+                10,
+            ),
+        )
+            .boxed()
+    }
+
+    fn generate_join_test_data(
+        max_key: i32,
+        max_val: i32,
+        max_weight: ZWeight,
+        max_tuples: usize,
+    ) -> BoxedStrategy<(
+        Vec<Vec<Tup2<i32, Tup2<i32, ZWeight>>>>,
+        Vec<Vec<Tup2<i32, Tup2<i32, ZWeight>>>>,
+    )> {
+        (
+            vec(
+                generate_test_indexed_zset(max_key, max_val, max_weight, max_tuples),
+                10,
+            ),
+            vec(
+                generate_test_indexed_zset(max_key, max_val, max_weight, max_tuples),
+                10,
+            ),
+        )
+            .boxed()
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_antijoin_big_step(inputs in generate_antijoin_test_data(10, 5, 3, 100)) {
+            proptest_antijoin(inputs.0, inputs.1, true);
+        }
+
+        #[test]
+        fn proptest_antijoin_small_step(inputs in generate_antijoin_test_data(10, 5, 3, 100)) {
+            proptest_antijoin(inputs.0, inputs.1, false);
+        }
+
+        #[test]
+        fn proptest_join_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
+            proptest_join(inputs.0, inputs.1, |_k, v1, v2| v1 + v2, true);
+        }
+
+        #[test]
+        fn proptest_join_small_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
+            proptest_join(inputs.0, inputs.1, |_k, v1, v2| v1 + v2, false);
+        }
     }
 }
 

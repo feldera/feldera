@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     dynamic::{DataTrait, DynDataTyped, Erase, Factory, WeightTrait},
-    trace::Cursor,
+    trace::{cursor::Position, Cursor},
     DBData,
 };
 
@@ -410,6 +410,10 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.cursor.fast_forward_vals()
+    }
+
+    fn position(&self) -> Option<Position> {
+        None
     }
 }
 

@@ -172,7 +172,7 @@ pub use server::{ErrorResponse, PipelineError};
 
 pub use catalog::{
     Catalog, CircuitCatalog, DeCollectionHandle, DeCollectionStream, RecordFormat, SerBatch,
-    SerCollectionHandle, SerCursor,
+    SerCursor,
 };
 pub use feldera_adapterlib::format::{
     Encoder, InputBuffer, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser,

@@ -103,7 +103,7 @@ fn main() -> Result<()> {
         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
     input_handle.append(&mut input_records);
 
-    circuit.step()?;
+    circuit.transaction()?;
 
     output_handle
         .consolidate()

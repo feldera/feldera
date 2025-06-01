@@ -1476,7 +1476,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     List.of(NonMonotoneType.nonMonotone(indexedOutputType.keyType), projection), true, false);
             DBSPSimpleOperator retain = DBSPIntegrateTraceRetainValuesOperator.create(
                     operator.getRelNode(), newSource.getOutput(0),
-                    projection, extend.outputPort());
+                    projection, extend.outputPort(), false);
             this.addOperator(retain);
         }
 

@@ -121,7 +121,7 @@ fn main() -> Result<()> {
             1,
         );
     }
-    dbsp.step().unwrap();
+    dbsp.transaction().unwrap();
     println!("Initialization:");
     print_output(&output);
 
@@ -142,7 +142,7 @@ fn main() -> Result<()> {
             },
             1,
         );
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         println!("Changes from adjusting {employee}'s manager:");
         print_output(&output);
 

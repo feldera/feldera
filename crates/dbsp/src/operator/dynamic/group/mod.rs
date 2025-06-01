@@ -2,21 +2,26 @@
 //! into multiple output records.
 
 use crate::{
-    algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZBatchReader, ZCursor, ZTrace},
+    algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor},
     circuit::{
-        operator_traits::{Operator, TernaryOperator},
-        Scope,
+        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        operator_traits::Operator,
+        splitter_output_chunk_size, Scope,
     },
-    dynamic::{DataTrait, DynPair, DynUnit, DynWeightedPairs, Factory},
-    operator::dynamic::trace::{TraceBounds, TraceFeedback},
+    dynamic::{DataTrait, DynUnit, Factory},
+    operator::{
+        async_stream_operators::{StreamingTernaryOperator, StreamingTernaryWrapper},
+        dynamic::{accumulate_trace::AccumulateTraceFeedback, trace::TraceBounds},
+    },
     trace::{
         cursor::{CursorEmpty, CursorGroup, CursorPair},
-        BatchFactories, BatchReaderFactories, Builder, Cursor, OrdIndexedWSetFactories, Spine,
-        TupleBuilder,
+        spine_async::WithSnapshot,
+        BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor,
+        OrdIndexedWSetFactories, Spine, TupleBuilder,
     },
-    Circuit, DynZWeight, RootCircuit, Stream,
+    Circuit, DynZWeight, Position, RootCircuit, Stream,
 };
-use std::{borrow::Cow, marker::PhantomData, ops::Neg};
+use std::{borrow::Cow, cell::RefCell, marker::PhantomData, ops::Neg, rc::Rc};
 
 mod lag;
 mod topk;
@@ -24,7 +29,9 @@ mod topk;
 #[cfg(test)]
 mod test;
 
+use async_stream::stream;
 use dyn_clone::clone_box;
+use futures::Stream as AsyncStream;
 use minitrace::trace;
 
 use crate::dynamic::{ClonableTrait, Erase};
@@ -329,7 +336,7 @@ where
         //                                                                             └────┘
         // ```
         let bounds = TraceBounds::unbounded();
-        let feedback = circuit.add_integrate_trace_feedback::<Spine<OB>>(
+        let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<OB>>(
             persistent_id,
             output_factories,
             bounds,
@@ -337,14 +344,16 @@ where
 
         let output = circuit
             .add_ternary_operator(
-                GroupTransform::new(output_factories, transform),
-                &stream,
-                &stream.dyn_integrate_trace(input_factories).delay_trace(),
+                StreamingTernaryWrapper::new(GroupTransform::new(output_factories, transform)),
+                &stream.dyn_accumulate(input_factories),
+                &stream
+                    .dyn_accumulate_integrate_trace(input_factories)
+                    .accumulate_delay_trace(),
                 &feedback.delayed_trace,
             )
             .mark_sharded();
 
-        feedback.connect(&output);
+        feedback.connect(&output, output_factories);
 
         output
     }
@@ -356,8 +365,14 @@ where
     OB: IndexedZSet,
 {
     output_factories: OB::Factories,
-    transformer: Box<dyn GroupTransformer<B::Val, OB::Val>>,
-    buffer: Box<DynWeightedPairs<DynPair<OB::Key, OB::Val>, OB::R>>,
+    transformer: RefCell<Box<dyn GroupTransformer<B::Val, OB::Val>>>,
+
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
     _phantom: PhantomData<(B, OB, T, OT)>,
 }
 
@@ -372,8 +387,9 @@ where
     ) -> Self {
         Self {
             output_factories: output_factories.clone(),
-            transformer,
-            buffer: output_factories.weighted_items_factory().default_box(),
+            transformer: RefCell::new(transformer),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
             _phantom: PhantomData,
         }
     }
@@ -387,146 +403,201 @@ where
     OT: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from(format!("GroupTransform({})", self.transformer.name()))
+        Cow::from(format!(
+            "GroupTransform({})",
+            self.transformer.borrow().name()
+        ))
     }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
 
-impl<B, OB, T, OT> TernaryOperator<B, T, OT, OB> for GroupTransform<B, OB, T, OT>
+impl<B, OB, T, OT> StreamingTernaryOperator<Option<Spine<B>>, T, OT, OB>
+    for GroupTransform<B, OB, T, OT>
 where
     B: IndexedZSet,
-    T: ZBatchReader<Key = B::Key, Val = B::Val, Time = ()> + Clone,
+    T: WithSnapshot<Batch = B> + Clone + 'static,
     OB: IndexedZSet<Key = B::Key>,
-    OT: ZTrace<Key = B::Key, Val = OB::Val, Time = ()> + Clone,
+    OT: WithSnapshot<Batch = OB> + Clone + 'static,
 {
     #[trace]
-    async fn eval(
-        &mut self,
-        delta: Cow<'_, B>,
+    fn eval(
+        self: Rc<Self>,
+        delta: Cow<'_, Option<Spine<B>>>,
         input_trace: Cow<'_, T>,
         output_trace: Cow<'_, OT>,
-    ) -> OB {
-        let mut delta_cursor = delta.cursor();
-        let mut input_trace_cursor = input_trace.cursor();
-        let mut output_trace_cursor = output_trace.cursor();
+    ) -> impl AsyncStream<Item = (OB, bool, Option<Position>)> + 'static {
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
+        let chunk_size = splitter_output_chunk_size();
 
-        let mut builder = TupleBuilder::new(
-            &self.output_factories,
-            OB::Builder::with_capacity(&self.output_factories, delta.len()),
-        );
+        // We assume that delta.is_some() implies that the operator is being flushed,
+        // since the input integral is always flushed in the same step as delta and the
+        // delayed output integral is always flushed earlier.
+        let input_trace = if delta.is_some() {
+            Some(input_trace.ro_snapshot())
+        } else {
+            None
+        };
 
-        while delta_cursor.key_valid() {
-            let key = clone_box(delta_cursor.key());
-            let mut key2 = clone_box(key.as_ref());
-            let mut tuple = self.output_factories.weighted_item_factory().default_box();
+        let output_trace = if delta.is_some() {
+            Some(output_trace.ro_snapshot())
+        } else {
+            None
+        };
 
-            // Output callback that pushes directly to builder.
-            let mut cb_asc = |val: &mut OB::Val, w: &mut B::R| {
-                key.clone_to(&mut key2);
-                // println!("val: {val:?}, w: {w:?}");
-                builder.push_vals(&mut key2, val, &mut (), w);
-            };
-            // Output callback that pushes to an intermediate buffer.
-            let mut cb_desc = |val: &mut OB::Val, w: &mut B::R| {
-                //println!("val: {val:?}, w: {w:?}");
-                let (kv, weight) = tuple.split_mut();
-                let (k, v) = kv.split_mut();
-                key.clone_to(k);
-                val.move_to(v);
-                w.move_to(weight);
-                self.buffer.push_val(&mut *tuple);
+        stream! {
+            let Some(delta) = delta.as_ref() else {
+                yield (OB::dyn_empty(&self.output_factories), true, None);
+                return;
             };
 
-            let cb = if self.transformer.monotonicity() == Monotonicity::Ascending {
-                // Ascending transformer: push directly to builder.
-                &mut cb_asc as &mut dyn FnMut(&mut OB::Val, &mut B::R)
-            } else {
-                // Descending or unordered transformer: push to buffer.
-                &mut cb_desc as &mut dyn FnMut(&mut OB::Val, &mut B::R)
-            };
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
-            let mut delta_group_cursor = CursorGroup::new(&mut delta_cursor, ());
+            let mut delta_cursor = delta.cursor();
+            let mut input_trace_cursor = input_trace.unwrap().cursor();
+            let mut output_trace_cursor = output_trace.unwrap().cursor();
 
-            // I was not able to avoid 4-way code duplication below.  Depending on
-            // whether `key` is found in the input and output trace, we must invoke
-            // `transformer.transform` with four different combinations of
-            // empty/non-empty cursors.  Since the cursors have different types
-            // (`CursorEmpty` and `CursorGroup`), we can't bind them to the same
-            // variable.
-            if input_trace_cursor.seek_key_exact(&key) {
-                let mut input_group_cursor = CursorGroup::new(&mut input_trace_cursor, ());
+            let mut builder = TupleBuilder::new(
+                &self.output_factories,
+                OB::Builder::with_capacity(&self.output_factories, delta.len()),
+            );
 
-                if output_trace_cursor.seek_key_exact(&key) {
-                    let mut output_group_cursor = CursorGroup::new(&mut output_trace_cursor, ());
+            let mut buffer = self.output_factories.weighted_items_factory().default_box();
+            buffer.reserve(2 * chunk_size);
+            let monotonicity = self.transformer.borrow().monotonicity();
 
-                    self.transformer.transform(
-                        &mut delta_group_cursor,
-                        &mut input_group_cursor,
-                        &mut output_group_cursor,
-                        cb,
-                    );
+            while delta_cursor.key_valid() {
+                let key = clone_box(delta_cursor.key());
+                let mut key2 = clone_box(key.as_ref());
+                let mut tuple = self.output_factories.weighted_item_factory().default_box();
+
+                // Output callback that pushes directly to builder.
+                let mut cb_asc = |val: &mut OB::Val, w: &mut B::R| {
+                    key.clone_to(&mut key2);
+                    // println!("val: {val:?}, w: {w:?}");
+                    builder.push_vals(&mut key2, val, &mut (), w);
+                };
+                // Output callback that pushes to an intermediate buffer.
+                let mut cb_desc = |val: &mut OB::Val, w: &mut B::R| {
+                    //println!("val: {val:?}, w: {w:?}");
+                    let (kv, weight) = tuple.split_mut();
+                    let (k, v) = kv.split_mut();
+                    key.clone_to(k);
+                    val.move_to(v);
+                    w.move_to(weight);
+                    buffer.push_val(&mut *tuple);
+                };
+
+                let cb = if monotonicity == Monotonicity::Ascending {
+                    // Ascending transformer: push directly to builder.
+                    &mut cb_asc as &mut dyn FnMut(&mut OB::Val, &mut B::R)
                 } else {
-                    let mut output_group_cursor =
+                    // Descending or unordered transformer: push to buffer.
+                    &mut cb_desc as &mut dyn FnMut(&mut OB::Val, &mut B::R)
+                };
+
+                let mut delta_group_cursor = CursorGroup::new(&mut delta_cursor, ());
+
+                // I was not able to avoid 4-way code duplication below.  Depending on
+                // whether `key` is found in the input and output trace, we must invoke
+                // `transformer.transform` with four different combinations of
+                // empty/non-empty cursors.  Since the cursors have different types
+                // (`CursorEmpty` and `CursorGroup`), we can't bind them to the same
+                // variable.
+                if input_trace_cursor.seek_key_exact(&key) {
+                    let mut input_group_cursor = CursorGroup::new(&mut input_trace_cursor, ());
+
+                    if output_trace_cursor.seek_key_exact(&key) {
+                        let mut output_group_cursor = CursorGroup::new(&mut output_trace_cursor, ());
+
+                        self.transformer.borrow_mut().transform(
+                            &mut delta_group_cursor,
+                            &mut input_group_cursor,
+                            &mut output_group_cursor,
+                            cb,
+                        );
+                    } else {
+                        let mut output_group_cursor =
+                            CursorEmpty::new(self.output_factories.weight_factory());
+
+                        self.transformer.borrow_mut().transform(
+                            &mut delta_group_cursor,
+                            &mut input_group_cursor,
+                            &mut output_group_cursor,
+                            cb,
+                        );
+                    };
+                } else {
+                    let mut input_group_cursor =
                         CursorEmpty::new(self.output_factories.weight_factory());
 
-                    self.transformer.transform(
-                        &mut delta_group_cursor,
-                        &mut input_group_cursor,
-                        &mut output_group_cursor,
-                        cb,
-                    );
+                    if output_trace_cursor.seek_key_exact(&key) {
+                        let mut output_group_cursor = CursorGroup::new(&mut output_trace_cursor, ());
+
+                        self.transformer.borrow_mut().transform(
+                            &mut delta_group_cursor,
+                            &mut input_group_cursor,
+                            &mut output_group_cursor,
+                            cb,
+                        );
+                    } else {
+                        let mut output_group_cursor =
+                            CursorEmpty::new(self.output_factories.weight_factory());
+
+                        self.transformer.borrow_mut().transform(
+                            &mut CursorGroup::new(&mut delta_cursor, ()),
+                            &mut input_group_cursor,
+                            &mut output_group_cursor,
+                            cb,
+                        );
+                    };
                 };
-            } else {
-                let mut input_group_cursor =
-                    CursorEmpty::new(self.output_factories.weight_factory());
-
-                if output_trace_cursor.seek_key_exact(&key) {
-                    let mut output_group_cursor = CursorGroup::new(&mut output_trace_cursor, ());
-
-                    self.transformer.transform(
-                        &mut delta_group_cursor,
-                        &mut input_group_cursor,
-                        &mut output_group_cursor,
-                        cb,
-                    );
-                } else {
-                    let mut output_group_cursor =
-                        CursorEmpty::new(self.output_factories.weight_factory());
-
-                    self.transformer.transform(
-                        &mut CursorGroup::new(&mut delta_cursor, ()),
-                        &mut input_group_cursor,
-                        &mut output_group_cursor,
-                        cb,
-                    );
-                };
-            };
-            match self.transformer.monotonicity() {
-                // Descending transformer: push tuples from `buffer` to builder
-                // in reverse order.
-                Monotonicity::Descending => {
-                    for tuple in self.buffer.dyn_iter_mut().rev() {
-                        builder.push(tuple)
+                match monotonicity {
+                    // Descending transformer: push tuples from `buffer` to builder
+                    // in reverse order.
+                    Monotonicity::Descending => {
+                        for tuple in buffer.dyn_iter_mut().rev() {
+                            builder.push(tuple)
+                        }
                     }
-                }
-                // Unordered transformer: sort the buffer before pushing tuples
-                // to `builder`.
-                Monotonicity::Unordered => {
-                    self.buffer.consolidate();
-                    for tuple in self.buffer.dyn_iter_mut() {
-                        builder.push(tuple)
+                    // Unordered transformer: sort the buffer before pushing tuples
+                    // to `builder`.
+                    Monotonicity::Unordered => {
+                        buffer.consolidate();
+                        for tuple in buffer.dyn_iter_mut() {
+                            builder.push(tuple)
+                        }
                     }
+                    // Ascending transformer: all updates already pushed to builder.
+                    _ => {}
                 }
-                // Ascending transformer: all updates already pushed to builder.
-                _ => {}
+                buffer.clear();
+
+                if builder.num_tuples() >= chunk_size {
+                    let result = builder.done();
+                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    yield (result, false, delta_cursor.position());
+                    builder = TupleBuilder::new(
+                        &self.output_factories,
+                        OB::Builder::with_capacity(&self.output_factories, delta.len()),
+                    );
+                }
+
+                delta_cursor.step_key();
             }
-            self.buffer.clear();
 
-            delta_cursor.step_key();
+            let result = builder.done();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            yield (result, true, delta_cursor.position())
         }
-
-        builder.done()
     }
 }

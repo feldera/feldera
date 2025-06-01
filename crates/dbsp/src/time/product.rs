@@ -1,8 +1,7 @@
 use crate::{
     algebra::{Lattice, PartialOrder},
-    dynamic::{DataTrait, WeightTrait},
     time::Timestamp,
-    trace::{FallbackKeyBatch, FallbackValBatch},
+    trace::Batch,
     Scope,
 };
 use rkyv::{Archive, Deserialize, Serialize};
@@ -86,11 +85,11 @@ where
     TOuter: Timestamp,
     TInner: Timestamp,
 {
+    const NESTING_DEPTH: usize = TOuter::NESTING_DEPTH + 1;
+
     type Nested = Product<Self, u32>;
 
-    type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        FallbackValBatch<K, V, Self, R>;
-    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackKeyBatch<K, Self, R>;
+    type TimedBatch<B: Batch<Time = ()>> = B::Timed<Self>;
 
     fn minimum() -> Self {
         Self::new(TOuter::minimum(), TInner::minimum())

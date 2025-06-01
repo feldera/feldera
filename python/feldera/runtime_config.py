@@ -80,6 +80,7 @@ class RuntimeConfig:
         resources: Optional[Resources] = None,
         fault_tolerance_model: Optional[FaultToleranceModel] = None,
         checkpoint_interval_secs: Optional[int] = None,
+        dev_tweaks: Optional[dict] = None,
     ):
         self.workers = workers
         self.tracing = tracing
@@ -103,6 +104,7 @@ class RuntimeConfig:
                 self.storage = storage.__dict__
             else:
                 raise ValueError(f"Unknown value '{storage}' for storage")
+        self.dev_tweaks = dev_tweaks
 
     @staticmethod
     def default() -> "RuntimeConfig":

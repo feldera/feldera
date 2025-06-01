@@ -3,14 +3,17 @@
 use std::cmp::Ordering;
 
 use crate::{
+    circuit::CircuitConfig,
     dynamic::{DowncastTrait, DynData, DynPair},
     indexed_zset,
     operator::{CmpFunc, IndexedZSetHandle, OutputHandle},
     trace::{
         test::test_batch::{assert_batch_eq, assert_typed_batch_eq, TestBatch, TestBatchFactories},
-        Cursor, Trace,
+        Cursor, SpineSnapshot as DynSpineSnapshot, Trace,
     },
-    typed_batch::{BatchReader, DynBatchReader, DynOrdIndexedZSet, OrdIndexedZSet, TypedBatch},
+    typed_batch::{
+        BatchReader, DynBatchReader, DynOrdIndexedZSet, OrdIndexedZSet, SpineSnapshot, TypedBatch,
+    },
     utils::{Tup2, Tup3, Tup4},
     DBData, DynZWeight, RootCircuit, Runtime, ZWeight,
 };
@@ -188,13 +191,19 @@ fn topk_test_circuit(
     circuit: &mut RootCircuit,
 ) -> AnyResult<(
     IndexedZSetHandle<i32, i32>,
-    OutputHandle<OrdIndexedZSet<i32, i32>>,
-    OutputHandle<OrdIndexedZSet<i32, i32>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<i32, i32>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<i32, i32>>>,
 )> {
     let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32>();
 
-    let topk_asc_handle = input_stream.topk_asc(5).integrate().output();
-    let topk_desc_handle = input_stream.topk_desc(5).integrate().output();
+    let topk_asc_handle = input_stream
+        .topk_asc(5)
+        .accumulate_integrate()
+        .accumulate_output();
+    let topk_desc_handle = input_stream
+        .topk_desc(5)
+        .accumulate_integrate()
+        .accumulate_output();
 
     Ok((input_handle, topk_asc_handle, topk_desc_handle))
 }
@@ -282,16 +291,21 @@ fn lag_test_circuit(
             i32,
             Tup2<i32, Option<i32>>,
             ZWeight,
-            DynOrdIndexedZSet<
-                DynData, /* <i32> */
-                DynPair<DynData /* <i32> */, DynData /* <Option<i32>> */>,
+            DynSpineSnapshot<
+                DynOrdIndexedZSet<
+                    DynData, /* <i32> */
+                    DynPair<DynData /* <i32> */, DynData /* <Option<i32>> */>,
+                >,
             >,
         >,
     >,
 )> {
     let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32>();
 
-    let lag_handle = input_stream.lag(3, |v| v.cloned()).integrate().output();
+    let lag_handle = input_stream
+        .lag(3, |v| v.cloned())
+        .accumulate_integrate()
+        .accumulate_output();
 
     Ok((input_handle, lag_handle))
 }
@@ -305,16 +319,21 @@ fn lead_test_circuit(
             i32,
             Tup2<i32, Option<i32>>,
             ZWeight,
-            DynOrdIndexedZSet<
-                DynData, /* <i32> */
-                DynPair<DynData /* <i32> */, DynData /* <Option<i32>> */>,
+            DynSpineSnapshot<
+                DynOrdIndexedZSet<
+                    DynData, /* <i32> */
+                    DynPair<DynData /* <i32> */, DynData /* <Option<i32>> */>,
+                >,
             >,
         >,
     >,
 )> {
     let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32>();
 
-    let lead_handle = input_stream.lag(-3, |v| v.cloned()).integrate().output();
+    let lead_handle = input_stream
+        .lag(-3, |v| v.cloned())
+        .accumulate_integrate()
+        .accumulate_output();
 
     Ok((input_handle, lead_handle))
 }
@@ -323,7 +342,7 @@ fn lag_custom_order_test_circuit(
     circuit: &mut RootCircuit,
 ) -> AnyResult<(
     IndexedZSetHandle<i32, Tup2<i32, String>>,
-    OutputHandle<OrdIndexedZSet<i32, Tup3<i32, String, Option<Tup2<i32, String>>>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<i32, Tup3<i32, String, Option<Tup2<i32, String>>>>>>,
 )> {
     struct AscDesc;
 
@@ -347,63 +366,122 @@ fn lag_custom_order_test_circuit(
             |v| v.cloned(),
             |v, vl| Tup3(v.0, v.1.clone(), vl.clone()),
         )
-        .integrate()
-        .output();
+        .accumulate_integrate()
+        .accumulate_output();
 
     Ok((input_handle, lag_handle))
 }
 
-fn lead_test(trace: Vec<Vec<(i32, i32, ZWeight)>>) {
-    let (mut dbsp, (input_handle, lead_handle)) =
-        Runtime::init_circuit(4, lead_test_circuit).unwrap();
+fn lead_test(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
+    let (mut dbsp, (input_handle, lead_handle)) = Runtime::init_circuit(
+        CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+        lead_test_circuit,
+    )
+    .unwrap();
 
     let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
 
-    for batch in trace.into_iter() {
-        let records = batch
-            .iter()
-            .map(|(k, v, r)| ((*k, *v, ()), *r))
-            .collect::<Vec<_>>();
+    if transaction {
+        dbsp.start_transaction().unwrap();
+        for batch in trace.into_iter() {
+            let records = batch
+                .iter()
+                .map(|(k, v, r)| ((*k, *v, ()), *r))
+                .collect::<Vec<_>>();
 
-        let ref_batch = TestBatch::from_typed_data(&records);
-        ref_trace.insert(ref_batch);
+            let ref_batch = TestBatch::from_typed_data(&records);
+            ref_trace.insert(ref_batch);
 
-        for (k, v, r) in batch.into_iter() {
-            input_handle.push(k, (v, r));
+            for (k, v, r) in batch.into_iter() {
+                input_handle.push(k, (v, r));
+            }
+            dbsp.step().unwrap();
         }
-        dbsp.step().unwrap();
 
-        let lead_result = lead_handle.consolidate();
+        dbsp.commit_transaction().unwrap();
+
+        let lead_result = lead_handle.concat().consolidate();
         let ref_lead = ref_trace.lead::<i32, i32>(3);
 
         assert_batch_eq(lead_result.inner(), &ref_lead);
+    } else {
+        for batch in trace.into_iter() {
+            let records = batch
+                .iter()
+                .map(|(k, v, r)| ((*k, *v, ()), *r))
+                .collect::<Vec<_>>();
+
+            let ref_batch = TestBatch::from_typed_data(&records);
+            ref_trace.insert(ref_batch);
+
+            for (k, v, r) in batch.into_iter() {
+                input_handle.push(k, (v, r));
+            }
+            dbsp.transaction().unwrap();
+
+            let lead_result = lead_handle.concat().consolidate();
+            let ref_lead = ref_trace.lead::<i32, i32>(3);
+
+            assert_batch_eq(lead_result.inner(), &ref_lead);
+        }
     }
 }
 
-fn lag_test(trace: Vec<Vec<(i32, i32, ZWeight)>>) {
-    let (mut dbsp, (input_handle, lag_handle)) =
-        Runtime::init_circuit(4, lag_test_circuit).unwrap();
+fn lag_test(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
+    let (mut dbsp, (input_handle, lag_handle)) = Runtime::init_circuit(
+        CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+        lag_test_circuit,
+    )
+    .unwrap();
 
     let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
 
-    for batch in trace.into_iter() {
-        let records = batch
-            .iter()
-            .map(|(k, v, r)| ((*k, *v, ()), *r))
-            .collect::<Vec<_>>();
+    if transaction {
+        dbsp.start_transaction().unwrap();
 
-        let ref_batch = TestBatch::from_typed_data(&records);
-        ref_trace.insert(ref_batch);
+        for batch in trace.into_iter() {
+            let records = batch
+                .iter()
+                .map(|(k, v, r)| ((*k, *v, ()), *r))
+                .collect::<Vec<_>>();
 
-        for (k, v, r) in batch.into_iter() {
-            input_handle.push(k, (v, r));
+            let ref_batch = TestBatch::from_typed_data(&records);
+            ref_trace.insert(ref_batch);
+
+            for (k, v, r) in batch.into_iter() {
+                input_handle.push(k, (v, r));
+            }
+            dbsp.step().unwrap();
         }
-        dbsp.step().unwrap();
 
-        let lag_result = lag_handle.consolidate();
+        dbsp.commit_transaction().unwrap();
+
+        let lag_result = lag_handle.concat().consolidate();
         let ref_lag = ref_trace.lag::<i32, i32>(3);
 
         assert_batch_eq(lag_result.inner(), &ref_lag);
+    } else {
+        for batch in trace.into_iter() {
+            let records = batch
+                .iter()
+                .map(|(k, v, r)| ((*k, *v, ()), *r))
+                .collect::<Vec<_>>();
+
+            let ref_batch = TestBatch::from_typed_data(&records);
+            ref_trace.insert(ref_batch);
+
+            for (k, v, r) in batch.into_iter() {
+                input_handle.push(k, (v, r));
+            }
+            dbsp.transaction().unwrap();
+
+            let lag_result = SpineSnapshot::<TypedBatch<i32, Tup2<i32, Option<i32>>, _, _>>::concat(
+                &lag_handle.take_from_all(),
+            );
+            let ref_lag = ref_trace.lag::<i32, i32>(3);
+
+            assert_batch_eq(lag_result.inner(), &ref_lag);
+        }
     }
 }
 
@@ -411,7 +489,7 @@ fn lag_test(trace: Vec<Vec<(i32, i32, ZWeight)>>) {
 fn test_lead_regressions() {
     let trace = vec![vec![(0, 0, 1), (0, 73, -1), (0, 1, 1)], vec![(0, 0, 1)]];
 
-    lead_test(trace);
+    lead_test(trace, false);
 }
 
 #[test]
@@ -429,7 +507,7 @@ fn test_lag_regressions() {
     ];
 
     for trace in traces {
-        lag_test(trace);
+        lag_test(trace, false);
     }
 }
 
@@ -581,7 +659,7 @@ fn test_topk_custom_ord() {
         for (k, v, r) in batch.into_iter() {
             input_handle.push(k, (v, r));
         }
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         let topk_result = topk_handle.consolidate();
 
@@ -608,11 +686,23 @@ fn test_topk_custom_ord() {
 }
 
 #[test]
-fn test_lag_custom_ord() {
-    let (mut dbsp, (input_handle, lag_handle)) =
-        Runtime::init_circuit(4, lag_custom_order_test_circuit).unwrap();
+fn test_lag_custom_ord_small_step() {
+    test_lag_custom_ord(false)
+}
 
-    let trace = vec![
+#[test]
+fn test_lag_custom_ord_big_step() {
+    test_lag_custom_ord(true)
+}
+
+fn test_lag_custom_ord(transaction: bool) {
+    let (mut dbsp, (input_handle, lag_handle)) = Runtime::init_circuit(
+        CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+        lag_custom_order_test_circuit,
+    )
+    .unwrap();
+
+    let trace = [
         vec![
             (1, Tup2(1, "f".to_string()), 1),
             (1, Tup2(1, "e".to_string()), 1),
@@ -690,30 +780,56 @@ fn test_lag_custom_ord() {
         },
     ];
 
-    let mut expected_output = expected_output.into_iter();
+    if transaction {
+        dbsp.start_transaction().unwrap();
 
-    for batch in trace.into_iter() {
-        println!("step");
-        for (k, v, r) in batch.into_iter() {
-            input_handle.push(k, (v, r));
+        for i in 0..trace.len() {
+            println!("step");
+            let batch = trace[i].clone();
+            for (k, v, r) in batch.into_iter() {
+                input_handle.push(k, (v, r));
+            }
+            dbsp.step().unwrap();
         }
-        dbsp.step().unwrap();
 
-        let topk_result = lag_handle.consolidate();
+        dbsp.commit_transaction().unwrap();
 
-        assert_typed_batch_eq(&topk_result, &expected_output.next().unwrap());
+        let topk_result = lag_handle.concat().consolidate();
+
+        assert_typed_batch_eq(&topk_result, &expected_output.last().unwrap().clone());
+    } else {
+        for i in 0..trace.len() {
+            println!("step");
+            let batch = trace[i].clone();
+            for (k, v, r) in batch.into_iter() {
+                input_handle.push(k, (v, r));
+            }
+            dbsp.transaction().unwrap();
+
+            let topk_result = lag_handle.concat().consolidate();
+
+            assert_typed_batch_eq(&topk_result, &expected_output[i]);
+        }
     }
 }
 
-proptest! {
-    #[test]
-    fn test_topk(trace in input_trace(5, 1_000, 200, 20)) {
-        let (mut dbsp, (input_handle, topk_asc_handle, topk_desc_handle)) = Runtime::init_circuit(4, topk_test_circuit).unwrap();
+fn test_topk(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
+    let (mut dbsp, (input_handle, topk_asc_handle, topk_desc_handle)) = Runtime::init_circuit(
+        CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+        topk_test_circuit,
+    )
+    .unwrap();
 
-        let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
+    let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
+
+    if transaction {
+        dbsp.start_transaction().unwrap();
 
         for batch in trace.into_iter() {
-            let records = batch.iter().map(|(k, v, r)| ((*k, *v, ()), *r)).collect::<Vec<_>>();
+            let records = batch
+                .iter()
+                .map(|(k, v, r)| ((*k, *v, ()), *r))
+                .collect::<Vec<_>>();
 
             let ref_batch = TestBatch::from_typed_data(&records);
             ref_trace.insert(ref_batch);
@@ -722,9 +838,35 @@ proptest! {
                 input_handle.push(k, (v, r));
             }
             dbsp.step().unwrap();
+        }
 
-            let topk_asc_result = topk_asc_handle.consolidate();
-            let topk_desc_result = topk_desc_handle.consolidate();
+        dbsp.commit_transaction().unwrap();
+
+        let topk_asc_result = topk_asc_handle.concat().consolidate();
+        let topk_desc_result = topk_desc_handle.concat().consolidate();
+
+        let ref_topk_asc = ref_trace.topk_asc::<i32, i32>(5);
+        let ref_topk_desc = ref_trace.topk_desc::<i32, i32>(5);
+
+        assert_batch_eq(topk_asc_result.inner(), &ref_topk_asc);
+        assert_batch_eq(topk_desc_result.inner(), &ref_topk_desc);
+    } else {
+        for batch in trace.into_iter() {
+            let records = batch
+                .iter()
+                .map(|(k, v, r)| ((*k, *v, ()), *r))
+                .collect::<Vec<_>>();
+
+            let ref_batch = TestBatch::from_typed_data(&records);
+            ref_trace.insert(ref_batch);
+
+            for (k, v, r) in batch.into_iter() {
+                input_handle.push(k, (v, r));
+            }
+            dbsp.transaction().unwrap();
+
+            let topk_asc_result = topk_asc_handle.concat().consolidate();
+            let topk_desc_result = topk_desc_handle.concat().consolidate();
 
             let ref_topk_asc = ref_trace.topk_asc::<i32, i32>(5);
             let ref_topk_desc = ref_trace.topk_desc::<i32, i32>(5);
@@ -733,14 +875,37 @@ proptest! {
             assert_batch_eq(topk_desc_result.inner(), &ref_topk_desc);
         }
     }
+}
 
+proptest! {
     #[test]
-    fn test_lag(trace in input_trace(5, 100, 200, 20)) {
-        lag_test(trace)
+    fn test_topk_small_step(trace in input_trace(5, 1_000, 200, 20)) {
+        test_topk(trace, false)
     }
 
     #[test]
-    fn test_lead(trace in input_trace(5, 100, 200, 20)) {
-        lead_test(trace)
+    fn test_topk_big_step(trace in input_trace(5, 1_000, 200, 20)) {
+        test_topk(trace, true)
     }
+
+    #[test]
+    fn test_lag_small_step(trace in input_trace(5, 100, 200, 20)) {
+        lag_test(trace, false)
+    }
+
+    #[test]
+    fn test_lag_big_step(trace in input_trace(5, 100, 200, 20)) {
+        lag_test(trace, true)
+    }
+
+    #[test]
+    fn test_lead_small_step(trace in input_trace(5, 100, 200, 20)) {
+        lead_test(trace, false)
+    }
+
+    #[test]
+    fn test_lead_big_step(trace in input_trace(5, 100, 200, 20)) {
+        lead_test(trace, true)
+    }
+
 }

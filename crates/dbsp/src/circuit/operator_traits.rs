@@ -3,14 +3,19 @@
 //! Operators are the building blocks of DBSP circuits.  An operator
 //! consumes one or more input streams and produces an output stream.
 
+#![allow(async_fn_in_trait)]
+
 use feldera_storage::StoragePath;
 
-use crate::circuit::{
-    metadata::{OperatorLocation, OperatorMeta},
-    OwnershipPreference, Scope,
-};
 use crate::Error;
-use std::{borrow::Cow, future::Future};
+use crate::{
+    circuit::{
+        metadata::{OperatorLocation, OperatorMeta},
+        OwnershipPreference, Scope,
+    },
+    trace::cursor::Position,
+};
+use std::borrow::Cow;
 
 use super::GlobalNodeId;
 
@@ -220,7 +225,7 @@ pub trait Operator: 'static {
     /// Fails if the operator is stateful, i.e., expects a checkpoint, by
     /// `persistent_id` is `None`
     #[allow(unused_variables)]
-    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         Ok(())
     }
 
@@ -258,6 +263,33 @@ pub trait Operator: 'static {
     fn end_replay(&mut self) -> Result<(), Error> {
         panic!("end_replay() is not implemented for this operator")
     }
+
+    /// Notifies the operator that all of its predecessors have produced
+    /// all outputs for the current transaction.
+    ///
+    /// Operators that wait for all inputs to arrive before producing
+    /// outputs (e.g., join, aggregate, etc.) can use this notification to
+    /// start processing inputs the next time `eval` is invoked.
+    fn flush(&mut self) {}
+
+    /// Invoked after `flush` after each `eval` call to check if all outputs
+    /// have been produced.
+    ///
+    /// Once this method returns `true`, its downstream operators can be flushed.
+    fn is_flush_complete(&self) -> bool {
+        true
+    }
+
+    /// Returns the current progress of the operator in processing the current transaction.
+    ///
+    /// Returns a best-effort estimate of the amount of work done by the operator
+    /// toward processing inputs accumulated before `flush` was called.
+    ///
+    /// Can return `None` if the operator is not in flush mode (i.e., between
+    /// `flush` was called and `is_flush_complete` returns `true`).
+    fn flush_progress(&self) -> Option<Position> {
+        None
+    }
 }
 
 /// A source operator that injects data from the outside world or from the
@@ -265,7 +297,7 @@ pub trait Operator: 'static {
 /// a single output stream.
 pub trait SourceOperator<O>: Operator {
     /// Yield the next value.
-    fn eval(&mut self) -> impl Future<Output = O>;
+    async fn eval(&mut self) -> O;
 }
 
 /// A sink operator consumes an input stream, but does not produce an output
@@ -273,11 +305,11 @@ pub trait SourceOperator<O>: Operator {
 /// performed by the circuit to the outside world.
 pub trait SinkOperator<I>: Operator {
     /// Consume input by reference.
-    fn eval(&mut self, input: &I) -> impl Future<Output = ()>;
+    async fn eval(&mut self, input: &I);
 
     /// Consume input by value.
-    fn eval_owned(&mut self, input: I) -> impl Future<Output = ()> {
-        async move { self.eval(&input).await }
+    async fn eval_owned(&mut self, input: I) {
+        self.eval(&input).await
     }
 
     /// Ownership preference on the operator's input stream
@@ -299,7 +331,7 @@ where
     ///
     /// The operator must be prepated to handle any combination of
     /// owned and borrowed inputs.
-    fn eval<'a>(&mut self, lhs: Cow<'a, I1>, rhs: Cow<'a, I2>) -> impl Future<Output = ()>;
+    async fn eval<'a>(&mut self, lhs: Cow<'a, I1>, rhs: Cow<'a, I2>);
 
     /// Ownership preference on the operator's input streams
     /// (see [`OwnershipPreference`]).
@@ -315,11 +347,11 @@ where
 /// and produces a stream of outputs of type `O`.
 pub trait UnaryOperator<I, O>: Operator {
     /// Consume input by reference.
-    fn eval(&mut self, input: &I) -> impl Future<Output = O>;
+    async fn eval(&mut self, input: &I) -> O;
 
     /// Consume input by value.
-    fn eval_owned(&mut self, input: I) -> impl Future<Output = O> {
-        async move { self.eval(&input).await }
+    async fn eval_owned(&mut self, input: I) -> O {
+        self.eval(&input).await
     }
 
     /// Ownership preference on the operator's input stream
@@ -333,21 +365,21 @@ pub trait UnaryOperator<I, O>: Operator {
 /// of types `I1` and `I2` and produces a stream of outputs of type `O`.
 pub trait BinaryOperator<I1, I2, O>: Operator {
     /// Consume input by reference.
-    fn eval(&mut self, lhs: &I1, rhs: &I2) -> impl Future<Output = O>;
+    async fn eval(&mut self, lhs: &I1, rhs: &I2) -> O;
 
     /// Consume input by value.
-    fn eval_owned(&mut self, lhs: I1, rhs: I2) -> impl Future<Output = O> {
-        async move { self.eval(&lhs, &rhs).await }
+    async fn eval_owned(&mut self, lhs: I1, rhs: I2) -> O {
+        self.eval(&lhs, &rhs).await
     }
 
     /// Consume the first input by value and the second by reference.
-    fn eval_owned_and_ref(&mut self, lhs: I1, rhs: &I2) -> impl Future<Output = O> {
-        async move { self.eval(&lhs, rhs).await }
+    async fn eval_owned_and_ref(&mut self, lhs: I1, rhs: &I2) -> O {
+        self.eval(&lhs, rhs).await
     }
 
     /// Consume the first input by reference and the second by value.
-    fn eval_ref_and_owned(&mut self, lhs: &I1, rhs: I2) -> impl Future<Output = O> {
-        async move { self.eval(lhs, &rhs).await }
+    async fn eval_ref_and_owned(&mut self, lhs: &I1, rhs: I2) -> O {
+        self.eval(lhs, &rhs).await
     }
 
     /// Ownership preference on the operator's input streams
@@ -370,14 +402,9 @@ where
 {
     /// Consume inputs.
     ///
-    /// The operator must be prepated to handle any combination of
+    /// The operator must be prepared to handle any combination of
     /// owned and borrowed inputs.
-    fn eval(
-        &mut self,
-        i1: Cow<'_, I1>,
-        i2: Cow<'_, I2>,
-        i3: Cow<'_, I3>,
-    ) -> impl Future<Output = O>;
+    async fn eval(&mut self, i1: Cow<'_, I1>, i2: Cow<'_, I2>, i3: Cow<'_, I3>) -> O;
 
     fn input_preference(
         &self,
@@ -406,15 +433,15 @@ where
 {
     /// Consume inputs.
     ///
-    /// The operator must be prepated to handle any combination of
+    /// The operator must be prepared to handle any combination of
     /// owned and borrowed inputs.
-    fn eval(
+    async fn eval(
         &mut self,
         i1: Cow<'_, I1>,
         i2: Cow<'_, I2>,
         i3: Cow<'_, I3>,
         i4: Cow<'_, I4>,
-    ) -> impl Future<Output = O>;
+    ) -> O;
 
     fn input_preference(
         &self,
@@ -443,7 +470,7 @@ where
     ///
     /// The operator must be prepared to handle any combination of
     /// owned and borrowed inputs.
-    fn eval<'a, Iter>(&'a mut self, inputs: Iter) -> impl Future<Output = O>
+    async fn eval<'a, Iter>(&'a mut self, inputs: Iter) -> O
     where
         Iter: Iterator<Item = Cow<'a, I>>;
 
@@ -485,14 +512,14 @@ pub trait StrictUnaryOperator<I, O>: StrictOperator<O> {
     /// output will be consumed via
     /// [`get_output`](`StrictOperator::get_output`) during the
     /// next timestamp.
-    fn eval_strict(&mut self, input: &I) -> impl Future<Output = ()>;
+    async fn eval_strict(&mut self, input: &I);
 
     /// Feed input for the current timestamp to the operator by value.  The
     /// output will be consumed via
     /// [`get_output`](`StrictOperator::get_output`) during the
     /// next timestamp.
-    fn eval_strict_owned(&mut self, input: I) -> impl Future<Output = ()> {
-        async move { self.eval_strict(&input).await }
+    async fn eval_strict_owned(&mut self, input: I) {
+        self.eval_strict(&input).await
     }
 
     /// Ownership preference on the operator's input stream
@@ -525,7 +552,7 @@ pub trait ImportOperator<I, O>: Operator {
 
     /// Invoked once per nested clock cycle to write a value to
     /// the output stream.
-    fn eval(&mut self) -> impl Future<Output = O>;
+    async fn eval(&mut self) -> O;
 
     /// Ownership preference on the operator's input stream
     /// (see [`OwnershipPreference`]).

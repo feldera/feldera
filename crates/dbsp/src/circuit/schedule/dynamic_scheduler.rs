@@ -38,28 +38,49 @@
 //! scans the ready set marking operators ready and moving them to the runnable
 //! queue when necessary. If the runnable queue is still empty, the scheduler
 //! thread parks itself waiting for the next ready notification.
+//!
+//! ## Transactions
+//!
+//! As commit time, the scheduler tracks the number of unflushed predecessors for
+//! each operator and flushes the operator when the number reaches zero. Once all
+//! operators have been flushed, the scheduler waits for all parallel workers to
+//! complete flushing their circuit before declaring the transaction committed.
 
 use std::{
-    cell::{RefCell, RefMut},
+    cell::{Ref, RefCell, RefMut},
     collections::{BTreeSet, HashMap, HashSet},
     panic,
     sync::{Arc, Mutex},
 };
 
-use crate::circuit::{
-    runtime::Runtime,
-    schedule::{
-        util::{circuit_graph, ownership_constraints},
-        Error, Scheduler,
+use crate::{
+    circuit::{
+        runtime::{Consensus, Runtime},
+        schedule::{
+            util::{circuit_graph, ownership_constraints},
+            CommitProgress, Error, Scheduler,
+        },
+        trace::SchedulerEvent,
+        Circuit, GlobalNodeId, NodeId,
     },
-    trace::SchedulerEvent,
-    Circuit, GlobalNodeId, NodeId,
+    Position,
 };
 use petgraph::algo::toposort;
 use tokio::{select, sync::Notify, task::JoinSet};
 
+#[derive(Debug)]
+enum FlushState {
+    /// The operator is waiting for all predecessors to be flushed.
+    UnflushedDependencies(usize),
+    /// `flush` has been called, but `flush_complete` hasn't yet returned
+    /// `true`.
+    Started(Option<Position>),
+    /// Flush has been completed for the current transaction.
+    Completed(Option<Position>),
+}
+
 /// A task is a unit of work scheduled by the dynamic scheduler.
-/// It contains a reference to a node in the circuit and associted metadata.
+/// It contains a reference to a node in the circuit and associated metadata.
 struct Task {
     // Immutable fields (initialized once when preparing the scheduler).
     /// Circuit node to be scheduled.
@@ -76,7 +97,7 @@ struct Task {
     /// ready state.
     is_async: bool,
 
-    // Mutable fields.
+    // Mutable fields reset on each step.
     /// Number of predecessors not yet evaluated.  Set to `num_predecessors`
     /// at the start of each step.
     unsatisfied_dependencies: usize,
@@ -88,6 +109,9 @@ struct Task {
     /// Task has been scheduled (put on the run queue) in the current clock
     /// cycle.
     scheduled: bool,
+
+    // Mutable fields reset on each transaction.
+    flush_state: FlushState,
 }
 
 /// The set of async nodes for which the scheduler has received ready
@@ -121,6 +145,22 @@ impl Notifications {
     }
 }
 
+enum TransactionPhase {
+    /// Not started
+    Idle,
+
+    /// Started, but not yet committing.
+    Started,
+
+    /// Committing, but not yet complete.
+    /// The value is the number of unflushed operators.
+    Committing(usize),
+
+    /// This scheduler, and all parallel workers have finished flushing
+    /// all operators in the circuit.
+    CommitComplete,
+}
+
 /// Dynamic scheduler internals.
 struct Inner {
     // Immutable fields (initialized once when preparing the scheduler).
@@ -133,16 +173,21 @@ struct Inner {
 
     /// Currently running tasks. Each task returns node id along with status,
     /// so that the scheduler can match it back to the circuit node.
-    handles: JoinSet<(NodeId, Result<(), Error>)>,
+    handles: JoinSet<(NodeId, Result<Option<Position>, Error>)>,
 
     /// True when the scheduler is waiting for at least one task to become ready.
     waiting: bool,
+
+    transaction_phase: TransactionPhase,
+
+    /// Used to synchronize commit completion across all workers.
+    global_commit_consensus: Consensus,
 }
 
 impl Inner {
     /// Called when task `node_id` has completed to update unsatisfied dependencies of
     /// all successors and spawn any tasks that are ready to run.
-    fn schedule_successors<C>(&mut self, circuit: &C, node_id: NodeId)
+    fn schedule_successors<C>(&mut self, circuit: &C, node_id: NodeId, flush_complete: bool)
     where
         C: Circuit,
     {
@@ -153,6 +198,17 @@ impl Inner {
             let successor = self.tasks.get_mut(&succ_id).unwrap();
             debug_assert_ne!(successor.unsatisfied_dependencies, 0);
             successor.unsatisfied_dependencies -= 1;
+            if flush_complete {
+                let FlushState::UnflushedDependencies(ref mut n) = &mut successor.flush_state
+                else {
+                    panic!(
+                        "Internal scheduler error: node {node_id} is in state {:?} while it still has unflushed dependencies",
+                        successor.flush_state
+                    );
+                };
+                debug_assert!(*n > 0);
+                *n -= 1;
+            }
             if successor.unsatisfied_dependencies == 0 && successor.is_ready {
                 self.spawn_task(circuit, succ_id);
             }
@@ -276,6 +332,7 @@ impl Inner {
                     unsatisfied_dependencies: num_predecessors,
                     is_ready: !is_async,
                     scheduled: false,
+                    flush_state: FlushState::UnflushedDependencies(num_predecessors),
                 },
             );
         }
@@ -285,6 +342,8 @@ impl Inner {
             notifications: Notifications::new(num_async_nodes),
             handles: JoinSet::new(),
             waiting: false,
+            transaction_phase: TransactionPhase::Idle,
+            global_commit_consensus: Consensus::new(),
         };
 
         // Setup scheduler callbacks.
@@ -307,6 +366,21 @@ impl Inner {
         Ok(scheduler)
     }
 
+    fn commit_complete(&self) -> bool {
+        matches!(self.transaction_phase, TransactionPhase::CommitComplete)
+    }
+
+    fn transaction_started(&self) -> bool {
+        matches!(self.transaction_phase, TransactionPhase::Started)
+    }
+
+    fn transaction_in_progress(&self) -> bool {
+        matches!(
+            self.transaction_phase,
+            TransactionPhase::Started | TransactionPhase::Committing(_)
+        )
+    }
+
     /// Spawn a tokio task to evaluate `node_id`.
     fn spawn_task<C>(&mut self, circuit: &C, node_id: NodeId)
     where
@@ -326,6 +400,13 @@ impl Inner {
 
         let circuit = circuit.clone();
 
+        let committing = matches!(self.transaction_phase, TransactionPhase::Committing(_));
+
+        if committing && matches!(task.flush_state, FlushState::UnflushedDependencies(0)) {
+            circuit.flush_node(node_id);
+            task.flush_state = FlushState::Started(None);
+        }
+
         self.handles.spawn_local(async move {
             let result = circuit.eval_node(node_id).await;
             (node_id, result)
@@ -335,13 +416,80 @@ impl Inner {
     async fn abort(&mut self) {
         // Wait for all started tasks to abort.
         // TODO: we could use self.handles.abort_all() instead to terminate any slow (or stuck),
-        // IO operations, but that requires all operators to handle cancelation gracefully.
+        // IO operations, but that requires all operators to handle cancellation gracefully.
         while !self.handles.is_empty() {
             let _ = self.handles.join_next().await;
         }
     }
 
+    fn start_transaction(&mut self) {
+        // Reset unsatisfied dependencies, initialize runnable queue.
+        for task in self.tasks.values_mut() {
+            task.flush_state = FlushState::UnflushedDependencies(task.num_predecessors);
+        }
+        self.transaction_phase = TransactionPhase::Started;
+    }
+
+    fn start_commit_transaction(&mut self) -> Result<(), Error> {
+        if !self.transaction_started() {
+            return Err(Error::CommitWithoutTransaction);
+        }
+        self.transaction_phase = TransactionPhase::Committing(self.tasks.len());
+
+        Ok(())
+    }
+
+    fn is_commit_complete(&self) -> bool {
+        self.commit_complete()
+    }
+
+    fn commit_progress(&self) -> CommitProgress {
+        let mut commit_progress = CommitProgress::new();
+
+        for (node_id, task) in self.tasks.iter() {
+            match &task.flush_state {
+                FlushState::UnflushedDependencies(_) => commit_progress.add_remaining(*node_id),
+                FlushState::Completed(progress) => {
+                    commit_progress.add_completed(*node_id, progress.clone())
+                }
+                FlushState::Started(progress) => {
+                    commit_progress.add_in_progress(*node_id, progress.clone())
+                }
+            }
+        }
+
+        commit_progress
+    }
+
     async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        if !self.transaction_in_progress() {
+            return Err(Error::StepWithoutTransaction);
+        }
+
+        circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
+        let result = self.do_step(circuit).await;
+        if let TransactionPhase::Committing(unflushed_operators) = &self.transaction_phase {
+            let commit_complete = self
+                .global_commit_consensus
+                .check(*unflushed_operators == 0)
+                .await?;
+
+            if commit_complete {
+                self.transaction_phase = TransactionPhase::CommitComplete;
+            }
+        }
+
+        circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id()));
+        if self.commit_complete() {
+            circuit.tick();
+        }
+        result
+    }
+
+    async fn do_step<C>(&mut self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
@@ -395,15 +543,34 @@ impl Inner {
                         self.tasks.get_mut(&node_id).unwrap().is_ready = false;
                     }
 
-                    if let Err(error) = task_result {
-                        self.abort().await;
-                        return Err(error);
-                    }
+                    let progress = match task_result {
+                        Ok(progress) => progress,
+                        Err(e) => {
+                            self.abort().await;
+                            return Err(e);
+                        }
+                    };
 
                     if Runtime::kill_in_progress() {
                         self.abort().await;
                         return Err(Error::Killed);
                     }
+
+                    let flush_complete = match &mut self.tasks.get_mut(&node_id).unwrap().flush_state {
+                        flush_state@FlushState::Started(_) if circuit.is_flush_complete(node_id) => {
+                            *flush_state = FlushState::Completed(progress);
+                            let TransactionPhase::Committing(ref mut unflushed_operators) = self.transaction_phase else {
+                                panic!("Internal scheduler error: flush called while not committing");
+                            };
+                            *unflushed_operators -= 1;
+                            true
+                        }
+                        FlushState::Started(prog) => {
+                            *prog = progress;
+                            false
+                        }
+                        _ => false
+                    };
 
                     // Are we done?
                     debug_assert!(completed_tasks <= self.tasks.len());
@@ -412,7 +579,7 @@ impl Inner {
                     }
 
                     // Spawn any new tasks that are now ready to run.
-                    self.schedule_successors(circuit, node_id);
+                    self.schedule_successors(circuit, node_id, flush_complete);
 
                     // No tasks are ready to run -- account any time until we have something to run as wait time
                     if self.handles.is_empty() {
@@ -432,6 +599,13 @@ impl Inner {
 pub struct DynamicScheduler(Option<RefCell<Inner>>);
 
 impl DynamicScheduler {
+    fn inner(&self) -> Ref<'_, Inner> {
+        self.0
+            .as_ref()
+            .expect("DynamicScheduler: prepare() must be called before running the circuit")
+            .borrow()
+    }
+
     fn inner_mut(&self) -> RefMut<'_, Inner> {
         self.0
             .as_ref()
@@ -453,19 +627,36 @@ impl Scheduler for DynamicScheduler {
         Ok(())
     }
 
+    async fn start_transaction<C>(&self, _circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        let inner = &mut *self.inner_mut();
+
+        inner.start_transaction();
+
+        Ok(())
+    }
+
     #[allow(clippy::await_holding_refcell_ref)]
     async fn step<C>(&self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
-        circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
-
         let inner = &mut *self.inner_mut();
 
-        let result = inner.step(circuit).await;
-        circuit.tick();
+        inner.step(circuit).await
+    }
 
-        circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id()));
-        result
+    fn start_commit_transaction(&self) -> Result<(), Error> {
+        self.inner_mut().start_commit_transaction()
+    }
+
+    fn is_commit_complete(&self) -> bool {
+        self.inner().is_commit_complete()
+    }
+
+    fn commit_progress(&self) -> super::CommitProgress {
+        self.inner().commit_progress()
     }
 }

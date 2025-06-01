@@ -1,16 +1,14 @@
 use std::{borrow::Cow, marker::PhantomData};
 
 use crate::{
-    circuit::{
-        operator_traits::{NaryOperator, Operator},
-        WithClock,
-    },
-    ChildCircuit, Circuit, Stream,
+    circuit::operator_traits::{NaryOperator, Operator},
+    ChildCircuit, Circuit, Stream, Timestamp,
 };
 
-impl<P> ChildCircuit<P>
+impl<P, TS> ChildCircuit<P, TS>
 where
-    P: WithClock + Clone + 'static,
+    P: Clone + 'static,
+    TS: Timestamp,
 {
     #[track_caller]
     pub fn apply_n<'a, T, T2, I, F>(&'a self, streams: I, func: F) -> Stream<Self, T2>

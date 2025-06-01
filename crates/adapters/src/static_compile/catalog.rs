@@ -1,15 +1,14 @@
 use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
 use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
-use crate::{
-    catalog::{OutputCollectionHandles, SerCollectionHandle},
-    Catalog, ControllerError,
-};
+use crate::{catalog::OutputCollectionHandles, Catalog, ControllerError};
 use dbsp::circuit::circuit_builder::CircuitBase;
+use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup1;
 use dbsp::OrdZSet;
 use dbsp::{
     operator::{MapHandle, SetHandle, ZSetHandle},
+    typed_batch::BatchReader,
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
 };
 use feldera_adapterlib::catalog::CircuitCatalog;
@@ -380,7 +379,7 @@ impl Catalog {
         }
 
         // Create handle for the stream itself.
-        let (delta_handle, delta_gid) = stream.output_persistent_with_gid(persistent_id);
+        let (delta_handle, delta_gid) = stream.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
@@ -388,7 +387,7 @@ impl Catalog {
             value_schema: schema,
             index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
-                as Box<dyn SerCollectionHandle>,
+                as Box<dyn SerBatchReaderHandle>,
             integrate_handle: None,
         };
 
@@ -444,12 +443,12 @@ impl Catalog {
         let stream = stream.shard();
 
         // Create handle for the stream itself.
-        let (delta_handle, delta_gid) = stream.output_persistent_with_gid(persistent_id);
+        let (delta_handle, delta_gid) = stream.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let (integrate_handle, integrate_gid) = stream
-            .integrate_trace()
-            .apply(|t| TypedBatch::<Z::Key, (), ZWeight, _>::new(t.ro_snapshot()))
+            .accumulate_integrate_trace()
+            .apply(|t| TypedBatch::<Z::Key, (), ZWeight, _>::new(t.inner().ro_snapshot()))
             .output_persistent_with_gid(
                 persistent_id.map(|id| format!("{id}.integral")).as_deref(),
             );
@@ -465,7 +464,7 @@ impl Catalog {
                 integrate_handle,
             )) as Arc<dyn SerBatchReaderHandle>),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
-                as Box<dyn SerCollectionHandle>,
+                as Box<dyn SerBatchReaderHandle>,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -529,7 +528,7 @@ impl Catalog {
         // Create handle for the stream itself.
         let (delta_handle, delta_gid) = stream
             .map(|(_k, v)| v.clone())
-            .output_persistent_with_gid(persistent_id);
+            .accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
@@ -537,7 +536,7 @@ impl Catalog {
             value_schema: schema,
             index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
-                as Box<dyn SerCollectionHandle>,
+                as Box<dyn SerBatchReaderHandle>,
             integrate_handle: None,
         };
 
@@ -601,12 +600,12 @@ impl Catalog {
                 .as_deref(),
         );
 
-        let (delta_handle, delta_gid) = delta.output_persistent_with_gid(persistent_id);
+        let (delta_handle, delta_gid) = delta.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let (integrate_handle, integral_gid) = delta
-            .integrate_trace()
-            .apply(|s| TypedBatch::<V, (), ZWeight, _>::new(s.ro_snapshot()))
+            .accumulate_integrate_trace()
+            .apply(|s| TypedBatch::<V, (), ZWeight, _>::new(s.inner().ro_snapshot()))
             .output_persistent_with_gid(
                 persistent_id.map(|id| format!("{id}.integral")).as_deref(),
             );
@@ -619,7 +618,7 @@ impl Catalog {
             value_schema: schema,
             index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
-                as Box<dyn SerCollectionHandle>,
+                as Box<dyn SerBatchReaderHandle>,
             integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, VD, ()>>::new(
                 integrate_handle,
             )) as Arc<dyn SerBatchReaderHandle>),
@@ -689,7 +688,8 @@ impl Catalog {
 
         let view_handles = self.output_handles(view_name)?;
 
-        let (stream_handle, stream_gid) = stream.output_persistent_with_gid(persistent_id);
+        let (stream_handle, stream_gid) =
+            stream.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&stream_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
@@ -701,7 +701,7 @@ impl Catalog {
             value_schema: view_handles.value_schema.clone(),
             index_of: Some(view_name.clone()),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(stream_handle))
-                as Box<dyn SerCollectionHandle>,
+                as Box<dyn SerBatchReaderHandle>,
             integrate_handle: None,
         };
 
@@ -735,13 +735,14 @@ fn index_schema(
 mod test {
     use std::{io::Write, ops::Deref};
 
-    use crate::{catalog::RecordFormat, test::TestStruct, Catalog, CircuitCatalog, SerBatch};
+    use crate::{catalog::RecordFormat, test::TestStruct, Catalog, CircuitCatalog};
     use dbsp::Runtime;
+    use feldera_adapterlib::catalog::SerBatchReader;
     use feldera_types::format::json::JsonFlavor;
 
     const RECORD_FORMAT: RecordFormat = RecordFormat::Json(JsonFlavor::Default);
 
-    fn batch_to_json(batch: &dyn SerBatch) -> String {
+    fn batch_to_json(batch: &dyn SerBatchReader) -> String {
         let mut cursor = batch.cursor(RECORD_FORMAT.clone()).unwrap();
         let mut result = Vec::new();
 
@@ -794,9 +795,9 @@ mod test {
             .unwrap();
         input_stream_handle.flush();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
-        let delta = batch_to_json(output_stream_handles.delta_handle.consolidate().deref());
+        let delta = batch_to_json(output_stream_handles.delta_handle.concat().deref());
         assert_eq!(
             delta,
             r#"1: {"id":1,"b":true,"i":null,"s":"1"}
@@ -811,9 +812,9 @@ mod test {
             .unwrap();
         input_stream_handle.flush();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
-        let delta = batch_to_json(output_stream_handles.delta_handle.consolidate().deref());
+        let delta = batch_to_json(output_stream_handles.delta_handle.concat().deref());
         assert_eq!(
             delta,
             r#"-1: {"id":1,"b":true,"i":null,"s":"1"}
@@ -826,9 +827,9 @@ mod test {
         input_stream_handle.delete(br#"2"#).unwrap();
         input_stream_handle.flush();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
-        let delta = batch_to_json(output_stream_handles.delta_handle.consolidate().deref());
+        let delta = batch_to_json(output_stream_handles.delta_handle.concat().deref());
         assert_eq!(
             delta,
             r#"-1: {"id":2,"b":true,"i":null,"s":"2"}

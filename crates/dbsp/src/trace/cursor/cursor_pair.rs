@@ -2,7 +2,10 @@
 
 use std::{any::TypeId, cmp::Ordering, marker::PhantomData};
 
-use crate::dynamic::{DataTrait, Factory, WeightTrait};
+use crate::{
+    dynamic::{DataTrait, Factory, WeightTrait},
+    trace::cursor::Position,
+};
 
 use super::{Cursor, Direction};
 
@@ -209,6 +212,7 @@ where
             self.update_val_order_reverse();
         }
     }
+
     fn skip_zero_weight_keys_forward(&mut self) {
         while self.key_valid() {
             self.skip_zero_weight_vals_forward();
@@ -225,6 +229,7 @@ where
             self.update_key_order_forward();
         }
     }
+
     fn skip_zero_weight_keys_reverse(&mut self) {
         while self.key_valid() {
             self.skip_zero_weight_vals_forward();
@@ -322,18 +327,6 @@ where
     {
         debug_assert!(self.val_valid());
         debug_assert!(!self.weight.is_zero());
-
-        // self.weight.set_zero();
-
-        // if self.current_val1() || self.current_val12() {
-        //     self.cursor1
-        //         .map_times(&mut |_, w| self.weight.add_assign(w));
-        // }
-
-        // if self.current_val2() || self.current_val12() {
-        //     self.cursor2
-        //         .map_times(&mut |_, w| self.weight.add_assign(w));
-        // }
 
         // Weight should already be computed by `is_zero_weight`, which is always
         // called as part of every operation that moves the cursor.
@@ -590,5 +583,15 @@ where
             self.update_val_order_reverse();
         }
         self.skip_zero_weight_vals_reverse();
+    }
+
+    fn position(&self) -> Option<super::Position> {
+        let position1 = self.cursor1.position().unwrap();
+        let position2 = self.cursor2.position().unwrap();
+
+        Some(Position {
+            total: position1.total + position2.total,
+            offset: position1.offset + position2.offset,
+        })
     }
 }

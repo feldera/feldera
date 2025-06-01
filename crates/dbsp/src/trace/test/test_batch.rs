@@ -9,8 +9,8 @@ use crate::{
         Factory, Vector, WeightTrait,
     },
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, Filter,
-        Trace,
+        cursor::Position, Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher,
+        Builder, Cursor, Filter, Trace,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -797,6 +797,7 @@ where
     result: TestBatch<K, V, T, R>,
     time_diffs: Vec<(T, Box<R>)>,
     vals: BTreeMap<Box<V>, Vec<(T, Box<R>)>>,
+    num_tuples: usize,
 }
 
 impl<K, V, T, R> Builder<TestBatch<K, V, T, R>> for TestBatchBuilder<K, V, T, R>
@@ -811,11 +812,13 @@ where
             result: TestBatch::new(factories),
             time_diffs: Vec::new(),
             vals: BTreeMap::new(),
+            num_tuples: 0,
         }
     }
 
     fn push_time_diff(&mut self, time: &T, weight: &R) {
         self.time_diffs.push((time.clone(), clone_box(weight)));
+        self.num_tuples += 1;
     }
 
     fn push_val(&mut self, val: &V) {
@@ -848,6 +851,10 @@ where
     fn done(mut self) -> TestBatch<K, V, T, R> {
         self.result.data.retain(|_, r| !r.is_zero());
         self.result
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.num_tuples
     }
 }
 
@@ -1120,6 +1127,10 @@ where
 
         self.val_valid = true;
     }
+
+    fn position(&self) -> Option<Position> {
+        None
+    }
 }
 
 impl<K, V, T, R> BatchReader for TestBatch<K, V, T, R>
@@ -1184,6 +1195,7 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
+    type Timed<T2: Timestamp> = TestBatch<K, V, T2, R>;
     type Batcher = TestBatchBatcher<K, V, T, R>;
     type Builder = TestBatchBuilder<K, V, T, R>;
 
@@ -1233,6 +1245,10 @@ where
 
     fn insert(&mut self, batch: Self::Batch) {
         self.data = Self::merge(self, &batch, &self.key_filter, &self.value_filter).data;
+    }
+
+    fn insert_arc(&mut self, batch: std::sync::Arc<Self::Batch>) {
+        self.data = Self::merge(self, batch.as_ref(), &self.key_filter, &self.value_filter).data;
     }
 
     fn clear_dirty_flag(&mut self) {}

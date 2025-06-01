@@ -49,7 +49,9 @@ pub mod cursor;
 pub mod layers;
 pub mod ord;
 pub mod spine_async;
-pub use spine_async::{ListMerger, MergerType, Spine, SpineSnapshot};
+pub use spine_async::{
+    BatchReaderWithSnapshot, ListMerger, MergerType, Spine, SpineSnapshot, WithSnapshot,
+};
 
 #[cfg(test)]
 pub mod test;
@@ -261,6 +263,10 @@ pub trait Trace: BatchReader {
 
     /// Introduces a batch of updates to the trace.
     fn insert(&mut self, batch: Self::Batch);
+
+    /// Introduces a batch of updates to the trace. More efficient that cloning
+    /// a batch and calling `insert`.
+    fn insert_arc(&mut self, batch: Arc<Self::Batch>);
 
     /// Clears the value of the "dirty" flag to `false`.
     ///
@@ -621,6 +627,14 @@ pub trait Batch: BatchReader + Clone + Send + Sync
 where
     Self: Sized,
 {
+    /// A batch type equivalent to `Self`, but with timestamp type `T` instead of `Self::Time`.
+    type Timed<T: Timestamp>: Batch<
+        Key = <Self as BatchReader>::Key,
+        Val = <Self as BatchReader>::Val,
+        Time = T,
+        R = <Self as BatchReader>::R,
+    >;
+
     /// A type used to assemble batches from disordered updates.
     type Batcher: Batcher<Self>;
 
@@ -662,6 +676,30 @@ where
             unsafe { std::mem::transmute::<&BI, &Self>(batch).clone() }
         } else {
             Self::from_cursor(batch.cursor(), timestamp, factories, batch.len())
+        }
+    }
+
+    /// Like `from_batch`, but avoids cloning the batch if the output type is identical to the input type.
+    fn from_arc_batch<BI>(
+        batch: &Arc<BI>,
+        timestamp: &Self::Time,
+        factories: &Self::Factories,
+    ) -> Arc<Self>
+    where
+        BI: BatchReader<Key = Self::Key, Val = Self::Val, Time = (), R = Self::R>,
+    {
+        // Source and destination types are usually the same in the top-level scope.
+        // Optimize for this case by simply cloning the source batch. If the batch is
+        // implemented as `Arc` internally, this is essentially zero cost.
+        if TypeId::of::<BI>() == TypeId::of::<Self>() {
+            unsafe { std::mem::transmute::<&Arc<BI>, &Arc<Self>>(batch).clone() }
+        } else {
+            Arc::new(Self::from_cursor(
+                batch.cursor(),
+                timestamp,
+                factories,
+                batch.len(),
+            ))
         }
     }
 
@@ -918,6 +956,8 @@ where
         let _ = additional;
     }
 
+    fn num_tuples(&self) -> usize;
+
     /// Completes building and returns the batch.
     fn done(self) -> Output;
 }
@@ -933,6 +973,7 @@ where
     builder: B,
     kv: Box<DynPair<Output::Key, Output::Val>>,
     has_kv: bool,
+    num_tuples: usize,
 }
 
 impl<B, Output> TupleBuilder<B, Output>
@@ -945,7 +986,12 @@ where
             builder,
             kv: factories.item_factory().default_box(),
             has_kv: false,
+            num_tuples: 0,
         }
+    }
+
+    pub fn num_tuples(&self) -> usize {
+        self.num_tuples
     }
 
     /// Adds `element` to the batch.
@@ -981,6 +1027,7 @@ where
             self.kv.from_refs(key, val);
         }
         self.builder.push_time_diff(time, weight);
+        self.num_tuples += 1;
     }
 
     /// Adds tuple `(key, val, time, weight)` to the batch.
@@ -1006,6 +1053,7 @@ where
             self.kv.from_vals(key, val);
         }
         self.builder.push_time_diff_mut(time, weight);
+        self.num_tuples += 1;
     }
 
     pub fn reserve(&mut self, additional: usize) {

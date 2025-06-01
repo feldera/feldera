@@ -15,7 +15,7 @@ use crate::{
     storage::buffer_cache::CacheStats,
     time::Timestamp,
     trace::{
-        cursor::CursorList,
+        cursor::{CursorList, Position},
         merge_batches,
         ord::fallback::pick_merge_destination,
         spine_async::{
@@ -27,7 +27,6 @@ use crate::{
 };
 
 use crate::storage::file::to_bytes;
-pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
 use enum_map::EnumMap;
 use feldera_storage::StoragePath;
@@ -55,6 +54,7 @@ mod list_merger;
 mod push_merger;
 mod snapshot;
 use self::thread::{BackgroundThread, WorkerStatus};
+pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
 
 use super::{cursor::CursorFactory, BatchLocation};
 
@@ -1267,6 +1267,10 @@ impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B> {
     fn fast_forward_vals(&mut self) {
         self.with_cursor_mut(|cursor| cursor.fast_forward_vals());
     }
+
+    fn position(&self) -> Option<Position> {
+        self.with_cursor(|cursor| cursor.position())
+    }
 }
 
 impl<B> Trace for Spine<B>
@@ -1354,6 +1358,30 @@ where
 
             self.dirty = true;
             self.merger.add_batch(Arc::new(batch));
+        }
+    }
+
+    fn insert_arc(&mut self, batch: Arc<Self::Batch>) {
+        if !batch.is_empty() {
+            let batch = if batch.location() == BatchLocation::Memory
+                && Spine::<B>::size_to_level(batch.len()) >= 2
+                && pick_merge_destination([&batch], None) == BatchLocation::Storage
+            {
+                let factories = batch.factories();
+                let builder =
+                    B::Builder::for_merge(&factories, [&batch], Some(BatchLocation::Storage));
+                let (key_filter, value_filter) = self.merger.state.lock().unwrap().get_filters();
+                Arc::new(ListMerger::merge(
+                    &factories,
+                    builder,
+                    vec![batch.merge_cursor(key_filter, value_filter)],
+                ))
+            } else {
+                batch
+            };
+
+            self.dirty = true;
+            self.merger.add_batch(batch);
         }
     }
 
@@ -1512,10 +1540,15 @@ where
         );
         self.merger.resume(vec![Arc::new(batch)]);
     }
+}
 
-    /// Returns a read-only, non-merging snapshot of the current trace
-    /// state.
-    pub fn ro_snapshot(&self) -> SpineSnapshot<B> {
+impl<B: Batch> WithSnapshot for Spine<B>
+where
+    B: Batch,
+{
+    type Batch = B;
+
+    fn ro_snapshot(&self) -> SpineSnapshot<B> {
         self.into()
     }
 }

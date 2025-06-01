@@ -22,8 +22,7 @@ impl<const P: usize, const S: usize> HasZero for Fixed<P, S> {
 }
 
 impl<const P: usize, const S: usize> HasOne for Fixed<P, S> {
-    /// This will panic if 1 can't be represented in this type (that is, if `S
-    /// >= P`).
+    /// This will panic if 1 can't be represented in this type (that is, if `S >= P`).
     fn one() -> Self {
         Self::ONE
     }
@@ -200,7 +199,7 @@ mod test {
         .unwrap();
 
         input_handle.append(&mut vec![Tup2(1u64, Tup2(d(1), 1)), Tup2(1, Tup2(d(2), 2))]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
             &indexed_zset! {1 => {d(2) => 1}}
@@ -223,7 +222,7 @@ mod test {
             Tup2(2, Tup2(d(4), 1)),
             Tup2(1, Tup2(d(2), -1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
             &indexed_zset! {2 => {d(2) => 1}}
@@ -242,7 +241,7 @@ mod test {
         );
 
         input_handle.append(&mut vec![Tup2(1, Tup2(d(3), 1)), Tup2(1, Tup2(d(2), -1))]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
             &indexed_zset! {}

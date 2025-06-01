@@ -40,17 +40,17 @@ use crate::{
             QuaternaryOperator, SinkOperator, SourceOperator, StrictUnaryOperator, TernaryOperator,
             UnaryOperator,
         },
+        runtime::Consensus,
         schedule::{
-            DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
-            Scheduler,
+            CommitProgress, DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor,
+            OnceExecutor, Scheduler,
         },
         trace::{CircuitEvent, SchedulerEvent},
     },
     circuit_cache_key,
     ir::LABEL_MIR_NODE_ID,
-    operator::communication::Exchange,
     time::{Timestamp, UnitTimestamp},
-    Error as DbspError, Runtime,
+    Error as DbspError, Position, Runtime,
 };
 use anyhow::Error as AnyError;
 use dyn_clone::{clone_box, DynClone};
@@ -65,17 +65,15 @@ use std::{
     fmt::{self, Debug, Display, Write},
     future::Future,
     io::ErrorKind,
-    iter::repeat,
     marker::PhantomData,
     mem::transmute,
     ops::Deref,
     panic::Location,
     pin::Pin,
     rc::Rc,
-    sync::Arc,
     thread::panicking,
 };
-use tokio::{runtime::Runtime as TokioRuntime, sync::Notify, task::LocalSet};
+use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
 use tracing::debug;
 use typedmap::{TypedMap, TypedMapKey};
 
@@ -992,7 +990,17 @@ pub trait Node: Any {
     /// Evaluate the operator.  Reads one value from each input stream
     /// and pushes a new value to the output stream (except for sink
     /// operators, which don't have an output stream).
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>>;
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>>;
+
+    fn import(&mut self) {}
+
+    /// Call `Operator::flush` on the operator.
+    fn flush(&mut self);
+
+    /// Call `Operator::flush_complete` on the operator.
+    fn is_flush_complete(&self) -> bool;
 
     /// Notify the node about start of a clock epoch.
     ///
@@ -1040,7 +1048,7 @@ pub trait Node: Any {
 
     /// Instructs the node to commit the state of its inner operator to
     /// persistent storage within directory `base`.
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError>;
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError>;
 
     /// Instructs the node to restore the state of its inner operator to
     /// the given checkpoint in directory `base`.
@@ -1393,16 +1401,16 @@ pub struct Edge {
 #[allow(dead_code)]
 impl Edge {
     /// `true` if `self` is a dependency edge.
-    pub(super) fn is_dependency(&self) -> bool {
+    pub(crate) fn is_dependency(&self) -> bool {
         self.ownership_preference.is_none()
     }
 
     /// `true` if `self` is a stream edge.
-    pub(super) fn is_stream(&self) -> bool {
+    pub(crate) fn is_stream(&self) -> bool {
         self.stream.is_some()
     }
 
-    pub(super) fn stream_id(&self) -> Option<StreamId> {
+    pub(crate) fn stream_id(&self) -> Option<StreamId> {
         self.stream.as_ref().map(|meta| meta.stream_id())
     }
 }
@@ -1439,18 +1447,6 @@ pub trait WithClock {
     /// ticks.
     type Time: Timestamp;
 
-    /// Nesting depth of the circuit running this clock.
-    ///
-    /// 0 - for the top-level clock, 1 - first-level nested circuit, etc.
-    const NESTING_DEPTH: usize;
-
-    /// Returns `NESTING_DEPTH`.
-    ///
-    /// Helpful when using the trait via dynamic dispatch.
-    fn nesting_depth(&self) -> usize {
-        Self::NESTING_DEPTH
-    }
-
     /// Current time.
     fn time(&self) -> Self::Time;
 }
@@ -1460,20 +1456,18 @@ pub trait WithClock {
 /// It is never actually used at runtime.
 impl WithClock for () {
     type Time = UnitTimestamp;
-    const NESTING_DEPTH: usize = usize::MAX;
 
     fn time(&self) -> Self::Time {
         UnitTimestamp
     }
 }
 
-impl<P> WithClock for ChildCircuit<P>
+impl<P, T> WithClock for ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
 {
-    type Time = <<P as WithClock>::Time as Timestamp>::Nested;
-
-    const NESTING_DEPTH: usize = P::NESTING_DEPTH.wrapping_add(1);
+    type Time = T;
 
     fn time(&self) -> Self::Time {
         self.time.borrow().clone()
@@ -1497,6 +1491,16 @@ pub trait CircuitBase: 'static {
     /// Returns vector of local node ids in the circuit.
     fn node_ids(&self) -> Vec<NodeId>;
 
+    fn import_nodes(&self) -> Vec<NodeId>;
+
+    fn clear(&mut self);
+
+    /// Register a dependency between `from` and `to` nodes.  A dependency tells
+    /// the scheduler that `from` must be evaluated before `to` in each
+    /// clock cycle even though there may not be an edge or a path
+    /// connecting them.
+    fn add_dependency(&self, from: NodeId, to: NodeId);
+
     /// Allocate a new globally unique stream id.  This method can be invoked on any circuit in the pipeline,
     /// since all of them maintain a shared global counter.
     fn allocate_stream_id(&self) -> StreamId;
@@ -1515,6 +1519,12 @@ pub trait CircuitBase: 'static {
 
     /// Circuit's global node id.
     fn global_node_id(&self) -> GlobalNodeId;
+
+    /// Apply `f` to the node with the specified `path` relative to `self`.
+    fn map_node_relative(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node));
+
+    /// Apply `f` to the node with the specified `path` relative to `self`.
+    fn map_node_mut_relative(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node));
 
     /// Recursively apply `f` to all nodes in `self` and its children.
     ///
@@ -1593,6 +1603,8 @@ pub trait CircuitBase: 'static {
     fn get_persistent_node_id(&self, id: &GlobalNodeId) -> Option<String> {
         self.get_node_label(id, LABEL_PERSISTENT_OPERATOR_ID)
     }
+
+    fn check_fixedpoint(&self, scope: Scope) -> bool;
 }
 
 /// The circuit interface.  All DBSP computation takes place within a circuit.
@@ -1720,7 +1732,17 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// Evaluate operator with the given id.
     ///
     /// This method should only be used by schedulers.
-    fn eval_node(&self, id: NodeId) -> impl Future<Output = Result<(), SchedulerError>>;
+    fn eval_node(
+        &self,
+        id: NodeId,
+    ) -> impl Future<Output = Result<Option<Position>, SchedulerError>>;
+
+    /// Evaluate import node to pull inputs from the parent circuit.
+    fn eval_import_node(&self, id: NodeId);
+
+    fn flush_node(&self, id: NodeId);
+
+    fn is_flush_complete(&self, id: NodeId) -> bool;
 
     /// Evaluate closure `f` inside a new circuit region.
     ///
@@ -2085,7 +2107,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         O: Data,
         Op: StrictUnaryOperator<I, O>;
 
-    /// Like `add_feedback_with_export`, but also assigns persistent id to the output hald of the strict operator.
+    /// Like `add_feedback_with_export`, but also assigns persistent id to the output half of the strict operator.
     fn add_feedback_with_export_persistent<I, O, Op>(
         &self,
         persistent_id: Option<&str>,
@@ -2114,7 +2136,9 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         O: Data,
         Op: StrictUnaryOperator<I, O>;
 
-    /// Add a child circuit.
+    /// Add an iterative child circuit.
+    ///
+    /// Creates a child circuit with a nested logical clock.
     ///
     /// Creates an empty circuit with `self` as parent and invokes
     /// `child_constructor` to populate the circuit.  `child_constructor`
@@ -2125,14 +2149,17 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     ///
     /// Most users should invoke higher-level APIs like [`Circuit::iterate`]
     /// instead of using this method directly.
-    fn subcircuit<F, T, E>(
-        &self,
-        iterative: bool,
-        child_constructor: F,
-    ) -> Result<T, SchedulerError>
+    fn iterative_subcircuit<F, T, E>(&self, child_constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(T, E), SchedulerError>,
-        E: Executor<ChildCircuit<Self>>;
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(T, E), SchedulerError>,
+        E: Executor<IterativeCircuit<Self>>;
+
+    /// Like `iterative_subcircuit`, but creates a child circuit that runs on the same
+    /// clock as the parent.
+    fn non_iterative_subcircuit<F, T, E>(&self, child_constructor: F) -> Result<T, SchedulerError>
+    where
+        F: FnOnce(&mut NonIterativeCircuit<Self>) -> Result<(T, E), SchedulerError>,
+        E: Executor<NonIterativeCircuit<Self>>;
 
     /// Add an iteratively scheduled child circuit.
     ///
@@ -2195,7 +2222,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// let factorial = |n: usize| (1..=n).product::<usize>();
     /// const ITERATIONS: usize = 10;
     /// for i in 0..ITERATIONS {
-    ///     circuit_handle.step()?;
+    ///     circuit_handle.transaction()?;
     ///     let result = output_handle.take_from_all();
     ///     let result = result.first().unwrap();
     ///     println!("Iteration {:3}: {:3}! = {}", i + 1, i, result);
@@ -2206,7 +2233,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// ```
     fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(C, T), SchedulerError>,
         C: AsyncFn() -> Result<bool, SchedulerError> + 'static;
 
     /// Add an iteratively scheduled child circuit.
@@ -2215,7 +2242,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// [`Scheduler`] implementation.
     fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(C, T), SchedulerError>,
         C: AsyncFn() -> Result<bool, SchedulerError> + 'static,
         S: Scheduler + 'static;
 
@@ -2256,7 +2283,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// constructing non-compliant circuits.
     fn fixedpoint<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>;
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<T, SchedulerError>;
 
     /// Add a child circuit that will iterate to a fixed point.
     ///
@@ -2264,7 +2291,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// [`Scheduler`] implementation.
     fn fixedpoint_with_scheduler<F, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<T, SchedulerError>,
         S: Scheduler + 'static;
 
     /// Make the contents of `parent_stream` available in the nested circuit
@@ -2414,7 +2441,7 @@ impl Edges {
 /// is connected to an input of node2.
 struct CircuitInner<P>
 where
-    P: WithClock,
+    P: 'static,
 {
     parent: P,
 
@@ -2428,6 +2455,7 @@ where
     global_node_id: GlobalNodeId,
     nodes: RefCell<Vec<RefCell<Box<dyn Node>>>>,
     edges: RefCell<Edges>,
+    import_nodes: RefCell<Vec<NodeId>>,
     circuit_event_handlers: CircuitEventHandlers,
     scheduler_event_handlers: SchedulerEventHandlers,
     store: RefCell<CircuitCache>,
@@ -2436,7 +2464,7 @@ where
 
 impl<P> CircuitInner<P>
 where
-    P: WithClock,
+    P: 'static,
 {
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -2457,6 +2485,7 @@ where
             global_node_id,
             nodes: RefCell::new(Vec::new()),
             edges: RefCell::new(Edges::new()),
+            import_nodes: RefCell::new(Vec::new()),
             circuit_event_handlers,
             scheduler_event_handlers,
             store: RefCell::new(TypedMap::new()),
@@ -2476,6 +2505,14 @@ where
         self.nodes
             .borrow_mut()
             .push(RefCell::new(Box::new(node) as Box<dyn Node>));
+    }
+
+    fn add_import_node(&self, node_id: NodeId) {
+        self.import_nodes.borrow_mut().push(node_id);
+    }
+
+    fn import_nodes(&self) -> Vec<NodeId> {
+        self.import_nodes.borrow().clone()
     }
 
     fn clear(&self) {
@@ -2530,7 +2567,7 @@ where
         }
     }
 
-    fn fixedpoint(&self, scope: Scope) -> bool {
+    fn check_fixedpoint(&self, scope: Scope) -> bool {
         self.nodes.borrow().iter().all(|node| {
             node.borrow().fixedpoint(scope)
             /*if !res {
@@ -2545,12 +2582,13 @@ where
 /// A single implementation that can operate as the top-level
 /// circuit when instantiated with `P = ()` or a nested circuit,
 /// with `P = ChildCircuit<..>` designating the parent circuit type.
-pub struct ChildCircuit<P>
+pub struct ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
 {
     inner: Rc<CircuitInner<P>>,
-    time: Rc<RefCell<<P::Time as Timestamp>::Nested>>,
+    time: Rc<RefCell<T>>,
 }
 
 /// Top-level circuit.
@@ -2567,13 +2605,20 @@ where
 /// used as input for further operators, which are primarily instantiated via
 /// methods on [`Stream`].  Stream output may be made available outside the
 /// bounds of a circuit using [`Stream::output`].
-pub type RootCircuit = ChildCircuit<()>;
+pub type RootCircuit = ChildCircuit<(), ()>;
 
-pub type NestedCircuit = ChildCircuit<RootCircuit>;
+pub type NestedCircuit = ChildCircuit<RootCircuit, <() as Timestamp>::Nested>;
 
-impl<P> Clone for ChildCircuit<P>
+/// A child circuit with a nested clock.
+pub type IterativeCircuit<P> = ChildCircuit<P, <<P as WithClock>::Time as Timestamp>::Nested>;
+
+/// A child circuit that runs on the same clock as the parent.
+pub type NonIterativeCircuit<P> = ChildCircuit<P, <P as WithClock>::Time>;
+
+impl<P, T> Clone for ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
 {
     fn clone(&self) -> Self {
         Self {
@@ -2583,9 +2628,10 @@ where
     }
 }
 
-impl<P> ChildCircuit<P>
+impl<P, T> ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
 {
     /// Immutably borrow the inner circuit.
     fn inner(&self) -> &CircuitInner<P> {
@@ -2669,6 +2715,38 @@ impl RootCircuit {
         let res = constructor(&mut circuit).map_err(DbspError::Constructor)?;
         let mut executor = Box::new(<OnceExecutor<S>>::new()) as Box<dyn Executor<RootCircuit>>;
         executor.prepare(&circuit, None)?;
+
+        // if Runtime::worker_index() == 0 {
+        //     circuit.to_dot_file(
+        //         |node| {
+        //             Some(crate::utils::DotNodeAttributes::new().with_label(&format!(
+        //                 "{}-{}-{}",
+        //                 node.local_id(),
+        //                 node.name(),
+        //                 node.persistent_id().unwrap_or_default()
+        //             )))
+        //         },
+        //         |edge| {
+        //             let style = if edge.is_dependency() {
+        //                 Some("dotted".to_string())
+        //             } else {
+        //                 None
+        //             };
+        //             let label = if let Some(stream) = &edge.stream {
+        //                 Some(format!("consumers: {}", stream.num_consumers()))
+        //             } else {
+        //                 None
+        //             };
+        //             Some(
+        //                 crate::utils::DotEdgeAttributes::new(edge.stream_id())
+        //                     .with_style(style)
+        //                     .with_label(label),
+        //             )
+        //         },
+        //         "circuit.dot",
+        //     );
+        //     println!("circuit written to circuit.dot");
+        // }
 
         // Alternatively, `CircuitHandle` should expose `clock_start` and `clock_end`
         // APIs, so that the user can reset the circuit at runtime and start
@@ -2769,9 +2847,10 @@ impl RootCircuit {
     }
 }
 
-impl<P> ChildCircuit<P>
+impl<P, T> ChildCircuit<P, T>
 where
     P: Circuit,
+    T: Timestamp,
 {
     /// Create an empty nested circuit of `parent`.
     fn with_parent(parent: P, id: NodeId) -> Self {
@@ -2805,9 +2884,10 @@ where
 }
 
 // Internal API.
-impl<P> ChildCircuit<P>
+impl<P, T> ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
     Self: Circuit,
 {
     /// Circuit's node id within the parent circuit.
@@ -2815,10 +2895,78 @@ where
         self.inner().node_id
     }
 
-    /// Register a dependency between `from` and `to` nodes.  A dependency tells
-    /// the scheduler that `from` must be evaluated before `to` in each
-    /// clock cycle even though there may not be an edge or a path
-    /// connecting them.
+    /// Add a node to the circuit.
+    ///
+    /// Allocates a new node id and invokes a user callback to create a new node
+    /// instance. The callback may use the node id, e.g., to add an edge to
+    /// this node.
+    fn add_node<F, N, V>(&self, f: F) -> V
+    where
+        F: FnOnce(NodeId) -> (N, V),
+        N: Node + 'static,
+    {
+        let id = self.inner().nodes.borrow().len();
+
+        // We don't hold a reference to `self.inner()` while calling `f`, so it can
+        // safely modify the circuit, e.g., add edges.
+        let (node, res) = f(NodeId(id));
+        self.inner().add_node(node);
+        res
+    }
+
+    fn add_import_node(&self, node_id: NodeId) {
+        self.inner().add_import_node(node_id);
+    }
+
+    /// Like `add_node`, but the node is not created if the closure fails.
+    fn try_add_node<F, N, V, E>(&self, f: F) -> Result<V, E>
+    where
+        F: FnOnce(NodeId) -> Result<(N, V), E>,
+        N: Node + 'static,
+    {
+        let id = self.inner().nodes.borrow().len();
+
+        // We don't hold a reference to `self.inner()` while calling `f`, so it can
+        // safely modify the circuit, e.g., add edges.
+        let (node, res) = f(NodeId(id))?;
+        self.inner().add_node(node);
+        Ok(res)
+    }
+
+    /// Send the specified `CircuitEvent` to all handlers attached to the
+    /// circuit.
+    fn log_circuit_event(&self, event: &CircuitEvent) {
+        self.inner().log_circuit_event(event);
+    }
+
+    /// Send the specified `SchedulerEvent` to all handlers attached to the
+    /// circuit.
+    pub(super) fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
+        self.inner().log_scheduler_event(event);
+    }
+}
+
+impl<P, T> CircuitBase for ChildCircuit<P, T>
+where
+    P: Clone + 'static,
+    T: Timestamp,
+{
+    fn edges(&self) -> Ref<'_, Edges> {
+        self.inner().edges.borrow()
+    }
+
+    fn edges_mut(&self) -> RefMut<'_, Edges> {
+        self.inner().edges.borrow_mut()
+    }
+
+    fn num_nodes(&self) -> usize {
+        self.inner().nodes.borrow().len()
+    }
+
+    fn clear(&mut self) {
+        self.inner().clear();
+    }
+
     fn add_dependency(&self, from: NodeId, to: NodeId) {
         self.log_circuit_event(&CircuitEvent::dependency(
             self.global_node_id().child(from),
@@ -2835,58 +2983,8 @@ where
         });
     }
 
-    /// Add a node to the circuit.
-    ///
-    /// Allocates a new node id and invokes a user callback to create a new node
-    /// instance. The callback may use the node id, e.g., to add an edge to
-    /// this node.
-    fn add_node<F, N, T>(&self, f: F) -> T
-    where
-        F: FnOnce(NodeId) -> (N, T),
-        N: Node + 'static,
-    {
-        let id = self.inner().nodes.borrow().len();
-
-        // We don't hold a reference to `self.inner()` while calling `f`, so it can
-        // safely modify the circuit, e.g., add edges.
-        let (node, res) = f(NodeId(id));
-        self.inner().add_node(node);
-        res
-    }
-
-    /// Like `add_node`, but the node is not created if the closure fails.
-    fn try_add_node<F, N, T, E>(&self, f: F) -> Result<T, E>
-    where
-        F: FnOnce(NodeId) -> Result<(N, T), E>,
-        N: Node + 'static,
-    {
-        let id = self.inner().nodes.borrow().len();
-
-        // We don't hold a reference to `self.inner()` while calling `f`, so it can
-        // safely modify the circuit, e.g., add edges.
-        let (node, res) = f(NodeId(id))?;
-        self.inner().add_node(node);
-        Ok(res)
-    }
-
-    fn clear(&mut self) {
-        self.inner().clear();
-    }
-
-    /// Send the specified `CircuitEvent` to all handlers attached to the
-    /// circuit.
-    fn log_circuit_event(&self, event: &CircuitEvent) {
-        self.inner().log_circuit_event(event);
-    }
-
-    /// Send the specified `SchedulerEvent` to all handlers attached to the
-    /// circuit.
-    pub(super) fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
-        self.inner().log_scheduler_event(event);
-    }
-
     /// Apply `f` to the node with the specified `path` relative to `self`.
-    pub(crate) fn map_node_inner(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
+    fn map_node_relative(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
         let nodes = self.inner().nodes.borrow();
         let node = nodes[path[0].0].borrow();
         if path.len() == 1 {
@@ -2897,7 +2995,7 @@ where
     }
 
     /// Apply `f` to the node with the specified `path` relative to `self`.
-    pub(crate) fn map_node_mut_inner(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
+    fn map_node_mut_relative(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
         let nodes = self.inner().nodes.borrow();
         let mut node = nodes[path[0].0].borrow_mut();
         if path.len() == 1 {
@@ -2905,23 +3003,6 @@ where
         } else {
             node.map_child_mut(&path[1..], &mut |node| f(node));
         }
-    }
-}
-
-impl<P> CircuitBase for ChildCircuit<P>
-where
-    P: WithClock + Clone + 'static,
-{
-    fn edges(&self) -> Ref<'_, Edges> {
-        self.inner().edges.borrow()
-    }
-
-    fn edges_mut(&self) -> RefMut<'_, Edges> {
-        self.inner().edges.borrow_mut()
-    }
-
-    fn num_nodes(&self) -> usize {
-        self.inner().nodes.borrow().len()
     }
 
     fn map_nodes_recursive(
@@ -2969,7 +3050,7 @@ where
     }
 
     fn apply_local_node_mut(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node)) {
-        self.map_node_mut_inner(&[id], &mut |node| f(node));
+        self.map_node_mut_relative(&[id], &mut |node| f(node));
     }
 
     fn map_subcircuits(
@@ -3007,6 +3088,10 @@ where
             .collect()
     }
 
+    fn import_nodes(&self) -> Vec<NodeId> {
+        self.inner().import_nodes()
+    }
+
     fn allocate_stream_id(&self) -> StreamId {
         let circuit = self.inner();
         let mut last_stream_id = circuit.last_stream_id.borrow_mut();
@@ -3029,11 +3114,16 @@ where
     fn global_node_id(&self) -> GlobalNodeId {
         self.inner().global_node_id.clone()
     }
+
+    fn check_fixedpoint(&self, scope: Scope) -> bool {
+        self.inner().check_fixedpoint(scope)
+    }
 }
 
-impl<P> Circuit for ChildCircuit<P>
+impl<P, T> Circuit for ChildCircuit<P, T>
 where
-    P: WithClock + Clone + 'static,
+    P: Clone + 'static,
+    T: Timestamp,
 {
     type Parent = P;
 
@@ -3049,36 +3139,36 @@ where
         }
     }
 
-    fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T {
+    fn map_node<V>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> V) -> V {
         let path = id.path();
-        let mut result: Option<T> = None;
+        let mut result: Option<V> = None;
 
         assert!(path.starts_with(self.global_id().path()));
 
-        self.map_node_inner(
+        self.map_node_relative(
             path.strip_prefix(self.global_id().path()).unwrap(),
             &mut |node| result = Some(f(node)),
         );
         result.unwrap()
     }
 
-    fn map_node_mut<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T {
+    fn map_node_mut<V>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> V) -> V {
         let path = id.path();
-        let mut result: Option<T> = None;
+        let mut result: Option<V> = None;
 
         assert!(path.starts_with(self.global_id().path()));
 
-        self.map_node_mut_inner(
+        self.map_node_mut_relative(
             path.strip_prefix(self.global_id().path()).unwrap(),
             &mut |node| result = Some(f(node)),
         );
         result.unwrap()
     }
 
-    fn map_local_node_mut<T>(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T {
-        let mut result: Option<T> = None;
+    fn map_local_node_mut<V>(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node) -> V) -> V {
+        let mut result: Option<V> = None;
 
-        self.map_node_mut_inner(&[id], &mut |node| result = Some(f(node)));
+        self.map_node_mut_relative(&[id], &mut |node| result = Some(f(node)));
         result.unwrap()
     }
 
@@ -3124,9 +3214,9 @@ where
         })
     }
 
-    fn connect_stream<T: 'static>(
+    fn connect_stream<V: 'static>(
         &self,
-        stream: &Stream<Self, T>,
+        stream: &Stream<Self, V>,
         to: NodeId,
         ownership_preference: OwnershipPreference,
     ) {
@@ -3204,7 +3294,7 @@ where
 
     // Justification: the scheduler must not call `eval()` on a node twice.
     #[allow(clippy::await_holding_refcell_ref)]
-    async fn eval_node(&self, id: NodeId) -> Result<(), SchedulerError> {
+    async fn eval_node(&self, id: NodeId) -> Result<Option<Position>, SchedulerError> {
         let circuit = self.inner();
         debug_assert!(id.0 < circuit.nodes.borrow().len());
 
@@ -3216,19 +3306,42 @@ where
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
         ));
 
-        circuit.nodes.borrow()[id.0].borrow_mut().eval().await?;
+        let progress = circuit.nodes.borrow()[id.0].borrow_mut().eval().await?;
 
         circuit.log_scheduler_event(&SchedulerEvent::eval_end(
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
         ));
 
-        Ok(())
+        Ok(progress)
+    }
+
+    // Justification: the scheduler must not call `eval()` on a node twice.
+    fn eval_import_node(&self, id: NodeId) {
+        let circuit = self.inner();
+        debug_assert!(id.0 < circuit.nodes.borrow().len());
+        debug_assert!(circuit.import_nodes().contains(&id));
+
+        circuit.nodes.borrow()[id.0].borrow_mut().import();
+    }
+
+    fn flush_node(&self, id: NodeId) {
+        let circuit = self.inner();
+        debug_assert!(id.0 < circuit.nodes.borrow().len());
+
+        circuit.nodes.borrow()[id.0].borrow_mut().flush();
+    }
+
+    fn is_flush_complete(&self, id: NodeId) -> bool {
+        let circuit = self.inner();
+        debug_assert!(id.0 < circuit.nodes.borrow().len());
+
+        circuit.nodes.borrow()[id.0].borrow().is_flush_complete()
     }
 
     #[track_caller]
-    fn region<F, T>(&self, name: &str, f: F) -> T
+    fn region<F, V>(&self, name: &str, f: F) -> V
     where
-        F: FnOnce() -> T,
+        F: FnOnce() -> V,
     {
         self.log_circuit_event(&CircuitEvent::push_region(name, Some(Location::caller())));
         let res = f();
@@ -3762,45 +3875,58 @@ where
         })
     }
 
-    fn subcircuit<F, T, E>(
-        &self,
-        iterative: bool,
-        child_constructor: F,
-    ) -> Result<T, SchedulerError>
+    fn iterative_subcircuit<F, V, E>(&self, child_constructor: F) -> Result<V, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(T, E), SchedulerError>,
-        E: Executor<ChildCircuit<Self>>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(V, E), SchedulerError>,
+        E: Executor<IterativeCircuit<Self>>,
     {
         self.try_add_node(|id| {
             let global_id = GlobalNodeId::child_of(self, id);
-            self.log_circuit_event(&CircuitEvent::subcircuit(global_id.clone(), iterative));
+            self.log_circuit_event(&CircuitEvent::subcircuit(global_id.clone(), true));
             let mut child_circuit = ChildCircuit::with_parent(self.clone(), id);
             let (res, executor) = child_constructor(&mut child_circuit)?;
-            let child = <ChildNode<Self>>::new::<E>(child_circuit, executor);
+            let child = <ChildNode<IterativeCircuit<Self>>>::new::<E>(child_circuit, 1, executor);
             self.log_circuit_event(&CircuitEvent::subcircuit_complete(global_id));
             Ok((child, res))
         })
     }
 
-    fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn non_iterative_subcircuit<F, V, E>(&self, child_constructor: F) -> Result<V, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
+        F: FnOnce(&mut NonIterativeCircuit<Self>) -> Result<(V, E), SchedulerError>,
+        E: Executor<NonIterativeCircuit<Self>>,
+    {
+        self.try_add_node(|id| {
+            let global_id = GlobalNodeId::child_of(self, id);
+            self.log_circuit_event(&CircuitEvent::subcircuit(global_id.clone(), false));
+            let mut child_circuit = ChildCircuit::with_parent(self.clone(), id);
+            let (res, executor) = child_constructor(&mut child_circuit)?;
+            let child =
+                <ChildNode<NonIterativeCircuit<Self>>>::new::<E>(child_circuit, 0, executor);
+            self.log_circuit_event(&CircuitEvent::subcircuit_complete(global_id));
+            Ok((child, res))
+        })
+    }
+
+    fn iterate<F, C, V>(&self, constructor: F) -> Result<V, SchedulerError>
+    where
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(C, V), SchedulerError>,
         C: AsyncFn() -> Result<bool, SchedulerError> + 'static,
     {
-        self.iterate_with_scheduler::<F, C, T, DynamicScheduler>(constructor)
+        self.iterate_with_scheduler::<F, C, V, DynamicScheduler>(constructor)
     }
 
     /// Add an iteratively scheduled child circuit.
     ///
     /// Similar to [`iterate`](`Self::iterate`), but with a user-specified
     /// [`Scheduler`] implementation.
-    fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn iterate_with_scheduler<F, C, V, S>(&self, constructor: F) -> Result<V, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(C, V), SchedulerError>,
         C: AsyncFn() -> Result<bool, SchedulerError> + 'static,
         S: Scheduler + 'static,
     {
-        self.subcircuit(true, |child| {
+        self.iterative_subcircuit(|child| {
             let (termination_check, res) = constructor(child)?;
             let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
             executor.prepare(child, None)?;
@@ -3808,82 +3934,33 @@ where
         })
     }
 
-    fn fixedpoint<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn fixedpoint<F, V>(&self, constructor: F) -> Result<V, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<V, SchedulerError>,
     {
-        self.fixedpoint_with_scheduler::<F, T, DynamicScheduler>(constructor)
+        self.fixedpoint_with_scheduler::<F, V, DynamicScheduler>(constructor)
     }
 
-    fn fixedpoint_with_scheduler<F, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn fixedpoint_with_scheduler<F, V, S>(&self, constructor: F) -> Result<V, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<V, SchedulerError>,
         S: Scheduler + 'static,
     {
-        match Runtime::runtime() {
-            // In a multithreaded environment the fixedpoint check cannot be performed locally.
-            // The circuit must iterate until all peers have reached a fixed point.
-            Some(runtime) if runtime.num_workers() > 1 => {
-                self.subcircuit(true, |child| {
-                    let res = constructor(child)?;
-                    let child_clone = child.clone();
+        self.iterative_subcircuit(|child| {
+            let res = constructor(child)?;
+            let child_clone = child.clone();
 
-                    // Create an `Exchange` object that will be used to exchange the fixed point
-                    // status with peers.
-                    let worker_index = Runtime::worker_index();
-                    let exchange_id = runtime.sequence_next();
-                    let exchange = Exchange::with_runtime(&runtime, exchange_id);
+            let consensus = Consensus::new();
 
-                    let notify_sender = Arc::new(Notify::new());
-                    let notify_sender_clone = notify_sender.clone();
-                    let notify_receiver = Arc::new(Notify::new());
-                    let notify_receiver_clone = notify_receiver.clone();
-
-                    exchange.register_sender_callback(worker_index, move || {
-                        notify_sender_clone.notify_one()
-                    });
-
-                    exchange.register_receiver_callback(worker_index, move || {
-                        notify_receiver_clone.notify_one()
-                    });
-
-                    let termination_check = async move || {
-                        // Send local fixed point status to all peers.
-                        let local_fixedpoint = child_clone.inner().fixedpoint(0);
-                        while !exchange.try_send_all(worker_index, &mut repeat(local_fixedpoint)) {
-                            if Runtime::kill_in_progress() {
-                                return Err(SchedulerError::Killed);
-                            }
-                            notify_sender.notified().await;
-                        }
-                        // Receive the fixed point status of each peer, compute global fixedpoint
-                        // state as a logical and of all peer states.
-                        let mut global_fixedpoint = true;
-                        while !exchange.try_receive_all(worker_index, |fp| global_fixedpoint &= fp)
-                        {
-                            if Runtime::kill_in_progress() {
-                                return Err(SchedulerError::Killed);
-                            }
-                            // Sleep if other threads are still working.
-                            notify_receiver.notified().await;
-                        }
-                        Ok(global_fixedpoint)
-                    };
-                    let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
-                    executor.prepare(child, None)?;
-                    Ok((res, executor))
-                })
-            }
-            _ => self.subcircuit(true, |child| {
-                let res = constructor(child)?;
-                let child_clone = child.clone();
-
-                let termination_check = async move || Ok(child_clone.inner().fixedpoint(0));
-                let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
-                executor.prepare(child, None)?;
-                Ok((res, executor))
-            }),
-        }
+            let termination_check = async move || {
+                // Send local fixed point status to all peers.
+                let local_fixedpoint = child_clone.inner().check_fixedpoint(0);
+                consensus.check(local_fixedpoint).await
+            };
+            let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
+            executor.prepare(child, None)?;
+            Ok((res, executor))
+        })
     }
 
     fn import_stream<I, O, Op>(&self, operator: Op, parent_stream: &Stream<P, I>) -> Stream<Self, O>
@@ -3911,7 +3988,7 @@ where
     {
         assert!(self.is_child_of(parent_stream.circuit()));
 
-        self.add_node(|id| {
+        let output_stream = self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
                 self.global_node_id().child(id),
                 operator.name(),
@@ -3922,7 +3999,11 @@ where
                 .connect_stream(parent_stream, self.node_id(), input_preference);
             let output_stream = node.output_stream();
             (node, output_stream)
-        })
+        });
+
+        self.add_import_node(output_stream.local_node_id());
+
+        output_stream
     }
 
     fn add_replay_edges(&self, stream_id: StreamId, replay_stream: &dyn StreamMetadata) {
@@ -3952,59 +4033,6 @@ where
         edges.extend(new_edges);
     }
 }
-
-impl<P> ChildCircuit<P>
-where
-    P: Circuit,
-{
-    /// Make the contents of `parent_stream` available in the nested circuit
-    /// via an [`ImportOperator`].
-    ///
-    /// Typically invoked via a convenience wrapper, e.g., [`Stream::delta0`].
-    pub fn import_stream<I, O, Op>(
-        &self,
-        operator: Op,
-        parent_stream: &Stream<P, I>,
-    ) -> Stream<Self, O>
-    where
-        I: Data,
-        O: Data,
-        Op: ImportOperator<I, O>,
-    {
-        let preference = operator.input_preference();
-        self.import_stream_with_preference(operator, parent_stream, preference)
-    }
-
-    /// Like [`Self::import_stream`] but overrides the ownership
-    /// preference on the input stream with `input_preference.
-    pub fn import_stream_with_preference<I, O, Op>(
-        &self,
-        operator: Op,
-        parent_stream: &Stream<P, I>,
-        input_preference: OwnershipPreference,
-    ) -> Stream<Self, O>
-    where
-        I: Data,
-        O: Data,
-        Op: ImportOperator<I, O>,
-    {
-        assert!(self.is_child_of(parent_stream.circuit()));
-
-        self.add_node(|id| {
-            self.log_circuit_event(&CircuitEvent::operator(
-                self.global_node_id().child(id),
-                operator.name(),
-                operator.location(),
-            ));
-            let node = ImportNode::new(operator, self.clone(), parent_stream.clone(), id);
-            self.parent()
-                .connect_stream(parent_stream, self.node_id(), input_preference);
-            let output_stream = node.output_stream();
-            (node, output_stream)
-        })
-    }
-}
-
 struct ImportNode<C, I, O, Op>
 where
     C: Circuit,
@@ -4020,6 +4048,9 @@ impl<C, I, O, Op> ImportNode<C, I, O, Op>
 where
     C: Circuit,
     C::Parent: Circuit,
+    I: Clone + 'static,
+    O: Clone + 'static,
+    Op: ImportOperator<I, O>,
 {
     fn new(operator: Op, circuit: C, parent_stream: Stream<C::Parent, I>, id: NodeId) -> Self {
         assert!(Circuit::ptr_eq(&circuit.parent(), parent_stream.circuit()));
@@ -4074,25 +4105,36 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             self.output_stream.put(self.operator.eval().await);
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
+    }
+
+    fn import(&mut self) {
+        match StreamValue::take(self.parent_stream.val()) {
+            None => self
+                .operator
+                .import(StreamValue::peek(&self.parent_stream.get())),
+            Some(val) => self.operator.import_owned(val),
+        }
+
+        StreamValue::consume_token(self.parent_stream.val());
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
-        if scope == 0 {
-            match StreamValue::take(self.parent_stream.val()) {
-                None => self
-                    .operator
-                    .import(StreamValue::peek(&self.parent_stream.get())),
-                Some(val) => self.operator.import_owned(val),
-            }
-
-            StreamValue::consume_token(self.parent_stream.val());
-        }
     }
 
     fn clock_end(&mut self, scope: Scope) {
@@ -4111,8 +4153,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4212,11 +4255,21 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             self.output_stream.put(self.operator.eval().await);
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -4239,8 +4292,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4345,7 +4399,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             self.output_stream
                 .put(match StreamValue::take(self.input_stream.val()) {
@@ -4357,8 +4413,16 @@ where
                     }
                 });
             StreamValue::consume_token(self.input_stream.val());
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -4381,8 +4445,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4480,7 +4545,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             match StreamValue::take(self.input_stream.val()) {
                 Some(v) => self.operator.eval_owned(v).await,
@@ -4492,8 +4559,16 @@ where
             };
             StreamValue::consume_token(self.input_stream.val());
 
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -4516,8 +4591,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4630,7 +4706,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             if self.is_alias {
                 {
@@ -4684,8 +4762,16 @@ where
                 StreamValue::consume_token(self.input_stream2.val());
             };
 
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -4708,8 +4794,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4827,7 +4914,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             // If the two input streams are aliases, we cannot remove the owned
             // value from `input_stream2`, as this will invalidate the borrow
@@ -4876,8 +4965,16 @@ where
                 StreamValue::consume_token(self.input_stream1.val());
                 StreamValue::consume_token(self.input_stream2.val());
             }
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -4900,8 +4997,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5024,7 +5122,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             {
                 self.output_stream.put(
@@ -5042,8 +5142,16 @@ where
             StreamValue::consume_token(self.input_stream2.val());
             StreamValue::consume_token(self.input_stream3.val());
 
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -5066,8 +5174,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5209,7 +5318,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             {
                 self.output_stream.put(
@@ -5229,8 +5340,16 @@ where
             StreamValue::consume_token(self.input_stream3.val());
             StreamValue::consume_token(self.input_stream4.val());
 
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -5253,8 +5372,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5382,7 +5502,9 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             let refs = self
                 .input_streams
@@ -5401,8 +5523,16 @@ where
             for i in self.input_streams.iter() {
                 StreamValue::consume_token(i.val());
             }
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -5425,8 +5555,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5550,12 +5681,22 @@ where
         self.operator.borrow_mut().register_ready_callback(cb);
     }
 
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             self.output_stream
                 .put(self.operator.borrow_mut().get_output());
-            Ok(())
+            Ok(None)
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.borrow_mut().flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.borrow().is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -5584,10 +5725,10 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .borrow_mut()
-            .commit(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5692,7 +5833,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             match StreamValue::take(self.input_stream.val()) {
                 Some(v) => self.operator.borrow_mut().eval_strict_owned(v).await,
@@ -5706,8 +5849,16 @@ where
 
             StreamValue::consume_token(self.input_stream.val());
 
-            Ok(())
+            Ok(None)
         })
+    }
+
+    fn flush(&mut self) {
+        self.operator.borrow_mut().flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.borrow().is_flush_complete()
     }
 
     // Don't call `clock_start`/`clock_end` on the operator.  `FeedbackOutputNode`
@@ -5728,7 +5879,7 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn commit(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         // The Z-1 operator consists of two logical parts.
         // The first part gets invoked at the start of a clock cycle to retrieve the
         // state stored at the previous clock tick. The second one gets invoked
@@ -5840,19 +5991,20 @@ where
 }
 
 // A nested circuit instantiated as a node in a parent circuit.
-struct ChildNode<P>
+struct ChildNode<C>
 where
-    P: Circuit,
+    C: Circuit,
 {
     id: GlobalNodeId,
-    circuit: ChildCircuit<P>,
-    executor: Box<dyn Executor<ChildCircuit<P>>>,
+    circuit: C,
+    executor: Box<dyn Executor<C>>,
     labels: BTreeMap<String, String>,
+    nesting_depth: Scope,
 }
 
-impl<P> Drop for ChildNode<P>
+impl<C> Drop for ChildNode<C>
 where
-    P: Circuit,
+    C: Circuit,
 {
     fn drop(&mut self) {
         // Explicitly deallocate all nodes in the circuit to break
@@ -5861,26 +6013,27 @@ where
     }
 }
 
-impl<P> ChildNode<P>
+impl<C> ChildNode<C>
 where
-    P: Circuit,
+    C: Circuit,
 {
-    fn new<E>(circuit: ChildCircuit<P>, executor: E) -> Self
+    fn new<E>(circuit: C, nesting_depth: Scope, executor: E) -> Self
     where
-        E: Executor<ChildCircuit<P>>,
+        E: Executor<C>,
     {
         Self {
             id: circuit.global_node_id(),
             circuit,
-            executor: Box::new(executor) as Box<dyn Executor<ChildCircuit<P>>>,
+            executor: Box::new(executor) as Box<dyn Executor<C>>,
             labels: BTreeMap::new(),
+            nesting_depth,
         }
     }
 }
 
-impl<P> Node for ChildNode<P>
+impl<C> Node for ChildNode<C>
 where
-    P: Circuit,
+    C: Circuit,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("Subcircuit")
@@ -5910,22 +6063,40 @@ where
         true
     }
 
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
-        Box::pin(async { self.executor.run(&self.circuit).await })
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
+        // We may want to make the executor responsible for evaluating import nodes
+        // if there is a need for customizing this behavior.
+        for node_id in self.circuit.import_nodes() {
+            self.circuit.eval_import_node(node_id)
+        }
+        Box::pin(async {
+            self.executor.transaction(&self.circuit).await?;
+            Ok(None)
+        })
+    }
+
+    fn flush(&mut self) {
+        self.executor.start_commit_transaction().unwrap();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.executor.is_commit_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
-        self.circuit.clock_start(scope + 1);
+        self.circuit.clock_start(scope + self.nesting_depth);
     }
 
     fn clock_end(&mut self, scope: Scope) {
-        self.circuit.clock_end(scope + 1);
+        self.circuit.clock_end(scope + self.nesting_depth);
     }
 
     fn metadata(&self, _meta: &mut OperatorMeta) {}
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        self.circuit.inner().fixedpoint(scope + 1)
+        self.circuit.check_fixedpoint(scope + self.nesting_depth)
     }
 
     fn map_nodes_recursive(
@@ -5935,7 +6106,7 @@ where
         self.circuit.map_nodes_recursive(f)
     }
 
-    fn commit(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         Ok(())
     }
 
@@ -5973,11 +6144,11 @@ where
     }
 
     fn map_child(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
-        self.circuit.map_node_inner(path, f);
+        self.circuit.map_node_relative(path, f);
     }
 
     fn map_child_mut(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
-        self.circuit.map_node_mut_inner(path, f);
+        self.circuit.map_node_mut_relative(path, f);
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -5992,7 +6163,7 @@ where
 /// Top-level circuit with executor.
 ///
 /// This is the interface to a circuit created with [`RootCircuit::build`].
-/// Call [`CircuitHandle::step`] to run the circuit in the context of the
+/// Call [`CircuitHandle::transaction`] to run the circuit in the context of the
 /// current thread.
 pub struct CircuitHandle {
     circuit: RootCircuit,
@@ -6033,32 +6204,72 @@ pub struct BootstrapInfo {
 }
 
 impl CircuitHandle {
-    /// Function that drives the execution of the circuit.
-    ///
-    /// Every call to `step()` corresponds to one tick of the global logical
-    /// clock and evaluates each operator in the circuit once.  Before calling,
-    /// store the desired input value in each input stream using its input
-    /// handle.  Each call stores a value in each output stream so, after
-    /// calling, the client may obtain these values using their output handles.
-    pub fn step(&self) -> Result<(), DbspError> {
+    /// Start and instantly commit a transaction, waiting for the commit to complete.
+    pub fn transaction(&self) -> Result<(), DbspError> {
         self.tokio_runtime
             .block_on(async {
                 let local_set = LocalSet::new();
                 local_set
-                    .run_until(async { self.executor.run(&self.circuit).await })
+                    .run_until(async { self.executor.transaction(&self.circuit).await })
                     .await
             })
             .map_err(DbspError::Scheduler)
     }
 
-    pub fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    /// Start a transaction.
+    ///
+    /// A transaction consists of a sequence of steps that evaluate a set of inputs for a single logical
+    /// clock tick.
+    pub fn start_transaction(&self) -> Result<(), DbspError> {
+        self.tokio_runtime
+            .block_on(async {
+                let local_set = LocalSet::new();
+                local_set
+                    .run_until(async { self.executor.start_transaction(&self.circuit).await })
+                    .await
+            })
+            .map_err(DbspError::Scheduler)
+    }
+
+    /// Start committing the current transaction by forcing all operators to process
+    /// their inputs to completion.
+    ///
+    /// The caller must invoke `step` repeatedly until the commit is complete.
+    pub fn start_commit_transaction(&self) -> Result<(), DbspError> {
+        self.executor
+            .start_commit_transaction()
+            .map_err(DbspError::Scheduler)
+    }
+
+    pub fn is_commit_complete(&self) -> bool {
+        self.executor.is_commit_complete()
+    }
+
+    pub fn commit_progress(&self) -> CommitProgress {
+        self.executor.commit_progress()
+    }
+
+    /// Evaluate the circuit for a single step.
+    pub fn step(&self) -> Result<(), DbspError> {
+        self.tokio_runtime
+            .block_on(async {
+                let local_set = LocalSet::new();
+                local_set
+                    .run_until(async { self.executor.step(&self.circuit).await })
+                    .await
+            })
+            .map_err(DbspError::Scheduler)
+    }
+
+    pub fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         // if Runtime::worker_index() == 0 {
         //     self.circuit.to_dot_file(
         //         |node| {
         //             Some(crate::utils::DotNodeAttributes::new().with_label(&format!(
-        //                 "{}-{}",
+        //                 "{}-{}-{}",
         //                 node.local_id(),
-        //                 node.name()
+        //                 node.name(),
+        //                 node.persistent_id().unwrap_or_default()
         //             )))
         //         },
         //         |edge| {
@@ -6085,7 +6296,7 @@ impl CircuitHandle {
 
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
-                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.record_callback(|| node.commit(base))
+                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.record_callback(|| node.checkpoint(base))
             })
     }
 
@@ -6515,7 +6726,7 @@ mod tests {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         let mut sum = 0;
@@ -6559,7 +6770,7 @@ mod tests {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         let mut sum = 0;
@@ -6620,7 +6831,7 @@ mod tests {
         .0;
 
         for _ in 1..10 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         let mut expected_output: Vec<usize> = Vec::with_capacity(10);

@@ -63,7 +63,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
         this.containsIntegrator = containsIntegrator;
         if (!operation.startsWith("waterline") &&
                 !operation.startsWith("apply") &&
-                !operation.startsWith("delay") &&
+                !operation.startsWith("transaction_delay") &&
                 !outputType.is(DBSPTypeZSet.class) &&
                 !outputType.is(DBSPTypeIndexedZSet.class))
             throw new InternalCompilerError("Operator " + operation +

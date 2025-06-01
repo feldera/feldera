@@ -1,4 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
+use crate::trace::cursor::Position;
 use crate::trace::ord::file::UnwrapStorage;
 use crate::trace::BatchLocation;
 use crate::{
@@ -341,6 +342,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    type Timed<T2: Timestamp> = FileValBatch<K, V, T2, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FileValBuilder<K, V, T, R>;
 
@@ -647,6 +649,13 @@ where
     fn fast_forward_vals(&mut self) {
         self.move_val(|val_cursor| val_cursor.move_last().unwrap_storage());
     }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.key_cursor.len(),
+            offset: self.key_cursor.absolute_position(),
+        })
+    }
 }
 
 /// A builder for creating layers from unsorted update tuples.
@@ -663,6 +672,7 @@ where
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
     time_diffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
+    num_tuples: usize,
 }
 
 impl<K, V, T, R> Builder<FileValBatch<K, V, T, R>> for FileValBuilder<K, V, T, R>
@@ -686,6 +696,7 @@ where
             )
             .unwrap_storage(),
             time_diffs: factories.timediff_factory.default_box(),
+            num_tuples: 0,
         }
     }
 
@@ -703,6 +714,7 @@ where
     fn push_time_diff(&mut self, time: &T, weight: &R) {
         debug_assert!(!weight.is_zero());
         self.time_diffs.push_refs((time, weight));
+        self.num_tuples += 1;
     }
 
     fn push_val(&mut self, val: &V) {
@@ -710,6 +722,10 @@ where
             .write1((val, &*self.time_diffs))
             .unwrap_storage();
         self.time_diffs.clear();
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.num_tuples
     }
 }
 

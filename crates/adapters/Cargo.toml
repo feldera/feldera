@@ -187,6 +187,7 @@ smallstr = { workspace = true }
 dashmap = { workspace = true }
 arrow-digest = { workspace = true }
 thread-id = { workspace = true }
+parking_lot = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]

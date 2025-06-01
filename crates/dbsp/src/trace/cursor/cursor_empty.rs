@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
-use crate::dynamic::{Factory, WeightTrait};
+use crate::{
+    dynamic::{Factory, WeightTrait},
+    trace::cursor::Position,
+};
 
 use super::Cursor;
 
@@ -106,4 +109,11 @@ where
     fn seek_val_with_reverse(&mut self, _predicate: &dyn Fn(&V) -> bool) {}
 
     fn fast_forward_vals(&mut self) {}
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: 0,
+            offset: 0,
+        })
+    }
 }

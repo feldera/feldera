@@ -5,6 +5,7 @@ pub mod cursor_empty;
 pub mod cursor_group;
 pub mod cursor_list;
 pub mod cursor_pair;
+pub mod cursor_with_polarity;
 mod reverse;
 
 use std::{fmt::Debug, marker::PhantomData};
@@ -13,6 +14,8 @@ pub use cursor_empty::CursorEmpty;
 pub use cursor_group::CursorGroup;
 pub use cursor_list::CursorList;
 pub use cursor_pair::CursorPair;
+pub use cursor_with_polarity::CursorWithPolarity;
+
 pub use reverse::ReverseKeyCursor;
 use size_of::SizeOf;
 
@@ -26,6 +29,13 @@ use super::BatchReader;
 enum Direction {
     Forward,
     Backward,
+}
+
+/// Represents approximate position of a cursor as an offset and total.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Position {
+    pub total: u64,
+    pub offset: u64,
 }
 
 /// A cursor for `(key, val, time, diff)` tuples.
@@ -303,6 +313,8 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
             }
         }
     }
+
+    fn position(&self) -> Option<Position>;
 }
 
 /// An object that can produce a cursor bounded by its lifetime.
@@ -530,6 +542,10 @@ where
     {
         (**self).seek_keyval_reverse(key, val)
     }
+
+    fn position(&self) -> Option<Position> {
+        (**self).position()
+    }
 }
 
 /// A wrapper around a `dyn Cursor` to allow choice of implementations at runtime.
@@ -667,6 +683,10 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.0.fast_forward_vals()
+    }
+
+    fn position(&self) -> Option<Position> {
+        self.0.position()
     }
 }
 

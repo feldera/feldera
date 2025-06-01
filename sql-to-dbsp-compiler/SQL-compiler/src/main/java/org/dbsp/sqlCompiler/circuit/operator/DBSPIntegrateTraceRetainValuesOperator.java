@@ -26,15 +26,19 @@ import java.util.Objects;
 /** Currently always inserted after the input of a join operator */
 public final class DBSPIntegrateTraceRetainValuesOperator
         extends DBSPBinaryOperator implements GCOperator {
+
+    public final boolean accumulate;
+
     public DBSPIntegrateTraceRetainValuesOperator(
             CalciteRelNode node, DBSPExpression function,
-            OutputPort data, OutputPort control) {
-        super(node, "integrate_trace_retain_values",
+            OutputPort data, OutputPort control, boolean accumulate) {
+        super(node, accumulate ? "accumulate_integrate_trace_retain_values" : "integrate_trace_retain_values",
                 function, data.outputType(), data.isMultiset(), data, control, false);
+        this.accumulate = accumulate;
     }
 
     public static DBSPIntegrateTraceRetainValuesOperator create(
-            CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
+            CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control, boolean accumulate) {
         DBSPType controlType = control.outputType();
         Utilities.enforce(controlType.is(DBSPTypeTupleBase.class),
                 "Control type is not a tuple: " + controlType);
@@ -57,8 +61,13 @@ public final class DBSPIntegrateTraceRetainValuesOperator
         compare = ExpressionCompiler.makeBinaryExpression(
                 node, compare.getType(), DBSPOpcode.OR, compare0, compare);
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
-        return new DBSPIntegrateTraceRetainValuesOperator(node, closure, data, control);
+        return new DBSPIntegrateTraceRetainValuesOperator(node, closure, data, control, accumulate);
     }
+
+    public static DBSPIntegrateTraceRetainValuesOperator create(
+            CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
+        return create(node, data, dataProjection, control, true);
+}
 
     @Override
     public DBSPSimpleOperator with(
@@ -68,7 +77,7 @@ public final class DBSPIntegrateTraceRetainValuesOperator
             Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
             return new DBSPIntegrateTraceRetainValuesOperator(
                     this.getRelNode(), Objects.requireNonNull(function),
-                    newInputs.get(0), newInputs.get(1));
+                    newInputs.get(0), newInputs.get(1), this.accumulate);
         }
         return this;
     }
@@ -87,8 +96,10 @@ public final class DBSPIntegrateTraceRetainValuesOperator
     @SuppressWarnings("unused")
     public static DBSPIntegrateTraceRetainValuesOperator fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
+        boolean accumulate = Utilities.getBooleanProperty(node, "accumulate");
+
         return new DBSPIntegrateTraceRetainValuesOperator(CalciteEmptyRel.INSTANCE,
-                info.getFunction(), info.getInput(0), info.getInput(1))
+                info.getFunction(), info.getInput(0), info.getInput(1), accumulate)
                 .addAnnotations(info.annotations(), DBSPIntegrateTraceRetainValuesOperator.class);
     }
 }

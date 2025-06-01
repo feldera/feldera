@@ -869,7 +869,7 @@ mod tests {
         dbsp.enable_cpu_profiler().unwrap();
         for mut vec in input_vecs {
             input_handle.append(&mut vec);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
         dbsp.dump_profile(std::env::temp_dir().join("q16")).unwrap();
     }

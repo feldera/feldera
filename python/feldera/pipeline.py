@@ -326,7 +326,7 @@ class Pipeline:
                     f" time {elapsed}s, timeout: {timeout_s}s"
                 )
 
-            pipeline_complete: bool = self.stats().global_metrics.pipeline_complete
+            pipeline_complete: bool = self.is_complete()
             if pipeline_complete is None:
                 raise RuntimeError(
                     "received unknown metrics from the pipeline, pipeline_complete is None"
@@ -338,6 +338,19 @@ class Pipeline:
 
         if force_stop:
             self.stop(force=True)
+
+    def is_complete(self) -> bool:
+        """
+        Check if the pipeline has completed processing all input records.
+
+        Returns True if (1) all input connectors attached to the
+        pipeline have finished reading their input data sources and issued
+        end-of-input notifications to the pipeline, and (2) all inputs received
+        from these connectors have been fully processed and corresponding
+        outputs have been sent out through the output connectors.
+        """
+
+        return self.stats().global_metrics.pipeline_complete
 
     def start(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
@@ -625,6 +638,8 @@ metrics"""
         :param timeout_s: The maximum time (in seconds) to wait for the
             checkpoint to complete.
 
+        :return: The checkpoint sequence number.
+
         :raises FelderaAPIError: If enterprise features are not enabled.
         """
 
@@ -647,9 +662,7 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
                 time.sleep(0.1)
                 continue
 
-            return status
-
-        return seq
+            return seq
 
     def checkpoint_status(self, seq: int) -> CheckpointStatus:
         """
@@ -888,6 +901,38 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.refresh()
         return self._inner.program_code
+
+    def modify(
+        self,
+        sql: Optional[str] = None,
+        udf_rust: Optional[str] = None,
+        udf_toml: Optional[str] = None,
+        program_config: Optional[Mapping[str, Any]] = None,
+        runtime_config: Optional[Mapping[str, Any]] = None,
+        description: Optional[str] = None,
+    ):
+        """
+        Modify the pipeline.
+
+        Modify the values of pipeline attributes: SQL code, UDF Rust code,
+        UDF Rust dependencies (TOML), program config, runtime config, and
+        description. Only the provided attributes will be modified. Other
+        attributes will remain unchanged.
+
+        The pipeline must be in the STOPPED state to be modified.
+
+        :raises FelderaAPIError: If the pipeline is not in a STOPPED state.
+        """
+
+        self.client.patch_pipeline(
+            name=self._inner.name,
+            sql=sql,
+            udf_rust=udf_rust,
+            udf_toml=udf_toml,
+            program_config=program_config,
+            runtime_config=runtime_config,
+            description=description,
+        )
 
     def storage_status(self) -> StorageStatus:
         """

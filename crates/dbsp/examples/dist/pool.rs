@@ -122,7 +122,12 @@ impl Circuit for Server {
             .unwrap()
             .input_handle
             .append(&mut records);
-        self.inner().as_mut().unwrap().circuit.step().unwrap();
+        self.inner()
+            .as_mut()
+            .unwrap()
+            .circuit
+            .transaction()
+            .unwrap();
         future::ready(
             self.inner()
                 .as_ref()
