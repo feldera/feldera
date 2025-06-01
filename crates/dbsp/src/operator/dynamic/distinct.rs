@@ -1,19 +1,24 @@
 //! Distinct operator.
 
+use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
+use crate::circuit::metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL};
+use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::{ClonableTrait, Data, DynData};
-use crate::trace::TupleBuilder;
+use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
+use crate::trace::spine_async::{SpineCursor, WithSnapshot};
+use crate::trace::{Spine, TupleBuilder};
 use crate::{
     algebra::{
-        AddByRef, HasOne, HasZero, IndexedZSet, IndexedZSetReader, Lattice, OrdIndexedZSet,
-        OrdIndexedZSetFactories, PartialOrder, ZRingValue, ZTrace,
+        AddByRef, HasOne, HasZero, IndexedZSet, Lattice, OrdIndexedZSet, OrdIndexedZSetFactories,
+        PartialOrder, ZRingValue,
     },
     circuit::{
         metadata::{
-            MetaItem, OperatorLocation, OperatorMeta, NUM_ENTRIES_LABEL, NUM_INPUTS, NUM_OUTPUTS,
-            SHARED_BYTES_LABEL, USED_BYTES_LABEL,
+            MetaItem, OperatorLocation, OperatorMeta, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
+            USED_BYTES_LABEL,
         },
-        operator_traits::{BinaryOperator, Operator, UnaryOperator},
+        operator_traits::{Operator, UnaryOperator},
         Circuit, Scope, Stream, WithClock,
     },
     circuit_cache_key,
@@ -22,10 +27,14 @@ use crate::{
     utils::Tup2,
     DBData, Runtime, Timestamp, ZWeight,
 };
-use crate::{NestedCircuit, RootCircuit};
+use crate::{NestedCircuit, Position, RootCircuit};
+use async_stream::stream;
+use futures::Stream as AsyncStream;
 use minitrace::trace;
 use size_of::SizeOf;
+use std::cell::RefCell;
 use std::panic::Location;
+use std::rc::Rc;
 use std::{
     borrow::Cow,
     cmp::{min, Ordering},
@@ -42,7 +51,7 @@ circuit_cache_key!(DistinctIncrementalId<C, D>(StreamId => Stream<C, D>));
 
 pub struct DistinctFactories<Z: IndexedZSet, T: Timestamp> {
     pub input_factories: Z::Factories,
-    trace_factories: <T::ValBatch<Z::Key, Z::Val, Z::R> as BatchReader>::Factories,
+    trace_factories: <T::TimedBatch<Z> as BatchReader>::Factories,
     aux_factories: OrdIndexedZSetFactories<Z::Key, Z::Val>,
 }
 
@@ -308,31 +317,34 @@ where
         if circuit.root_scope() == 0 {
             // Use an implementation optimized to work in the root scope.
             circuit.add_binary_operator(
-                DistinctIncrementalTotal::new(Location::caller(), &factories.input_factories),
-                self,
+                StreamingBinaryWrapper::new(DistinctIncrementalTotal::new(
+                    Location::caller(),
+                    &factories.input_factories,
+                )),
+                &self.dyn_accumulate(&factories.input_factories),
                 &self
-                    .dyn_integrate_trace(&factories.input_factories)
-                    .delay_trace(),
+                    .dyn_accumulate_integrate_trace(&factories.input_factories)
+                    .accumulate_delay_trace(),
             )
         } else {
             // ```
-            //          ┌────────────────────────────────────┐
-            //          │                                    │
-            //          │                                    ▼
-            //  stream  │     ┌─────┐  stream.trace()  ┌───────────────────┐
-            // ─────────┴─────┤trace├─────────────────►│DistinctIncremental├─────►
-            //                └─────┘                  └───────────────────┘
+            //                               ┌───────────────────────────────────────────────────────┐
+            //                               │                                                       │
+            //                               │                                                       ▼
+            // stream  ┌───────────┐         │     ┌─────┐  stream.trace()  ┌─────┐        ┌───────────────────┐
+            //  ──────►│accumulate ├─────────┴────►┤trace├─────────────────►│delay├───────►│DistinctIncremental├─────►
+            //         └───────────┘               └─────┘                  └─────┘        └───────────────────┘
             // ```
             circuit.add_binary_operator(
-                DistinctIncremental::new(
+                StreamingBinaryWrapper::new(DistinctIncremental::new(
                     Location::caller(),
                     &factories.input_factories,
                     &factories.aux_factories,
                     circuit.clone(),
-                ),
-                self,
+                )),
+                &self.dyn_accumulate(&factories.input_factories),
                 // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
-                &self.dyn_trace(&factories.trace_factories, &factories.input_factories),
+                &self.dyn_accumulate_trace(&factories.trace_factories, &factories.input_factories),
             )
         }
         .mark_sharded()
@@ -396,11 +408,13 @@ struct DistinctIncrementalTotal<Z: IndexedZSet, I> {
     input_factories: Z::Factories,
     location: &'static Location<'static>,
 
-    // Total number of input tuples processed by the operator.
-    num_inputs: usize,
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
 
-    // Total number of output tuples processed by the operator.
-    num_outputs: usize,
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
+    chunk_size: usize,
 
     _type: PhantomData<(Z, I)>,
 }
@@ -410,9 +424,36 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
         Self {
             input_factories: input_factories.clone(),
             location,
-            num_inputs: 0,
-            num_outputs: 0,
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
+            chunk_size: splitter_output_chunk_size(),
             _type: PhantomData,
+        }
+    }
+
+    fn maybe_yield(
+        &self,
+        builder: &mut Z::Builder,
+        delta_cursor: &mut SpineCursor<Z>,
+        any_values: &mut bool,
+    ) -> Option<(Z, bool, Option<Position>)> {
+        if builder.num_tuples() >= self.chunk_size {
+            if *any_values {
+                builder.push_key(delta_cursor.key());
+                *any_values = false;
+            }
+
+            let builder = std::mem::replace(
+                builder,
+                Z::Builder::with_capacity(&self.input_factories, self.chunk_size),
+            );
+
+            let result = builder.done();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+
+            Some((result, false, delta_cursor.position()))
+        } else {
+            None
         }
     }
 }
@@ -432,8 +473,8 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS => MetaItem::Count(self.num_inputs),
-            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
         });
     }
 
@@ -442,89 +483,111 @@ where
     }
 }
 
-impl<Z, I> BinaryOperator<Z, I, Z> for DistinctIncrementalTotal<Z, I>
+impl<Z, I> StreamingBinaryOperator<Option<Spine<Z>>, I, Z> for DistinctIncrementalTotal<Z, I>
 where
     Z: IndexedZSet,
-    I: IndexedZSetReader<Key = Z::Key, Val = Z::Val>,
+    I: WithSnapshot<Batch = Z> + 'static,
 {
     #[trace]
-    async fn eval(&mut self, delta: &Z, delayed_integral: &I) -> Z {
-        self.num_inputs += delta.len();
+    fn eval(
+        self: Rc<Self>,
+        delta: &Option<Spine<Z>>,
+        delayed_integral: &I,
+    ) -> impl AsyncStream<Item = (Z, bool, Option<Position>)> + 'static {
+        let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
-        let mut builder = Z::Builder::with_capacity(&self.input_factories, delta.len());
-        let mut delta_cursor = delta.cursor();
-
-        let fetched = if Runtime::with_dev_tweaks(|d| d.fetch_distinct) {
-            delayed_integral.fetch(delta).await
+        // We assume that delta.is_some() implies that the operator is being flushed:
+        // since delayed_integral is always flushed before delta.
+        let delayed_integral = if delta.is_some() {
+            Some(delayed_integral.ro_snapshot())
         } else {
             None
         };
-        let mut integral_cursor = match &fetched {
-            Some(fetched) => fetched.get_cursor(),
-            None => Box::new(delayed_integral.cursor()),
-        };
 
-        while delta_cursor.key_valid() {
-            let mut any_values = false;
-            if integral_cursor.seek_key_exact(delta_cursor.key()) {
-                while delta_cursor.val_valid() {
-                    let w = **delta_cursor.weight();
-                    let v = delta_cursor.val();
+        stream! {
+            let Some(delta) = delta else {
+                yield (Z::dyn_empty(&self.input_factories), true, None);
+                return
+            };
 
-                    integral_cursor.seek_val(v);
-                    let old_weight = if integral_cursor.val_valid() && integral_cursor.val() == v {
-                        **integral_cursor.weight()
-                    } else {
-                        HasZero::zero()
-                    };
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
-                    let new_weight = old_weight.add_by_ref(&w);
+            let mut builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size);
+            let mut delta_cursor = delta.cursor();
 
-                    if old_weight.le0() {
-                        // Weight changes from non-positive to positive.
-                        if new_weight.ge0() && !new_weight.is_zero() {
-                            builder.push_val_diff(v, ZWeight::one().erase());
+            let fetched = if Runtime::with_dev_tweaks(|d| d.fetch_distinct) {
+                delayed_integral.as_ref().unwrap().fetch(&delta).await
+            } else {
+                None
+            };
+            let mut integral_cursor = match &fetched {
+                Some(fetched) => fetched.get_cursor(),
+                None => Box::new(delayed_integral.unwrap().cursor()),
+            };
+
+            while delta_cursor.key_valid() {
+                let mut any_values = false;
+                if integral_cursor.seek_key_exact(delta_cursor.key()) {
+                    while delta_cursor.val_valid() {
+                        let w = **delta_cursor.weight();
+                        let v = delta_cursor.val();
+
+                        integral_cursor.seek_val(v);
+                        let old_weight = if integral_cursor.val_valid() && integral_cursor.val() == v {
+                            **integral_cursor.weight()
+                        } else {
+                            HasZero::zero()
+                        };
+
+                        let new_weight = old_weight.add_by_ref(&w);
+
+                        if old_weight.le0() {
+                            // Weight changes from non-positive to positive.
+                            if new_weight.ge0() && !new_weight.is_zero() {
+                                builder.push_val_diff(v, ZWeight::one().erase());
+                                any_values = true;
+                            }
+                        } else if new_weight.le0() {
+                            // Weight changes from positive to non-positive.
+                            builder.push_val_diff(v, ZWeight::one().neg().erase());
                             any_values = true;
                         }
-                    } else if new_weight.le0() {
-                        // Weight changes from positive to non-positive.
-                        builder.push_val_diff(v, ZWeight::one().neg().erase());
-                        any_values = true;
-                    }
 
-                    delta_cursor.step_val();
-                }
-            } else {
-                while delta_cursor.val_valid() {
-                    let new_weight = **delta_cursor.weight();
-                    debug_assert!(!new_weight.is_zero());
+                        if let Some(output) = self.maybe_yield(&mut builder, &mut delta_cursor, &mut any_values) {
+                            yield output;
+                        }
 
-                    if new_weight.ge0() {
-                        builder.push_val_diff(delta_cursor.val(), ZWeight::one().erase());
-                        any_values = true;
+                        delta_cursor.step_val();
                     }
-                    delta_cursor.step_val();
+                } else {
+                    while delta_cursor.val_valid() {
+                        let new_weight = **delta_cursor.weight();
+                        debug_assert!(!new_weight.is_zero());
+
+                        if new_weight.ge0() {
+                            builder.push_val_diff(delta_cursor.val(), ZWeight::one().erase());
+                            any_values = true;
+                        }
+
+                        if let Some(output) = self.maybe_yield(&mut builder, &mut delta_cursor, &mut any_values) {
+                            yield output;
+                        }
+
+                        delta_cursor.step_val();
+                    }
+                };
+                if any_values {
+                    builder.push_key(delta_cursor.key());
                 }
-            };
-            if any_values {
-                builder.push_key(delta_cursor.key());
+
+                delta_cursor.step_key();
             }
 
-            delta_cursor.step_key();
+            let result = builder.done();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+
+            yield (result, true, delta_cursor.position())
         }
-
-        let result = builder.done();
-        self.num_outputs += result.len();
-        result
-    }
-
-    // TODO: owned implementation.
-    async fn eval_owned_and_ref(&mut self, delta: Z, delayed_integral: &I) -> Z {
-        self.eval(&delta, delayed_integral).await
-    }
-
-    async fn eval_owned(&mut self, delta: Z, delayed_integral: I) -> Z {
-        self.eval_owned_and_ref(delta, &delayed_integral).await
     }
 }
 
@@ -538,7 +601,7 @@ type KeysOfInterest<TS, K, V, R> = BTreeMap<TS, Box<DynWeightedPairs<DynPair<K, 
 struct DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
-    T: ZTrace<Key = Z::Key, Val = Z::Val>,
+    T: WithSnapshot,
 {
     #[size_of(skip)]
     input_factories: Z::Factories,
@@ -550,20 +613,26 @@ where
     #[size_of(skip)]
     clock: Clk,
     // Keys that may need updating at future times.
-    keys_of_interest: KeysOfInterest<T::Time, Z::Key, Z::Val, Z::R>,
+    keys_of_interest:
+        RefCell<KeysOfInterest<<T::Batch as BatchReader>::Time, Z::Key, Z::Val, Z::R>>,
     // True if the operator received empty input during the last clock
     // tick.
-    empty_input: bool,
+    empty_input: RefCell<bool>,
     // True if the operator produced empty output at the last clock tick.
-    empty_output: bool,
+    empty_output: RefCell<bool>,
     // Used in computing partial derivatives
     // (we keep it here to reuse allocations across `eval_keyval` calls).
-    distinct_vals: Vec<(Option<T::Time>, ZWeight)>,
-    // Total number of input tuples processed by the operator.
-    num_inputs: usize,
+    distinct_vals: RefCell<Vec<(Option<<T::Batch as BatchReader>::Time>, ZWeight)>>,
 
-    // Total number of output tuples processed by the operator.
-    num_outputs: usize,
+    // Input batch sizes.
+    #[size_of(skip)]
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    #[size_of(skip)]
+    output_batch_stats: RefCell<BatchSizeStats>,
+
+    chunk_size: usize,
 
     _type: PhantomData<(Z, T)>,
 }
@@ -571,8 +640,9 @@ where
 impl<Z, T, Clk> DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
-    T: ZTrace<Key = Z::Key, Val = Z::Val>,
-    Clk: WithClock<Time = T::Time>,
+    T: WithSnapshot,
+    T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
+    Clk: WithClock<Time = <T::Batch as BatchReader>::Time>,
 {
     fn new(
         location: &'static Location<'static>,
@@ -580,20 +650,21 @@ where
         aux_factories: &OrdIndexedZSetFactories<Z::Key, Z::Val>,
         clock: Clk,
     ) -> Self {
-        let depth = clock.nesting_depth();
+        let depth = <T::Batch as BatchReader>::Time::NESTING_DEPTH;
 
         Self {
             location,
             input_factories: input_factories.clone(),
             aux_factories: aux_factories.clone(),
             clock,
-            keys_of_interest: BTreeMap::new(),
-            empty_input: false,
-            empty_output: false,
-            distinct_vals: vec![(None, HasZero::zero()); 2 << depth],
+            keys_of_interest: RefCell::new(BTreeMap::new()),
+            empty_input: RefCell::new(false),
+            empty_output: RefCell::new(false),
+            distinct_vals: RefCell::new(vec![(None, HasZero::zero()); 2 << depth]),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
+            chunk_size: splitter_output_chunk_size(),
             _type: PhantomData,
-            num_inputs: 0,
-            num_outputs: 0,
         }
     }
 
@@ -686,11 +757,11 @@ where
     /// operator at time `t'` we simply scan all tuples in
     /// `keys_of_interest[t2]` for candidates.
     fn eval_keyval(
-        &mut self,
+        &self,
         time: &Clk::Time,
         key: &Z::Key,
         val: &Z::Val,
-        trace_cursor: &mut T::Cursor<'_>,
+        trace_cursor: &mut SpineCursor<T::Batch>,
         output: &mut TupleBuilder<Z::Builder, Z>,
         item: &mut DynPair<DynPair<Z::Key, Z::Val>, Z::R>,
     ) {
@@ -706,7 +777,7 @@ where
 
             trace_cursor.map_times(&mut |trace_ts, weight| {
                 // Update weights in `distinct_vals`.
-                for (ts, total_weight) in self.distinct_vals.iter_mut() {
+                for (ts, total_weight) in self.distinct_vals.borrow_mut().iter_mut() {
                     if let Some(ts) = ts {
                         if trace_ts.less_equal(ts) {
                             *total_weight += **weight;
@@ -723,7 +794,7 @@ where
             });
 
             // Compute `dist` for each entry in `distinct_vals`.
-            for (_time, weight) in self.distinct_vals.iter_mut() {
+            for (_time, weight) in self.distinct_vals.borrow_mut().iter_mut() {
                 if weight.le0() {
                     *weight = HasZero::zero();
                 } else {
@@ -733,7 +804,7 @@ where
 
             // We have computed `f` at all the relevant points in times; we can now
             // compute the partial derivative.
-            let output_weight = Self::partial_derivative(&self.distinct_vals);
+            let output_weight = Self::partial_derivative(&self.distinct_vals.borrow());
             if !output_weight.is_zero() {
                 output.push_refs(key, val, &(), output_weight.erase());
             }
@@ -744,6 +815,7 @@ where
 
             if let Some(t) = time_of_interest {
                 self.keys_of_interest
+                    .borrow_mut()
                     .entry(t)
                     .or_insert_with(|| self.aux_factories.weighted_items_factory().default_box())
                     .push_val(&mut *item);
@@ -751,7 +823,37 @@ where
         }
     }
 
-    fn init_distinct_vals(vals: &mut [(Option<T::Time>, ZWeight)], ts: Option<T::Time>) {
+    fn maybe_yield<C>(
+        &self,
+        delta_cursor: &C,
+        result_builder: &mut TupleBuilder<Z::Builder, Z>,
+    ) -> Option<(Z, bool, Option<Position>)>
+    where
+        C: Cursor<Z::Key, Z::Val, Z::Time, Z::R>,
+    {
+        if result_builder.num_tuples() >= self.chunk_size {
+            let builder = std::mem::replace(
+                result_builder,
+                TupleBuilder::new(
+                    &self.input_factories,
+                    Z::Builder::with_capacity(&self.input_factories, self.chunk_size),
+                ),
+            );
+
+            let result = builder.done();
+            *self.empty_output.borrow_mut() &= result.is_empty();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+
+            Some((result, false, delta_cursor.position()))
+        } else {
+            None
+        }
+    }
+
+    fn init_distinct_vals(
+        vals: &mut [(Option<<T::Batch as BatchReader>::Time>, ZWeight)],
+        ts: Option<<T::Batch as BatchReader>::Time>,
+    ) {
         if vals.len() == 1 {
             vals[0] = (ts, HasZero::zero());
         } else {
@@ -765,14 +867,14 @@ where
         }
     }
 
-    fn clear_distinct_vals(&mut self) {
-        for (_time, val) in self.distinct_vals.iter_mut() {
+    fn clear_distinct_vals(&self) {
+        for (_time, val) in self.distinct_vals.borrow_mut().iter_mut() {
             *val = HasZero::zero();
         }
     }
 
     /// Compute partial derivative.
-    fn partial_derivative(vals: &[(Option<T::Time>, ZWeight)]) -> ZWeight {
+    fn partial_derivative(vals: &[(Option<<T::Batch as BatchReader>::Time>, ZWeight)]) -> ZWeight {
         // Split vals in two halves.  Compute `partial_derivative` recursively
         // for each half, return the difference.
         if vals.len() == 1 {
@@ -787,8 +889,9 @@ where
 impl<Z, T, Clk> Operator for DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
-    T: ZTrace<Key = Z::Key, Val = Z::Val>,
-    Clk: WithClock<Time = T::Time> + 'static,
+    T: WithSnapshot + 'static,
+    T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
+    Clk: WithClock<Time = <T::Batch as BatchReader>::Time> + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("DistinctIncremental")
@@ -799,13 +902,18 @@ where
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
-        let size: usize = self.keys_of_interest.values().map(|v| v.len()).sum();
+        let size: usize = self
+            .keys_of_interest
+            .borrow()
+            .values()
+            .map(|v| v.len())
+            .sum();
         let bytes = self.size_of();
 
         meta.extend(metadata! {
             NUM_ENTRIES_LABEL => MetaItem::Count(size),
-            NUM_INPUTS => MetaItem::Count(self.num_inputs),
-            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
@@ -814,13 +922,13 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
-            self.empty_input = false;
-            self.empty_output = false;
+            *self.empty_input.borrow_mut() = false;
+            *self.empty_output.borrow_mut() = false;
         }
     }
 
     fn clock_end(&mut self, scope: Scope) {
-        debug_assert!(self.keys_of_interest.keys().all(|ts| {
+        debug_assert!(self.keys_of_interest.borrow().keys().all(|ts| {
             if ts.less_equal(&self.clock.time().epoch_end(scope)) {
                 eprintln!(
                     "ts: {ts:?}, epoch_end: {:?}",
@@ -834,226 +942,268 @@ where
     fn fixedpoint(&self, scope: Scope) -> bool {
         let epoch_end = self.clock.time().epoch_end(scope);
 
-        self.empty_input
-            && self.empty_output
+        *self.empty_input.borrow()
+            && *self.empty_output.borrow()
             && self
                 .keys_of_interest
+                .borrow()
                 .keys()
                 .all(|ts| !ts.less_equal(&epoch_end))
     }
 }
 
-impl<Z, T, Clk> BinaryOperator<Z, T, Z> for DistinctIncremental<Z, T, Clk>
+impl<Z, T, Clk> StreamingBinaryOperator<Option<Spine<Z>>, T, Z> for DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
-    T: ZTrace<Key = Z::Key, Val = Z::Val>,
-    Clk: WithClock<Time = T::Time> + 'static,
+    T: WithSnapshot + 'static,
+    T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
+    Clk: WithClock<Time = <T::Batch as BatchReader>::Time> + 'static,
 {
     // TODO: add eval_owned, so we can use keys and values from `delta` without
     // cloning.
     #[trace]
-    async fn eval(&mut self, delta: &Z, trace: &T) -> Z {
-        let time = self.clock.time();
-        self.num_inputs += delta.len();
+    fn eval(
+        self: Rc<Self>,
+        delta: &Option<Spine<Z>>,
+        trace: &T,
+    ) -> impl AsyncStream<Item = (Z, bool, Option<Position>)> + 'static {
+        let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
-        Self::init_distinct_vals(&mut self.distinct_vals, Some(time.clone()));
-        self.empty_input = delta.is_empty();
+        // We assume that delta.is_some() implies that the operator is being flushed:
+        // since the integral is always flushed in same step as delta.
+        let trace = if delta.is_some() {
+            Some(trace.ro_snapshot())
+        } else {
+            None
+        };
 
-        // We iterate over keys and values in order, so it is safe to use `Builder`.
-        let result_builder = Z::Builder::with_capacity(&self.input_factories, delta.len());
-        let mut result_builder = TupleBuilder::new(&self.input_factories, result_builder);
+        *self.empty_output.borrow_mut() = true;
 
-        let mut delta_cursor = delta.cursor();
-        let mut trace_cursor = trace.cursor();
+        stream! {
+            let Some(delta) = delta else {
+                yield (Z::dyn_empty(&self.input_factories), true, None);
+                return;
+            };
 
-        // Previously encountered keys that may affect output at the
-        // current time.
-        let mut keys_of_interest = self
-            .keys_of_interest
-            .remove(&time)
-            .unwrap_or_else(|| self.aux_factories.weighted_items_factory().default_box());
+            let time = self.clock.time();
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
-        let keys_of_interest = <OrdIndexedZSet<Z::Key, Z::Val>>::dyn_from_tuples(
-            &self.aux_factories,
-            (),
-            &mut keys_of_interest,
-        );
-        let mut keys_of_interest_cursor = keys_of_interest.cursor();
+            Self::init_distinct_vals(&mut self.distinct_vals.borrow_mut(), Some(time.clone()));
+            *self.empty_input.borrow_mut() = delta.is_empty();
 
-        let mut item = self.aux_factories.weighted_item_factory().default_box();
+            // We iterate over keys and values in order, so it is safe to use `Builder`.
+            let result_builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size);
+            let mut result_builder = TupleBuilder::new(&self.input_factories, result_builder);
 
-        // Iterate over all keys in `delta_cursor` and `keys_of_interest`.
-        while delta_cursor.key_valid() && keys_of_interest_cursor.key_valid() {
-            match delta_cursor.key().cmp(keys_of_interest_cursor.key()) {
-                // Key only appears in `delta`.
-                Ordering::Less => {
-                    if trace_cursor.seek_key_exact(delta_cursor.key()) {
-                        while delta_cursor.val_valid() {
-                            self.eval_keyval(
-                                &time,
-                                delta_cursor.key(),
-                                delta_cursor.val(),
-                                &mut trace_cursor,
-                                &mut result_builder,
-                                &mut *item,
-                            );
-                            delta_cursor.step_val();
-                        }
-                    }
-                    delta_cursor.step_key();
-                }
-                // Key only appears in `keys_of_interest`.
-                Ordering::Greater => {
-                    if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
-                        while keys_of_interest_cursor.val_valid() {
-                            self.eval_keyval(
-                                &time,
-                                keys_of_interest_cursor.key(),
-                                keys_of_interest_cursor.val(),
-                                &mut trace_cursor,
-                                &mut result_builder,
-                                &mut *item,
-                            );
-                            keys_of_interest_cursor.step_val();
-                        }
-                    }
-                    keys_of_interest_cursor.step_key();
-                }
-                // Key appears in both `delta` and `keys_of_interest`:
-                // Iterate over all values in both cursors.
-                Ordering::Equal => {
-                    if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
-                        while delta_cursor.val_valid() && keys_of_interest_cursor.val_valid() {
-                            match delta_cursor.val().cmp(keys_of_interest_cursor.val()) {
-                                Ordering::Less => {
-                                    self.eval_keyval(
-                                        &time,
-                                        delta_cursor.key(),
-                                        delta_cursor.val(),
-                                        &mut trace_cursor,
-                                        &mut result_builder,
-                                        &mut *item,
-                                    );
-                                    delta_cursor.step_val();
+            let mut delta_cursor = delta.cursor();
+            let mut trace_cursor = trace.unwrap().cursor();
+
+            // Previously encountered keys that may affect output at the
+            // current time.
+            let mut keys_of_interest = self
+                .keys_of_interest
+                .borrow_mut()
+                .remove(&time)
+                .unwrap_or_else(|| self.aux_factories.weighted_items_factory().default_box());
+
+            let keys_of_interest = <OrdIndexedZSet<Z::Key, Z::Val>>::dyn_from_tuples(
+                &self.aux_factories,
+                (),
+                &mut keys_of_interest,
+            );
+            let mut keys_of_interest_cursor = keys_of_interest.cursor();
+
+            let mut item = self.aux_factories.weighted_item_factory().default_box();
+
+            // Iterate over all keys in `delta_cursor` and `keys_of_interest`.
+            while delta_cursor.key_valid() && keys_of_interest_cursor.key_valid() {
+                match delta_cursor.key().cmp(keys_of_interest_cursor.key()) {
+                    // Key only appears in `delta`.
+                    Ordering::Less => {
+                        if trace_cursor.seek_key_exact(delta_cursor.key()) {
+                            while delta_cursor.val_valid() {
+                                self.eval_keyval(
+                                    &time,
+                                    delta_cursor.key(),
+                                    delta_cursor.val(),
+                                    &mut trace_cursor,
+                                    &mut result_builder,
+                                    &mut *item,
+                                );
+                                if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
+                                    yield output;
                                 }
-                                Ordering::Greater => {
-                                    self.eval_keyval(
-                                        &time,
-                                        keys_of_interest_cursor.key(),
-                                        keys_of_interest_cursor.val(),
-                                        &mut trace_cursor,
-                                        &mut result_builder,
-                                        &mut *item,
-                                    );
-                                    keys_of_interest_cursor.step_val();
-                                }
-                                Ordering::Equal => {
-                                    self.eval_keyval(
-                                        &time,
-                                        delta_cursor.key(),
-                                        delta_cursor.val(),
-                                        &mut trace_cursor,
-                                        &mut result_builder,
-                                        &mut *item,
-                                    );
-                                    delta_cursor.step_val();
-                                    keys_of_interest_cursor.step_val();
-                                }
+                                delta_cursor.step_val();
                             }
                         }
-                        // Iterate over remaining `delta_cursor` values.
-                        while delta_cursor.val_valid() {
-                            self.eval_keyval(
-                                &time,
-                                delta_cursor.key(),
-                                delta_cursor.val(),
-                                &mut trace_cursor,
-                                &mut result_builder,
-                                &mut *item,
-                            );
-                            delta_cursor.step_val();
-                        }
-
-                        // Iterate over remaining `keys_of_interest` values.
-                        while keys_of_interest_cursor.val_valid() {
-                            self.eval_keyval(
-                                &time,
-                                keys_of_interest_cursor.key(),
-                                keys_of_interest_cursor.val(),
-                                &mut trace_cursor,
-                                &mut result_builder,
-                                &mut *item,
-                            );
-                            keys_of_interest_cursor.step_val();
-                        }
+                        delta_cursor.step_key();
                     }
+                    // Key only appears in `keys_of_interest`.
+                    Ordering::Greater => {
+                        if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
+                            while keys_of_interest_cursor.val_valid() {
+                                self.eval_keyval(
+                                    &time,
+                                    keys_of_interest_cursor.key(),
+                                    keys_of_interest_cursor.val(),
+                                    &mut trace_cursor,
+                                    &mut result_builder,
+                                    &mut *item,
+                                );
+                                if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
+                                    yield output;
+                                }
+                                keys_of_interest_cursor.step_val();
+                            }
+                        }
+                        keys_of_interest_cursor.step_key();
+                    }
+                    // Key appears in both `delta` and `keys_of_interest`:
+                    // Iterate over all values in both cursors.
+                    Ordering::Equal => {
+                        if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
+                            while delta_cursor.val_valid() && keys_of_interest_cursor.val_valid() {
+                                match delta_cursor.val().cmp(keys_of_interest_cursor.val()) {
+                                    Ordering::Less => {
+                                        self.eval_keyval(
+                                            &time,
+                                            delta_cursor.key(),
+                                            delta_cursor.val(),
+                                            &mut trace_cursor,
+                                            &mut result_builder,
+                                            &mut *item,
+                                        );
+                                        delta_cursor.step_val();
+                                    }
+                                    Ordering::Greater => {
+                                        self.eval_keyval(
+                                            &time,
+                                            keys_of_interest_cursor.key(),
+                                            keys_of_interest_cursor.val(),
+                                            &mut trace_cursor,
+                                            &mut result_builder,
+                                            &mut *item,
+                                        );
+                                        keys_of_interest_cursor.step_val();
+                                    }
+                                    Ordering::Equal => {
+                                        self.eval_keyval(
+                                            &time,
+                                            delta_cursor.key(),
+                                            delta_cursor.val(),
+                                            &mut trace_cursor,
+                                            &mut result_builder,
+                                            &mut *item,
+                                        );
+                                        delta_cursor.step_val();
+                                        keys_of_interest_cursor.step_val();
+                                    }
+                                }
+                                if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
+                                    yield output;
+                                }
+                            }
+                            // Iterate over remaining `delta_cursor` values.
+                            while delta_cursor.val_valid() {
+                                self.eval_keyval(
+                                    &time,
+                                    delta_cursor.key(),
+                                    delta_cursor.val(),
+                                    &mut trace_cursor,
+                                    &mut result_builder,
+                                    &mut *item,
+                                );
+                                if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
+                                    yield output;
+                                }
+                                delta_cursor.step_val();
+                            }
 
-                    delta_cursor.step_key();
-                    keys_of_interest_cursor.step_key();
+                            // Iterate over remaining `keys_of_interest` values.
+                            while keys_of_interest_cursor.val_valid() {
+                                self.eval_keyval(
+                                    &time,
+                                    keys_of_interest_cursor.key(),
+                                    keys_of_interest_cursor.val(),
+                                    &mut trace_cursor,
+                                    &mut result_builder,
+                                    &mut *item,
+                                );
+                                if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
+                                    yield output;
+                                }
+                                keys_of_interest_cursor.step_val();
+                            }
+                        }
+
+                        delta_cursor.step_key();
+                        keys_of_interest_cursor.step_key();
+                    }
                 }
             }
-        }
 
-        // Iterate over remaining `delta_cursor` keys.
-        while delta_cursor.key_valid() {
-            if trace_cursor.seek_key_exact(delta_cursor.key()) {
-                while delta_cursor.val_valid() {
-                    self.eval_keyval(
-                        &time,
-                        delta_cursor.key(),
-                        delta_cursor.val(),
-                        &mut trace_cursor,
-                        &mut result_builder,
-                        &mut *item,
-                    );
-                    delta_cursor.step_val();
+            // Iterate over remaining `delta_cursor` keys.
+            while delta_cursor.key_valid() {
+                if trace_cursor.seek_key_exact(delta_cursor.key()) {
+                    while delta_cursor.val_valid() {
+                        self.eval_keyval(
+                            &time,
+                            delta_cursor.key(),
+                            delta_cursor.val(),
+                            &mut trace_cursor,
+                            &mut result_builder,
+                            &mut *item,
+                        );
+                        if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
+                            yield output;
+                        }
+                        delta_cursor.step_val();
+                    }
                 }
+                delta_cursor.step_key();
             }
-            delta_cursor.step_key();
-        }
 
-        // Iterate over remaining `keys_of_interest_cursor` keys.
-        while keys_of_interest_cursor.key_valid() {
-            if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
-                while keys_of_interest_cursor.val_valid() {
-                    self.eval_keyval(
-                        &time,
-                        keys_of_interest_cursor.key(),
-                        keys_of_interest_cursor.val(),
-                        &mut trace_cursor,
-                        &mut result_builder,
-                        &mut *item,
-                    );
-                    keys_of_interest_cursor.step_val();
+            // Iterate over remaining `keys_of_interest_cursor` keys.
+            while keys_of_interest_cursor.key_valid() {
+                if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
+                    while keys_of_interest_cursor.val_valid() {
+                        self.eval_keyval(
+                            &time,
+                            keys_of_interest_cursor.key(),
+                            keys_of_interest_cursor.val(),
+                            &mut trace_cursor,
+                            &mut result_builder,
+                            &mut *item,
+                        );
+                        if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
+                            yield output;
+                        }
+                        keys_of_interest_cursor.step_val();
+                    }
                 }
+                keys_of_interest_cursor.step_key();
             }
-            keys_of_interest_cursor.step_key();
+
+            let result = result_builder.done();
+            *self.empty_output.borrow_mut() &= result.is_empty();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            yield (result, true, delta_cursor.position());
         }
-
-        let result = result_builder.done();
-        self.empty_output = result.is_empty();
-
-        self.num_outputs += result.len();
-        result
     }
 }
 
 #[cfg(test)]
 mod test {
     use anyhow::Result as AnyResult;
-
-    use std::{
-        cell::RefCell,
-        rc::Rc,
-        sync::{Arc, Mutex},
-    };
+    use std::{cell::RefCell, rc::Rc};
 
     use crate::{
+        circuit::CircuitConfig,
         indexed_zset,
-        operator::{Generator, GeneratorNested, OutputHandle},
-        typed_batch::{OrdIndexedZSet, OrdZSet},
+        operator::{GeneratorNested, OutputHandle},
+        typed_batch::{OrdIndexedZSet, OrdZSet, SpineSnapshot},
         utils::Tup2,
-        zset, Circuit, RootCircuit, Runtime,
+        zset, Circuit, IndexedZSetHandle, RootCircuit, Runtime, ZSetHandle,
     };
     use proptest::{collection, prelude::*};
 
@@ -1093,38 +1243,41 @@ mod test {
                     let counter = Rc::new(RefCell::new(0));
                     let counter_clone = counter.clone();
 
-                    let input = child.add_source(GeneratorNested::new(Box::new(move || {
-                        *counter_clone.borrow_mut() = 0;
-                        if Runtime::worker_index() == 0 {
-                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
-                            Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
-                        } else {
-                            Box::new(|| zset! {})
-                        }
-                    })));
+                    let input = child.add_source(GeneratorNested::new(
+                        Box::new(move || {
+                            *counter_clone.borrow_mut() = 0;
+                            if Runtime::worker_index() == 0 {
+                                let mut deltas = inputs.next().unwrap_or_default().into_iter();
+                                Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
+                            } else {
+                                Box::new(|| zset! {})
+                            }
+                        }),
+                        zset! {},
+                    ));
 
                     let distinct_inc = input.distinct().gather(0);
                     let hash_distinct_inc = input.hash_distinct().gather(0);
-                    let distinct_noninc = input
-                        // Non-incremental implementation of distinct_nested_incremental.
-                        .integrate()
-                        .integrate_nested()
-                        .stream_distinct()
-                        .differentiate()
-                        .differentiate_nested()
-                        .gather(0);
 
-                    distinct_inc
-                        .apply2(&distinct_noninc, |d1: &OrdZSet<u64>, d2: &OrdZSet<u64>| {
-                            (d1.clone(), d2.clone())
-                        })
-                        .inspect(|(d1, d2)| assert_eq!(d1, d2));
+                    // TODO: implement microstep-compatible versions of integrate_nested, etc.
+                    // let distinct_noninc = input
+                    //     // Non-incremental implementation of distinct_nested_incremental.
+                    //     .integrate()
+                    //     .integrate_nested()
+                    //     .stream_distinct()
+                    //     .differentiate()
+                    //     .differentiate_nested()
+                    //     .gather(0);
 
-                    hash_distinct_inc
-                        .apply2(&distinct_noninc, |d1: &OrdZSet<u64>, d2: &OrdZSet<u64>| {
-                            (d1.clone(), d2.clone())
-                        })
-                        .inspect(|(d1, d2)| assert_eq!(d1, d2));
+                    // distinct_inc
+                    //     .apply2(&distinct_noninc, |d1: &OrdZSet<u64>, d2: &OrdZSet<u64>| {
+                    //         (d1.clone(), d2.clone())
+                    //     })
+                    //     .inspect(|(d1, d2)| assert_eq!(d1, d2));
+
+                    hash_distinct_inc.accumulate_apply2(&distinct_inc, |d1, d2| {
+                        assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>())
+                    });
 
                     Ok((
                         async move || {
@@ -1141,84 +1294,92 @@ mod test {
         .0;
 
         for _ in 0..3 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 
     #[test]
-    fn distinct_indexed_test() {
-        let output1 = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
-        let output1_clone = output1.clone();
-        let output1_clone_2 = output1.clone();
+    fn distinct_indexed_test_small_steps() {
+        distinct_indexed_test(false);
+    }
 
-        let output2 = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
-        let output2_clone = output2.clone();
+    #[test]
+    fn distinct_indexed_test_big_step() {
+        distinct_indexed_test(true);
+    }
 
-        let (mut circuit, input) = Runtime::init_circuit(4, move |circuit| {
-            let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
+    fn distinct_indexed_test(transaction: bool) {
+        let inputs = vec![
+            vec![
+                Tup2(1, Tup2(0, 1)),
+                Tup2(1, Tup2(1, 2)),
+                Tup2(2, Tup2(0, 1)),
+                Tup2(2, Tup2(1, 1)),
+            ],
+            vec![Tup2(3, Tup2(1, 1)), Tup2(2, Tup2(1, 1))],
+            vec![Tup2(1, Tup2(1, 3)), Tup2(2, Tup2(1, -3))],
+        ];
 
-            input
-                .integrate()
-                .stream_distinct()
-                .gather(0)
-                .inspect(move |batch| {
-                    if Runtime::worker_index() == 0 {
-                        *output2_clone.lock().unwrap() = batch.clone();
-                    }
-                });
+        let expected_outputs = vec![
+            indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 } },
+            indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 }, 3 => { 1 => 1 } },
+            indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1 }, 3 => { 1 => 1 } },
+        ];
 
-            input
-                .distinct()
-                .integrate()
-                .gather(0)
-                .inspect(move |batch| {
-                    if Runtime::worker_index() == 0 {
-                        *output1_clone.lock().unwrap() = batch.clone();
-                    }
-                });
+        let (mut circuit, (input, stream_distinct_output, distinct_output, hash_distinct_output)) =
+            Runtime::init_circuit(4, move |circuit| {
+                let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
 
-            input
-                .hash_distinct()
-                .integrate()
-                .gather(0)
-                .inspect(move |batch| {
-                    if Runtime::worker_index() == 0 {
-                        *output1_clone_2.lock().unwrap() = batch.clone();
-                    }
-                });
+                let stream_distinct_output = circuit
+                    .non_incremental(&input, |_child, input| {
+                        Ok(input.integrate().stream_distinct())
+                    })
+                    .unwrap()
+                    .accumulate_output();
 
-            Ok(input_handle)
-        })
-        .unwrap();
+                let distinct_output = input.distinct().accumulate_integrate().accumulate_output();
 
-        input.append(&mut vec![
-            Tup2(1, Tup2(0, 1)),
-            Tup2(1, Tup2(1, 2)),
-            Tup2(2, Tup2(0, 1)),
-            Tup2(2, Tup2(1, 1)),
-        ]);
-        circuit.step().unwrap();
-        assert_eq!(
-            &*output1.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 } }
-        );
-        assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
+                let hash_distinct_output = input
+                    .hash_distinct()
+                    .accumulate_integrate()
+                    .accumulate_output();
 
-        input.append(&mut vec![Tup2(3, Tup2(1, 1)), Tup2(2, Tup2(1, 1))]);
-        circuit.step().unwrap();
-        assert_eq!(
-            &*output1.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 }, 3 => { 1 => 1 } }
-        );
-        assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
+                Ok((
+                    input_handle,
+                    stream_distinct_output,
+                    distinct_output,
+                    hash_distinct_output,
+                ))
+            })
+            .unwrap();
 
-        input.append(&mut vec![Tup2(1, Tup2(1, 3)), Tup2(2, Tup2(1, -3))]);
-        circuit.step().unwrap();
-        assert_eq!(
-            &*output1.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1 }, 3 => { 1 => 1 } }
-        );
-        assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
+        if transaction {
+            circuit.start_transaction().unwrap();
+
+            for mut i in inputs.into_iter() {
+                input.append(&mut i);
+                circuit.step().unwrap();
+            }
+
+            circuit.commit_transaction().unwrap();
+
+            let expected_output = expected_outputs.last().unwrap().clone();
+
+            assert_eq!(
+                stream_distinct_output.concat().consolidate(),
+                expected_output
+            );
+            assert_eq!(distinct_output.concat().consolidate(), expected_output);
+            assert_eq!(hash_distinct_output.concat().consolidate(), expected_output);
+        } else {
+            for (mut i, o) in inputs.into_iter().zip(expected_outputs.into_iter()) {
+                input.append(&mut i);
+                circuit.transaction().unwrap();
+                assert_eq!(stream_distinct_output.concat().consolidate(), o);
+                assert_eq!(distinct_output.concat().consolidate(), o);
+                assert_eq!(hash_distinct_output.concat().consolidate(), o);
+            }
+        }
 
         circuit.kill().unwrap();
     }
@@ -1232,19 +1393,12 @@ mod test {
     const MAX_VAL: i64 = 3;
     const MAX_TUPLES: usize = 10;
 
-    fn test_zset() -> impl Strategy<Value = TestZSet> {
-        collection::vec((0..NUM_KEYS, -1..=1i64), 0..MAX_TUPLES).prop_map(|tuples| {
-            OrdZSet::from_tuples(
-                (),
-                tuples
-                    .into_iter()
-                    .map(|(k, w)| Tup2(Tup2(k, ()), w))
-                    .collect(),
-            )
-        })
+    fn test_zset() -> impl Strategy<Value = Vec<Tup2<u64, i64>>> {
+        collection::vec((0..NUM_KEYS, -1..=1i64), 0..MAX_TUPLES)
+            .prop_map(|tuples| tuples.into_iter().map(|(k, w)| Tup2(k, w)).collect())
     }
 
-    fn test_input() -> impl Strategy<Value = Vec<TestZSet>> {
+    fn test_input() -> impl Strategy<Value = Vec<Vec<Tup2<u64, i64>>>> {
         collection::vec(test_zset(), 0..MAX_ROUNDS * MAX_ITERATIONS)
     }
 
@@ -1260,8 +1414,19 @@ mod test {
         .prop_map(|tuples| OrdIndexedZSet::from_tuples((), tuples))
     }
 
-    fn test_indexed_input() -> impl Strategy<Value = Vec<TestIndexedZSet>> {
-        collection::vec(test_indexed_zset(), 0..MAX_ROUNDS * MAX_ITERATIONS)
+    fn test_indexed_vec() -> impl Strategy<Value = Vec<Tup2<u64, Tup2<i64, i64>>>> {
+        collection::vec(
+            (
+                (0..NUM_KEYS, -MAX_VAL..MAX_VAL).prop_map(|(x, y)| Tup2(x, y)),
+                -1..=1i64,
+            )
+                .prop_map(|(x, y)| Tup2(x.0, Tup2(x.1, y))),
+            0..MAX_TUPLES,
+        )
+    }
+
+    fn test_indexed_input() -> impl Strategy<Value = Vec<Vec<Tup2<u64, Tup2<i64, i64>>>>> {
+        collection::vec(test_indexed_vec(), 0..MAX_ROUNDS * MAX_ITERATIONS)
     }
 
     fn test_indexed_nested_input() -> impl Strategy<Value = Vec<Vec<TestIndexedZSet>>> {
@@ -1273,53 +1438,58 @@ mod test {
 
     fn distinct_test_circuit(
         circuit: &mut RootCircuit,
-        inputs: Vec<TestZSet>,
     ) -> AnyResult<(
-        OutputHandle<TestZSet>,
-        OutputHandle<TestZSet>,
-        OutputHandle<TestZSet>,
+        ZSetHandle<u64>,
+        OutputHandle<SpineSnapshot<TestZSet>>,
+        OutputHandle<SpineSnapshot<TestZSet>>,
+        OutputHandle<SpineSnapshot<TestZSet>>,
     )> {
-        let mut inputs = inputs.into_iter();
+        let (input, input_handle) = circuit.add_input_zset::<u64>();
 
-        let input = circuit.add_source(Generator::new(Box::new(move || {
-            if Runtime::worker_index() == 0 {
-                inputs.next().unwrap_or_default()
-            } else {
-                zset! {}
-            }
-        })));
+        let distinct_inc = input.distinct().accumulate_output();
+        let hash_distinct_inc = input.hash_distinct().accumulate_output();
 
-        let distinct_inc = input.distinct().output();
-        let hash_distinct_inc = input.hash_distinct().output();
+        let distinct_noninc = circuit
+            .non_incremental(&input, |_child_circuit, input| {
+                Ok(input.integrate().stream_distinct().differentiate())
+            })
+            .unwrap()
+            .accumulate_output();
 
-        let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
-
-        Ok((distinct_inc, hash_distinct_inc, distinct_noninc))
+        Ok((
+            input_handle,
+            distinct_inc,
+            hash_distinct_inc,
+            distinct_noninc,
+        ))
     }
 
     fn distinct_indexed_test_circuit(
         circuit: &mut RootCircuit,
-        inputs: Vec<TestIndexedZSet>,
     ) -> AnyResult<(
-        OutputHandle<TestIndexedZSet>,
-        OutputHandle<TestIndexedZSet>,
-        OutputHandle<TestIndexedZSet>,
+        IndexedZSetHandle<u64, i64>,
+        OutputHandle<SpineSnapshot<TestIndexedZSet>>,
+        OutputHandle<SpineSnapshot<TestIndexedZSet>>,
+        OutputHandle<SpineSnapshot<TestIndexedZSet>>,
     )> {
-        let mut inputs = inputs.into_iter();
+        let (input, input_handle) = circuit.add_input_indexed_zset::<u64, i64>();
 
-        let input = circuit.add_source(Generator::new(Box::new(move || {
-            if Runtime::worker_index() == 0 {
-                inputs.next().unwrap_or_default()
-            } else {
-                indexed_zset! {}
-            }
-        })));
+        let distinct_inc = input.distinct().accumulate_output();
+        let hash_distinct_inc = input.hash_distinct().accumulate_output();
 
-        let distinct_inc = input.distinct().output();
-        let hash_distinct_inc = input.hash_distinct().output();
-        let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
+        let distinct_noninc = circuit
+            .non_incremental(&input, |_child_circuit, input| {
+                Ok(input.integrate().stream_distinct().differentiate())
+            })
+            .unwrap()
+            .accumulate_output();
 
-        Ok((distinct_inc, hash_distinct_inc, distinct_noninc))
+        Ok((
+            input_handle,
+            distinct_inc,
+            hash_distinct_inc,
+            distinct_noninc,
+        ))
     }
 
     fn distinct_indexed_nested_test_circuit(
@@ -1333,31 +1503,41 @@ mod test {
                 let counter = Rc::new(RefCell::new(0));
                 let counter_clone = counter.clone();
 
-                let input = child.add_source(GeneratorNested::new(Box::new(move || {
-                    *counter_clone.borrow_mut() = 0;
-                    if Runtime::worker_index() == 0 {
-                        let mut deltas = inputs.next().unwrap_or_default().into_iter();
-                        Box::new(move || deltas.next().unwrap_or_else(|| indexed_zset! {}))
-                    } else {
-                        Box::new(|| indexed_zset! {})
-                    }
-                })));
+                let input = child.add_source(GeneratorNested::new(
+                    Box::new(move || {
+                        *counter_clone.borrow_mut() = 0;
+                        if Runtime::worker_index() == 0 {
+                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
+                            Box::new(move || deltas.next().unwrap_or_else(|| indexed_zset! {}))
+                        } else {
+                            Box::new(|| indexed_zset! {})
+                        }
+                    }),
+                    indexed_zset! {},
+                ));
 
                 let distinct_inc = input.distinct().gather(0);
                 let hash_distinct_inc = input.hash_distinct().gather(0);
 
-                let distinct_noninc = input
-                    .integrate_nested()
-                    .integrate()
-                    .stream_distinct()
-                    .differentiate()
-                    .differentiate_nested()
-                    .gather(0);
+                let distinct_noninc = child
+                    .non_incremental(&input, |_child_circuit, input| {
+                        Ok(input
+                            .integrate_nested()
+                            .integrate()
+                            .stream_distinct()
+                            .differentiate()
+                            .differentiate_nested()
+                            .gather(0))
+                    })
+                    .unwrap();
 
                 // Compare outputs of all three implementations.
-                distinct_inc.apply3(&distinct_noninc, &hash_distinct_inc, |d1, d2, d3| {
-                    assert_eq!(d1, d2);
-                    assert_eq!(d1, d3);
+                distinct_inc.accumulate_apply2(&distinct_noninc, |d1, d2| {
+                    assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>());
+                });
+
+                distinct_inc.accumulate_apply2(&hash_distinct_inc, |d1, d2| {
+                    assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>());
                 });
 
                 Ok((
@@ -1372,50 +1552,117 @@ mod test {
         Ok(())
     }
 
+    fn proptest_distinct_test_mt(
+        inputs: Vec<Vec<Tup2<u64, i64>>>,
+        workers: usize,
+        transaction: bool,
+    ) {
+        let (mut circuit, (input_handle, inc_output, hash_inc_output, noninc_output)) =
+            Runtime::init_circuit(
+                CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
+                distinct_test_circuit,
+            )
+            .unwrap();
+
+        if transaction {
+            circuit.start_transaction().unwrap();
+            for mut input_batch in inputs.into_iter() {
+                input_handle.append(&mut input_batch);
+
+                circuit.step().unwrap();
+            }
+
+            circuit.commit_transaction().unwrap();
+
+            let noninc_output = noninc_output.concat().consolidate();
+            let inc_output = inc_output.concat().consolidate();
+            let hash_inc_output = hash_inc_output.concat().consolidate();
+
+            assert_eq!(noninc_output, hash_inc_output);
+            assert_eq!(noninc_output, inc_output);
+            assert_eq!(hash_inc_output, inc_output);
+        } else {
+            for mut input_batch in inputs.into_iter() {
+                input_handle.append(&mut input_batch);
+
+                circuit.transaction().unwrap();
+
+                let noninc_output = noninc_output.concat().consolidate();
+                let inc_output = inc_output.concat().consolidate();
+                let hash_inc_output = hash_inc_output.concat().consolidate();
+
+                assert_eq!(noninc_output, hash_inc_output);
+                assert_eq!(noninc_output, inc_output);
+                assert_eq!(hash_inc_output, inc_output);
+            }
+        }
+
+        circuit.kill().unwrap();
+    }
+
+    fn proptest_distinct_indexed_test_mt(
+        inputs: Vec<Vec<Tup2<u64, Tup2<i64, i64>>>>,
+        workers: usize,
+        transaction: bool,
+    ) {
+        let (mut circuit, (input_handle, inc_output, hash_inc_output, noninc_output)) =
+            Runtime::init_circuit(workers, distinct_indexed_test_circuit).unwrap();
+
+        if transaction {
+            circuit.start_transaction().unwrap();
+            for mut input_batch in inputs.into_iter() {
+                input_handle.append(&mut input_batch);
+
+                circuit.step().unwrap();
+            }
+
+            circuit.commit_transaction().unwrap();
+
+            let noninc_output = noninc_output.concat().consolidate();
+            let inc_output = inc_output.concat().consolidate();
+            let hash_inc_output = hash_inc_output.concat().consolidate();
+
+            assert_eq!(noninc_output, hash_inc_output);
+            assert_eq!(noninc_output, inc_output);
+            assert_eq!(hash_inc_output, inc_output);
+        } else {
+            for mut input_batch in inputs.into_iter() {
+                input_handle.append(&mut input_batch);
+
+                circuit.transaction().unwrap();
+
+                let noninc_output = noninc_output.concat().consolidate();
+                let inc_output = inc_output.concat().consolidate();
+                let hash_inc_output = hash_inc_output.concat().consolidate();
+
+                assert_eq!(noninc_output, hash_inc_output);
+                assert_eq!(noninc_output, inc_output);
+                assert_eq!(hash_inc_output, inc_output);
+            }
+        }
+
+        circuit.kill().unwrap();
+    }
+
     proptest! {
         #[test]
-        fn proptest_distinct_test_st(inputs in test_input()) {
-            let iterations = inputs.len();
-            let (circuit, (inc_output, hash_inc_output, noninc_output)) = RootCircuit::build(|circuit| distinct_test_circuit(circuit, inputs)).unwrap();
-
-            for _ in 0..iterations {
-                circuit.step().unwrap();
-                let noninc = noninc_output.consolidate();
-                assert_eq!(&inc_output.consolidate(), &noninc);
-                assert_eq!(&hash_inc_output.consolidate(), &noninc);
-            }
+        fn proptest_distinct_test_mt_small_step(inputs in test_input(), workers in (2..=16usize)) {
+            proptest_distinct_test_mt(inputs, workers, false);
         }
 
         #[test]
-        fn proptest_distinct_test_mt(inputs in test_input(), workers in (2..=16usize)) {
-            let iterations = inputs.len();
-            let (mut circuit, (inc_output, hash_inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_test_circuit(circuit, inputs)).unwrap();
-
-            for _ in 0..iterations {
-                circuit.step().unwrap();
-                let noninc = noninc_output.consolidate();
-
-                assert_eq!(&inc_output.consolidate(), &noninc);
-                assert_eq!(&hash_inc_output.consolidate(), &noninc);
-
-            }
-
-            circuit.kill().unwrap();
+        fn proptest_distinct_test_mt_big_step(inputs in test_input(), workers in (2..=16usize)) {
+            proptest_distinct_test_mt(inputs, workers, true);
         }
 
         #[test]
-        fn proptest_distinct_indexed_test_mt(inputs in test_indexed_input(), workers in (2..=4usize)) {
-            let iterations = inputs.len();
-            let (mut circuit, (inc_output, hash_inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_indexed_test_circuit(circuit, inputs)).unwrap();
+        fn proptest_distinct_indexed_test_mt_small_steps(inputs in test_indexed_input(), workers in (2..=4usize)) {
+            proptest_distinct_indexed_test_mt(inputs, workers, false);
+        }
 
-            for _ in 0..iterations {
-                circuit.step().unwrap();
-                let noninc = noninc_output.consolidate();
-                assert_eq!(&inc_output.consolidate(), &noninc);
-                assert_eq!(&hash_inc_output.consolidate(), &noninc);
-            }
-
-            circuit.kill().unwrap();
+        #[test]
+        fn proptest_distinct_indexed_test_mt_big_step(inputs in test_indexed_input(), workers in (2..=4usize)) {
+            proptest_distinct_indexed_test_mt(inputs, workers, true);
         }
 
         #[test]
@@ -1430,7 +1677,7 @@ mod test {
             let mut circuit = Runtime::init_circuit(workers, |circuit| distinct_indexed_nested_test_circuit(circuit, inputs)).unwrap().0;
 
             for _ in 0..iterations {
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
             }
 
             circuit.kill().unwrap();

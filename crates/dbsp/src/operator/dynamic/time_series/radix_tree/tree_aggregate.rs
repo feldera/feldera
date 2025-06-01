@@ -7,9 +7,8 @@ use crate::{
     },
     dynamic::{DataTrait, DynDataTyped, Erase},
     operator::dynamic::{
-        aggregate::DynAggregator,
-        time_series::radix_tree::treenode::TreeNode,
-        trace::{TraceBounds, TraceFeedback},
+        accumulate_trace::AccumulateTraceFeedback, aggregate::DynAggregator,
+        time_series::radix_tree::treenode::TreeNode, trace::TraceBounds,
     },
     trace::{Batch, BatchReader, BatchReaderFactories, Builder, Spine, TupleBuilder},
     Circuit, DBData, DynZWeight, Stream, ZWeight,
@@ -154,7 +153,7 @@ where
             //                                                            delayed_trace       └───────┘
             // ```
 
-            let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(
+            let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<O>>(
                 persistent_id,
                 &factories.output_factories,
                 <TraceBounds<O::Key, O::Val>>::unbounded(),
@@ -166,12 +165,12 @@ where
                     &factories.output_factories,
                     aggregator,
                 ),
-                &stream,
-                &stream.dyn_integrate_trace(&factories.input_factories),
+                &stream.dyn_accumulate(&factories.input_factories),
+                &stream.dyn_accumulate_integrate_trace(&factories.input_factories),
                 &feedback.delayed_trace,
             );
 
-            feedback.connect(&output);
+            feedback.connect(&output, &factories.output_factories);
 
             output
         })
@@ -239,7 +238,7 @@ where
     }
 }
 
-impl<Z, TS, IT, OT, Acc, Out, O> TernaryOperator<Z, IT, OT, O>
+impl<Z, TS, IT, OT, Acc, Out, O> TernaryOperator<Option<Spine<Z>>, IT, OT, O>
     for RadixTreeAggregate<Z, TS, IT, OT, Acc, Out, O>
 where
     Z: IndexedZSet<Key = DynDataTyped<TS>>,
@@ -253,10 +252,14 @@ where
     #[trace]
     async fn eval(
         &mut self,
-        delta: Cow<'_, Z>,
+        delta: Cow<'_, Option<Spine<Z>>>,
         input_trace: Cow<'_, IT>,
         output_trace: Cow<'_, OT>,
     ) -> O {
+        let Some(delta) = delta.as_ref() else {
+            return O::dyn_empty(&self.output_factories);
+        };
+
         let mut updates = self.radix_tree_factories.node_updates_factory.default_box();
         updates.reserve(delta.key_count());
 
@@ -422,7 +425,7 @@ mod test {
         })
         .unwrap();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -430,7 +433,7 @@ mod test {
             0x1000_0000_0000_0001,
             Tup2(1, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -438,7 +441,7 @@ mod test {
             0x1000_0000_0000_0002,
             Tup2(2, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -446,7 +449,7 @@ mod test {
             0x1000_1000_0000_0000,
             Tup2(3, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -454,7 +457,7 @@ mod test {
             0x1000_0000_0000_0002,
             Tup2(2, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -504,7 +507,7 @@ mod test {
             0xf300_1000_1100_1001,
             Tup2(10, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -518,7 +521,7 @@ mod test {
             0xf300_1000_0000_0001,
             Tup2(7, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -544,7 +547,7 @@ mod test {
             0xf200_0000_0000_0001,
             Tup2(5, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -564,7 +567,7 @@ mod test {
             0xf300_1000_1000_1001,
             Tup2(9, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -572,7 +575,7 @@ mod test {
             0xf400_1000_1100_1001,
             Tup2(11, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -610,6 +613,6 @@ mod test {
             0xf300_1000_1000_0001,
             Tup2(11, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 }

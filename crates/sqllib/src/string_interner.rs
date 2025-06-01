@@ -372,7 +372,9 @@ mod interned_string_test {
     use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, StorageConfig, StorageOptions};
     use dbsp::trace::{BatchReader, Cursor};
     use dbsp::utils::{Tup1, Tup2};
-    use dbsp::{DBSPHandle, OrdZSet, OutputHandle, Runtime, ZSetHandle};
+    use dbsp::{
+        typed_batch::SpineSnapshot, DBSPHandle, OrdZSet, OutputHandle, Runtime, ZSetHandle,
+    };
     use std::path::Path;
     use uuid::Uuid;
 
@@ -388,7 +390,7 @@ mod interned_string_test {
         (
             ZSetHandle<SqlString>,
             ZSetHandle<SqlString>,
-            OutputHandle<OrdZSet<SqlString>>,
+            OutputHandle<SpineSnapshot<OrdZSet<SqlString>>>,
         ),
     ) {
         let (circuit, handles) = Runtime::init_circuit(
@@ -420,7 +422,7 @@ mod interned_string_test {
                         |_, intern_string_id, _| unintern_string(intern_string_id).unwrap(),
                     );
 
-                Ok((hinput_strings, hqueries, output_strings.output()))
+                Ok((hinput_strings, hqueries, output_strings.accumulate_output()))
             },
         )
         .unwrap();
@@ -431,7 +433,7 @@ mod interned_string_test {
     fn query<'a, I>(
         circuit: &mut DBSPHandle,
         hqueries: &ZSetHandle<SqlString>,
-        houtput_strings: &OutputHandle<OrdZSet<SqlString>>,
+        houtput_strings: &OutputHandle<SpineSnapshot<OrdZSet<SqlString>>>,
         queries: I,
     ) where
         I: IntoIterator<Item = &'a str>,
@@ -444,8 +446,8 @@ mod interned_string_test {
             .collect::<Vec<_>>();
         hqueries.append(&mut tuples);
 
-        circuit.step().unwrap();
-        let output = houtput_strings.consolidate();
+        circuit.transaction().unwrap();
+        let output = houtput_strings.concat().consolidate();
         let mut output = output.iter().map(|(s, _, _)| s.clone()).collect::<Vec<_>>();
         output.sort();
 
@@ -458,7 +460,7 @@ mod interned_string_test {
             .collect::<Vec<_>>();
         hqueries.append(&mut tuples);
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 
     #[test]
@@ -490,7 +492,7 @@ mod interned_string_test {
             ["1", "2", "3", "4", "5"],
         );
 
-        let checkpoint = circuit.commit().unwrap();
+        let checkpoint = circuit.checkpoint().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (hinput_strings, hqueries, houtput_strings)) =
@@ -539,7 +541,7 @@ mod interned_string_test {
             );
         }
 
-        let checkpoint = circuit.commit().unwrap();
+        let checkpoint = circuit.checkpoint().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (_hinput_strings, hqueries, houtput_strings)) =
@@ -604,7 +606,7 @@ mod interned_string_test {
             );
         }
 
-        let checkpoint = circuit.commit().unwrap();
+        let checkpoint = circuit.checkpoint().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (hinput_strings, _hqueries, _houtput_strings)) =
@@ -619,10 +621,10 @@ mod interned_string_test {
                 .map(|i| Tup2(SqlString::from(i.as_str()), -1))
                 .collect::<Vec<_>>();
             hinput_strings.append(&mut chunk);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
-        circuit.step().unwrap();
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
+        circuit.transaction().unwrap();
 
         super::INTERNED_STRING_BY_ID.with_borrow(|by_id| {
             let mut cursor = by_id.read().unwrap().cursor();
@@ -663,7 +665,7 @@ mod interned_string_test {
             );
         }
 
-        let checkpoint = circuit.commit().unwrap();
+        let checkpoint = circuit.checkpoint().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (_hinput_strings, hqueries, houtput_strings)) =

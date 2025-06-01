@@ -4,8 +4,10 @@ use crate::{
         LeanVec, WeightTrait, WithFactory,
     },
     trace::{
+        cursor::Position,
         layers::{
-            Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
+            Cursor as TrieCursor, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
+            OrdOffset, Trie,
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
         Serializer, WeightedItem,
@@ -326,6 +328,7 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
+    type Timed<T2: Timestamp> = VecKeyBatch<K, T2, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecKeyBuilder<K, T, R, O>;
     fn checkpoint_path(&self) -> Option<StoragePath> {
@@ -517,6 +520,13 @@ where
     fn fast_forward_vals(&mut self) {
         self.valid = true;
     }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: TrieCursor::keys(&self.cursor) as u64,
+            offset: self.cursor.pos() as u64,
+        })
+    }
 }
 
 /// A builder for creating layers from unsorted update tuples.
@@ -623,6 +633,10 @@ where
             ),
             factories: self.factories,
         }
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.diffs.len()
     }
 }
 

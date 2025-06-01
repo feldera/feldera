@@ -256,7 +256,7 @@ pub mod tests {
         let source = make_source_with_wallclock_times(0..10, 10);
         input_handle.append(&mut source.take(10).map(|e| Tup2(e, 1)).collect());
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 
     #[test]

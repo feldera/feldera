@@ -145,7 +145,7 @@ public class TestCase {
             }
             DBSPLetStatement step =
                     new DBSPLetStatement("_", new DBSPApplyMethodExpression(
-                    "step", DBSPTypeAny.getDefault(), cas.getVarReference().field(0)).resultUnwrap());
+                    "transaction", DBSPTypeAny.getDefault(), cas.getVarReference().field(0)).resultUnwrap());
             list.add(step);
 
             boolean skipSystemViews = changes.outputs.getSetCount() < this.ccs.circuit.getOutputCount();

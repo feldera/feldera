@@ -50,6 +50,13 @@ pub struct CircuitCPUProfile {
     /// The total number of steps performed by the circuit and the total
     /// time spent between `StepStart` and `StepEnd`.
     pub step_profile: OperatorCPUProfile,
+
+    /// Idle periods when the circuit is not performing a step.
+    ///
+    /// There are two sources of idle time:
+    /// - The local circuit waiting for other workers to complete a step.
+    /// - The entire multithreaded circuit waiting for the client to trigger a step.
+    pub idle_profile: OperatorCPUProfile,
 }
 
 #[derive(Default, Debug)]
@@ -58,6 +65,7 @@ struct CPUProfilerInner {
     operators: HashMap<GlobalNodeId, OperatorCPUProfile>,
     wait_start_times: HashMap<GlobalNodeId, Instant>,
     step_start_times: HashMap<GlobalNodeId, Instant>,
+    step_end_times: HashMap<GlobalNodeId, Instant>,
     circuit_profiles: HashMap<GlobalNodeId, CircuitCPUProfile>,
 }
 
@@ -65,6 +73,15 @@ impl CPUProfilerInner {
     fn scheduler_event(&mut self, event: &SchedulerEvent) {
         match event {
             SchedulerEvent::StepStart { circuit_id } => {
+                if let Some(end_time) = self.step_end_times.remove(*circuit_id) {
+                    let duration = Instant::now().duration_since(end_time);
+                    let circuit_profile = self
+                        .circuit_profiles
+                        .entry((*circuit_id).clone())
+                        .or_insert_with(Default::default);
+                    circuit_profile.idle_profile.add_event(duration);
+                };
+
                 self.step_start_times
                     .insert((*circuit_id).clone(), Instant::now());
             }
@@ -77,6 +94,8 @@ impl CPUProfilerInner {
                         .or_insert_with(Default::default);
                     circuit_profile.step_profile.add_event(duration);
                 };
+                self.step_end_times
+                    .insert((*circuit_id).clone(), Instant::now());
             }
             SchedulerEvent::EvalStart { node } => {
                 self.start_times

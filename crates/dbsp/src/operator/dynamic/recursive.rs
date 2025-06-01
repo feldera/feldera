@@ -2,9 +2,13 @@
 
 use crate::{
     algebra::IndexedZSet,
-    circuit::{schedule::Error as SchedulerError, ChildCircuit, Circuit, Stream, WithClock},
+    circuit::{
+        circuit_builder::IterativeCircuit, schedule::Error as SchedulerError, ChildCircuit,
+        Circuit, Stream,
+    },
     operator::{dynamic::distinct::DistinctFactories, DelayedFeedback},
     trace::Spine,
+    Timestamp,
 };
 
 use crate::circuit::checkpointer::Checkpoint;
@@ -132,16 +136,17 @@ impl<C> RecursiveStreams<C> for Tuple {
 // https://github.com/rust-lang/rustfmt/issues/5420 is resolved
 // (or we can run this doctest with persistence enabled)
 #[rustfmt::skip]
-impl<P> ChildCircuit<P>
+impl<P, T> ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
     Self: Circuit,
 {
     /// See [`ChildCircuit::recursive`].
     pub fn dyn_recursive<F, S>(&self, factories: &S::Factories, f: F) -> Result<S::Output, SchedulerError>
     where
-        S: RecursiveStreams<ChildCircuit<Self>>,
-        F: FnOnce(&ChildCircuit<Self>, S) -> Result<S, SchedulerError>,
+        S: RecursiveStreams<IterativeCircuit<Self>>,
+        F: FnOnce(&IterativeCircuit<Self>, S) -> Result<S, SchedulerError>,
     {
         // The actual circuit we build:
         //
@@ -245,7 +250,7 @@ mod test {
         .unwrap().0;
 
         for _ in 0..8 {
-            root.step().unwrap();
+            root.transaction().unwrap();
         }
     }
 
@@ -289,7 +294,7 @@ mod test {
         let handle = thread::spawn(move || {
             for i in 0..100 {
                 edges_handle.append(&mut vec![Tup2(Tup2(i, i + 1), 1)]);
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
             }
         });
 
@@ -340,10 +345,10 @@ mod test {
 
         for _ in 0..10 {
             edges_handle.append(&mut insert_edges.clone());
-            root.step().unwrap();
+            root.transaction().unwrap();
 
             edges_handle.append(&mut delete_edges.clone());
-            root.step().unwrap();
+            root.transaction().unwrap();
 
             let paths = paths_handle.consolidate();
             assert!(paths.is_empty());
@@ -420,7 +425,7 @@ mod test {
         .unwrap().0;
 
         for _ in 0..8 {
-            root.step().unwrap();
+            root.transaction().unwrap();
         }
     }
 }

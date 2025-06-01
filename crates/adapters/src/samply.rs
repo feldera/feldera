@@ -119,7 +119,7 @@ impl SamplySpan {
     ///
     /// If the span is enabled for [tracing] purposes, **and** this module is
     /// enabled at debug level, then the span will be emitted for consumption by
-    /// the [samply] profiler.  See [module documentation] for more information.
+    /// the samply profiler.  See [module documentation] for more information.
     ///
     /// [module documentation]: crate::samply
     pub fn entered(self) -> EnteredSamplySpan {
@@ -137,7 +137,7 @@ impl SamplySpan {
     ///
     /// If the span is enabled for [tracing] purposes, **and** this module is
     /// enabled at debug level, then the span will be emitted for consumption by
-    /// the [samply] profiler.  See [module documentation] for more information.
+    /// the samply profiler.  See [module documentation] for more information.
     ///
     /// [module documentation]: crate::samply
     pub fn in_scope<F, T>(self, f: F) -> T

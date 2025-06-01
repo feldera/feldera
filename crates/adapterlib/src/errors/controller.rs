@@ -731,6 +731,9 @@ pub enum ControllerError {
     CheckpointPushError {
         error: String,
     },
+
+    TransactionInProgress,
+    NoTransactionInProgress,
 }
 
 impl ResponseError for ControllerError {
@@ -756,6 +759,8 @@ impl ResponseError for ControllerError {
             Self::BootstrapInProgress => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineRestarted { .. } => StatusCode::GONE,
             Self::UnknownEndpointInCompletionToken { .. } => StatusCode::GONE,
+            Self::TransactionInProgress => StatusCode::CONFLICT,
+            Self::NoTransactionInProgress => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -888,6 +893,8 @@ impl DbspDetailedError for ControllerError {
             }
             Self::CheckpointFetchError { .. } => Cow::from("CheckpointFetchError"),
             Self::CheckpointPushError { .. } => Cow::from("CheckpointPushError"),
+            Self::TransactionInProgress => Cow::from("TransactionInProgress"),
+            Self::NoTransactionInProgress => Cow::from("NoTransactionInProgress"),
         }
     }
 }
@@ -1036,6 +1043,18 @@ impl Display for ControllerError {
             }
             Self::CheckpointPushError { error } => {
                 write!(f, "Error pushing checkpoint to object store: {error}")
+            }
+            Self::TransactionInProgress => {
+                write!(
+                    f,
+                    "Cannot perform this operation while there is a transaction in progress"
+                )
+            }
+            Self::NoTransactionInProgress => {
+                write!(
+                    f,
+                    "This operation requires an active transaction, but none is currently in progress"
+                )
             }
         }
     }
@@ -1374,7 +1393,8 @@ impl ControllerError {
             Self::StepError(error) => error.kind(),
             Self::RestoreInProgress
             | Self::BootstrapInProgress
-            | Self::SuspendError(SuspendError::Temporary(_)) => ErrorKind::ResourceBusy,
+            | Self::SuspendError(SuspendError::Temporary(_))
+            | Self::TransactionInProgress => ErrorKind::ResourceBusy,
             Self::NotSupported { .. } | Self::SuspendError(SuspendError::Permanent(_)) => {
                 ErrorKind::Unsupported
             }
@@ -1406,7 +1426,8 @@ impl ControllerError {
             | Self::UnknownEndpointInCompletionToken { .. }
             | Self::CheckpointFetchError { .. }
             | Self::CheckpointPushError { .. }
-            | Self::PipelineRestarted { .. } => ErrorKind::Other,
+            | Self::PipelineRestarted { .. }
+            | Self::NoTransactionInProgress => ErrorKind::Other,
         }
     }
 }

@@ -1985,7 +1985,7 @@ mod test {
         for input in inputs.iter() {
             let input_json = to_json_string(input).unwrap();
             input_stream.set_for_all(input_json.as_bytes()).unwrap();
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
 
             let outputs = output_handle.take_from_all();
             assert!(outputs.iter().all(|x| x == input));
@@ -1999,7 +1999,7 @@ mod test {
             input_stream_clone
                 .set_for_worker(w % NUM_WORKERS, input_json.as_bytes())
                 .unwrap();
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
 
             let output = output_handle.take_from_worker(w % NUM_WORKERS).unwrap();
             assert_eq!(&output, input);
@@ -2128,7 +2128,7 @@ mod test {
         set_stream.flush();
         map_stream.flush();
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(zset_output.consolidate(), zset);
         assert_eq!(set_output.consolidate(), zset);
@@ -2189,7 +2189,7 @@ mod test {
             map_input.flush();
         }
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(zset_output.consolidate(), zset);
         assert_eq!(set_output.consolidate(), zset);

@@ -1,9 +1,9 @@
-use std::{borrow::Cow, cmp::Ordering, marker::PhantomData, panic::Location};
+use std::{borrow::Cow, cell::RefCell, cmp::Ordering, marker::PhantomData, panic::Location};
 
 use crate::{
     algebra::{IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZBatchReader, ZCursor},
     circuit::{
-        metadata::OperatorLocation,
+        metadata::{BatchSizeStats, OperatorLocation, OperatorMeta, OUTPUT_BATCHES_LABEL},
         operator_traits::{Operator, QuaternaryOperator},
     },
     dynamic::{
@@ -12,7 +12,8 @@ use crate::{
     },
     trace::{
         cursor::{CursorEmpty, CursorPair},
-        BatchFactories, BatchReaderFactories, Cursor,
+        spine_async::WithSnapshot,
+        BatchFactories, BatchReader, BatchReaderFactories, Cursor, Spine, SpineSnapshot,
     },
     Circuit, DBData, DynZWeight, RootCircuit, Scope, Stream, ZWeight,
 };
@@ -176,11 +177,11 @@ where
             let right = other.dyn_shard(&factories.right_factories);
 
             let left_trace = left
-                .dyn_integrate_trace(&factories.left_factories)
-                .delay_trace();
+                .dyn_accumulate_integrate_trace(&factories.left_factories)
+                .accumulate_delay_trace();
             let right_trace = right
-                .dyn_integrate_trace(&factories.right_factories)
-                .delay_trace();
+                .dyn_accumulate_integrate_trace(&factories.right_factories)
+                .accumulate_delay_trace();
 
             self.circuit().add_quaternary_operator(
                 AsofJoin::new(
@@ -191,9 +192,9 @@ where
                     join_func,
                     Location::caller(),
                 ),
-                &left,
+                &left.dyn_accumulate(&factories.left_factories),
                 &left_trace,
-                &right,
+                &right.dyn_accumulate(&factories.right_factories),
                 &right_trace,
             )
         })
@@ -218,6 +219,17 @@ where
     valts_cmp_func: Box<dyn Fn(&I1::Val, &TS) -> Ordering>,
     join_func: Box<AsofJoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>>,
     location: &'static Location<'static>,
+    flush: bool,
+    delta1: Option<SpineSnapshot<I1>>,
+    delta2: Option<SpineSnapshot<I2>>,
+
+    // Input batch sizes.
+    delta1_batch_stats: RefCell<BatchSizeStats>,
+    delta2_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
     phantom: PhantomData<(I1, T1, I2, T2, Z)>,
 }
 
@@ -245,6 +257,12 @@ where
             valts_cmp_func,
             join_func,
             location,
+            flush: false,
+            delta1: None,
+            delta2: None,
+            delta1_batch_stats: RefCell::new(BatchSizeStats::new()),
+            delta2_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
             phantom: PhantomData,
         }
     }
@@ -537,38 +555,24 @@ where
         Some(self.location)
     }
 
-    /*fn metadata(&self, meta: &mut OperatorMeta) {
-        // Find the percentage of consolidated outputs
-        let mut output_redundancy = ((self.stats.output_tuples as f64
-            - self.stats.produced_tuples as f64)
-            / self.stats.output_tuples as f64)
-            * 100.0;
-        if output_redundancy.is_nan() {
-            output_redundancy = 0.0;
-        } else if output_redundancy.is_infinite() {
-            output_redundancy = 100.0;
-        }
+    fn flush(&mut self) {
+        self.flush = true;
+    }
 
+    fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => total_size,
-            "batch sizes" => batch_sizes,
-            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => bytes.distinct_allocations(),
-            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
-            "left inputs" => self.stats.lhs_tuples,
-            "right inputs" => self.stats.rhs_tuples,
-            "computed outputs" => self.stats.output_tuples,
-            "produced outputs" => self.stats.produced_tuples,
-            "output redundancy" => MetaItem::Percent(output_redundancy),
+            "left input batches" => self.delta1_batch_stats.borrow().metadata(),
+            "right input batches" => self.delta2_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
         });
-    }*/
+    }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
 
-impl<TS, I1, T1, I2, T2, Z> QuaternaryOperator<I1, T1, I2, T2, Z>
+impl<TS, I1, T1, I2, T2, Z> QuaternaryOperator<Option<Spine<I1>>, T1, Option<Spine<I2>>, T2, Z>
     for AsofJoin<TS, I1, T1, I2, T2, Z>
 where
     TS: DataTrait + ?Sized,
@@ -580,11 +584,31 @@ where
 {
     async fn eval(
         &mut self,
-        delta1: Cow<'_, I1>,
+        delta1: Cow<'_, Option<Spine<I1>>>,
         delayed_trace1: Cow<'_, T1>,
-        delta2: Cow<'_, I2>,
+        delta2: Cow<'_, Option<Spine<I2>>>,
         delayed_trace2: Cow<'_, T2>,
     ) -> Z {
+        if let Some(delta1) = delta1.as_ref() {
+            self.delta1 = Some(delta1.ro_snapshot());
+        };
+
+        if let Some(delta2) = delta2.as_ref() {
+            self.delta2 = Some(delta2.ro_snapshot());
+        };
+
+        if !self.flush {
+            return Z::dyn_empty(&self.factories.output_factories);
+        }
+
+        self.flush = false;
+
+        let delta1 = self.delta1.take().unwrap();
+        let delta2 = self.delta2.take().unwrap();
+
+        self.delta1_batch_stats.borrow_mut().add_batch(delta1.len());
+        self.delta2_batch_stats.borrow_mut().add_batch(delta2.len());
+
         let mut delta1_cursor = delta1.cursor();
         let mut delta2_cursor = delta2.cursor();
 
@@ -684,7 +708,9 @@ where
             delta2_cursor.step_key();
         }
 
-        Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples)
+        let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
+        self.output_batch_stats.borrow_mut().add_batch(result.len());
+        result
     }
 }
 
@@ -769,7 +795,7 @@ mod test {
             // CCNum = 3
             Tup2(Tup3(100, 3, F32::new(30.0)), 1),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             result.consolidate(),
@@ -791,7 +817,7 @@ mod test {
             // CCNum = 3
             Tup2(Tup3(110, 3, "C110".to_string()), 1),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             result.consolidate(),
@@ -820,7 +846,7 @@ mod test {
 
         transactions.append(&mut vec![Tup2(Tup3(200, 3, F32::new(30.0)), 1)]);
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             result.consolidate(),
@@ -846,7 +872,7 @@ mod test {
             Tup2(Tup3(110, 3, "C105".to_string()), 1),
         ]);
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(result.consolidate(), zset! {});
 
@@ -861,7 +887,7 @@ mod test {
             // CCNum = 3
             Tup2(Tup3(100, 3, F32::new(300.0)), 1),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             result.consolidate(),
@@ -881,7 +907,7 @@ mod test {
             Tup2(Tup3(10, 3, "C10".to_string()), -1),
         ]);
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(result.consolidate(), zset! {});
 
@@ -899,7 +925,7 @@ mod test {
             Tup2(Tup3(110, 3, "C110".to_string()), -1),
         ]);
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             result.consolidate(),
@@ -930,16 +956,16 @@ mod test {
             Tup2(Tup3(37, 0, "L".to_string()), 1),
             Tup2(Tup3(0, 0, "A".to_string()), 1),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         transactions.append(&mut vec![Tup2(Tup3(37, 0, F32::new(0.0)), 1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         users.append(&mut vec![Tup2(Tup3(37, 0, "L".to_string()), -1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         users.append(&mut vec![Tup2(Tup3(0, 0, "A".to_string()), -1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
     }
 
     /// Reference implementaton of asof-join for testing.
@@ -1041,14 +1067,14 @@ mod test {
                 htransactions.append(&mut transactions);
                 husers.append(&mut users);
 
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
             }
 
             for (mut transactions, mut users) in deletions {
                 htransactions.append(&mut transactions);
                 husers.append(&mut users);
 
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
             }
         }
     }

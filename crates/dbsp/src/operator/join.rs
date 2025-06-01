@@ -4,7 +4,10 @@ use crate::{
     dynamic::{DowncastTrait, DynData, DynUnit, Erase},
     operator::dynamic::{
         filter_map::DynFilterMap,
-        join::{JoinFactories, OuterJoinFactories, StreamJoinFactories, TraceJoinFuncs},
+        join::{
+            JoinFactories, OuterJoinFactories, StreamAntijoinFactories, StreamJoinFactories,
+            TraceJoinFuncs,
+        },
     },
     typed_batch::{IndexedZSet, OrdIndexedZSet, OrdZSet, ZSet},
     Circuit, DBData, Stream,
@@ -262,13 +265,13 @@ where
         V: DBData,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + Clone + 'static,
     {
-        let factories = StreamJoinFactories::new::<I1::Key, I1::Val, I2::Val, V>();
+        let factories = StreamJoinFactories::new::<I1::Key, I1::Val, I2::Val, V, ()>();
 
         self.inner()
             .dyn_stream_join(
                 &factories,
                 &other.inner(),
-                Box::new(move |k, v1, v2, res: &mut DynData| unsafe {
+                Box::new(move |k, v1, v2, res: &mut DynData, _| unsafe {
                     *res.downcast_mut() = join(k.downcast(), v1.downcast(), v2.downcast())
                 }),
             )
@@ -281,18 +284,21 @@ where
     where
         I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
         I2::InnerBatch: Send,
-        Z: ZSet,
-        F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + Clone + 'static,
+        Z: IndexedZSet,
+        F: Fn(&I1::Key, &I1::Val, &I2::Val) -> (Z::Key, Z::Val) + Clone + 'static,
     {
-        let factories = StreamJoinFactories::new::<I1::Key, I1::Val, I2::Val, Z::Key>();
+        let factories = StreamJoinFactories::new::<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>();
 
         self.inner()
             .dyn_stream_join_generic(
                 &factories,
                 &other.inner(),
-                Box::new(move |k, v1, v2, res: &mut Z::DynK| unsafe {
-                    *res.downcast_mut() = join(k.downcast(), v1.downcast(), v2.downcast())
-                }),
+                Box::new(
+                    move |k, v1, v2, resk: &mut Z::DynK, resv: &mut Z::DynV| unsafe {
+                        (*resk.downcast_mut(), *resv.downcast_mut()) =
+                            join(k.downcast(), v1.downcast(), v2.downcast())
+                    },
+                ),
             )
             .typed()
     }
@@ -312,16 +318,31 @@ where
         Z: ZSet,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + Clone + 'static,
     {
-        let factories = StreamJoinFactories::new::<I1::Key, I1::Val, I2::Val, Z::Key>();
+        let factories = StreamJoinFactories::new::<I1::Key, I1::Val, I2::Val, Z::Key, ()>();
 
         self.inner()
             .dyn_monotonic_stream_join(
                 &factories,
                 &other.inner(),
-                Box::new(move |k, v1, v2, res: &mut Z::DynK| unsafe {
+                Box::new(move |k, v1, v2, res: &mut Z::DynK, _| unsafe {
                     *res.downcast_mut() = join(k.downcast(), v1.downcast(), v2.downcast())
                 }),
             )
+            .typed()
+    }
+
+    /// Non-incremental antijoin operator.
+    #[track_caller]
+    pub fn stream_antijoin<I2>(&self, other: &Stream<C, I2>) -> Stream<C, I1>
+    where
+        I1: IndexedZSet,
+        I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
+        I2::Inner: DynFilterMap,
+    {
+        let factories = StreamAntijoinFactories::new::<I1::Key, I1::Val, ()>();
+
+        self.inner()
+            .dyn_stream_antijoin(&factories, &other.inner())
             .typed()
     }
 

@@ -95,6 +95,8 @@ time = { workspace = true, features = [
 ] }
 feldera-ir = { workspace = true }
 smallvec = { workspace = true }
+async-stream = { workspace = true }
+futures-util = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }

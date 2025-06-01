@@ -1756,49 +1756,54 @@ outputs:
       "to": "4"
     },
     {
-      "from": "3",
-      "stream_id": 3,
-      "to": "6"
-    },
-    {
-      "from": "3",
-      "stream_id": 3,
-      "to": "10"
-    },
-    {
-      "from": "5",
+      "from": "4",
       "stream_id": 4,
-      "to": "6"
+      "to": "5"
     },
     {
-      "from": "5",
-      "stream_id": null,
+      "from": "4",
+      "stream_id": 4,
       "to": "7"
     },
     {
-      "from": "6",
-      "stream_id": 7,
-      "to": "7"
-    },
-    {
-      "from": "6",
-      "stream_id": 7,
-      "to": "8"
-    },
-    {
-      "from": "6",
-      "stream_id": 7,
+      "from": "4",
+      "stream_id": 4,
       "to": "11"
     },
     {
-      "from": "8",
+      "from": "6",
+      "stream_id": 5,
+      "to": "7"
+    },
+    {
+      "from": "6",
+      "stream_id": null,
+      "to": "8"
+    },
+    {
+      "from": "7",
+      "stream_id": 8,
+      "to": "8"
+    },
+    {
+      "from": "7",
       "stream_id": 8,
       "to": "9"
     },
     {
-      "from": "11",
-      "stream_id": 9,
+      "from": "7",
+      "stream_id": 8,
       "to": "12"
+    },
+    {
+      "from": "9",
+      "stream_id": 9,
+      "to": "10"
+    },
+    {
+      "from": "12",
+      "stream_id": 10,
+      "to": "13"
     }
   ],
   "nodes": [
@@ -1833,17 +1838,17 @@ outputs:
     {
       "id": "4",
       "implements": [
-        "input.output"
+        "input.output",
+        "output"
       ],
-      "operation": "Output"
+      "operation": "Accumulator"
     },
     {
       "id": "5",
       "implements": [
-        "input.output",
-        "output"
+        "input.output"
       ],
-      "operation": "Z1 (trace)"
+      "operation": "AccumulateOutput"
     },
     {
       "id": "6",
@@ -1851,7 +1856,7 @@ outputs:
         "input.output",
         "output"
       ],
-      "operation": "UntimedTraceAppend"
+      "operation": "Z1 (trace)"
     },
     {
       "id": "7",
@@ -1859,26 +1864,27 @@ outputs:
         "input.output",
         "output"
       ],
-      "operation": "Z1 (trace)"
+      "operation": "AccumulateUntimedTraceAppend"
     },
     {
       "id": "8",
       "implements": [
-        "input.output"
+        "input.output",
+        "output"
       ],
-      "operation": "Apply"
+      "operation": "Z1 (trace)"
     },
     {
       "id": "9",
       "implements": [
         "input.output"
       ],
-      "operation": "Output"
+      "operation": "Apply"
     },
     {
       "id": "10",
       "implements": [
-        "output"
+        "input.output"
       ],
       "operation": "Output"
     },
@@ -1887,10 +1893,17 @@ outputs:
       "implements": [
         "output"
       ],
-      "operation": "Apply"
+      "operation": "AccumulateOutput"
     },
     {
       "id": "12",
+      "implements": [
+        "output"
+      ],
+      "operation": "Apply"
+    },
+    {
+      "id": "13",
       "implements": [
         "output"
       ],

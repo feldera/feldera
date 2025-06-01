@@ -190,9 +190,9 @@ public class ToDotNodesVisitor extends CircuitVisitor {
             case "waterline" -> " style=filled fillcolor=lightgreen";
             case "controlled_filter" -> " style=filled fillcolor=cyan";
             case "apply", "apply2" -> " style=filled fillcolor=yellow";
-            case "integrate_trace_retain_keys",
+            case "accumulate_integrate_trace_retain_keys", "integrate_trace_retain_keys",
                  "partitioned_rolling_aggregate_with_waterline", "window",
-                 "integrate_trace_retain_values" -> " style=filled fillcolor=pink";
+                 "accumulate_integrate_trace_retain_values", "integrate_trace_retain_values" -> " style=filled fillcolor=pink";
             // stateful operators
             case "distinct", "stream_distinct",
                  // all aggregates require an upsert, which is stateful, even the ones that are linear
@@ -202,7 +202,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                  "join", "join_flatmap", "asof_join", "join_index", "antijoin",
                  "stream_join", "stream_join_index", "stream_antijoin",
                  // delays contain state, but not that much
-                 "delay_trace", // "delay", "differentiate",
+                 "accumulate_delay_trace", // "transaction_delay", "differentiate",
                  // group operators
                  "topK", "lag_custom_order", "upsert",
                  "integrate" -> " style=filled fillcolor=orangered";
@@ -211,8 +211,8 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     }
 
     String shorten(String operation) {
-        if (operation.startsWith("integrate_trace"))
-            return operation.substring("integrate_trace_".length());
+        if (operation.startsWith("accumulate_integrate_trace"))
+            return operation.substring("accumulate_integrate_trace_".length());
         if (operation.equals("aggregate_linear_postprocess"))
             return "aggregate_linear";
         return operation;
