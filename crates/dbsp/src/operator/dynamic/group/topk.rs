@@ -433,10 +433,11 @@ where
         if ASCENDING {
             while cursor.key_valid() && count < self.k {
                 let mut w = **cursor.weight();
-                debug_assert!(w != 0);
-                cursor.key().clone_to(&mut key);
-                output_cb(&mut key, w.erase_mut());
-                count += 1;
+                if !w.is_zero() {
+                    cursor.key().clone_to(&mut key);
+                    output_cb(&mut key, w.erase_mut());
+                    count += 1;
+                }
                 cursor.step_key();
             }
         } else {
@@ -444,11 +445,11 @@ where
 
             while cursor.key_valid() && count < self.k {
                 let mut w = **cursor.weight();
-                debug_assert!(w != 0);
-
-                cursor.key().clone_to(&mut key);
-                output_cb(&mut key, w.erase_mut());
-                count += 1;
+                if !w.is_zero() {
+                    cursor.key().clone_to(&mut key);
+                    output_cb(&mut key, w.erase_mut());
+                    count += 1;
+                }
                 cursor.step_key_reverse();
             }
         }
@@ -528,8 +529,6 @@ where
         let mut prev_key: Option<Box<I>> = None;
         while cursor.key_valid() {
             let mut w = **cursor.weight();
-            debug_assert!(w != 0);
-
             if w > 0 {
                 count += w;
                 let key = cursor.key();
@@ -606,8 +605,6 @@ where
 
         while cursor.key_valid() && count < self.k {
             let mut w = **cursor.weight();
-            debug_assert!(w != 0);
-
             while w.ge0() && !w.is_zero() {
                 count += 1;
                 if count > self.k {

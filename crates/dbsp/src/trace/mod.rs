@@ -617,10 +617,11 @@ where
             let mut any_values = false;
             while cursor.val_valid() {
                 let weight = cursor.weight();
-                debug_assert!(!weight.is_zero());
-                builder.push_time_diff(timestamp, weight);
-                builder.push_val(cursor.val());
-                any_values = true;
+                if !weight.is_zero() {
+                    builder.push_time_diff(timestamp, weight);
+                    builder.push_val(cursor.val());
+                    any_values = true;
+                }
                 cursor.step_val();
             }
             if any_values {
