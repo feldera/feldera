@@ -1,5 +1,7 @@
 //! The scheduling framework controls the execution of a circuit at runtime.
 
+#![allow(async_fn_in_trait)]
+
 use super::{trace::SchedulerEvent, Circuit, GlobalNodeId, NodeId};
 use crate::DetailedError;
 use itertools::Itertools;

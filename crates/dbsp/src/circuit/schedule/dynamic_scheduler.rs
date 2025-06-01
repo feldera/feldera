@@ -58,6 +58,13 @@ use crate::circuit::{
 use petgraph::algo::toposort;
 use tokio::{select, sync::Notify, task::JoinSet};
 
+#[derive(PartialEq, Eq, Debug)]
+enum FlushState {
+    UnflushedDependencies(usize),
+    Started,
+    Completed,
+}
+
 /// A task is a unit of work scheduled by the dynamic scheduler.
 /// It contains a reference to a node in the circuit and associted metadata.
 struct Task {
@@ -76,7 +83,7 @@ struct Task {
     /// ready state.
     is_async: bool,
 
-    // Mutable fields.
+    // Mutable fields reset on each microstep.
     /// Number of predecessors not yet evaluated.  Set to `num_predecessors`
     /// at the start of each step.
     unsatisfied_dependencies: usize,
@@ -88,6 +95,9 @@ struct Task {
     /// Task has been scheduled (put on the run queue) in the current clock
     /// cycle.
     scheduled: bool,
+
+    // Mutable fields reset on each macrostep.
+    flush_state: FlushState,
 }
 
 /// The set of async nodes for which the scheduler has received ready
@@ -137,12 +147,15 @@ struct Inner {
 
     /// True when the scheduler is waiting for at least one task to become ready.
     waiting: bool,
+
+    // Reset on each macrostep
+    unflushed_operators: usize,
 }
 
 impl Inner {
     /// Called when task `node_id` has completed to update unsatisfied dependencies of
     /// all successors and spawn any tasks that are ready to run.
-    fn schedule_successors<C>(&mut self, circuit: &C, node_id: NodeId)
+    fn schedule_successors<C>(&mut self, circuit: &C, node_id: NodeId, flush_complete: bool)
     where
         C: Circuit,
     {
@@ -153,6 +166,17 @@ impl Inner {
             let successor = self.tasks.get_mut(&succ_id).unwrap();
             debug_assert_ne!(successor.unsatisfied_dependencies, 0);
             successor.unsatisfied_dependencies -= 1;
+            if flush_complete {
+                let FlushState::UnflushedDependencies(ref mut n) = &mut successor.flush_state
+                else {
+                    panic!(
+                        "Internal scheduler error: node {node_id} is in state {:?} while it still has unflushed dependencies",
+                        successor.flush_state
+                    );
+                };
+                debug_assert!(*n > 0);
+                *n -= 1;
+            }
             if successor.unsatisfied_dependencies == 0 && successor.is_ready {
                 self.spawn_task(circuit, succ_id);
             }
@@ -276,6 +300,7 @@ impl Inner {
                     unsatisfied_dependencies: num_predecessors,
                     is_ready: !is_async,
                     scheduled: false,
+                    flush_state: FlushState::UnflushedDependencies(num_predecessors),
                 },
             );
         }
@@ -285,6 +310,7 @@ impl Inner {
             notifications: Notifications::new(num_async_nodes),
             handles: JoinSet::new(),
             waiting: false,
+            unflushed_operators: nodes.len(),
         };
 
         // Setup scheduler callbacks.
@@ -326,6 +352,11 @@ impl Inner {
 
         let circuit = circuit.clone();
 
+        if task.flush_state == FlushState::UnflushedDependencies(0) {
+            circuit.flush_node(node_id);
+            task.flush_state = FlushState::Started;
+        }
+
         self.handles.spawn_local(async move {
             let result = circuit.eval_node(node_id).await;
             (node_id, result)
@@ -335,13 +366,34 @@ impl Inner {
     async fn abort(&mut self) {
         // Wait for all started tasks to abort.
         // TODO: we could use self.handles.abort_all() instead to terminate any slow (or stuck),
-        // IO operations, but that requires all operators to handle cancelation gracefully.
+        // IO operations, but that requires all operators to handle cancellation gracefully.
         while !self.handles.is_empty() {
             let _ = self.handles.join_next().await;
         }
     }
 
     async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        self.unflushed_operators = self.tasks.len();
+
+        // Reset unsatisfied dependencies, initialize runnable queue.
+        for task in self.tasks.values_mut() {
+            task.flush_state = FlushState::UnflushedDependencies(task.num_predecessors);
+        }
+
+        while self.unflushed_operators > 0 {
+            circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
+            let result = self.microstep(circuit).await;
+            circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id()));
+            result?;
+        }
+
+        Ok(())
+    }
+
+    async fn microstep<C>(&mut self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
@@ -405,6 +457,16 @@ impl Inner {
                         return Err(Error::Killed);
                     }
 
+                    let flush_complete = if self.tasks[&node_id].flush_state == FlushState::Started
+                        && circuit.is_flush_complete(node_id)
+                    {
+                        self.tasks.get_mut(&node_id).unwrap().flush_state = FlushState::Completed;
+                        self.unflushed_operators -= 1;
+                        true
+                    } else {
+                        false
+                    };
+
                     // Are we done?
                     debug_assert!(completed_tasks <= self.tasks.len());
                     if completed_tasks == self.tasks.len() {
@@ -412,7 +474,7 @@ impl Inner {
                     }
 
                     // Spawn any new tasks that are now ready to run.
-                    self.schedule_successors(circuit, node_id);
+                    self.schedule_successors(circuit, node_id, flush_complete);
 
                     // No tasks are ready to run -- account any time until we have something to run as wait time
                     if self.handles.is_empty() {
@@ -458,14 +520,10 @@ impl Scheduler for DynamicScheduler {
     where
         C: Circuit,
     {
-        circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
-
         let inner = &mut *self.inner_mut();
 
         let result = inner.step(circuit).await;
         circuit.tick();
-
-        circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id()));
         result
     }
 }
