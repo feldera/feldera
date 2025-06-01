@@ -988,6 +988,29 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
         Ok(HttpResponse::Ok().json("Pipeline suspended"))
     }
 
+    #[cfg(feature = "feldera-enterprise")]
+    {
+        if let Err(e) = async {
+            let Ok(suspend_breadcrumb) = std::env::var("SUSPEND_BREADCRUMB") else {
+                // the breadcrumb file doesn't exist for FT pipelines, just return
+                return Ok(());
+            };
+
+            let meta = tokio::fs::metadata(&suspend_breadcrumb).await?;
+
+            let size = meta.len();
+            if size != 0 {
+                anyhow::bail!("expected suspend breadcrumb file '{suspend_breadcrumb}' to be empty but found size: '{size}'");
+            }
+
+            tokio::fs::remove_file(&suspend_breadcrumb).await?;
+
+            Ok::<_, anyhow::Error>(())
+        }.await {
+            tracing::error!("{e}");
+        };
+    }
+
     let receiver = match &*state.controller.lock().unwrap() {
         Some(controller) => {
             let (sender, receiver) = oneshot::channel();
