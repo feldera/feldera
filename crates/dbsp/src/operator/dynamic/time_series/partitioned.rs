@@ -208,14 +208,11 @@ where
     }
 
     fn rewind_keys(&mut self) {
-        debug_assert!(self.cursor.key_valid() && self.cursor.val_valid());
-
         self.cursor.rewind_vals();
         self.cursor.val().fst().clone_to(&mut self.key);
     }
 
     fn fast_forward_keys(&mut self) {
-        debug_assert!(self.cursor.key_valid() && self.cursor.val_valid());
         self.cursor.fast_forward_vals();
         self.cursor.val().fst().clone_to(&mut self.key);
     }

@@ -182,9 +182,10 @@ where
                     |v, w| {
                         while output_trace.key_valid() && output_trace.key() < v {
                             let ow = **output_trace.weight();
-                            debug_assert!(ow != 0);
-                            output_trace.key().clone_to(&mut key);
-                            output_cb(&mut key, ow.neg().erase_mut());
+                            if !ow.is_zero() {
+                                output_trace.key().clone_to(&mut key);
+                                output_cb(&mut key, ow.neg().erase_mut());
+                            }
                             output_trace.step_key();
                         }
                         if output_trace.key_valid() && output_trace.key() == v {
@@ -203,10 +204,10 @@ where
                 // Output remaining retractions in the output trace.
                 while output_trace.key_valid() {
                     let w = **output_trace.weight();
-                    debug_assert!(w != 0);
-
-                    output_trace.key().clone_to(&mut key);
-                    output_cb(&mut key, w.neg().erase_mut());
+                    if !w.is_zero() {
+                        output_trace.key().clone_to(&mut key);
+                        output_cb(&mut key, w.neg().erase_mut());
+                    }
                     output_trace.step_key();
                 }
             }
@@ -221,20 +222,18 @@ where
                     |v, w| {
                         while output_trace.key_valid() && output_trace.key() > v {
                             let ow = **output_trace.weight();
-                            debug_assert!(ow != 0);
-
-                            output_trace.key().clone_to(&mut key);
-                            output_cb(&mut key, ow.neg().erase_mut());
+                            if !ow.is_zero() {
+                                output_trace.key().clone_to(&mut key);
+                                output_cb(&mut key, ow.neg().erase_mut());
+                            }
                             output_trace.step_key_reverse();
                         }
                         if output_trace.key_valid() && output_trace.key() == v {
                             let mut w = **w + output_trace.weight().neg();
-
                             if !w.is_zero() {
                                 output_trace.key().clone_to(&mut key);
                                 output_cb(&mut key, w.erase_mut());
                             }
-
                             output_trace.step_key_reverse();
                         } else {
                             output_cb(v, w);
@@ -245,10 +244,10 @@ where
                 // Output remaining retractions in the output trace.
                 while output_trace.key_valid() {
                     let w = **output_trace.weight();
-                    debug_assert!(w != 0);
-
-                    output_trace.key().clone_to(&mut key);
-                    output_cb(&mut key, w.neg().erase_mut());
+                    if !w.is_zero() {
+                        output_trace.key().clone_to(&mut key);
+                        output_cb(&mut key, w.neg().erase_mut());
+                    }
                     output_trace.step_key_reverse();
                 }
             }
@@ -263,10 +262,10 @@ where
                 // Output retractions in output trace.
                 while output_trace.key_valid() {
                     let w = **output_trace.weight();
-                    debug_assert!(w != 0);
-
-                    output_trace.key().clone_to(&mut key);
-                    output_cb(&mut key, w.neg().erase_mut());
+                    if !w.is_zero() {
+                        output_trace.key().clone_to(&mut key);
+                        output_cb(&mut key, w.neg().erase_mut());
+                    }
                     output_trace.step_key();
                 }
             }

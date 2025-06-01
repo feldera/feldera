@@ -273,9 +273,9 @@ where
             //println!("retract: {:?} with weight {weight}", &self.output_pair);
             output_cb(self.output_pair.as_mut(), weight.neg().erase_mut());
             result += weight as usize;
-            cursor.step_key();
+            step_key_skip_zeros(cursor);
         }
-        debug_assert!(!cursor.key_valid() || !cursor.weight().is_zero());
+        skip_zeros(cursor);
 
         result
     }
@@ -371,7 +371,7 @@ where
 
         let mut lag: usize = 0;
 
-        debug_assert!(!output_trace.key_valid() || !output_trace.weight().is_zero());
+        skip_zeros(output_trace);
 
         while input_delta.key_valid() && output_trace.key_valid() {
             // - `input_delta` points to the _next_ delta key to process.
@@ -398,7 +398,7 @@ where
                     output_trace.seek_key_with(&|key| {
                         (self.key_cmp)(key.fst(), delta_key) != Ordering::Less
                     });
-                    debug_assert!(!output_trace.key_valid() || !output_trace.weight().is_zero());
+                    skip_zeros(output_trace);
                 }
                 Ordering::Equal => {
                     // Delta modifies current key. Retract all existing values for this key
@@ -665,12 +665,29 @@ where
     }
 }
 
+fn step_key_skip_zeros<I>(cursor: &mut dyn ZCursor<I, DynUnit, ()>)
+where
+    I: DataTrait + ?Sized,
+{
+    cursor.step_key();
+    skip_zeros(cursor)
+}
+
 fn step_key_reverse_skip_non_positive<I>(cursor: &mut dyn ZCursor<I, DynUnit, ()>)
 where
     I: DataTrait + ?Sized,
 {
     cursor.step_key_reverse();
     skip_non_positive_reverse(cursor)
+}
+
+fn skip_zeros<I>(cursor: &mut dyn ZCursor<I, DynUnit, ()>)
+where
+    I: DataTrait + ?Sized,
+{
+    while cursor.key_valid() && cursor.weight().is_zero() {
+        cursor.step_key();
+    }
 }
 
 fn skip_non_positive_reverse<I>(cursor: &mut dyn ZCursor<I, DynUnit, ()>)

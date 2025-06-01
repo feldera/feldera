@@ -563,8 +563,7 @@ where
             val: None,
             phantom: PhantomData,
         };
-        debug_assert!(!result.cursor.key_valid() || result.weight() != 0);
-
+        result.skip_zero_keys();
         result.update_key();
         result.update_val();
         result
@@ -589,6 +588,25 @@ where
             ));
         } else {
             self.val = None;
+        }
+    }
+
+    fn skip_zero_keys(&mut self) {
+        while self.key_valid() {
+            self.skip_zero_vals();
+            if self.val_valid() {
+                return;
+            }
+            self.step_key()
+        }
+    }
+
+    fn skip_zero_vals(&mut self) {
+        while self.val_valid() {
+            if self.weight() != 0 {
+                return;
+            }
+            self.step_val();
         }
     }
 }
@@ -711,7 +729,7 @@ where
 
     fn step_key(&mut self) {
         self.cursor.step_key();
-        debug_assert!(!self.cursor.key_valid() || self.weight() != 0);
+        self.skip_zero_keys();
         self.update_key();
         self.update_val();
     }
@@ -719,15 +737,14 @@ where
     /// Advances the cursor to the next value.
     fn step_val(&mut self) {
         self.cursor.step_val();
-        debug_assert!(!self.cursor.val_valid() || self.weight() != 0);
-
+        self.skip_zero_vals();
         self.update_val();
     }
 
     /// Rewinds the cursor to the first key.
     fn rewind_keys(&mut self) {
         self.cursor.rewind_keys();
-        debug_assert!(!self.cursor.key_valid() || self.weight() != 0);
+        self.skip_zero_keys();
         self.update_key();
         self.update_val();
     }
@@ -735,7 +752,7 @@ where
     /// Rewinds the cursor to the first value for current key.
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals();
-        debug_assert!(!self.cursor.val_valid() || self.weight() != 0);
+        self.skip_zero_vals();
         self.update_val();
     }
 }

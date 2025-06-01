@@ -97,13 +97,22 @@ where
         };
 
         if res.tree_cursor.key_valid() {
-            debug_assert!(res.tree_cursor.val_valid() && **res.tree_cursor.weight() != 0);
-            debug_assert_eq!(**res.tree_cursor.key(), Prefix::full_range());
-            res.push_existing(
-                Prefix::full_range(),
-                &mut *clone_box(res.tree_cursor.val()),
-                0,
-            )
+            res.tree_cursor.skip_zero_weights();
+            if res.tree_cursor.val_valid() {
+                debug_assert_eq!(**res.tree_cursor.key(), Prefix::full_range());
+                res.push_existing(
+                    Prefix::full_range(),
+                    &mut *clone_box(res.tree_cursor.val()),
+                    0,
+                )
+            } else {
+                // No root node -- tree is empty.  Create new root.
+                res.push_new(
+                    Prefix::full_range(),
+                    &mut *factories.node_factory.default_box(),
+                    0,
+                );
+            }
         } else {
             // No root node -- tree is empty.  Create new root.
             res.push_new(
@@ -305,10 +314,8 @@ where
                                 self.tree_cursor.seek_key(&prefix);
                                 debug_assert!(self.tree_cursor.key_valid());
                                 debug_assert_eq!(**self.tree_cursor.key(), prefix);
-                                debug_assert!(
-                                    self.tree_cursor.val_valid()
-                                        && **self.tree_cursor.weight() != 0
-                                );
+                                self.tree_cursor.skip_zero_weights();
+                                debug_assert!(self.tree_cursor.val_valid());
                                 let slot = prefix.slot_of_timestamp(ts);
                                 self.tree_cursor.val().clone_to(&mut *tree_node);
                                 self.push_existing(prefix, &mut *tree_node, slot);
