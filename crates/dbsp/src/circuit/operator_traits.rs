@@ -261,6 +261,12 @@ pub trait Operator: 'static {
     fn end_replay(&mut self) -> Result<(), Error> {
         panic!("end_replay() is not implemented for this operator")
     }
+
+    fn flush(&mut self) {}
+
+    fn is_flush_complete(&self) -> bool {
+        true
+    }
 }
 
 /// A source operator that injects data from the outside world or from the
