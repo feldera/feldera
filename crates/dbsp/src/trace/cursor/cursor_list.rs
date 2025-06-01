@@ -2,8 +2,8 @@
 
 use crate::dynamic::{DataTrait, Factory, WeightTrait};
 use dyn_clone::clone_box;
+use std::cmp::Ordering;
 use std::marker::PhantomData;
-use std::{any::TypeId, cmp::Ordering};
 
 use super::{Cursor, Direction};
 
@@ -57,7 +57,6 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
     C: Cursor<K, V, T, R>,
-    T: 'static,
 {
     /// Creates a new cursor list from pre-existing cursors.
     pub fn new(weight_factory: &'static dyn Factory<R>, cursors: Vec<C>) -> Self {
@@ -73,7 +72,6 @@ where
         };
 
         result.minimize_keys();
-        result.skip_zero_weight_keys_forward();
         result
     }
 
@@ -92,68 +90,6 @@ where
 
     #[cfg(not(debug_assertions))]
     fn assert_val_direction(&self, _direction: Direction) {}
-
-    fn is_zero_weight(&mut self) -> bool {
-        if TypeId::of::<T>() == TypeId::of::<()>() {
-            debug_assert!(self.key_valid());
-            debug_assert!(self.val_valid());
-            debug_assert!(self.cursors[self.current_val[0]].val_valid());
-            self.weight.as_mut().set_zero();
-            for &index in self.current_val.iter() {
-                self.cursors[index].map_times(&mut |_, w| self.weight.add_assign(w));
-            }
-            self.weight.is_zero()
-        } else {
-            false
-        }
-    }
-
-    fn skip_zero_weight_vals_forward(&mut self) {
-        self.assert_val_direction(Direction::Forward);
-
-        while self.val_valid() && self.is_zero_weight() {
-            for &index in self.current_val.iter() {
-                self.cursors[index].step_val();
-            }
-            self.minimize_vals();
-        }
-    }
-    fn skip_zero_weight_vals_reverse(&mut self) {
-        self.assert_val_direction(Direction::Backward);
-
-        while self.val_valid() && self.is_zero_weight() {
-            for &index in self.current_val.iter() {
-                self.cursors[index].step_val_reverse();
-            }
-            self.maximize_vals();
-        }
-    }
-    fn skip_zero_weight_keys_forward(&mut self) {
-        while self.key_valid() {
-            self.skip_zero_weight_vals_forward();
-            if self.val_valid() {
-                break;
-            }
-            for &index in self.current_key.iter() {
-                self.cursors[index].step_key();
-            }
-            self.set_val_direction(Direction::Forward);
-            self.minimize_keys();
-        }
-    }
-    fn skip_zero_weight_keys_reverse(&mut self) {
-        while self.key_valid() {
-            self.skip_zero_weight_vals_forward();
-            if self.val_valid() {
-                break;
-            }
-            for &index in self.current_key.iter() {
-                self.cursors[index].step_key_reverse();
-            }
-            self.set_val_direction(Direction::Forward);
-            self.maximize_keys();
-        }
-    }
 
     // Initialize current_key with the indices of cursors with the minimum key.
     //
@@ -294,7 +230,6 @@ where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
-    T: 'static,
 {
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.weight_factory
@@ -340,14 +275,10 @@ where
         debug_assert!(self.key_valid());
         debug_assert!(self.val_valid());
         debug_assert!(self.cursors[self.current_val[0]].val_valid());
-        // Weight should already be computed by `is_zero_weight`, which is always
-        // called as part of every operation that moves the cursor.
-
-        // self.weight.as_mut().set_zero();
-        // for &index in self.current_val.iter() {
-        //     self.cursors[index].map_times(&mut |_, w| self.weight.add_assign(w));
-        // }
-        debug_assert!(!self.weight.is_zero());
+        self.weight.as_mut().set_zero();
+        for &index in self.current_val.iter() {
+            self.cursors[index].map_times(&mut |_, w| self.weight.add_assign(w));
+        }
         &self.weight
     }
 
@@ -356,6 +287,8 @@ where
         T: PartialEq<()>,
     {
         while self.val_valid() {
+            // This will update self.weight, so we can use it below.
+            self.weight();
             let val = self.val();
             logic(val, &self.weight);
             self.step_val();
@@ -369,7 +302,6 @@ where
 
         self.set_val_direction(Direction::Forward);
         self.minimize_keys();
-        self.skip_zero_weight_keys_forward();
     }
 
     fn step_key_reverse(&mut self) {
@@ -379,7 +311,6 @@ where
 
         self.set_val_direction(Direction::Forward);
         self.maximize_keys();
-        self.skip_zero_weight_keys_reverse();
     }
 
     fn seek_key(&mut self, key: &K) {
@@ -389,7 +320,6 @@ where
 
         self.set_val_direction(Direction::Forward);
         self.minimize_keys();
-        self.skip_zero_weight_keys_forward();
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
@@ -407,12 +337,7 @@ where
         self.set_val_direction(Direction::Forward);
         self.minimize_vals();
 
-        if result {
-            self.skip_zero_weight_vals_forward();
-            self.val_valid()
-        } else {
-            false
-        }
+        result
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -422,7 +347,6 @@ where
 
         self.set_val_direction(Direction::Forward);
         self.minimize_keys();
-        self.skip_zero_weight_keys_forward();
     }
 
     fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
@@ -432,7 +356,6 @@ where
 
         self.set_val_direction(Direction::Forward);
         self.maximize_keys();
-        self.skip_zero_weight_keys_reverse();
     }
 
     fn seek_key_reverse(&mut self, key: &K) {
@@ -442,7 +365,6 @@ where
 
         self.set_val_direction(Direction::Forward);
         self.maximize_keys();
-        self.skip_zero_weight_keys_reverse();
     }
 
     fn step_val(&mut self) {
@@ -452,7 +374,6 @@ where
             self.cursors[index].step_val();
         }
         self.minimize_vals();
-        self.skip_zero_weight_vals_forward();
     }
 
     fn seek_val(&mut self, val: &V) {
@@ -462,7 +383,6 @@ where
             self.cursors[index].seek_val(val);
         }
         self.minimize_vals();
-        self.skip_zero_weight_vals_forward();
     }
 
     fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
@@ -472,7 +392,6 @@ where
             self.cursors[index].seek_val_with(predicate);
         }
         self.minimize_vals();
-        self.skip_zero_weight_vals_forward();
     }
 
     fn rewind_keys(&mut self) {
@@ -482,7 +401,6 @@ where
 
         self.set_val_direction(Direction::Forward);
         self.minimize_keys();
-        self.skip_zero_weight_keys_forward();
     }
 
     fn fast_forward_keys(&mut self) {
@@ -492,7 +410,6 @@ where
 
         self.set_val_direction(Direction::Forward);
         self.maximize_keys();
-        self.skip_zero_weight_keys_reverse();
     }
 
     fn rewind_vals(&mut self) {
@@ -502,7 +419,6 @@ where
 
         self.set_val_direction(Direction::Forward);
         self.minimize_vals();
-        self.skip_zero_weight_vals_forward();
     }
 
     fn step_val_reverse(&mut self) {
@@ -512,7 +428,6 @@ where
             self.cursors[index].step_val_reverse();
         }
         self.maximize_vals();
-        self.skip_zero_weight_vals_reverse();
     }
 
     fn seek_val_reverse(&mut self, val: &V) {
@@ -522,7 +437,6 @@ where
             self.cursors[index].seek_val_reverse(val);
         }
         self.maximize_vals();
-        self.skip_zero_weight_vals_reverse();
     }
 
     fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
@@ -532,7 +446,6 @@ where
             self.cursors[index].seek_val_with_reverse(predicate);
         }
         self.maximize_vals();
-        self.skip_zero_weight_vals_reverse();
     }
 
     fn fast_forward_vals(&mut self) {
@@ -542,6 +455,5 @@ where
 
         self.set_val_direction(Direction::Backward);
         self.maximize_vals();
-        self.skip_zero_weight_vals_reverse();
     }
 }
