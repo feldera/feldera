@@ -1,9 +1,11 @@
-# This Dockerfile is used by CI to build things.
+# This Dockerfile is used by CI to build all things.
 #
 # The image is built by the `build-docker-dev.yml` action
 # You can run it manually using the github actions UI.
+#
+# You can test it locally using:
+# `docker build -f deploy/build.Dockerfile -t feldera-dev .`
 
-# We need a Java and Rust compiler to run alongside the pipeline manager
 FROM ubuntu:24.04 AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -41,7 +43,11 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # For debugging things
     strace \
     # For blacksmith runners configuring disks
-    sudo
+    sudo \
+    # Looks like on our arm machines we need npm,
+    # otherwise `bun run build` fails during `svelte-kit sync` with SIGABRT (?)
+    # somehow it works fine without npm on x86_64 machines :/
+    npm
 
 # Give ubuntu user with sudo privileges for mounting dirs in blacksmith runner
 RUN usermod -aG sudo ubuntu
@@ -70,6 +76,7 @@ ENV PATH="/home/ubuntu/.local/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.cargo/bin:
 
 # Install rust
 ENV RUSTUP_HOME=/home/ubuntu/.rustup
+ENV CARGO_HOME=/home/ubuntu/.cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.87.0
 RUN cargo install cargo-machete@0.7.0 cargo-edit@0.13.1 just@1.40.0
 
