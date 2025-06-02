@@ -4,7 +4,7 @@
 # You can run it manually using the github actions UI.
 
 # We need a Java and Rust compiler to run alongside the pipeline manager
-FROM ubuntu:24.04 AS ubuntu-base
+FROM ubuntu:24.04 AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
 # These two environment variables are used to make openssl-sys pick
@@ -12,8 +12,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 # to building a vendored version of OpenSSL.
 ENV OPENSSL_NO_VENDOR=1
 ENV OPENSSL_STATIC=1
-
-FROM ubuntu-base AS install-build-dependencies
 RUN apt-get update --fix-missing && apt-get install -y \
     # pkg-config is required for cargo to find libssl
     libssl-dev pkg-config \
@@ -45,7 +43,6 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # For blacksmith runners configuring disks
     sudo
 
-FROM install-build-dependencies AS base
 # Give ubuntu user with sudo privileges for mounting dirs in blacksmith runner
 RUN usermod -aG sudo ubuntu
 RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
