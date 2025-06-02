@@ -51,6 +51,28 @@ control memory usage:
    cross-products. Use functions like
    [NOW()](https://docs.feldera.com/sql/datetime/#now) sparingly on large relations.
 
+### Out-of-storage Errors
+
+**Error**: The pipeline logs contain messages like:
+```
+DBSP error: runtime error: One or more worker threads terminated unexpectedly
+worker thread 0 panicked
+panic message: called `Result::unwrap()` on an `Err` value: StdIo(StorageFull)
+```
+
+**Solution**: Increase pipeline storage capacity
+
+In the Enterprise edition, Feldera runs each pipeline in a separate pod and, by
+default, attaches PVC volumes for storage. The default volume size is 30 GB,
+and if your pipelines are encountering `StorageFull` errors, you should
+explicitly request larger volumes for each pipeline:
+
+   ```json
+   "resources": {
+       "storage_mb_max": 128000
+   }
+   ```
+
 ### Kubernetes evictions
 
 **Error**: the pipeline becomes `UNAVAILABLE` with no errors in the logs.
