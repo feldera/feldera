@@ -5,7 +5,7 @@ It let's you bring your own cloud or Kubernetes Cluster,
 on which you deploy Feldera. Your data never leaves your premises.
 
 Feldera Enterprise adds
-[features](https://www.feldera.com/pricing) that are not available in the
+[features](/architecture/enterprise) that are not available in the
 Docker offering. This includes multi-node clusters, pipeline and control plane
 fault-tolerance, pipeline resource isolation, pipeline scale-out (coming soon),
 and dedicated support.
@@ -13,9 +13,10 @@ and dedicated support.
 The documentation we provide here is publicly available, both to guide
 our existing customers and to provide insight to interested parties.
 
-Using Feldera Enterprise is only possible with a license key.
-Please [contact sales](https://calendly.com/d/cn7m-grv-mzm/feldera-demo) if you
-are interested.
+:::info
+Using Feldera Enterprise requires a license key. Please [contact
+sales](https://calendly.com/d/cn7m-grv-mzm/feldera-demo)  if you are interested.
+:::
 
 :::tip
 You can try a Feldera Enterprise instance by visiting

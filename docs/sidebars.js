@@ -369,6 +369,15 @@ const pipelines = {
     ]
 };
 
+// Architecture section
+const architecture = {
+    type: 'category',
+    label: 'Architecture',
+    items: [
+        'architecture/enterprise',
+    ]
+}
+
 // Literature section
 const literature = {
     type: 'category',
@@ -393,6 +402,7 @@ const operations = {
 const sidebars = {
     docsSidebar: [
         'what-is-feldera',
+        architecture,
         installation,
         guides,
         interface,
