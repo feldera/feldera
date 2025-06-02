@@ -6,12 +6,13 @@
 # You can test it locally using:
 # `docker build -f deploy/build.Dockerfile -t feldera-dev .`
 
-FROM ubuntu:24.04 AS base
+FROM ubuntu:24.04 AS ubuntu-base
 ENV DEBIAN_FRONTEND=noninteractive
 
 # These two environment variables are used to make openssl-sys pick
 # up libssl-dev and statically link it. Without it, our build defaults
 # to building a vendored version of OpenSSL.
+FROM ubuntu-base AS install-pkgs
 ENV OPENSSL_NO_VENDOR=1
 ENV OPENSSL_STATIC=1
 RUN apt-get update --fix-missing && apt-get install -y \
@@ -49,6 +50,7 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # somehow it works fine without npm on x86_64 machines :/
     npm
 
+FROM install-pkgs AS base
 # Give ubuntu user with sudo privileges for mounting dirs in blacksmith runner
 RUN usermod -aG sudo ubuntu
 RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
