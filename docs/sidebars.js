@@ -367,7 +367,7 @@ const pipelines = {
         formats,
         {
             type: 'doc',
-            label: "Configuration",
+            label: "Settings",
             id: "pipelines/configuration",
         },
         "pipelines/fault-tolerance"

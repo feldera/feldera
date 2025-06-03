@@ -2,15 +2,13 @@ import ApiSchema from '@theme/ApiSchema';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Pipeline configuration
+# Pipeline Settings
 
-When Feldera pipeline is created it is pre-configured for a good experience when developing and iterating on the pipeline code.
-You can configure each pipeline's runtime options to better utilize your cluster's resources, ensure fault tolerance (if available) and access other functionality.
-You can also configure program compilation, which is useful when switching between a development workflow and production setting.
+Pipelines come with a set of configuration settings to toggle features, tune performance, and help with operations. If you're on the Enterprise Edition, you will likely need to configure the resources section to tune the CPU, memory, and storage resources used by the Pipeline depending on your infrastructure needs. Other than that, users rarely need to deviate from the supplied defaults.
 
 ### Editing configuration
-
-You can generally only edit pipeline configuration when it is `Shutdown`. When the pipeline is `Suspended`, you can only edit certain options.
+.
+You can edit all pipeline settings when the pipeline is `Shutdown` and a limited subset when it is `Suspended`.
 <Tabs
   defaultValue="web-console"
   values={[
@@ -25,12 +23,12 @@ You can generally only edit pipeline configuration when it is `Shutdown`. When t
     ![Configure pipeline in web-console](webconsole_configure_pipeline.png)
   </TabItem>
   <TabItem value="python">
-    You can use [feldera_client.create_or_update_pipeline()](http://localhost:3000/python/feldera.rest.html#feldera.rest.feldera_client.FelderaClient.create_or_update_pipeline) to update `program_config` and `runtime_config` fields.
+    You can use [feldera_client.create_or_update_pipeline()](pathname:///python/feldera.rest.html#feldera.rest.feldera_client.FelderaClient.create_or_update_pipeline) to update `program_config` and `runtime_config` fields.
   </TabItem>
   <TabItem value="fda">
-    You can toggle the storage for pipeline `p1` with
+    You can toggle the storage for a pipeline with
     ```bash
-      fda set-config p1 storage [true/false]
+      fda set-config {pipeline_name} storage [true|false]
     ```
   </TabItem>
   <TabItem value="api">
@@ -44,7 +42,7 @@ You can generally only edit pipeline configuration when it is `Shutdown`. When t
 ### Runtime configuration
 
 :::important
-Make sure to correctly configure resource limits (memory and storage), the number of worker threads and the storage backend to properly utilize your cluster's resources when going to production.
+Make sure to appropriately size resource limits (memory and storage), the number of worker threads and the storage backend to utilize available cluster resources.
 :::
 
 <div className='theme-api-markdown' >
@@ -53,9 +51,7 @@ Make sure to correctly configure resource limits (memory and storage), the numbe
 
 ### Program configuration
 
-:::important
-Make sure to use the "optimized" compilation profile when going to production.
-:::
+The "optimized" compilation profile (default) should be used when running production pipelines where performance is important.
 
 <div className='theme-api-markdown' >
 <ApiSchema pointer="#/components/schemas/ProgramConfig"/>
