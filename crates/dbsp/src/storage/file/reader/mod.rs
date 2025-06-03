@@ -23,7 +23,7 @@ use crate::{
 };
 use binrw::{
     io::{self},
-    BinRead, Error as BinError,
+    BinRead,
 };
 use crc32c::crc32c;
 use fastbloom::BloomFilter;
@@ -69,12 +69,6 @@ pub enum Error {
     Unsupported,
 }
 
-impl From<BinError> for Error {
-    fn from(source: BinError) -> Self {
-        Error::Corruption(source.into())
-    }
-}
-
 impl From<io::Error> for Error {
     fn from(source: io::Error) -> Self {
         Error::Storage(StorageError::StdIo(source.kind()))
@@ -82,7 +76,7 @@ impl From<io::Error> for Error {
 }
 
 /// Errors that indicate a problem with the layer file contents.
-#[derive(ThisError, Debug)]
+#[derive(ThisError, Clone, Debug)]
 pub enum CorruptionError {
     /// File size must be a positive multiple of 512.
     #[error("File size {0} must be a positive multiple of 512")]
@@ -116,12 +110,17 @@ pub enum CorruptionError {
     },
 
     /// [`mod@binrw`] reported a format violation.
-    #[error("Binary read/write error: {0}")]
-    Binrw(
+    #[error("Binary read/write error reading {block_type} block ({location}): {inner}")]
+    Binrw {
+        /// Block location.
+        location: BlockLocation,
+
+        /// Block type.
+        block_type: &'static str,
+
         /// Underlying error.
-        #[from]
-        BinError,
-    ),
+        inner: String,
+    },
 
     /// Array overflows block bounds.
     #[error("{count}-element array of {each}-byte elements starting at offset {offset} within block overflows {block_size}-byte block")]
@@ -453,7 +452,14 @@ where
         location: BlockLocation,
         first_row: u64,
     ) -> Result<Self, Error> {
-        let header = DataBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
+        let header =
+            DataBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice())).map_err(|e| {
+                Error::Corruption(CorruptionError::Binrw {
+                    location,
+                    block_type: "data",
+                    inner: e.to_string(),
+                })
+            })?;
         Ok(Self {
             location,
             value_map: ValueMapReader::new(
@@ -724,7 +730,14 @@ where
         location: BlockLocation,
         first_row: u64,
     ) -> Result<Self, Error> {
-        let header = IndexBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
+        let header =
+            IndexBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice())).map_err(|e| {
+                Error::Corruption(CorruptionError::Binrw {
+                    location,
+                    block_type: "index",
+                    inner: e.to_string(),
+                })
+            })?;
         if header.n_children == 0 {
             return Err(CorruptionError::EmptyIndex(location).into());
         }
@@ -988,8 +1001,14 @@ impl CacheEntry for FileTrailer {
 }
 
 impl FileTrailer {
-    fn from_raw(raw: Arc<FBuf>) -> Result<Self, Error> {
-        Ok(Self::read_le(&mut io::Cursor::new(raw.as_slice()))?)
+    fn from_raw(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
+        Self::read_le(&mut io::Cursor::new(raw.as_slice())).map_err(|e| {
+            Error::Corruption(CorruptionError::Binrw {
+                location,
+                block_type: "trailer",
+                inner: e.to_string(),
+            })
+        })
     }
     fn new(
         cache: fn() -> Arc<BufferCache>,
@@ -1009,7 +1028,7 @@ impl FileTrailer {
             }
             None => {
                 let block = file_handle.read_block(location)?;
-                let entry = Arc::new(Self::from_raw(block)?);
+                let entry = Arc::new(Self::from_raw(block, location)?);
                 cache.insert(file_handle.file_id(), location.offset, entry.clone());
                 (CacheAccess::Miss, entry)
             }
@@ -1029,7 +1048,13 @@ struct Column {
 impl FilterBlock {
     fn new(file_handle: &dyn FileReader, location: BlockLocation) -> Result<Self, Error> {
         let block = file_handle.read_block(location)?;
-        Ok(Self::read_le(&mut io::Cursor::new(block.as_slice()))?)
+        Self::read_le(&mut io::Cursor::new(block.as_slice())).map_err(|e| {
+            Error::Corruption(CorruptionError::Binrw {
+                location,
+                block_type: "filter",
+                inner: e.to_string(),
+            })
+        })
     }
 }
 
