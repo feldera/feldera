@@ -47,6 +47,7 @@ use std::{
 use std::{ops::RangeInclusive, sync::Mutex};
 use textwrap::indent;
 
+mod index_set;
 mod list_merger;
 mod snapshot;
 mod thread;
