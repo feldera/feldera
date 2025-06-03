@@ -58,9 +58,17 @@ struct CacheValue {
     serial: u64,
 }
 
-pub trait CacheEntry: Send + Sync {
+pub trait CacheEntry: Any + Send + Sync {
     fn cost(&self) -> usize;
-    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
+}
+
+impl dyn CacheEntry {
+    pub fn downcast<T>(self: Arc<Self>) -> Option<Arc<T>>
+    where
+        T: Send + Sync + 'static,
+    {
+        (self as Arc<dyn Any + Send + Sync>).downcast().ok()
+    }
 }
 
 struct CacheInner {
