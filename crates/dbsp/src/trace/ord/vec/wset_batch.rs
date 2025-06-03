@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
+    algebra::{NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
@@ -19,10 +19,7 @@ use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
-use std::{
-    fmt::{self, Debug, Display},
-    ops::Neg,
-};
+use std::fmt::{self, Debug, Display};
 
 pub struct VecWSetFactories<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
     layer_factories: LeafFactories<K, R>,
@@ -280,39 +277,6 @@ where
             factories: self.factories.clone(),
             //weighted_item_factory: self.weighted_item_factory,
             //batch_item_factory: self.batch_item_factory,
-        }
-    }
-}
-
-impl<K: DataTrait + ?Sized, R: WeightTraitTyped + ?Sized> Neg for VecWSet<K, R>
-where
-    R::Type: DBWeight + ZRingValue,
-{
-    type Output = Self;
-
-    fn neg(self) -> Self {
-        Self {
-            layer: self.layer.neg(),
-            factories: self.factories,
-            // weighted_item_factory: self.weighted_item_factory,
-            // batch_item_factory: self.batch_item_factory,
-        }
-    }
-}
-
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> AddAssignByRef for VecWSet<K, R> {
-    fn add_assign_by_ref(&mut self, rhs: &Self) {
-        self.layer.add_assign_by_ref(&rhs.layer);
-    }
-}
-
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> AddByRef for VecWSet<K, R> {
-    fn add_by_ref(&self, rhs: &Self) -> Self {
-        Self {
-            layer: self.layer.add_by_ref(&rhs.layer),
-            factories: self.factories.clone(),
-            // weighted_item_factory: self.weighted_item_factory,
-            // batch_item_factory: self.batch_item_factory,
         }
     }
 }
