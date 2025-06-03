@@ -241,6 +241,7 @@ struct RuntimeConfigPropVal {
     val12: Option<String>,
     val13: Option<u64>,
     val14: Option<u64>,
+    val15: bool,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -282,6 +283,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             provisioning_timeout_secs: val.val14,
             max_parallel_connector_init: None,
             init_containers: None,
+            checkpoint_during_suspend: val.val15,
         })
         .unwrap()
     }
@@ -364,7 +366,7 @@ fn limited_program_binary_integrity_checksum() -> impl Strategy<Value = String> 
     })
 }
 
-/// Generates different runtime configurations.
+/// Generates different pipeline descriptors.
 fn limited_pipeline_descr() -> impl Strategy<Value = PipelineDescr> {
     any::<(
         PipelineNamePropVal,
@@ -444,6 +446,11 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
             .unwrap()
         }
     })
+}
+
+/// Generates different suspend information.
+fn limited_suspend_info() -> impl Strategy<Value = serde_json::Value> {
+    any::<()>().prop_map(|_| json!({}))
 }
 
 /// Generates different error responses.
@@ -1026,6 +1033,7 @@ async fn pipeline_versioning() {
         provisioning_timeout_secs: None,
         max_parallel_connector_init: None,
         init_containers: None,
+        checkpoint_during_suspend: true,
     })
     .unwrap();
     handle
@@ -1379,7 +1387,7 @@ async fn pipeline_deployment() {
             Version(1),
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
-                &serde_json::from_value(pipeline1.runtime_config).unwrap(),
+                &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
                 &BTreeMap::default(),
                 &BTreeMap::default(),
             ))
@@ -1405,6 +1413,62 @@ async fn pipeline_deployment() {
     handle
         .db
         .transit_deployment_status_to_running(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_desired_status_suspended(tenant_id, "example1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_suspending_circuit(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_suspending_compute(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_suspended(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_desired_status_paused(tenant_id, "example1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_provisioning(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            serde_json::to_value(generate_pipeline_config(
+                pipeline1.id,
+                &serde_json::from_value(pipeline1.runtime_config).unwrap(),
+                &BTreeMap::default(),
+                &BTreeMap::default(),
+            ))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_initializing(tenant_id, pipeline1.id, Version(1), "location1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_paused(tenant_id, pipeline1.id, Version(1))
         .await
         .unwrap();
     handle
@@ -1530,6 +1594,7 @@ async fn pipeline_provision_version_guard() {
                     provisioning_timeout_secs: None,
                     max_parallel_connector_init: None,
                     init_containers: None,
+                    checkpoint_during_suspend: false,
                 })
                 .unwrap(),
             ),
@@ -1707,6 +1772,10 @@ enum StorageAction {
         TenantId,
         #[proptest(strategy = "limited_pipeline_name()")] String,
     ),
+    SetDeploymentDesiredStatusSuspended(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+    ),
     SetDeploymentDesiredStatusShutdown(
         TenantId,
         #[proptest(strategy = "limited_pipeline_name()")] String,
@@ -1721,6 +1790,14 @@ enum StorageAction {
     TransitDeploymentStatusToRunning(TenantId, PipelineId, Version),
     TransitDeploymentStatusToPaused(TenantId, PipelineId, Version),
     TransitDeploymentStatusToUnavailable(TenantId, PipelineId, Version),
+    TransitDeploymentStatusToSuspendingCircuit(TenantId, PipelineId, Version),
+    TransitDeploymentStatusToSuspendingCompute(
+        TenantId,
+        PipelineId,
+        Version,
+        #[proptest(strategy = "limited_suspend_info()")] serde_json::Value,
+    ),
+    TransitDeploymentStatusToSuspended(TenantId, PipelineId, Version),
     TransitDeploymentStatusToShuttingDown(TenantId, PipelineId, Version),
     TransitDeploymentStatusToShutdown(TenantId, PipelineId, Version),
     TransitDeploymentStatusToFailed(
@@ -2213,6 +2290,12 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.set_deployment_desired_status_paused(tenant_id, &pipeline_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
+                            StorageAction::SetDeploymentDesiredStatusSuspended(tenant_id, pipeline_name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.set_deployment_desired_status_suspended(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.set_deployment_desired_status_suspended(tenant_id, &pipeline_name).await;
+                                check_responses(i, model_response, impl_response);
+                            }
                             StorageAction::SetDeploymentDesiredStatusShutdown(tenant_id, pipeline_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.set_deployment_desired_status_shutdown(tenant_id, &pipeline_name).await;
@@ -2247,6 +2330,24 @@ fn db_impl_behaves_like_model() {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.transit_deployment_status_to_unavailable(tenant_id, pipeline_id, version_guard).await;
                                 let impl_response = handle.db.transit_deployment_status_to_unavailable(tenant_id, pipeline_id, version_guard).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToSuspendingCircuit(tenant_id, pipeline_id, version_guard) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_suspending_circuit(tenant_id, pipeline_id, version_guard).await;
+                                let impl_response = handle.db.transit_deployment_status_to_suspending_circuit(tenant_id, pipeline_id, version_guard).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToSuspendingCompute(tenant_id, pipeline_id, version_guard, suspend_info) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_suspending_compute(tenant_id, pipeline_id, version_guard, suspend_info.clone()).await;
+                                let impl_response = handle.db.transit_deployment_status_to_suspending_compute(tenant_id, pipeline_id, version_guard, suspend_info.clone()).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToSuspended(tenant_id, pipeline_id, version_guard) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_suspended(tenant_id, pipeline_id, version_guard).await;
+                                let impl_response = handle.db.transit_deployment_status_to_suspended(tenant_id, pipeline_id, version_guard).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitDeploymentStatusToShuttingDown(tenant_id, pipeline_id, version_guard) => {
@@ -2410,11 +2511,77 @@ impl ModelHelpers for Mutex<DbModel> {
         let mut pipeline = self.get_pipeline(tenant_id, original_name).await?;
 
         // Pipeline must be shutdown
-        if pipeline.deployment_status != PipelineStatus::Shutdown
-            || (!is_compiler_update
-                && pipeline.deployment_desired_status != PipelineDesiredStatus::Shutdown)
-        {
+        if !matches!(
+            (
+                pipeline.deployment_status,
+                pipeline.deployment_desired_status,
+                is_compiler_update
+            ),
+            (PipelineStatus::Shutdown, PipelineDesiredStatus::Shutdown, _)
+                | (
+                    PipelineStatus::Suspended,
+                    PipelineDesiredStatus::Suspended,
+                    _
+                )
+                | (
+                    PipelineStatus::Shutdown | PipelineStatus::Suspended,
+                    PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
+                    true
+                )
+        ) {
             return Err(DBError::CannotUpdateNonShutdownPipeline);
+        }
+
+        // While suspended, some fields are not allowed to be edited
+        if pipeline.deployment_status == PipelineStatus::Suspended {
+            let mut not_allowed = vec![];
+            if name.as_ref().is_some_and(|v| *v != pipeline.name) {
+                not_allowed.push("`name`")
+            }
+            if description
+                .as_ref()
+                .is_some_and(|v| *v != pipeline.description)
+            {
+                not_allowed.push("`description`")
+            }
+            // `platform_version` can be updated
+            // Some fields of `runtime_config` are not allowed to be updated
+            if let Some(runtime_config) = &runtime_config {
+                if runtime_config.get("workers") != pipeline.runtime_config.get("workers") {
+                    not_allowed.push("`runtime_config.workers`");
+                }
+                if runtime_config.get("storage") != pipeline.runtime_config.get("storage") {
+                    not_allowed.push("`runtime_config.storage`");
+                }
+                if runtime_config.get("fault_tolerance")
+                    != pipeline.runtime_config.get("fault_tolerance")
+                {
+                    not_allowed.push("`runtime_config.fault_tolerance`");
+                }
+            }
+            if program_code
+                .as_ref()
+                .is_some_and(|v| *v != pipeline.program_code)
+            {
+                not_allowed.push("`program_code`")
+            }
+            if udf_rust.as_ref().is_some_and(|v| *v != pipeline.udf_rust) {
+                not_allowed.push("`udf_rust`")
+            }
+            if udf_toml.as_ref().is_some_and(|v| *v != pipeline.udf_toml) {
+                not_allowed.push("`udf_toml`")
+            }
+            if program_config
+                .as_ref()
+                .is_some_and(|v| *v != pipeline.program_config)
+            {
+                not_allowed.push("`program_config`")
+            }
+            if !not_allowed.is_empty() {
+                return Err(DBError::EditNotAllowedWhileSuspendedError {
+                    not_allowed: not_allowed.iter_mut().map(|s| s.to_string()).collect(),
+                });
+            }
         }
 
         // Update the base fields
@@ -2836,6 +3003,11 @@ impl Storage for Mutex<DbModel> {
                 PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
                 _,
                 false,
+            ) | (
+                PipelineStatus::Paused | PipelineStatus::Running | PipelineStatus::Unavailable,
+                PipelineDesiredStatus::Suspended,
+                _,
+                _,
             ),
         ) {
             Ok(ExtendedPipelineDescrRunner::Complete(pipeline))

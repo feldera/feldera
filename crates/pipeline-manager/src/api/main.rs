@@ -201,6 +201,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::transport::postgres::PostgresWriterConfig,
         feldera_types::transport::redis::RedisOutputConfig,
         feldera_types::transport::http::Chunk,
+        feldera_types::transport::clock::ClockConfig,
         feldera_types::query::AdhocQueryArgs,
         feldera_types::query::AdHocResultFormat,
         feldera_types::format::json::JsonUpdateFormat,

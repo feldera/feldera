@@ -101,6 +101,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             provisioning_timeout_secs: Some(1200),
             max_parallel_connector_init: Some(10),
             init_containers: None,
+            checkpoint_during_suspend: false,
         })
         .unwrap(),
         program_code: "CREATE TABLE table2 ( col2 VARCHAR );".to_string(),

@@ -208,13 +208,15 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     async fn do_run(&mut self) -> Result<Duration, DBError> {
         // Depending on the upcoming transition, it either retrieves the smaller monitoring descriptor,
         // or the larger complete descriptor. It should only get the complete descriptor if:
-        // - current=`Shutdown`
+        // - current=`Shutdown`/`Suspended`
         //   AND desired=`Running`/`Paused`
         //   AND program_status=`Success`
         //   AND platform_version=self.platform_version
         // - current=`Provisioning`
         //   AND desired=`Running`/`Paused`
         //   AND `provision()` is not yet called
+        // - current=`Running`/`Paused`/`Unavailable`
+        //   AND desired=`Suspended`
         //
         // The complete descriptor can be converted into the monitoring one, which is done to avoid
         // checking which one was returned in the general flow.
@@ -286,7 +288,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .await
             }
             (PipelineStatus::Paused, PipelineDesiredStatus::Suspended) => {
-                State::TransitionToSuspendingCircuit
+                self.transit_paused_running_or_unavailable_towards_suspended(
+                    pipeline_monitoring_or_complete,
+                )
+                .await
             }
 
             // Running
@@ -298,7 +303,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 self.probe_initialized_pipeline(pipeline).await
             }
             (PipelineStatus::Running, PipelineDesiredStatus::Suspended) => {
-                State::TransitionToSuspendingCircuit
+                self.transit_paused_running_or_unavailable_towards_suspended(
+                    pipeline_monitoring_or_complete,
+                )
+                .await
             }
 
             // Unavailable
@@ -307,7 +315,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
             ) => self.probe_initialized_pipeline(pipeline).await,
             (PipelineStatus::Unavailable, PipelineDesiredStatus::Suspended) => {
-                State::TransitionToSuspendingCircuit
+                self.transit_paused_running_or_unavailable_towards_suspended(
+                    pipeline_monitoring_or_complete,
+                )
+                .await
             }
 
             // SuspendingCircuit
@@ -1232,6 +1243,46 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
             }
             StatusCheckResult::Error(error) => State::TransitionToFailed { error },
+        }
+    }
+
+    /// Transits from `Paused`, `Running` or `Unavailable` towards `Suspended`.
+    /// It will transition to:
+    /// - `SuspendingCircuit` if `runtime_config.checkpoint_during_suspend` is `true`
+    /// - `SuspendingCompute` if `runtime_config.checkpoint_during_suspend` is `false`
+    async fn transit_paused_running_or_unavailable_towards_suspended(
+        &mut self,
+        pipeline_monitoring_or_complete: &ExtendedPipelineDescrRunner,
+    ) -> State {
+        let pipeline = pipeline_monitoring_or_complete.only_monitoring();
+        let ExtendedPipelineDescrRunner::Complete(pipeline) = pipeline_monitoring_or_complete
+        else {
+            panic!("For the transit of {} towards Suspended the complete pipeline descriptor should have been retrieved", pipeline.deployment_status);
+        };
+
+        // Required runtime_config
+        let runtime_config = match validate_runtime_config(&pipeline.runtime_config, true) {
+            Ok(runtime_config) => runtime_config,
+            Err(e) => {
+                return State::TransitionToFailed {
+                    error: ErrorResponse::from_error_nolog(
+                        &RunnerError::AutomatonInvalidRuntimeConfig {
+                            value: pipeline.runtime_config.clone(),
+                            error: e,
+                        },
+                    ),
+                };
+            }
+        };
+
+        if runtime_config.checkpoint_during_suspend {
+            State::TransitionToSuspendingCircuit
+        } else {
+            // Skip the `SuspendingCircuit` state, and transition straight to `SuspendingCompute`
+            self.suspend_compute_called = None;
+            State::TransitionToSuspendingCompute {
+                suspend_info: json!({}),
+            }
         }
     }
 
