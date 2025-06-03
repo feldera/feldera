@@ -9,7 +9,7 @@ use crate::{
 use dyn_clone::clone_box;
 use size_of::SizeOf;
 
-use super::dynamic::trace::FileValSpine;
+use super::dynamic::trace::ValSpine;
 
 impl<C, K, V, R, B> Stream<C, TypedBatch<K, V, R, B>>
 where
@@ -26,7 +26,7 @@ where
     /// This operator labels each untimed batch in the stream with the current
     /// timestamp and adds it to a trace.
     #[track_caller]
-    pub fn trace(&self) -> Stream<C, TypedBatch<K, V, R, FileValSpine<B, C>>> {
+    pub fn trace(&self) -> Stream<C, TypedBatch<K, V, R, ValSpine<B, C>>> {
         let trace_factories = BatchReaderFactories::new::<K, V, R>();
         let batch_factories = BatchReaderFactories::new::<K, V, R>();
         self.inner()
@@ -52,7 +52,7 @@ where
         &self,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
-    ) -> Stream<C, TypedBatch<K, V, R, FileValSpine<B, C>>> {
+    ) -> Stream<C, TypedBatch<K, V, R, ValSpine<B, C>>> {
         let trace_factories = BatchReaderFactories::new::<K, V, R>();
         let batch_factories = BatchReaderFactories::new::<K, V, R>();
 

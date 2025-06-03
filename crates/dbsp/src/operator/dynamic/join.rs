@@ -137,8 +137,8 @@ where
 {
     pub left_factories: I1::Factories,
     pub right_factories: I2::Factories,
-    pub left_trace_factories: <T::FileValBatch<I1::Key, I1::Val, I1::R> as BatchReader>::Factories,
-    pub right_trace_factories: <T::FileValBatch<I1::Key, I2::Val, I1::R> as BatchReader>::Factories,
+    pub left_trace_factories: <T::ValBatch<I1::Key, I1::Val, I1::R> as BatchReader>::Factories,
+    pub right_trace_factories: <T::ValBatch<I1::Key, I2::Val, I1::R> as BatchReader>::Factories,
     pub output_factories: O::Factories,
     pub timed_item_factory:
         &'static dyn Factory<DynPair<DynDataTyped<T>, WeightedItem<O::Key, O::Val, O::R>>>,

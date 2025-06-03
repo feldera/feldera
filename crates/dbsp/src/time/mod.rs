@@ -47,10 +47,7 @@ mod product;
 use crate::{
     algebra::{Lattice, PartialOrder},
     dynamic::{DataTrait, WeightTrait},
-    trace::{
-        Batch, FallbackIndexedWSet, FallbackKeyBatch, FallbackValBatch, FallbackWSet,
-        OrdIndexedWSet, OrdKeyBatch, OrdValBatch, OrdWSet,
-    },
+    trace::{Batch, FallbackIndexedWSet, FallbackKeyBatch, FallbackValBatch, FallbackWSet},
     DBData, Scope,
 };
 use rkyv::{Archive, Deserialize, Serialize};
@@ -85,18 +82,12 @@ pub trait Timestamp: DBData + PartialOrder + Lattice {
     /// We automate this choice by making it an associated type of
     /// `trait Timestamp` -- not a very elegant solution, but I couldn't
     /// think of a better one.
-    type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = V, Time = Self, R = R>
-        + SizeOf;
-
-    type MemKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = DynUnit, Time = Self, R = R>
-        + SizeOf;
-
-    type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = V, Time = Self, R = R>
+    type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = V, Time = Self, R = R>
         + SizeOf
         + Send
         + Sync;
 
-    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = DynUnit, Time = Self, R = R>
+    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = DynUnit, Time = Self, R = R>
         + SizeOf;
 
     fn minimum() -> Self;
@@ -198,14 +189,9 @@ impl Lattice for UnitTimestamp {
 impl Timestamp for UnitTimestamp {
     type Nested = ();
 
-    type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        OrdValBatch<K, V, Self, R>;
-    type MemKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdKeyBatch<K, Self, R>;
-
-    type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+    type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         FallbackValBatch<K, V, Self, R>;
-    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        FallbackKeyBatch<K, Self, R>;
+    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackKeyBatch<K, Self, R>;
     fn minimum() -> Self {
         UnitTimestamp
     }
@@ -229,13 +215,9 @@ impl Timestamp for UnitTimestamp {
 impl Timestamp for () {
     type Nested = Product<u32, u32>;
 
-    type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        OrdIndexedWSet<K, V, R>;
-    type MemKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdWSet<K, R>;
-
-    type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+    type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         FallbackIndexedWSet<K, V, R>;
-    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackWSet<K, R>;
+    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackWSet<K, R>;
 
     fn minimum() -> Self {}
     fn advance(&self, _scope: Scope) -> Self {}
@@ -250,14 +232,9 @@ impl Timestamp for () {
 impl Timestamp for u32 {
     type Nested = Product<u32, u32>;
 
-    type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        OrdValBatch<K, V, Self, R>;
-    type MemKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdKeyBatch<K, Self, R>;
-
-    type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+    type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         FallbackValBatch<K, V, Self, R>;
-    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        FallbackKeyBatch<K, Self, R>;
+    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {
         0
