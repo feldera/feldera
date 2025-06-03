@@ -277,38 +277,16 @@ impl<K: Debug + ?Sized + 'static, V: Debug + ?Sized + 'static> TraceBoundsInner<
     }
 }
 
-/// A key-only [`Spine`] of `C`'s default batch type, with key and weight types
-/// taken from `B`.
-pub type KeySpine<B, C> = Spine<
-    <<C as WithClock>::Time as Timestamp>::MemKeyBatch<
-        <B as BatchReader>::Key,
-        <B as BatchReader>::R,
-    >,
->;
-
-/// A [`Spine`] of `C`'s default batch type, with key, value, and weight types
-/// taken from `B`.
-pub type ValSpine<B, C> = Spine<
-    <<C as WithClock>::Time as Timestamp>::MemValBatch<
-        <B as BatchReader>::Key,
-        <B as BatchReader>::Val,
-        <B as BatchReader>::R,
-    >,
->;
-
 /// An on-storage, key-only [`Spine`] of `C`'s default batch type, with key and
 /// weight types taken from `B`.
-pub type FileKeySpine<B, C> = Spine<
-    <<C as WithClock>::Time as Timestamp>::FileKeyBatch<
-        <B as BatchReader>::Key,
-        <B as BatchReader>::R,
-    >,
+pub type KeySpine<B, C> = Spine<
+    <<C as WithClock>::Time as Timestamp>::KeyBatch<<B as BatchReader>::Key, <B as BatchReader>::R>,
 >;
 
 /// An on-storage [`Spine`] of `C`'s default batch type, with key, value, and
 /// weight types taken from `B`.
-pub type FileValSpine<B, C> = Spine<
-    <<C as WithClock>::Time as Timestamp>::FileValBatch<
+pub type ValSpine<B, C> = Spine<
+    <<C as WithClock>::Time as Timestamp>::ValBatch<
         <B as BatchReader>::Key,
         <B as BatchReader>::Val,
         <B as BatchReader>::R,
@@ -323,9 +301,9 @@ where
     /// See [`Stream::trace`].
     pub fn dyn_trace(
         &self,
-        output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
+        output_factories: &<ValSpine<B, C> as BatchReader>::Factories,
         batch_factories: &B::Factories,
-    ) -> Stream<C, FileValSpine<B, C>>
+    ) -> Stream<C, ValSpine<B, C>>
     where
         B: Batch<Time = ()>,
     {
@@ -340,11 +318,11 @@ where
     /// See [`Stream::trace_with_bound`].
     pub fn dyn_trace_with_bound(
         &self,
-        output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
+        output_factories: &<ValSpine<B, C> as BatchReader>::Factories,
         batch_factories: &B::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
-    ) -> Stream<C, FileValSpine<B, C>>
+    ) -> Stream<C, ValSpine<B, C>>
     where
         B: Batch<Time = ()>,
     {
@@ -373,10 +351,7 @@ where
                     let replay_stream = z1feedback.operator_mut().prepare_replay_stream(self);
 
                     let trace = circuit.add_binary_operator_with_preference(
-                        <TraceAppend<FileValSpine<B, C>, B, C>>::new(
-                            output_factories,
-                            circuit.clone(),
-                        ),
+                        <TraceAppend<ValSpine<B, C>, B, C>>::new(output_factories, circuit.clone()),
                         (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
                         (self, OwnershipPreference::PREFER_OWNED),
                     );

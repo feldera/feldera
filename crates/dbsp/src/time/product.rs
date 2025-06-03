@@ -2,7 +2,7 @@ use crate::{
     algebra::{Lattice, PartialOrder},
     dynamic::{DataTrait, WeightTrait},
     time::Timestamp,
-    trace::{FallbackKeyBatch, FallbackValBatch, OrdKeyBatch, OrdValBatch},
+    trace::{FallbackKeyBatch, FallbackValBatch},
     Scope,
 };
 use rkyv::{Archive, Deserialize, Serialize};
@@ -88,13 +88,9 @@ where
 {
     type Nested = Product<Self, u32>;
 
-    type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        OrdValBatch<K, V, Self, R>;
-    type MemKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdKeyBatch<K, Self, R>;
-
-    type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+    type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         FallbackValBatch<K, V, Self, R>;
-    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         FallbackKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {

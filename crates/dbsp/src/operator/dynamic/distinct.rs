@@ -43,7 +43,7 @@ circuit_cache_key!(DistinctIncrementalId<C, D>(StreamId => Stream<C, D>));
 
 pub struct DistinctFactories<Z: IndexedZSet, T: Timestamp> {
     pub input_factories: Z::Factories,
-    trace_factories: <T::FileValBatch<Z::Key, Z::Val, Z::R> as BatchReader>::Factories,
+    trace_factories: <T::ValBatch<Z::Key, Z::Val, Z::R> as BatchReader>::Factories,
     aux_factories: OrdIndexedZSetFactories<Z::Key, Z::Val>,
 }
 

@@ -17,11 +17,11 @@ use crate::{
 use minitrace::trace;
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
-use super::trace::{BoundsId, FileKeySpine};
+use super::trace::{BoundsId, KeySpine};
 
 pub struct UpdateSetFactories<T: Timestamp, B: ZSet> {
     pub batch_factories: B::Factories,
-    pub trace_factories: <T::FileKeyBatch<B::Key, B::R> as BatchReader>::Factories,
+    pub trace_factories: <T::KeyBatch<B::Key, B::R> as BatchReader>::Factories,
 }
 
 impl<T: Timestamp, B: ZSet> Clone for UpdateSetFactories<T, B> {
@@ -51,7 +51,7 @@ where
 
 pub struct UpsertFactories<T: Timestamp, B: IndexedZSet> {
     pub batch_factories: B::Factories,
-    pub trace_factories: <T::MemValBatch<B::Key, B::Val, B::R> as BatchReader>::Factories,
+    pub trace_factories: <T::ValBatch<B::Key, B::Val, B::R> as BatchReader>::Factories,
 }
 
 impl<T: Timestamp, B: IndexedZSet> Clone for UpsertFactories<T, B> {
@@ -151,10 +151,7 @@ where
 
             let delta = circuit
                 .add_binary_operator(
-                    <Upsert<FileKeySpine<B, C>, B>>::new(
-                        &factories.batch_factories,
-                        bounds.clone(),
-                    ),
+                    <Upsert<KeySpine<B, C>, B>>::new(&factories.batch_factories, bounds.clone()),
                     &delayed_trace,
                     self,
                 )
@@ -163,7 +160,7 @@ where
             let replay_stream = z1feedback.operator_mut().prepare_replay_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<FileKeySpine<B, C>, B, C>>::new(
+                <TraceAppend<KeySpine<B, C>, B, C>>::new(
                     &factories.trace_factories,
                     circuit.clone(),
                 ),
