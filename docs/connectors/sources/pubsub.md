@@ -16,7 +16,7 @@ tolerance](/pipelines/fault-tolerance).
 This connector supports four groups of configuration options:
 
 1. [Authentication options](#authentication) control Google Cloud authentication
-2. [Subscription options](#subscribtion) specify an existing Pub/Sub subscription from which
+2. [Subscription options](#subscription) specify an existing Pub/Sub subscription from which
    the connector will pull messages
 3. [Connectivity options](#connectivity) configure gRPC connection to the Pub/Sub service
 4. [Emulator options](#emulator) are used to connect to a Pub/Sub emulator instead of the

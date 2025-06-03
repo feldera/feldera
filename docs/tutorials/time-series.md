@@ -186,7 +186,7 @@ only keeps state needed by those views.
 :::note
 
 Feldera also supports on-demand queries (also known as **ad hoc queries**) for
-materialized tables and views.  See [documentation](/sql/materialized#ad-hoc-queries) for details.
+materialized tables and views.  See [documentation](/sql/materialized#inspecting-materialized-tables-and-views) for details.
 
 :::
 
@@ -244,7 +244,7 @@ Feldera uses the following procedure to identify and discard unused data:
    collect old records that fall below retention bounds.
 
 **Not all queries support discarding old inputs**. We list the operators for which
-Feldera implements garbage collection [below](#sql-for-time-series-analysis).
+Feldera implements garbage collection [below](#sql-for-time-series-analytics).
 
 **Relations can have multiple waterlines**. The query engine can derive waterlines
 for multiple columns in a table or view. All these waterlines can be utilized for
@@ -674,7 +674,7 @@ GC feature [roadmap](https://github.com/feldera/feldera/issues/1850)).
 
 All features discussed so far evaluate SQL queries over time series data without
 referring to the current physical time.  Feldera allows using the current
-physical time in queries via the [`NOW()`](/sql/datetime/#the-now-function) function.  The primary use of this
+physical time in queries via the [`NOW()`](/sql/datetime/#now) function.  The primary use of this
 function is in implementing **temporal filters**, i.e., queries that filter
 records based on the current time values, e.g.:
 
@@ -690,7 +690,7 @@ outputs without receiving any new input.  In the above example, the pipeline wil
 output deletions for records that fall outside the 7-day window as the physical
 clock ticks forward.
 
-See [`NOW()`](/sql/datetime/#the-now-function) documentation for more details.
+See [`NOW()`](/sql/datetime/#now) documentation for more details.
 
 #### Garbage collection
 

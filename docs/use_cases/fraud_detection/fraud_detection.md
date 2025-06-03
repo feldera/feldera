@@ -354,7 +354,7 @@ query over streaming data and send computed feature vectors to the ML model for
 inference. It is almost identical to our training setup, except that this time
 we read data from the inference dataset. In addition, we configure the input
 connector for the `TRANSACTION` table to ingest transaction data in the
-[snapshot-and-follow](/connectors/sources/delta#required-parameters) mode.
+[snapshot-and-follow](/connectors/sources/delta#delta-lake-input-connector-configuration) mode.
 In this mode, the connector reads the initial snapshot of the table before following
 the stream of changes in its transaction log. This **backfill** pattern is necessary
 to correctly evaluate features that depend on historical data such as rolling

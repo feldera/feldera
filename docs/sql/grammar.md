@@ -46,7 +46,7 @@ typedef
   | name generalType [, name type ]*
 ```
 
-See [user-defined structures](types.md#user-defined-structures)
+See [user-defined types](types.md#user-defined-types)
 
 ## Creating tables
 
@@ -140,7 +140,7 @@ The `append_only` Boolean property describes tables that only support
 insertions.  Updates or deletes are not allowed in such tables.
 
 See [Streaming SQL Extensions, append-only
-tables](streaming.md#append-only-tables)
+tables](streaming.md#append_only-tables)
 
 #### Size hints
 
