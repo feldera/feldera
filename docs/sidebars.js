@@ -365,6 +365,11 @@ const pipelines = {
         sql,
         connectors,
         formats,
+        {
+            type: 'doc',
+            label: "Configuration",
+            id: "pipelines/configuration",
+        },
         "pipelines/fault-tolerance"
     ]
 };

@@ -63,7 +63,7 @@ below.  The Web Console code editor has a separate tab for each of these files,
 and supports an interactive development workflow.  Once ready, the creation and
 deployment of the pipeline can be automated with scripts that make use of the
 [Feldera CLI](#using-feldera-cli), the [Python API](#using-feldera-python-sdk),
-or the [REST API](#using-rest-api).  These scripts and the SQL/Rust code can
+or the [REST API](#using-the-rest-api).  These scripts and the SQL/Rust code can
 then be maintained with the usual practices such as version control.
 
 
