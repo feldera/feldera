@@ -603,7 +603,7 @@ where
             let mut start = (max(block_rows.start, target_rows.start) - self.first_row) as usize;
             let mut end = (min(block_rows.end, target_rows.end) - self.first_row) as usize;
             while start < end {
-                let mid = (start + end) / 2;
+                let mid = start.midpoint(end);
                 self.key(factories, mid, key);
                 let cmp = compare(key);
 
@@ -888,7 +888,7 @@ where
     fn find_row(&self, row: u64) -> Option<usize> {
         let mut indexes = 0..self.n_children();
         while !indexes.is_empty() {
-            let mid = (indexes.start + indexes.end) / 2;
+            let mid = indexes.start.midpoint(indexes.end);
             let rows = self.get_rows(mid);
             if row < rows.start {
                 indexes.end = mid;
@@ -923,7 +923,7 @@ where
             let mut end = self.n_children() * 2;
             result = None;
             while start < end {
-                let mid = (start + end) / 2;
+                let mid = start.midpoint(end);
                 let row = self.get_row_bound(mid) + self.first_row;
                 let cmp = match range_compare(target_rows, row) {
                     Equal => {
