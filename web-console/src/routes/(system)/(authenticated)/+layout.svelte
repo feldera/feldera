@@ -171,4 +171,10 @@
     <NavigationExtras inline></NavigationExtras>
   </ModalDrawer>
 </div>
-<GlobalModal dialog={dialog.dialog} onClose={() => (dialog.dialog = null)}></GlobalModal>
+<GlobalModal
+  dialog={dialog.dialog}
+  onClose={() => {
+    dialog.onclose?.()
+    dialog.dialog = null
+  }}
+></GlobalModal>
