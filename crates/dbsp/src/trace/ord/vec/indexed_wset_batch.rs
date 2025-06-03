@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
+    algebra::{NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
     dynamic::{
         DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, LeanVec, WeightTrait,
@@ -20,10 +20,7 @@ use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
-use std::{
-    fmt::{self, Debug, Display},
-    ops::Neg,
-};
+use std::fmt::{self, Debug, Display};
 
 use crate::trace::ord::merge_batcher::MergeBatcher;
 
@@ -301,54 +298,6 @@ where
     fn neg_by_ref(&self) -> Self {
         Self {
             layer: self.layer.neg_by_ref(),
-            factories: self.factories.clone(),
-        }
-    }
-}
-
-impl<K, V, R, O> Neg for VecIndexedWSet<K, V, R, O>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTraitTyped + ?Sized,
-    O: OrdOffset,
-    R::Type: DBWeight + ZRingValue,
-{
-    type Output = Self;
-
-    #[inline]
-    fn neg(self) -> Self {
-        Self {
-            layer: self.layer.neg(),
-            factories: self.factories.clone(),
-        }
-    }
-}
-
-impl<K, V, R, O> AddAssignByRef for VecIndexedWSet<K, V, R, O>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    #[inline]
-    fn add_assign_by_ref(&mut self, rhs: &Self) {
-        self.layer.add_assign_by_ref(&rhs.layer);
-    }
-}
-
-impl<K, V, R, O> AddByRef for VecIndexedWSet<K, V, R, O>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    #[inline]
-    fn add_by_ref(&self, rhs: &Self) -> Self {
-        Self {
-            layer: self.layer.add_by_ref(&rhs.layer),
             factories: self.factories.clone(),
         }
     }
