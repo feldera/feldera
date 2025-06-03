@@ -245,7 +245,7 @@ where
         let mut writer = Writer2::new(
             &self.factories.factories0,
             &self.factories.factories1,
-            Runtime::buffer_cache(),
+            Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
             self.key_count(),
@@ -666,7 +666,7 @@ where
             writer: Writer2::new(
                 &factories.factories0,
                 &factories.factories1,
-                Runtime::buffer_cache(),
+                Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
                 capacity,

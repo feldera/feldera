@@ -232,7 +232,7 @@ where
     fn neg_by_ref(&self) -> Self {
         let mut writer = Writer1::new(
             &self.factories.file_factories,
-            Runtime::buffer_cache(),
+            Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
             self.key_count(),
@@ -642,7 +642,7 @@ where
             factories: factories.clone(),
             writer: Writer1::new(
                 &factories.file_factories,
-                Runtime::buffer_cache(),
+                Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap(),
                 Runtime::file_writer_parameters(),
                 capacity,

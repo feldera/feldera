@@ -1073,6 +1073,7 @@ impl BlockWriter {
 /// all the same type.  Thus, [`Writer1`] and [`Writer2`] exist for writing
 /// 1-column and 2-column layer files, respectively, with added type safety.
 struct Writer {
+    cache: fn() -> Arc<BufferCache>,
     writer: BlockWriter,
     bloom_filter: BloomFilter,
     cws: Vec<ColumnWriter>,
@@ -1082,7 +1083,7 @@ struct Writer {
 impl Writer {
     pub fn new(
         factories: &[&AnyFactories],
-        buffer_cache: Arc<BufferCache>,
+        cache: fn() -> Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
         n_columns: usize,
@@ -1098,10 +1099,8 @@ impl Writer {
         let finished_columns = Vec::with_capacity(n_columns);
         let worker = format!("w{}-", Runtime::worker_index());
         let writer = Self {
-            writer: BlockWriter::new(
-                buffer_cache,
-                storage_backend.create_with_prefix(&worker.into())?,
-            ),
+            cache,
+            writer: BlockWriter::new(cache(), storage_backend.create_with_prefix(&worker.into())?),
             bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
                 .seed(&BLOOM_FILTER_SEED)
                 .expected_items(estimated_keys),
@@ -1248,7 +1247,7 @@ where
     /// Creates a new writer with the given parameters.
     pub fn new(
         factories: &Factories<K0, A0>,
-        buffer_cache: Arc<BufferCache>,
+        cache: fn() -> Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
         estimated_keys: usize,
@@ -1257,7 +1256,7 @@ where
             factories: factories.clone(),
             inner: Writer::new(
                 &[&factories.any_factories()],
-                buffer_cache,
+                cache,
                 storage_backend,
                 parameters,
                 1,
@@ -1310,12 +1309,13 @@ where
     ) -> Result<Reader<(&'static K0, &'static A0, ())>, super::reader::Error> {
         let any_factories = self.factories.any_factories();
 
+        let cache = self.inner.cache;
         let (file_handle, path, bloom_filter) = self.close()?;
 
         Reader::new(
             &[&any_factories],
             path,
-            Runtime::buffer_cache,
+            cache,
             file_handle,
             Some(bloom_filter),
         )
@@ -1395,7 +1395,7 @@ where
     pub fn new(
         factories0: &Factories<K0, A0>,
         factories1: &Factories<K1, A1>,
-        buffer_cache: Arc<BufferCache>,
+        cache: fn() -> Arc<BufferCache>,
         storage_backend: &dyn StorageBackend,
         parameters: Parameters,
         estimated_keys: usize,
@@ -1405,7 +1405,7 @@ where
             factories1: factories1.clone(),
             inner: Writer::new(
                 &[&factories0.any_factories(), &factories1.any_factories()],
-                buffer_cache,
+                cache,
                 storage_backend,
                 parameters,
                 2,
@@ -1493,11 +1493,12 @@ where
     > {
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
+        let cache = self.inner.cache;
         let (file_handle, path, bloom_filter) = self.close()?;
         Reader::new(
             &[&any_factories0, &any_factories1],
             path,
-            Runtime::buffer_cache,
+            cache,
             file_handle,
             Some(bloom_filter),
         )
