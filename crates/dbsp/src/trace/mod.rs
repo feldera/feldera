@@ -640,15 +640,6 @@ where
         builder.done()
     }
 
-    /*
-    /// Assemble an unordered vector of keys into a batch.
-    ///
-    /// This method is only defined for batches whose `Val` type is `()`.
-    fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
-    where
-        Self::Val: From<()>;
-    */
-
     /// Creates an empty batch.
     fn dyn_empty(factories: &Self::Factories) -> Self {
         Self::Builder::new_builder(factories).done()
