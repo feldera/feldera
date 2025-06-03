@@ -234,7 +234,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                 throw new UnimplementedException("Join on struct types", 3398, node);
             DBSPType commonType = TypeCompiler.reduceType(node,
                     leftType, rightType, "Consider using an INNER JOIN with an explicit ON condition.\n" +
-                            "In NATURAL or USING JOIN: ").withMayBeNull(mayBeNull);
+                            "In NATURAL or USING JOIN: ", true).withMayBeNull(mayBeNull);
             if (leftIsLeft) {
                 this.addEquality(node, left, right, commonType, !mayBeNull);
             } else {

@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
+import org.dbsp.sqlCompiler.ir.type.primitive.IHasPrecision;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -99,7 +100,7 @@ public class TypeCompiler implements ICompilerComponent {
      * @return           Common type operands must be cast to.
      */
     public static DBSPType reduceType(CalciteObject node, DBSPType left, DBSPType right,
-                                      String error) {
+                                      String error, boolean acceptStrings) {
         if (left.is(DBSPTypeNull.class))
             return right.withMayBeNull(true);
         if (right.is(DBSPTypeNull.class))
@@ -119,8 +120,22 @@ public class TypeCompiler implements ICompilerComponent {
                         left.asSqlString() + " and " + right.asSqlString() + " not supported", node);
             List<DBSPType> fields = new ArrayList<>(lTuple.size());
             for (int i = 0; i < lTuple.size(); i++)
-                fields.add(reduceType(node, lTuple.getFieldType(i), rTuple.getFieldType(i), error));
+                fields.add(reduceType(node, lTuple.getFieldType(i), rTuple.getFieldType(i),
+                        error, acceptStrings));
             return lTuple.makeRelatedTupleType(fields);
+        }
+
+        if (acceptStrings) {
+            if (left.is(DBSPTypeString.class) && right.is(DBSPTypeString.class)) {
+                DBSPTypeString ls = left.to(DBSPTypeString.class);
+                DBSPTypeString rs = right.to(DBSPTypeString.class);
+                boolean fixed = ls.fixed && rs.fixed;
+                int precision = Math.max(ls.precision, rs.precision);
+                if (ls.precision == IHasPrecision.UNLIMITED_PRECISION ||
+                        rs.precision == IHasPrecision.UNLIMITED_PRECISION)
+                    precision = IHasPrecision.UNLIMITED_PRECISION;
+                return DBSPTypeString.create(left.getNode(), precision, fixed, anyNull);
+            }
         }
 
         IsNumericType ln = left.as(IsNumericType.class);

@@ -43,7 +43,7 @@ public class DBSPTypeString extends DBSPTypeBaseType implements IHasPrecision {
     /** If true the width is fixed, i.e., this is a CHAR type.
      * Otherwise, this is a VARCHAR. */
     public final boolean fixed;
-    /** Number of characters.  If UNLIMITED_PRECISION it means "unlimited".
+    /** Number of characters.  If {@link IHasPrecision#UNLIMITED_PRECISION} it means "unlimited".
      * This is the size specified by CHAR or VARCHAR. */
     public final int precision;
 

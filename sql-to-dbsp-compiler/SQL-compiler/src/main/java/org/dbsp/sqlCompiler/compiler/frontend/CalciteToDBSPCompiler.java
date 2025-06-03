@@ -1658,7 +1658,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // If there is no filter before or after the join, we can do a more efficient antijoin
                 DBSPTypeTuple toSubtractKeyType = rightNonNullIndex.getOutputIndexedZSetType().getKeyTypeTuple();
                 DBSPType leftKeyType = lkf.keyType(leftElementType);
-                DBSPTypeTuple antiJoinKeyType = TypeCompiler.reduceType(node, toSubtractKeyType, leftKeyType, "")
+                DBSPTypeTuple antiJoinKeyType = TypeCompiler.reduceType(node, toSubtractKeyType, leftKeyType, "", true)
                         .to(DBSPTypeTuple.class);
                 {
                     // Subtract (using an antijoin) the right from the left.
@@ -1803,7 +1803,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 }
 
                 DBSPType rightKeyType = rkf.keyType(rightElementType);
-                DBSPTypeTuple antiJoinKeyType = TypeCompiler.reduceType(node, toSubtractKeyType, rightKeyType, "")
+                DBSPTypeTuple antiJoinKeyType = TypeCompiler.reduceType(node, toSubtractKeyType, rightKeyType, "", true)
                         .to(DBSPTypeTuple.class);
 
                 if (!toSubtractKeyType.sameType(antiJoinKeyType)) {
