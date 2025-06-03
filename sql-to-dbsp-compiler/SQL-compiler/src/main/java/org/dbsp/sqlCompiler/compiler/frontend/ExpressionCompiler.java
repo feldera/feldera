@@ -376,7 +376,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPType expressionResultType;
         if (needCommonType(opcode, type, leftType, rightType)) {
             // Need to cast both operands to a common type.  Find out what it is.
-            DBSPType commonBase = TypeCompiler.reduceType(node, leftType, rightType, "");
+            DBSPType commonBase = TypeCompiler.reduceType(node, leftType, rightType, "", false);
             expressionResultType = commonBase.withMayBeNull(anyNull);
             if (commonBase.is(DBSPTypeDecimal.class))
                 expressionResultType = DBSPTypeDecimal.getDefault().withMayBeNull(anyNull);  // no limits
