@@ -29,7 +29,6 @@ use crc32c::crc32c;
 use fastbloom::BloomFilter;
 use feldera_storage::StoragePath;
 use snap::raw::{decompress_len, Decoder};
-use std::any::Any;
 use std::mem::replace;
 use std::time::Instant;
 use std::{
@@ -442,10 +441,6 @@ where
     fn cost(&self) -> usize {
         size_of::<Self>() + self.raw.capacity()
     }
-
-    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
-    }
 }
 
 impl<K, A> DataBlock<K, A>
@@ -483,23 +478,25 @@ where
         let start = Instant::now();
         let cache = (file.cache)();
         #[allow(clippy::borrow_deref_ref)]
-        let (access, entry) = match cache.get(&*file.file_handle, node.location) {
-            Some(entry) => {
-                let entry = Arc::downcast::<Self>(entry.as_any())
-                    .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(node.location)))?;
-                (CacheAccess::Hit, entry)
-            }
-            None => {
-                let block = file.read_block(node.location)?;
-                let entry = Arc::new(Self::from_raw(block, node.location, node.rows.start)?);
-                cache.insert(
-                    file.file_handle.file_id(),
-                    node.location.offset,
-                    entry.clone(),
-                );
-                (CacheAccess::Miss, entry)
-            }
-        };
+        let (access, entry) =
+            match cache.get(&*file.file_handle, node.location) {
+                Some(entry) => {
+                    let entry = entry.downcast().ok_or(Error::Corruption(
+                        CorruptionError::BadBlockType(node.location),
+                    ))?;
+                    (CacheAccess::Hit, entry)
+                }
+                None => {
+                    let block = file.read_block(node.location)?;
+                    let entry = Arc::new(Self::from_raw(block, node.location, node.rows.start)?);
+                    cache.insert(
+                        file.file_handle.file_id(),
+                        node.location.offset,
+                        entry.clone(),
+                    );
+                    (CacheAccess::Miss, entry)
+                }
+            };
         file.stats.record(access, start.elapsed(), node.location);
 
         if entry.rows() != node.rows {
@@ -716,9 +713,6 @@ where
     fn cost(&self) -> usize {
         size_of::<Self>() + self.raw.capacity()
     }
-    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
-    }
 }
 
 impl<K> IndexBlock<K>
@@ -789,8 +783,9 @@ where
         #[allow(clippy::borrow_deref_ref)]
         let (access, entry) = match cache.get(&*file.file_handle, node.location) {
             Some(entry) => {
-                let entry = Arc::downcast::<Self>(entry.as_any())
-                    .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(node.location)))?;
+                let entry = entry.downcast::<Self>().ok_or(Error::Corruption(
+                    CorruptionError::BadBlockType(node.location),
+                ))?;
                 if entry.first_row != first_row {
                     return Err(Error::Corruption(CorruptionError::MultiplePaths(
                         node.location,
@@ -990,10 +985,6 @@ impl CacheEntry for FileTrailer {
     fn cost(&self) -> usize {
         size_of::<FileTrailer>()
     }
-
-    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
-    }
 }
 
 impl FileTrailer {
@@ -1011,8 +1002,9 @@ impl FileTrailer {
         #[allow(clippy::borrow_deref_ref)]
         let (access, entry) = match cache.get(&*file_handle, location) {
             Some(entry) => {
-                let entry = Arc::downcast::<Self>(entry.as_any())
-                    .map_err(|_| Error::Corruption(CorruptionError::BadBlockType(location)))?;
+                let entry = entry
+                    .downcast()
+                    .ok_or(Error::Corruption(CorruptionError::BadBlockType(location)))?;
                 (CacheAccess::Hit, entry)
             }
             None => {
