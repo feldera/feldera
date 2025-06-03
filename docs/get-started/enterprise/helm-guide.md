@@ -39,11 +39,12 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    ```bash
    ACCOUNT_ID="00000000-0000-0000-0000-000000000000"  # Set to own
    LICENSE_KEY="00000000-0000-0000-0000-000000000000"  # Set to own
+   VERSION="0.69.0" # Replace by the desired version.
 
    helm upgrade --install feldera \
-       oci://public.ecr.aws/feldera/feldera-chart --version 0.50.0 \
+       oci://public.ecr.aws/feldera/feldera-chart --version "${VERSION}" \
        --namespace feldera --create-namespace \
-       --set felderaVersion="0.64.0" \
+       --set felderaVersion="${VERSION}" \
        --set felderaAccountId="${ACCOUNT_ID}" \
        --set felderaLicenseKey="${LICENSE_KEY}" \
        --set felderaDatabaseSecretRef="feldera-db-insecure-secret"
