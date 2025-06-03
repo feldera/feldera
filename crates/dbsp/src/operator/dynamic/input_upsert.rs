@@ -1,19 +1,18 @@
 use crate::{
     algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZTrace},
     circuit::{
-        circuit_builder::register_replay_stream,
+        circuit_builder::{register_replay_stream, CircuitBase},
         operator_traits::{BinaryOperator, Operator},
-        OwnershipPreference, Scope, WithClock,
+        OwnershipPreference, Scope,
     },
     declare_trait_object,
     dynamic::{ClonableTrait, Data, DataTrait, DynOpt, DynPairs, Erase, Factory, WithFactory},
-    operator::dynamic::trace::{
-        DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace,
-    },
+    operator::dynamic::trace::{DelayedTraceId, TraceBounds, TraceId, UntimedTraceAppend, Z1Trace},
     trace::{
         cursor::Cursor, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Filter,
+        Spine,
     },
-    Circuit, DBData, NumEntries, Stream, Timestamp, ZWeight,
+    Circuit, DBData, NumEntries, RootCircuit, Stream, Timestamp, ZWeight,
 };
 use minitrace::trace;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -116,27 +115,24 @@ where
 
 pub type PatchFunc<V, U> = Box<dyn Fn(&mut V, &U)>;
 
-pub struct InputUpsertFactories<T: Timestamp, B: IndexedZSet> {
+pub struct InputUpsertFactories<B: IndexedZSet> {
     pub batch_factories: B::Factories,
     pub opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
     pub opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
-    pub trace_factories: <T::MemValBatch<B::Key, B::Val, B::R> as BatchReader>::Factories,
 }
 
-impl<T: Timestamp, B: IndexedZSet> Clone for InputUpsertFactories<T, B> {
+impl<B: IndexedZSet> Clone for InputUpsertFactories<B> {
     fn clone(&self) -> Self {
         Self {
             batch_factories: self.batch_factories.clone(),
             opt_key_factory: self.opt_key_factory,
             opt_val_factory: self.opt_val_factory,
-            trace_factories: self.trace_factories.clone(),
         }
     }
 }
 
-impl<T, B> InputUpsertFactories<T, B>
+impl<B> InputUpsertFactories<B>
 where
-    T: Timestamp,
     B: Batch + IndexedZSet,
 {
     pub fn new<KType, VType>() -> Self
@@ -148,17 +144,15 @@ where
             batch_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
             opt_val_factory: WithFactory::<Option<VType>>::FACTORY,
-            trace_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
         }
     }
 }
 
-impl<C, K, V, U> Stream<C, Box<DynPairs<K, DynUpdate<V, U>>>>
+impl<K, V, U> Stream<RootCircuit, Box<DynPairs<K, DynUpdate<V, U>>>>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     U: DataTrait + ?Sized,
-    C: Circuit,
 {
     /// Convert an input stream of upserts into a stream of updates to a
     /// relation.
@@ -186,9 +180,9 @@ where
     pub fn input_upsert<B>(
         &self,
         persistent_id: Option<&str>,
-        factories: &InputUpsertFactories<<C as WithClock>::Time, B>,
+        factories: &InputUpsertFactories<B>,
         patch_func: PatchFunc<V, U>,
-    ) -> Stream<C, B>
+    ) -> Stream<RootCircuit, B>
     where
         B: IndexedZSet<Key = K, Val = V>,
     {
@@ -209,20 +203,20 @@ where
         //                               ┌────────────────────────────►
         //                               │
         //                               │
-        //  self        ┌───────────┐    │        ┌───────────┐  trace
-        // ────────────►│InputUpsert├────┴───────►│TraceAppend├────┐
-        //              └───────────┘   delta     └───────────┘    │
-        //                      ▲                  ▲               │
-        //                      │                  │               │
-        //                      │                  │   ┌───────┐   │
-        //                      └──────────────────┴───┤Z1Trace│◄──┘
+        //  self        ┌───────────┐    │        ┌──────────────────┐  trace
+        // ────────────►│InputUpsert├────┴───────►│UntimedTraceAppend├────┐
+        //              └───────────┘   delta     └──────────────────┘    │
+        //                      ▲                  ▲                      │
+        //                      │                  │                      │
+        //                      │                  │   ┌───────┐          │
+        //                      └──────────────────┴───┤Z1Trace│◄─────────┘
         //                         z1trace             └───────┘
         // ```
         circuit.region("input_upsert", || {
             let bounds = <TraceBounds<K, V>>::unbounded();
 
             let z1 = Z1Trace::new(
-                &factories.trace_factories,
+                &factories.batch_factories,
                 &factories.batch_factories,
                 false,
                 circuit.root_scope(),
@@ -240,7 +234,7 @@ where
 
             let delta = circuit
                 .add_binary_operator(
-                    <InputUpsert<ValSpine<B, C>, U, B>>::new(
+                    <InputUpsert<Spine<B>, U, B>>::new(
                         factories.batch_factories.clone(),
                         factories.opt_key_factory,
                         factories.opt_val_factory,
@@ -255,10 +249,7 @@ where
             let replay_stream = z1feedback.operator_mut().prepare_replay_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<ValSpine<B, C>, B, C>>::new(
-                    &factories.trace_factories,
-                    circuit.clone(),
-                ),
+                UntimedTraceAppend::<Spine<B>>::new(),
                 (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
                 (&delta, OwnershipPreference::PREFER_OWNED),
             );

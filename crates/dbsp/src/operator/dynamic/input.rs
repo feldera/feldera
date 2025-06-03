@@ -159,7 +159,7 @@ where
     B: IndexedZSet,
     U: DataTrait + ?Sized,
 {
-    upsert_factories: InputUpsertFactories<(), B>,
+    upsert_factories: InputUpsertFactories<B>,
     input_pair_factory: &'static dyn Factory<DynPair<B::Key, DynUpdate<B::Val, U>>>,
     input_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynUpdate<B::Val, U>>>,
     upsert_pair_factory: &'static dyn Factory<DynPair<B::Key, DynOpt<DynUnit>>>,
