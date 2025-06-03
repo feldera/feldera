@@ -337,7 +337,7 @@ following values:
 - `D`: **Delete**
 - `U`: **Upsert**
 
-The [Iceberg Sink Kafka Connector](/connectors/sink/iceberg) utilizes the CDC
+The [Iceberg Sink Kafka Connector](/connectors/sinks/iceberg) utilizes the CDC
 metadata to maintain the materialized view in Iceberg.
 
 Example:
