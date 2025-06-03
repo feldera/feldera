@@ -83,12 +83,14 @@ impl PostgresOutputEndpoint {
         let keys: Vec<String> = key_schema
             .fields
             .iter()
-            .map(|f| f.name.to_string())
+            .map(|f| f.name.sql_name())
             .collect();
+
+        let err_msg = "\nPlease ensure all field names that are quoted in PostgreSQL are quoted correctly in Feldera as well";
 
         let insert = {
             let insert = format!(
-                "INSERT INTO {table} SELECT * FROM jsonb_populate_recordset(NULL::{table}, $1::jsonb)"
+                r#"INSERT INTO "{table}" SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)"#
             );
             client
                 .prepare_typed(&insert, &[postgres::types::Type::VARCHAR])
@@ -96,7 +98,7 @@ impl PostgresOutputEndpoint {
                     ControllerError::output_transport_error(
                         endpoint_name,
                         true,
-                        anyhow!("failed to prepare insert statement: `{insert}`: {e}"),
+                        anyhow!("failed to prepare insert statement: `{insert}`: {e} {err_msg}"),
                     )
                 })?
         };
@@ -104,15 +106,17 @@ impl PostgresOutputEndpoint {
         let delete = {
             let (table_keys, d_keys): (Vec<_>, Vec<_>) = keys
                 .iter()
-                .map(|k| (format!("{table}.{k}"), format!("d.{k}")))
+                .map(|k| (format!(r#" "{table}".{k} "#), format!("d.{k}")))
                 .unzip();
 
             let delete = format!(
-                "DELETE FROM {table} USING (SELECT {} FROM jsonb_populate_recordset(NULL::{table}, $1::jsonb)) as d where ({}) = ({})",
-                keys.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(", "),
+                r#"DELETE FROM "{table}" USING (SELECT {} FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) as d where ({}) = ({})"#,
+                keys.iter()
+                    .map(|k| k.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 table_keys.join(", "),
                 d_keys.join(", "),
-
             );
             client
                 .prepare_typed(&delete, &[postgres::types::Type::VARCHAR])
@@ -120,7 +124,7 @@ impl PostgresOutputEndpoint {
                     ControllerError::output_transport_error(
                         endpoint_name,
                         true,
-                        anyhow!("failed to prepare delete statement: `{delete}`: {e}"),
+                        anyhow!("failed to prepare delete statement: `{delete}`: {e} {err_msg}"),
                     )
                 })?
         };
@@ -132,7 +136,7 @@ impl PostgresOutputEndpoint {
                 .fields
                 .iter()
                 .map(|f| {
-                    let f = f.name.name();
+                    let f = f.name.sql_name();
                     format!("{f} = {new_alias}.{f}")
                 })
                 .collect::<Vec<_>>()
@@ -144,7 +148,7 @@ impl PostgresOutputEndpoint {
                 .unzip();
 
             let upsert = format!(
-                "UPDATE {table} AS {table_alias} SET {columns} FROM (SELECT * FROM jsonb_populate_recordset(NULL::{table}, $1::jsonb)) AS {new_alias} WHERE ({}) = ({})",
+                r#"UPDATE "{table}" AS {table_alias} SET {columns} FROM (SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) AS {new_alias} WHERE ({}) = ({})"#,
                 table_fields.join(", "),
                 new_fields.join(", ")
             );
@@ -155,7 +159,7 @@ impl PostgresOutputEndpoint {
                     ControllerError::output_transport_error(
                         endpoint_name,
                         true,
-                        anyhow!("failed to prepare update statement: `{upsert}`: {e}"),
+                        anyhow!("failed to prepare update statement: `{upsert}`: {e} {err_msg}"),
                     )
                 })?
         };
@@ -424,5 +428,216 @@ impl OutputEndpoint for PostgresOutputEndpoint {
 
     fn batch_end(&mut self) -> AnyResult<()> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use feldera_adapterlib::errors::journal::ControllerError;
+    use feldera_types::{
+        program_schema::{ColumnType, Field, Relation, SqlType},
+        transport::postgres::PostgresWriterConfig,
+    };
+    use postgres::NoTls;
+
+    use super::PostgresOutputEndpoint;
+    use crate::controller::EndpointId;
+
+    fn int_field(name: &str) -> Field {
+        Field::new(
+            name.into(),
+            ColumnType {
+                typ: SqlType::Int,
+                nullable: true,
+                precision: None,
+                scale: None,
+                component: None,
+                fields: None,
+                key: None,
+                value: None,
+            },
+        )
+    }
+
+    fn varchar_field(name: &str) -> Field {
+        Field::new(
+            name.into(),
+            ColumnType {
+                typ: SqlType::Varchar,
+                nullable: true,
+                precision: Some(-1),
+                scale: None,
+                component: None,
+                fields: None,
+                key: None,
+                value: None,
+            },
+        )
+    }
+
+    fn relation(name: &str, fields: Vec<Field>, materialized: bool) -> Relation {
+        Relation {
+            name: name.into(),
+            fields,
+            materialized,
+            properties: Default::default(),
+        }
+    }
+
+    fn postgres_url() -> String {
+        std::env::var("POSTGRES_URL")
+            .unwrap_or("postgres://postgres:password@localhost:5432".to_string())
+    }
+
+    fn make_config(table: &str) -> PostgresWriterConfig {
+        PostgresWriterConfig {
+            uri: postgres_url(),
+            table: table.into(),
+        }
+    }
+
+    fn create_endpoint(
+        table: &str,
+        idx_rel: Option<Relation>,
+        main_rel: Relation,
+    ) -> Result<PostgresOutputEndpoint, ControllerError> {
+        PostgresOutputEndpoint::new(
+            EndpointId::default(),
+            "blah",
+            &make_config(table),
+            &idx_rel,
+            &main_rel,
+            Weak::new(),
+        )
+    }
+
+    fn postgres_client() -> postgres::Client {
+        postgres::Client::connect(&postgres_url(), NoTls).expect("failed to connect to postgres")
+    }
+
+    fn truncate_table(client: &mut postgres::Client, table: &str) {
+        client
+            .execute(&format!(r#"TRUNCATE TABLE "{table}" "#), &[])
+            .expect("failed to drop table");
+    }
+
+    fn drop_table(client: &mut postgres::Client, table: &str) {
+        client
+            .execute(&format!(r#"DROP TABLE "{table}" "#), &[])
+            .expect("failed to drop table");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_postgres_table_name() {
+        let mut client = postgres_client();
+        let table = "01JWRRNVP4CGER2E3SQQKCZFNQ";
+
+        client
+            .execute(
+                &format!(r#"CREATE TABLE "{table}" (id int primary key, s varchar)"#),
+                &[],
+            )
+            .expect("failed to create test table in postgres");
+
+        truncate_table(&mut client, table);
+
+        let idx = relation("v1_idx", vec![int_field("id")], false);
+        let main = relation("v1", vec![int_field("id"), varchar_field("s")], true);
+        create_endpoint(table, Some(idx), main).unwrap();
+
+        drop_table(&mut client, table);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_postgres_field_name() {
+        let mut client = postgres_client();
+        let table = "02JWRRNVP4CGER2E3SQQKCZFNQ";
+        let field = r#""01JWRRNVP4CGER2E3SQQKCZFNQ""#;
+
+        client
+            .execute(
+                &format!(r#"CREATE TABLE "{table}" (id int primary key, {field} varchar)"#),
+                &[],
+            )
+            .expect("failed to create test table in postgres");
+
+        truncate_table(&mut client, table);
+
+        let idx = relation("v1_idx", vec![int_field("id")], false);
+        let main = relation("v1", vec![int_field("id"), varchar_field(field)], true);
+        create_endpoint(table, Some(idx), main).unwrap();
+
+        drop_table(&mut client, table);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_postgres_key_field_name() {
+        let mut client = postgres_client();
+        let table = "02JWRRNVP4CGER2E3SQQKCZFNQ";
+        let field = r#""01JWRRNVP4CGER2E3SQQKCZFNQ""#;
+
+        client
+            .execute(
+                &format!(r#"CREATE TABLE "{table}" (id int primary key, {field} varchar)"#),
+                &[],
+            )
+            .expect("failed to create test table in postgres");
+
+        truncate_table(&mut client, table);
+
+        let idx = relation(
+            "v1_idx",
+            vec![
+                int_field("id"),
+                varchar_field(r#""01JWRRNVP4CGER2E3SQQKCZFNQ""#),
+            ],
+            false,
+        );
+        let main = relation(
+            "v1",
+            vec![
+                int_field("id"),
+                varchar_field(r#""01JWRRNVP4CGER2E3SQQKCZFNQ""#),
+            ],
+            true,
+        );
+        create_endpoint("02JWRRNVP4CGER2E3SQQKCZFNQ", Some(idx), main).unwrap();
+
+        drop_table(&mut client, table);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_postgres_bad_field_name() {
+        let mut client = postgres_client();
+        let table = "02JWRRNVP4CGER2E3SQQKCZFNQ";
+        let field = r#""01JWRRNVP4CGER2E3SQQKCZFNQ""#;
+
+        client
+            .execute(
+                &format!(r#"CREATE TABLE "{table}" (id int primary key, {field} varchar)"#),
+                &[],
+            )
+            .expect("failed to create test table in postgres");
+
+        truncate_table(&mut client, table);
+
+        let idx = relation("v1_idx", vec![int_field("id")], false);
+        let main = relation(
+            "v1",
+            vec![int_field("id"), varchar_field("01JWRRNVP4CGER2E3SQQKCZFNQ")],
+            true,
+        );
+        let err = create_endpoint("02JWRRNVP4CGER2E3SQQKCZFNQ", Some(idx), main)
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("Please ensure all field"));
+
+        drop_table(&mut client, table);
     }
 }
