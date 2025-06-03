@@ -90,8 +90,7 @@ where
 
     type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         FallbackValBatch<K, V, Self, R>;
-    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        FallbackKeyBatch<K, Self, R>;
+    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {
         Self::new(TOuter::minimum(), TInner::minimum())
