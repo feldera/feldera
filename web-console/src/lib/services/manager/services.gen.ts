@@ -42,6 +42,9 @@ import type {
   CheckpointPipelineData,
   CheckpointPipelineError,
   CheckpointPipelineResponse,
+  GetCheckpointStatusData,
+  GetCheckpointStatusError,
+  GetCheckpointStatusResponse,
   GetPipelineCircuitProfileData,
   GetPipelineCircuitProfileError,
   GetPipelineCircuitProfileResponse,
@@ -238,12 +241,24 @@ export const patchPipeline = (options: Options<PatchPipelineData>) => {
 }
 
 /**
- * Checkpoint a running or paused pipeline.
+ * Initiates checkpoint for a running or paused pipeline.
+ * Returns a checkpoint sequence number that can be used with `/checkpoint_status` to
+ * determine when the checkpoint has completed.
  */
 export const checkpointPipeline = (options: Options<CheckpointPipelineData>) => {
   return (options?.client ?? client).post<CheckpointPipelineResponse, CheckpointPipelineError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/checkpoint'
+  })
+}
+
+/**
+ * Retrieve status of checkpoint activity in a pipeline.
+ */
+export const getCheckpointStatus = (options: Options<GetCheckpointStatusData>) => {
+  return (options?.client ?? client).get<GetCheckpointStatusResponse, GetCheckpointStatusError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/checkpoint_status'
   })
 }
 

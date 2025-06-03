@@ -60,9 +60,9 @@ impl Display for PipelineId {
 ///          │       Paused  ◄──────► Unavailable │                  │                         │                 │
 ///          │       │    ▲                ▲      │                  │                         │                 │
 ///          │ /start│    │/pause          │      │──────────> SuspendingCircuit ───> SuspendingCompute ───> Suspended
-///          │       ▼    │                │      │ /suspend                                                     │ /start or /pause
-///          │      Running ◄──────────────┘      │                                                              ▼
-///          └────────────────────────────────────┘                                                        ⌛Provisioning
+///          │       ▼    │                │      │ /suspend                            ▲                        │ /start or /pause
+///          │      Running ◄──────────────┘      │─────────────────────────────────────┘                        ▼
+///          └────────────────────────────────────┘ (if runtime_config.checkpoint_during_suspend=false)    ⌛Provisioning
 /// ```
 ///
 /// ### Desired and actual status
@@ -151,8 +151,9 @@ pub enum PipelineStatus {
     ///    The runner asynchronously passes the request to the pipeline;
     ///    transitions to the [`Running`](`Self::Running`) state.
     /// 2. The user suspends the pipeline by invoking the `/suspend` endpoint.
-    ///    The runner transitions to the [`SuspendingCircuit`](`Self::SuspendingCircuit`)
-    ///    state.
+    ///    The runner transitions to either the [`SuspendingCircuit`](`Self::SuspendingCircuit`)
+    ///    or [`SuspendingCompute`](`Self::SuspendingCompute`) depending on whether
+    ///    `runtime_config.checkpoint_during_suspend` is respectively set to `true` or `false`.
     /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint,
     ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
     /// 4. An unexpected deployment or runtime error renders the pipeline
@@ -168,8 +169,9 @@ pub enum PipelineStatus {
     ///    The runner asynchronously passes the request to the pipeline;
     ///    transitions to the [`Paused`](`Self::Paused`) state.
     /// 2. The user suspends the pipeline by invoking the `/suspend` endpoint.
-    ///    The runner transitions to the [`SuspendingCircuit`](`Self::SuspendingCircuit`)
-    ///    state.
+    ///    The runner transitions to either the [`SuspendingCircuit`](`Self::SuspendingCircuit`)
+    ///    or [`SuspendingCompute`](`Self::SuspendingCompute`) depending on whether
+    ///    `runtime_config.checkpoint_during_suspend` is respectively set to `true` or `false`.
     /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint,
     ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
     /// 4. An unexpected deployment or runtime error renders the pipeline
@@ -185,8 +187,9 @@ pub enum PipelineStatus {
     ///    [`Paused`](`Self::Paused`) or [`Running`](`Self::Running`) state
     ///    depending on the check outcome.
     /// 2. The user suspends the pipeline by invoking the `/suspend` endpoint.
-    ///    The runner transitions to the [`SuspendingCircuit`](`Self::SuspendingCircuit`)
-    ///    state.
+    ///    The runner transitions to either the [`SuspendingCircuit`](`Self::SuspendingCircuit`)
+    ///    or [`SuspendingCompute`](`Self::SuspendingCompute`) depending on whether
+    ///    `runtime_config.checkpoint_during_suspend` is respectively set to `true` or `false`.
     /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint,
     ///    after which it transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
     /// 4. An unexpected deployment or runtime error renders the pipeline

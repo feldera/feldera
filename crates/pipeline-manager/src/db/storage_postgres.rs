@@ -226,7 +226,12 @@ impl Storage for StoragePostgres {
                 PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
                 _,
                 false
-            )
+            ) | (
+                PipelineStatus::Paused | PipelineStatus::Running | PipelineStatus::Unavailable,
+                PipelineDesiredStatus::Suspended,
+                _,
+                _
+            ),
         ) {
             ExtendedPipelineDescrRunner::Complete(
                 operations::pipeline::get_pipeline_by_id(&txn, tenant_id, pipeline_id).await?,
