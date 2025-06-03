@@ -39,6 +39,7 @@ use feldera_storage::StoragePath;
 use rand::Rng;
 use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::sync::Arc;
 use std::{fmt::Debug, hash::Hash};
 
@@ -598,7 +599,14 @@ where
     where
         BI: BatchReader<Key = Self::Key, Val = Self::Val, Time = (), R = Self::R>,
     {
-        Self::from_cursor(batch.cursor(), timestamp, factories, batch.len())
+        // Source and destination types are usually the same in the top-level scope.
+        // Optimize for this case by simply cloning the source batch. If the batch is
+        // implemented as `Arc` internally, this iw essentially zero cost.
+        if TypeId::of::<BI>() == TypeId::of::<Self>() {
+            unsafe { std::mem::transmute::<&BI, &Self>(batch).clone() }
+        } else {
+            Self::from_cursor(batch.cursor(), timestamp, factories, batch.len())
+        }
     }
 
     /// Creates a new batch as a copy of the tuples accessible via `cursor``,

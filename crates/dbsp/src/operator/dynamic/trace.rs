@@ -25,6 +25,8 @@ use feldera_storage::StoragePath;
 use minitrace::trace;
 use ouroboros::self_referencing;
 use size_of::SizeOf;
+use std::any::TypeId;
+use std::mem::transmute;
 use std::{
     borrow::Cow,
     cell::{Ref, RefCell},
@@ -890,11 +892,17 @@ where
     async fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
         self.num_inputs += batch.len();
 
-        trace.insert(T::Batch::from_batch(
-            &batch,
-            &self.clock.time(),
-            &self.output_factories,
-        ));
+        if TypeId::of::<B>() == TypeId::of::<T::Batch>() {
+            let mut batch = Some(batch);
+            let batch = unsafe { transmute::<&mut Option<B>, &mut Option<T::Batch>>(&mut batch) };
+            trace.insert(batch.take().unwrap());
+        } else {
+            trace.insert(T::Batch::from_batch(
+                &batch,
+                &self.clock.time(),
+                &self.output_factories,
+            ));
+        }
         trace
     }
 
