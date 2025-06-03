@@ -36,14 +36,12 @@
 //! value and for sequential reads.  It should be possible to disable indexing
 //! by data value for workloads that don't require it.[^0]
 //!
-//! Layer files should support approximate set membership query in `~O(1)`
-//! time.[^0]
+//! Layer files support approximate set membership query in `~O(1)` time using
+//! [a filter block](format::FilterBlock).
 //!
 //! Layer files should support 1 TB data size.
 //!
 //! Layer files should include data checksums to detect accidental corruption.
-//!
-//! [^0]: Not yet implemented.
 //!
 //! # Design
 //!
