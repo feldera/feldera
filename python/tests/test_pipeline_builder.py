@@ -741,7 +741,6 @@ Code snippet:
         pipeline.shutdown()
         pipeline.delete()
 
-
     def test_issue2142(self):
         sql = """
         CREATE TABLE t0 (c1 INT);
