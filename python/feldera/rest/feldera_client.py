@@ -314,7 +314,7 @@ Reason: The pipeline is in a FAILED state due to the following error:
         Shutdown a pipeline
 
         :param pipeline_name: The name of the pipeline to shut down
-        :param timeout_s: The amount of time in seconds to wait for the pipeline to shut down. Default is 15 seconds.
+        :param timeout_s: The amount of time in seconds to wait for the pipeline to shut down. Default is 300 seconds.
         """
 
         if timeout_s is None:
@@ -340,6 +340,45 @@ Reason: The pipeline is in a FAILED state due to the following error:
 
         raise FelderaTimeoutError(
             f"timeout error: pipeline '{pipeline_name}' did not shutdown in {timeout_s} seconds"
+        )
+
+    def suspend_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 300):
+        """
+        Suspend a pipeline
+
+        :param pipeline_name: The name of the pipeline to suspend
+        :param timeout_s: The amount of time in seconds to wait for the pipeline to suspend. Default is 300 seconds.
+        """
+
+        if timeout_s is None:
+            timeout_s = 300
+
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/suspend",
+        )
+
+        start = time.monotonic()
+
+        while time.monotonic() - start < timeout_s:
+            resp = self.get_pipeline(pipeline_name)
+            status = resp.deployment_status
+
+            if status == "Suspended":
+                return
+            elif status == "Failed":
+                raise RuntimeError(
+                    f"""Unable to Suspend pipeline '{pipeline_name}'.\nReason: The pipeline is in a FAILED state due to the following error:
+{resp.deployment_error.get("message", "")}"""
+                )
+
+            logging.debug(
+                "still suspending %s, waiting for 100 more milliseconds",
+                pipeline_name,
+            )
+            time.sleep(0.1)
+
+        raise FelderaTimeoutError(
+            f"timeout error: pipeline '{pipeline_name}' did not suspend in {timeout_s} seconds"
         )
 
     def checkpoint_pipeline(self, pipeline_name: str):
