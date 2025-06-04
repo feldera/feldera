@@ -492,6 +492,22 @@ resume a paused pipeline."""
 
         self.client.shutdown_pipeline(self.name, timeout_s=timeout_s)
 
+    def suspend(self, timeout_s: Optional[float] = None):
+        """
+        Suspends the pipeline to storage.
+
+        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to suspend.
+        """
+
+        if len(self.views_tx) > 0:
+            for _, queue in self.views_tx.pop().items():
+                # sends a message to the callback runner to stop listening
+                queue.put(_CallbackRunnerInstruction.RanToCompletion)
+                # block until the callback runner has been stopped
+                queue.join()
+
+        self.client.suspend_pipeline(self.name, timeout_s=timeout_s)
+
     def resume(self, timeout_s: Optional[float] = None):
         """
         Resumes the pipeline from the PAUSED state. If the pipeline is already running, it will remain in the RUNNING state.
