@@ -1,9 +1,9 @@
 use std::{
     collections::{BTreeMap, VecDeque},
-    hash::Hasher,
     sync::Arc,
 };
 
+use super::InputReaderCommand;
 use crate::transport::InputEndpoint;
 use crate::{
     format::StreamSplitter, InputBuffer, InputConsumer, InputReader, Parser, TransportInputEndpoint,
@@ -23,12 +23,11 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch::{channel as watch_channel, error::RecvError, Receiver as WatchReceiver};
 use tokio::sync::Mutex;
 use tracing::{error, info_span, Instrument};
-use xxhash_rust::xxh3::Xxh3Default;
 
-use super::InputReaderCommand;
-
-/// Number of object paths to buffer in memory.
-const OBJECT_QUEUE_LEN: usize = 100_000;
+/// Number of object paths in the queue.
+/// Must be small, since these paths are considered in-progress and
+/// written as part of step metadata.
+const OBJECT_QUEUE_LEN: usize = 8;
 
 pub struct S3InputEndpoint {
     config: Arc<S3InputConfig>,
@@ -63,6 +62,148 @@ impl S3InputEndpoint {
             config: Arc::new(config),
         })
     }
+}
+
+/// 0-based index of the key in the list of keys retrieved from S3.
+type KeyIndex = u64;
+
+/// Describes a key that has been partially processed.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct PartiallyProcessedKey {
+    /// Key
+    key: String,
+
+    /// All records before this offset have been ingested.
+    /// None means tha the entire key was processed.
+    completed_offset: Option<u64>,
+}
+
+struct PartiallyProcessedKeysInner {
+    by_index: BTreeMap<KeyIndex, PartiallyProcessedKey>,
+    by_key: BTreeMap<String, KeyIndex>,
+}
+
+impl PartiallyProcessedKeysInner {
+    /// Remove key. Panics if the key is not present.
+    fn remove_key(&mut self, key_index: KeyIndex) {
+        let key = &self.by_index.get(&key_index).unwrap().key;
+
+        self.by_key.remove(key);
+        self.by_index.remove(&key_index);
+    }
+
+    /// Insert a new key. Assigns the next sequential index after the last index in the map to the new key.
+    fn insert_key(&mut self, key: PartiallyProcessedKey) -> KeyIndex {
+        let key_index = self
+            .by_index
+            .last_key_value()
+            .map(|(k, _)| *k + 1)
+            .unwrap_or(0);
+
+        self.by_key.insert(key.key.clone(), key_index);
+        self.by_index.insert(key_index, key);
+
+        key_index
+    }
+
+    /// Remove keys from the start of the map such that all previous keys have been fully processed.
+    /// Keeps at least one fully processed key, so we can use it as a starting point for listing
+    /// objects after recovery.
+    fn cleanup(&mut self) {
+        while self.by_index.len() >= 2 {
+            let mut iter = self.by_index.iter();
+            if iter.next().unwrap().1.completed_offset.is_none()
+                && iter.next().unwrap().1.completed_offset.is_none()
+            {
+                self.remove_key(*self.by_index.first_key_value().unwrap().0);
+            } else {
+                return;
+            }
+        }
+    }
+}
+
+/// Information about partially processed keys.
+///
+/// Used to restore connector state from a checkpoint.
+#[derive(Clone)]
+struct PartiallyProcessedKeys {
+    inner: Arc<Mutex<PartiallyProcessedKeysInner>>,
+}
+
+impl PartiallyProcessedKeys {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(PartiallyProcessedKeysInner {
+                by_index: BTreeMap::new(),
+                by_key: BTreeMap::new(),
+            })),
+        }
+    }
+
+    async fn by_index(&self) -> BTreeMap<KeyIndex, PartiallyProcessedKey> {
+        self.inner.lock().await.by_index.clone()
+    }
+
+    fn from_by_index(by_index: BTreeMap<KeyIndex, PartiallyProcessedKey>) -> Self {
+        let by_key = by_index
+            .iter()
+            .map(|(key_index, key)| (key.key.clone(), *key_index))
+            .collect();
+
+        Self {
+            inner: Arc::new(Mutex::new(PartiallyProcessedKeysInner { by_index, by_key })),
+        }
+    }
+
+    /// Update completed_offset of an _existing_ key.
+    /// Prune completed keys if possible.
+    async fn update(&self, key_index: KeyIndex, completed_offset: Option<u64>) {
+        let mut inner = self.inner.lock().await;
+
+        inner.by_index.get_mut(&key_index).unwrap().completed_offset = completed_offset;
+        inner.cleanup();
+    }
+
+    /// Return existing key index or create a new entry for the specified key.
+    async fn get_or_add_key(&self, key: &str) -> KeyIndex {
+        let mut inner = self.inner.lock().await;
+
+        if let Some(key_index) = inner.by_key.get(key) {
+            *key_index
+        } else {
+            inner.insert_key(PartiallyProcessedKey {
+                key: key.to_string(),
+                completed_offset: Some(0),
+            })
+        }
+    }
+
+    /// Lookup key by index.
+    async fn get_key(&self, key_index: KeyIndex) -> Option<PartiallyProcessedKey> {
+        self.inner.lock().await.by_index.get(&key_index).cloned()
+    }
+
+    /// Returns the key to start listing from or None to start from the beginning.
+    /// Called when recovering connector state from a checkpoint.
+    async fn start_after(&self) -> Option<String> {
+        let inner = self.inner.lock().await;
+
+        if let Some((_, key)) = inner.by_index.first_key_value() {
+            if key.completed_offset.is_none() {
+                Some(key.key.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Metadata {
+    partially_processed_keys: BTreeMap<KeyIndex, PartiallyProcessedKey>,
 }
 
 impl InputEndpoint for S3InputEndpoint {
@@ -194,10 +335,11 @@ impl Drop for S3InputReader {
 }
 
 struct QueuedBuffer {
+    key_index: KeyIndex,
     key: String,
     start_offset: u64,
     end_offset: Option<u64>,
-    buffer: Box<dyn InputBuffer>,
+    buffer: Option<Box<dyn InputBuffer>>,
 }
 
 impl S3InputReader {
@@ -238,77 +380,22 @@ impl S3InputReader {
         client: Arc<dyn S3Api>,
         config: Arc<S3InputConfig>,
         consumer: Box<dyn InputConsumer>,
-        mut parser: Box<dyn Parser>,
+        parser: Box<dyn Parser>,
         command_receiver: Receiver<InputReaderCommand>,
     ) -> anyhow::Result<()> {
-        let mut splitter = StreamSplitter::new(parser.splitter());
-
         let mut command_receiver = BufferedReceiver::new(command_receiver);
-        let mut start_position = None;
+        let mut partially_processed_keys = PartiallyProcessedKeys::new();
+
         match command_receiver.recv().await {
             Some(InputReaderCommand::Seek(metadata)) => {
-                let metadata = serde_json::from_value::<Metadata>(metadata)?;
-                if let Some((key, value)) = metadata.offsets.last_key_value() {
-                    start_position = Some((key.clone(), value.1));
-                }
+                let by_index = serde_json::from_value::<Metadata>(metadata)
+                    .map_err(|e| anyhow!("Error deserializing checkpoint metadata: {e}"))?
+                    .partially_processed_keys;
+                partially_processed_keys = PartiallyProcessedKeys::from_by_index(by_index);
             }
             None | Some(InputReaderCommand::Disconnect) => return Ok(()),
             Some(other) => {
                 command_receiver.put_back(other);
-            }
-        };
-
-        // Then replay as many steps as requested.
-        loop {
-            match command_receiver.recv().await {
-                Some(InputReaderCommand::Seek(_)) => {
-                    unreachable!("Seek must be the first input reader command")
-                }
-                None | Some(InputReaderCommand::Disconnect) => return Ok(()),
-                Some(InputReaderCommand::Replay { metadata, .. }) => {
-                    let metadata = serde_json::from_value::<Metadata>(metadata)?;
-                    if let Some((key, value)) = metadata.offsets.last_key_value() {
-                        start_position = Some((key.clone(), value.1));
-                    }
-                    let mut num_records = 0;
-                    let mut hasher = Xxh3Default::new();
-                    for (key, (start, end)) in metadata.offsets {
-                        let mut object = match client
-                            .get_object(&config.bucket_name, &key, start, end)
-                            .await
-                        {
-                            Ok(object) => object,
-                            Err(e) => {
-                                consumer
-                                    .error(false, anyhow!("error replaying object '{key}': {e:?}"));
-                                continue;
-                            }
-                        };
-                        splitter.reset();
-                        let mut eoi = false;
-                        while !eoi {
-                            match object.body.next().await {
-                                Some(Err(e)) => consumer
-                                    .error(false, anyhow!("error replaying object '{key}': {e:?}")),
-                                Some(Ok(bytes)) => splitter.append(&bytes),
-                                None => eoi = true,
-                            };
-                            while let Some(chunk) = splitter.next(eoi) {
-                                let (mut buffer, errors) = parser.parse(chunk);
-                                consumer.parse_errors(errors);
-                                consumer.buffered(buffer.len(), chunk.len());
-                                num_records += buffer.len();
-                                buffer.hash(&mut hasher);
-                                buffer.flush();
-                            }
-                        }
-                    }
-                    consumer.replayed(num_records, hasher.finish());
-                }
-                Some(other) => {
-                    command_receiver.put_back(other);
-                    break;
-                }
             }
         }
 
@@ -317,16 +404,11 @@ impl S3InputReader {
         let client_clone = client.clone();
         let consumer_clone = consumer.clone();
 
+        let partially_processed_keys_clone = partially_processed_keys.clone();
+
         // This task fetches object list and sends it to the channel created above.
         tokio::spawn(async move {
-            let mut start_after = match start_position {
-                Some((key, Some(offset))) => {
-                    tx.send((key.clone(), offset)).await?;
-                    Some(key)
-                }
-                Some((key, None)) => Some(key),
-                None => None,
-            };
+            let mut start_after = partially_processed_keys_clone.start_after().await;
             let mut continuation_token = None;
             loop {
                 let (objects_to_fetch, next_token): (Vec<String>, Option<String>) =
@@ -362,7 +444,11 @@ impl S3InputReader {
                     };
                 continuation_token = next_token;
                 for key in objects_to_fetch {
-                    tx.send((key, 0)).await?;
+                    // Assign sequential index to the key. The key can already be in
+                    // `partially_processed_keys_clone`. In this case, an existing index
+                    // is returned.
+                    let key_index = partially_processed_keys_clone.get_or_add_key(&key).await;
+                    tx.send(key_index).await?;
                 }
                 if continuation_token.is_none() {
                     break;
@@ -389,6 +475,7 @@ impl S3InputReader {
             let consumer = consumer.clone();
             let queue = queue.clone();
             let mut status_receiver = status_receiver.clone();
+            let partially_processed_keys = partially_processed_keys.clone();
 
             let handle = tokio::task::spawn(async move {
                 let mut splitter = StreamSplitter::new(parser.splitter());
@@ -397,40 +484,68 @@ impl S3InputReader {
                     let msg = { rx.recv().await };
 
                     match msg {
-                        Ok((key, start_offset)) => {
+                        Ok(key_index) => {
                             if wait_running(&mut status_receiver).await.is_err() {
                                 // channel closed
                                 return;
                             }
 
+                            let Some(partially_processed_key) =
+                                partially_processed_keys.get_key(key_index).await
+                            else {
+                                consumer.error(
+                                    true,
+                                    anyhow!("internal error: invalid key index {key_index}"),
+                                );
+                                continue;
+                            };
+
+                            let Some(mut start_offset) = partially_processed_key.completed_offset
+                            else {
+                                // completed_offset is None - key has been fully processed.
+                                continue;
+                            };
+
                             let result = client
-                                .get_object(&bucket_name, &key, start_offset, None)
+                                .get_object(
+                                    &bucket_name,
+                                    &partially_processed_key.key,
+                                    start_offset,
+                                    None,
+                                )
                                 .await;
                             let mut object = match result {
                                 Ok(ret) => ret,
                                 Err(e) => {
                                     consumer.error(
                                         false,
-                                        anyhow!("could not fetch object '{key}': {e:?}"),
+                                        anyhow!(
+                                            "could not fetch object '{}': {e:?}",
+                                            &partially_processed_key.key
+                                        ),
                                     );
+                                    // Mark key as fully processed.
+                                    partially_processed_keys.update(key_index, None).await;
                                     continue;
                                 }
                             };
 
                             splitter.seek(start_offset);
                             let mut eoi = false;
-                            let mut added_chunks = false;
                             while !eoi {
                                 match object.body.next().await {
                                     Some(Err(e)) => consumer.error(
                                         false,
-                                        anyhow!("error reading object '{key}': {e:?}"),
+                                        anyhow!(
+                                            "error reading object '{}': {e:?}",
+                                            &partially_processed_key.key
+                                        ),
                                     ),
                                     Some(Ok(bytes)) => splitter.append(&bytes),
                                     None => eoi = true,
                                 };
                                 loop {
-                                    let start_offset = splitter.position();
+                                    start_offset = splitter.position();
                                     let Some(chunk) = splitter.next(eoi) else {
                                         break;
                                     };
@@ -439,20 +554,26 @@ impl S3InputReader {
                                     let end_offset = splitter.position();
 
                                     consumer.parse_errors(errors);
+
                                     if !buffer.is_empty() {
                                         queue.lock().await.push_back(QueuedBuffer {
-                                            key: key.clone(),
+                                            key_index,
+                                            key: partially_processed_key.key.clone(),
                                             start_offset,
                                             end_offset: Some(end_offset),
-                                            buffer: buffer.unwrap(),
+                                            buffer: Some(buffer.unwrap()),
                                         });
-                                        added_chunks = true;
                                     }
                                 }
                             }
-                            if added_chunks {
-                                queue.lock().await.back_mut().unwrap().end_offset = None;
-                            }
+                            // Queue empty buffer with end_offset = None marking the key as fully processed.
+                            queue.lock().await.push_back(QueuedBuffer {
+                                key_index,
+                                key: partially_processed_key.key.clone(),
+                                start_offset: splitter.position(),
+                                end_offset: None,
+                                buffer: None,
+                            });
                         }
                         Err(_) => break, // Channel closed
                     }
@@ -474,9 +595,12 @@ impl S3InputReader {
 
         loop {
             match command_receiver.recv().await {
-                Some(command @ InputReaderCommand::Seek(_))
-                | Some(command @ InputReaderCommand::Replay { .. }) => {
-                    unreachable!("{command:?} must be at the beginning of the command stream")
+                Some(InputReaderCommand::Seek(_)) => {
+                    panic!("seek command must be at the beginning of the command stream; this is a bug, please report it to developers")
+                }
+                Some(InputReaderCommand::Replay { .. }) => {
+                    panic!(
+                        "replay command is not supported by the S3 input connector; this is a bug, please report it to developers")
                 }
                 Some(InputReaderCommand::Extend) => {
                     let _ = status_sender.send_replace(PipelineState::Running);
@@ -484,12 +608,14 @@ impl S3InputReader {
                 Some(InputReaderCommand::Pause) => {
                     let _ = status_sender.send_replace(PipelineState::Paused);
                 }
-                Some(InputReaderCommand::Queue { .. }) => {
+                Some(InputReaderCommand::Queue {
+                    checkpoint_requested,
+                }) => {
                     let mut total = 0;
                     let mut hasher = consumer.hasher();
-                    let mut offsets = BTreeMap::<String, (u64, Option<u64>)>::new();
                     while total < consumer.max_batch_size() {
                         let Some(QueuedBuffer {
+                            key_index,
                             key,
                             start_offset,
                             end_offset,
@@ -498,20 +624,43 @@ impl S3InputReader {
                         else {
                             break;
                         };
-                        total += buffer.len();
+
+                        let Some(mut prefix) = buffer.take_some(consumer.max_batch_size() - total)
+                        else {
+                            partially_processed_keys.update(key_index, end_offset).await;
+                            continue;
+                        };
+
+                        total += prefix.len();
                         if let Some(hasher) = hasher.as_mut() {
-                            buffer.hash(hasher);
+                            prefix.hash(hasher);
                         }
-                        buffer.flush();
-                        offsets
-                            .entry(key)
-                            .and_modify(|value| value.1 = end_offset)
-                            .or_insert((start_offset, end_offset));
+                        prefix.flush();
+
+                        if buffer.is_empty() {
+                            partially_processed_keys.update(key_index, end_offset).await;
+                            if checkpoint_requested {
+                                break;
+                            }
+                        } else {
+                            queue.lock().await.push_front(QueuedBuffer {
+                                key_index,
+                                key,
+                                start_offset,
+                                end_offset,
+                                buffer,
+                            });
+                        }
                     }
+
+                    // We store the latest fully ingested offsets in `resume`. Partially
                     consumer.extended(
                         total,
                         Some(Resume::new_metadata_only(
-                            serde_json::to_value(&Metadata { offsets }).unwrap(),
+                            serde_json::to_value(&Metadata {
+                                partially_processed_keys: partially_processed_keys.by_index().await,
+                            })
+                            .unwrap(),
                             hasher,
                         )),
                     );
@@ -531,11 +680,6 @@ async fn wait_running(receiver: &mut WatchReceiver<PipelineState>) -> Result<(),
         .wait_for(|state| state == &PipelineState::Running)
         .await
         .map(|_| ())
-}
-
-#[derive(Serialize, Deserialize)]
-struct Metadata {
-    offsets: BTreeMap<String, (u64, Option<u64>)>,
 }
 
 /// Wraps [UnboundedReceiver] with a one-message buffer, to allow received messages to be
@@ -699,6 +843,11 @@ format:
         wait(
             || {
                 reader.queue(false);
+                println!(
+                    "actual: {}, expected: {}",
+                    input_handle.state().flushed.len(),
+                    test_data.len()
+                );
                 input_handle.state().flushed.len() == test_data.len()
             },
             10000,
