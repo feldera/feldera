@@ -601,7 +601,7 @@ where
     {
         // Source and destination types are usually the same in the top-level scope.
         // Optimize for this case by simply cloning the source batch. If the batch is
-        // implemented as `Arc` internally, this iw essentially zero cost.
+        // implemented as `Arc` internally, this is essentially zero cost.
         if TypeId::of::<BI>() == TypeId::of::<Self>() {
             unsafe { std::mem::transmute::<&BI, &Self>(batch).clone() }
         } else {
