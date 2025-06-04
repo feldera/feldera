@@ -55,6 +55,18 @@ pub struct KafkaInputConfig {
 
     /// The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
     pub region: Option<String>,
+
+    /// The list of Kafka partitions to read from.
+    ///
+    /// Only the specified partitions will be consumed. If this field is not set,
+    /// the connector will consume from all available partitions.
+    ///
+    /// If `start_from` is set to `offsets` and this field is provided, the
+    /// number of partitions must exactly match the number of offsets, and the
+    /// order of partitions must correspond to the order of offsets.
+    ///
+    /// If offsets are provided for all partitions, this field can be omitted.
+    pub partitions: Option<Vec<i32>>,
 }
 
 impl KafkaInputConfig {
@@ -185,6 +197,14 @@ impl KafkaInputConfig {
         // Enable client context `stats` callback so we can periodically check
         // up on librdkafka memory usage.
         self.set_option_if_missing("statistics.interval.ms", "10000");
+
+        if let (Some(partitions), KafkaStartFromConfig::Offsets(offsets)) =
+            (&self.partitions, &self.start_from)
+        {
+            if partitions.len() != offsets.len() {
+                anyhow::bail!("the number of partitions ('{partitions:?}') should be equal to the number of offsets '{offsets:?}' specified")
+            }
+        }
 
         Ok(())
     }
@@ -432,6 +452,9 @@ mod compat {
 
         /// The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
         region: Option<String>,
+
+        /// The Kafka partitions to read from.
+        partitions: Option<Vec<i32>>,
     }
 
     impl TryFrom<KafkaInputConfigCompat> for super::KafkaInputConfig {
@@ -497,6 +520,7 @@ mod compat {
                 poller_threads: compat.poller_threads,
                 start_from,
                 region: compat.region,
+                partitions: compat.partitions,
             })
         }
     }

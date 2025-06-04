@@ -1139,6 +1139,7 @@ fn test_offset(
                 poller_threads: None,
                 start_from: start_from.clone(),
                 region: None,
+                partitions: None,
             }),
             format: Some(FormatConfig {
                 name: Cow::from("csv"),
@@ -1508,6 +1509,353 @@ max_batch_size: 10000000
     sleep(Duration::from_millis(1000));
     flush();
     assert_eq!(zset.state().flushed.len(), 0);
+}
+
+fn test_input_partition(
+    topic: &str,
+    n_partitions: i32,
+    partitions: Vec<i32>,
+    start_from: KafkaStartFromConfig,
+    data: Vec<Vec<TestStruct>>,
+    extra_data: Vec<Vec<TestStruct>>,
+) {
+    let _kafka = KafkaResources::create_topics(&[(topic, n_partitions)]);
+
+    let config = InputEndpointConfig {
+        stream: Cow::from("test_input"),
+        connector_config: ConnectorConfig {
+            transport: TransportConfig::KafkaInput(KafkaInputConfig {
+                kafka_options: {
+                    let mut kafka_options = BTreeMap::new();
+                    let auto_offset_reset = match start_from {
+                        KafkaStartFromConfig::Earliest => Some("earliest"),
+                        KafkaStartFromConfig::Latest => Some("latest"),
+                        KafkaStartFromConfig::Offsets(_) => None,
+                    };
+                    if let Some(auto_offset_reset) = auto_offset_reset {
+                        kafka_options.insert("auto.offset.reset".into(), auto_offset_reset.into());
+                    }
+                    kafka_options.insert("bootstrap.servers".into(), default_redpanda_server());
+                    kafka_options.insert("group.id".into(), "test-client".into());
+                    kafka_options
+                },
+                topic: topic.into(),
+                log_level: Some(KafkaLogLevel::Debug),
+                group_join_timeout_secs: default_group_join_timeout_secs(),
+                poller_threads: None,
+                start_from: start_from.clone(),
+                region: None,
+                partitions: Some(partitions.clone()),
+            }),
+            format: Some(FormatConfig {
+                name: Cow::from("csv"),
+                config: serde_yaml::Value::Mapping(Mapping::default()),
+            }),
+            index: None,
+            output_buffer_config: OutputBufferConfig::default(),
+            max_batch_size: default_max_batch_size(),
+            max_queued_records: default_max_queued_records(),
+            paused: false,
+            labels: Vec::new(),
+            start_after: None,
+        },
+    };
+
+    info!("kafka_input_partition: Building input pipeline");
+
+    let producer = TestProducer::new();
+    let expected = match &start_from {
+        KafkaStartFromConfig::Earliest | KafkaStartFromConfig::Latest => Some(data.to_vec()),
+        KafkaStartFromConfig::Offsets(offsets) => {
+            let mut new = Vec::new();
+            for (datum, offset) in data.iter().zip(offsets) {
+                new.push(datum.iter().skip(*offset as usize).cloned().collect());
+            }
+            Some(new)
+        }
+    };
+
+    fn load_data_to_topic_partitions(
+        producer: &TestProducer,
+        data: &[Vec<TestStruct>],
+        topic: &str,
+        partitions: &[i32],
+    ) {
+        for (batch, partition) in data.iter().zip(partitions) {
+            for item in batch {
+                producer.send_to_topic_partition(&[vec![item.to_owned()]], topic, *partition);
+                producer.send_string_partition("", topic, *partition);
+            }
+        }
+    }
+
+    // Front load data if auto.offset.reset isn't Latest
+    if start_from != KafkaStartFromConfig::Latest {
+        load_data_to_topic_partitions(&producer, &data, topic, &partitions);
+        for (part, extra) in (0..n_partitions)
+            .filter(|x| !partitions.contains(x))
+            .zip(extra_data.clone())
+        {
+            for item in extra {
+                producer.send_to_topic_partition(&[vec![item.to_owned()]], topic, part);
+                producer.send_string_partition("", topic, part);
+            }
+        }
+    }
+
+    let (endpoint, consumer, _parser, zset) =
+        mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap();
+
+    if expected.is_none() {
+        consumer.on_error(Some(Box::new(|_, _| ())));
+    }
+
+    endpoint.extend();
+
+    // If auto.offset.reset: latest, send data after starting the pipeline.
+    if start_from == KafkaStartFromConfig::Latest {
+        load_data_to_topic_partitions(&producer, &data, topic, &partitions);
+        for (part, extra) in (0..n_partitions)
+            .filter(|x| !partitions.contains(x))
+            .zip(extra_data)
+        {
+            for item in extra {
+                producer.send_to_topic_partition(&[vec![item.to_owned()]], topic, part);
+                producer.send_string_partition("", topic, part);
+            }
+        }
+    }
+
+    info!("kafka_input_partition: Test: Receive from topic");
+
+    let flush = || {
+        endpoint.queue(false);
+    };
+    if let Some(ref expected) = expected {
+        wait_for_output_unordered(&zset, expected, flush);
+    } else {
+        sleep(Duration::from_millis(1000));
+        let error = consumer
+            .get_error()
+            .expect("the connector should have reported an error but  it didn't");
+        panic!("{error}");
+    }
+    zset.reset();
+
+    info!("kafka_input_partition: Test: Disconnect");
+
+    // Disconnected endpoint should not receive any data.
+    endpoint.disconnect();
+    sleep(Duration::from_millis(1000));
+    flush();
+    assert_eq!(zset.state().flushed.len(), 0);
+}
+
+#[test]
+fn test_input_partitions_latest() {
+    let topic = "test_input_partitions0";
+    let data = vec![
+        vec![TestStruct {
+            id: 0,
+            b: false,
+            i: Some(0),
+            s: "0".to_owned(),
+        }],
+        vec![TestStruct {
+            id: 10,
+            b: true,
+            i: Some(10),
+            s: "10".to_owned(),
+        }],
+        vec![TestStruct {
+            id: 20,
+            b: false,
+            i: Some(20),
+            s: "20".to_owned(),
+        }],
+    ];
+    let extra = vec![
+        vec![TestStruct {
+            id: 100,
+            b: false,
+            i: Some(100),
+            s: "100-extra".to_owned(),
+        }],
+        vec![TestStruct {
+            id: 200,
+            b: true,
+            i: Some(200),
+            s: "200-extra".to_owned(),
+        }],
+        vec![TestStruct {
+            id: 300,
+            b: false,
+            i: Some(300),
+            s: "300-extra".to_owned(),
+        }],
+    ];
+
+    let start_from = KafkaStartFromConfig::Latest;
+
+    test_input_partition(topic, 5, vec![1, 2, 4], start_from, data, extra);
+}
+
+#[test]
+fn test_input_partitions_earliest() {
+    let topic = "test_input_partitions1";
+    let data = vec![
+        vec![TestStruct {
+            id: 0,
+            b: false,
+            i: Some(0),
+            s: "0".to_owned(),
+        }],
+        vec![TestStruct {
+            id: 10,
+            b: true,
+            i: Some(10),
+            s: "10".to_owned(),
+        }],
+        vec![TestStruct {
+            id: 20,
+            b: false,
+            i: Some(20),
+            s: "20".to_owned(),
+        }],
+    ];
+    let extra = vec![
+        vec![TestStruct {
+            id: 100,
+            b: false,
+            i: Some(100),
+            s: "100-extra".to_owned(),
+        }],
+        vec![TestStruct {
+            id: 200,
+            b: true,
+            i: Some(200),
+            s: "200-extra".to_owned(),
+        }],
+        vec![TestStruct {
+            id: 300,
+            b: false,
+            i: Some(300),
+            s: "300-extra".to_owned(),
+        }],
+    ];
+
+    let start_from = KafkaStartFromConfig::Earliest;
+
+    test_input_partition(topic, 5, vec![1, 2, 4], start_from, data, extra);
+}
+
+#[test]
+fn test_input_partitions_offsets() {
+    let topic = "test_input_partitions2";
+    let data = vec![
+        vec![
+            TestStruct {
+                id: 0,
+                b: false,
+                i: Some(0),
+                s: "0".to_owned(),
+            },
+            TestStruct {
+                id: 1,
+                b: false,
+                i: Some(1),
+                s: "1".to_owned(),
+            },
+            TestStruct {
+                id: 2,
+                b: false,
+                i: Some(2),
+                s: "2".to_owned(),
+            },
+        ],
+        vec![
+            TestStruct {
+                id: 10,
+                b: true,
+                i: Some(10),
+                s: "10".to_owned(),
+            },
+            TestStruct {
+                id: 11,
+                b: true,
+                i: Some(11),
+                s: "11".to_owned(),
+            },
+            TestStruct {
+                id: 12,
+                b: true,
+                i: Some(12),
+                s: "12".to_owned(),
+            },
+            TestStruct {
+                id: 13,
+                b: true,
+                i: Some(13),
+                s: "13".to_owned(),
+            },
+        ],
+        vec![
+            TestStruct {
+                id: 20,
+                b: false,
+                i: Some(20),
+                s: "20".to_owned(),
+            },
+            TestStruct {
+                id: 21,
+                b: false,
+                i: Some(21),
+                s: "21".to_owned(),
+            },
+            TestStruct {
+                id: 22,
+                b: false,
+                i: Some(22),
+                s: "22".to_owned(),
+            },
+            TestStruct {
+                id: 23,
+                b: false,
+                i: Some(23),
+                s: "23".to_owned(),
+            },
+            TestStruct {
+                id: 24,
+                b: false,
+                i: Some(24),
+                s: "24".to_owned(),
+            },
+        ],
+    ];
+    let extra = vec![
+        vec![TestStruct {
+            id: 100,
+            b: false,
+            i: Some(100),
+            s: "100-extra".to_owned(),
+        }],
+        vec![TestStruct {
+            id: 200,
+            b: true,
+            i: Some(200),
+            s: "200-extra".to_owned(),
+        }],
+        vec![TestStruct {
+            id: 300,
+            b: false,
+            i: Some(300),
+            s: "300-extra".to_owned(),
+        }],
+    ];
+
+    let start_from = KafkaStartFromConfig::Offsets(vec![1, 1]);
+
+    test_input_partition(topic, 5, vec![2, 4], start_from, data, extra);
 }
 
 /// If Kafka tests are going to fail because the server is not running or
