@@ -26,7 +26,7 @@ use serde_arrow::Deserializer as ArrowDeserializer;
 use serde_json::de::SliceRead;
 use std::hash::Hasher;
 use std::iter::zip;
-use std::{collections::VecDeque, marker::PhantomData, mem::swap, ops::Neg};
+use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
 
 // The following functions are needed to force the erased deserializer implementation
 // for the Arrow, CSV, JSON, and raw formats to get monomorphized in the adapters crate
@@ -423,14 +423,16 @@ where
 }
 
 struct DeZSetStreamBuffer<K> {
-    updates: Vec<Tup2<K, ZWeight>>,
+    // VecDeque is preferable to Vec here as it allows splitting off a small
+    // prefix of a large buffer efficiently (see take_some).
+    updates: VecDeque<Tup2<K, ZWeight>>,
     handle: ZSetHandle<K>,
 }
 
 impl<K> DeZSetStreamBuffer<K> {
     fn new(handle: ZSetHandle<K>) -> Self {
         Self {
-            updates: Vec::new(),
+            updates: VecDeque::new(),
             handle,
         }
     }
@@ -441,7 +443,8 @@ where
     K: DBData,
 {
     fn flush(&mut self) {
-        self.handle.append(&mut self.updates);
+        let updates = std::mem::take(&mut self.updates);
+        self.handle.append(&mut updates.into());
     }
 
     fn hash(&self, hasher: &mut dyn Hasher) {
@@ -457,11 +460,9 @@ where
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
             Some(Box::new(Self {
-                updates: {
-                    let mut some = self.updates.split_off(self.updates.len().min(n));
-                    swap(&mut some, &mut self.updates);
-                    some
-                },
+                // Draining a small prefix of a VecDeque is efficient as it doesn't require
+                // shifting the rest of the vector.
+                updates: self.updates.drain(0..self.updates.len().min(n)).collect(),
                 handle: self.handle.clone(),
             }))
         } else {
@@ -512,14 +513,16 @@ where
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.buffer.updates.push(Tup2(key, ZWeight::one()));
+        self.buffer.updates.push_back(Tup2(key, ZWeight::one()));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.buffer.updates.push(Tup2(key, ZWeight::one().neg()));
+        self.buffer
+            .updates
+            .push_back(Tup2(key, ZWeight::one().neg()));
         Ok(())
     }
 
@@ -690,7 +693,7 @@ where
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.buffer.updates.push(Tup2(K::from(v), 1));
+        self.buffer.updates.push_back(Tup2(K::from(v), 1));
 
         Ok(())
     }
@@ -699,7 +702,7 @@ where
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.buffer.updates.push(Tup2(K::from(v), -1));
+        self.buffer.updates.push_back(Tup2(K::from(v), -1));
 
         Ok(())
     }
@@ -815,14 +818,14 @@ where
 }
 
 struct DeSetStreamBuffer<K> {
-    updates: Vec<Tup2<K, bool>>,
+    updates: VecDeque<Tup2<K, bool>>,
     handle: SetHandle<K>,
 }
 
 impl<K> DeSetStreamBuffer<K> {
     fn new(handle: SetHandle<K>) -> Self {
         Self {
-            updates: Vec::new(),
+            updates: VecDeque::new(),
             handle,
         }
     }
@@ -833,7 +836,8 @@ where
     K: DBData,
 {
     fn flush(&mut self) {
-        self.handle.append(&mut self.updates);
+        let updates = std::mem::take(&mut self.updates);
+        self.handle.append(&mut updates.into());
     }
 
     fn len(&self) -> usize {
@@ -849,11 +853,7 @@ where
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
             Some(Box::new(DeSetStreamBuffer {
-                updates: {
-                    let mut some = self.updates.split_off(self.updates.len().min(n));
-                    swap(&mut some, &mut self.updates);
-                    some
-                },
+                updates: self.updates.drain(0..self.updates.len().min(n)).collect(),
                 handle: self.handle.clone(),
             }))
         } else {
@@ -905,14 +905,14 @@ where
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.buffer.updates.push(Tup2(key, true));
+        self.buffer.updates.push_back(Tup2(key, true));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.buffer.updates.push(Tup2(key, false));
+        self.buffer.updates.push_back(Tup2(key, false));
         Ok(())
     }
 
@@ -1081,7 +1081,7 @@ where
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.buffer.updates.push(Tup2(K::from(v), true));
+        self.buffer.updates.push_back(Tup2(K::from(v), true));
 
         Ok(())
     }
@@ -1090,7 +1090,7 @@ where
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.buffer.updates.push(Tup2(K::from(v), false));
+        self.buffer.updates.push_back(Tup2(K::from(v), false));
 
         Ok(())
     }
@@ -1274,7 +1274,7 @@ where
     V: DBData,
     U: DBData,
 {
-    updates: Vec<Tup2<K, Update<V, U>>>,
+    updates: VecDeque<Tup2<K, Update<V, U>>>,
     handle: MapHandle<K, V, U>,
 }
 
@@ -1286,7 +1286,7 @@ where
 {
     fn new(handle: MapHandle<K, V, U>) -> Self {
         Self {
-            updates: Vec::new(),
+            updates: VecDeque::new(),
             handle,
         }
     }
@@ -1299,7 +1299,8 @@ where
     U: DBData,
 {
     fn flush(&mut self) {
-        self.handle.append(&mut self.updates);
+        let updates = std::mem::take(&mut self.updates);
+        self.handle.append(&mut updates.into());
     }
 
     fn len(&self) -> usize {
@@ -1315,11 +1316,7 @@ where
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
             Some(Box::new(DeMapStreamBuffer {
-                updates: {
-                    let mut some = self.updates.split_off(self.updates.len().min(n));
-                    swap(&mut some, &mut self.updates);
-                    some
-                },
+                updates: self.updates.drain(0..self.updates.len().min(n)).collect(),
                 handle: self.handle.clone(),
             }))
         } else {
@@ -1397,14 +1394,16 @@ where
         let val = V::from(self.deserializer.deserialize::<VD>(data)?);
         let key = (self.value_key_func)(&val);
 
-        self.buffer.updates.push(Tup2(key, Update::Insert(val)));
+        self.buffer
+            .updates
+            .push_back(Tup2(key, Update::Insert(val)));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = K::from(self.deserializer.deserialize::<KD>(data)?);
 
-        self.buffer.updates.push(Tup2(key, Update::Delete));
+        self.buffer.updates.push_back(Tup2(key, Update::Delete));
         Ok(())
     }
 
@@ -1412,7 +1411,9 @@ where
         let upd = U::from(self.deserializer.deserialize::<UD>(data)?);
         let key = (self.update_key_func)(&upd);
 
-        self.buffer.updates.push(Tup2(key, Update::Update(upd)));
+        self.buffer
+            .updates
+            .push_back(Tup2(key, Update::Update(upd)));
         Ok(())
     }
 
@@ -1651,7 +1652,7 @@ where
         let val = V::from(v);
         self.buffer
             .updates
-            .push(Tup2((self.value_key_func)(&val), Update::Insert(val)));
+            .push_back(Tup2((self.value_key_func)(&val), Update::Insert(val)));
 
         Ok(())
     }
@@ -1663,7 +1664,7 @@ where
         let val = V::from(v);
         self.buffer
             .updates
-            .push(Tup2((self.value_key_func)(&val), Update::Delete));
+            .push_back(Tup2((self.value_key_func)(&val), Update::Delete));
 
         Ok(())
     }
