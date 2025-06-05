@@ -10,7 +10,7 @@
 #![warn(missing_docs)]
 
 use feldera_types::config::StorageCacheConfig;
-use std::{fs::OpenOptions, path::PathBuf, sync::LazyLock};
+use std::{fs::OpenOptions, path::PathBuf};
 use tempfile::TempDir;
 use tracing::warn;
 
@@ -56,21 +56,3 @@ impl StorageCacheFlags for OpenOptions {
         self
     }
 }
-
-/// Maximum number of buffers that system calls accept in one operation.
-///
-/// We only use multibuffer system calls on Linux, so the value is arbitrary
-/// elsewhere.
-static IOV_MAX: LazyLock<usize> = LazyLock::new(|| {
-    #[cfg(target_os = "linux")]
-    match nix::unistd::sysconf(nix::unistd::SysconfVar::IOV_MAX) {
-        Ok(Some(iov_max)) if iov_max > 0 => iov_max as usize,
-        _ => {
-            // Typical Linux value.
-            1024
-        }
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    1024
-});

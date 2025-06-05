@@ -2,7 +2,7 @@
 
 use super::{
     BlockLocation, FileId, FileReader, FileWriter, HasFileId, StorageCacheFlags, StorageError,
-    IOV_MAX, MUTABLE_EXTENSION,
+    MUTABLE_EXTENSION,
 };
 use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
 use crate::storage::{buffer_cache::FBuf, init};
@@ -268,7 +268,7 @@ impl PosixWriter {
     }
 
     fn write(&mut self, buffer: &Arc<FBuf>) -> Result<(), StorageError> {
-        if self.len >= 1024 * 1024 || self.buffers.len() >= *IOV_MAX {
+        if self.len >= 1024 * 1024 {
             self.flush()?;
         }
         self.len += buffer.len() as u64;
