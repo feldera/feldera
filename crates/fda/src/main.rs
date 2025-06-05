@@ -30,7 +30,7 @@ mod cli;
 mod shell;
 
 pub(crate) const UPGRADE_NOTICE: &str =
-    "Try upgrading to the latest CLI version to resolve this issue or report it on github.com/feldera/feldera if you're already on the latest version.";
+    "Try upgrading to the latest CLI version to resolve this issue. Also make sure the pipeline is recompiled with the latest version of feldera. Report it on github.com/feldera/feldera if the issue persists.";
 
 use crate::adhoc::handle_adhoc_query;
 use crate::cli::*;
@@ -214,10 +214,12 @@ fn handle_errors_fatal(
             }
             Error::InvalidResponsePayload(b, e) => {
                 eprintln!("{}", msg);
-                error!("Unable to parse the detailed response returned from {server}");
                 if !b.is_empty() {
+                    error!("Unable to parse the detailed response returned from `{server}`");
                     debug!("Parse Error: {:?}", e.to_string());
                     debug!("Response payload: {:?}", String::from_utf8_lossy(&b));
+                } else {
+                    error!("No detailed response (empty payload) returned from `{server}`");
                 }
                 error!("{}", UPGRADE_NOTICE);
             }
@@ -235,6 +237,12 @@ fn handle_errors_fatal(
                         "Unexpected error response from {server} -- this can happen if you're running different fda and feldera versions."
                     );
                     warn!("{}", UPGRADE_NOTICE);
+                    debug!(
+                        "Received HTTP status `{}` which is not declared as an expected response in OpenAPI.",
+                        r.status()
+                    );
+                    std::io::stdout().flush().unwrap();
+                    std::io::stderr().flush().unwrap();
 
                     eprint!("{}", msg);
                     let h = Handle::current();
@@ -849,6 +857,33 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 )
                 .await;
                 println!("Pipeline shutdown successful.");
+            }
+
+            trace!("{:#?}", response);
+        }
+        PipelineAction::Suspend { name, no_wait } => {
+            let response = client
+                .post_pipeline_action()
+                .pipeline_name(name.clone())
+                .action("suspend")
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to suspend pipeline",
+                    1,
+                ))
+                .unwrap();
+
+            if !no_wait {
+                wait_for_status(
+                    &client,
+                    name.clone(),
+                    PipelineStatus::Suspended,
+                    "Suspending the pipeline...",
+                )
+                .await;
+                println!("Pipeline suspended successfully.");
             }
 
             trace!("{:#?}", response);

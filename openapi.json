@@ -3609,6 +3609,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Action can not be performed (maybe because the pipeline is already suspended)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [

@@ -323,6 +323,15 @@ pub enum PipelineAction {
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,
     },
+    /// Suspend a pipeline.
+    Suspend {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// Don't wait for pipeline to reach the status before returning.
+        #[arg(long, short = 'n', default_value_t = false)]
+        no_wait: bool,
+    },
     /// Retrieve the entire state of a pipeline.
     ///
     /// EXAMPLES:

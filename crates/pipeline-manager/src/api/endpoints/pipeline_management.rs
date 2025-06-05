@@ -851,6 +851,10 @@ pub(crate) async fn delete_pipeline(
                 ("Illegal action" = (value = json!(examples::error_illegal_pipeline_action()))),
             )
         ),
+        (status = SERVICE_UNAVAILABLE
+            , description = "Action can not be performed (maybe because the pipeline is already suspended)"
+            , body = ErrorResponse
+        ),
         (status = METHOD_NOT_ALLOWED
             , description = "Action is not supported"
             , body = ErrorResponse
