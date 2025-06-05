@@ -470,6 +470,31 @@ pub enum PipelineAction {
         )]
         stdin: bool,
     },
+    /// Generate a completion token for a SQL table/connector pair in a pipeline.
+    #[clap(aliases = &["generate-token", "generate-completion-status"])]
+    CompletionToken {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// The name of the SQL table to generate the token for.
+        table: String,
+        /// The name of the connector to generate the token for.
+        ///
+        /// This can be read from the `name` field in the connector config.
+        connector: String,
+    },
+    /// Check the status of a completion token for a pipeline.
+    #[clap(aliases = &["check-token", "check-completion-status"])]
+    CompletionStatus {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// The token to check the status for.
+        ///
+        /// A token can be optained by running `fda completion-token`.
+        /// Or when ingesting data over HTTP.
+        token: String,
+    },
 }
 
 #[derive(Subcommand)]
