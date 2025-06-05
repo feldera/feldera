@@ -11,6 +11,7 @@ pub mod db;
 pub mod db_notifier;
 pub mod demo;
 pub mod error;
+pub mod license;
 pub mod logging;
 pub mod metrics;
 pub mod probe;
