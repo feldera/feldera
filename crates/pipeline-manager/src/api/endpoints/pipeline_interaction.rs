@@ -901,6 +901,7 @@ pub(crate) async fn pipeline_adhoc_sql(
         state
             .runner
             .forward_websocket_request_to_pipeline_by_name(
+                client.as_ref(),
                 *tenant_id,
                 &pipeline_name,
                 "query",

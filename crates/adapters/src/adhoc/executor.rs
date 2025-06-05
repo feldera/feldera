@@ -9,6 +9,7 @@ use bytestring::ByteString;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::dataframe::DataFrame;
 use datafusion::execution::SendableRecordBatchStream;
+use feldera_types::query::MAX_WS_FRAME_SIZE;
 use futures::stream::Stream;
 use futures_util::future::{BoxFuture, FutureExt};
 use futures_util::{select, StreamExt};
@@ -207,6 +208,9 @@ pub(crate) fn stream_arrow_query(
 pub(crate) fn stream_parquet_query(
     df: DataFrame,
 ) -> impl Stream<Item = Result<Bytes, DataFusionError>> {
+    // Should probably be smaller than `MAX_WS_FRAME_SIZE`.
+    const PARQUET_CHUNK_SIZE: usize = MAX_WS_FRAME_SIZE / 2;
+
     // Create a channel to communicate between the parquet writer and the HTTP response
     let (tx, mut rx) = mpsc::channel(1024);
 
@@ -228,6 +232,9 @@ pub(crate) fn stream_parquet_query(
             )?;
             while let Some(batch) = stream.next().await.transpose()? {
                 writer.write(&batch).await?;
+                if writer.in_progress_size() > PARQUET_CHUNK_SIZE {
+                    writer.flush().await?;
+                }
             }
             writer.flush().await?;
             writer.close().await?;

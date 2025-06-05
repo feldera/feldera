@@ -12,7 +12,7 @@ use executor::{
 };
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_types::config::PipelineConfig;
-use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs};
+use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs, MAX_WS_FRAME_SIZE};
 use futures_util::StreamExt;
 use serde_json::json;
 use std::convert::Infallible;
@@ -109,7 +109,6 @@ async fn adhoc_query_handler(
             while let Some(res) = stream.next().await {
                 match res {
                     Ok(byte_string) => {
-                        tracing::info!("stream_json_query got byte string {byte_string}");
                         ws_session.text(byte_string).await?;
                     }
                     Err(json_err) => {
@@ -149,9 +148,7 @@ async fn adhoc_query_handler(
             let mut stream = Box::pin(stream_parquet_query(df));
             while let Some(res) = stream.next().await {
                 match res {
-                    Ok(bytes) => {
-                        ws_session.binary(bytes).await?;
-                    }
+                    Ok(bytes) => ws_session.binary(bytes).await?,
                     Err(err) => {
                         ws_session
                             .text(
@@ -184,8 +181,9 @@ pub async fn adhoc_websocket(
             df: None,
         })?;
     let mut stream = stream
+        .max_frame_size(MAX_WS_FRAME_SIZE)
         .aggregate_continuations()
-        .max_continuation_size(16 * 1024 * 1024);
+        .max_continuation_size(4 * MAX_WS_FRAME_SIZE);
 
     actix_web::rt::spawn(async move {
         while let Some(msg) = stream.next().await {

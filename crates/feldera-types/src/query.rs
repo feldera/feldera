@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display, Formatter, Result};
 use utoipa::ToSchema;
 
+/// The maximum size of a WebSocket frames we're sending in bytes.
+pub const MAX_WS_FRAME_SIZE: usize = 1024 * 1024 * 2;
+
 /// URL-encoded `format` argument to the `/query` endpoint.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy, ToSchema)]
 #[serde(rename_all = "snake_case")]

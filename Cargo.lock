@@ -310,24 +310,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "actix-web-actors"
-version = "4.3.1+deprecated"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f98c5300b38fd004fe7d2a964f9a90813fdbe8a81fed500587e78b1b71c6f980"
-dependencies = [
- "actix",
- "actix-codec",
- "actix-http",
- "actix-web",
- "bytes",
- "bytestring",
- "futures-core",
- "pin-project-lite",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
 name = "actix-web-codegen"
 version = "4.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -378,20 +360,6 @@ dependencies = [
  "bytestring",
  "futures-core",
  "tokio",
-]
-
-[[package]]
-name = "actix-ws-proxy"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "381f1b36f281bc745cc3dd67aa7bebb3e240eaabe16f6bf563eb8e50a01242c3"
-dependencies = [
- "actix",
- "actix-web",
- "actix-web-actors",
- "awc",
- "bytes",
- "futures",
 ]
 
 [[package]]
@@ -7574,7 +7542,7 @@ dependencies = [
  "actix-web",
  "actix-web-httpauth",
  "actix-web-static-files",
- "actix-ws-proxy",
+ "actix-ws",
  "anyhow",
  "async-stream",
  "async-trait",
@@ -7582,6 +7550,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-cognitoidentityprovider",
  "base64 0.22.1",
+ "bytestring",
  "cached",
  "change-detection",
  "chrono",
