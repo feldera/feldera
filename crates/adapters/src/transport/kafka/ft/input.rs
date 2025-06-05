@@ -331,9 +331,7 @@ impl KafkaFtInputReaderInner {
         while let Some((metadata, ())) = command_receiver.blocking_recv_replay()? {
             let metadata = metadata.parse(n_partitions)?;
             let mut incomplete_partitions = HashSet::new();
-            for (partition, (offsets, (_, receiver))) in
-                metadata.iter().zip(receivers.iter_mut()).enumerate()
-            {
+            for (offsets, (partition, receiver)) in metadata.iter().zip(receivers.iter()) {
                 if !offsets.is_empty() {
                     receiver.set_max_offset(offsets.end - 1);
                     incomplete_partitions.insert(partition);
@@ -353,7 +351,7 @@ impl KafkaFtInputReaderInner {
                         hasher.add(partition, &msg.buffer);
                         msg.buffer.flush();
                         if msg.offset == max {
-                            incomplete_partitions.remove(&(**partition as usize));
+                            incomplete_partitions.remove(partition);
                         }
                     }
                 }
@@ -376,7 +374,7 @@ impl KafkaFtInputReaderInner {
                     None => (),
                 }
 
-                if receivers.iter().any(|(_, receiver)| receiver.fatal_error()) {
+                if receivers.values().any(|receiver| receiver.fatal_error()) {
                     return Ok(());
                 }
 
@@ -448,7 +446,7 @@ impl KafkaFtInputReaderInner {
                 if !kafka_paused {
                     self.pause_partitions()
                         .map_err(|error| self.refine_error(error).1)?;
-                    for (_, receiver) in receivers.iter() {
+                    for receiver in receivers.values() {
                         receiver.set_max_offset(i64::MIN);
                     }
                     kafka_paused = true;
@@ -460,7 +458,7 @@ impl KafkaFtInputReaderInner {
                     kafka_paused = false;
                 }
                 if !was_running {
-                    for (_, receiver) in receivers.iter() {
+                    for receiver in receivers.values() {
                         receiver.set_max_offset(i64::MAX);
                     }
                     for thread in &threads {
@@ -496,10 +494,10 @@ impl KafkaFtInputReaderInner {
                 }
             }
 
-            if receivers.iter().any(|(_, r)| r.fatal_error()) {
+            if receivers.values().any(|r| r.fatal_error()) {
                 return Ok(());
             }
-            if receivers.iter().all(|(_, r)| r.eof()) {
+            if receivers.values().all(|r| r.eof()) {
                 consumer.eoi();
                 return Ok(());
             }
