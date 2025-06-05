@@ -1020,6 +1020,10 @@ pub(crate) async fn completion_token(
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "An invalid completion token was provided"
+            , body = ErrorResponse,
+        ),
         (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse
             , examples(

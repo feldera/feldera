@@ -1217,6 +1217,81 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
         PipelineAction::Query { name, sql, stdin } => {
             handle_adhoc_query(client, format, name, sql, stdin).await
         }
+        PipelineAction::CompletionToken {
+            name,
+            table,
+            connector,
+        } => {
+            let response = client
+                .completion_token()
+                .pipeline_name(name)
+                .table_name(table)
+                .connector_name(connector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get completion status",
+                    1,
+                ))
+                .unwrap();
+
+            match format {
+                OutputFormat::Text => {
+                    println!("{}", &response.into_inner().token.to_string());
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
+                _ => {
+                    eprintln!(
+                        "Unsupported output format: {}, falling back to text",
+                        format
+                    );
+                    println!("{}", &response.into_inner().token.to_string());
+                    std::process::exit(1);
+                }
+            }
+        }
+        PipelineAction::CompletionStatus { name, token } => {
+            let response = client
+                .completion_status()
+                .pipeline_name(name)
+                .token(token)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get completion status",
+                    1,
+                ))
+                .unwrap();
+
+            match format {
+                OutputFormat::Text => {
+                    println!("{}", &response.into_inner().status.to_string());
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline stats")
+                    );
+                }
+                _ => {
+                    eprintln!(
+                        "Unsupported output format, falling back to text: {}",
+                        format
+                    );
+                    println!("{}", &response.into_inner().status.to_string());
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }
 

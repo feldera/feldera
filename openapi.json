@@ -1773,6 +1773,16 @@
               }
             }
           },
+          "400": {
+            "description": "An invalid completion token was provided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Pipeline with that name does not exist",
             "content": {
