@@ -1715,7 +1715,6 @@ export const $LicenseInformation = {
     'is_expired',
     'is_trial',
     'description_html',
-    'extension_url',
     'remind_starting_at',
     'remind_schedule'
   ],
@@ -1738,7 +1737,8 @@ export const $LicenseInformation = {
     },
     extension_url: {
       type: 'string',
-      description: 'URL that navigates the user to extend / upgrade their license'
+      description: 'URL that navigates the user to extend / upgrade their license',
+      nullable: true
     },
     is_expired: {
       type: 'boolean',

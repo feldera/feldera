@@ -1300,7 +1300,7 @@ export type LicenseInformation = {
   /**
    * URL that navigates the user to extend / upgrade their license
    */
-  extension_url: string
+  extension_url?: string | null
   /**
    * Whether the license is expired
    */
