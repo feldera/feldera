@@ -8,8 +8,11 @@ use crate::db_notifier::DbNotification;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
+use actix_ws::{CloseCode, CloseReason};
 use awc::error::{ConnectError, SendRequestError};
 use crossbeam::sync::ShardedLock;
+use feldera_types::query::MAX_WS_FRAME_SIZE;
+use log::error;
 use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
@@ -303,22 +306,112 @@ impl RunnerInteraction {
 
     pub(crate) async fn forward_websocket_request_to_pipeline_by_name(
         &self,
+        awc_client: &awc::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
         endpoint: &str,
-        request: HttpRequest,
-        body: Payload,
+        client_request: HttpRequest,
+        client_body: Payload,
     ) -> Result<HttpResponse, ManagerError> {
+        use awc::ws::Frame;
+        use bytestring::ByteString;
+        use futures_util::{SinkExt, StreamExt};
+
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
-        let url = format_pipeline_url("ws", &location, endpoint, request.query_string());
-        actix_ws_proxy::start(&request, url, body)
+
+        // Handle client request
+        let (res, mut client_tx, client_rx) = actix_ws::handle(&client_request, client_body)
+            .map_err(|e| ManagerError::ApiError {
+                api_error: ApiError::UnableToConnect {
+                    reason: format!("Unable to initiate websocket connection with client: {e}"),
+                },
+            })?;
+        let mut client_rx = client_rx.max_frame_size(MAX_WS_FRAME_SIZE);
+
+        // Connect to the pipeline
+        let server_url =
+            format_pipeline_url("ws", &location, endpoint, client_request.query_string());
+        let (_response, pipeline_conn) = awc_client
+            .ws(server_url)
+            .max_frame_size(MAX_WS_FRAME_SIZE)
+            .connect()
             .await
-            .map_err(|e| {
-                ApiError::UnableToConnect {
-                    reason: format!("Unable to proxy web-socket connection to pipeline {e}"),
+            .map_err(|e| ManagerError::ApiError {
+                api_error: ApiError::UnableToConnect {
+                    reason: format!("Unable to initiate websocket connection with pipeline: {e}"),
+                },
+            })?;
+        let (mut pipeline_tx, mut pipeline_rx) = pipeline_conn.split();
+
+        // Forward backend → client using `session`
+        let client_send = async move {
+            while let Some(Ok(msg)) = pipeline_rx.next().await {
+                match msg {
+                    Frame::Text(bytes) => {
+                        let maybe_text: Result<ByteString, _> = bytes.try_into();
+                        if let Ok(text) = maybe_text {
+                            if client_tx.text(text).await.is_err() {
+                                break;
+                            }
+                        } else {
+                            // If the conversion fails, we ignore the message
+                            // as it is not a valid UTF-8 string.
+                            // This shouldn't happen in practice, the pipeline
+                            // should only send valid UTF-8 strings.
+                            error!(
+                                "Skipped invalid UTF-8 returned over web-socket as msg-type text from pipeline",
+                            );
+                            let _r = client_tx
+                                .close(Some(CloseReason {
+                                    code: CloseCode::Error,
+                                    description: None,
+                                }))
+                                .await;
+                            break;
+                        }
+                    }
+                    Frame::Binary(bin) => {
+                        if client_tx.binary(bin).await.is_err() {
+                            break;
+                        }
+                    }
+                    Frame::Ping(bytes) => {
+                        if client_tx.ping(&bytes).await.is_err() {
+                            break;
+                        }
+                    }
+                    Frame::Pong(bytes) => {
+                        if client_tx.pong(&bytes).await.is_err() {
+                            break;
+                        }
+                    }
+                    Frame::Close(reason) => {
+                        let _ = client_tx.close(reason).await;
+                        break;
+                    }
+                    _ => {}
                 }
-                .into()
-            })
+            }
+        };
+
+        // Spawn the task that forwards client → pipeline
+        let pipeline_send = async move {
+            while let Some(Ok(msg)) = client_rx.next().await {
+                if pipeline_tx.send(msg).await.is_err() {
+                    break;
+                }
+            }
+        };
+
+        // Run both tasks until one finishes
+        actix_web::rt::spawn(async move {
+            tokio::select! {
+                _ = client_send => {},
+                _ = pipeline_send => {},
+            };
+        });
+
+        Ok(res)
     }
 
     /// Forwards the provided HTTP request to the pipeline, for which the

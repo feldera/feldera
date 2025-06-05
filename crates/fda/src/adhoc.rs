@@ -9,7 +9,7 @@ use feldera_rest_api::Client;
 use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs};
 use futures_util::SinkExt;
 use futures_util::StreamExt;
-use log::{debug, error, trace};
+use log::{debug, error, trace, warn};
 use reqwest_websocket::{CloseCode, Message, RequestBuilderExt};
 
 use crate::cli::OutputFormat;
@@ -89,13 +89,11 @@ async fn handle_websocket_message_generic(
             if code == CloseCode::Normal {
                 trace!("Websocket normal closure.");
             } else if code == CloseCode::Error {
-                eprint!("Error encountered during query processing");
                 if !reason.is_empty() {
-                    eprintln!(": {}.", reason);
+                    warn!("Error encountered during query processing: {}.", reason);
                 } else {
-                    eprintln!(".");
+                    warn!("Error encountered during query processing.");
                 }
-                std::process::exit(1);
             } else {
                 eprint!("Connection unexpectedly closed by pipeline ({})", code);
                 if !reason.is_empty() {
