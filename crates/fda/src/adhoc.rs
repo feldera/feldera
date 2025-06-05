@@ -89,11 +89,17 @@ async fn handle_websocket_message_generic(
             if code == CloseCode::Normal {
                 trace!("Websocket normal closure.");
             } else if code == CloseCode::Error {
-                eprintln!("Error encountered during query processing.")
-            } else {
-                eprint!("Connection unexpectedly closed by pipeline: {}", code);
+                eprint!("Error encountered during query processing");
                 if !reason.is_empty() {
-                    eprintln!(" ({}).", reason);
+                    eprintln!(": {}.", reason);
+                } else {
+                    eprintln!(".");
+                }
+                std::process::exit(1);
+            } else {
+                eprint!("Connection unexpectedly closed by pipeline ({})", code);
+                if !reason.is_empty() {
+                    eprintln!(": {}.", reason);
                 } else {
                     eprintln!(".");
                 }
