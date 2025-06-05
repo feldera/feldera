@@ -182,6 +182,11 @@ class PipelineStatus(Enum):
     could not be reached or returned it is not yet ready.
     """
 
+    SUSPENDED = 10
+    """
+    The pipeline was successfully suspended to storage.
+    """
+
     @staticmethod
     def from_str(value):
         for member in PipelineStatus:

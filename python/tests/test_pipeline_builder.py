@@ -706,6 +706,41 @@ Code snippet:
 
         pipeline.delete()
 
+    def test_suspend(self):
+        TBL_NAME = "items"
+        VIEW_NAME = "s"
+
+        sql = f"""
+        CREATE TABLE {TBL_NAME} (
+            id INT,
+            name STRING
+        );
+
+        CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
+        """
+
+        pipeline = PipelineBuilder(
+            TEST_CLIENT, name="test_suspend", sql=sql
+        ).create_or_replace()
+
+        data = {"insert": {"id": 1, "name": "a"}}
+
+        out = pipeline.listen(VIEW_NAME)
+
+        pipeline.start()
+        pipeline.input_json(TBL_NAME, data, update_format="insert_delete")
+        pipeline.wait_for_completion(False)
+
+        pipeline.suspend()
+
+        out_data = out.to_dict()
+
+        data["insert"].update({"insert_delete": 1})
+        assert out_data == [data["insert"]]
+
+        pipeline.shutdown()
+        pipeline.delete()
+
     def test_issue2142(self):
         sql = """
         CREATE TABLE t0 (c1 INT);
