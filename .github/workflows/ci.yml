@@ -13,6 +13,10 @@ jobs:
     name: Build Java
     uses: ./.github/workflows/build-java.yml
 
+  invoke-build-docs:
+    name: Build Docs
+    uses: ./.github/workflows/build-docs.yml
+
   invoke-tests-unit:
     name: Unit Tests
     needs: [invoke-build-rust, invoke-build-java]
@@ -48,6 +52,7 @@ jobs:
     needs:
       - invoke-build-rust
       - invoke-build-java
+      - invoke-build-docs
       - invoke-tests-unit
       - invoke-tests-adapter
       - invoke-build-docker
