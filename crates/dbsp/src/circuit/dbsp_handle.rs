@@ -1,6 +1,7 @@
 use crate::circuit::checkpointer::{CheckpointMetadata, Checkpointer};
 use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
+use crate::trace::MergerType;
 use crate::{
     circuit::runtime::RuntimeHandle, profile::Profiler, Error as DbspError, RootCircuit, Runtime,
     RuntimeError,
