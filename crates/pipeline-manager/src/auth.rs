@@ -623,7 +623,7 @@ mod test {
     use cached::Cached;
     use chrono::Utc;
     use jsonwebtoken::{encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
-    use tokio::sync::Mutex;
+    use tokio::sync::{Mutex, RwLock};
     use uuid::Uuid;
 
     use super::AuthError;
@@ -750,9 +750,14 @@ mod test {
         }
         let db = Arc::new(Mutex::new(conn));
         let state = actix_web::web::Data::new(
-            ServerState::new(common_config, manager_config, db)
-                .await
-                .unwrap(),
+            ServerState::new(
+                common_config,
+                manager_config,
+                db,
+                Arc::new(RwLock::new(None)),
+            )
+            .await
+            .unwrap(),
         );
         if decoding_key.is_some() {
             state
