@@ -672,10 +672,10 @@ where
 pub enum MergerType {
     /// Newer merger, which should be faster for high-latency storage, such as
     /// object storage, but it likely needs tuning.
-    #[default]
     PushMerger,
 
     /// The old standby, with known performance.
+    #[default]
     ListMerger,
 }
 
