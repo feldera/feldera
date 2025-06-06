@@ -3,9 +3,10 @@ use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
 use serde::Serialize;
 use utoipa::ToSchema;
 
+use crate::api::error::ApiError;
 use crate::api::main::ServerState;
 use crate::error::ManagerError;
-use crate::license::{DisplaySchedule, LicenseInformation};
+use crate::license::{DisplaySchedule, LicenseInformation, LICENSE_INFO_READ_LOCK_TIMEOUT};
 
 #[derive(Serialize, ToSchema)]
 pub(crate) struct UpdateInformation {
@@ -65,6 +66,19 @@ pub(crate) async fn get_config(
         env!("CARGO_PKG_VERSION")
     }
     .to_string();
+    // Acquire and read the license information. The timeout prevents it from becoming unresponsive
+    // if it cannot acquire the lock, which generally should not happen.
+    let license_info =
+        match tokio::time::timeout(LICENSE_INFO_READ_LOCK_TIMEOUT, state.license_info.read()).await
+        {
+            Ok(license_info) => license_info.clone(),
+            Err(_elapsed) => {
+                return Err(ManagerError::from(ApiError::LockTimeout {
+                    value: "license information".to_string(),
+                    timeout: LICENSE_INFO_READ_LOCK_TIMEOUT,
+                }));
+            }
+        };
     Ok(HttpResponse::Ok().json(Configuration {
         telemetry: state._config.telemetry.clone(),
         edition: if cfg!(feature = "feldera-enterprise") {
@@ -80,7 +94,7 @@ pub(crate) async fn get_config(
         } else {
             format!("https://github.com/feldera/feldera/releases/tag/v{version}")
         },
-        license_info: None,
+        license_info,
         update_info: None,
     }))
 }
