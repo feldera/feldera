@@ -4975,7 +4975,6 @@
       "LicenseInformation": {
         "type": "object",
         "required": [
-          "expires_in_seconds",
           "expires_at",
           "is_expired",
           "is_trial",
@@ -4992,12 +4991,6 @@
             "type": "string",
             "format": "date-time",
             "description": "Timestamp at which the license expires"
-          },
-          "expires_in_seconds": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Duration until the license expires",
-            "minimum": 0
           },
           "extension_url": {
             "type": "string",
