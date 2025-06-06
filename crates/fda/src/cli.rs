@@ -287,6 +287,9 @@ pub enum PipelineAction {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
+        /// Don't wait for pipeline to complete the checkpoint.
+        #[arg(long, short = 'n', default_value_t = false)]
+        no_wait: bool,
     },
     /// Pause a pipeline.
     Pause {

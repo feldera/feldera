@@ -8,7 +8,17 @@ pub struct CheckpointStatus {
     pub success: Option<u64>,
 
     /// Most recently failed checkpoint, and the associated error.
-    pub failure: Option<(u64, String)>,
+    pub failure: Option<CheckpointFailure>,
+}
+
+/// Information about a failed checkpoint.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
+pub struct CheckpointFailure {
+    /// Sequence number of the failed checkpoint.
+    pub sequence_number: u64,
+
+    /// Error message associated with the failure.
+    pub error: String,
 }
 
 /// Response to a checkpoint request.

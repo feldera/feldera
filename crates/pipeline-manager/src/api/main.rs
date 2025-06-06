@@ -224,6 +224,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::completion_token::CompletionStatusResponse,
         feldera_types::checkpoint::CheckpointStatus,
         feldera_types::checkpoint::CheckpointResponse,
+        feldera_types::checkpoint::CheckpointFailure,
     ),),
     tags(
         (name = "Pipeline management", description = "Create, retrieve, update, delete and deploy pipelines."),
