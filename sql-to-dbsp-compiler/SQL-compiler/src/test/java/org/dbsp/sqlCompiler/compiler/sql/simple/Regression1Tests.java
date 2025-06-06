@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
@@ -279,6 +281,34 @@ public class Regression1Tests extends SqlIoTest {
                 THEN - 84 * ( - NULLIF ( COALESCE ( + + 54, COUNT ( * ) + + MAX ( ALL + 61 ), + - CASE -
                 COUNT ( * ) WHEN - - COUNT ( * ) - 96 THEN - - 34 ELSE NULL END - + + 7 + - 77 / + 73 ), + 51 ) ) / + - 59 *
                 NULLIF ( + 42, ( 23 ) ) WHEN CASE + 19 WHEN - 96 THEN NULL WHEN - COUNT ( * ) - 38 THEN 9 END THEN NULL END AS col2""");
+    }
+
+    @Test
+    public void testFpAggNonLinear() {
+        // FP aggregates are never linear
+        var cc = this.getCC("""
+                CREATE TABLE T(x DOUBLE);
+                CREATE VIEW V AS SELECT SUM(x), AVG(x) FROM T;""");
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            int streamAggregate = 0;
+            int linearAggregate = 0;
+
+            @Override
+            public void postorder(DBSPStreamAggregateOperator operator) {
+                this.streamAggregate++;
+            }
+
+            @Override
+            public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
+                this.linearAggregate++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.streamAggregate);
+                Assert.assertEquals(0, this.linearAggregate);
+            }
+        });
     }
 
     @Test
