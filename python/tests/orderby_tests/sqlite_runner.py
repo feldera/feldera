@@ -3,6 +3,7 @@ import re
 
 from tests.aggregate_tests.aggtst_base import Table, View, DEBUG
 from tests.aggregate_tests.atest_run import discover_tests
+from tests.orderby_tests.automate_orderby_views import AutomateOrderByTests
 
 
 sqlite_db_path = ":memory:"  # Create an in-memory database
@@ -70,9 +71,16 @@ class SQLiteRunner:
             view.data = normalized_rows
 
 
-def discover_sqlite_tests(class_name: str, dir_name: str):
+def discover_sqlite_tests(class_name: str, dir_name: str, extra_register=bool):
     """Find all tests loaded by the current module and register them"""
     ta = discover_tests(class_name, dir_name)
+
+    if extra_register:
+        # Dynamically add parameterized ORDER BY views for all existing tables
+        for table in (
+            ta.tables
+        ):  # iterate over the list of table objects registered in the Accumulator
+            AutomateOrderByTests(table.name).register(ta)
 
     # Connect to SQLite to run tables/views
     con = sqlite3.connect(sqlite_db_path)
