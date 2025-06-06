@@ -1,0 +1,580 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
+
+@font-face {
+  font-family: "Signifier Thin";
+  src: url("/font/signifier-thin.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+}
+
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-font-family-base: "DM Sans", sans-serif;
+  --ifm-color-primary: #C533B9;
+  --ifm-color-primary-dark: #B12EA6;
+  --ifm-color-primary-darker: #9D2993;
+  --ifm-color-primary-darkest: #892480;
+  --ifm-color-primary-light: #CE47C3;
+  --ifm-color-primary-lighter: #D75BCD;
+  --ifm-color-primary-lightest: #E06FD7;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-navbar-background-color: #ffffff;
+  --ifm-navbar-link-color: #333333;
+  --ifm-navbar-link-hover-color: #C533B9;
+  --feldera-tangerine: #FCAF4F;
+  --feldera-deep-purple: #360E3B;
+  --feldera-red-orange: #FF2D55;
+  --feldera-olive-green: #94C445;
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #FCAF4F;
+  --ifm-color-primary-dark: #FB9E2C;
+  --ifm-color-primary-darker: #FA8D09;
+  --ifm-color-primary-darkest: #D77602;
+  --ifm-color-primary-light: #FDC072;
+  --ifm-color-primary-lighter: #FED195;
+  --ifm-color-primary-lightest: #FFE2B8;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-navbar-background-color: #360E3B;
+  --ifm-navbar-link-color: #ffffff;
+  --ifm-navbar-link-hover-color: #FCAF4F;
+  --ifm-alert-background-color: rgba(255, 45, 85, 0.15);
+}
+
+/* Customize inline code style */
+code {
+  background: none;
+  color: #C533B9;
+  font-weight: 500;
+  font-size: 0.9em;
+  font-family: 'DM Mono', monospace !important;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  vertical-align: baseline;
+}
+
+[data-theme='dark'] code {
+  color: #FCAF4F;
+}
+
+/* Target links only in the Docs page content */
+main .theme-doc-markdown a {
+  color: #C533B9 !important;
+  text-decoration: none !important;
+  font-weight: 500 !important;
+  transition: all 0.2s ease;
+}
+
+[data-theme='dark'] main .theme-doc-markdown a {
+  color: #FCAF4F !important;
+}
+
+main .theme-doc-markdown a:hover {
+  text-decoration: underline !important;
+}
+
+/* Navbar styling */
+.navbar {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.1);
+  height: 70px;
+  padding: 0.5rem 2rem;
+  /* Add consistent padding */
+}
+
+/* Logo sizing and alignment */
+.navbar__logo {
+  height: 40px;
+  /* Increase logo container height */
+  display: flex;
+  align-items: center;
+}
+
+.navbar__logo img {
+  height: 32px;
+  /* Adjust logo size */
+  margin-right: 1rem;
+  /* Add spacing between logo and nav items */
+}
+
+/* Navigation items alignment */
+.navbar__items {
+  align-items: center;
+  height: 100%;
+}
+
+.navbar__item {
+  font-weight: 500;
+  padding: 0 1rem;
+  /* Add consistent padding to nav items */
+}
+
+.navbar__link--active {
+  font-weight: 600;
+}
+
+.footer {
+  background-color: var(--feldera-deep-purple);
+  color: white;
+  padding: 40px 0;
+}
+
+/* This makes the page scroll to a position above the anchor specified in url's hash value - to account for the fixed-width header that overlaps the page contents */
+:target::before {
+  content: '';
+  display: block;
+  height: 180px;
+  margin-top: -180px;
+}
+
+/* Additional styles for better consistency */
+.button {
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.pagination-nav__link {
+  border-radius: 8px;
+}
+
+.table-of-contents {
+  font-size: 0.9em;
+}
+
+/* Sidebar styling improvements */
+.theme-doc-sidebar-container {
+  --ifm-font-size-base: 0.9rem;
+}
+
+.theme-doc-sidebar-menu {
+  font-family: var(--ifm-font-family-base);
+}
+
+/* Category/section headers in sidebar */
+.theme-doc-sidebar-item-category>.menu__list-item-collapsible {
+  font-weight: 400;
+  /* Default weight for all category headers */
+  font-size: 0.9rem;
+  letter-spacing: normal;
+  color: var(--ifm-color-emphasis-700);
+}
+
+/* Bold only top-level categories */
+.theme-doc-sidebar-menu>.theme-doc-sidebar-item-category>.menu__list-item-collapsible {
+  font-weight: 600;
+}
+
+/* Regular menu items */
+.theme-doc-sidebar-item-link .menu__link {
+  font-weight: 400;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--ifm-color-emphasis-800);
+}
+
+/* Documentation page styling improvements */
+.theme-doc-markdown {
+  --content-font-size: 16px;
+  --content-line-height: 1.625;
+  font-size: var(--content-font-size);
+  line-height: var(--content-line-height);
+  max-width: 960px;
+  /* Increased from 42rem for better wide screen display */
+  margin: 0 auto;
+}
+
+/* Main content container width and spacing */
+.container {
+  max-width: 1400px !important;
+  /* Increased from 1140px */
+  padding: 0 2rem;
+}
+
+/* Headers styling */
+.theme-doc-markdown h1 {
+  font-size: 2.5rem;
+  line-height: 1.25;
+  margin-bottom: 2rem;
+  font-weight: 600;
+}
+
+.theme-doc-markdown h2 {
+  font-size: 1.75rem;
+  line-height: 1.3;
+  margin: 2.5rem 0 1.25rem;
+  font-weight: 600;
+}
+
+.theme-doc-markdown h3 {
+  font-size: 1.375rem;
+  line-height: 1.4;
+  margin: 2rem 0 1rem;
+  font-weight: 600;
+}
+
+.theme-doc-markdown h4 {
+  font-weight: 500;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+/* Add more space after sections that contain lists */
+.theme-doc-markdown h2+ul,
+.theme-doc-markdown h3+ul,
+.theme-doc-markdown h2+ol,
+.theme-doc-markdown h3+ol {
+  margin-top: -0.5rem;
+}
+
+/* Adjust spacing between paragraphs and lists */
+.theme-doc-markdown p+ul,
+.theme-doc-markdown p+ol {
+  margin-top: -0.75rem;
+}
+
+/* Remove max-width from paragraphs since it's handled by parent */
+.theme-doc-markdown p {
+  margin: 0 0 1rem;
+}
+
+/* List styling */
+.theme-doc-markdown ul,
+.theme-doc-markdown ol {
+  margin: 0 0 1rem;
+  padding-left: 1.5rem;
+}
+
+.theme-doc-markdown li {
+  margin: 0.5rem 0;
+  padding-left: 0.5rem;
+}
+
+/* Code blocks spacing */
+.theme-doc-markdown .prism-code {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  padding: 1rem;
+  margin: 1.5rem 0;
+}
+
+/* Index/category cards styling */
+.card {
+  margin-bottom: 1rem !important;
+  padding: 1rem !important;
+}
+
+.card__header {
+  margin-bottom: 0.5rem !important;
+}
+
+.card__header h2 {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.card__description {
+  margin-bottom: 0 !important;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* Remove extra margin from last card in a row */
+.row .col:last-child .card {
+  margin-bottom: 0;
+}
+
+/* Admonition (callout) styling */
+.alert {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+}
+
+.alert__title {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Notes - use Deep Purple */
+.alert--info {
+  --ifm-alert-background-color: rgba(54, 14, 59, 0.03);
+  --ifm-alert-border-color: var(--feldera-deep-purple);
+  background: #F9F6FA;
+  /* Light purple background */
+}
+
+/* Tips - use Olive Green */
+.alert--success,
+.alert--tip {
+  --ifm-alert-background-color: rgba(148, 196, 69, 0.03);
+  --ifm-alert-border-color: var(--feldera-olive-green);
+}
+
+/* Warnings - use Tangerine with more visible styling */
+.alert--warning {
+  --ifm-alert-background-color: rgba(252, 175, 79, 0.05);
+  --ifm-alert-border-color: var(--feldera-tangerine);
+  background: #FFF9F2;
+  /* Light tangerine background */
+}
+
+/* Danger/Important - use Red Orange */
+.alert--danger {
+  --ifm-alert-background-color: rgba(255, 45, 85, 0.03);
+  --ifm-alert-border-color: var(--feldera-red-orange);
+}
+
+/* Make admonition titles match their border colors */
+.alert--info .alert__title {
+  color: var(--feldera-deep-purple);
+  font-weight: 500;
+}
+
+.alert--success .alert__title,
+.alert--tip .alert__title {
+  color: var(--feldera-olive-green);
+}
+
+.alert--warning .alert__title {
+  color: var(--feldera-tangerine);
+  font-weight: 600;
+}
+
+.alert--danger .alert__title {
+  color: var(--feldera-red-orange);
+}
+
+/* Dark mode adjustments */
+[data-theme='dark'] .alert {
+  --ifm-alert-background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* Use olive green for success messages and tips */
+.alert--success {
+  --ifm-alert-background-color: rgba(148, 196, 69, 0.1);
+  --ifm-alert-border-color: var(--feldera-olive-green);
+  --ifm-alert-color: var(--feldera-olive-green);
+}
+
+/* Add subtle olive green accent for info blocks */
+.alert--info {
+  border-left: 4px solid var(--feldera-olive-green);
+}
+
+/* Use red-orange for deprecated or beta feature badges */
+.badge--secondary {
+  background: var(--feldera-red-orange);
+  color: white;
+}
+
+/* Add olive green for version badges or stable features */
+.badge--primary {
+  background: var(--feldera-olive-green);
+  color: white;
+}
+
+/* Add Deep Purple to more UI elements */
+/* Blockquotes for important callouts */
+blockquote {
+  background-color: rgba(54, 14, 59, 0.05);
+  border-left: 3px solid var(--feldera-deep-purple);
+  margin: 1.5rem 0;
+  padding: 1rem;
+}
+
+/* Table headers */
+table th {
+  background-color: var(--feldera-deep-purple);
+  color: white;
+}
+
+[data-theme='dark'] table th {
+  background-color: rgba(54, 14, 59, 0.8);
+}
+
+/* Update the admonition styling for better visibility */
+.alert {
+  border: 1px solid var(--ifm-alert-border-color);
+  border-left-width: 6px;
+  border-radius: 6px;
+  margin: 1.5rem 0;
+}
+
+/* Warnings - use Tangerine with more visible styling */
+.alert--warning {
+  --ifm-alert-background-color: rgba(252, 175, 79, 0.05);
+  --ifm-alert-border-color: var(--feldera-tangerine);
+  background: #FFF9F2;
+  /* Light tangerine background */
+}
+
+[data-theme='dark'] .alert--warning {
+  background: rgba(252, 175, 79, 0.05);
+}
+
+/* Make warning icons and titles more visible */
+.alert--warning .alert__title {
+  color: var(--feldera-tangerine);
+  font-weight: 600;
+}
+
+.admonition-icon svg {
+  fill: var(--ifm-alert-border-color);
+}
+
+/* Update note styling to be more visible */
+.alert--info {
+  --ifm-alert-background-color: rgba(54, 14, 59, 0.03);
+  --ifm-alert-border-color: var(--feldera-deep-purple);
+  background: #F9F6FA;
+  /* Light purple background */
+}
+
+[data-theme='dark'] .alert--info {
+  background: rgba(54, 14, 59, 0.1);
+}
+
+/* Make note icons and titles more visible */
+.alert--info .alert__title {
+  color: var(--feldera-deep-purple);
+  font-weight: 500;
+}
+
+.admonition-icon svg {
+  fill: var(--ifm-alert-border-color);
+}
+
+/* Ensure tables and code blocks span full width of content */
+.theme-doc-markdown table,
+.theme-doc-markdown .prism-code,
+.theme-doc-markdown .alert {
+  width: 100%;
+  max-width: none;
+}
+
+/* Table container to enable horizontal scrolling */
+.theme-doc-markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+
+/* Make the table structure behave normally inside the scrollable container */
+.theme-doc-markdown table thead,
+.theme-doc-markdown table tbody,
+.theme-doc-markdown table tr {
+  width: 100%;
+}
+
+/* Ensure table headers and cells align properly */
+.theme-doc-markdown table th,
+.theme-doc-markdown table td {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  min-width: 100px;
+  /* Prevent cells from becoming too narrow */
+}
+
+/* Keep header styling */
+.theme-doc-markdown table th {
+  background-color: var(--feldera-deep-purple);
+  color: white;
+  font-weight: 500;
+}
+
+/* Active and hover states */
+.menu__link--active,
+.menu__link:hover {
+  color: var(--ifm-color-primary);
+  background: none;
+}
+
+.menu__link--active {
+  font-weight: 500;
+}
+
+/* Indent nested items for better hierarchy */
+.menu__list .menu__list {
+  margin-left: 0.8rem;
+  border-left: 1px solid var(--ifm-color-emphasis-200);
+  padding-left: 0.4rem;
+}
+
+/* Dark mode adjustments */
+[data-theme='dark'] .theme-doc-sidebar-item-category>.menu__list-item-collapsible {
+  color: var(--ifm-color-emphasis-500);
+}
+
+[data-theme='dark'] .theme-doc-sidebar-item-link .menu__link {
+  color: var(--ifm-color-emphasis-600);
+}
+
+/* Menu arrow styling and alignment */
+.menu__link--sublist:after,
+.menu__caret:before {
+  width: 1rem;
+  height: 1rem;
+  background-size: 1rem 1rem;
+  transform: rotate(180deg);
+  transition: transform 0.2s ease;
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  margin-top: -0.5rem;
+  /* Center vertically */
+}
+
+/* Container for items with arrows */
+.menu__list-item-collapsible {
+  position: relative;
+  /* For absolute positioning of arrows */
+}
+
+.menu__list-item-collapsible .menu__link {
+  padding-right: 2rem;
+  /* Make space for the arrow */
+}
+
+/* Rotate arrow when expanded */
+.menu__list-item--expanded .menu__link--sublist:after,
+.menu__list-item--expanded .menu__caret:before {
+  transform: rotate(90deg);
+}
+
+/* Sidebar hover and active states */
+.menu__link:hover {
+  background-color: var(--ifm-menu-color-background-hover, rgba(54, 14, 59, 0.05));
+}
+
+[data-theme='dark'] .menu__link:hover {
+  background-color: var(--ifm-menu-color-background-hover, rgba(252, 175, 79, 0.05));
+}
+
+/* Keep active state background */
+.menu__link--active {
+  background-color: var(--ifm-menu-color-background-active, rgba(54, 14, 59, 0.1));
+}
+
+[data-theme='dark'] .menu__link--active {
+  background-color: var(--ifm-menu-color-background-active, rgba(252, 175, 79, 0.1));
+}
+
+/* Hide breadcrumbs */
+.theme-doc-breadcrumbs {
+  display: none;
+}

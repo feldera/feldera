@@ -1,0 +1,41 @@
+name: Build docs.feldera.com
+
+on:
+  workflow_call:
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 18
+
+      - name: Install required-version defined in pyproject.toml
+        uses: astral-sh/setup-uv@v5
+        with:
+          pyproject-file: "python/pyproject.toml"
+
+      - name: Build Python SDK docs
+        working-directory: ./python/docs
+        run: |
+          uv run sphinx-apidoc -o . ../
+          uv run sphinx-build -M html . _build
+
+      - name: Copy the Python docs to static
+        run: |
+          cp -r python/docs/_build/html docs.feldera.com/static/python
+
+      - name: Build Docusaurus
+        working-directory: ./docs.feldera.com
+        run: |
+          yarn install --frozen-lockfile
+          yarn build
+
+      - name: Upload docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: feldera-docs
+          path: ./docs.feldera.com/build
+          retention-days: 7
