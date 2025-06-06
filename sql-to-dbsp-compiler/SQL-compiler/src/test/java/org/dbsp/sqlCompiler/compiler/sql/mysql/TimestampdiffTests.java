@@ -16,7 +16,7 @@ public class TimestampdiffTests extends SqlIoTest {
     // Test data obtained from
     // https://github.com/mysql/mysql-server/blob/mysql-test/r/func_time.result#L715
     @Test
-    public void testDateDiff() {
+    public void testTimestampDiff0() {
         this.qs("""
                 select timestampdiff(MONTH, DATE '2001-02-01', DATE '2001-05-01') as a;
                 a
@@ -61,6 +61,59 @@ public class TimestampdiffTests extends SqlIoTest {
                 (1 row)
 
                 select timestampdiff(SQL_TSI_DAY, DATE '2001-02-01', DATE '2001-05-01') as a;
+                a
+                -----
+                89
+                (1 row)""");
+    }
+
+    @Test
+    public void testDateDiff() {
+        // same as testTimestampDiff0 above, but using DATEDIFF as a function
+        this.qs("""
+                select datediff(MONTH, DATE '2001-02-01', DATE '2001-05-01') as a;
+                a
+                -----
+                 3
+                (1 row)
+
+                select datediff(YEAR, DATE '2002-05-01', DATE '2001-01-01') as a;
+                a
+                -----
+                 -1
+                (1 row)
+
+                select datediff(QUARTER, DATE '2002-05-01', DATE '2001-01-01') as a;
+                a
+                -----
+                 -5
+                (1 row)
+
+                select datediff(MONTH, DATE '2000-03-28', DATE '2000-02-29') as a;
+                a
+                -----
+                 0
+                (1 row)
+
+                select datediff(MONTH, DATE '1991-03-28', DATE '2000-02-29') as a;
+                a
+                -----
+                 107
+                (1 row)
+
+                select datediff(SQL_TSI_WEEK, DATE '2001-02-01', DATE '2001-05-01') as a;
+                a
+                -----
+                12
+                (1 row)
+
+                select datediff(SQL_TSI_HOUR, DATE '2001-02-01', DATE '2001-05-01') as a;
+                a
+                -----
+                2136
+                (1 row)
+
+                select datediff(SQL_TSI_DAY, DATE '2001-02-01', DATE '2001-05-01') as a;
                 a
                 -----
                 89
@@ -135,6 +188,7 @@ public class TimestampdiffTests extends SqlIoTest {
 
     @Test
     public void testTimestampDiff() {
+        this.showPlan();
         this.qs("""
                 select timestampdiff(SQL_TSI_MINUTE, TIMESTAMP '2001-02-01 12:59:59', TIMESTAMP '2001-05-01 12:58:59') as a;
                 a
