@@ -26,7 +26,7 @@ use colored::{ColoredString, Colorize};
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
-use feldera_types::checkpoint::{CheckpointResponse, CheckpointStatus};
+use feldera_types::checkpoint::{CheckpointFailure, CheckpointResponse, CheckpointStatus};
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
@@ -146,9 +146,12 @@ impl CheckpointState {
                     .status
                     .failure
                     .as_ref()
-                    .is_none_or(|(failure, _)| *failure < seq)
+                    .is_none_or(|cf| cf.sequence_number < seq)
                 {
-                    self.status.failure = Some((seq, error.to_string()));
+                    self.status.failure = Some(CheckpointFailure {
+                        sequence_number: seq,
+                        error: error.to_string(),
+                    });
                 }
             }
         }

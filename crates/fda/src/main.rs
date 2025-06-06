@@ -571,6 +571,51 @@ async fn wait_for_status(
     }
 }
 
+async fn wait_for_checkpoint(client: &Client, name: String, seq_number: u64, waiting_text: &str) {
+    let mut print_every_30_seconds = tokio::time::Instant::now();
+    let mut is_waiting_for_checkpoint = true;
+    while is_waiting_for_checkpoint {
+        let cs = client
+            .get_checkpoint_status()
+            .pipeline_name(name.clone())
+            .send()
+            .await
+            .map_err(handle_errors_fatal(
+                client.baseurl().clone(),
+                "Failed to get pipeline checkpoint status",
+                1,
+            ))
+            .unwrap();
+        debug!("Checkpoint status {:?}", cs);
+
+        is_waiting_for_checkpoint = cs.success.map(|c| c < seq_number).unwrap_or(true);
+        if !is_waiting_for_checkpoint {
+            // We have a checkpoint at least as recent as the requested sequence number
+            break;
+        }
+
+        if let Some(failure) = &cs.failure {
+            if failure.sequence_number < seq_number {
+                continue;
+            }
+            eprintln!(
+                "Pipeline failed to take the checkpoint#{} due to the following error:",
+                failure.sequence_number
+            );
+            eprintln!();
+            eprintln!("{}", failure.error);
+            std::process::exit(1);
+        }
+
+        if print_every_30_seconds.elapsed().as_secs() > 30 {
+            info!("{}", waiting_text);
+            print_every_30_seconds = tokio::time::Instant::now();
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+}
+
 async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) {
     match action {
         PipelineAction::Create {
@@ -742,7 +787,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
 
             trace!("{:#?}", response);
         }
-        PipelineAction::Checkpoint { name } => {
+        PipelineAction::Checkpoint { name, no_wait } => {
             let response = client
                 .checkpoint_pipeline()
                 .pipeline_name(name.clone())
@@ -750,11 +795,25 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .await
                 .map_err(handle_errors_fatal(
                     client.baseurl().clone(),
-                    "Failed to checkpoint pipeline",
+                    "Failed to initiate pipeline checkpoint",
                     1,
                 ))
                 .unwrap();
             trace!("{:#?}", response);
+            let checkpoint_sequence_number = response.into_inner().checkpoint_sequence_number;
+            if !no_wait {
+                wait_for_checkpoint(
+                    &client,
+                    name.clone(),
+                    checkpoint_sequence_number,
+                    "Taking a checkpoint...",
+                )
+                .await;
+                println!(
+                    "Pipeline checkpoint (#{}) taken successfully.",
+                    checkpoint_sequence_number
+                );
+            }
         }
         PipelineAction::Pause { name, no_wait } => {
             let response = client

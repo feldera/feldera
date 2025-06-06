@@ -167,6 +167,18 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "feldera_types::config::OutputEndpointConfig",
         ),
         ("FtConfig", "feldera_types::config::FtConfig"),
+        (
+            "CheckpointResponse",
+            "feldera_types::checkpoint::CheckpointResponse",
+        ),
+        (
+            "CheckpointStatus",
+            "feldera_types::checkpoint::CheckpointStatus",
+        ),
+        (
+            "CheckpointStatusFailure",
+            "feldera_types::checkpoint::CheckpointFailure",
+        ),
     ]
 }
 

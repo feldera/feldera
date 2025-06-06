@@ -3739,6 +3739,26 @@
           }
         ]
       },
+      "CheckpointFailure": {
+        "type": "object",
+        "description": "Information about a failed checkpoint.",
+        "required": [
+          "sequence_number",
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message associated with the failure."
+          },
+          "sequence_number": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sequence number of the failed checkpoint.",
+            "minimum": 0
+          }
+        }
+      },
       "CheckpointResponse": {
         "type": "object",
         "description": "Response to a checkpoint request.",
@@ -3758,20 +3778,11 @@
         "description": "Checkpoint status returned by the `/checkpoint_status` endpoint.",
         "properties": {
           "failure": {
-            "type": "array",
-            "items": {
-              "allOf": [
-                {
-                  "type": "integer",
-                  "format": "int64",
-                  "minimum": 0
-                },
-                {
-                  "type": "string"
-                }
-              ]
-            },
-            "description": "Most recently failed checkpoint, and the associated error.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CheckpointFailure"
+              }
+            ],
             "nullable": true
           },
           "success": {
