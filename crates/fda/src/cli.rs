@@ -434,6 +434,15 @@ pub enum PipelineAction {
         #[arg(value_hint = ValueHint::FilePath, long, short = 'o')]
         output: Option<PathBuf>,
     },
+    /// Obtains a circuit profile for a pipeline.
+    CircuitProfile {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// The ZIP file to write the profile to.
+        #[arg(value_hint = ValueHint::FilePath, long, short = 'o')]
+        output: Option<PathBuf>,
+    },
     /// Enter the ad-hoc SQL shell for a pipeline.
     Shell {
         /// The name of the pipeline.
@@ -474,7 +483,7 @@ pub enum PipelineAction {
         stdin: bool,
     },
     /// Generate a completion token for a SQL table/connector pair in a pipeline.
-    #[clap(aliases = &["generate-token", "generate-completion-status"])]
+    #[clap(aliases = &["generate-token", "generate-completion-token"])]
     CompletionToken {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
@@ -487,7 +496,7 @@ pub enum PipelineAction {
         connector: String,
     },
     /// Check the status of a completion token for a pipeline.
-    #[clap(aliases = &["check-token", "check-completion-status"])]
+    #[clap(aliases = &["check-token", "check-completion-token"])]
     CompletionStatus {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
