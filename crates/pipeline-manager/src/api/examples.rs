@@ -1,4 +1,6 @@
 //! Example data and error types for use in OpenAPI docs.
+use std::collections::BTreeMap;
+
 use crate::api::endpoints::pipeline_management::{
     PartialProgramInfo, PatchPipeline, PipelineInfo, PipelineInfoInternal, PipelineSelectedInfo,
     PipelineSelectedInfoInternal, PostPutPipeline,
@@ -102,6 +104,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             max_parallel_connector_init: Some(10),
             init_containers: None,
             checkpoint_during_suspend: false,
+            dev_tweaks: BTreeMap::new(),
         })
         .unwrap(),
         program_code: "CREATE TABLE table2 ( col2 VARCHAR );".to_string(),

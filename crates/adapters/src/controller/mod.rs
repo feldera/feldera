@@ -39,7 +39,7 @@ use crossbeam::{
 };
 use datafusion::prelude::*;
 use dbsp::circuit::tokio::TOKIO;
-use dbsp::circuit::{CircuitStorageConfig, Mode};
+use dbsp::circuit::{CircuitStorageConfig, DevTweaks, Mode};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
 use dbsp::{
     circuit::{CircuitConfig, Layout},
@@ -1865,6 +1865,7 @@ impl ControllerInit {
                 max_parallel_connector_init: config.global.max_parallel_connector_init,
                 init_containers: config.global.init_containers,
                 checkpoint_during_suspend: config.global.checkpoint_during_suspend,
+                dev_tweaks: BTreeMap::new(),
             },
 
             // Adapter configuration has to come from the checkpoint.
@@ -1894,6 +1895,7 @@ impl ControllerInit {
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             storage,
             mode: Mode::Persistent,
+            dev_tweaks: DevTweaks::default(),
         })
     }
 }

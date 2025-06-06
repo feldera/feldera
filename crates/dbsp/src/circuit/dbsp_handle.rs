@@ -15,6 +15,8 @@ use metrics::counter;
 use minitrace::collector::SpanContext;
 use minitrace::local::LocalSpan;
 use minitrace::Span;
+use serde::Deserialize;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -254,6 +256,53 @@ pub struct CircuitConfig {
 
     /// Storage configuration. If present, then storage is enabled..
     pub storage: Option<CircuitStorageConfig>,
+
+    /// Parsed from `RuntimeConfig` for use by the circuit.
+    pub dev_tweaks: DevTweaks,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct DevTweaks {
+    /// Whether to asynchronously fetch keys needed for the join operator from
+    /// storage.  Asynchronous fetching should be faster for high-latency
+    /// storage, such as object storage, but it could use excessive amounts of
+    /// memory if the number of keys fetched is very large.
+    pub fetch_join: bool,
+
+    /// Whether to asynchronously fetch keys needed for the distinct operator
+    /// from storage.  Asynchronous fetching should be faster for high-latency
+    /// storage, such as object storage, but it could use excessive amounts of
+    /// memory if the number of keys fetched is very large.
+    pub fetch_distinct: bool,
+
+    /// Which merger to use.
+    pub merger: MergerType,
+}
+
+impl Default for DevTweaks {
+    fn default() -> Self {
+        Self {
+            fetch_join: true,
+            fetch_distinct: true,
+            merger: MergerType::default(),
+        }
+    }
+}
+
+impl DevTweaks {
+    pub fn from_config(config: &BTreeMap<String, Value>) -> Self {
+        let tweaks = serde_json::to_value(config)
+            .and_then(serde_json::from_value)
+            .inspect_err(|error| {
+                tracing::error!("falling back to default `dev_tweaks` due to error ({error}) with configuration: {config:#?}")
+            })
+            .unwrap_or_default();
+        if tweaks != DevTweaks::default() {
+            info!("using non-default `dev_tweaks`: {tweaks:#?}")
+        }
+        tweaks
+    }
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.
@@ -313,6 +362,7 @@ impl CircuitConfig {
             pin_cpus: Vec::new(),
             mode: Mode::Ephemeral,
             storage: None,
+            dev_tweaks: DevTweaks::default(),
         }
     }
 
@@ -1032,6 +1082,7 @@ pub(crate) mod tests {
 
     use super::{CircuitStorageConfig, Mode};
     use crate::circuit::checkpointer::Checkpointer;
+    use crate::circuit::dbsp_handle::DevTweaks;
     use crate::circuit::{CircuitConfig, Layout};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
     use crate::operator::Generator;
@@ -1306,6 +1357,7 @@ pub(crate) mod tests {
                 )
                 .unwrap(),
             ),
+            dev_tweaks: DevTweaks::default(),
         };
         (temp, cconf)
     }

@@ -3,6 +3,7 @@
 
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::describe_metrics;
+use crate::circuit::DevTweaks;
 use crate::error::Error as DbspError;
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
@@ -247,6 +248,7 @@ struct RuntimeStorage {
 struct RuntimeInner {
     layout: Layout,
     mode: Mode,
+    dev_tweaks: DevTweaks,
 
     storage: Option<RuntimeStorage>,
     store: LocalStore,
@@ -364,6 +366,7 @@ impl RuntimeInner {
         Ok(Self {
             layout: config.layout,
             mode: config.mode,
+            dev_tweaks: config.dev_tweaks,
             storage,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
@@ -603,6 +606,16 @@ impl Runtime {
         RUNTIME
             .with(|rt| Some(rt.borrow().as_ref()?.get_mode()))
             .unwrap_or_default()
+    }
+
+    pub fn with_dev_tweaks<F, T>(f: F) -> T
+    where
+        F: Fn(&DevTweaks) -> T,
+    {
+        static DEFAULT: Lazy<DevTweaks> = Lazy::new(DevTweaks::default);
+        RUNTIME
+            .with(|rt| Some(f(&rt.borrow().as_ref()?.inner().dev_tweaks)))
+            .unwrap_or_else(|| f(&DEFAULT))
     }
 
     pub fn get_mode(&self) -> Mode {
@@ -926,7 +939,7 @@ mod tests {
     use super::Runtime;
     use crate::{
         circuit::{
-            dbsp_handle::{CircuitStorageConfig, Mode},
+            dbsp_handle::{CircuitStorageConfig, DevTweaks, Mode},
             schedule::{DynamicScheduler, Scheduler},
             CircuitConfig, Layout,
         },
@@ -962,6 +975,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            dev_tweaks: DevTweaks::default(),
         };
 
         let hruntime = Runtime::run(cconf, move || {

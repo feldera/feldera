@@ -406,7 +406,8 @@
                       "provisioning_timeout_secs": null,
                       "max_parallel_connector_init": null,
                       "init_containers": null,
-                      "checkpoint_during_suspend": true
+                      "checkpoint_during_suspend": true,
+                      "dev_tweaks": {}
                     },
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
                     "udf_rust": "",
@@ -470,7 +471,8 @@
                       "provisioning_timeout_secs": 1200,
                       "max_parallel_connector_init": 10,
                       "init_containers": null,
-                      "checkpoint_during_suspend": false
+                      "checkpoint_during_suspend": false,
+                      "dev_tweaks": {}
                     },
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
                     "udf_rust": "",
@@ -563,7 +565,8 @@
                   "provisioning_timeout_secs": null,
                   "max_parallel_connector_init": null,
                   "init_containers": null,
-                  "checkpoint_during_suspend": true
+                  "checkpoint_during_suspend": true,
+                  "dev_tweaks": {}
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -625,7 +628,8 @@
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
-                    "checkpoint_during_suspend": true
+                    "checkpoint_during_suspend": true,
+                    "dev_tweaks": {}
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -782,7 +786,8 @@
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
-                    "checkpoint_during_suspend": true
+                    "checkpoint_during_suspend": true,
+                    "dev_tweaks": {}
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -902,7 +907,8 @@
                   "provisioning_timeout_secs": null,
                   "max_parallel_connector_init": null,
                   "init_containers": null,
-                  "checkpoint_during_suspend": true
+                  "checkpoint_during_suspend": true,
+                  "dev_tweaks": {}
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -964,7 +970,8 @@
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
-                    "checkpoint_during_suspend": true
+                    "checkpoint_during_suspend": true,
+                    "dev_tweaks": {}
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1038,7 +1045,8 @@
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
-                    "checkpoint_during_suspend": true
+                    "checkpoint_during_suspend": true,
+                    "dev_tweaks": {}
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1279,7 +1287,8 @@
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
-                    "checkpoint_during_suspend": true
+                    "checkpoint_during_suspend": true,
+                    "dev_tweaks": {}
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -2638,7 +2647,8 @@
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
-                    "checkpoint_during_suspend": true
+                    "checkpoint_during_suspend": true,
+                    "dev_tweaks": {}
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -5309,6 +5319,14 @@
                 "description": "Enable CPU profiler.\n\nThe default value is `true`.",
                 "default": true
               },
+              "dev_tweaks": {
+                "type": "object",
+                "description": "Optional settings for tweaking Feldera internals.\n\nThe available key-value pairs change from one version of Feldera to\nanother, so users should not depend on particular settings being\navailable, or on their behavior.",
+                "default": {},
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              },
               "fault_tolerance": {
                 "allOf": [
                   {
@@ -6289,6 +6307,14 @@
             "type": "boolean",
             "description": "Enable CPU profiler.\n\nThe default value is `true`.",
             "default": true
+          },
+          "dev_tweaks": {
+            "type": "object",
+            "description": "Optional settings for tweaking Feldera internals.\n\nThe available key-value pairs change from one version of Feldera to\nanother, so users should not depend on particular settings being\navailable, or on their behavior.",
+            "default": {},
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            }
           },
           "fault_tolerance": {
             "allOf": [

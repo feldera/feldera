@@ -2,7 +2,6 @@ use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metrics::Gauge;
 use crate::dynamic::DynData;
-use crate::NestedCircuit;
 use crate::{
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
@@ -29,6 +28,7 @@ use crate::{
     utils::Tup2,
     DBData, ZWeight,
 };
+use crate::{NestedCircuit, Runtime};
 use minitrace::trace;
 use size_of::{Context, SizeOf};
 use std::{
@@ -1310,7 +1310,11 @@ where
 
         let mut index_cursor = index.cursor();
 
-        let fetched = trace.fetch(index).await;
+        let fetched = if Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.fetch_join) {
+            trace.fetch(index).await
+        } else {
+            None
+        };
         let mut trace_cursor = if let Some(fetched) = fetched.as_ref() {
             fetched.get_cursor()
         } else {
