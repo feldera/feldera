@@ -21,7 +21,7 @@ use crate::{
     dynamic::{DynPair, DynWeightedPairs, Erase},
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     utils::Tup2,
-    DBData, Timestamp, ZWeight,
+    DBData, Runtime, Timestamp, ZWeight,
 };
 use crate::{NestedCircuit, RootCircuit};
 use minitrace::trace;
@@ -489,7 +489,11 @@ where
         let mut builder = Z::Builder::with_capacity(&self.input_factories, delta.len());
         let mut delta_cursor = delta.cursor();
 
-        let fetched = delayed_integral.fetch(delta).await;
+        let fetched = if Runtime::with_dev_tweaks(|d| d.fetch_distinct) {
+            delayed_integral.fetch(delta).await
+        } else {
+            None
+        };
         let mut integral_cursor = match &fetched {
             Some(fetched) => fetched.get_cursor(),
             None => Box::new(delayed_integral.cursor()),

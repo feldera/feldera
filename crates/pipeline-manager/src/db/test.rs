@@ -284,6 +284,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             max_parallel_connector_init: None,
             init_containers: None,
             checkpoint_during_suspend: val.val15,
+            dev_tweaks: BTreeMap::new(),
         })
         .unwrap()
     }
@@ -1034,6 +1035,7 @@ async fn pipeline_versioning() {
         max_parallel_connector_init: None,
         init_containers: None,
         checkpoint_during_suspend: true,
+        dev_tweaks: BTreeMap::new(),
     })
     .unwrap();
     handle
@@ -1595,6 +1597,7 @@ async fn pipeline_provision_version_guard() {
                     max_parallel_connector_init: None,
                     init_containers: None,
                     checkpoint_during_suspend: false,
+                    dev_tweaks: BTreeMap::new(),
                 })
                 .unwrap(),
             ),

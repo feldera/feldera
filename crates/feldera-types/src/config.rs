@@ -453,6 +453,13 @@ pub struct RuntimeConfig {
     ///   When resuming, it will pick up the latest checkpoint made by the periodic checkpointer or
     ///   by invoking the `/checkpoint` API.
     pub checkpoint_during_suspend: bool,
+
+    /// Optional settings for tweaking Feldera internals.
+    ///
+    /// The available key-value pairs change from one version of Feldera to
+    /// another, so users should not depend on particular settings being
+    /// available, or on their behavior.
+    pub dev_tweaks: BTreeMap<String, JsonValue>,
 }
 
 /// Accepts "true" and "false" and converts them to the new format.
@@ -584,6 +591,7 @@ impl Default for RuntimeConfig {
             max_parallel_connector_init: None,
             init_containers: None,
             checkpoint_during_suspend: true,
+            dev_tweaks: BTreeMap::default(),
         }
     }
 }

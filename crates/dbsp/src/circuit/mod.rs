@@ -38,8 +38,8 @@ pub use circuit_builder::{
     NestedCircuit, NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,
 };
 pub use dbsp_handle::{
-    CircuitConfig, CircuitStorageConfig, DBSPHandle, Host, Layout, Mode, StorageCacheConfig,
-    StorageConfig, StorageOptions,
+    CircuitConfig, CircuitStorageConfig, DBSPHandle, DevTweaks, Host, Layout, Mode,
+    StorageCacheConfig, StorageConfig, StorageOptions,
 };
 pub use runtime::{Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};
 
