@@ -69,6 +69,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
@@ -234,6 +235,10 @@ public class AggregateCompiler implements ICompilerComponent {
         // Always non-linear (result can not be zero).
         this.setResult(new NonLinearAggregate(
                 this.node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
+    }
+
+    boolean fp() {
+        return this.resultType.is(DBSPTypeFP.class);
     }
 
     void processCount(SqlCountAggFunction function) {
@@ -458,7 +463,7 @@ public class AggregateCompiler implements ICompilerComponent {
     void processSum(SqlSumAggFunction function) {
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
 
-        if (this.linearAllowed) {
+        if (this.linearAllowed && !this.fp()) {
             DBSPClosureExpression map;
             DBSPClosureExpression post;
             // map = |v| {
@@ -516,7 +521,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         DBSPVariablePath accumulator = this.resultType.var();
-        if (this.linearAllowed) {
+        if (this.linearAllowed && !this.fp()) {
             DBSPClosureExpression map;
             DBSPClosureExpression post;
             // map = |v| ( if filter(v) && !v.field.is_null() { v.field } else { 0 }, 1)
@@ -577,7 +582,7 @@ public class AggregateCompiler implements ICompilerComponent {
         Utilities.enforce(function.getKind() == SqlKind.AVG);
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
 
-        if (this.linearAllowed) {
+        if (this.linearAllowed && !this.fp()) {
             DBSPClosureExpression map;
             DBSPClosureExpression post;
             // map = |v| {
