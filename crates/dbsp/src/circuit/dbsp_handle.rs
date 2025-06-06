@@ -284,8 +284,8 @@ pub struct DevTweaks {
 impl Default for DevTweaks {
     fn default() -> Self {
         Self {
-            fetch_join: true,
-            fetch_distinct: true,
+            fetch_join: false,
+            fetch_distinct: false,
             merger: MergerType::default(),
         }
     }
