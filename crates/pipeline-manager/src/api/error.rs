@@ -3,6 +3,7 @@ use actix_web::{
 };
 use feldera_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;
+use std::time::Duration;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display};
 
 /// The [`ApiError`] encompasses API-related errors, which primarily will show up
@@ -22,6 +23,7 @@ pub enum ApiError {
     UnsupportedPipelineAction { action: String, reason: String },
     InvalidConnectorAction { action: String },
     UnableToConnect { reason: String },
+    LockTimeout { value: String, timeout: Duration },
 }
 
 impl DetailedError for ApiError {
@@ -36,6 +38,7 @@ impl DetailedError for ApiError {
             Self::UnsupportedPipelineAction { .. } => Cow::from("UnsupportedPipelineAction"),
             Self::InvalidConnectorAction { .. } => Cow::from("InvalidConnectorAction"),
             Self::UnableToConnect { .. } => Cow::from("UnableToConnect"),
+            Self::LockTimeout { .. } => Cow::from("LockTimeout"),
         }
     }
 }
@@ -73,6 +76,13 @@ impl Display for ApiError {
             Self::UnableToConnect { reason } => {
                 write!(f, "Error forwarding connection to pipeline: {reason}")
             }
+            Self::LockTimeout { value, timeout } => {
+                write!(
+                    f,
+                    "It took longer than {}s to acquire the lock to read the {value}",
+                    timeout.as_secs_f64()
+                )
+            }
         }
     }
 }
@@ -97,6 +107,7 @@ impl ResponseError for ApiError {
             Self::UnsupportedPipelineAction { .. } => StatusCode::METHOD_NOT_ALLOWED,
             Self::InvalidConnectorAction { .. } => StatusCode::BAD_REQUEST,
             Self::UnableToConnect { .. } => StatusCode::BAD_REQUEST,
+            Self::LockTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

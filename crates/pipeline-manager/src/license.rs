@@ -1,6 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use utoipa::ToSchema;
+
+/// The license information lock is held very shortly for both read and write.
+pub const LICENSE_INFO_READ_LOCK_TIMEOUT: Duration = Duration::from_millis(500);
 
 #[derive(Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 #[allow(dead_code)]
@@ -15,7 +19,7 @@ pub enum DisplaySchedule {
     Always,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct LicenseInformation {
     /// Timestamp at which the license expires
     pub expires_at: DateTime<Utc>,
