@@ -264,6 +264,7 @@ pub struct CircuitConfig {
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct DevTweaks {
     /// Whether to asynchronously fetch keys needed for the join operator from
     /// storage.  Asynchronous fetching should be faster for high-latency
@@ -279,16 +280,6 @@ pub struct DevTweaks {
 
     /// Which merger to use.
     pub merger: MergerType,
-}
-
-impl Default for DevTweaks {
-    fn default() -> Self {
-        Self {
-            fetch_join: false,
-            fetch_distinct: false,
-            merger: MergerType::default(),
-        }
-    }
 }
 
 impl DevTweaks {
