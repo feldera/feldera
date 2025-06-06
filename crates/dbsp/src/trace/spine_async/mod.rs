@@ -16,10 +16,12 @@ use crate::{
     storage::buffer_cache::CacheStats,
     time::Timestamp,
     trace::{
-        cursor::{CursorList, Pending},
+        cursor::CursorList,
         merge_batches,
         ord::fallback::pick_merge_destination,
-        spine_async::{push_merger::ArcPushMerger, snapshot::FetchList},
+        spine_async::{
+            list_merger::ArcListMerger, push_merger::ArcPushMerger, snapshot::FetchList,
+        },
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Trace,
     },
     Error, NumEntries, Runtime,
@@ -376,7 +378,18 @@ where
             let no_backpressure = Arc::clone(&no_backpressure);
             Box::new(|| {
                 let mut mergers = std::array::from_fn(|_| None);
-                Box::new(move || Self::run(&mut mergers, &state, &idle, &no_backpressure))
+                let mut stored_fuel = std::array::from_fn(|_| 0);
+                let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
+                Box::new(move || {
+                    Self::run(
+                        &mut stored_fuel,
+                        &mut mergers,
+                        merger_type,
+                        &state,
+                        &idle,
+                        &no_backpressure,
+                    )
+                })
             })
         });
         Self {
@@ -576,7 +589,9 @@ where
     }
 
     fn run(
+        stored_fuel: &mut [isize; MAX_LEVELS],
         mergers: &mut [Option<Merge<B>>; MAX_LEVELS],
+        merger_type: MergerType,
         state: &Arc<Mutex<SharedState<B>>>,
         idle: &Arc<Condvar>,
         no_backpressure: &Arc<Condvar>,
@@ -589,31 +604,22 @@ where
 
         for (level, m) in mergers.iter_mut().enumerate() {
             if let Some(merger) = m.as_mut() {
-                // Merge as much data as is currently available in-memory.
-                // Then, unless we're done, initiate further I/O.
-                //
-                // In some testing, this performed OK.  However, it undoubtedly
-                // needs tuning to limit the amount of merging done in a single
-                // call:
-                //
-                // - Batches on storage use a cursor based on [BulkRows], which
-                //   internally limits the amount of data brought into memory at
-                //   a time.  (That limit applies even if the entire batch is
-                //   cached.)  That amount probably needs tuning.  Possibly, we
-                //   want to additionally limit the amount of the in-memory data
-                //   that we actually process in a single merge.
-                //
-                // - Batches in memory can always be read in full, which means
-                //   that currently we always do the full merge in a single
-                //   round.  It seems likely that we need to limit that,
-                //   although in practice I suspect that large batches will tend
-                //   to be on storage, meaning that limiting is not as crucial
-                //   as at first glance.
-                if merger.merge(&frontier).is_ok() {
-                    let new_batch = Arc::new(m.take().unwrap().done());
-                    state.lock().unwrap().merge_complete(level, new_batch);
+                // The following treatment of fuel works well for the test case
+                // used to tune it, but it is not theoretically sound or well
+                // principled. It is likely that it should be redone.
+                let starting_fuel = if level == 0 {
+                    isize::MAX
                 } else {
-                    merger.prime();
+                    stored_fuel[level].max(10_000)
+                };
+                let fuel = merger.merge(&frontier, starting_fuel);
+                let fuel_consumed = starting_fuel - fuel;
+                stored_fuel[level] = (stored_fuel[level] - fuel_consumed).max(0);
+                stored_fuel[level + 1] += fuel_consumed;
+                if fuel > 0 {
+                    let merger = m.take().unwrap();
+                    let new_batch = Arc::new(merger.done());
+                    state.lock().unwrap().merge_complete(level, new_batch);
                 }
             }
         }
@@ -632,9 +638,7 @@ where
             .filter_map(|(level, slot)| slot.try_start_merge(level).map(|batches| (level, batches)))
             .collect::<Vec<_>>();
         for (level, batches) in start_merges {
-            let mut merger = Merge::new(batches, &key_filter, &value_filter);
-            merger.prime();
-            mergers[level] = Some(merger);
+            mergers[level] = Some(Merge::new(merger_type, batches, &key_filter, &value_filter));
         }
 
         let state = state.lock().unwrap();
@@ -662,18 +666,34 @@ where
     }
 }
 
+/// Which merger to use.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MergerType {
+    /// Newer merger, which should be faster for high-latency storage, such as
+    /// object storage, but it likely needs tuning.
+    #[default]
+    PushMerger,
+
+    /// The old standby, with known performance.
+    ListMerger,
+}
+
 /// A single merge in progress in an [AsyncMerger].
-///
-/// This will give us a place to hang statistics, etc., for a particular merge.
-struct Merge<B>
+enum Merge<B>
 where
     B: Batch,
 {
-    /// The underlying merger.
-    merger: ArcPushMerger<B>,
+    ListMerger {
+        merger: ArcListMerger<B>,
+    },
+    PushMerger {
+        /// The underlying merger.
+        merger: ArcPushMerger<B>,
 
-    /// Builder for merge output.
-    builder: B::Builder,
+        /// Builder for merge output.
+        builder: B::Builder,
+    },
 }
 
 impl<B> Merge<B>
@@ -681,28 +701,67 @@ where
     B: Batch,
 {
     fn new(
+        merger_type: MergerType,
         batches: Vec<Arc<B>>,
         key_filter: &Option<Filter<B::Key>>,
         value_filter: &Option<Filter<B::Val>>,
     ) -> Self {
         let factories = batches[0].factories();
         let builder = B::Builder::for_merge(&factories, &batches, None);
-        Self {
-            merger: ArcPushMerger::new(&factories, batches, key_filter, value_filter),
-            builder,
+        match merger_type {
+            MergerType::ListMerger => Self::ListMerger {
+                merger: ArcListMerger::new(&factories, builder, batches, key_filter, value_filter),
+            },
+            MergerType::PushMerger => {
+                let mut merger = ArcPushMerger::new(&factories, batches, key_filter, value_filter);
+                merger.run();
+                Self::PushMerger { merger, builder }
+            }
         }
     }
 
-    fn merge(&mut self, frontier: &B::Time) -> Result<(), Pending> {
-        self.merger.merge(&mut self.builder, frontier)
-    }
-
-    fn prime(&mut self) {
-        self.merger.run();
+    fn merge(&mut self, frontier: &B::Time, mut fuel: isize) -> isize {
+        match self {
+            Self::ListMerger { merger } => {
+                merger.work(frontier, &mut fuel);
+                fuel
+            }
+            Self::PushMerger { merger, builder } => {
+                // Merge as much data as is currently available in-memory.
+                // Then, unless we're done, initiate further I/O.
+                //
+                // In some testing, this performed OK.  However, it ignores
+                // `fuel`, and it undoubtedly needs tuning to limit the amount
+                // of merging done in a single call:
+                //
+                // - Batches on storage use a cursor based on [BulkRows], which
+                //   internally limits the amount of data brought into memory at
+                //   a time.  (That limit applies even if the entire batch is
+                //   cached.)  That amount probably needs tuning.  Possibly, we
+                //   want to additionally limit the amount of the in-memory data
+                //   that we actually process in a single merge.
+                //
+                // - Batches in memory can always be read in full, which means
+                //   that currently we always do the full merge in a single
+                //   round.  It seems likely that we need to limit that,
+                //   although in practice I suspect that large batches will tend
+                //   to be on storage, meaning that limiting is not as crucial
+                //   as at first glance.
+                if merger.merge(builder, frontier).is_err() {
+                    merger.run();
+                    0
+                } else {
+                    fuel
+                }
+            }
+        }
     }
 
     fn done(self) -> B {
-        self.builder.done()
+        match self {
+            Self::ListMerger { merger } => merger.done(),
+            Self::PushMerger { builder, .. } => builder.done(),
+        }
     }
 }
 

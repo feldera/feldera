@@ -1895,7 +1895,7 @@ impl ControllerInit {
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             storage,
             mode: Mode::Persistent,
-            dev_tweaks: DevTweaks::default(),
+            dev_tweaks: DevTweaks::from_config(&pipeline_config.global.dev_tweaks),
         })
     }
 }
