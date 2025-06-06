@@ -67,6 +67,20 @@ export type AuthProvider =
     }
 
 /**
+ * Information about a failed checkpoint.
+ */
+export type CheckpointFailure = {
+  /**
+   * Error message associated with the failure.
+   */
+  error: string
+  /**
+   * Sequence number of the failed checkpoint.
+   */
+  sequence_number: number
+}
+
+/**
  * Response to a checkpoint request.
  */
 export type CheckpointResponse = {
@@ -77,10 +91,7 @@ export type CheckpointResponse = {
  * Checkpoint status returned by the `/checkpoint_status` endpoint.
  */
 export type CheckpointStatus = {
-  /**
-   * Most recently failed checkpoint, and the associated error.
-   */
-  failure?: Array<number & string> | null
+  failure?: CheckpointFailure | null
   /**
    * Most recently successful checkpoint.
    */
@@ -1158,6 +1169,19 @@ export type KafkaInputConfig = {
   group_join_timeout_secs?: number
   log_level?: KafkaLogLevel | null
   /**
+   * The list of Kafka partitions to read from.
+   *
+   * Only the specified partitions will be consumed. If this field is not set,
+   * the connector will consume from all available partitions.
+   *
+   * If `start_from` is set to `offsets` and this field is provided, the
+   * number of partitions must exactly match the number of offsets, and the
+   * order of partitions must correspond to the order of offsets.
+   *
+   * If offsets are provided for all partitions, this field can be omitted.
+   */
+  partitions?: Array<number> | null
+  /**
    * Set to 1 or more to fix the number of threads used to poll
    * `rdkafka`. Multiple threads can increase performance with small Kafka
    * messages; for large messages, one thread is enough. In either case, too
@@ -1293,10 +1317,6 @@ export type LicenseInformation = {
    * Timestamp at which the license expires
    */
   expires_at: string
-  /**
-   * Duration until the license expires
-   */
-  expires_in_seconds: number
   /**
    * URL that navigates the user to extend / upgrade their license
    */
@@ -3481,6 +3501,10 @@ export type $OpenApiTs = {
          */
         '200': CompletionStatusResponse
         /**
+         * An invalid completion token was provided
+         */
+        '400': ErrorResponse
+        /**
          * Pipeline with that name does not exist
          */
         '404': ErrorResponse
@@ -3739,6 +3763,10 @@ export type $OpenApiTs = {
          * Action is not implemented because it is only available in the Enterprise edition
          */
         '501': ErrorResponse
+        /**
+         * Action can not be performed (maybe because the pipeline is already suspended)
+         */
+        '503': ErrorResponse
       }
     }
   }

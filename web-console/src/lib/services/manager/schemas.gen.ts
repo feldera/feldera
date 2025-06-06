@@ -100,6 +100,24 @@ export const $AuthProvider = {
   ]
 } as const
 
+export const $CheckpointFailure = {
+  type: 'object',
+  description: 'Information about a failed checkpoint.',
+  required: ['sequence_number', 'error'],
+  properties: {
+    error: {
+      type: 'string',
+      description: 'Error message associated with the failure.'
+    },
+    sequence_number: {
+      type: 'integer',
+      format: 'int64',
+      description: 'Sequence number of the failed checkpoint.',
+      minimum: 0
+    }
+  }
+} as const
+
 export const $CheckpointResponse = {
   type: 'object',
   description: 'Response to a checkpoint request.',
@@ -118,20 +136,11 @@ export const $CheckpointStatus = {
   description: 'Checkpoint status returned by the `/checkpoint_status` endpoint.',
   properties: {
     failure: {
-      type: 'array',
-      items: {
-        allOf: [
-          {
-            type: 'integer',
-            format: 'int64',
-            minimum: 0
-          },
-          {
-            type: 'string'
-          }
-        ]
-      },
-      description: 'Most recently failed checkpoint, and the associated error.',
+      allOf: [
+        {
+          $ref: '#/components/schemas/CheckpointFailure'
+        }
+      ],
       nullable: true
     },
     success: {
@@ -1531,6 +1540,24 @@ consumer group during initialization.`,
       ],
       nullable: true
     },
+    partitions: {
+      type: 'array',
+      items: {
+        type: 'integer',
+        format: 'int32'
+      },
+      description: `The list of Kafka partitions to read from.
+
+Only the specified partitions will be consumed. If this field is not set,
+the connector will consume from all available partitions.
+
+If \`start_from\` is set to \`offsets\` and this field is provided, the
+number of partitions must exactly match the number of offsets, and the
+order of partitions must correspond to the order of offsets.
+
+If offsets are provided for all partitions, this field can be omitted.`,
+      nullable: true
+    },
     poller_threads: {
       type: 'integer',
       description: `Set to 1 or more to fix the number of threads used to poll
@@ -1710,7 +1737,6 @@ The number of offsets must match the number of partitions in the topic.`
 export const $LicenseInformation = {
   type: 'object',
   required: [
-    'expires_in_seconds',
     'expires_at',
     'is_expired',
     'is_trial',
@@ -1728,12 +1754,6 @@ export const $LicenseInformation = {
       type: 'string',
       format: 'date-time',
       description: 'Timestamp at which the license expires'
-    },
-    expires_in_seconds: {
-      type: 'integer',
-      format: 'int64',
-      description: 'Duration until the license expires',
-      minimum: 0
     },
     extension_url: {
       type: 'string',

@@ -133,10 +133,12 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
             ? `Your Feldera ${config.edition} license expires in ${time.in} at ${time.at} on ${time.on}`
             : `Your Feldera ${config.edition} license has expired`) +
         (config.license_info.description_html ? `. ${config.license_info.description_html}` : ''),
-      action: {
-        text: config.license_info.is_trial ? 'Upgrade Subscription' : 'Extend Your License',
-        href: config.license_info.extension_url
-      }
+      action: config.license_info.extension_url
+        ? {
+            text: config.license_info.is_trial ? 'Upgrade Subscription' : 'Extend Your License',
+            href: config.license_info.extension_url
+          }
+        : undefined
     })
   }
   if (config.update_info && !config.update_info.is_latest_version) {

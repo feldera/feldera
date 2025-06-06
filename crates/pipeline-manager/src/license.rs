@@ -17,8 +17,6 @@ pub enum DisplaySchedule {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct LicenseInformation {
-    /// Duration until the license expires
-    pub expires_in_seconds: u64,
     /// Timestamp at which the license expires
     pub expires_at: DateTime<Utc>,
     /// Whether the license is expired
