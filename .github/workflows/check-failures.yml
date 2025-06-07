@@ -1,7 +1,7 @@
 name: Notify Failures To Slack
 on:
   workflow_run:
-    workflows: ["Java SLT Nightly"]
+    workflows: ["Java SLT Nightly", "Link Checker"]
     types: [completed]
     branches:
       - main

@@ -17,6 +17,7 @@ jobs:
     name: ""
     uses: ./.github/workflows/publish-crates.yml
     secrets: inherit
+
   adjust-versions:
     runs-on: [self-hosted, skylake40]
     container:
