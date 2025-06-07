@@ -36,6 +36,9 @@ pub const NUM_INPUTS: &str = "inputs";
 /// The number of output tuples ingested by the operator.
 pub const NUM_OUTPUTS: &str = "outputs";
 
+/// The amount of time an async operator spent wait to become ready.
+pub const EXCHANGE_WAIT_TIME: &str = "exchange_wait_time";
+
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
 
