@@ -16,7 +16,7 @@ use pipeline_manager::runner::local_runner::LocalRunner;
 use pipeline_manager::runner::main::runner_main;
 use pipeline_manager::{ensure_default_crypto_provider, init_fd_limit};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use utoipa::OpenApi;
 
 #[tokio::main]
@@ -112,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
     });
     pipeline_manager::metrics::create_endpoint(metrics_handle, db.clone()).await;
     // The api-server blocks forever
-    pipeline_manager::api::main::run(db, common_config, api_config)
+    pipeline_manager::api::main::run(db, common_config, api_config, Arc::new(RwLock::new(None)))
         .await
         .expect("API server main failed");
     Ok(())

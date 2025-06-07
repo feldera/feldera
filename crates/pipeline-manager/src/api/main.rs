@@ -4,6 +4,7 @@ use crate::config::{ApiServerConfig, CommonConfig};
 use crate::db::storage_postgres::StoragePostgres;
 use crate::demo::{read_demos_from_directories, Demo};
 use crate::error::ManagerError;
+use crate::license::LicenseInformation;
 use crate::probe::Probe;
 use crate::runner::interaction::RunnerInteraction;
 use actix_http::body::BoxBody;
@@ -27,7 +28,7 @@ use std::io::Write;
 use std::time::Duration;
 use std::{env, io, net::TcpListener, sync::Arc};
 use termbg::{theme, Theme};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
@@ -332,6 +333,7 @@ pub(crate) struct ServerState {
     pub jwk_cache: Arc<Mutex<JwkCache>>,
     probe: Arc<Mutex<Probe>>,
     pub demos: Vec<Demo>,
+    pub license_info: Arc<RwLock<Option<LicenseInformation>>>,
 }
 
 impl ServerState {
@@ -339,6 +341,7 @@ impl ServerState {
         common_config: CommonConfig,
         config: ApiServerConfig,
         db: Arc<Mutex<StoragePostgres>>,
+        license_info: Arc<RwLock<Option<LicenseInformation>>>,
     ) -> AnyResult<Self> {
         let runner = RunnerInteraction::new(config.clone(), db.clone());
         let db_copy = db.clone();
@@ -351,6 +354,7 @@ impl ServerState {
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             probe: Probe::new(db_copy).await,
             demos,
+            license_info,
         })
     }
 }
@@ -411,10 +415,12 @@ pub async fn run(
     db: Arc<Mutex<StoragePostgres>>,
     common_config: CommonConfig,
     api_config: ApiServerConfig,
+    license_info: Arc<RwLock<Option<LicenseInformation>>>,
 ) -> AnyResult<()> {
     let listener = create_listener(&api_config)?;
-    let state =
-        WebData::new(ServerState::new(common_config.clone(), api_config.clone(), db).await?);
+    let state = WebData::new(
+        ServerState::new(common_config.clone(), api_config.clone(), db, license_info).await?,
+    );
     let bind_address = api_config.bind_address.clone();
     let port = api_config.port;
     let auth_configuration = match api_config.auth_provider {
