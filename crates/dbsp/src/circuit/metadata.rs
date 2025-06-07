@@ -39,6 +39,9 @@ pub const INPUT_BATCHES_LABEL: &str = "input batches";
 /// Output batch sizes.
 pub const OUTPUT_BATCHES_LABEL: &str = "output batches";
 
+/// The amount of time an async operator spent wait to become ready.
+pub const EXCHANGE_WAIT_TIME: &str = "exchange_wait_time";
+
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
 
