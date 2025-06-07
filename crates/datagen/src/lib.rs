@@ -577,12 +577,12 @@ impl InputGenerator {
                 completed.push_back(completion);
             }
 
-            if running && !work_sender.is_full() {
+            if running && !eoi && !work_sender.is_full() {
                 if let Some(work) =
                     assign_work(&mut unassigned, &mut in_flight, &config, seed, true)
                 {
                     let _ = work_sender.send_blocking(work);
-                } else if in_flight.iter().all(|set| set.is_empty()) && !eoi {
+                } else if in_flight.iter().all(|set| set.is_empty()) {
                     eoi = true;
                     running = false;
                     consumer.eoi();
