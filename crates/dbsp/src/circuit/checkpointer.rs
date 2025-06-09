@@ -1,6 +1,7 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
 use crate::dynamic::{self, data::DataTyped};
+use crate::trace::spine_async::PSpineBatches;
 use crate::{Error, TypedBox};
 
 use std::io::ErrorKind;
@@ -14,17 +15,14 @@ use crate::trace::Serializer;
 use feldera_storage::error::StorageError;
 use feldera_storage::fbuf::FBuf;
 use feldera_storage::{StorageBackend, StorageFileType, StoragePath};
-use rkyv::{Archive, Deserialize, Serialize};
-use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::RuntimeError;
 
 /// Holds meta-data about a checkpoint that was taken for persistent storage
 /// and recovery of a circuit's state.
-#[derive(
-    Debug, Clone, Default, Serialize, Deserialize, Archive, SerdeSerialize, SerdeDeserialize,
-)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CheckpointMetadata {
     /// A unique identifier for the given checkpoint.
     ///
@@ -211,14 +209,8 @@ impl Checkpointer {
     fn try_read_checkpoints(
         backend: &dyn StorageBackend,
     ) -> Result<VecDeque<CheckpointMetadata>, Error> {
-        match backend.read(&StoragePath::from(Self::CHECKPOINT_FILE_NAME)) {
-            Ok(content) => {
-                let archived =
-                    unsafe { rkyv::archived_root::<VecDeque<CheckpointMetadata>>(&content) };
-                let checkpoint_list: VecDeque<CheckpointMetadata> =
-                    archived.deserialize(&mut rkyv::Infallible).unwrap();
-                Ok(checkpoint_list)
-            }
+        match backend.read_json(&StoragePath::from(Self::CHECKPOINT_FILE_NAME)) {
+            Ok(checkpoints) => Ok(checkpoints),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(VecDeque::new()),
             Err(error) => Err(error)?,
         }
@@ -243,11 +235,11 @@ impl Checkpointer {
 
         let mut batch_files_in_commit: HashSet<StoragePath> = HashSet::new();
         for spine in spines {
-            let content = self.backend.read(&spine)?;
-            let archived = rkyv::check_archived_root::<Vec<String>>(&content).unwrap();
-            for batch in archived.iter() {
-                if let Ok(true) = self.backend.exists(&batch.to_string().into()) {
-                    batch_files_in_commit.insert(batch.to_string().into());
+            let pspine_batches = self.backend.read_json::<PSpineBatches>(&spine)?;
+            for file in pspine_batches.files {
+                let path = file.into();
+                if let Ok(true) = self.backend.exists(&path) {
+                    batch_files_in_commit.insert(path);
                 }
             }
         }
@@ -255,12 +247,9 @@ impl Checkpointer {
     }
 
     fn update_checkpoint_file(&self) -> Result<(), Error> {
-        let content = crate::storage::file::to_bytes(&self.checkpoint_list)
-            .expect("failed to serialize checkpoint-list data");
-        self.backend
-            .write(&Self::CHECKPOINT_FILE_NAME.into(), content)?;
-
-        Ok(())
+        Ok(self
+            .backend
+            .write_json(&Self::CHECKPOINT_FILE_NAME.into(), &self.checkpoint_list)?)
     }
 
     /// Removes `file` and logs any error.

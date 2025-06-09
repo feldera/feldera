@@ -1,11 +1,12 @@
 //! Common Types and Trait Definition for Storage in Feldera.
 
-use std::io::ErrorKind;
+use std::io::{Cursor, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use feldera_types::config::{StorageBackendConfig, StorageConfig, StorageOptions};
+use serde::de::DeserializeOwned;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -173,6 +174,31 @@ impl dyn StorageBackend {
                 warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage", path.display())
             });
         }
+    }
+
+    /// Writes `content` to `name` as JSON, automatically creating any parent
+    /// directories within `name` that don't already exist.
+    pub fn write_json<V>(&self, name: &StoragePath, value: &V) -> Result<(), StorageError>
+    where
+        V: serde::Serialize,
+    {
+        let mut content = FBuf::new();
+        serde_json::to_writer(&mut content, value).unwrap();
+        self.write(name, content)
+    }
+}
+
+// For an explanation of the `+ '_` here, see:
+// https://stackoverflow.com/questions/73495603/trait-problem-borrowed-data-escapes-outside-of-associated-function
+impl dyn StorageBackend + '_ {
+    /// Reads `name` as JSON.
+    pub fn read_json<V>(&self, name: &StoragePath) -> Result<V, StorageError>
+    where
+        V: DeserializeOwned,
+    {
+        let content = self.read(name)?;
+        serde_json::from_reader(Cursor::new(content.as_ref()))
+            .map_err(|e| StorageError::JsonError(e.to_string()))
     }
 }
 
