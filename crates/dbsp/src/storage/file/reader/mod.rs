@@ -33,6 +33,7 @@ use feldera_storage::StoragePath;
 use smallvec::SmallVec;
 use snap::raw::{decompress_len, Decoder};
 use std::mem::replace;
+use std::ops::Index;
 use std::time::Instant;
 use std::{
     cmp::{
@@ -1079,13 +1080,16 @@ where
     /// initial target).  Returns `Some((child_index, n_targets))`.
     ///
     /// `tmp_key` and `start` are temporary storage.
-    unsafe fn find_next(
+    unsafe fn find_next<I>(
         &self,
-        targets: &DynVec<K>,
+        targets: &I,
         mut target_indexes: Range<usize>,
         tmp_key: &mut K,
         start: &mut usize,
-    ) -> Option<(usize, usize)> {
+    ) -> Option<(usize, usize)>
+    where
+        I: Index<usize, Output = K> + ?Sized,
+    {
         let start_index = target_indexes.next().unwrap();
         let mut end = self.n_children();
         while *start < end {
@@ -2783,5 +2787,82 @@ where
             }
         }
         Ok(())
+    }
+}
+
+/// A `DynVec`, possibly filtered by a Bloom filter.
+struct FilteredKeys<'b, K>
+where
+    K: ?Sized,
+{
+    /// Sorted array to keys to retrieve.
+    queried_keys: &'b DynVec<K>,
+
+    /// Indexes into `queried_keys` of the keys that pass the Bloom filter.  If
+    /// this is `None`, then enough of the keys passed the Bloom filter that we
+    /// just take all of them.
+    bloom_keys: Option<Vec<usize>>,
+}
+
+impl<'b, K> FilteredKeys<'b, K>
+where
+    K: DataTrait + ?Sized,
+{
+    /// Returns `keys`, filtered using `reader.maybe_contains_key()`.
+    fn new<'a, A, N>(reader: &'a Reader<(&'static K, &'static A, N)>, keys: &'b DynVec<K>) -> Self
+    where
+        A: DataTrait + ?Sized,
+        N: ColumnSpec,
+    {
+        debug_assert!(keys.is_sorted_by(&|a, b| a.cmp(b)));
+
+        // Pass keys into the Bloom filter until 1/300th of them pass the Bloom
+        // filter.  Empirically, this seems to good enough for the common case
+        // where the data passed into a "distinct" operator is actually distinct
+        // but we get some false positives from the Bloom filter.  Because the
+        // keys that go into a "distinct" operator are often large, we don't
+        // want to pass all of them into the Bloom filter if we're going to have
+        // to deserialize them anyhow later.
+        let mut bloom_keys = SmallVec::<[_; 50]>::new();
+        for (index, key) in keys.dyn_iter().enumerate() {
+            if reader.maybe_contains_key(key) {
+                bloom_keys.push(index);
+                if bloom_keys.len() >= keys.len() / 300 {
+                    return Self {
+                        queried_keys: keys,
+                        bloom_keys: None,
+                    };
+                }
+            }
+        }
+        Self {
+            queried_keys: keys,
+            bloom_keys: Some(bloom_keys.into_vec()),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match &self.bloom_keys {
+            Some(bloom_keys) => bloom_keys.len(),
+            None => self.queried_keys.len(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<'b, K> Index<usize> for FilteredKeys<'b, K>
+where
+    K: DataTrait + ?Sized,
+{
+    type Output = K;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match &self.bloom_keys {
+            Some(bloom_keys) => &self.queried_keys[bloom_keys[index]],
+            None => &self.queried_keys[index],
+        }
     }
 }

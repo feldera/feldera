@@ -10,7 +10,9 @@ use crate::{
     storage::{
         buffer_cache::BufferCache,
         file::{
-            reader::{decompress, ColumnSpec, DataBlock, Error, Reader, TreeBlock, TreeNode},
+            reader::{
+                decompress, ColumnSpec, DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode,
+            },
             Factories,
         },
     },
@@ -35,19 +37,8 @@ where
     K1: DataTrait + ?Sized,
     A1: WeightTrait + ?Sized,
 {
-    Column0(
-        Option<
-            Fetch0<
-                'a,
-                'b,
-                K0,
-                A0,
-                (&'static K1, &'static A1, ()),
-                (&'static K0, &'static A0, (&'static K1, &'static A1, ())),
-            >,
-        >,
-    ),
-    Column1(Fetch1<'a, K0, K1, A1, (&'static K0, &'static A0, (&'static K1, &'static A1, ()))>),
+    Column0(Option<Fetch0<'a, 'b, K0, A0, (&'static K1, &'static A1, ())>>),
+    Column1(Fetch1<'a, K0, A0, K1, A1>),
 }
 
 impl<'a, 'b, K0, A0, K1, A1> FetchIndexedZSet<'a, 'b, K0, A0, K1, A1>
@@ -151,13 +142,13 @@ where
     }
 }
 
-struct Fetch0<'a, 'b, K, A, N, T>
+struct Fetch0<'a, 'b, K, A, N>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
 {
-    reader: &'a Reader<T>,
-    keys: &'b DynVec<K>,
+    reader: &'a Reader<(&'static K, &'static A, N)>,
+    keys: FilteredKeys<'b, K>,
     cache: Arc<BufferCache>,
     factories: Factories<K, A>,
 
@@ -173,14 +164,16 @@ where
     _phantom: PhantomData<fn(&N)>,
 }
 
-impl<'a, 'b, K, A, N, T> Fetch0<'a, 'b, K, A, N, T>
+impl<'a, 'b, K, A, N> Fetch0<'a, 'b, K, A, N>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
-    T: ColumnSpec,
+    N: ColumnSpec,
 {
-    fn new(reader: &'a Reader<T>, keys: &'b DynVec<K>) -> Result<Self, Error> {
-        debug_assert!(keys.is_sorted_by(&|a, b| a.cmp(b)));
+    fn new(
+        reader: &'a Reader<(&'static K, &'static A, N)>,
+        keys: &'b DynVec<K>,
+    ) -> Result<Self, Error> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let factories = reader.columns[0].factories.factories();
         let output = factories.keys_factory.default_box();
@@ -192,8 +185,8 @@ where
         key_stack.reserve_exact(10);
 
         let mut this = Self {
+            keys: FilteredKeys::new(reader, keys),
             reader,
-            keys,
             cache: (reader.file.cache)(),
             factories,
             sender,
@@ -205,10 +198,13 @@ where
             pending: 0,
             _phantom: PhantomData,
         };
-        if !keys.is_empty() {
+        if !this.keys.is_empty() {
             if let Some(node) = &reader.columns[0].root {
                 let mut reads = Vec::new();
-                this.try_read(Fetch0Read::new(0..keys.len(), node.clone()), &mut reads)?;
+                this.try_read(
+                    Fetch0Read::new(0..this.keys.len(), node.clone()),
+                    &mut reads,
+                )?;
                 this.start_reads(reads);
             }
         }
@@ -338,7 +334,7 @@ where
                 while i < key_range.end {
                     if let Some((child_index, n_keys)) = unsafe {
                         index_block.find_next(
-                            self.keys,
+                            &self.keys,
                             i..key_range.end,
                             &mut self.tmp_key,
                             &mut child_idx,
@@ -395,26 +391,26 @@ struct Fetch1ReadResults {
     results: Vec<Result<Arc<FBuf>, StorageError>>,
 }
 
-impl<'a, 'b, K, A, NK, NA, NN, T> Fetch0<'a, 'b, K, A, (&'static NK, &'static NA, NN), T>
+impl<'a, 'b, K, A, NK, NA> Fetch0<'a, 'b, K, A, (&'static NK, &'static NA, ())>
 where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     NK: DataTrait + ?Sized,
     NA: WeightTrait + ?Sized,
-    T: ColumnSpec,
 {
-    fn next_column(self) -> Result<Fetch1<'a, K, NK, NA, T>, Error> {
+    fn next_column(self) -> Result<Fetch1<'a, K, A, NK, NA>, Error> {
         Fetch1::new(self)
     }
 }
 
-struct Fetch1<'a, K0, K1, A1, T>
+struct Fetch1<'a, K0, A0, K1, A1>
 where
     K0: DataTrait + ?Sized,
+    A0: DataTrait + ?Sized,
     K1: DataTrait + ?Sized,
     A1: WeightTrait + ?Sized,
 {
-    reader: &'a Reader<T>,
+    reader: &'a Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
     cache: Arc<BufferCache>,
     factories: Factories<K1, A1>,
 
@@ -436,19 +432,16 @@ where
     pending: usize,
 }
 
-impl<'a, K0, K1, A1, T> Fetch1<'a, K0, K1, A1, T>
+impl<'a, K0, A0, K1, A1> Fetch1<'a, K0, A0, K1, A1>
 where
     K0: DataTrait + ?Sized,
+    A0: DataTrait + ?Sized,
     K1: DataTrait + ?Sized,
     A1: WeightTrait + ?Sized,
-    T: ColumnSpec,
 {
-    fn new<'b, A0, N>(
-        mut source: Fetch0<'a, 'b, K0, A0, (&'static K1, &'static A1, N), T>,
-    ) -> Result<Self, Error>
-    where
-        A0: DataTrait + ?Sized,
-    {
+    fn new<'b>(
+        mut source: Fetch0<'a, 'b, K0, A0, (&'static K1, &'static A1, ())>,
+    ) -> Result<Self, Error> {
         source.finish();
 
         let factories = source.reader.columns[1].factories.factories();
