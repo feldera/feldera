@@ -151,7 +151,7 @@ class Pipeline:
             raise RuntimeError("Pipeline is paused, set force=True to push data")
 
         if update_format not in ["raw", "insert_delete"]:
-            ValueError("update_format must be one of raw or insert_delete")
+            raise ValueError("update_format must be one of raw or insert_delete")
 
         array = True if isinstance(data, list) else False
         self.client.push_to_pipeline(
