@@ -199,7 +199,7 @@ rustyline = "15.0"
 ryu = "1.0.20"
 schema_registry_converter = "4.2.0"
 serde = "1.0.213"
-serde_arrow = { git = "https://github.com/ryzhyk/serde_arrow.git", rev = "dbab218" }
+serde_arrow = { version = "0.13.4" }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }
 serde_urlencoded = "0.7.1"
