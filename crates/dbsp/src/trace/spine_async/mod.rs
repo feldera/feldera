@@ -1376,19 +1376,17 @@ where
             })
             .collect::<Vec<_>>();
 
+        let backend = Runtime::storage_backend().unwrap();
         let committed: CommittedSpine = (ids, self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
-        Runtime::storage_backend()
-            .unwrap()
-            .write(&Self::checkpoint_file(base, persistent_id), as_bytes)?;
+        backend.write(&Self::checkpoint_file(base, persistent_id), as_bytes)?;
 
         // Write the batches as a separate file, this allows to parse it
         // in `Checkpointer` without the need to know the exact Spine type.
-        let batches = committed.batches;
-        let as_bytes = to_bytes(&batches).expect("Serializing batches to Vec<String> should work.");
-        Runtime::storage_backend()
-            .unwrap()
-            .write(&self.batchlist_file(base, persistent_id), as_bytes)?;
+        let pspine_batches = PSpineBatches {
+            files: committed.batches,
+        };
+        backend.write_json(&self.batchlist_file(base, persistent_id), &pspine_batches)?;
 
         Ok(())
     }
@@ -1446,6 +1444,16 @@ where
             }),
         }
     }
+}
+
+/// Format of `pspine-batches-*.dat` in storage.
+///
+/// These files exist to be a simple format for higher-level code and outside
+/// tools to parse.  The spine itself writes them for that purpose, but it does
+/// not read them.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PSpineBatches {
+    pub files: Vec<String>,
 }
 
 impl<B> Spine<B>

@@ -64,6 +64,9 @@ pub enum StorageError {
         backend: String,
         config: StorageBackendConfig,
     },
+
+    #[error("Error deserializing JSON: {0}")]
+    JsonError(String),
 }
 
 impl From<std::io::Error> for StorageError {
@@ -136,6 +139,7 @@ impl StorageError {
             StorageError::ObjectStore { kind, .. } => *kind,
             StorageError::BackendNotSupported(_) => ErrorKind::Other,
             StorageError::InvalidBackendConfig { .. } => ErrorKind::Other,
+            StorageError::JsonError(_) => ErrorKind::Other,
         }
     }
 
