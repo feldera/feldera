@@ -1,6 +1,8 @@
 use super::super::Factories;
 use crate::dynamic::{DataTrait, DynVec, WeightTrait};
-use crate::storage::file::reader::{decompress, DataBlock, Error, Reader, TreeBlock, TreeNode};
+use crate::storage::file::reader::{
+    decompress, DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode,
+};
 use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
@@ -23,11 +25,11 @@ where
     /// The reader.
     reader: &'a Reader<(&'static K, &'static A, ())>,
 
-    /// Sorted keys specifying the subset.
-    keys: &'b DynVec<K>,
-
     /// The buffer cache.
     cache: Arc<BufferCache>,
+
+    /// The keys being queried.
+    keys: FilteredKeys<'b, K>,
 
     /// Factories for constructing keys and aux data.
     factories: Factories<K, A>,
@@ -60,13 +62,12 @@ where
         reader: &'a Reader<(&'static K, &'static A, ())>,
         keys: &'b DynVec<K>,
     ) -> Result<Self, Error> {
-        debug_assert!(keys.is_sorted_by(&|a, b| a.cmp(b)));
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let factories = reader.columns[0].factories.factories();
         let tmp_key = factories.key_factory.default_box();
         let mut this = Self {
+            keys: FilteredKeys::new(reader, keys),
             reader,
-            keys,
             cache: (reader.file.cache)(),
             factories,
             sender,
@@ -75,10 +76,13 @@ where
             output_blocks: BTreeMap::new(),
             pending: 0,
         };
-        if !keys.is_empty() {
+        if !this.keys.is_empty() {
             if let Some(node) = &reader.columns[0].root {
                 let mut reads = Vec::new();
-                this.try_read(FetchZSetRead::new(0..keys.len(), node.clone()), &mut reads)?;
+                this.try_read(
+                    FetchZSetRead::new(0..this.keys.len(), node.clone()),
+                    &mut reads,
+                )?;
                 this.start_reads(reads);
             }
         }
@@ -245,7 +249,7 @@ where
                 while i < key_range.end {
                     if let Some((child_index, n_keys)) = unsafe {
                         index_block.find_next(
-                            self.keys,
+                            &self.keys,
                             i..key_range.end,
                             &mut self.tmp_key,
                             &mut child_idx,
