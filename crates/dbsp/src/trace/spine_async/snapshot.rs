@@ -32,6 +32,22 @@ impl<B: Batch + Send + Sync> Debug for SpineSnapshot<B> {
     }
 }
 
+impl<B> SpineSnapshot<B>
+where
+    B: Batch + Send + Sync,
+{
+    pub fn new(factories: B::Factories) -> Self {
+        Self {
+            batches: Vec::new(),
+            factories,
+        }
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.batches.extend(other.batches.iter().cloned())
+    }
+}
+
 impl<B> From<&Spine<B>> for SpineSnapshot<B>
 where
     B: Batch + Send + Sync,
