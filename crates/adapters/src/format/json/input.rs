@@ -441,11 +441,18 @@ impl From<u8> for Cc {
 
 impl Splitter for JsonSplitter {
     fn input(&mut self, data: &[u8]) -> Option<usize> {
-        for (index, c) in data.iter().copied().enumerate() {
+        let mut iter = data.iter().copied().enumerate();
+
+        // Splitter reached end of fragment when parsing a string--finish parsing the string.
+        if matches!(self, Self::Quote(_) | Self::Backslash(_)) {
+            *self = self.parse_string(&mut iter);
+        }
+
+        while let Some((index, c)) = iter.next() {
             *self = match (*self, Cc::from(c)) {
                 (Self::Start, Cc::Space) => *self,
                 (Self::Start, Cc::Left) => Self::Value(1),
-                (Self::Start, Cc::Quote) => Self::Quote(0),
+                (Self::Start, Cc::Quote) => Self::Quote(0).parse_string(&mut iter),
                 (Self::Start, _) => Self::Value(0),
                 (Self::Value(0), Cc::Other) => *self,
                 (Self::Value(0), _) => {
@@ -458,12 +465,9 @@ impl Splitter for JsonSplitter {
                 }
                 (Self::Value(nest), Cc::Right) => Self::Value(nest - 1),
                 (Self::Value(nest), Cc::Left) => Self::Value(nest + 1),
-                (Self::Value(nest), Cc::Quote) => Self::Quote(nest),
+                (Self::Value(nest), Cc::Quote) => Self::Quote(nest).parse_string(&mut iter),
                 (Self::Value(_), _) => *self,
-                (Self::Quote(nest), Cc::Quote) => Self::Value(nest),
-                (Self::Quote(nest), Cc::Backslash) => Self::Backslash(nest),
-                (Self::Quote(_), _) => *self,
-                (Self::Backslash(nest), _) => Self::Quote(nest),
+                _ => panic!("unexpected JsonSplitter state"),
             };
         }
         None
@@ -471,6 +475,26 @@ impl Splitter for JsonSplitter {
 
     fn clear(&mut self) {
         *self = Self::default();
+    }
+}
+
+impl JsonSplitter {
+    /// Parse quoted string.
+    ///
+    /// This is an optimization: we can iterate ove the string faster by only considering
+    /// relevant states.
+    fn parse_string(mut self, iter: &mut impl Iterator<Item = (usize, u8)>) -> Self {
+        while let Some((_, c)) = iter.next() {
+            match (self, c) {
+                (Self::Quote(nest), b'"') => {
+                    return Self::Value(nest);
+                }
+                (Self::Quote(nest), b'\\') => self = Self::Backslash(nest),
+                (Self::Backslash(nest), _) => self = Self::Quote(nest),
+                _ => {}
+            }
+        }
+        self
     }
 }
 
