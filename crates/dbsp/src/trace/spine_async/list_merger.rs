@@ -22,7 +22,6 @@ where
     B: Batch,
 {
     batches: Vec<Arc<B>>,
-    builder: B::Builder,
     #[borrows(batches)]
     #[not_covariant]
     merger: ListMerger<Box<dyn MergeCursor<B::Key, B::Val, B::Time, B::R> + Send + 'this>, B>,
@@ -34,7 +33,6 @@ where
 {
     pub fn new(
         factories: &B::Factories,
-        builder: B::Builder,
         batches: Vec<Arc<B>>,
         key_filter: &Option<Filter<B::Key>>,
         value_filter: &Option<Filter<B::Val>>,
@@ -42,7 +40,6 @@ where
         Self(
             ArcMergerInnerBuilder {
                 batches,
-                builder,
                 merger_builder: |batches| {
                     ListMerger::new(
                         factories,
@@ -57,13 +54,9 @@ where
         )
     }
 
-    pub fn work(&mut self, frontier: &B::Time, fuel: &mut isize) {
+    pub fn work(&mut self, builder: &mut B::Builder, frontier: &B::Time, fuel: &mut isize) {
         self.0
-            .with_mut(|fields| fields.merger.work(fields.builder, frontier, fuel))
-    }
-
-    pub fn done(self) -> B {
-        self.0.into_heads().builder.done()
+            .with_mut(|fields| fields.merger.work(builder, frontier, fuel))
     }
 }
 
