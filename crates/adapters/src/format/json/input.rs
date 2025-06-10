@@ -484,7 +484,7 @@ impl JsonSplitter {
     /// This is an optimization: we can iterate ove the string faster by only considering
     /// relevant states.
     fn parse_string(mut self, iter: &mut impl Iterator<Item = (usize, u8)>) -> Self {
-        while let Some((_, c)) = iter.next() {
+        for (_, c) in iter.by_ref() {
             match (self, c) {
                 (Self::Quote(nest), b'"') => {
                     return Self::Value(nest);
