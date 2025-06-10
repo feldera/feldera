@@ -4781,6 +4781,7 @@ dependencies = [
  "arcstr",
  "base58",
  "base64 0.22.1",
+ "blake3",
  "chrono",
  "dbsp",
  "dec",
@@ -4797,13 +4798,17 @@ dependencies = [
  "num",
  "num-traits",
  "paste",
+ "quick_cache",
  "regex",
  "rkyv",
  "ryu",
  "serde",
  "serde_json",
+ "serial_test",
  "smallvec",
+ "tempfile",
  "thiserror 2.0.12",
+ "tracing",
  "uuid",
 ]
 
@@ -8467,6 +8472,18 @@ checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
 dependencies = [
  "memchr",
  "serde",
+]
+
+[[package]]
+name = "quick_cache"
+version = "0.6.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b450dad8382b1b95061d5ca1eb792081fb082adf48c678791fe917509596d5f"
+dependencies = [
+ "ahash 0.8.12",
+ "equivalent",
+ "hashbrown 0.15.3",
+ "parking_lot 0.12.3",
 ]
 
 [[package]]

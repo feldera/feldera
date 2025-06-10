@@ -6,18 +6,25 @@ use crate::{
 };
 use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::typed_batch::TypedBatch;
+use dbsp::utils::Tup1;
+use dbsp::OrdZSet;
 use dbsp::{
     operator::{MapHandle, SetHandle, ZSetHandle},
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
 };
 use feldera_adapterlib::catalog::CircuitCatalog;
+use feldera_sqllib::{build_string_interner, SqlString};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
+use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::mem::transmute;
 use std::sync::Arc;
+
+const INTERNED_STRING_RELATION_NAME: &str = "feldera_interned_strings";
 
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
@@ -358,6 +365,19 @@ impl Catalog {
     {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
+
+        if name == SqlIdentifier::new(INTERNED_STRING_RELATION_NAME, false) {
+            if TypeId::of::<Z>() != TypeId::of::<OrdZSet<Tup1<SqlString>>>() {
+                panic!("Reserved relation {INTERNED_STRING_RELATION_NAME} must have type OrdZSet<Tup1<SqlString>>, but it was declared with type {}", std::any::type_name::<Z>());
+            } else {
+                let stream = unsafe {
+                    transmute::<Stream<RootCircuit, Z>, Stream<RootCircuit, OrdZSet<Tup1<SqlString>>>>(
+                        stream.clone(),
+                    )
+                };
+                build_string_interner(stream)
+            }
+        }
 
         // Create handle for the stream itself.
         let (delta_handle, delta_gid) = stream.output_persistent_with_gid(persistent_id);

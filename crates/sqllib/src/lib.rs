@@ -50,6 +50,9 @@ pub use regex::Regex;
 #[doc(hidden)]
 pub use source::{SourcePosition, SourcePositionRange};
 
+mod string_interner;
+pub use string_interner::{build_string_interner, intern_string, unintern_string};
+
 use lexical_core::*;
 use std::sync::LazyLock;
 

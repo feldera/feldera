@@ -45,6 +45,11 @@ ryu = { workspace = true }
 md-5 = { workspace = true }
 lexical-core = { workspace = true }
 smallvec = { workspace = true }
+quick_cache = { workspace = true, features = ["stats"] }
+blake3 = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+tempfile = { workspace = true }
+serial_test = { workspace = true }
