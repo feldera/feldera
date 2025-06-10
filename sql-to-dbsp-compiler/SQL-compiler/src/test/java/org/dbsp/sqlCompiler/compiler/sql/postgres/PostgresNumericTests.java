@@ -755,14 +755,14 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testDivByZero() {
-        this.qf("SELECT '0'::numeric / '0'", "divide by zero");
+        this.qf("SELECT '0'::numeric / '0'", "Attempt to divide by zero");
         //SELECT 'inf'::numeric % '0';
-        this.qf("SELECT '1'::numeric % '0'", "divide by zero");
+        this.qf("SELECT '1'::numeric % '0'", "Attempt to modulo by zero");
         //SELECT '-inf'::numeric % '0';
         //SELECT 'nan'::numeric % '0';
-        this.qf("SELECT '-1'::numeric % '0'", "divide by zero");
+        this.qf("SELECT '-1'::numeric % '0'", "Attempt to modulo by zero");
         //SELECT '0'::numeric % '0';
-        this.qf("SELECT '0'::numeric % '0'", "divide by zero");
+        this.qf("SELECT '0'::numeric % '0'", "Attempt to modulo by zero");
         //SELECT div('inf'::numeric, '0');
         //SELECT div('-inf'::numeric, '0');
         //SELECT div('nan'::numeric, '0');

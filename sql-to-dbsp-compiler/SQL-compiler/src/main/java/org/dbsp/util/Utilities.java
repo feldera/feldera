@@ -379,8 +379,10 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("test");
-        args.add("--jobs");
-        args.add("6");
+        if (System.getenv("CI") == null) {
+            args.add("--jobs");
+            args.add("6");
+        }
         args.addAll(Arrays.asList(extraArgs));
         if (quiet) {
             args.add("-q");
@@ -412,8 +414,10 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("check");
-        args.add("--jobs");
-        args.add("6");
+        if (System.getenv("CI") == null) {
+            args.add("--jobs");
+            args.add("6");
+        }
         if (quiet)
             args.add("--quiet");
         runProcess(directory, args.toArray(new String[0]));

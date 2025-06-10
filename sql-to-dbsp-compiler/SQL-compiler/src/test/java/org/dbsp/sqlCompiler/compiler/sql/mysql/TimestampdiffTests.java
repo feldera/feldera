@@ -188,7 +188,6 @@ public class TimestampdiffTests extends SqlIoTest {
 
     @Test
     public void testTimestampDiff() {
-        this.showPlan();
         this.qs("""
                 select timestampdiff(SQL_TSI_MINUTE, TIMESTAMP '2001-02-01 12:59:59', TIMESTAMP '2001-05-01 12:58:59') as a;
                 a
