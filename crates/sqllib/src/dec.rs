@@ -327,7 +327,10 @@ impl SerializeWithContext<SqlSerdeConfig> for SqlDecimal {
     {
         match context.decimal_format {
             DecimalFormat::Numeric => Serialize::serialize(&self, serializer),
-            DecimalFormat::String => serializer.serialize_str(&self.value.to_string()),
+            DecimalFormat::String => {
+                // serde_arrow doesn't support scientific notation.
+                serializer.serialize_str(&self.value.to_standard_notation_string())
+            }
         }
     }
 }
@@ -981,7 +984,11 @@ pub fn shift_leftN_(left: Option<SqlDecimal>, amount: i32) -> Option<SqlDecimal>
 mod test {
     use crate::SqlDecimal;
     use feldera_types::deserialize_table_record;
-    use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+    use feldera_types::serde_with_context::serde_config::DecimalFormat;
+    use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
+    use feldera_types::serde_with_context::{
+        DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+    };
     use size_of::SizeOf;
     use std::sync::LazyLock;
 
@@ -995,6 +1002,34 @@ mod test {
             &mut serde_json::Deserializer::from_str(json),
             &DEFAULT_CONFIG,
         )
+    }
+
+    fn serialize_for_adhoc<'de, T>(x: &T) -> Result<String, serde_json::Error>
+    where
+        T: SerializeWithContext<SqlSerdeConfig>,
+    {
+        let mut config = SqlSerdeConfig::default();
+        config.decimal_format = DecimalFormat::String;
+
+        serde_json::to_string(&SerializeWithContextWrapper::new(x, &config))
+    }
+
+    // serde_json only supports standard notation.
+    // Make sur decimals are not serialized using scientific notation.
+    #[test]
+    fn serialize_decimal_standard_notation() {
+        assert_eq!(
+            serialize_for_adhoc(&SqlDecimal::from(-3e-15)).unwrap(),
+            "\"-0.000000000000003\""
+        );
+        assert_eq!(
+            serialize_for_adhoc(&SqlDecimal::from(-3e+15)).unwrap(),
+            "\"-3000000000000000\""
+        );
+        assert_eq!(
+            serialize_for_adhoc(&SqlDecimal::from(6.000000000000001E-7)).unwrap(),
+            "\"0.0000006000000000000001\""
+        );
     }
 
     #[test]
