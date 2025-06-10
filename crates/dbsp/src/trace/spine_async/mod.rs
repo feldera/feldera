@@ -797,32 +797,10 @@ where
                 self.done = fuel > 0;
             }
             MergeInner::PushMerger(merger) => {
-                // Merge as much data as is currently available in-memory.
-                // Then, unless we're done, initiate further I/O.
-                //
-                // In some testing, this performed OK.  However, it ignores
-                // `fuel`, and it undoubtedly needs tuning to limit the amount
-                // of merging done in a single call:
-                //
-                // - Batches on storage use a cursor based on [BulkRows], which
-                //   internally limits the amount of data brought into memory at
-                //   a time.  (That limit applies even if the entire batch is
-                //   cached.)  That amount probably needs tuning.  Possibly, we
-                //   want to additionally limit the amount of the in-memory data
-                //   that we actually process in a single merge.
-                //
-                // - Batches in memory can always be read in full, which means
-                //   that currently we always do the full merge in a single
-                //   round.  It seems likely that we need to limit that,
-                //   although in practice I suspect that large batches will tend
-                //   to be on storage, meaning that limiting is not as crucial
-                //   as at first glance.
-                self.done = merger.merge(&mut self.builder, frontier).is_ok();
+                self.done =
+                    merger.merge(&mut self.builder, frontier, &mut fuel).is_ok() && fuel > 0;
                 if !self.done {
                     merger.run();
-                    fuel = 1;
-                } else {
-                    fuel = 0;
                 }
             }
         };
