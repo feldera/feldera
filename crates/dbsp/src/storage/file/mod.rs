@@ -34,7 +34,7 @@
 //!
 //! Row groups should implement indexing efficiently for `O(lg n)` seek by data
 //! value and for sequential reads.  It should be possible to disable indexing
-//! by data value for workloads that don't require it.[^0]
+//! by data value for workloads that don't require it.
 //!
 //! Layer files support approximate set membership query in `~O(1)` time using
 //! [a filter block](format::FilterBlock).

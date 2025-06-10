@@ -124,7 +124,7 @@ where
         }
     }
 
-    /// Constructs and returns a [VecindexedWSet] with the results.
+    /// Constructs and returns a [VecIndexedWSet] with the results.
     ///
     /// # Panic
     ///
