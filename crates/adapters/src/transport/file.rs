@@ -243,12 +243,14 @@ impl FileInputReader {
                     break;
                 };
                 let (buffer, errors) = parser.parse(chunk);
-                consumer.buffered(buffer.len(), chunk.len());
+                let num_records = buffer.len();
+                let num_bytes = chunk.len();
                 consumer.parse_errors(errors);
 
                 if let Some(buffer) = buffer {
                     let end = splitter.position();
                     queue.push_back((start..end, buffer));
+                    consumer.buffered(num_records, num_bytes);
                 }
             }
             if n == 0 && !follow {
