@@ -364,4 +364,9 @@ public class Regression1Tests extends SqlIoTest {
                     INSERT INTO G VALUES(1), (2);""", empty);
         }
     }
+
+    @Test
+    public void testRuntimePanic() {
+        this.runtimeConstantFail("SELECT 1.0 / 0", "Attempt to divide by zero: 1.0 / 0.0");
+    }
 }

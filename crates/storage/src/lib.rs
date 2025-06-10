@@ -238,6 +238,7 @@ pub trait FileReader: Send + Sync + HasFileId {
     /// will be called.
     ///
     /// The default implementation is not actually asynchronous.
+    #[allow(clippy::type_complexity)]
     fn read_async(
         &self,
         blocks: Vec<BlockLocation>,
@@ -253,6 +254,7 @@ pub trait FileReader: Send + Sync + HasFileId {
 /// Default implementation for [FileReader::read_async].
 ///
 /// This implementation is not actually asynchronous.
+#[allow(clippy::type_complexity)]
 pub fn default_read_async<R>(
     reader: &R,
     blocks: Vec<BlockLocation>,

@@ -40,6 +40,26 @@ pub struct SqlDecimal {
 
 pub(crate) type DecimalContext = Context<LargeDecimal>;
 
+fn append(s: &mut String, b: bool, msg: &str) {
+    if b {
+        if !s.is_empty() {
+            s.push_str(", ");
+        }
+        s.push_str(msg);
+    }
+}
+
+fn context_to_string(context: &DecimalContext) -> String {
+    let mut s: String = String::default();
+    let status = context.status();
+    append(&mut s, status.overflow(), "overflow");
+    append(&mut s, status.division_by_zero(), "division_by_zero");
+    append(&mut s, status.division_impossible(), "division_impossible");
+    append(&mut s, status.division_undefined(), "division_undefined");
+    append(&mut s, status.invalid_operation(), "invalid_operation");
+    s
+}
+
 #[doc(hidden)]
 pub(crate) fn is_error(context: &DecimalContext) -> bool {
     let status = context.status();
@@ -47,9 +67,7 @@ pub(crate) fn is_error(context: &DecimalContext) -> bool {
         || status.overflow()
         || status.invalid_operation()
         || status.division_by_zero()
-        || status.division_undefined()
         || status.division_impossible()
-        || status.division_by_zero()
         || status.division_undefined()
 }
 
@@ -89,9 +107,16 @@ impl SqlDecimal {
         }
     }
 
-    pub fn validate(value: LargeDecimal, context: &DecimalContext, msg: &str) -> Self {
+    pub fn validate<F>(value: LargeDecimal, context: &DecimalContext, msg: F) -> Self
+    where
+        F: Fn() -> String,
+    {
         if is_error(context) {
-            panic!("Error during DECIMAL computation: {}", msg);
+            panic!(
+                "Error during DECIMAL computation ({}): {}",
+                context_to_string(context),
+                msg()
+            );
         }
         if value.is_zero() && value.is_negative() {
             SqlDecimal::new(LargeDecimal::zero())
@@ -138,7 +163,9 @@ impl SqlDecimal {
         let scale = LargeDecimal::from(-scale);
         context.rescale(&mut result, &scale);
         context.shift(&mut result, &scale);
-        Self::validate(result, &context, "from_i128_with_scale")
+        Self::validate(result, &context, || {
+            format!("from_i128_with_scale({}, {})", value, scale)
+        })
     }
 
     pub fn from_f32(value: f32) -> Self {
@@ -586,7 +613,7 @@ impl Add for SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.add(&mut result, &other.value);
-        Self::validate(result, &context, "Addition")
+        Self::validate(result, &context, || format!("{} + {}", self, other))
     }
 }
 
@@ -597,7 +624,7 @@ impl Add for &SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.add(&mut result, &other.value);
-        SqlDecimal::validate(result, &context, "Addition")
+        SqlDecimal::validate(result, &context, || format!("{} + {}", self, other))
     }
 }
 
@@ -608,7 +635,7 @@ impl Neg for SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.neg(&mut result);
-        Self::validate(result, &context, "Negation")
+        Self::validate(result, &context, || format!("-{}", self))
     }
 }
 
@@ -619,7 +646,7 @@ impl Neg for &SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.neg(&mut result);
-        SqlDecimal::validate(result, &context, "Negation")
+        SqlDecimal::validate(result, &context, || format!("-{}", self))
     }
 }
 
@@ -629,7 +656,12 @@ impl AddAssign<SqlDecimal> for SqlDecimal {
         let mut result = self.value;
         context.add(&mut result, &other.value);
         if is_error(&context) {
-            panic!("Error during DECIMAL computation: ADD");
+            panic!(
+                "Error during computation ({}): {} + {}",
+                context_to_string(&context),
+                self,
+                other
+            );
         }
         self.value = result;
     }
@@ -641,7 +673,12 @@ impl AddAssign<&SqlDecimal> for SqlDecimal {
         let mut result = self.value;
         context.add(&mut result, &other.value);
         if is_error(&context) {
-            panic!("Error during DECIMAL computation: ADD");
+            panic!(
+                "Error during computation ({}): {} + {}",
+                context_to_string(&context),
+                self,
+                other
+            );
         }
         self.value = result;
     }
@@ -663,7 +700,7 @@ impl Sub for SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.sub(&mut result, &other.value);
-        Self::validate(result, &context, "Subtraction")
+        Self::validate(result, &context, || format!("{} - {}", self, other))
     }
 }
 
@@ -683,7 +720,7 @@ impl Mul for SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &other.value);
-        Self::validate(result, &context, "Multiplication")
+        Self::validate(result, &context, || format!("{} * {}", self, other))
     }
 }
 
@@ -694,7 +731,7 @@ impl Mul for &SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &other.value);
-        SqlDecimal::validate(result, &context, "Multiplication")
+        SqlDecimal::validate(result, &context, || format!("{} * {}", self, other))
     }
 }
 
@@ -706,7 +743,7 @@ impl MulByRef<isize> for SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &LargeDecimal::from(*w));
-        Self::validate(result, &context, "Multiplication")
+        Self::validate(result, &context, || format!("{} * {}", self, w))
     }
 }
 
@@ -718,7 +755,7 @@ impl MulByRef<i64> for SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &LargeDecimal::from(*w));
-        Self::validate(result, &context, "Multiplication")
+        Self::validate(result, &context, || format!("{} * {}", self, w))
     }
 }
 
@@ -730,7 +767,7 @@ impl MulByRef<i32> for SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.mul(&mut result, &LargeDecimal::from(*w));
-        Self::validate(result, &context, "Multiplication")
+        Self::validate(result, &context, || format!("{} * {}", self, w))
     }
 }
 
@@ -750,14 +787,14 @@ impl Div for SqlDecimal {
         let mut context = get_standard_context();
         let mut result = self.value;
         context.div(&mut result, &other.value);
-        Self::validate(result, &context, "Division")
+        Self::validate(result, &context, || format!("{} / {}", self, other))
     }
 }
 
 impl CheckedDiv for SqlDecimal {
     fn checked_div(&self, other: &Self) -> Option<Self> {
         if other.value == LargeDecimal::zero() {
-            panic!("attempt to divide by zero");
+            panic!("Attempt to divide by zero: {} / {}", self, other);
         }
         let mut context = get_standard_context();
         let mut result = self.value;
@@ -770,7 +807,7 @@ impl CheckedDiv for SqlDecimal {
 #[doc(hidden)]
 fn sqldecimal_modulo(left: SqlDecimal, right: SqlDecimal) -> SqlDecimal {
     if right.value == LargeDecimal::zero() {
-        panic!("attempt to divide by zero");
+        panic!("Attempt to modulo by zero: {} % {}", left, right);
     }
     let left_neg = left.is_negative();
     let mut context = get_standard_context();
@@ -782,7 +819,7 @@ fn sqldecimal_modulo(left: SqlDecimal, right: SqlDecimal) -> SqlDecimal {
     if left_neg {
         context.neg(&mut result);
     }
-    SqlDecimal::validate(result, &context, "Modulo")
+    SqlDecimal::validate(result, &context, || format!("{} % {}", left, right))
 }
 
 some_operator!(
@@ -793,7 +830,10 @@ some_operator!(
     SqlDecimal
 );
 
-fn generic_round(left: SqlDecimal, right: i32, mode: Rounding, message: &str) -> SqlDecimal {
+fn generic_round<F>(left: SqlDecimal, right: i32, mode: Rounding, message: F) -> SqlDecimal
+where
+    F: Fn() -> String,
+{
     if right >= (DECIMAL_MAX_PRECISION as i32) || right >= num::abs(left.value.exponent()) {
         return left;
     }
@@ -817,7 +857,9 @@ fn generic_round(left: SqlDecimal, right: i32, mode: Rounding, message: &str) ->
 
 #[doc(hidden)]
 pub fn bround__(left: SqlDecimal, right: i32) -> SqlDecimal {
-    generic_round(left, right, Rounding::HalfEven, "BROUND")
+    generic_round(left, right, Rounding::HalfEven, || {
+        format!("bround({}, {})", left, right)
+    })
 }
 
 some_function2!(bround, SqlDecimal, i32, SqlDecimal);
@@ -835,7 +877,9 @@ pub fn new_decimal(s: &str, precision: u32, scale: u32) -> Option<SqlDecimal> {
 #[doc(hidden)]
 #[inline(always)]
 pub fn round_SqlDecimal_i32(left: SqlDecimal, right: i32) -> SqlDecimal {
-    generic_round(left, right, Rounding::HalfEven, "ROUND")
+    generic_round(left, right, Rounding::HalfEven, || {
+        format!("round({}, {})", left, right)
+    })
 }
 
 some_polymorphic_function2!(round, SqlDecimal, SqlDecimal, i32, i32, SqlDecimal);
@@ -843,7 +887,9 @@ some_polymorphic_function2!(round, SqlDecimal, SqlDecimal, i32, i32, SqlDecimal)
 #[doc(hidden)]
 #[inline(always)]
 pub fn truncate_SqlDecimal_i32(left: SqlDecimal, right: i32) -> SqlDecimal {
-    generic_round(left, right, Rounding::Down, "TRUNCATE")
+    generic_round(left, right, Rounding::Down, || {
+        format!("truncate({}, {})", left, right)
+    })
 }
 
 some_polymorphic_function2!(truncate, SqlDecimal, SqlDecimal, i32, i32, SqlDecimal);
@@ -874,7 +920,12 @@ pub fn power_SqlDecimal_SqlDecimal(left: SqlDecimal, right: SqlDecimal) -> F64 {
         let mut result = left.get_dec();
         context.pow(&mut result, &right.get_dec());
         if is_error(&context) {
-            panic!("Error during POWER computation");
+            panic!(
+                "Error during computation ({}): power({}, {})",
+                context_to_string(&context),
+                left,
+                right
+            );
         }
         F64::new(context.try_into_f64(result).unwrap())
     }
@@ -889,7 +940,12 @@ pub fn power_SqlDecimal_i32(left: SqlDecimal, right: i32) -> F64 {
     let power = SqlDecimal::from(right);
     context.pow(&mut result, &power.get_dec());
     if is_error(&context) {
-        panic!("Error during POWER computation");
+        panic!(
+            "Error during computation ({}): power({}, {})",
+            context_to_string(&context),
+            left,
+            right
+        );
     }
     F64::new(context.try_into_f64(result).unwrap())
 }
@@ -919,7 +975,11 @@ pub fn sqrt_SqlDecimal(left: SqlDecimal) -> F64 {
     let mut result = left.get_dec();
     context.sqrt(&mut result);
     if is_error(&context) {
-        panic!("Error during SQRT computation");
+        panic!(
+            "Error during computation ({}): sqrt({})",
+            context_to_string(&context),
+            left
+        );
     }
     F64::new(context.try_into_f64(result).unwrap())
 }
@@ -932,7 +992,7 @@ pub fn floor_SqlDecimal(value: SqlDecimal) -> SqlDecimal {
     context.set_rounding(Rounding::Floor);
     let mut result = value.get_dec();
     context.round(&mut result);
-    SqlDecimal::validate(result, &context, "FLOOR")
+    SqlDecimal::validate(result, &context, || format!("floor({})", value))
 }
 
 some_polymorphic_function1!(floor, SqlDecimal, SqlDecimal, SqlDecimal);
@@ -943,7 +1003,7 @@ pub fn ceil_SqlDecimal(value: SqlDecimal) -> SqlDecimal {
     context.set_rounding(Rounding::Ceiling);
     let mut result = value.get_dec();
     context.round(&mut result);
-    SqlDecimal::validate(result, &context, "CEIL")
+    SqlDecimal::validate(result, &context, || format!("ceil({})", value))
 }
 
 some_polymorphic_function1!(ceil, SqlDecimal, SqlDecimal, SqlDecimal);
@@ -968,7 +1028,7 @@ pub fn shift_left__(left: SqlDecimal, amount: i32) -> SqlDecimal {
     let mut context = get_standard_context();
     let mut result = left.get_dec();
     context.scaleb(&mut result, &pow);
-    SqlDecimal::validate(result, &context, "SHIFT LEFT")
+    SqlDecimal::validate(result, &context, || format!("{} << {}", left, amount))
 }
 
 #[doc(hidden)]
@@ -979,7 +1039,7 @@ pub fn shift_leftN_(left: Option<SqlDecimal>, amount: i32) -> Option<SqlDecimal>
 
 #[cfg(test)]
 mod test {
-    use crate::SqlDecimal;
+    use crate::{dec::context_to_string, DecimalContext, SqlDecimal};
     use feldera_types::deserialize_table_record;
     use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
     use size_of::SizeOf;
@@ -1034,6 +1094,16 @@ mod test {
         dec: SqlDecimal,
     }
     deserialize_table_record!(Struct2["Table.Name", 3] {(cc_num, "cc_num", false, u64, None), (first, "first", false, Option<String>, Some(None)), (dec, "dec", false, SqlDecimal, None)});
+
+    #[test]
+    fn context() {
+        let mut context: DecimalContext = DecimalContext::default();
+        let mut status = context.status();
+        status.set_overflow();
+        status.set_invalid_operation();
+        context.set_status(status);
+        assert_eq!("overflow, invalid_operation", context_to_string(&context));
+    }
 
     #[test]
     fn deserialize_struct2() {
