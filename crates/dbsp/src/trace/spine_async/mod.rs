@@ -685,7 +685,11 @@ where
     B: Batch,
 {
     ListMerger {
+        /// The underlying merger.
         merger: ArcListMerger<B>,
+
+        /// Builder for merge output.
+        builder: B::Builder,
     },
     PushMerger {
         /// The underlying merger.
@@ -710,7 +714,8 @@ where
         let builder = B::Builder::for_merge(&factories, &batches, None);
         match merger_type {
             MergerType::ListMerger => Self::ListMerger {
-                merger: ArcListMerger::new(&factories, builder, batches, key_filter, value_filter),
+                builder,
+                merger: ArcListMerger::new(&factories, batches, key_filter, value_filter),
             },
             MergerType::PushMerger => {
                 let mut merger = ArcPushMerger::new(&factories, batches, key_filter, value_filter);
@@ -722,8 +727,8 @@ where
 
     fn merge(&mut self, frontier: &B::Time, mut fuel: isize) -> isize {
         match self {
-            Self::ListMerger { merger } => {
-                merger.work(frontier, &mut fuel);
+            Self::ListMerger { merger, builder } => {
+                merger.work(builder, frontier, &mut fuel);
                 fuel
             }
             Self::PushMerger { merger, builder } => {
@@ -759,8 +764,7 @@ where
 
     fn done(self) -> B {
         match self {
-            Self::ListMerger { merger } => merger.done(),
-            Self::PushMerger { builder, .. } => builder.done(),
+            Self::ListMerger { builder, .. } | Self::PushMerger { builder, .. } => builder.done(),
         }
     }
 }
