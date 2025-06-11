@@ -405,11 +405,10 @@ where
             let no_backpressure = Arc::clone(&no_backpressure);
             Box::new(|| {
                 let mut mergers = std::array::from_fn(|_| None);
-                let mut stored_fuel = std::array::from_fn(|_| 0);
                 let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger);
-                Box::new(move || {
+                Box::new(move |worker_state| {
                     Self::run(
-                        &mut stored_fuel,
+                        worker_state,
                         &mut mergers,
                         merger_type,
                         &state,
@@ -628,7 +627,7 @@ where
     }
 
     fn run(
-        stored_fuel: &mut [isize; MAX_LEVELS],
+        worker_state: &mut WorkerState,
         mergers: &mut [Option<Merge<B>>; MAX_LEVELS],
         merger_type: MergerType,
         state: &Arc<Mutex<SharedState<B>>>,
@@ -643,18 +642,22 @@ where
 
         for (level, m) in mergers.iter_mut().enumerate() {
             if let Some(merger) = m.as_mut() {
-                // The following treatment of fuel works well for the test case
-                // used to tune it, but it is not theoretically sound or well
-                // principled. It is likely that it should be redone.
-                let starting_fuel = if level == 0 {
+                // Run level-0 merges to completion.  For other levels, we
+                // supply as much fuel as the average level-0 merge.  Along with
+                // round-robinning between levels, this means that we invest
+                // about the same amount of effort into merges at each level,
+                // which should ensure that the higher-level merges complete in
+                // time to keep batches from piling up.
+                let fuel = if level == 0 {
                     isize::MAX
                 } else {
-                    stored_fuel[level].max(10_000)
+                    worker_state.avg_slot0_merge_fuel()
                 };
-                let fuel_consumed = merger.merge(&frontier, starting_fuel);
-                stored_fuel[level] = (stored_fuel[level] - fuel_consumed).max(0);
-                stored_fuel[level + 1] += fuel_consumed;
+                merger.merge(&frontier, fuel);
                 if merger.done {
+                    if level == 0 {
+                        worker_state.report_slot0_merge(merger.fuel);
+                    }
                     let merger = m.take().unwrap();
                     let new_batch = Arc::new(merger.builder.done());
                     state.lock().unwrap().merge_complete(
@@ -706,6 +709,33 @@ where
     fn drop(&mut self) {
         self.state.lock().unwrap().request_exit = true;
         BackgroundThread::wake();
+    }
+}
+
+/// State shared among all of the workers in a background thread.
+#[derive(Debug)]
+struct WorkerState {
+    /// Average amount of fuel used for slot-0 merges.
+    avg_slot0_merge_fuel: isize,
+}
+
+impl Default for WorkerState {
+    fn default() -> Self {
+        Self {
+            avg_slot0_merge_fuel: 10_000,
+        }
+    }
+}
+
+impl WorkerState {
+    fn report_slot0_merge(&mut self, fuel: isize) {
+        // Maintains an exponentially weighted moving average of the amount of
+        // fuel used to merge batches in slot 0.
+        self.avg_slot0_merge_fuel = ((127 * self.avg_slot0_merge_fuel + fuel + 64) / 128).max(1);
+    }
+
+    fn avg_slot0_merge_fuel(&self) -> isize {
+        self.avg_slot0_merge_fuel
     }
 }
 
