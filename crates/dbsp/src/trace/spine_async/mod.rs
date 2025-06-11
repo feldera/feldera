@@ -183,7 +183,7 @@ where
     #[size_of(skip)]
     request_exit: bool,
     #[size_of(skip)]
-    merge_stats: MergeStats,
+    spine_stats: SpineStats,
 }
 
 impl<B> SharedState<B>
@@ -197,7 +197,7 @@ where
             frontier: B::Time::minimum(),
             slots: std::array::from_fn(|_| Slot::default()),
             request_exit: false,
-            merge_stats: MergeStats::default(),
+            spine_stats: SpineStats::default(),
         }
     }
 
@@ -276,7 +276,7 @@ where
         let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
             stats + batch.cache_stats()
         });
-        self.merge_stats.report_merge(
+        self.spine_stats.report_merge(
             batches.iter().map(|b| b.len()).sum(),
             new_batch.len(),
             cache_stats,
@@ -289,8 +289,8 @@ where
     ///
     /// This is better than constructing the report here directly, because part
     /// of that is measuring the size of the batches, which can require I/O.
-    fn metadata_snapshot(&self) -> ([Slot<B>; MAX_LEVELS], MergeStats) {
-        (self.slots.clone(), self.merge_stats.clone())
+    fn metadata_snapshot(&self) -> ([Slot<B>; MAX_LEVELS], SpineStats) {
+        (self.slots.clone(), self.spine_stats.clone())
     }
 }
 
@@ -418,7 +418,7 @@ where
         if state.should_apply_backpressure() {
             let start = Instant::now();
             let mut state = self.no_backpressure.wait(state).unwrap();
-            state.merge_stats.backpressure_wait += start.elapsed();
+            state.spine_stats.backpressure_wait += start.elapsed();
             counter!(COMPACTION_STALL_TIME).increment(start.elapsed().as_nanos() as u64);
         }
     }
@@ -469,7 +469,7 @@ where
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
-        let (mut slots, merge_stats) = self.state.lock().unwrap().metadata_snapshot();
+        let (mut slots, spine_stats) = self.state.lock().unwrap().metadata_snapshot();
 
         // Construct per-slot occupancy description.
         for (index, slot) in slots.iter_mut().enumerate() {
@@ -517,7 +517,7 @@ where
         // Then summarize the batches.
         let n_batches = batches.len();
         let n_merging = batches.iter().filter(|(_batch, merging)| *merging).count();
-        let mut cache_stats = merge_stats.cache_stats;
+        let mut cache_stats = spine_stats.cache_stats;
         let mut storage_size = 0;
         let mut merging_size = 0;
         for (batch, merging) in batches {
@@ -553,10 +553,10 @@ where
             // For merges already completed, the percentage of the updates input
             // to merges that merging eliminated, whether by weights adding to
             // zero or through key or value filters.
-            "merge reduction" => merge_stats.merge_reduction(),
+            "merge reduction" => spine_stats.merge_reduction(),
 
             // The amount of time waiting for backpressure.
-            "merge backpressure wait" => MetaItem::Duration(merge_stats.backpressure_wait),
+            "merge backpressure wait" => MetaItem::Duration(spine_stats.backpressure_wait),
         });
 
         cache_stats.metadata(meta);
@@ -780,7 +780,7 @@ where
 /// The difference between `post_len` and `pre_len` reflects updates that were
 /// dropped because weights added to zero or because of key or value filters.
 #[derive(Clone, Default)]
-struct MergeStats {
+struct SpineStats {
     /// Number of updates before merging.
     pre_len: u64,
     /// Number of updates after merging.
@@ -792,7 +792,7 @@ struct MergeStats {
     backpressure_wait: Duration,
 }
 
-impl MergeStats {
+impl SpineStats {
     /// Adds `pre_len`, `post_len`, and `cache_stats` to the statistics.
     fn report_merge(&mut self, pre_len: usize, post_len: usize, cache_stats: CacheStats) {
         self.pre_len += pre_len as u64;
