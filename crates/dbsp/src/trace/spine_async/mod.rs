@@ -97,6 +97,18 @@ where
     ///
     /// Invariant: the batches must be non-empty.
     loose_batches: VecDeque<Arc<B>>,
+
+    /// Amount of time spent merging batches at this level.
+    elapsed: Duration,
+
+    /// Number of completed merges at this level.
+    n_merged: usize,
+
+    /// Number of batches input to the completed merges.
+    n_merged_batches: usize,
+
+    /// Number of merge steps required to complete the merges so far.
+    n_steps: usize,
 }
 
 impl<B> Default for Slot<B>
@@ -107,6 +119,10 @@ where
         Self {
             merging_batches: None,
             loose_batches: VecDeque::new(),
+            elapsed: Duration::ZERO,
+            n_merged: 0,
+            n_merged_batches: 0,
+            n_steps: 0,
         }
     }
 }
@@ -269,10 +285,21 @@ where
         self.slots.iter().any(|slot| slot.merging_batches.is_some())
     }
 
-    /// Finishes up the ongoing merge at the given `level`, which has completed
-    /// with `new_batch` as the result.
-    fn merge_complete(&mut self, level: usize, new_batch: Arc<B>) {
-        let batches = self.slots[level].merging_batches.take().unwrap();
+    /// Finishes up the ongoing merge at the given `level`, which completed in
+    /// `elapsed` time over `n_steps` steps, with `new_batch` as the result.
+    fn merge_complete(
+        &mut self,
+        level: usize,
+        new_batch: Arc<B>,
+        elapsed: Duration,
+        n_steps: usize,
+    ) {
+        let slot = &mut self.slots[level];
+        let batches = slot.merging_batches.take().unwrap();
+        slot.n_merged += 1;
+        slot.n_merged_batches += batches.len();
+        slot.elapsed += elapsed;
+        slot.n_steps += n_steps;
         let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
             stats + batch.cache_stats()
         });
@@ -502,6 +529,18 @@ where
                     )]);
                 }
             }
+            if slot.n_merged > 0 {
+                meta.extend([(
+                    format!("slot {index} completed").into(),
+                    MetaItem::String(format!(
+                        "{} merges of {} batches over {} steps (avg {:.1} ms/step)",
+                        slot.n_merged,
+                        slot.n_merged_batches,
+                        slot.n_steps,
+                        (slot.elapsed / slot.n_steps as u32).as_secs_f64() * 1000.0
+                    )),
+                )]);
+            }
         }
 
         // Extract all the batches from `slots`, annotating with whether they're
@@ -618,7 +657,12 @@ where
                 if merger.done {
                     let merger = m.take().unwrap();
                     let new_batch = Arc::new(merger.builder.done());
-                    state.lock().unwrap().merge_complete(level, new_batch);
+                    state.lock().unwrap().merge_complete(
+                        level,
+                        new_batch,
+                        merger.elapsed,
+                        merger.n_steps,
+                    );
                 }
             }
         }
@@ -686,8 +730,15 @@ where
     /// Builder for merge output.
     builder: B::Builder,
 
+    /// Total fuel consumed by this merge.
+    fuel: isize,
+
     /// Done?
     done: bool,
+
+    elapsed: Duration,
+
+    n_steps: usize,
 
     /// The merger itself.
     inner: MergeInner<B>,
@@ -715,6 +766,9 @@ where
         let builder = B::Builder::for_merge(&factories, &batches, None);
         Self {
             builder,
+            fuel: 0,
+            elapsed: Duration::ZERO,
+            n_steps: 0,
             done: false,
             inner: match merger_type {
                 MergerType::ListMerger => MergeInner::ListMerger(ArcListMerger::new(
@@ -736,6 +790,7 @@ where
     fn merge(&mut self, frontier: &B::Time, mut fuel: isize) -> isize {
         debug_assert!(fuel > 0);
         let supplied_fuel = fuel;
+        let start = Instant::now();
         match &mut self.inner {
             MergeInner::ListMerger(merger) => {
                 merger.work(&mut self.builder, frontier, &mut fuel);
@@ -771,7 +826,11 @@ where
                 }
             }
         };
-        supplied_fuel - fuel
+        self.elapsed += start.elapsed();
+        self.n_steps += 1;
+        let consumed_fuel = supplied_fuel - fuel;
+        self.fuel += consumed_fuel;
+        consumed_fuel
     }
 }
 
