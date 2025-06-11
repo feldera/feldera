@@ -612,13 +612,12 @@ where
                 } else {
                     stored_fuel[level].max(10_000)
                 };
-                let fuel = merger.merge(&frontier, starting_fuel);
-                let fuel_consumed = starting_fuel - fuel;
+                let fuel_consumed = merger.merge(&frontier, starting_fuel);
                 stored_fuel[level] = (stored_fuel[level] - fuel_consumed).max(0);
                 stored_fuel[level + 1] += fuel_consumed;
-                if fuel > 0 {
+                if merger.done {
                     let merger = m.take().unwrap();
-                    let new_batch = Arc::new(merger.done());
+                    let new_batch = Arc::new(merger.builder.done());
                     state.lock().unwrap().merge_complete(level, new_batch);
                 }
             }
@@ -680,24 +679,26 @@ pub enum MergerType {
 }
 
 /// A single merge in progress in an [AsyncMerger].
-enum Merge<B>
+struct Merge<B>
 where
     B: Batch,
 {
-    ListMerger {
-        /// The underlying merger.
-        merger: ArcListMerger<B>,
+    /// Builder for merge output.
+    builder: B::Builder,
 
-        /// Builder for merge output.
-        builder: B::Builder,
-    },
-    PushMerger {
-        /// The underlying merger.
-        merger: ArcPushMerger<B>,
+    /// Done?
+    done: bool,
 
-        /// Builder for merge output.
-        builder: B::Builder,
-    },
+    /// The merger itself.
+    inner: MergeInner<B>,
+}
+
+enum MergeInner<B>
+where
+    B: Batch,
+{
+    ListMerger(ArcListMerger<B>),
+    PushMerger(ArcPushMerger<B>),
 }
 
 impl<B> Merge<B>
@@ -712,26 +713,35 @@ where
     ) -> Self {
         let factories = batches[0].factories();
         let builder = B::Builder::for_merge(&factories, &batches, None);
-        match merger_type {
-            MergerType::ListMerger => Self::ListMerger {
-                builder,
-                merger: ArcListMerger::new(&factories, batches, key_filter, value_filter),
+        Self {
+            builder,
+            done: false,
+            inner: match merger_type {
+                MergerType::ListMerger => MergeInner::ListMerger(ArcListMerger::new(
+                    &factories,
+                    batches,
+                    key_filter,
+                    value_filter,
+                )),
+                MergerType::PushMerger => {
+                    let mut inner =
+                        ArcPushMerger::new(&factories, batches, key_filter, value_filter);
+                    inner.run();
+                    MergeInner::PushMerger(inner)
+                }
             },
-            MergerType::PushMerger => {
-                let mut merger = ArcPushMerger::new(&factories, batches, key_filter, value_filter);
-                merger.run();
-                Self::PushMerger { merger, builder }
-            }
         }
     }
 
     fn merge(&mut self, frontier: &B::Time, mut fuel: isize) -> isize {
-        match self {
-            Self::ListMerger { merger, builder } => {
-                merger.work(builder, frontier, &mut fuel);
-                fuel
+        debug_assert!(fuel > 0);
+        let supplied_fuel = fuel;
+        match &mut self.inner {
+            MergeInner::ListMerger(merger) => {
+                merger.work(&mut self.builder, frontier, &mut fuel);
+                self.done = fuel > 0;
             }
-            Self::PushMerger { merger, builder } => {
+            MergeInner::PushMerger(merger) => {
                 // Merge as much data as is currently available in-memory.
                 // Then, unless we're done, initiate further I/O.
                 //
@@ -752,20 +762,16 @@ where
                 //   although in practice I suspect that large batches will tend
                 //   to be on storage, meaning that limiting is not as crucial
                 //   as at first glance.
-                if merger.merge(builder, frontier).is_err() {
+                self.done = merger.merge(&mut self.builder, frontier).is_ok();
+                if !self.done {
                     merger.run();
-                    0
+                    fuel = 1;
                 } else {
-                    fuel
+                    fuel = 0;
                 }
             }
-        }
-    }
-
-    fn done(self) -> B {
-        match self {
-            Self::ListMerger { builder, .. } | Self::PushMerger { builder, .. } => builder.done(),
-        }
+        };
+        supplied_fuel - fuel
     }
 }
 
