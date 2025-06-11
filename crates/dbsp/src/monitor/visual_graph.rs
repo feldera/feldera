@@ -1,7 +1,7 @@
 //! Intermediate representation of a circuit graph suitable for
 //! conversion to a visual format like dot.
 
-use std::fmt::{self, Debug, Write};
+use std::fmt::{self, Debug, Display, Write};
 
 type Id = String;
 
@@ -44,6 +44,12 @@ impl Graph {
     }
 }
 
+impl Display for Graph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.nodes.to_plain(Indentation(0), f)
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct SimpleNode {
     id: Id,
@@ -65,6 +71,12 @@ impl SimpleNode {
             "{}[label=\"{}\" fillcolor=\"#ff{gb:02x}{gb:02x}\" style=filled]",
             self.id, self.label,
         )
+    }
+    fn to_plain(&self, indent: Indentation, f: &mut fmt::Formatter) -> fmt::Result {
+        for line in self.label.split("\\l").filter(|line| !line.is_empty()) {
+            writeln!(f, "{indent}{line}")?;
+        }
+        Ok(())
     }
 }
 
@@ -101,6 +113,19 @@ impl ClusterNode {
 
         Ok(())
     }
+
+    fn to_plain(&self, indent: Indentation, f: &mut fmt::Formatter) -> fmt::Result {
+        for line in self.label.split("\\l").filter(|line| !line.is_empty()) {
+            writeln!(f, "{indent}{line}")?;
+        }
+        for (index, node) in self.nodes.iter().enumerate() {
+            if index > 0 {
+                writeln!(f)?;
+            }
+            node.to_plain(Indentation(indent.0 + 4), f)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -121,6 +146,13 @@ impl Node {
         match self {
             Self::Simple(simple_node) => simple_node.to_dot(output),
             Self::Cluster(cluster_node) => cluster_node.to_dot(output),
+        }
+    }
+
+    fn to_plain(&self, indent: Indentation, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Simple(simple_node) => simple_node.to_plain(indent, f),
+            Self::Cluster(cluster_node) => cluster_node.to_plain(indent, f),
         }
     }
 }
@@ -155,5 +187,15 @@ impl Edge {
             write!(output, "enter_")?;
         }
         writeln!(output, "{}", self.to_node)
+    }
+}
+
+struct Indentation(usize);
+impl Display for Indentation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for _ in 0..self.0 {
+            f.write_char(' ')?;
+        }
+        Ok(())
     }
 }
