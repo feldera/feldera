@@ -230,20 +230,12 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
     /// Returns a Zip archive containing all the profile `.dot` files.
     pub fn as_zip(&self) -> Vec<u8> {
         let mut zip = ZipWriter::new(IoCursor::new(Vec::with_capacity(65536)));
-        let elapsed = self.elapsed_time.as_micros();
         for (worker, graph) in self.worker_graphs.iter().enumerate() {
-            zip.start_file(
-                format!("profile/{elapsed}/{worker}.dot"),
-                FileOptions::default(),
-            )
-            .unwrap();
+            zip.start_file(format!("{worker}.dot"), FileOptions::default())
+                .unwrap();
             zip.write_all(graph.to_dot().as_bytes()).unwrap();
         }
-        zip.start_file(
-            format!("profile/{elapsed}/Makefile"),
-            FileOptions::default(),
-        )
-        .unwrap();
+        zip.start_file("Makefile", FileOptions::default()).unwrap();
         zip.write_all(Self::MAKEFILE.as_bytes()).unwrap();
         zip.finish().unwrap().into_inner()
     }
