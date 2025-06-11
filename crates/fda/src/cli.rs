@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum, ValueHint};
+use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::engine::{ArgValueCompleter, CompletionCandidate};
 use std::fmt::Display;
 use std::path::PathBuf;
@@ -507,6 +507,109 @@ pub enum PipelineAction {
         /// Or when ingesting data over HTTP.
         token: String,
     },
+    /// Benchmark the performance of a pipeline.
+    ///
+    /// This command will perform the following steps
+    /// 1. ensure the benchmark is compiled with the latest platform version
+    /// 2. run the pipeline & record stats over time
+    /// 3. post-process and check recorded statistics
+    /// 4. aggregate basic performance metrics and output them in the specified format
+    Bench {
+        #[command(flatten)]
+        args: BenchmarkArgs,
+    },
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct BenchmarkArgs {
+    /// The name of the pipeline.
+    #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+    pub name: String,
+    /// Duration of the benchmark in seconds.
+    ///
+    /// If not specified, the benchmark will run until the pipeline indicates it has processed all input.
+    #[arg(long, short = 'd')]
+    pub duration: Option<u64>,
+
+    /// Do not recompile the pipeline before starting.
+    ///
+    /// If set to true, one might end up with a pipeline that's not
+    /// compiled with the latest feldera runtime.
+    #[arg(long, short = 'n', default_value_t = false)]
+    pub no_recompile: bool,
+
+    /// If set upload results to feldera benchmark host.
+    ///
+    /// For development purposes, you most likely don't want to set this to true.
+    ///
+    /// Requires `benchmark_token` token to be set.
+    #[arg(long, short = 'u', default_value_t = false)]
+    pub upload: bool,
+
+    /// Slug or UUID of the project to add results to when uploading
+    /// (requires: `--upload`).
+    ///
+    /// It not specified is set to either `feldera` or `feldera-oss`,
+    /// depending on the testbed edition.
+    #[arg(long, short = 'p')]
+    pub project: Option<String>,
+
+    /// Branch name, slug, or UUID. By default it will be set to `main`
+    /// (requires: `--upload`).
+    #[arg(long, default_value_t = String::from("main"))]
+    pub branch: String,
+
+    /// Use the specified branch name as the start point for `branch`
+    /// (requires: `--upload`).
+    ///
+    /// - If `branch` already exists and the start point is different, a new
+    ///   branch will be created.
+    #[arg(long)]
+    pub start_point: Option<String>,
+
+    /// Use the specified full `git` hash as the start point for `branch`
+    /// (requires: `--start-point` and `--upload`).
+    ///
+    /// - If `start_point` already exists and the start point hash is different,
+    ///   a new branch will be created
+    #[arg(long)]
+    pub start_point_hash: Option<String>,
+
+    /// The maximum number of historical branch versions to include
+    /// (requires: `--start-point` and `--upload`).
+    ///
+    /// Versions beyond this number will be omitted.
+    #[arg(long, default_value_t = 255)]
+    pub start_point_max_versions: u32,
+
+    /// Clone thresholds from the start point branch
+    /// (requires: `--branch-start-point` and `--upload`).
+    #[arg(long)]
+    pub start_point_clone_thresholds: bool,
+
+    /// Reset the branch head to an empty state
+    /// (requires: `--branch-start-point` and `--upload`).
+    ///
+    /// If `start_point` is specified, the new branch head will begin at that start point.
+    /// Otherwise, the branch head will be reset to an empty state
+    #[arg(long)]
+    pub start_point_reset: bool,
+
+    /// Where to upload benchmark results to
+    /// (requires: `--upload`).
+    #[arg(
+        long,
+        short = 'b',
+        env = "BENCHER_HOST",
+        value_hint = ValueHint::Url,
+        default_value_t = String::from("https://benchmarks.feldera.io/")
+    )]
+    pub benchmark_host: String,
+
+    /// Which API key to use for authentication with benchmarks server
+    /// (requires: `--upload`).
+    #[arg(long, short = 't', env = "BENCHER_API_TOKEN", hide_env_values = true)]
+    pub benchmark_token: Option<String>,
 }
 
 #[derive(Subcommand)]

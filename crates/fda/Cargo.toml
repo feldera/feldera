@@ -34,3 +34,12 @@ tokio-util = { workspace = true }
 tempfile = { workspace = true }
 rmpv = { workspace = true, features = ["with-serde"] }
 arrow = { workspace = true, features = ["ipc", "prettyprint"] }
+serde = { workspace = true, features = ["derive"] }
+uuid = { workspace = true, features = ["serde", "v4"] }
+chrono = { workspace = true, features = ["serde"] }
+
+[build-dependencies]
+prettyplease = { workspace = true }
+progenitor = { workspace = true }
+serde_json = { workspace = true }
+syn = { workspace = true }
