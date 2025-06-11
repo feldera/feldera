@@ -34,3 +34,4 @@ tokio-util = { workspace = true }
 tempfile = { workspace = true }
 rmpv = { workspace = true, features = ["with-serde"] }
 arrow = { workspace = true, features = ["ipc", "prettyprint"] }
+serde = { workspace = true, features = ["derive"] }

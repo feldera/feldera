@@ -4468,6 +4468,7 @@ dependencies = [
  "reqwest-websocket",
  "rmpv",
  "rustyline",
+ "serde",
  "serde_json",
  "tabled",
  "tempfile",
