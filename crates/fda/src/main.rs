@@ -26,6 +26,7 @@ use tokio::runtime::Handle;
 use tokio::time::{sleep, timeout, Duration};
 
 mod adhoc;
+mod bench;
 mod cli;
 mod shell;
 
@@ -93,48 +94,45 @@ pub(crate) fn make_client(
     Ok(Client::new_with_client(host.as_str(), client))
 }
 
-/// A helper struct that temporarily disables the cache for a pipeline
-/// as long as it is in scope.
-struct TemporaryCacheDisable {
+/// A helper struct that disables the cache for a pipeline.
+struct CacheDisabler {
     name: String,
     client: Client,
     original_pc: ProgramConfig,
 }
 
-impl TemporaryCacheDisable {
-    async fn new(name: String, client: Client, original_pc: ProgramConfig) -> Self {
-        TemporaryCacheDisable::set_cache_flag_disabled(
-            client.clone(),
-            name.clone(),
-            original_pc.clone(),
-            true,
-        )
-        .await;
-
+impl CacheDisabler {
+    async fn new(name: String, client: &Client, original_pc: ProgramConfig) -> Self {
         Self {
             name,
-            client,
+            client: client.clone(),
             original_pc,
         }
     }
 
-    async fn set_cache_flag_disabled(
-        client: Client,
-        name: String,
-        original_pc: ProgramConfig,
-        disable: bool,
-    ) {
-        let pc = if disable {
-            let mut disabled_cache_pc = original_pc.clone();
-            disabled_cache_pc.cache = false;
-            disabled_cache_pc
+    async fn restore(&self) {
+        if self.original_pc.cache {
+            debug!("Restoring original cache flag for pipeline {}", self.name);
+            self.set_cache_flag(true).await;
         } else {
-            original_pc.clone()
-        };
+            debug!(
+                "Cache for pipeline stays disabled as it was previously disabled {}",
+                self.name
+            );
+        }
+    }
 
-        client
+    async fn disable(&self) {
+        self.set_cache_flag(false).await;
+    }
+
+    async fn set_cache_flag(&self, flag: bool) {
+        let mut pc = self.original_pc.clone();
+        pc.cache = flag;
+
+        self.client
             .patch_pipeline()
-            .pipeline_name(name.clone())
+            .pipeline_name(self.name.clone())
             .body(PatchPipeline {
                 description: None,
                 name: None,
@@ -147,31 +145,11 @@ impl TemporaryCacheDisable {
             .send()
             .await
             .map_err(handle_errors_fatal(
-                client.baseurl().clone(),
-                "Failed to enable/disable compilation cache",
+                self.client.baseurl().clone(),
+                format!("Failed to set compilation cache to {flag}").leak(),
                 1,
             ))
             .unwrap();
-    }
-}
-
-impl Drop for TemporaryCacheDisable {
-    fn drop(&mut self) {
-        if let Ok(handle) = Handle::try_current() {
-            debug!("TemporaryCacheDisable::drop reset cache value to original setting");
-            let client = self.client.clone();
-            let name = self.name.clone();
-            let original_pc = self.original_pc.clone();
-            handle.spawn(TemporaryCacheDisable::set_cache_flag_disabled(
-                client,
-                name,
-                original_pc,
-                false,
-            ));
-        } else {
-            // This shouldn't happen the way we currently run things
-            unreachable!("No Tokio runtime available for re-enabling the cache.");
-        }
     }
 }
 
@@ -691,13 +669,12 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 ))
                 .unwrap();
 
-            let _cd = if recompile {
-                let cd = TemporaryCacheDisable::new(
-                    name.clone(),
-                    client.clone(),
-                    pc.program_config.clone().unwrap(),
-                )
-                .await;
+            if recompile {
+                let cd =
+                    CacheDisabler::new(name.clone(), &client, pc.program_config.clone().unwrap())
+                        .await;
+                cd.disable().await;
+
                 let new_program = if pc
                     .program_code
                     .as_ref()
@@ -729,10 +706,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         1,
                     ))
                     .unwrap();
+
                 info!("Forcing recompilation this may take a few seconds...");
-                Some(cd)
-            } else {
-                None
+                cd.restore().await;
             };
 
             let mut print_every_30_seconds = tokio::time::Instant::now();
@@ -1401,6 +1377,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
+        PipelineAction::Bench { args } => bench::bench(client, format, args).await,
     }
 }
 

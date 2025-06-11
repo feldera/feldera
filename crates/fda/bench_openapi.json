@@ -1,0 +1,1259 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Benchmark API Minified Using https://www.npmjs.com/package/openapi-format at https://openapi-format-playground.vercel.app",
+    "version": "0.5.1"
+  },
+  "paths": {
+    "/v0/run": {
+      "post": {
+        "operationId": "run_post",
+        "summary": "Create a run",
+        "description": "Create a run. The user does not need have an account yet or be authenticated. The project may or may not exist yet.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonNewRun"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "headers": {
+              "access-control-allow-headers": {
+                "style": "simple",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "access-control-allow-methods": {
+                "style": "simple",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "access-control-allow-origin": {
+                "style": "simple",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "access-control-expose-headers": {
+                "style": "simple",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "x-total-count": {
+                "style": "simple",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonReport"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": ["run", "reports"]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Adapter": {
+        "type": "string",
+        "enum": [
+          "magic",
+          "json",
+          "rust",
+          "rust_bench",
+          "rust_criterion",
+          "rust_iai",
+          "rust_iai_callgrind",
+          "cpp",
+          "cpp_google",
+          "cpp_catch2",
+          "go",
+          "go_bench",
+          "java",
+          "java_jmh",
+          "c_sharp",
+          "c_sharp_dot_net",
+          "js",
+          "js_benchmark",
+          "js_time",
+          "python",
+          "python_asv",
+          "python_pytest",
+          "ruby",
+          "ruby_benchmark",
+          "shell",
+          "shell_hyperfine"
+        ]
+      },
+      "AlertStatus": {
+        "oneOf": [
+          {
+            "description": "The alert is active.",
+            "type": "string",
+            "enum": ["active"]
+          },
+          {
+            "description": "The alert has been dismissed by a user.",
+            "type": "string",
+            "enum": ["dismissed"]
+          },
+          {
+            "description": "The alert has been silenced by the system.",
+            "type": "string",
+            "enum": ["silenced"]
+          }
+        ]
+      },
+      "AlertUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "BenchmarkName": {
+        "type": "string"
+      },
+      "BenchmarkUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "Boundary": {
+        "type": "number",
+        "format": "double"
+      },
+      "BoundaryLimit": {
+        "type": "string",
+        "enum": ["lower", "upper"]
+      },
+      "BranchName": {
+        "type": "string"
+      },
+      "BranchUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "DateTime": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "Error": {
+        "description": "Error information from a response.",
+        "type": "object",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["message", "request_id"]
+      },
+      "GitHash": {
+        "type": "string"
+      },
+      "HeadUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "Iteration": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0
+      },
+      "JsonAlert": {
+        "type": "object",
+        "properties": {
+          "benchmark": {
+            "$ref": "#/components/schemas/JsonBenchmark"
+          },
+          "boundary": {
+            "$ref": "#/components/schemas/JsonBoundary"
+          },
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "iteration": {
+            "$ref": "#/components/schemas/Iteration"
+          },
+          "limit": {
+            "$ref": "#/components/schemas/BoundaryLimit"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/JsonMetric"
+          },
+          "modified": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "report": {
+            "$ref": "#/components/schemas/ReportUuid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AlertStatus"
+          },
+          "threshold": {
+            "$ref": "#/components/schemas/JsonThreshold"
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/AlertUuid"
+          }
+        },
+        "required": [
+          "benchmark",
+          "boundary",
+          "created",
+          "iteration",
+          "limit",
+          "metric",
+          "modified",
+          "report",
+          "status",
+          "threshold",
+          "uuid"
+        ]
+      },
+      "JsonAverage": {
+        "type": "string",
+        "enum": ["mean", "median"]
+      },
+      "JsonBenchmark": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              }
+            ],
+            "nullable": true
+          },
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "modified": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "name": {
+            "$ref": "#/components/schemas/BenchmarkName"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectUuid"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/Slug"
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/BenchmarkUuid"
+          }
+        },
+        "required": ["created", "modified", "name", "project", "slug", "uuid"]
+      },
+      "JsonBoundary": {
+        "type": "object",
+        "properties": {
+          "baseline": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lower_limit": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "upper_limit": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        }
+      },
+      "JsonBranch": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              }
+            ],
+            "nullable": true
+          },
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "head": {
+            "$ref": "#/components/schemas/JsonHead"
+          },
+          "modified": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "name": {
+            "$ref": "#/components/schemas/BranchName"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectUuid"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/Slug"
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/BranchUuid"
+          }
+        },
+        "required": [
+          "created",
+          "head",
+          "modified",
+          "name",
+          "project",
+          "slug",
+          "uuid"
+        ]
+      },
+      "JsonFold": {
+        "type": "string",
+        "enum": ["min", "max", "mean", "median"]
+      },
+      "JsonHead": {
+        "type": "object",
+        "properties": {
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "replaced": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              }
+            ],
+            "nullable": true
+          },
+          "start_point": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonStartPoint"
+              }
+            ],
+            "nullable": true
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/HeadUuid"
+          },
+          "version": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonVersion"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": ["created", "uuid"]
+      },
+      "JsonMeasure": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              }
+            ],
+            "nullable": true
+          },
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "modified": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "name": {
+            "$ref": "#/components/schemas/ResourceName"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectUuid"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/Slug"
+          },
+          "units": {
+            "$ref": "#/components/schemas/ResourceName"
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/MeasureUuid"
+          }
+        },
+        "required": [
+          "created",
+          "modified",
+          "name",
+          "project",
+          "slug",
+          "units",
+          "uuid"
+        ]
+      },
+      "JsonMetric": {
+        "type": "object",
+        "properties": {
+          "lower_value": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "upper_value": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/MetricUuid"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "required": ["uuid", "value"]
+      },
+      "JsonModel": {
+        "type": "object",
+        "properties": {
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "lower_boundary": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Boundary"
+              }
+            ],
+            "nullable": true
+          },
+          "max_sample_size": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SampleSize"
+              }
+            ],
+            "nullable": true
+          },
+          "min_sample_size": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SampleSize"
+              }
+            ],
+            "nullable": true
+          },
+          "replaced": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              }
+            ],
+            "nullable": true
+          },
+          "test": {
+            "$ref": "#/components/schemas/ModelTest"
+          },
+          "upper_boundary": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Boundary"
+              }
+            ],
+            "nullable": true
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/ModelUuid"
+          },
+          "window": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Window"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": ["created", "test", "uuid"]
+      },
+      "JsonNewRun": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "description": "Branch UUID, slug, or name. If the branch is not provided or does not exist, it will be created.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NameId"
+              }
+            ],
+            "nullable": true
+          },
+          "context": {
+            "description": "Context for the report.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RunContext"
+              }
+            ],
+            "nullable": true
+          },
+          "end_time": {
+            "description": "End time for the report. Must be an ISO 8601 formatted string.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              }
+            ]
+          },
+          "hash": {
+            "description": "Full `git` commit hash. All reports with the same `git` commit hash will be considered part of the same branch version. This can be useful for tracking the performance of a specific commit across multiple testbeds.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GitHash"
+              }
+            ],
+            "nullable": true
+          },
+          "project": {
+            "description": "Project UUID or slug. If the project is not provided or does not exist, it will be created.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              }
+            ],
+            "nullable": true
+          },
+          "results": {
+            "description": "An array of benchmarks results.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "settings": {
+            "description": "Settings for how to handle the results.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonReportSettings"
+              }
+            ],
+            "nullable": true
+          },
+          "start_point": {
+            "description": "The start point for the report branch. If the branch does not exist, the start point will be used to create a new branch. If the branch already exists and the start point is not provided, the current branch will be used. If the branch already exists and the start point provided is different, a new branch head will be created from the new start point. If a new branch or new branch head is created with a start point, historical branch versions from the start point branch will be shallow copied over to the new branch. That is, historical metrics data for the start point branch will appear in queries for the branch. For example, pull request branches often use their base branch as their start point branch. If a new branch is created, it is not kept in sync with the start point branch.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonUpdateStartPoint"
+              }
+            ],
+            "nullable": true
+          },
+          "start_time": {
+            "description": "Start time for the report. Must be an ISO 8601 formatted string.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              }
+            ]
+          },
+          "testbed": {
+            "description": "Testbed UUID, slug, or name. If the testbed is not provided or does not exist, it will be created.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NameId"
+              }
+            ],
+            "nullable": true
+          },
+          "thresholds": {
+            "description": "Thresholds to use for the branch, testbed, and measures in the report. If a threshold does not exist, it will be created. If a threshold exists and the model is different, it will be updated with the new model. If a measure name or slug is provided, the measure will be created if it does not exist.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonReportThresholds"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": ["end_time", "results", "start_time"]
+      },
+      "JsonProject": {
+        "type": "object",
+        "properties": {
+          "claimed": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              }
+            ],
+            "nullable": true
+          },
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "modified": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "name": {
+            "$ref": "#/components/schemas/ResourceName"
+          },
+          "organization": {
+            "$ref": "#/components/schemas/OrganizationUuid"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/Slug"
+          },
+          "url": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Url"
+              }
+            ],
+            "nullable": true
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/ProjectUuid"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          }
+        },
+        "required": [
+          "created",
+          "modified",
+          "name",
+          "organization",
+          "slug",
+          "uuid",
+          "visibility"
+        ]
+      },
+      "JsonPubUser": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/UserName"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/Slug"
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/UserUuid"
+          }
+        },
+        "required": ["name", "slug", "uuid"]
+      },
+      "JsonReport": {
+        "type": "object",
+        "properties": {
+          "adapter": {
+            "$ref": "#/components/schemas/Adapter"
+          },
+          "alerts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonAlert"
+            }
+          },
+          "branch": {
+            "$ref": "#/components/schemas/JsonBranch"
+          },
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "end_time": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "project": {
+            "$ref": "#/components/schemas/JsonProject"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/JsonReportResult"
+              }
+            }
+          },
+          "start_time": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "testbed": {
+            "$ref": "#/components/schemas/JsonTestbed"
+          },
+          "user": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonPubUser"
+              }
+            ],
+            "nullable": true
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/ReportUuid"
+          }
+        },
+        "required": [
+          "adapter",
+          "alerts",
+          "branch",
+          "created",
+          "end_time",
+          "project",
+          "results",
+          "start_time",
+          "testbed",
+          "uuid"
+        ]
+      },
+      "JsonReportMeasure": {
+        "type": "object",
+        "properties": {
+          "boundary": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonBoundary"
+              }
+            ],
+            "nullable": true
+          },
+          "measure": {
+            "$ref": "#/components/schemas/JsonMeasure"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/JsonMetric"
+          },
+          "threshold": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonThresholdModel"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": ["measure", "metric"]
+      },
+      "JsonReportResult": {
+        "type": "object",
+        "properties": {
+          "benchmark": {
+            "$ref": "#/components/schemas/JsonBenchmark"
+          },
+          "iteration": {
+            "$ref": "#/components/schemas/Iteration"
+          },
+          "measures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonReportMeasure"
+            }
+          }
+        },
+        "required": ["benchmark", "iteration", "measures"]
+      },
+      "JsonReportSettings": {
+        "type": "object",
+        "properties": {
+          "adapter": {
+            "description": "The benchmark harness adapter for parsing the benchmark results. If no adapter is specified, then the Magic adapter will be used.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Adapter"
+              }
+            ],
+            "nullable": true
+          },
+          "average": {
+            "description": "Benchmark harness suggested central tendency (ie average). Some benchmarking harnesses provide multiple averages, such as mean and median.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonAverage"
+              }
+            ],
+            "nullable": true
+          },
+          "fold": {
+            "description": "Fold multiple results into a single result using the selected operation. This can be useful for taking the min, max, mean, or median of the benchmark results.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonFold"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "JsonReportThresholds": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "description": "Map of measure UUID, slug, or name to the threshold model to use. If a measure name or slug is provided, the measure will be created if it does not exist.",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Model"
+            },
+            "nullable": true
+          },
+          "reset": {
+            "description": "Reset all thresholds for the branch and testbed. Any models present in the `models` field will still be updated accordingly. If a threshold already exists and is not present in the `models` field, its current model will be removed.",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "JsonStartPoint": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "$ref": "#/components/schemas/BranchUuid"
+          },
+          "head": {
+            "$ref": "#/components/schemas/HeadUuid"
+          },
+          "version": {
+            "$ref": "#/components/schemas/JsonVersion"
+          }
+        },
+        "required": ["branch", "head", "version"]
+      },
+      "JsonTestbed": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DateTime"
+              }
+            ],
+            "nullable": true
+          },
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "modified": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "name": {
+            "$ref": "#/components/schemas/ResourceName"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectUuid"
+          },
+          "slug": {
+            "$ref": "#/components/schemas/Slug"
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/TestbedUuid"
+          }
+        },
+        "required": ["created", "modified", "name", "project", "slug", "uuid"]
+      },
+      "JsonThreshold": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "$ref": "#/components/schemas/JsonBranch"
+          },
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "measure": {
+            "$ref": "#/components/schemas/JsonMeasure"
+          },
+          "model": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonModel"
+              }
+            ],
+            "nullable": true
+          },
+          "modified": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectUuid"
+          },
+          "testbed": {
+            "$ref": "#/components/schemas/JsonTestbed"
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/ThresholdUuid"
+          }
+        },
+        "required": [
+          "branch",
+          "created",
+          "measure",
+          "modified",
+          "project",
+          "testbed",
+          "uuid"
+        ]
+      },
+      "JsonThresholdModel": {
+        "type": "object",
+        "properties": {
+          "created": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "model": {
+            "$ref": "#/components/schemas/JsonModel"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectUuid"
+          },
+          "uuid": {
+            "$ref": "#/components/schemas/ThresholdUuid"
+          }
+        },
+        "required": ["created", "model", "project", "uuid"]
+      },
+      "JsonUpdateStartPoint": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "description": "The UUID, slug, or name of the branch to use as the start point.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NameId"
+              }
+            ],
+            "nullable": true
+          },
+          "clone_thresholds": {
+            "description": "If set to `true`, the thresholds from the start point branch will be deep copied to the branch. This can be useful for pull request branches that should have the same thresholds as their target branch. Requires the `branch` field to be set.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "hash": {
+            "description": "The full git hash of the branch to use as the start point. Requires the `branch` field to be set.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GitHash"
+              }
+            ],
+            "nullable": true
+          },
+          "max_versions": {
+            "description": "The maximum number of historical branch versions to include. Versions beyond this number will be omitted. The default is 255. Requires the `branch` field to be set.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
+          },
+          "reset": {
+            "description": "Reset the branch head to an empty state. If the start point `branch` is specified, the new branch head will begin at that start point. Otherwise, the branch head will be reset to an empty state.",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "JsonVersion": {
+        "type": "object",
+        "properties": {
+          "hash": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GitHash"
+              }
+            ],
+            "nullable": true
+          },
+          "number": {
+            "$ref": "#/components/schemas/VersionNumber"
+          }
+        },
+        "required": ["number"]
+      },
+      "MeasureUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "MetricUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "Model": {
+        "type": "object",
+        "properties": {
+          "lower_boundary": {
+            "description": "The lower boundary used to calculate the lower boundary limit. The requirements for this field depend on which `test` is selected.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Boundary"
+              }
+            ],
+            "nullable": true
+          },
+          "max_sample_size": {
+            "description": "The maximum number of samples used to perform the test. Only the most recent samples will be used if there are more.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SampleSize"
+              }
+            ],
+            "nullable": true
+          },
+          "min_sample_size": {
+            "description": "The minimum number of samples required to perform the test. If there are fewer samples, the test will not be performed.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SampleSize"
+              }
+            ],
+            "nullable": true
+          },
+          "test": {
+            "description": "The test used by the threshold model to calculate the baseline and boundary limits.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModelTest"
+              }
+            ]
+          },
+          "upper_boundary": {
+            "description": "The upper boundary used to calculate the upper boundary limit. The requirements for this field depend on which `test` is selected.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Boundary"
+              }
+            ],
+            "nullable": true
+          },
+          "window": {
+            "description": "The window of time for samples used to perform the test, in seconds. Samples outside of this window will be omitted.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Window"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": ["test"]
+      },
+      "ModelTest": {
+        "type": "string",
+        "enum": [
+          "static",
+          "percentage",
+          "z_score",
+          "t_test",
+          "log_normal",
+          "iqr",
+          "delta_iqr"
+        ]
+      },
+      "ModelUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "NameId": {
+        "type": "string"
+      },
+      "OrganizationUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "ProjectUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "ReportUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "ResourceId": {
+        "type": "string"
+      },
+      "ResourceName": {
+        "type": "string"
+      },
+      "RunContext": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "SampleSize": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0
+      },
+      "Slug": {
+        "type": "string"
+      },
+      "TestbedUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "ThresholdUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "Url": {
+        "type": "string"
+      },
+      "UserName": {
+        "type": "string"
+      },
+      "UserUuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "VersionNumber": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0
+      },
+      "Visibility": {
+        "type": "string",
+        "enum": ["public", "private"]
+      },
+      "Window": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "alerts",
+      "description": "Alerts"
+    },
+    {
+      "name": "allowed"
+    },
+    {
+      "name": "auth",
+      "description": "Auth"
+    },
+    {
+      "name": "benchmarks",
+      "description": "Benchmarks"
+    },
+    {
+      "name": "branches",
+      "description": "Branches"
+    },
+    {
+      "name": "checkout"
+    },
+    {
+      "name": "measures",
+      "description": "Measures"
+    },
+    {
+      "name": "members"
+    },
+    {
+      "name": "metrics",
+      "description": "Metrics"
+    },
+    {
+      "name": "models",
+      "description": "Models"
+    },
+    {
+      "name": "organizations",
+      "description": "Organizations"
+    },
+    {
+      "name": "perf",
+      "description": "Perf Metrics"
+    },
+    {
+      "name": "plan"
+    },
+    {
+      "name": "plots",
+      "description": "Plots"
+    },
+    {
+      "name": "projects",
+      "description": "Projects"
+    },
+    {
+      "name": "reports",
+      "description": "Reports"
+    },
+    {
+      "name": "run",
+      "description": "Run"
+    },
+    {
+      "name": "server",
+      "description": "Server"
+    },
+    {
+      "name": "stats"
+    },
+    {
+      "name": "testbeds",
+      "description": "Testbeds"
+    },
+    {
+      "name": "thresholds",
+      "description": "Thresholds"
+    },
+    {
+      "name": "tokens",
+      "description": "API Tokens"
+    },
+    {
+      "name": "usage"
+    },
+    {
+      "name": "users",
+      "description": "Users"
+    }
+  ]
+}

@@ -4616,6 +4616,7 @@ name = "fda"
 version = "0.70.0"
 dependencies = [
  "arrow",
+ "chrono",
  "clap",
  "clap_complete",
  "directories",
@@ -4626,16 +4627,21 @@ dependencies = [
  "futures-util",
  "json_to_table",
  "log",
+ "prettyplease",
+ "progenitor",
  "progenitor-client 0.9.1",
  "reqwest 0.12.20",
  "reqwest-websocket",
  "rmpv",
  "rustyline",
+ "serde",
  "serde_json",
+ "syn 2.0.101",
  "tabled",
  "tempfile",
  "tokio",
  "tokio-util",
+ "uuid",
 ]
 
 [[package]]
