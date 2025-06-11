@@ -1,8 +1,8 @@
 <h1 align="center">
   <a href="https://feldera.com">
     <picture>
-      <source height="125" media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/feldera/docs.feldera.com/refs/heads/main/static/img/logo-color-light.svg">
-      <img height="125" alt="Feldera" src="https://raw.githubusercontent.com/feldera/docs.feldera.com/refs/heads/main/static/img/logo.svg">
+      <source height="125" media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/feldera/docs.feldera.com/refs/heads/main/img/logo-color-light.svg">
+      <img height="125" alt="Feldera" src="https://raw.githubusercontent.com/feldera/docs.feldera.com/refs/heads/main/img/logo.svg">
     </picture>
   </a>
   <br>
