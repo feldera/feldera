@@ -222,6 +222,7 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
         create_dir_all(&dir_path)?;
         for (worker, graph) in self.worker_graphs.iter().enumerate() {
             fs::write(dir_path.join(format!("{worker}.dot")), graph.to_dot())?;
+            fs::write(dir_path.join(format!("{worker}.txt")), graph.to_string())?;
         }
         fs::write(dir_path.join("Makefile"), Self::MAKEFILE)?;
         Ok(dir_path)
@@ -234,6 +235,10 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
             zip.start_file(format!("{worker}.dot"), FileOptions::default())
                 .unwrap();
             zip.write_all(graph.to_dot().as_bytes()).unwrap();
+
+            zip.start_file(format!("{worker}.txt"), FileOptions::default())
+                .unwrap();
+            zip.write_all(graph.to_string().as_bytes()).unwrap();
         }
         zip.start_file("Makefile", FileOptions::default()).unwrap();
         zip.write_all(Self::MAKEFILE.as_bytes()).unwrap();
