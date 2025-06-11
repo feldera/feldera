@@ -1,5 +1,6 @@
 //! A compactor thread that merges the batches for the spine-fueled trace.
 
+use crate::trace::spine_async::WorkerState;
 use crate::Runtime;
 use std::cell::RefCell;
 use std::mem::replace;
@@ -65,7 +66,7 @@ type WorkerConstructorFn = Box<dyn FnOnce() -> WorkerFn + Send>;
 
 /// The worker function, which is called repeatedly until it reports that it is
 /// done.
-type WorkerFn = Box<dyn FnMut() -> WorkerStatus>;
+type WorkerFn = Box<dyn FnMut(&mut WorkerState) -> WorkerStatus>;
 
 impl BackgroundThread {
     pub fn add_worker(worker: WorkerConstructorFn) {
@@ -112,6 +113,7 @@ impl BackgroundThread {
     }
 
     fn run(self: Arc<Self>) {
+        let mut state = WorkerState::default();
         let mut workers = Vec::new();
         loop {
             // Gather newly submitted workers.
@@ -127,7 +129,7 @@ impl BackgroundThread {
 
             // Run through workers.
             let mut idle = true;
-            workers.retain_mut(|worker| match worker() {
+            workers.retain_mut(|worker| match worker(&mut state) {
                 WorkerStatus::Busy => {
                     idle = false;
                     true
