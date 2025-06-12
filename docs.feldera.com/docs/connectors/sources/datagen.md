@@ -131,12 +131,12 @@ In case the field type is a string, various strategies can be used to generate d
 - Name: `first_name`, `last_name`, `title`, `suffix`, `name`, `name_with_title`, `phone_number`, `cell_number`
 - Internet: `domain_suffix`, `email`, `username`, `password`, `ipv4`, `ipv6`, `ip`, `mac_address`, `user_agent`
 
-Company: `company_suffix`, `company_name`, `buzzword`, `buzzword_middle`, `buzzword_tail`, `catch_phrase`, `bs_verb`, `bs_adj`, `bs_noun`, `bs`, `profession`, `industry`
+- Company: `company_suffix`, `company_name`, `buzzword`, `buzzword_middle`, `buzzword_tail`, `catch_phrase`, `bs_verb`, `bs_adj`, `bs_noun`, `bs`, `profession`, `industry`
 
 - Currency: `currency_code`, `currency_name`, `currency_symbol`
 - Finance: `credit_card_number`
 
-Address: `city_prefix`, `city_suffix`, `city_name`, `country_name`, `country_code`, `street_suffix`, `street_name`, `time_zone`, `state_name`, `state_abbr`, `secondary_address_type`, `secondary_address`, `zip_code`, `post_code`, `building_number`, `latitude`, `longitude`
+- Address: `city_prefix`, `city_suffix`, `city_name`, `country_name`, `country_code`, `street_suffix`, `street_name`, `time_zone`, `state_name`, `state_abbr`, `secondary_address_type`, `secondary_address`, `zip_code`, `post_code`, `building_number`, `latitude`, `longitude`
 
 - Barcode: `isbn10`, `isbn13`, `isbn`
 - Files: `file_path`, `file_name`, `file_extension`, `dir_path`
