@@ -346,3 +346,383 @@ where
     }
     min_indexes
 }
+
+#[cfg(test)]
+mod test {
+    use std::fmt::{Debug, Formatter};
+
+    use itertools::Itertools;
+
+    use crate::{
+        dynamic::{DynData, DynWeight, Erase},
+        trace::{
+            ord::vec::indexed_wset_batch::VecIndexedWSetBuilder, spine_async::index_set::IndexSet,
+            Batch, BatchReader, BatchReaderFactories, Builder, ListMerger, MergeCursor,
+            TupleBuilder, VecIndexedWSet, VecIndexedWSetFactories,
+        },
+    };
+
+    #[derive(Clone)]
+    struct TestCursor<'a> {
+        data: &'a [(u32, Vec<(u32, i32)>)],
+        key: usize,
+        val: usize,
+    }
+
+    impl<'a> TestCursor<'a> {
+        fn new(data: &'a [(u32, Vec<(u32, i32)>)]) -> Self {
+            Self {
+                data,
+                key: 0,
+                val: 0,
+            }
+        }
+    }
+
+    impl MergeCursor<DynData, DynData, (), DynWeight> for TestCursor<'_> {
+        fn key_valid(&self) -> bool {
+            self.key < self.data.len()
+        }
+        fn val_valid(&self) -> bool {
+            assert!(self.key_valid());
+            self.val < self.data[self.key].1.len()
+        }
+        fn key(&self) -> &DynData {
+            self.data[self.key].0.erase()
+        }
+        fn val(&self) -> &DynData {
+            self.data[self.key].1[self.val].0.erase()
+        }
+        fn map_times(&mut self, logic: &mut dyn FnMut(&(), &DynWeight)) {
+            logic(&(), self.weight())
+        }
+        fn weight(&mut self) -> &DynWeight {
+            self.data[self.key].1[self.val].1.erase()
+        }
+        fn step_key(&mut self) {
+            assert!(self.key_valid());
+            self.key += 1;
+            self.val = 0;
+        }
+        fn step_val(&mut self) {
+            assert!(self.val_valid());
+            self.val += 1;
+        }
+    }
+
+    struct TestInput(Vec<(u32, Vec<(u32, i32)>)>);
+
+    impl Debug for TestInput {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+            writeln!(f, "Pattern:")?;
+            for (key, values) in &self.0 {
+                write!(f, "  {key:?}(")?;
+                for (index, (value, weight)) in values.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "({value:?}, {weight:+})")?;
+                }
+                writeln!(f, ")")?;
+            }
+            Ok(())
+        }
+    }
+
+    #[derive(Copy, Clone)]
+    struct GeneratorParams {
+        /// Number of keys in the batch.
+        n_keys: usize,
+
+        /// Number of values per key.
+        n_values: usize,
+
+        /// Whether to iterate all weight combinations.
+        exhaustive_weights: bool,
+    }
+
+    struct IndexedZSetGenerator {
+        keys: KeysGenerator,
+        values: Vec<ValuesGenerator>,
+    }
+
+    impl IndexedZSetGenerator {
+        fn new(params: GeneratorParams) -> Self {
+            Self {
+                keys: KeysGenerator::new(params),
+                values: (0..params.n_keys)
+                    .map(|_| ValuesGenerator::new(params))
+                    .collect(),
+            }
+        }
+        fn current(&self) -> TestInput {
+            TestInput(
+                self.values
+                    .iter()
+                    .enumerate()
+                    .map(|(row, values)| (self.keys.current(row), values.current()))
+                    .collect(),
+            )
+        }
+        fn next(&mut self) -> bool {
+            for values in self.values.iter_mut().rev() {
+                if values.next() {
+                    return true;
+                }
+                values.clear();
+            }
+            self.keys.next()
+        }
+        fn generate(mut self) -> Vec<TestInput> {
+            let mut inputs = Vec::new();
+            loop {
+                inputs.push(self.current());
+                if !self.next() {
+                    return inputs;
+                }
+            }
+        }
+    }
+
+    struct KeysGenerator {
+        params: GeneratorParams,
+        deltas: u32,
+    }
+
+    impl KeysGenerator {
+        fn new(params: GeneratorParams) -> Self {
+            Self { params, deltas: 0 }
+        }
+        fn current(&self, row: usize) -> u32 {
+            (0..=row).map(|index| self.delta(index)).sum()
+        }
+        fn delta(&self, row: usize) -> u32 {
+            if (self.deltas & (1 << row)) != 0 {
+                2
+            } else {
+                1
+            }
+        }
+        fn next(&mut self) -> bool {
+            self.deltas += 1;
+            self.deltas < (1 << self.params.n_keys)
+        }
+    }
+
+    struct ValuesGenerator {
+        params: GeneratorParams,
+        mask: u32,
+        weights: u32,
+    }
+
+    impl ValuesGenerator {
+        fn new(params: GeneratorParams) -> Self {
+            Self {
+                params,
+                mask: 1,
+                weights: 0,
+            }
+        }
+        fn current(&self) -> Vec<(u32, i32)> {
+            let weights = if self.params.exhaustive_weights {
+                self.weights
+            } else {
+                0
+            };
+            IndexSet::for_mask(self.mask)
+                .into_iter()
+                .enumerate()
+                .map(|(index, datum)| {
+                    (
+                        datum as u32,
+                        if (weights & (1 << index)) != 0 { -1 } else { 1 },
+                    )
+                })
+                .collect()
+        }
+        fn next(&mut self) -> bool {
+            if self.params.exhaustive_weights {
+                self.weights += 1;
+                if self.weights < (1 << self.mask.count_ones()) {
+                    return true;
+                }
+                self.weights = 0;
+            }
+
+            self.mask += 1;
+            self.mask < (1 << self.params.n_values)
+        }
+        fn clear(&mut self) {
+            *self = Self::new(self.params);
+        }
+    }
+
+    #[test]
+    fn with_2inputs_2keys_2values_weights_fueled() {
+        test_2inputs(
+            GeneratorParams {
+                n_keys: 2,
+                n_values: 2,
+                exhaustive_weights: true,
+            },
+            true,
+        );
+    }
+
+    #[test]
+    fn with_2inputs_3keys_1value_weights_fueled() {
+        test_2inputs(
+            GeneratorParams {
+                n_keys: 3,
+                n_values: 1,
+                exhaustive_weights: true,
+            },
+            true,
+        );
+    }
+
+    #[test]
+    fn with_2inputs_2keys_1value_weights_fueled() {
+        test_2inputs(
+            GeneratorParams {
+                n_keys: 2,
+                n_values: 1,
+                exhaustive_weights: true,
+            },
+            true,
+        );
+    }
+
+    fn test_2inputs(params: GeneratorParams, for_all_fuel: bool) {
+        let inputs = IndexedZSetGenerator::new(params).generate();
+        dbg!(inputs.len());
+
+        for p1 in &inputs {
+            for p2 in &inputs {
+                test_inputs(&[p1, p2], for_all_fuel);
+            }
+        }
+    }
+
+    #[test]
+    fn with_3inputs_3keys_1value_weights_fueled() {
+        test_3inputs(
+            GeneratorParams {
+                n_keys: 3,
+                n_values: 1,
+                exhaustive_weights: true,
+            },
+            true,
+        );
+    }
+
+    #[test]
+    fn with_3inputs_2keys_2values() {
+        test_3inputs(
+            GeneratorParams {
+                n_keys: 2,
+                n_values: 2,
+                exhaustive_weights: false,
+            },
+            false,
+        );
+    }
+
+    #[test]
+    fn with_3inputs_2keys_2values_fueled() {
+        test_3inputs(
+            GeneratorParams {
+                n_keys: 2,
+                n_values: 2,
+                exhaustive_weights: false,
+            },
+            true,
+        );
+    }
+
+    fn test_3inputs(params: GeneratorParams, for_all_fuel: bool) {
+        let inputs = IndexedZSetGenerator::new(params).generate();
+        dbg!(inputs.len());
+
+        for p1 in &inputs {
+            for p2 in &inputs {
+                for p3 in &inputs {
+                    test_inputs(&[p1, p2, p3], for_all_fuel);
+                }
+            }
+        }
+    }
+
+    fn test_inputs(inputs: &[&TestInput], for_all_fuel: bool) {
+        if for_all_fuel {
+            for initial_fuel in 1.. {
+                if test_inputs_with_fuel(inputs, initial_fuel) {
+                    break;
+                }
+            }
+        } else {
+            test_inputs_with_fuel(inputs, isize::MAX);
+        }
+    }
+
+    fn test_inputs_with_fuel(inputs: &[&TestInput], initial_fuel: isize) -> bool {
+        let mut initial_fuel_was_enough = true;
+
+        type T = VecIndexedWSet<DynData, DynData, DynWeight, usize>;
+        let factories: <T as BatchReader>::Factories =
+            VecIndexedWSetFactories::new::<u32, u32, i32>();
+        let mut builder: <T as Batch>::Builder = VecIndexedWSetBuilder::new_builder(&factories);
+        let mut list_merger = ListMerger::<_, T>::new(
+            &factories,
+            inputs
+                .iter()
+                .map(|input| TestCursor::new(input.0.as_slice()))
+                .collect(),
+        );
+        let mut fuel = initial_fuel;
+        loop {
+            list_merger.work(&mut builder, &(), &mut fuel);
+            if fuel > 0 {
+                break;
+            }
+            initial_fuel_was_enough = false;
+            fuel = isize::MAX;
+        }
+        let actual = builder.done();
+        let mut tuples = Vec::new();
+        for pattern in inputs {
+            for (key, values) in &pattern.0 {
+                for (value, weight) in values {
+                    tuples.push((*key, *value, *weight));
+                }
+            }
+        }
+        tuples.sort();
+
+        let builder: <T as Batch>::Builder = VecIndexedWSetBuilder::new_builder(&factories);
+        let mut builder = TupleBuilder::new(&factories, builder);
+        for (key, value, weight) in tuples.into_iter().coalesce(|(k1, v1, w1), (k2, v2, w2)| {
+            if k1 == k2 && v1 == v2 {
+                Ok((k1, v1, w1 + w2))
+            } else {
+                Err(((k1, v1, w1), (k2, v2, w2)))
+            }
+        }) {
+            if weight != 0 {
+                builder.push_refs(key.erase(), value.erase(), &(), weight.erase());
+            }
+        }
+        let expected = builder.done();
+
+        if actual != expected {
+            panic!(
+                "merge failed for:
+{inputs:#?}
+expected: {expected:#?}
+  actual: {actual:#?}"
+            );
+        }
+
+        initial_fuel_was_enough
+    }
+}
