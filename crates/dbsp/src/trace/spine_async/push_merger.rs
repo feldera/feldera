@@ -461,10 +461,8 @@ where
             cursor.step_key();
             *fuel -= 1;
         }
-    } else {
-        if cursor.key()?.is_some() {
-            cursor.val()?;
-        }
+    } else if cursor.key()?.is_some() {
+        cursor.val()?;
     }
     Ok(())
 }
