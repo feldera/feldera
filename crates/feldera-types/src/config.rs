@@ -258,6 +258,48 @@ pub enum StorageCompression {
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct SyncConfig {
+    /// The endpoint URL for the storage service.
+    ///
+    /// This is typically required for custom or local S3-compatible storage providers like MinIO.
+    /// Example: `http://localhost:9000`
+    ///
+    /// Relevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)
+    pub endpoint: Option<String>,
+
+    /// The name of the storage bucket.
+    ///
+    /// This may include a path to a folder inside the bucket (e.g., `my-bucket/data`).
+    pub bucket: String,
+
+    /// The name of the cloud storage provider (e.g., `"AWS"`, `"Minio"`).
+    ///
+    /// Used for provider-specific behavior in rclone.
+    /// If omitted, defaults to `"Other"`.
+    ///
+    /// See [rclone S3 provider documentation](https://rclone.org/s3/#s3-provider)
+    pub provider: Option<String>,
+
+    /// The access key used to authenticate with the storage provider.
+    ///
+    /// If not provided, rclone will fall back to environment-based credentials, such as
+    /// `RCLONE_S3_ACCESS_KEY_ID`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),
+    /// this can be left empty to allow automatic authentication via the pod's service account.
+    pub access_key: Option<String>,
+
+    /// The secret key used together with the access key for authentication.
+    ///
+    /// If not provided, rclone will fall back to environment-based credentials, such as
+    /// `RCLONE_S3_SECRET_ACCESS_KEY`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),
+    /// this can be left empty to allow automatic authentication via the pod's service account.
+    pub secret_key: Option<String>,
+
+    /// If `true`, will try to pull the latest checkpoint from the configured
+    /// object store and resume from that point.
+    pub start_from_checkpoint: bool,
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ObjectStorageConfig {
     /// URL.
     ///
@@ -341,6 +383,9 @@ pub struct FileBackendConfig {
     /// This is for simulating slow storage devices.  Do not use this in
     /// production.
     pub ioop_delay: Option<u64>,
+
+    /// Configuration to synchronize checkpoints to object store.
+    pub sync: Option<SyncConfig>,
 }
 
 /// Global pipeline configuration settings. This is the publicly

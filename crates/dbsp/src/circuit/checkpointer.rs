@@ -1,8 +1,9 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
 use crate::dynamic::{self, data::DataTyped};
-use crate::trace::spine_async::PSpineBatches;
 use crate::{Error, TypedBox};
+use feldera_types::checkpoint::CheckpointMetadata;
+use feldera_types::constants::CHECKPOINT_FILE_NAME;
 
 use std::io::ErrorKind;
 use std::sync::atomic::Ordering;
@@ -15,34 +16,9 @@ use crate::trace::Serializer;
 use feldera_storage::error::StorageError;
 use feldera_storage::fbuf::FBuf;
 use feldera_storage::{StorageBackend, StorageFileType, StoragePath};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::RuntimeError;
-
-/// Holds meta-data about a checkpoint that was taken for persistent storage
-/// and recovery of a circuit's state.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CheckpointMetadata {
-    /// A unique identifier for the given checkpoint.
-    ///
-    /// This is used to identify the checkpoint in the file-system hierarchy.
-    pub uuid: Uuid,
-    /// An optional name for the checkpoint.
-    pub identifier: Option<String>,
-    /// Fingerprint of the circuit at the time of the checkpoint.
-    pub fingerprint: u64,
-}
-
-impl CheckpointMetadata {
-    pub fn new(uuid: Uuid, identifier: Option<String>, fingerprint: u64) -> Self {
-        CheckpointMetadata {
-            uuid,
-            identifier,
-            fingerprint,
-        }
-    }
-}
 
 /// A "checkpointer" is responsible for the creation, and removal of
 /// checkpoints for a circuit.
@@ -60,11 +36,6 @@ pub(crate) struct Checkpointer {
 impl Checkpointer {
     /// We keep at least this many checkpoints around.
     pub(super) const MIN_CHECKPOINT_THRESHOLD: usize = 2;
-    /// Name of the checkpoint list file.
-    ///
-    /// File will be stored inside the runtime storage directory with this
-    /// name.
-    const CHECKPOINT_FILE_NAME: &'static str = "checkpoints.feldera";
     /// A slice of all file-extension the system can create.
     const DBSP_FILE_EXTENSION: &'static [&'static str] = &["mut", "feldera"];
 
@@ -139,11 +110,12 @@ impl Checkpointer {
     fn gc_startup(&self) -> Result<u64, Error> {
         // Collect all directories and files still referenced by a checkpoint
         let mut in_use_paths: HashSet<StoragePath> = HashSet::new();
-        in_use_paths.insert(Checkpointer::CHECKPOINT_FILE_NAME.into());
+        in_use_paths.insert(CHECKPOINT_FILE_NAME.into());
         in_use_paths.insert("steps.bin".into());
         for cpm in self.checkpoint_list.iter() {
             in_use_paths.insert(cpm.uuid.to_string().into());
             let batches = self
+                .backend
                 .gather_batches_for_checkpoint(cpm)
                 .expect("Batches for a checkpoint should be discoverable");
             for batch in batches {
@@ -209,47 +181,17 @@ impl Checkpointer {
     fn try_read_checkpoints(
         backend: &dyn StorageBackend,
     ) -> Result<VecDeque<CheckpointMetadata>, Error> {
-        match backend.read_json(&StoragePath::from(Self::CHECKPOINT_FILE_NAME)) {
+        match backend.read_json(&StoragePath::from(CHECKPOINT_FILE_NAME)) {
             Ok(checkpoints) => Ok(checkpoints),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(VecDeque::new()),
             Err(error) => Err(error)?,
         }
     }
 
-    pub(super) fn gather_batches_for_checkpoint(
-        &self,
-        cpm: &CheckpointMetadata,
-    ) -> Result<HashSet<StoragePath>, Error> {
-        assert!(!cpm.uuid.is_nil());
-
-        let mut spines = Vec::new();
-        self.backend
-            .list(&cpm.uuid.to_string().into(), &mut |path, _file_type| {
-                if path
-                    .filename()
-                    .is_some_and(|filename| filename.starts_with("pspine-batches"))
-                {
-                    spines.push(path.clone());
-                }
-            })?;
-
-        let mut batch_files_in_commit: HashSet<StoragePath> = HashSet::new();
-        for spine in spines {
-            let pspine_batches = self.backend.read_json::<PSpineBatches>(&spine)?;
-            for file in pspine_batches.files {
-                let path = file.into();
-                if let Ok(true) = self.backend.exists(&path) {
-                    batch_files_in_commit.insert(path);
-                }
-            }
-        }
-        Ok(batch_files_in_commit)
-    }
-
     fn update_checkpoint_file(&self) -> Result<(), Error> {
         Ok(self
             .backend
-            .write_json(&Self::CHECKPOINT_FILE_NAME.into(), &self.checkpoint_list)?)
+            .write_json(&CHECKPOINT_FILE_NAME.into(), &self.checkpoint_list)?)
     }
 
     /// Removes `file` and logs any error.
@@ -294,8 +236,8 @@ impl Checkpointer {
             // to remove the checkpoint files again (see also [`Self::gc_startup`]).
             self.update_checkpoint_file()?;
 
-            let potentially_remove = self.gather_batches_for_checkpoint(&cp_to_remove)?;
-            let need_to_keep = self.gather_batches_for_checkpoint(next_in_line)?;
+            let potentially_remove = self.backend.gather_batches_for_checkpoint(&cp_to_remove)?;
+            let need_to_keep = self.backend.gather_batches_for_checkpoint(next_in_line)?;
             for file in potentially_remove.difference(&need_to_keep) {
                 self.remove_batch_file(file);
             }

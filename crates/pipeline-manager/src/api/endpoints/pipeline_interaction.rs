@@ -667,6 +667,66 @@ pub(crate) async fn get_pipeline_circuit_profile(
         .await
 }
 
+/// Syncs latest checkpoints to the object store configured in pipeline config.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Checkpoint synced to object store"
+            , body = CheckpointResponse),
+        (status = NOT_FOUND
+            , description = "No checkpoints found"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[post("/pipelines/{pipeline_name}/checkpoint/sync")]
+pub(crate) async fn sync_checkpoint(
+    state: WebData<ServerState>,
+    _client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    #[cfg(not(feature = "feldera-enterprise"))]
+    {
+        let _ = (state, tenant_id, path.into_inner(), request);
+        Err(CommonError::EnterpriseFeature("checkpoint").into())
+    }
+
+    #[cfg(feature = "feldera-enterprise")]
+    {
+        let pipeline_name = path.into_inner();
+        state
+            .runner
+            .forward_http_request_to_pipeline_by_name(
+                _client.as_ref(),
+                *tenant_id,
+                &pipeline_name,
+                Method::POST,
+                "checkpoint/sync",
+                request.query_string(),
+                Some(Duration::from_secs(120)),
+            )
+            .await
+    }
+}
+
 /// Initiates checkpoint for a running or paused pipeline.
 ///
 /// Returns a checkpoint sequence number that can be used with `/checkpoint_status` to
@@ -776,6 +836,58 @@ pub(crate) async fn get_checkpoint_status(
             &pipeline_name,
             Method::GET,
             "checkpoint_status",
+            request.query_string(),
+            None,
+        )
+        .await
+}
+
+/// Retrieve status of checkpoint sync activity in a pipeline.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+         , description = "Checkpoint sync status retrieved successfully"
+         , content_type = "application/json"
+         , body = CheckpointStatus),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[get("/pipelines/{pipeline_name}/checkpoint/sync_status")]
+pub(crate) async fn get_checkpoint_sync_status(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "checkpoint/sync_status",
             request.query_string(),
             None,
         )

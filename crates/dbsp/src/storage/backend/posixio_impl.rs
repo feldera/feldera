@@ -466,6 +466,10 @@ impl StorageBackend for PosixBackend {
     fn usage(&self) -> Arc<AtomicI64> {
         self.usage.clone()
     }
+
+    fn file_system_path(&self) -> Option<&Path> {
+        Some(self.base.as_path())
+    }
 }
 
 pub(crate) struct DefaultBackendFactory;

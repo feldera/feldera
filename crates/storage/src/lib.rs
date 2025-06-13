@@ -1,10 +1,12 @@
 //! Common Types and Trait Definition for Storage in Feldera.
 
+use std::collections::HashSet;
 use std::io::{Cursor, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
+use feldera_types::checkpoint::{CheckpointMetadata, PSpineBatches};
 use feldera_types::config::{StorageBackendConfig, StorageConfig, StorageOptions};
 use serde::de::DeserializeOwned;
 use tracing::warn;
@@ -18,6 +20,7 @@ use crate::file::HasFileId;
 pub use object_store::path::{Path as StoragePath, PathPart as StoragePathPart};
 
 pub mod block;
+pub mod checkpoint_synchronizer;
 pub mod error;
 pub mod fbuf;
 pub mod file;
@@ -69,6 +72,12 @@ pub trait StorageBackend: Send + Sync {
 
     /// Opens `name` for reading.
     fn open(&self, name: &StoragePath) -> Result<Arc<dyn FileReader>, StorageError>;
+
+    /// Returns the base directory path on the local file system if the storage backend
+    /// uses local disk.
+    fn file_system_path(&self) -> Option<&Path> {
+        None
+    }
 
     /// Calls `cb` with the name of each of the files under `parent`. This is a
     /// non-recursive list: it does not include files under sub-directories of
@@ -174,6 +183,36 @@ impl dyn StorageBackend {
                 warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage", path.display())
             });
         }
+    }
+
+    pub fn gather_batches_for_checkpoint(
+        &self,
+        cpm: &CheckpointMetadata,
+    ) -> Result<HashSet<StoragePath>, StorageError> {
+        assert!(!cpm.uuid.is_nil());
+
+        let mut spines = Vec::new();
+        self.list(&cpm.uuid.to_string().into(), &mut |path, _file_type| {
+            if path
+                .filename()
+                .is_some_and(|filename| filename.starts_with("pspine-batches"))
+            {
+                spines.push(path.clone());
+            }
+        })?;
+
+        let mut batch_files_in_commit: HashSet<StoragePath> = HashSet::new();
+        for spine in spines {
+            let pspine_batches = self.read_json::<PSpineBatches>(&spine)?;
+            for file in pspine_batches.files {
+                let path = file.into();
+                if let Ok(true) = self.exists(&path) {
+                    batch_files_in_commit.insert(path);
+                }
+            }
+        }
+
+        Ok(batch_files_in_commit)
     }
 
     /// Writes `content` to `name` as JSON, automatically creating any parent

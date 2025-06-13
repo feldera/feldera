@@ -50,6 +50,8 @@ use enum_map::EnumMap;
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
+use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
+use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::format::json::JsonLines;
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use governor::DefaultDirectRateLimiter;
@@ -104,6 +106,7 @@ pub use feldera_types::config::{
     RuntimeConfig, TransportConfig,
 };
 use feldera_types::config::{FtConfig, FtModel, OutputBufferConfig};
+use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
 pub use stats::{
@@ -139,6 +142,9 @@ pub type CheckpointCallbackFn = Box<dyn FnOnce(Result<Checkpoint, Arc<Controller
 /// Type of the callback argument to [`Controller::start_suspend`].
 pub type SuspendCallbackFn = Box<dyn FnOnce(Result<(), Arc<ControllerError>>) + Send>;
 
+/// Type of the callback argument to [`Controller::start_checkpoint_sync`].
+pub type SyncCheckpointCallbackFn = Box<dyn FnOnce(Result<(), Arc<ControllerError>>) + Send>;
+
 /// A command that [Controller] can send to [Controller::circuit_thread].
 ///
 /// There is no type for a command reply.  Instead, the command implementation
@@ -147,6 +153,7 @@ enum Command {
     GraphProfile(GraphProfileCallbackFn),
     Checkpoint(CheckpointCallbackFn),
     Suspend(SuspendCallbackFn),
+    SyncCheckpoint(SyncCheckpointCallbackFn),
 }
 
 impl Command {
@@ -157,6 +164,9 @@ impl Command {
                 callback(Err(Arc::new(ControllerError::ControllerExit)))
             }
             Command::Suspend(callback) => callback(Err(Arc::new(ControllerError::ControllerExit))),
+            Command::SyncCheckpoint(callback) => {
+                callback(Err(Arc::new(ControllerError::ControllerExit)))
+            }
         }
     }
 }
@@ -489,6 +499,15 @@ impl Controller {
         self.inner.send_command(Command::Checkpoint(cb));
     }
 
+    /// Triggers a sync checkpoint operation. `cb` will be called when it
+    /// completes.
+    ///
+    /// The callback-based nature of this function makes it useful in
+    /// asynchronous contexts.
+    pub fn start_sync_checkpoint(&self, cb: SyncCheckpointCallbackFn) {
+        self.inner.send_command(Command::SyncCheckpoint(cb));
+    }
+
     /// Checkpoints the pipeline.
     ///
     /// This is a blocking wrapper around [Self::start_checkpoint].
@@ -606,6 +625,9 @@ struct CircuitThread {
     checkpoint_delay_warning: Option<LongOperationWarning>,
     checkpoint_requests: Vec<CheckpointRequest>,
 
+    /// Currently only allows one request at a time.
+    sync_checkpoint_request: Option<SyncCheckpointCallbackFn>,
+
     /// Storage backend for writing checkpoints.
     storage: Option<Arc<dyn StorageBackend>>,
 
@@ -641,11 +663,47 @@ impl CircuitThread {
             processed_records,
             step,
             input_metadata,
-        } = ControllerInit::new(config)?;
+        } = ControllerInit::new(config.clone())?;
         let storage = circuit_config
             .storage
             .as_ref()
             .map(|storage| storage.backend.clone());
+
+        #[cfg(feature = "feldera-enterprise")]
+        if let Some((_, options)) = config.storage() {
+            use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
+            use feldera_types::config::FileBackendConfig;
+
+            if let feldera_types::config::StorageBackendConfig::File(FileBackendConfig {
+                sync: Some(ref sync),
+                ..
+            }) = options.backend
+            {
+                if sync.start_from_checkpoint {
+                    let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
+                        .into_iter()
+                        .next()
+                    else {
+                        return Err(ControllerError::checkpoint_fetch_error(
+                            "no checkpoint synchronizer found; are enterprise features enabled?"
+                                .to_owned(),
+                        ));
+                    };
+
+                    let Some(storage) = storage.clone() else {
+                        return Err(ControllerError::checkpoint_fetch_error(
+                            "no checkpoint synchronizer found; are enterprise features enabled?"
+                                .to_owned(),
+                        ));
+                    };
+
+                    synchronizer
+                        .pull(storage, sync.to_owned())
+                        .map_err(|e| ControllerError::checkpoint_fetch_error(e.to_string()))?;
+                }
+            }
+        }
+
         let (mut circuit, catalog) = circuit_factory(circuit_config)?;
         let lir = circuit.lir()?;
         let (parker, backpressure_thread, command_receiver, controller) =
@@ -756,6 +814,7 @@ impl CircuitThread {
             last_checkpoint: Instant::now(),
             checkpoint_delay_warning: None,
             checkpoint_requests: Vec::new(),
+            sync_checkpoint_request: None,
             step,
             input_metadata: input_metadata.unwrap_or_default(),
         })
@@ -781,6 +840,10 @@ impl CircuitThread {
             self.run_commands();
             if self.checkpoint_requested() {
                 self.checkpoint();
+            }
+
+            if self.sync_checkpoint_requested() {
+                self.sync_checkpoint();
             }
 
             if self.controller.state() == PipelineState::Terminated {
@@ -959,8 +1022,11 @@ impl CircuitThread {
                         .map(|()| checkpoint)
                         .map_err(Arc::new)
                 })?;
-            if let Err(error) = this.circuit.gc_checkpoint() {
-                warn!("error removing old checkpoints: {error}");
+            // TODO: check the requested checkpoint UUID
+            if this.sync_checkpoint_request.is_none() {
+                if let Err(error) = this.circuit.gc_checkpoint() {
+                    warn!("error removing old checkpoints: {error}");
+                }
             }
             if let Some(ft) = &mut this.ft {
                 ft.checkpointed()?;
@@ -1044,6 +1110,9 @@ impl CircuitThread {
                 Command::Suspend(reply_callback) => {
                     self.checkpoint_requests
                         .push(CheckpointRequest::SuspendCommand(reply_callback));
+                }
+                Command::SyncCheckpoint(reply_callback) => {
+                    self.sync_checkpoint_request = Some(reply_callback);
                 }
             }
         }
@@ -1322,6 +1391,90 @@ impl CircuitThread {
 
     fn replaying(&self) -> bool {
         self.ft.as_ref().is_some_and(|ft| ft.is_replaying())
+    }
+
+    fn sync_checkpoint_requested(&self) -> bool {
+        self.sync_checkpoint_request.is_some()
+    }
+
+    #[allow(unused)]
+    pub fn list_checkpoints(&mut self) -> Result<Vec<CheckpointMetadata>, Arc<ControllerError>> {
+        self.circuit
+            .list_checkpoints()
+            .map_err(|e| Arc::new(ControllerError::dbsp_error(e)))
+    }
+
+    fn sync_checkpoint_inner(&mut self) -> Result<(), Arc<ControllerError>> {
+        use feldera_types::config::FileBackendConfig;
+
+        let checkpoints = self.list_checkpoints()?;
+
+        let Some((_, options)) = self.controller.status.pipeline_config.storage() else {
+            return Err(Arc::new(ControllerError::storage_error(
+                "cannot sync checkpoints when storage is disabled".to_owned(),
+                dbsp::storage::backend::StorageError::StorageDisabled,
+            )));
+        };
+
+        let feldera_types::config::StorageBackendConfig::File(FileBackendConfig {
+            sync: Some(ref sync),
+            ..
+        }) = options.backend
+        else {
+            return Err(Arc::new(ControllerError::storage_error(
+                "syncing checkpoint is only supported with file backend".to_owned(),
+                dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
+                    options.backend.clone(),
+                )),
+            )));
+        };
+
+        let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
+            .into_iter()
+            .next()
+        else {
+            return Err(Arc::new(ControllerError::checkpoint_push_error(
+                "no checkpoint synchronizer found; are enterprise features enabled?".to_owned(),
+            )));
+        };
+
+        let Some(ref storage) = self.storage else {
+            tracing::error!("storage is set to None");
+            return Err(Arc::new(ControllerError::checkpoint_push_error(
+                "cannot push checkpoints to object store: storage is set to None".to_owned(),
+            )));
+        };
+
+        let res: Vec<_> = checkpoints
+            .into_iter()
+            .map(|checkpoint| {
+                let config = sync.to_owned();
+                let storage = storage.clone();
+                std::thread::spawn(move || synchronizer.push(&checkpoint, storage, config))
+            })
+            .flat_map(|j| {
+                j.join()
+                    .expect("couldn't join checkpoint synchronizer thread")
+                    .err()
+            })
+            .map(|err| err.to_string())
+            .collect();
+
+        if !res.is_empty() {
+            return Err(Arc::new(ControllerError::checkpoint_push_error(
+                res.join("\n"),
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn sync_checkpoint(&mut self) {
+        let Some(callback) = self.sync_checkpoint_request.take() else {
+            return;
+        };
+
+        callback(self.sync_checkpoint_inner());
     }
 }
 
@@ -1760,10 +1913,6 @@ struct ControllerInit {
     /// This is `Some` iff we read a checkpoint.
     input_metadata: Option<HashMap<String, JsonValue>>,
 }
-
-pub const STATE_FILE: &str = "state.json";
-
-pub const STEPS_FILE: &str = "steps.bin";
 
 impl ControllerInit {
     fn without_resume(

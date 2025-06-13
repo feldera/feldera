@@ -4461,6 +4461,15 @@
             "default": null,
             "nullable": true,
             "minimum": 0
+          },
+          "sync": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SyncConfig"
+              }
+            ],
+            "default": null,
+            "nullable": true
           }
         }
       },
@@ -6927,6 +6936,43 @@
             "default": null,
             "nullable": true,
             "minimum": 0
+          }
+        }
+      },
+      "SyncConfig": {
+        "type": "object",
+        "required": [
+          "bucket",
+          "start_from_checkpoint"
+        ],
+        "properties": {
+          "access_key": {
+            "type": "string",
+            "description": "The access key used to authenticate with the storage provider.\n\nIf not provided, rclone will fall back to environment-based credentials, such as\n`RCLONE_S3_ACCESS_KEY_ID`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),\nthis can be left empty to allow automatic authentication via the pod's service account.",
+            "nullable": true
+          },
+          "bucket": {
+            "type": "string",
+            "description": "The name of the storage bucket.\n\nThis may include a path to a folder inside the bucket (e.g., `my-bucket/data`)."
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "The endpoint URL for the storage service.\n\nThis is typically required for custom or local S3-compatible storage providers like MinIO.\nExample: `http://localhost:9000`\n\nRelevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)",
+            "nullable": true
+          },
+          "provider": {
+            "type": "string",
+            "description": "The name of the cloud storage provider (e.g., `\"AWS\"`, `\"Minio\"`).\n\nUsed for provider-specific behavior in rclone.\nIf omitted, defaults to `\"Other\"`.\n\nSee [rclone S3 provider documentation](https://rclone.org/s3/#s3-provider)",
+            "nullable": true
+          },
+          "secret_key": {
+            "type": "string",
+            "description": "The secret key used together with the access key for authentication.\n\nIf not provided, rclone will fall back to environment-based credentials, such as\n`RCLONE_S3_SECRET_ACCESS_KEY`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),\nthis can be left empty to allow automatic authentication via the pod's service account.",
+            "nullable": true
+          },
+          "start_from_checkpoint": {
+            "type": "boolean",
+            "description": "If `true`, will try to pull the latest checkpoint from the configured\nobject store and resume from that point."
           }
         }
       },

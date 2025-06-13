@@ -569,7 +569,10 @@ async fn prepare_workspace(
     let mut main_rs_content = read_file_content(&lib_rs_path).await?;
     main_rs_content.push_str(MAIN_FUNCTION);
     #[cfg(feature = "feldera-enterprise")]
-    main_rs_content.push_str("\nextern crate dbsp_enterprise;");
+    main_rs_content.push_str(
+        r#"extern crate dbsp_enterprise;
+extern crate sync_checkpoint;"#,
+    );
     create_new_file_with_content(&main_rs_path, &main_rs_content).await?;
     fs::remove_file(&lib_rs_path)
         .await
@@ -740,8 +743,15 @@ async fn prepare_workspace(
         config.dbsp_override_path, // Path: feldera-types
         config.dbsp_override_path, // Path: feldera-sqllib
         if cfg!(feature = "feldera-enterprise") {
-            // Enterprise crate: dbsp-enterprise
-            format!("\ndbsp-enterprise = {{ path = \"{}/crates/dbsp-enterprise\" }}", config.dbsp_override_path)
+            // Enterprise crate: dbsp-enterprise, sync-checkpoint
+            formatdoc! { r#"
+
+                dbsp-enterprise = {{ path = "{}/crates/dbsp-enterprise" }}
+                sync-checkpoint = {{ path = "{}/crates/sync-checkpoint" }}
+            "#,
+                config.dbsp_override_path,
+                config.dbsp_override_path
+            }
         } else {
             "".to_string()
         }

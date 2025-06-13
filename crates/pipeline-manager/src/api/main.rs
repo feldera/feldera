@@ -157,6 +157,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::config::StorageCacheConfig,
         feldera_types::config::StorageOptions,
         feldera_types::config::StorageBackendConfig,
+        feldera_types::config::SyncConfig,
         feldera_types::config::FileBackendConfig,
         feldera_types::config::StorageCompression,
         feldera_types::config::RuntimeConfig,
@@ -273,7 +274,9 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::http_input)
         .service(endpoints::pipeline_interaction::http_output)
         .service(endpoints::pipeline_interaction::checkpoint_pipeline)
+        .service(endpoints::pipeline_interaction::sync_checkpoint)
         .service(endpoints::pipeline_interaction::get_checkpoint_status)
+        .service(endpoints::pipeline_interaction::get_checkpoint_sync_status)
         .service(endpoints::pipeline_interaction::post_pipeline_input_connector_action)
         .service(endpoints::pipeline_interaction::get_pipeline_input_connector_status)
         .service(endpoints::pipeline_interaction::get_pipeline_output_connector_status)
