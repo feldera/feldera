@@ -13,6 +13,7 @@
   import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import { dateNow, newDate } from '$lib/compositions/serverTime'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -22,7 +23,7 @@
   }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
 
   const global = $derived(metrics.current.global.at(-1))
-  const now = useInterval(() => new Date(), 1000, 1000 - (Date.now() % 1000))
+  const now = useInterval(() => newDate(), 1000, 1000 - (dateNow() % 1000))
 
   const formatElapsedTime = (timestamp: Date) =>
     ((d) =>

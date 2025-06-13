@@ -9,6 +9,7 @@ import { untrack } from 'svelte'
 import { useToast } from './useToastNotification'
 import { closedIntervalAction } from '$lib/functions/common/promise'
 import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+import { dateNow } from '$lib/compositions/serverTime'
 
 let metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metrics data for better performance
 let getMetrics = $state<() => typeof metrics>(() => metrics)
@@ -31,7 +32,7 @@ export const useAggregatePipelineStats = (
     }
     if (metricsAvailable === 'soon') {
       metrics[pipelineName] = accumulatePipelineMetrics(
-        Date.now(),
+        dateNow(),
         refetchMs,
         keepMs
       )(metrics[pipelineName], { status: null })
@@ -43,9 +44,9 @@ export const useAggregatePipelineStats = (
       getMetrics = () => metrics
       return Promise.resolve()
     }
-    let requestTimestamp = Date.now()
+    let requestTimestamp = dateNow()
     return api.getPipelineStats(pipelineName).then((stats) => {
-      let responseTimestamp = Date.now()
+      let responseTimestamp = dateNow()
       metrics[pipelineName] = accumulatePipelineMetrics(
         (requestTimestamp + responseTimestamp) / 2,
         refetchMs,

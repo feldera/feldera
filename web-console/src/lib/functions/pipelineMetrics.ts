@@ -12,6 +12,7 @@ import type {
 } from '$lib/types/pipelineManager'
 import invariant from 'tiny-invariant'
 import { discreteDerivative } from './common/math'
+import { dateNow } from '$lib/compositions/serverTime'
 
 export const emptyPipelineMetrics = {
   tables: new Map<string, InputEndpointMetrics>(),
@@ -58,7 +59,7 @@ const addZeroMetrics = (previous: PipelineMetrics) => ({
         {
           ...m,
           rss_bytes: 0,
-          timeMs: Date.now(),
+          timeMs: dateNow(),
           start_time: 0
         }
       ])(previous.global.at(-1))
