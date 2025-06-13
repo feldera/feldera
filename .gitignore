@@ -34,6 +34,7 @@ lcov.info
 sql-to-dbsp-compiler/SQL-compiler/pom.xml-E
 
 crates/dbsp-enterprise
+crates/sync-checkpoint
 
 **/benches/galen_data/
 **/benches/gdelt-data/

@@ -1,4 +1,4 @@
-use crate::circuit::checkpointer::{CheckpointMetadata, Checkpointer};
+use crate::circuit::checkpointer::Checkpointer;
 use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
 use crate::trace::MergerType;
@@ -10,6 +10,7 @@ use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
 use feldera_ir::LirCircuit;
 use feldera_storage::{StorageBackend, StoragePath};
+use feldera_types::checkpoint::CheckpointMetadata;
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
 use metrics::counter;

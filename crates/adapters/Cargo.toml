@@ -41,6 +41,7 @@ iceberg-tests-rest = []
 feldera-types = { workspace = true }
 feldera-adapterlib = { workspace = true }
 feldera-datagen = { workspace = true }
+feldera-storage = { workspace = true }
 feldera-iceberg = { workspace = true, optional = true }
 awc = { workspace = true, features = ["compress-gzip", "compress-brotli", "cookies", "rustls-0_23-webpki-roots"] }
 aws-config = { workspace = true }
@@ -135,6 +136,7 @@ base64 = {workspace = true }
 aws-msk-iam-sasl-signer = "1.0.0"
 aws-credential-types = "1.2.3"
 feldera-sqllib = { workspace = true }
+inventory = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]

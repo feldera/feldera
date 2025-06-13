@@ -32,6 +32,7 @@ pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
 use enum_map::EnumMap;
 use feldera_storage::StoragePath;
+use feldera_types::checkpoint::PSpineBatches;
 use metrics::counter;
 use ouroboros::self_referencing;
 use rand::Rng;
@@ -1521,16 +1522,6 @@ where
             }),
         }
     }
-}
-
-/// Format of `pspine-batches-*.dat` in storage.
-///
-/// These files exist to be a simple format for higher-level code and outside
-/// tools to parse.  The spine itself writes them for that purpose, but it does
-/// not read them.
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct PSpineBatches {
-    pub files: Vec<String>,
 }
 
 impl<B> Spine<B>

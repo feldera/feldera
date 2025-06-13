@@ -721,6 +721,16 @@ pub enum ControllerError {
     UnknownEndpointInCompletionToken {
         endpoint_id: u64,
     },
+
+    /// Error fetching checkpoint from remote object storage.
+    CheckpointFetchError {
+        error: String,
+    },
+
+    /// Error pushing checkpoint to remote object storage.
+    CheckpointPushError {
+        error: String,
+    },
 }
 
 impl ResponseError for ControllerError {
@@ -876,6 +886,8 @@ impl DbspDetailedError for ControllerError {
             Self::UnknownEndpointInCompletionToken { .. } => {
                 Cow::from("UnknownEndpointInCompletionToken")
             }
+            Self::CheckpointFetchError { .. } => Cow::from("CheckpointFetchError"),
+            Self::CheckpointPushError { .. } => Cow::from("CheckpointPushError"),
         }
     }
 }
@@ -1019,6 +1031,12 @@ impl Display for ControllerError {
             Self::UnknownEndpointInCompletionToken { endpoint_id } => {
                 write!(f, "completion token specifies input endpoint id {endpoint_id}, which doesn't exist; this indicates that the input connector was deleted after the completion token was generated")
             }
+            Self::CheckpointFetchError { error } => {
+                write!(f, "Error fetching checkpoint from object store: {error}")
+            }
+            Self::CheckpointPushError { error } => {
+                write!(f, "Error pushing checkpoint to object store: {error}")
+            }
         }
     }
 }
@@ -1046,6 +1064,14 @@ impl ControllerError {
 
     pub fn checkpoint_does_not_match_pipeline() -> Self {
         Self::CheckpointDoesNotMatchPipeline
+    }
+
+    pub fn checkpoint_fetch_error(error: String) -> Self {
+        Self::CheckpointFetchError { error }
+    }
+
+    pub fn checkpoint_push_error(error: String) -> Self {
+        Self::CheckpointPushError { error }
     }
 
     pub fn schema_validation_error(error: &str) -> Self {
@@ -1378,6 +1404,8 @@ impl ControllerError {
             | Self::EnterpriseFeature(_)
             | Self::UnexpectedJsonStructure { .. }
             | Self::UnknownEndpointInCompletionToken { .. }
+            | Self::CheckpointFetchError { .. }
+            | Self::CheckpointPushError { .. }
             | Self::PipelineRestarted { .. } => ErrorKind::Other,
         }
     }

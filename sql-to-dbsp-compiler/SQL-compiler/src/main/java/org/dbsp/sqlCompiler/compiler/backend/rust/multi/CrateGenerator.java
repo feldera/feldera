@@ -94,8 +94,10 @@ public final class CrateGenerator {
                 serde_json = { workspace = true }
                 rkyv = { workspace = true }""";
         stream.println(cargo);
-        if (this.enterprise)
+        if (this.enterprise) {
             stream.println("dbsp-enterprise = { workspace = true }");
+            stream.println("sync-checkpoint = { workspace = true }");
+        }
         String extraDep = """
                 [target.'cfg(not(target_env = "msvc"))'.dependencies]
                 tikv-jemallocator = { workspace = true }

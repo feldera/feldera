@@ -370,7 +370,8 @@ const pipelines = {
             label: "Settings",
             id: "pipelines/configuration",
         },
-        "pipelines/fault-tolerance"
+        "pipelines/fault-tolerance",
+        "pipelines/checkpoint-sync"
     ]
 };
 

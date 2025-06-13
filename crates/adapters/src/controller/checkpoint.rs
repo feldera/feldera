@@ -1,11 +1,8 @@
-use dbsp::{
-    circuit::checkpointer::CheckpointMetadata,
-    storage::{
-        backend::{StorageBackend, StoragePath},
-        buffer_cache::FBuf,
-    },
+use dbsp::storage::{
+    backend::{StorageBackend, StoragePath},
+    buffer_cache::FBuf,
 };
-use feldera_types::config::PipelineConfig;
+use feldera_types::{checkpoint::CheckpointMetadata, config::PipelineConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
