@@ -1,4 +1,7 @@
-use std::ops::{BitOr, BitOrAssign};
+use std::{
+    fmt::Debug,
+    ops::{BitOr, BitOrAssign},
+};
 
 /// A set of indexes (numbers) in the range 0..=63.
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -9,6 +12,12 @@ impl IndexSet {
     pub fn for_index(index: usize) -> Self {
         debug_assert!(index < 64);
         Self(1 << index)
+    }
+
+    /// Returns a bit-set with the bits in `mask`.
+    #[cfg(test)]
+    pub fn for_mask(mask: impl Into<u64>) -> Self {
+        Self(mask.into())
     }
 
     /// Returns an empty set.
@@ -65,6 +74,19 @@ impl IndexSet {
     /// Removes `index` from the set.
     pub fn remove(&mut self, index: usize) {
         self.0 &= !(1 << index);
+    }
+}
+
+impl Debug for IndexSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "IndexSet[")?;
+        for (index, bit) in self.into_iter().enumerate() {
+            if index > 0 {
+                write!(f, ",")?;
+            }
+            write!(f, "{bit}")?;
+        }
+        write!(f, "]")
     }
 }
 
