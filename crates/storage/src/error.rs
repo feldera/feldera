@@ -62,7 +62,7 @@ pub enum StorageError {
     #[error("The requested storage backend ({backend}) cannot be configured with {config:?}.")]
     InvalidBackendConfig {
         backend: String,
-        config: StorageBackendConfig,
+        config: Box<StorageBackendConfig>,
     },
 
     #[error("Error deserializing JSON: {0}")]
