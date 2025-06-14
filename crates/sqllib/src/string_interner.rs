@@ -340,10 +340,10 @@ mod interned_string_test {
             ),
             move |circuit| {
                 let (input_strings, hinput_strings) = circuit.add_input_zset::<SqlString>();
-                input_strings.set_persistent_mir_id(&format!("input_strings"));
+                input_strings.set_persistent_mir_id(&"input_strings".to_string());
 
                 let (queries, hqueries) = circuit.add_input_zset::<SqlString>();
-                queries.set_persistent_mir_id(&format!("queries"));
+                queries.set_persistent_mir_id(&"queries".to_string());
 
                 build_string_interner(input_strings.map(|s| Tup1(s.clone())));
 
@@ -370,10 +370,7 @@ mod interned_string_test {
     ) where
         I: IntoIterator<Item = &'a str>,
     {
-        let mut queries = queries
-            .into_iter()
-            .map(|s| SqlString::from(s))
-            .collect::<Vec<_>>();
+        let mut queries = queries.into_iter().map(SqlString::from).collect::<Vec<_>>();
 
         let mut tuples = queries
             .iter()
