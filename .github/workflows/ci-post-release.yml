@@ -21,7 +21,7 @@ jobs:
   adjust-versions:
     runs-on: [self-hosted, skylake40]
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-adccd0011c9ab1bb2c4aaba5bc765a4491584ee1
+      image: ghcr.io/feldera/feldera-dev:sha-16392983db90d797040b46489b56399895516720
       options: --user=ubuntu
       volumes:
         - /sccache:/sccache
@@ -33,8 +33,6 @@ jobs:
           # we use the token so it can circument push to main protection rules
           ref: main
           token: ${{ secrets.CI_RELEASE }}
-      - name: Rustup set default toolchain
-        run: rustup default stable
       - name: Determine current version based on pipeline-manager
         run: |
           echo "CURRENT_VERSION=$(cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version')" >> $GITHUB_ENV
@@ -56,6 +54,5 @@ jobs:
       - uses: EndBug/add-and-commit@v9
         with:
           message: "ci: Prepare for v${{ env.NEXT_VERSION }}"
-          author_name: feldera-ci
-          author_email: dev@feldera.com
           push: origin main
+          default_author: user_info

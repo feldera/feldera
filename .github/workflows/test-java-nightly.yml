@@ -13,23 +13,17 @@ jobs:
           - runner: [self-hosted, skylake40]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: blacksmith-16vcpu-ubuntu-2204-arm
+          - runner: [self-hosted, alteram128]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-adccd0011c9ab1bb2c4aaba5bc765a4491584ee1
+      image: ghcr.io/feldera/feldera-dev:sha-16392983db90d797040b46489b56399895516720
       options: --user=ubuntu
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # The docker container when executed in the action runs with a different home directory
-      # than we set in the dev container (?), hence this step is necessary (sigh)
-      # https://github.com/actions/runner/issues/863
-      - name: Rustup set default toolchain
-        run: rustup default stable
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
