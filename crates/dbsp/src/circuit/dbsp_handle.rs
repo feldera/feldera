@@ -362,6 +362,11 @@ impl CircuitConfig {
         self.mode = mode;
         self
     }
+
+    pub fn with_storage(mut self, storage: CircuitStorageConfig) -> Self {
+        self.storage = Some(storage);
+        self
+    }
 }
 
 impl From<&CircuitConfig> for CircuitConfig {
