@@ -13,8 +13,8 @@
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
   import type { SQLValueJS } from '$lib/types/sql.ts'
   import {
-    CustomJSONParserTransformStream,
-    parseCancellable
+    BatchingWritableStream,
+    CustomJSONParserTransformStream
   } from '$lib/functions/pipelines/changeStream'
   import invariant from 'tiny-invariant'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
@@ -104,44 +104,47 @@
         }
       }
     }
-    const { cancel } = parseCancellable(
-      result,
-      {
-        pushChanges,
-        onBytesSkipped: (skippedBytes) => {
-          if (!adhocQueries[pipelineName].queries[i]?.result) {
-            return
-          }
-          adhocQueries[pipelineName].queries[i].result.totalSkippedBytes += skippedBytes
-        },
-        onParseEnded: () => {
-          if (!adhocQueries[pipelineName].queries[i]) {
-            return
-          }
-          // Add field for the next query if the last query did not yield an error right away
-          if (
-            adhocQueries[pipelineName].queries.length === i + 1 &&
-            ((row) => !row || isDataRow(row))(
-              adhocQueries[pipelineName].queries[i].result?.rows().at(0)
-            )
-          ) {
-            adhocQueries[pipelineName].queries.push({ query: '' })
-          }
-          adhocQueries[pipelineName].queries[i].progress = false
-        },
-        onNetworkError(e, injectValue) {
-          injectValue({ error: e.message })
+    const sink = new BatchingWritableStream({
+      pushChanges,
+      onParseEnded: () => {
+        if (!adhocQueries[pipelineName].queries[i]) {
+          return
         }
+        // Add field for the next query if the last query did not yield an error right away
+        if (
+          adhocQueries[pipelineName].queries.length === i + 1 &&
+          ((row) => !row || isDataRow(row))(
+            adhocQueries[pipelineName].queries[i].result?.rows().at(0)
+          )
+        ) {
+          adhocQueries[pipelineName].queries.push({ query: '' })
+        }
+        adhocQueries[pipelineName].queries[i].progress = false
       },
-      new CustomJSONParserTransformStream<Record<string, SQLValueJS>>({
-        paths: ['$'],
-        separator: ''
-      }),
-      {
-        bufferSize: 8 * 1024 * 1024
+      onNetworkError(e, injectValue) {
+        injectValue({ error: e.message })
       }
-    )
-    adhocQueries[pipelineName].queries[i].result.endResultStream = cancel
+    })
+    result.stream
+      .pipeThrough(
+        new CustomJSONParserTransformStream<Record<string, SQLValueJS>>({
+          paths: ['$'],
+          separator: '',
+          onBytesSkipped: (skippedBytes) => {
+            if (!adhocQueries[pipelineName].queries[i]?.result) {
+              return
+            }
+            adhocQueries[pipelineName].queries[i].result.totalSkippedBytes += skippedBytes
+          }
+        })
+      )
+      .pipeTo(sink)
+    adhocQueries[pipelineName].queries[i].result.endResultStream = () => {
+      try {
+        result.cancel()
+      } catch {}
+      sink.abort()
+    }
   }
 </script>
 
