@@ -183,9 +183,13 @@ where
 mod test {
     use crate::{
         operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset, Circuit, FallbackZSet,
-        RootCircuit, Stream,
+        RootCircuit, Runtime, Stream,
     };
-    use std::vec;
+    use std::{
+        thread,
+        time::{Duration, Instant},
+        vec,
+    };
 
     #[test]
     fn reachability() {
@@ -243,6 +247,62 @@ mod test {
         for _ in 0..8 {
             root.step().unwrap();
         }
+    }
+
+    // See https://github.com/feldera/feldera/issues/4168
+    #[test]
+    fn issue4168() {
+        let (mut circuit, edges_handle) = Runtime::init_circuit(8, move |circuit| {
+            let (edges_stream, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
+
+            // Create two identical recursive fragments. issue4168 caused them to deadlock.
+            let _ = circuit
+                .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+                    let edges = edges_stream.delta0(child);
+
+                    let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
+                    let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+
+                    Ok(edges.plus(
+                        &paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                    ))
+                })
+                .unwrap();
+
+            let _ = circuit
+                .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+                    let edges = edges_stream.delta0(child);
+
+                    let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
+                    let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+
+                    Ok(edges.plus(
+                        &paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                    ))
+                })
+                .unwrap();
+
+            Ok(edges_handle)
+        })
+        .unwrap();
+
+        let handle = thread::spawn(move || {
+            for i in 0..100 {
+                edges_handle.append(&mut vec![Tup2(Tup2(i, i + 1), 1)]);
+                circuit.step().unwrap();
+            }
+        });
+
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(100) {
+            if handle.is_finished() {
+                handle.join().unwrap();
+                return;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        panic!("Deadlock in test 'issue4168'");
     }
 
     // See https://github.com/feldera/feldera/issues/4028

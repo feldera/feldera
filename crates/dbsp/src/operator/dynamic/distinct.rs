@@ -1209,7 +1209,7 @@ mod test {
                         .inspect(|(d1, d2)| assert_eq!(d1, d2));
 
                     Ok((
-                        move || {
+                        async move || {
                             *counter.borrow_mut() += 1;
                             Ok(*counter.borrow() == 4)
                         },
@@ -1443,7 +1443,7 @@ mod test {
                 });
 
                 Ok((
-                    move || {
+                    async move || {
                         *counter.borrow_mut() += 1;
                         Ok(*counter.borrow() == MAX_ITERATIONS)
                     },

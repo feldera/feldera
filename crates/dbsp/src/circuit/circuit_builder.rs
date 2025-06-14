@@ -71,10 +71,11 @@ use std::{
     panic::Location,
     pin::Pin,
     rc::Rc,
+    sync::Arc,
     thread::panicking,
     time::{Duration, Instant},
 };
-use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
+use tokio::{runtime::Runtime as TokioRuntime, sync::Notify, task::LocalSet};
 use tracing::{debug, info};
 use typedmap::{TypedMap, TypedMapKey};
 
@@ -2220,7 +2221,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
-        C: Fn() -> Result<bool, SchedulerError> + 'static;
+        C: AsyncFn() -> Result<bool, SchedulerError> + 'static;
 
     /// Add an iteratively scheduled child circuit.
     ///
@@ -2229,7 +2230,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
-        C: Fn() -> Result<bool, SchedulerError> + 'static,
+        C: AsyncFn() -> Result<bool, SchedulerError> + 'static,
         S: Scheduler + 'static;
 
     /// Add a child circuit that will iterate to a fixed point.
@@ -3792,7 +3793,7 @@ where
     fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
-        C: Fn() -> Result<bool, SchedulerError> + 'static,
+        C: AsyncFn() -> Result<bool, SchedulerError> + 'static,
     {
         self.iterate_with_scheduler::<F, C, T, DynamicScheduler>(constructor)
     }
@@ -3804,7 +3805,7 @@ where
     fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
-        C: Fn() -> Result<bool, SchedulerError> + 'static,
+        C: AsyncFn() -> Result<bool, SchedulerError> + 'static,
         S: Scheduler + 'static,
     {
         self.subcircuit(true, |child| {
@@ -3841,20 +3842,27 @@ where
                     let exchange_id = runtime.sequence_next();
                     let exchange = Exchange::with_runtime(&runtime, exchange_id);
 
-                    let thread = std::thread::current();
-                    exchange.register_sender_callback(worker_index, move || thread.unpark());
+                    let notify_sender = Arc::new(Notify::new());
+                    let notify_sender_clone = notify_sender.clone();
+                    let notify_receiver = Arc::new(Notify::new());
+                    let notify_receiver_clone = notify_receiver.clone();
 
-                    let thread = std::thread::current();
-                    exchange.register_receiver_callback(worker_index, move || thread.unpark());
+                    exchange.register_sender_callback(worker_index, move || {
+                        notify_sender_clone.notify_one()
+                    });
 
-                    let termination_check = move || {
+                    exchange.register_receiver_callback(worker_index, move || {
+                        notify_receiver_clone.notify_one()
+                    });
+
+                    let termination_check = async move || {
                         // Send local fixed point status to all peers.
                         let local_fixedpoint = child_clone.inner().fixedpoint(0);
                         while !exchange.try_send_all(worker_index, &mut repeat(local_fixedpoint)) {
                             if Runtime::kill_in_progress() {
                                 return Err(SchedulerError::Killed);
                             }
-                            std::thread::park();
+                            notify_sender.notified().await;
                         }
                         // Receive the fixed point status of each peer, compute global fixedpoint
                         // state as a logical and of all peer states.
@@ -3865,7 +3873,7 @@ where
                                 return Err(SchedulerError::Killed);
                             }
                             // Sleep if other threads are still working.
-                            std::thread::park();
+                            notify_receiver.notified().await;
                         }
                         Ok(global_fixedpoint)
                     };
@@ -3878,7 +3886,7 @@ where
                 let res = constructor(child)?;
                 let child_clone = child.clone();
 
-                let termination_check = move || Ok(child_clone.inner().fixedpoint(0));
+                let termination_check = async move || Ok(child_clone.inner().fixedpoint(0));
                 let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
                 executor.prepare(child, None)?;
                 Ok((res, executor))
