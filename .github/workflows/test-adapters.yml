@@ -12,7 +12,7 @@ jobs:
           - runner: ubuntu-latest
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: blacksmith-16vcpu-ubuntu-2404-arm
+          - runner: [self-hosted, alteram128]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
@@ -21,7 +21,7 @@ jobs:
     # because while it finds redis on the docker network it doesn't find
     # redpanda or pubsub (wtf?)
     #container:
-    #  image: ghcr.io/feldera/feldera-dev:0a775f772b2ebde13708744d3e6a219ca4a492d2
+    #  image: ghcr.io/feldera/feldera-dev:sha-16392983db90d797040b46489b56399895516720
     #  options: --user=ubuntu
     services:
       postgres:
