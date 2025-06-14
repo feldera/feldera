@@ -14,11 +14,10 @@ use arrow::array::RecordBatch;
 use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
 use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
-use deltalake::kernel::{Action, DataType, StructField};
+use deltalake::kernel::transaction::{CommitBuilder, TableReference};
+use deltalake::kernel::{transaction, Action, DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
-use deltalake::operations::transaction;
-use deltalake::operations::transaction::{CommitBuilder, TableReference};
-use deltalake::operations::writer::{DeltaWriter, WriterConfig};
+use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::DeltaTable;
 use feldera_types::serde_with_context::serde_config::{

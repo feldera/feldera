@@ -48,8 +48,8 @@ anyhow = "1.0.91"
 apache-avro = "0.18.0"
 arc-swap = "1.5.1"
 arcstr = "1.2.0"
-arrow = "54.2.0"
-arrow-json = "54.2.0"
+arrow = "55"
+arrow-json = "55"
 ascii_table = "=4.0.2"
 async-channel = "2.3.1"
 async-std = "1.12.0"
@@ -84,12 +84,12 @@ crossbeam = "0.8.4"
 crossbeam-utils = "0.8.6"
 csv = "1.2.2"
 csv-core = "0.1.10"
-datafusion = "45"
+datafusion = "47"
 dbsp = { path = "crates/dbsp", version = "0.64.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.10.5"
 dec = { version = "0.4.9", features = ["serde"] }
-deltalake = { git = "https://github.com/delta-io/delta-rs.git", rev = "666179e" }
+deltalake = "0.26.2"
 directories = "6.0"
 dirs = "5.0"
 dyn-clone = "1.0.17"
@@ -121,10 +121,10 @@ hashbrown = "0.14.2"
 hdrhist = "0.5"
 hex = "0.4.3"
 home = "=0.5.9"
-iceberg = { git = "https://github.com/apache/iceberg-rust.git", rev = "90f39e8" }
-iceberg-catalog-glue = { git = "https://github.com/apache/iceberg-rust.git", rev = "90f39e8" }
-iceberg-catalog-rest = { git = "https://github.com/apache/iceberg-rust.git", rev = "90f39e8" }
-iceberg-datafusion = { git = "https://github.com/apache/iceberg-rust.git", rev = "90f39e8" }
+iceberg = "0.5.1"
+iceberg-catalog-glue = "0.5.1"
+iceberg-catalog-rest = "0.5.1"
+iceberg-datafusion = "0.5.1"
 ijson = "0.1.4"
 impl-trait-for-tuples = "0.2"
 indexmap = "2.7.1"
@@ -160,7 +160,7 @@ once_cell = "1.20.2"
 openssl = "0.10.72"
 ordered-float = { version = "4.2.0", features = ["serde"] }
 ouroboros = "0.18.4"
-parquet = "54.2.0"
+parquet = "55"
 paste = "1.0.12"
 petgraph = "0.6.0"
 pg-client-config = "0.1.2"
@@ -199,7 +199,7 @@ rustyline = "15.0"
 ryu = "1.0.20"
 schema_registry_converter = "4.2.0"
 serde = "1.0.213"
-serde_arrow = { version = "0.13.4" }
+serde_arrow = { version = "0.13.4", features = ["arrow-55"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }
 serde_urlencoded = "0.7.1"
@@ -241,17 +241,6 @@ wiremock = "0.6"
 xxhash-rust = "0.8.6"
 zip = "0.6.2"
 zstd = "0.12.0"
-
-[patch.crates-io]
-datafusion = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-common = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-expr = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-functions = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-functions-aggregate = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-physical-expr = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-physical-plan = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-proto = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-sql = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
 
 [workspace.metadata.release]
 release = false
