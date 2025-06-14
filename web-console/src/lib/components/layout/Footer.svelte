@@ -5,6 +5,7 @@
   import FelderaLogoBlackDetail from '$assets/images/feldera-modern/Feldera Logo Black Detail.svg?component'
   import FelderaLogoWhiteDetail from '$assets/images/feldera-modern/Feldera Logo White Detail.svg?component'
   import BookADemo from '../other/BookADemo.svelte'
+  import { newDate } from '$lib/compositions/serverTime'
 
   const darkMode = useDarkMode()
 </script>
@@ -28,6 +29,6 @@
       class="btn justify-start px-4 hover:bg-surface-50-950"
       >{page.data.feldera.edition} v{page.data.feldera.version} Changelog</a
     >
-    <div class="btn justify-start px-4">© Feldera {new Date().getUTCFullYear()}</div>
+    <div class="btn justify-start px-4">© Feldera {newDate().getUTCFullYear()}</div>
   </div>
 </div>

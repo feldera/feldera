@@ -22,6 +22,7 @@
   import Dayjs from 'dayjs'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
+  import { newDate, dateNow } from '$lib/compositions/serverTime'
 
   const dialog = useGlobalDialog()
 
@@ -34,7 +35,7 @@
   const pipelineList = usePipelineList(data.preloaded)
 
   const systemMessages = useSystemMessages()
-  const now = useInterval(() => new Date(), 3600000, 3600000 - (Date.now() % 3600000))
+  const now = useInterval(() => newDate(), 3600000, 3600000 - (dateNow() % 3600000))
   const displayedMessages = $derived(
     systemMessages.displayedMessages.map((message) => {
       const text = message.text.replace(/\{toDaysHoursFromNow (\d+)\}/, (_match, milliseconds) => {

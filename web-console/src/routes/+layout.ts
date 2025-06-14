@@ -9,11 +9,12 @@ import type { AuthDetails } from '$lib/types/auth'
 import { goto } from '$app/navigation'
 import posthog from 'posthog-js'
 import { getConfig } from '$lib/services/pipelineManager'
-import type { Configuration, DisplaySchedule } from '$lib/services/manager'
+import type { Configuration } from '$lib/services/manager'
 import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
 import { initSystemMessages } from '$lib/compositions/initSystemMessages'
-import { P, match } from 'ts-pattern'
+import { newDate, setCurrentTime } from '$lib/compositions/serverTime'
+import { displayScheduleToDismissable, getLicenseMessage } from '$lib/functions/license'
 
 Dayjs.extend(duration)
 
@@ -45,16 +46,9 @@ type LayoutData = {
       version: string
       url: string
     }
+    config: Configuration
   }
 }
-
-const displayScheduleToDismissable = (schedule: DisplaySchedule) =>
-  match(schedule)
-    .with('Once', () => 'once' as const)
-    .with('Session', () => 'session' as const)
-    .with({ Every: P.select() }, ({ seconds }) => ({ milliseconds: seconds * 1000 }))
-    .with('Always', () => 'never' as const)
-    .exhaustive()
 
 export const load = async ({ fetch, url }): Promise<LayoutData> => {
   if (!('window' in globalThis)) {
@@ -63,7 +57,8 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
       feldera: {
         version: '',
         edition: '',
-        revision: ''
+        revision: '',
+        config: undefined!
       }
     }
   }
@@ -112,35 +107,23 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
     })
   }
 
-  if (config.license_info && new Date(config.license_info.remind_starting_at) <= new Date()) {
-    const expiresAt = Dayjs(config.license_info.expires_at)
-    const time = expiresAt.isBefore()
-      ? null
-      : {
-          in: `{toDaysHoursFromNow ${new Date(config.license_info.expires_at).valueOf()}}`,
-          at: expiresAt.format('h A'),
-          on: expiresAt.format('MMM D')
-        }
-    initSystemMessages.push({
-      id: `expiring_license_${config.edition}`,
-      dismissable: displayScheduleToDismissable(config.license_info.remind_schedule),
-      text:
-        (config.license_info.is_trial
-          ? time
-            ? `Your trial ends in ${time.in} at ${time.at} on ${time.on}`
-            : 'Your trial has ended'
-          : time
-            ? `Your Feldera ${config.edition} license expires in ${time.in} at ${time.at} on ${time.on}`
-            : `Your Feldera ${config.edition} license has expired`) +
-        (config.license_info.description_html ? `. ${config.license_info.description_html}` : ''),
-      action: config.license_info.extension_url
-        ? {
-            text: config.license_info.is_trial ? 'Upgrade Subscription' : 'Extend Your License',
-            href: config.license_info.extension_url
-          }
+  {
+    const license =
+      config.license_validity && 'Exists' in config.license_validity
+        ? config.license_validity.Exists
         : undefined
-    })
+
+    if (license) {
+      setCurrentTime(license.current)
+    }
   }
+  {
+    const message = getLicenseMessage(config, newDate())
+    if (message) {
+      initSystemMessages.push(message)
+    }
+  }
+
   if (config.update_info && !config.update_info.is_latest_version) {
     initSystemMessages.push({
       id: `version_available_${config.edition}_${config.update_info.latest_version}`,
@@ -166,7 +149,8 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
             }
           : undefined,
       changelog: config.changelog_url,
-      revision: config.revision
+      revision: config.revision,
+      config
     }
   }
 }

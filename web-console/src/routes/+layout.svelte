@@ -12,6 +12,12 @@
   import '$assets/fonts/feldera-material-icons.css'
   import '$assets/fonts/generic-icons.css'
 
+  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+  import { getLicenseMessage } from '$lib/functions/license'
+  import { newDate } from '$lib/compositions/serverTime'
+  import { page } from '$app/state'
+  import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
+
   let { children } = $props()
   let darkMode = useDarkMode()
 
@@ -19,6 +25,11 @@
     beforeNavigate(() => posthog.capture('$pageleave'))
     afterNavigate(() => posthog.capture('$pageview'))
   }
+
+  const { replace } = useSystemMessages()
+  useInterval(() => {
+    replace(/^license_/, getLicenseMessage(page.data.feldera.config, newDate()))
+  }, 1000)
 </script>
 
 <BodyAttr

@@ -39,6 +39,7 @@
   import { unionName, type NamesInUnion } from '$lib/functions/common/union'
   import { match } from 'ts-pattern'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { dateNow, newDate } from '$lib/compositions/serverTime'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   let pipelineName = $derived(pipeline.current.name)
@@ -163,7 +164,7 @@
         clearTimeout(timeout)
         streams[pipelineName].stream = { closed: {} }
       },
-      retryAtTimestamp: Date.now() + delayMs
+      retryAtTimestamp: dateNow() + delayMs
     }
   }
 
@@ -196,7 +197,7 @@
     }
   })
   let stream = $derived(getStreams()[pipelineName].stream)
-  const now = useInterval(() => new Date(), 1000, 1000 - (Date.now() % 1000))
+  const now = useInterval(() => newDate(), 1000, 1000 - (dateNow() % 1000))
 </script>
 
 <div class="relative flex h-full flex-1 flex-col rounded">

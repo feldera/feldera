@@ -17,6 +17,7 @@
   import type { ECMouseEvent } from 'svelte-echarts'
   import type { EChartsOption } from 'echarts'
   import { rgbToHex } from '$lib/functions/common/color'
+  import { dateNow } from '$lib/compositions/serverTime'
 
   let {
     pipeline,
@@ -70,8 +71,8 @@
         }
       ],
       xAxis: {
-        min: Date.now() - keepMs,
-        max: Date.now()
+        min: dateNow() - keepMs,
+        max: dateNow()
       },
       yAxis: {
         interval: (yMax - yMin) / 2,
@@ -112,8 +113,8 @@
     },
     xAxis: {
       type: 'time' as const,
-      min: Date.now() - keepMs - refetchMs,
-      max: Date.now() - refetchMs,
+      min: dateNow() - keepMs - refetchMs,
+      max: dateNow() - refetchMs,
       minInterval: 25000,
       maxInterval: 25000,
       axisLabel: {

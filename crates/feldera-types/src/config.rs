@@ -459,7 +459,7 @@ pub struct RuntimeConfig {
     /// The available key-value pairs change from one version of Feldera to
     /// another, so users should not depend on particular settings being
     /// available, or on their behavior.
-    pub dev_tweaks: BTreeMap<String, JsonValue>,
+    pub dev_tweaks: BTreeMap<String, serde_json::Value>,
 }
 
 /// Accepts "true" and "false" and converts them to the new format.

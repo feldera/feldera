@@ -5,7 +5,7 @@ export type SystemMessage = {
     text: string
     href: string
   }
-  dismissable: 'never' | 'once' | 'session' | { milliseconds: number }
+  dismissable: 'never' | 'once' | 'session' | { forMs: number }
 }
 
 export const initSystemMessages: SystemMessage[] = []
