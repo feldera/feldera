@@ -1039,7 +1039,7 @@ mod tests {
                                 n
                             }))
                             .inspect(|_: &usize| {});
-                        Ok((|| Ok(false), ()))
+                        Ok((async || Ok(false), ()))
                     })
                     .unwrap();
                 Ok(())

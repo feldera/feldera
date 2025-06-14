@@ -169,7 +169,7 @@ impl<F, S> IterativeExecutor<F, S> {
 
 impl<C, F, S> Executor<C> for IterativeExecutor<F, S>
 where
-    F: Fn() -> Result<bool, Error> + 'static,
+    F: AsyncFn() -> Result<bool, Error> + 'static,
     C: Circuit,
     S: Scheduler + 'static,
 {
@@ -181,7 +181,7 @@ where
 
             loop {
                 self.scheduler.step(&circuit).await?;
-                if (self.termination_check)()? {
+                if (self.termination_check)().await? {
                     break;
                 }
             }

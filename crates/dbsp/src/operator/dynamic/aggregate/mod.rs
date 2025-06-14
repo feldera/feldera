@@ -1250,7 +1250,7 @@ pub mod test {
                     });
 
                 Ok((
-                    move || {
+                    async move || {
                         *counter.borrow_mut() += 1;
                         Ok(*counter.borrow() == MAX_ITERATIONS)
                     },
