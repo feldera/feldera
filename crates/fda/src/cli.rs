@@ -507,6 +507,29 @@ pub enum PipelineAction {
         /// Or when ingesting data over HTTP.
         token: String,
     },
+    /// Benchmark the performance of a pipeline.
+    ///
+    /// This command will perform the following steps
+    /// 1. ensure the benchmark is compiled with the latest platform version
+    /// 2. run the pipeline & record stats over time
+    /// 3. post-process and check recorded statistics
+    /// 4. aggregate basic performance metrics and output them in the specified format
+    Bench {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// Duration of the benchmark in seconds.
+        ///
+        /// If not specified, the benchmark will run until the pipeline indicates it has processed all input.
+        #[arg(long, short = 'd')]
+        duration: Option<u64>,
+        /// Do not recompile the pipeline before starting.
+        ///
+        /// If set to true, one might end up with a pipeline that's not
+        /// compiled with the latest feldera runtime.
+        #[arg(long, short = 'r', default_value_t = false)]
+        no_recompile: bool,
+    },
 }
 
 #[derive(Subcommand)]
