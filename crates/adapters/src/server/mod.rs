@@ -23,13 +23,18 @@ use actix_web::{
 };
 use clap::Parser;
 use colored::{ColoredString, Colorize};
+use dbsp::circuit::checkpointer::CheckpointMetadata;
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
-use feldera_types::checkpoint::{CheckpointFailure, CheckpointResponse, CheckpointStatus};
+use feldera_types::checkpoint::{
+    CheckpointFailure, CheckpointResponse, CheckpointStatus, CheckpointSyncFailure,
+    CheckpointSyncResponse, CheckpointSyncStatus,
+};
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
+use feldera_types::config::FileBackendConfig;
 use feldera_types::query_params::{MetricsFormat, MetricsParameters};
 use feldera_types::secret_resolver::{
     resolve_secret_references_in_connector_config, DEFAULT_SECRETS_DIRECTORY_PATH,
@@ -116,9 +121,31 @@ fn missing_controller_error(state: &ServerState) -> PipelineError {
 }
 
 #[derive(Clone, Debug, Default)]
+struct CheckpointSyncState {
+    status: CheckpointSyncStatus,
+}
+
+impl CheckpointSyncState {
+    fn completed(&mut self, uuid: uuid::Uuid, result: Result<(), Arc<ControllerError>>) {
+        match result {
+            Ok(_) => self.status.success = Some(uuid),
+            Err(e) => {
+                self.status.failure = Some(CheckpointSyncFailure {
+                    uuid,
+                    error: e.to_string(),
+                })
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 struct CheckpointState {
     /// Sequence number for the next checkpoint request.
     next_seq: u64,
+
+    /// The UUID of the last checkpoint.
+    last_checkpoint: Option<uuid::Uuid>,
 
     /// Status to report to user.
     status: CheckpointStatus,
@@ -134,9 +161,14 @@ impl CheckpointState {
 
     /// Updates the state for completion of the checkpoint request with sequence
     /// number `seq` with status `result`.
-    fn completed(&mut self, seq: u64, result: Result<(), Arc<ControllerError>>) {
+    fn completed(
+        &mut self,
+        seq: u64,
+        result: Result<Option<CheckpointMetadata>, Arc<ControllerError>>,
+    ) {
         match result {
-            Ok(()) => {
+            Ok(chk) => {
+                self.last_checkpoint = chk.map(|c| c.uuid);
                 if self.status.success.is_none_or(|success| success < seq) {
                     self.status.success = Some(seq);
                 }
@@ -164,6 +196,7 @@ struct ServerState {
     controller: Mutex<Option<Controller>>,
     prometheus: RwLock<Option<PrometheusMetrics>>,
     checkpoint_state: Arc<Mutex<CheckpointState>>,
+    sync_checkpoint_state: Arc<Mutex<CheckpointSyncState>>,
     /// Channel used to send a `kill` command to
     /// the self-destruct task when shutting down
     /// the server.
@@ -177,6 +210,7 @@ impl ServerState {
             metadata: RwLock::new(String::new()),
             controller: Mutex::new(None),
             checkpoint_state: Arc::new(Mutex::new(CheckpointState::default())),
+            sync_checkpoint_state: Arc::new(Mutex::new(CheckpointSyncState::default())),
             prometheus: RwLock::new(None),
             terminate_sender,
         }
@@ -583,6 +617,20 @@ fn do_bootstrap(
 
     let weak_state_ref = Arc::downgrade(state);
 
+    if let Some((config, options)) = config.storage() {
+        if let feldera_types::config::StorageBackendConfig::File(FileBackendConfig {
+            sync: Some(ref sync),
+            ..
+        }) = options.backend
+        {
+            let path = config.path().to_path_buf();
+            let config = sync.to_owned();
+
+            dbsp::circuit::tokio::TOKIO
+                .block_on(async move { crate::synchronizer::pull(&path, config).await })?;
+        }
+    }
+
     let controller = Controller::with_config(
         circuit_factory,
         &config,
@@ -612,6 +660,7 @@ where
                 HttpResponse::Ok().body("<html><head><title>DBSP server</title></head></html>")
             }),
         )
+        .service(sync_checkpoint)
         .service(start)
         .service(pause)
         .service(shutdown)
@@ -628,6 +677,7 @@ where
         .service(lir)
         .service(checkpoint)
         .service(checkpoint_status)
+        .service(sync_checkpoint_status)
         .service(suspend)
         .service(input_endpoint)
         .service(output_endpoint)
@@ -984,6 +1034,32 @@ async fn lir(state: WebData<ServerState>) -> impl Responder {
         .body(lir.as_zip()))
 }
 
+#[post("/checkpoint/sync")]
+async fn sync_checkpoint(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
+    let last_checkpoint = match &*state.controller.lock().unwrap() {
+        None => return Err(missing_controller_error(&state)),
+        Some(controller) => {
+            let Some(last_checkpoint) = ({
+                let state = state.checkpoint_state.clone();
+                let chk = state.lock().unwrap().last_checkpoint;
+                chk
+            }) else {
+                return Ok(HttpResponse::BadRequest().json(
+                    serde_json::json!({"error": "no checkpoints found; make a POST request to /checkpoint to make a new checkpoint"}),
+                ));
+            };
+
+            let state = state.sync_checkpoint_state.clone();
+            controller.start_sync_checkpoint(Box::new(move |result| {
+                state.lock().unwrap().completed(last_checkpoint, result);
+            }));
+            last_checkpoint
+        }
+    };
+
+    Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(last_checkpoint)))
+}
+
 /// Initiates a checkpoint and returns its sequence number.  The caller may poll
 /// `/checkpoint_status` to determine when the checkpoint completes.
 #[post("/checkpoint")]
@@ -994,7 +1070,10 @@ async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
             let state = state.checkpoint_state.clone();
             let seq = state.lock().unwrap().next_seq();
             controller.start_checkpoint(Box::new(move |result| {
-                state.lock().unwrap().completed(seq, result.map(|_| ()));
+                state
+                    .lock()
+                    .unwrap()
+                    .completed(seq, result.map(|c| c.circuit));
             }));
             seq
         }
@@ -1005,6 +1084,11 @@ async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
 #[get("/checkpoint_status")]
 async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok().json(state.checkpoint_state.lock().unwrap().status.clone())
+}
+
+#[get("/checkpoint/sync_status")]
+async fn sync_checkpoint_status(state: WebData<ServerState>) -> impl Responder {
+    HttpResponse::Ok().json(state.sync_checkpoint_state.lock().unwrap().status.clone())
 }
 
 /// Suspends the pipeline (but only a later call to `/shutdown` will shut down
