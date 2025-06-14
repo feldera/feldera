@@ -715,17 +715,6 @@ async fn prepare_workspace(
         [profile.optimized]
         inherits = "release"
 
-        [patch.crates-io]
-        datafusion = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
-        datafusion-common = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
-        datafusion-expr = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
-        datafusion-functions = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
-        datafusion-functions-aggregate = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
-        datafusion-physical-expr = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
-        datafusion-physical-plan = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
-        datafusion-proto = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
-        datafusion-sql = {{ git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }}
-
         [workspace.dependencies]
         paste = {{ version = "1.0.12" }}
         derive_more = {{ version = "0.99.17", features = ["add", "not", "from"] }}

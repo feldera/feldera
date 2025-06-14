@@ -84,7 +84,7 @@ tempfile = { workspace = true }
 async-trait = { workspace = true }
 arrow = { workspace = true, features = ["chrono-tz"] }
 parquet = { workspace = true, features = ["json"] }
-serde_arrow = { workspace = true, features = ["arrow-54"] }
+serde_arrow = { workspace = true }
 arrow-json = { workspace = true }
 bytes = { workspace = true }
 # `datafusion` must be enabled for the writer to implement the `Invariant` feature.

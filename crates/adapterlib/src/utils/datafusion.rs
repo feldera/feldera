@@ -72,9 +72,10 @@ pub async fn execute_query_text(
         .map_err(|e| anyhow!("error compiling query '{query}': {e}"))?;
 
     Ok(pretty_format_batches(
-        &df.collect()
+        df.collect()
             .await
-            .map_err(|e| anyhow!("error executing query '{query}': {e}"))?,
+            .map_err(|e| anyhow!("error executing query '{query}': {e}"))?
+            .as_slice(),
     )
     .map_err(|e| anyhow!("error formatting result of query '{query}': {e}"))?
     .to_string())

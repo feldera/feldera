@@ -1,5 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.file.Files;
+
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
@@ -7,19 +12,19 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.nio.file.Files;
-
-/** This class helps generate Rust code.
- * It is given a set of circuit and functions and generates code in multiple crates. */
+/**
+ * This class helps generate Rust code. It is given a set of circuit and
+ * functions and generates code in multiple crates.
+ */
 public final class MultiCratesWriter extends RustWriter {
+
     public final String outputDirectory;
     public final String pipelineName;
     File rootDirectory;
 
-    /** Create a writer which will generate code in the specified directory */
+    /**
+     * Create a writer which will generate code in the specified directory
+     */
     public MultiCratesWriter(String outputDirectory, String pipelineName, boolean preserve) {
         this.outputDirectory = outputDirectory;
         this.pipelineName = pipelineName;
@@ -29,11 +34,13 @@ public final class MultiCratesWriter extends RustWriter {
     File rootDirectory(boolean preserve) {
         if (this.rootDirectory == null) {
             File file = new File(this.outputDirectory);
-            if (!file.exists() || !file.isDirectory())
-                throw new CompilationError("Output directory does not exist " +
-                        Utilities.singleQuote(this.outputDirectory));
-            if (!preserve)
+            if (!file.exists() || !file.isDirectory()) {
+                throw new CompilationError("Output directory does not exist "
+                        + Utilities.singleQuote(this.outputDirectory));
+            }
+            if (!preserve) {
                 Utilities.deleteContents(file);
+            }
             this.rootDirectory = file;
         }
         return this.rootDirectory;
@@ -53,18 +60,6 @@ public final class MultiCratesWriter extends RustWriter {
         // It's enough to list the main crate.
         cargoStream.println("  " + Utilities.doubleQuote(mainGenerator.crateName));
         cargoStream.println("]");
-
-        cargoStream.println("""
-                [patch.crates-io]
-                datafusion = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-                datafusion-common = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-                datafusion-expr = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-                datafusion-functions = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-                datafusion-functions-aggregate = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-                datafusion-physical-expr = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-                datafusion-physical-plan = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-                datafusion-proto = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-                datafusion-sql = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }""");
 
         String deps = """
                 [workspace.dependencies]

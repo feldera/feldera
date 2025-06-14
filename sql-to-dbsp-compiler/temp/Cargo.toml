@@ -33,17 +33,6 @@ metrics = { version = "0.23.0" }
 metrics-util = { version = "0.17.0" }
 sltsqlvalue = { path = "../lib/sltsqlvalue" }
 
-[patch.crates-io]
-datafusion = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-common = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-expr = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-functions = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-functions-aggregate = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-physical-expr = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-physical-plan = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-proto = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-datafusion-sql = { git = "https://github.com/ryzhyk/datafusion.git", rev = "f561db7" }
-
 [lib]
 path = "src/lib.rs"
 doctest = false

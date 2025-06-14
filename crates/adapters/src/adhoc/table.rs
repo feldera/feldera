@@ -13,6 +13,7 @@ use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use datafusion::catalog::{Session, TableProvider};
 use datafusion::common::{exec_err, not_impl_err, plan_err, SchemaExt};
+use datafusion::datasource::sink::{DataSink, DataSinkExec};
 use datafusion::datasource::TableType;
 use datafusion::error::DataFusionError;
 use datafusion::execution::{SendableRecordBatchStream, TaskContext};
@@ -20,7 +21,6 @@ use datafusion::logical_expr::dml::InsertOp;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
-use datafusion::physical_plan::insert::{DataSink, DataSinkExec};
 use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::stream::{
     RecordBatchReceiverStreamBuilder, RecordBatchStreamAdapter,
@@ -174,9 +174,10 @@ impl TableProvider for AdHocTable {
         input: Arc<dyn ExecutionPlan>,
         overwrite: InsertOp,
     ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
-        if !self
+        if self
             .schema()
             .logically_equivalent_names_and_types(&input.schema())
+            .is_err()
         {
             return plan_err!("Inserting query must have the same schema with the table.");
         }
@@ -235,7 +236,9 @@ impl Debug for AdHocTableSink {
 impl DisplayAs for AdHocTableSink {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut Formatter<'_>) -> fmt::Result {
         match t {
-            DisplayFormatType::Default | DisplayFormatType::Verbose => {
+            DisplayFormatType::Default
+            | DisplayFormatType::Verbose
+            | DisplayFormatType::TreeRender => {
                 write!(f, "AdHocTableSink")
             }
         }
