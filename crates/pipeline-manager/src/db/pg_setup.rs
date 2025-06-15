@@ -25,15 +25,15 @@ pub(crate) async fn install(
     persistent: bool,
     port: Option<u16>,
 ) -> Result<PostgreSQL, PostgreSQLError> {
-    let mut pg_settings = PostgreSQLSettings::default();
-    pg_settings.data_dir = database_dir;
-    pg_settings.username = "postgres".to_string();
-    pg_settings.password = "postgres".to_string();
-    // Set to v15 in build.rs, note that we can't change/upgrade this without making
-    // sure the database directories in ~/.feldera get upgraded too.
-    pg_settings.version = VersionReq::from_str(env!("POSTGRESQL_VERSION"))?;
-    pg_settings.temporary = !persistent;
-    pg_settings.port = port.unwrap_or(5432);
+    let pg_settings = PostgreSQLSettings {
+        data_dir: database_dir,
+        username: "postgres".to_string(),
+        password: "postgres".to_string(),
+        version: VersionReq::from_str(format!("={}", env!("POSTGRESQL_VERSION")).as_str())?,
+        temporary: !persistent,
+        port: port.unwrap_or(5432),
+        ..Default::default()
+    };
 
     let mut postgresql = PostgreSQL::new(pg_settings);
     postgresql.setup().await?;
