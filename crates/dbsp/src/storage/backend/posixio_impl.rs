@@ -505,7 +505,7 @@ impl StorageBackendFactory for FileBackendFactory {
         let StorageBackendConfig::File(config) = &backend_config else {
             return Err(StorageError::InvalidBackendConfig {
                 backend: self.backend().into(),
-                config: backend_config.clone(),
+                config: Box::new(backend_config.clone()),
             });
         };
         Ok(Arc::new(PosixBackend::new(

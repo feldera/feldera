@@ -971,6 +971,9 @@ pub trait Node: Any {
         false
     }
 
+    /// Is this an input node?
+    fn is_input(&self) -> bool;
+
     /// `true` if the node encapsulates an asynchronous operator (see
     /// [`Operator::is_async()`](super::operator_traits::Operator::is_async)).
     /// `false` for synchronous operators and subcircuits.
@@ -1752,6 +1755,11 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     fn region<F, T>(&self, name: &str, f: F) -> T
     where
         F: FnOnce() -> T;
+
+    /// Add a dependency from `preprocessor_node_id` to all input operators in the
+    /// circuit, making sure that the circuit that this node and all its predecessors
+    /// are evaluated before the rest of the circuit.
+    fn add_preprocessor(&self, preprocessor_node_id: NodeId);
 
     /// Add a source operator to the circuit.  See [`SourceOperator`].
     fn add_source<O, Op>(&self, operator: Op) -> Stream<Self, O>
@@ -3252,6 +3260,14 @@ where
         res
     }
 
+    fn add_preprocessor(&self, preprocessor_node_id: NodeId) {
+        for node in self.inner().nodes.borrow_mut().iter() {
+            if node.borrow().is_input() {
+                self.add_dependency(preprocessor_node_id, node.borrow().local_id());
+            }
+        }
+    }
+
     /// Add a source operator to the circuit.  See [`SourceOperator`].
     fn add_source<O, Op>(&self, operator: Op) -> Stream<Self, O>
     where
@@ -4070,6 +4086,10 @@ where
         self.operator.is_async()
     }
 
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
+    }
+
     fn ready(&self) -> bool {
         self.operator.ready()
     }
@@ -4208,6 +4228,10 @@ where
         self.operator.is_async()
     }
 
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
+    }
+
     fn ready(&self) -> bool {
         self.operator.ready()
     }
@@ -4337,6 +4361,10 @@ where
 
     fn is_async(&self) -> bool {
         self.operator.is_async()
+    }
+
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
     }
 
     fn ready(&self) -> bool {
@@ -4472,6 +4500,10 @@ where
 
     fn is_async(&self) -> bool {
         self.operator.is_async()
+    }
+
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
     }
 
     fn ready(&self) -> bool {
@@ -4622,6 +4654,10 @@ where
 
     fn is_async(&self) -> bool {
         self.operator.is_async()
+    }
+
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
     }
 
     fn ready(&self) -> bool {
@@ -4821,6 +4857,10 @@ where
         self.operator.is_async()
     }
 
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
+    }
+
     fn ready(&self) -> bool {
         self.operator.ready()
     }
@@ -5018,6 +5058,10 @@ where
         self.operator.is_async()
     }
 
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
+    }
+
     fn ready(&self) -> bool {
         self.operator.ready()
     }
@@ -5203,6 +5247,10 @@ where
         self.operator.is_async()
     }
 
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
+    }
+
     fn ready(&self) -> bool {
         self.operator.ready()
     }
@@ -5378,6 +5426,10 @@ where
         self.operator.is_async()
     }
 
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
+    }
+
     fn ready(&self) -> bool {
         self.operator.ready()
     }
@@ -5546,6 +5598,10 @@ where
         self.operator.borrow().is_async()
     }
 
+    fn is_input(&self) -> bool {
+        self.operator.borrow().is_input()
+    }
+
     fn ready(&self) -> bool {
         self.operator.borrow().ready()
     }
@@ -5685,6 +5741,10 @@ where
 
     fn is_async(&self) -> bool {
         self.operator.borrow().is_async()
+    }
+
+    fn is_input(&self) -> bool {
+        self.operator.borrow().is_input()
     }
 
     fn ready(&self) -> bool {
@@ -5908,6 +5968,10 @@ where
     }
 
     fn is_async(&self) -> bool {
+        false
+    }
+
+    fn is_input(&self) -> bool {
         false
     }
 

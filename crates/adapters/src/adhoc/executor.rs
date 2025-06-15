@@ -56,7 +56,7 @@ pub(crate) fn stream_text_query(
     try_stream! {
         let stream_executor = execute_stream(df).await.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None })?;
         let mut stream = stream_executor
-            .map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: Some(e) })?;
+            .map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: Some(Box::new(e)) })?;
 
         let mut headers_sent = false;
         let mut last_line: Option<String> = None;
@@ -99,7 +99,7 @@ pub(crate) fn stream_json_query(
     try_stream! {
         let stream_executor = execute_stream(df).await.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None })?;
         let mut stream = stream_executor
-            .map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: Some(e) })?;
+            .map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: Some(Box::new(e)) })?;
         while let Some(batch) = stream.next().await {
             let batch = batch.map_err(PipelineError::from)?;
             let mut buf = Vec::with_capacity(4096);

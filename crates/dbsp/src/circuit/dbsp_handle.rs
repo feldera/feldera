@@ -362,6 +362,11 @@ impl CircuitConfig {
         self.mode = mode;
         self
     }
+
+    pub fn with_storage(mut self, storage: CircuitStorageConfig) -> Self {
+        self.storage = Some(storage);
+        self
+    }
 }
 
 impl From<&CircuitConfig> for CircuitConfig {
@@ -705,6 +710,10 @@ impl DBSPHandle {
             runtime_elapsed: Duration::ZERO,
             bootstrap_info: None,
         })
+    }
+
+    pub fn runtime(&self) -> &Runtime {
+        self.runtime.as_ref().unwrap().runtime()
     }
 
     fn kill_inner(&mut self) -> ThreadResult<()> {
