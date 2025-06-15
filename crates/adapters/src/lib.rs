@@ -157,6 +157,7 @@ pub mod format;
 pub mod integrated;
 pub mod server;
 pub mod static_compile;
+pub(crate) mod synchronizer;
 pub mod transport;
 pub(crate) mod util;
 

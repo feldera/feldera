@@ -20,6 +20,12 @@ use uuid::Uuid;
 
 use super::RuntimeError;
 
+/// Name of the checkpoint list file.
+///
+/// File will be stored inside the runtime storage directory with this
+/// name.
+pub const CHECKPOINT_FILE_NAME: &str = "checkpoints.feldera";
+
 /// Holds meta-data about a checkpoint that was taken for persistent storage
 /// and recovery of a circuit's state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -60,11 +66,6 @@ pub(crate) struct Checkpointer {
 impl Checkpointer {
     /// We keep at least this many checkpoints around.
     pub(super) const MIN_CHECKPOINT_THRESHOLD: usize = 2;
-    /// Name of the checkpoint list file.
-    ///
-    /// File will be stored inside the runtime storage directory with this
-    /// name.
-    const CHECKPOINT_FILE_NAME: &'static str = "checkpoints.feldera";
     /// A slice of all file-extension the system can create.
     const DBSP_FILE_EXTENSION: &'static [&'static str] = &["mut", "feldera"];
 
@@ -139,7 +140,7 @@ impl Checkpointer {
     fn gc_startup(&self) -> Result<u64, Error> {
         // Collect all directories and files still referenced by a checkpoint
         let mut in_use_paths: HashSet<StoragePath> = HashSet::new();
-        in_use_paths.insert(Checkpointer::CHECKPOINT_FILE_NAME.into());
+        in_use_paths.insert(CHECKPOINT_FILE_NAME.into());
         in_use_paths.insert("steps.bin".into());
         for cpm in self.checkpoint_list.iter() {
             in_use_paths.insert(cpm.uuid.to_string().into());
@@ -209,7 +210,7 @@ impl Checkpointer {
     fn try_read_checkpoints(
         backend: &dyn StorageBackend,
     ) -> Result<VecDeque<CheckpointMetadata>, Error> {
-        match backend.read_json(&StoragePath::from(Self::CHECKPOINT_FILE_NAME)) {
+        match backend.read_json(&StoragePath::from(CHECKPOINT_FILE_NAME)) {
             Ok(checkpoints) => Ok(checkpoints),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(VecDeque::new()),
             Err(error) => Err(error)?,
@@ -249,7 +250,7 @@ impl Checkpointer {
     fn update_checkpoint_file(&self) -> Result<(), Error> {
         Ok(self
             .backend
-            .write_json(&Self::CHECKPOINT_FILE_NAME.into(), &self.checkpoint_list)?)
+            .write_json(&CHECKPOINT_FILE_NAME.into(), &self.checkpoint_list)?)
     }
 
     /// Removes `file` and logs any error.
