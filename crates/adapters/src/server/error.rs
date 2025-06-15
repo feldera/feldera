@@ -174,7 +174,7 @@ pub enum PipelineError {
     AdHocQueryError {
         error: String,
         #[serde(skip)]
-        df: Option<DataFusionError>,
+        df: Option<Box<DataFusionError>>,
     },
     Suspended,
 }
@@ -201,7 +201,7 @@ impl From<DataFusionError> for PipelineError {
             //
             // Tracking issue: https://github.com/feldera/feldera/issues/3215
             error: error.to_string().replace("External error: ", ""),
-            df: Some(error),
+            df: Some(Box::new(error)),
         }
     }
 }
