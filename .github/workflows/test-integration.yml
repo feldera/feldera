@@ -23,7 +23,7 @@ jobs:
             --health-timeout=5s \
             --health-retries=5 \
             ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
-      - name: Wait for container to become healthy (max 10s)
+      - name: Wait for container to become healthy (max 50s)
         run: |
           for i in {1..50}; do
             status=$(docker inspect --format '{{json .State.Health}}' pipeline-manager-no-internet | jq -r .Status 2>/dev/null || echo "starting")
@@ -39,10 +39,10 @@ jobs:
           done
           echo "Timed out waiting for pipeline-manager to become healthy"
           exit 1
-      - name: Cleanup
+      - name: Logs & Cleanup
         if: always()
         run: |
-          docker logs pipeline-manager-no-internet
+          docker logs pipeline-manager-no-internet || true
           docker rm -f pipeline-manager-no-internet || true
           docker network rm no-internet-net || true
 

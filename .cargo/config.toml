@@ -1,2 +1,8 @@
 [env]
-POSTGRESQL_VERSION = "15"
+# PostgreSQL version that gets bundled with `postgresql_embedded`
+#
+# - This needs refer to the exact version that is downloaded by
+#   postgresql_embedded bundle step (e.g. not omit minor or bugfix)
+# - Also note that we can't change the major version without making sure
+#   the database directories in ~/.feldera for users get upgraded too.
+POSTGRESQL_VERSION = "15.13.0"
