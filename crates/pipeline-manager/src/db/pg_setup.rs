@@ -20,6 +20,7 @@ use postgresql_embedded::{
 /// - `persistent` - If true, the database will be persistent. If false, the
 ///   database will be deleted after the process exits.
 /// - `port` - The port on which the database will be available on.
+#[allow(clippy::field_reassign_with_default)]
 pub(crate) async fn install(
     database_dir: PathBuf,
     persistent: bool,

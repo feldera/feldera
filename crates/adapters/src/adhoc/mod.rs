@@ -133,7 +133,7 @@ async fn adhoc_query_handler(
                             .text(
                                 serde_json::to_string(&PipelineError::AdHocQueryError {
                                     error: err.to_string(),
-                                    df: Some(err),
+                                    df: Some(Box::new(err)),
                                 })
                                 .unwrap(),
                             )
@@ -154,7 +154,7 @@ async fn adhoc_query_handler(
                             .text(
                                 serde_json::to_string(&PipelineError::AdHocQueryError {
                                     error: err.to_string(),
-                                    df: Some(err),
+                                    df: Some(Box::new(err)),
                                 })
                                 .unwrap(),
                             )
@@ -211,7 +211,7 @@ pub async fn adhoc_websocket(
                                 .await
                                 .map_err(|e| PipelineError::AdHocQueryError {
                                     error: format!("Unable to execute SQL query: {}", e),
-                                    df: Some(e),
+                                    df: Some(Box::new(e)),
                                 });
                             match df {
                                 Ok(df) => {
