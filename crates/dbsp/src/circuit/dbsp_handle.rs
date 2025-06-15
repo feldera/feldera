@@ -712,6 +712,10 @@ impl DBSPHandle {
         })
     }
 
+    pub fn runtime(&self) -> &Runtime {
+        self.runtime.as_ref().unwrap().runtime()
+    }
+
     fn kill_inner(&mut self) -> ThreadResult<()> {
         self.command_senders.clear();
         self.status_receivers.clear();

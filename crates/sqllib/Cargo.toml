@@ -48,8 +48,8 @@ smallvec = { workspace = true }
 quick_cache = { workspace = true, features = ["stats"] }
 blake3 = { workspace = true }
 tracing = { workspace = true }
+typedmap = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-serial_test = { workspace = true }

@@ -375,7 +375,7 @@ impl Catalog {
                         stream.clone(),
                     )
                 };
-                build_string_interner(stream)
+                build_string_interner(stream, None)
             }
         }
 

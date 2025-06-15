@@ -771,6 +771,10 @@ where
         Cow::from("Input")
     }
 
+    fn is_input(&self) -> bool {
+        true
+    }
+
     fn location(&self) -> OperatorLocation {
         Some(self.location)
     }
