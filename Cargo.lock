@@ -7983,7 +7983,7 @@ dependencies = [
 [[package]]
 name = "postgresql_archive"
 version = "0.18.5"
-source = "git+https://github.com/gz/postgresql-embedded.git?rev=878887#87888747c4603e3fd48c4631fd4223baf46684a6"
+source = "git+https://github.com/gz/postgresql-embedded.git?rev=f855644#f855644e28fa5de01f838ec8271c33c5a336acec"
 dependencies = [
  "async-trait",
  "flate2",
@@ -8011,7 +8011,7 @@ dependencies = [
 [[package]]
 name = "postgresql_commands"
 version = "0.18.5"
-source = "git+https://github.com/gz/postgresql-embedded.git?rev=878887#87888747c4603e3fd48c4631fd4223baf46684a6"
+source = "git+https://github.com/gz/postgresql-embedded.git?rev=f855644#f855644e28fa5de01f838ec8271c33c5a336acec"
 dependencies = [
  "thiserror 2.0.12",
  "tracing",
@@ -8020,7 +8020,7 @@ dependencies = [
 [[package]]
 name = "postgresql_embedded"
 version = "0.18.5"
-source = "git+https://github.com/gz/postgresql-embedded.git?rev=878887#87888747c4603e3fd48c4631fd4223baf46684a6"
+source = "git+https://github.com/gz/postgresql-embedded.git?rev=f855644#f855644e28fa5de01f838ec8271c33c5a336acec"
 dependencies = [
  "anyhow",
  "postgresql_archive",

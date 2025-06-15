@@ -1,0 +1,2 @@
+[env]
+POSTGRESQL_VERSION = "15"

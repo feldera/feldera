@@ -166,7 +166,7 @@ petgraph = "0.6.0"
 pg-client-config = "0.1.2"
 postgres = "0.19.10"
 postgres-openssl = "0.5.1"
-postgresql_embedded = { git = "https://github.com/gz/postgresql-embedded.git", rev = "878887", features = ["bundled"] }
+postgresql_embedded = { git = "https://github.com/gz/postgresql-embedded.git", rev = "f855644", features = ["bundled"] }
 pprof = "0.13.0"
 pretty_assertions = "1.4.0"
 prettyplease = "0.2.22"
