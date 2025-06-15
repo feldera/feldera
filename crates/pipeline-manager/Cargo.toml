@@ -67,8 +67,7 @@ termbg = { workspace = true }
 # Database
 tokio-postgres = { workspace = true, features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
 deadpool-postgres = { workspace = true }
-# Waiting for https://github.com/faokunega/pg-embed/pull/26
-pg-embed = { workspace = true, features = ["rt_tokio"], optional = true }
+postgresql_embedded = { workspace = true, optional = true }
 refinery = { workspace = true, features = ["tokio-postgres"] }
 postgres-openssl = { workspace = true }
 
@@ -106,7 +105,7 @@ compare = { workspace = true }
 tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 
 [features]
-default = ["pg-embed"]
+default = ["postgresql_embedded"]
 feldera-enterprise = []
 
 [build-dependencies]

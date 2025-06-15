@@ -33,10 +33,10 @@ pub enum DBError {
         error: Box<RefineryError>,
         backtrace: Backtrace,
     },
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     #[serde(serialize_with = "serialize_pgembed_error")]
     PgEmbedError {
-        error: Box<pg_embed::pg_errors::PgEmbedError>,
+        error: Box<postgresql_embedded::Error>,
         backtrace: Backtrace,
     },
     #[serde(serialize_with = "serialize_invalid_program_status")]
@@ -251,9 +251,9 @@ where
     ser.end()
 }
 
-#[cfg(feature = "pg-embed")]
+#[cfg(feature = "postgresql_embedded")]
 fn serialize_pgembed_error<S>(
-    error: &pg_embed::pg_errors::PgEmbedError,
+    error: &postgresql_embedded::Error,
     backtrace: &Backtrace,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
@@ -358,9 +358,9 @@ impl From<RefineryError> for DBError {
     }
 }
 
-#[cfg(feature = "pg-embed")]
-impl From<pg_embed::pg_errors::PgEmbedError> for DBError {
-    fn from(error: pg_embed::pg_errors::PgEmbedError) -> Self {
+#[cfg(feature = "postgresql_embedded")]
+impl From<postgresql_embedded::Error> for DBError {
+    fn from(error: postgresql_embedded::Error) -> Self {
         Self::PgEmbedError {
             error: Box::new(error),
             backtrace: Backtrace::capture(),
@@ -380,7 +380,7 @@ impl Display for DBError {
             DBError::PostgresMigrationError { error, .. } => {
                 write!(f, "DB schema migration error: '{error}'")
             }
-            #[cfg(feature = "pg-embed")]
+            #[cfg(feature = "postgresql_embedded")]
             DBError::PgEmbedError { error, .. } => {
                 write!(f, "PG-embed error: '{error}'")
             }
@@ -587,7 +587,7 @@ impl DetailedError for DBError {
             Self::PostgresError { .. } => Cow::from("PostgresError"),
             Self::PostgresPoolError { .. } => Cow::from("PostgresPoolError"),
             Self::PostgresMigrationError { .. } => Cow::from("PostgresMigrationError"),
-            #[cfg(feature = "pg-embed")]
+            #[cfg(feature = "postgresql_embedded")]
             Self::PgEmbedError { .. } => Cow::from("PgEmbedError"),
             Self::InvalidProgramStatus { .. } => Cow::from("InvalidProgramStatus"),
             Self::InvalidPipelineStatus { .. } => Cow::from("InvalidPipelineStatus"),
@@ -666,7 +666,7 @@ impl ResponseError for DBError {
             Self::PostgresError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PostgresPoolError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PostgresMigrationError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(feature = "pg-embed")]
+            #[cfg(feature = "postgresql_embedded")]
             Self::PgEmbedError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidProgramStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidPipelineStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,

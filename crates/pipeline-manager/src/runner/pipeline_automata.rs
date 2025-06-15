@@ -1689,9 +1689,9 @@ mod test {
             .await;
     }
 
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     type SetupResult = (MockServer, tempfile::TempDir, AutomatonTest);
-    #[cfg(not(feature = "pg-embed"))]
+    #[cfg(not(feature = "postgresql_embedded"))]
     type SetupResult = (MockServer, tokio_postgres::Config, AutomatonTest);
 
     async fn setup_complete() -> SetupResult {

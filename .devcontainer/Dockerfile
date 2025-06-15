@@ -1,13 +1,13 @@
 FROM ubuntu:24.04 AS base
 
-## Add non-root user for startup of pg-embed with rust backend
+## Add non-root user for startup of postgres with rust backend
 
 ARG USERNAME=user
 
 RUN useradd -m $USERNAME && usermod -aG sudo $USERNAME
 RUN echo "user:pass" | chpasswd
 
-# Set locale to fix pg-embed startup
+# Set locale to fix postgres embedded startup
 ENV LC_ALL=en_US.UTF-8
 
 ## Install common dependencies

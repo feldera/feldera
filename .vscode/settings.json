@@ -6,7 +6,7 @@
         "avaliable"
     ],
     "rust-analyzer.cargo.features": [
-        "pg-embed"
+        "postgresql_embedded"
     ],
     "[python]": {
         "editor.defaultFormatter": "ms-python.black-formatter"

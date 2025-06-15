@@ -3,7 +3,7 @@ RUST_BUILD_PROFILE = "--release"
 
 [tasks.build]
 command = "cargo"
-args = ["build", "--features=pg-embed", "@@remove-empty(RUST_BUILD_PROFILE)"]
+args = ["build", "@@remove-empty(RUST_BUILD_PROFILE)"]
 
 [tasks.openapi_json]
 description = "Dump OpenAPI specification of the REST API to 'openapi.json'"
@@ -14,7 +14,6 @@ args = [
     "run",
     "--package",
     "pipeline-manager",
-    "--features=pg-embed",
     "--bin",
     "pipeline-manager",
     "${RUST_BUILD_PROFILE}",
