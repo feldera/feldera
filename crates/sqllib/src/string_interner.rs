@@ -403,10 +403,10 @@ mod interned_string_test {
             ),
             move |circuit| {
                 let (input_strings, hinput_strings) = circuit.add_input_zset::<SqlString>();
-                input_strings.set_persistent_mir_id(&"input_strings".to_string());
+                input_strings.set_persistent_mir_id("input_strings");
 
                 let (queries, hqueries) = circuit.add_input_zset::<SqlString>();
-                queries.set_persistent_mir_id(&"queries".to_string());
+                queries.set_persistent_mir_id("queries");
 
                 // Set small cache capacity, so we test evictions.
                 build_string_interner(input_strings.map(|s| Tup1(s.clone())), Some(10_000));
