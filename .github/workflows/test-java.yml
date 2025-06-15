@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-289af12eaf6595b216bbeb5ace0c9b860f725b45
+      image: ghcr.io/feldera/feldera-dev:sha-16392983db90d797040b46489b56399895516720
       options: --user=ubuntu
     steps:
       - name: Checkout repository
