@@ -3,10 +3,11 @@ use std::{
     collections::VecDeque,
     hash::{BuildHasherDefault, Hasher},
     panic::Location,
-    sync::{LazyLock, RwLock},
+    sync::{Arc, RwLock},
 };
 
 use dbsp::{
+    circuit::LocalStoreMarker,
     dynamic::{DowncastTrait, DynData},
     operator::communication::new_exchange_operators,
     trace::{
@@ -20,20 +21,23 @@ use quick_cache::{
     sync::{Cache, DefaultLifecycle, GuardResult},
     OptionsBuilder, Weighter,
 };
+use typedmap::TypedMapKey;
 
 use crate::{SqlString, Uuid};
 
-// TODO: experiment with shard counts.
+// TODO:
+// - experiment with shard counts.
+// - expose circuit-level metrics for the cache and the spine snapshot.
 
 /// Estimated number of cache entries used by quick_cache to provision internal resources.
 const CACHE_CAPACITY: usize = 1 << 26;
 
-/// Maximum weight of the cache, in bytes.
+/// Default cache capacity, in bytes.
 ///
 /// We use memory occupied by each cache entry as weight; so this roughly limits cache to 1GiB
 /// plus new entries created during the last two steps, which are pinned in the cache by setting
 /// their weight to 0.
-const WEIGHT_CAPACITY: u64 = 1 << 30;
+const DEFAULT_CACHE_CAPACITY_BYTES: u64 = 1 << 30;
 
 /// FIXME. We use 128-bit integers to represent interned strings.
 /// The Uuid type is the closest thing we have in SQL. Once we have compiler support for
@@ -94,15 +98,32 @@ thread_local! {
     /// List of pinned strings. On each step, each worker thread unpins and removes
     /// from the list strings pinned >= 2 steps ago.
     static PINNED_STRINGS: RefCell<VecDeque<(InternedStringId, (SqlString, u64))>> = const { RefCell::new(VecDeque::new()) };
+
+    /// Global in-memory string cache.
+    ///
+    /// This is a thread-local reference; the actual cache is stored inside `Runtime`.
+    static INTERNED_STRING_CACHE: RefCell<Arc<InternedStringCache>> = RefCell::new(Arc::new(init_interned_string_cache(None)));
+
+    /// Spine snapshot that stores interned strings.
+    ///
+    /// This is a thread-local reference to the shared spine stored inside `Runtime`.
+    static INTERNED_STRING_BY_ID: RefCell<Arc<RwLock<InternedStringSpineSnapshot>>> = RefCell::new(Arc::new(RwLock::new(empty_by_id())));
 }
 
 /// Indexed Z-set that maps interned string IDs back to strings for use by `unintern`.
 ///
 /// Each worker maintains its own shard of this Z-set.
 /// Worker 0 collects references to all batches and stores them in this global variable at each step.
-static INTERNED_STRING_BY_ID: LazyLock<
-    RwLock<SpineSnapshot<DynOrdIndexedWSet<DynData, DynData, DynZWeight>>>,
-> = LazyLock::new(|| RwLock::new(empty_by_id()));
+pub type InternedStringSpineSnapshot =
+    SpineSnapshot<DynOrdIndexedWSet<DynData, DynData, DynZWeight>>;
+
+/// Create an empty spine snapshot.
+fn empty_by_id() -> InternedStringSpineSnapshot {
+    let factories: OrdIndexedWSetFactories<DynData, DynData, DynZWeight> =
+        BatchReaderFactories::new::<InternedStringId, Tup1<SqlString>, ZWeight>();
+
+    SpineSnapshot::<DynOrdIndexedWSet<DynData, DynData, DynZWeight>>::new(factories)
+}
 
 /// In-memory cache of interned strings.
 ///
@@ -123,11 +144,11 @@ type InternedStringCache = Cache<
     DefaultLifecycle<InternedStringId, InternedString>,
 >;
 
-fn init_interned_string_cache() -> InternedStringCache {
+fn init_interned_string_cache(cache_capacity_bytes: Option<u64>) -> InternedStringCache {
     Cache::with_options(
         OptionsBuilder::new()
             .estimated_items_capacity(CACHE_CAPACITY)
-            .weight_capacity(WEIGHT_CAPACITY)
+            .weight_capacity(cache_capacity_bytes.unwrap_or(DEFAULT_CACHE_CAPACITY_BYTES))
             .build()
             .unwrap(),
         StringWeighter,
@@ -135,10 +156,6 @@ fn init_interned_string_cache() -> InternedStringCache {
         DefaultLifecycle::default(),
     )
 }
-
-#[allow(clippy::type_complexity)]
-static INTERNED_STRING_CACHE: LazyLock<InternedStringCache> =
-    LazyLock::new(|| init_interned_string_cache());
 
 /// Hash a string to a 128-bit (probabilistically) unique id.
 fn hash_string(s: &SqlString) -> Uuid {
@@ -161,15 +178,18 @@ pub fn intern_string(s: &SqlString) -> InternedStringId {
 
     // Insert string into the cache with pinned flag set to true, so it doesn't get evicted.
     // Record the string in the PINNED_STRINGS list, so it can be unpinned later.
-    if let GuardResult::Guard(g) = INTERNED_STRING_CACHE.get_value_or_guard(&id, None) {
-        let current_step = CURRENT_STEP.with_borrow(|step| *step);
-        let val = (s.clone(), true);
-        // The record should be admitted, as it has weight 0.
-        g.insert(val)
-            .expect("Failed to insert into interned string cache");
-        PINNED_STRINGS
-            .with_borrow_mut(|pinned| pinned.push_back((id.clone(), (s.clone(), current_step))));
-    };
+    INTERNED_STRING_CACHE.with_borrow(|cache| {
+        if let GuardResult::Guard(g) = cache.get_value_or_guard(&id, None) {
+            let current_step = CURRENT_STEP.with_borrow(|step| *step);
+            let val = (s.clone(), true);
+            // The record should be admitted, as it has weight 0.
+            g.insert(val)
+                .expect("Failed to insert into interned string cache");
+            PINNED_STRINGS.with_borrow_mut(|pinned| {
+                pinned.push_back((id.clone(), (s.clone(), current_step)))
+            });
+        }
+    });
 
     id
 }
@@ -178,28 +198,35 @@ pub fn intern_string(s: &SqlString) -> InternedStringId {
 pub fn unintern_string(id: &InternedStringId) -> Option<SqlString> {
     // Lookup the string in the cache first.
     // If the string is not in the cache, look it up in the spine.
-    INTERNED_STRING_CACHE
-        .get(id)
-        .map(|(string, _step)| string)
-        .or_else(|| {
-            let mut cursor = INTERNED_STRING_BY_ID.read().unwrap().cursor();
-            if cursor.seek_key_exact(id) {
-                let val = unsafe { cursor.val().downcast::<Tup1<SqlString>>().0.clone() };
-                // Insert the string into the cache with pinned flag set to false, so it can be evicted.
-                INTERNED_STRING_CACHE.insert(id.clone(), (val.clone(), false));
-                Some(val)
-            } else {
-                None
-            }
+    INTERNED_STRING_CACHE.with_borrow(|cache| {
+        cache.get(id).map(|(string, _step)| string).or_else(|| {
+            INTERNED_STRING_BY_ID.with_borrow(|spine| {
+                let mut cursor = spine.read().unwrap().cursor();
+                if cursor.seek_key_exact(id) {
+                    let val = unsafe { cursor.val().downcast::<Tup1<SqlString>>().0.clone() };
+                    // Insert the string into the cache with pinned flag set to false, so it can be evicted.
+                    cache.insert(id.clone(), (val.clone(), false));
+                    Some(val)
+                } else {
+                    None
+                }
+            })
         })
+    })
 }
 
-/// Create an empty spine snapshot.
-fn empty_by_id() -> SpineSnapshot<DynOrdIndexedWSet<DynData, DynData, DynZWeight>> {
-    let factories: OrdIndexedWSetFactories<DynData, DynData, DynZWeight> =
-        BatchReaderFactories::new::<InternedStringId, Tup1<SqlString>, ZWeight>();
+#[derive(Eq, PartialEq, Hash)]
+struct InterneStringCacheKey;
 
-    SpineSnapshot::<DynOrdIndexedWSet<DynData, DynData, DynZWeight>>::new(factories)
+impl TypedMapKey<LocalStoreMarker> for InterneStringCacheKey {
+    type Value = Arc<InternedStringCache>;
+}
+
+#[derive(Eq, PartialEq, Hash)]
+struct InternedStringSpineKey;
+
+impl TypedMapKey<LocalStoreMarker> for InternedStringSpineKey {
+    type Value = Arc<RwLock<InternedStringSpineSnapshot>>;
 }
 
 /// Build the string interner circuit.
@@ -207,6 +234,9 @@ fn empty_by_id() -> SpineSnapshot<DynOrdIndexedWSet<DynData, DynData, DynZWeight
 /// Takes a stream that contains strings to be interned, and sets up a spine snapshot
 /// that maps interned string IDs back to strings. The spine snapshot is stored in the
 /// `INTERNED_STRING_BY_ID` global variable, and is updated on each step of the circuit.
+///
+/// This function must be invoked after all inputs have been added to the circuit, as it
+/// is going to schedule the interner circuit to run before all existing inputs.
 ///
 // ```text
 //                                               ┌──────────┐                      ┌────────────────────────┐
@@ -221,7 +251,28 @@ fn empty_by_id() -> SpineSnapshot<DynOrdIndexedWSet<DynData, DynData, DynZWeight
 //                            └─────────┘        │  └───┘   │
 //                                               └──────────┘
 // ```
-pub fn build_string_interner(interned_strings: Stream<RootCircuit, OrdZSet<Tup1<SqlString>>>) {
+pub fn build_string_interner(
+    interned_strings: Stream<RootCircuit, OrdZSet<Tup1<SqlString>>>,
+    cache_capacity_bytes: Option<u64>,
+) {
+    INTERNED_STRING_CACHE.with_borrow_mut(|cache| {
+        *cache = Runtime::runtime()
+            .unwrap()
+            .local_store()
+            .entry(InterneStringCacheKey)
+            .or_insert_with(|| Arc::new(init_interned_string_cache(cache_capacity_bytes)))
+            .clone()
+    });
+
+    INTERNED_STRING_BY_ID.with_borrow_mut(|by_id| {
+        *by_id = Runtime::runtime()
+            .unwrap()
+            .local_store()
+            .entry(InternedStringSpineKey)
+            .or_insert_with(|| Arc::new(RwLock::new(empty_by_id())))
+            .clone()
+    });
+
     // Intern input strings, index them by interned string ID, and store them in a spine.
     //
     // The last step below `.delay_trace()` makes sure that we work with the spine snapshot
@@ -271,7 +322,7 @@ pub fn build_string_interner(interned_strings: Stream<RootCircuit, OrdZSet<Tup1<
     //   the spine snapshot contains string from the previous steps; in addition, the snapshot
     //   is updated by worker 0, which may not have processed the current step yet.
     // - INTERNED_STRING_BY_ID - set to the latest spine snapshot in the `by_id` stream.
-    by_id.apply(|spine| {
+    let interner_stream = by_id.apply(|spine| {
         let current_step = CURRENT_STEP.with_borrow_mut(|step| {
             *step += 1;
             *step
@@ -288,30 +339,39 @@ pub fn build_string_interner(interned_strings: Stream<RootCircuit, OrdZSet<Tup1<
             //     INTERNED_STRING_CACHE.shard_capacity(),
             //     PINNED_STRINGS.with_borrow(|pinned| pinned.len())
             // );
-            *INTERNED_STRING_BY_ID.write().unwrap() = spine.clone();
+            INTERNED_STRING_BY_ID.with_borrow(|by_id| *by_id.write().unwrap() = spine.clone());
         }
 
         PINNED_STRINGS.with_borrow_mut(|pinned| {
             let first_pinned =
                 pinned.partition_point(|(_, (_, step))| *step <= current_step.saturating_sub(2));
             for (id, val) in pinned.drain(..first_pinned) {
-                let _ = INTERNED_STRING_CACHE.replace(id, (val.0, false), true);
+                let _ = INTERNED_STRING_CACHE
+                    .with_borrow(|cache| cache.replace(id, (val.0, false), true));
             }
             pinned.shrink_to(pinned.len() * 2);
         });
     });
+
+    // Make sure the above operators are evaluated before the rest of the circuit,
+    // so that strings interned during the previous steps are available at the current step.
+    // This is particularly important when starting from a checkpoint, when the cache is empty,
+    // so we need to initialize the spine so that uninterning can work correctly.
+    interner_stream
+        .circuit()
+        .add_preprocessor(interner_stream.local_node_id());
 }
 
 #[cfg(test)]
 mod interned_string_test {
 
+    use crate::string_interner::InterneStringCacheKey;
     use crate::{build_string_interner, SqlString};
     use crate::{intern_string, unintern_string};
     use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, StorageConfig, StorageOptions};
     use dbsp::trace::{BatchReader, Cursor};
     use dbsp::utils::{Tup1, Tup2};
     use dbsp::{DBSPHandle, OrdZSet, OutputHandle, Runtime, ZSetHandle};
-    use serial_test::serial;
     use std::path::Path;
     use uuid::Uuid;
 
@@ -348,7 +408,8 @@ mod interned_string_test {
                 let (queries, hqueries) = circuit.add_input_zset::<SqlString>();
                 queries.set_persistent_mir_id(&"queries".to_string());
 
-                build_string_interner(input_strings.map(|s| Tup1(s.clone())));
+                // Set small cache capacity, so we test evictions.
+                build_string_interner(input_strings.map(|s| Tup1(s.clone())), Some(10_000));
 
                 let output_strings = input_strings
                     .map_index(|s| (s.clone(), intern_string(s)))
@@ -399,7 +460,6 @@ mod interned_string_test {
     }
 
     #[test]
-    #[serial]
     fn test_interner_basic() {
         let path = tempfile::tempdir().unwrap().keep();
 
@@ -430,7 +490,6 @@ mod interned_string_test {
 
         let checkpoint = circuit.commit().unwrap();
         circuit.kill().unwrap();
-        super::INTERNED_STRING_CACHE.clear();
 
         let (mut circuit, (hinput_strings, hqueries, houtput_strings)) =
             interner_test_circuit(path.as_path(), Some(checkpoint.uuid));
@@ -456,16 +515,7 @@ mod interned_string_test {
 
     /// Intern a small number (1,000) of strings repeatedly.
     #[test]
-    #[serial]
     fn test_interner_small() {
-        // INTERNED_STRING_CACHE is a global variable, so we need to reset it
-        // before each test to avoid interference.
-        super::INTERNED_STRING_CACHE.clear();
-
-        // The above doesn't reset the misses counter, so we store it here
-        // and compute delta at the end.
-        let old_missed = super::INTERNED_STRING_CACHE.misses();
-
         let path = tempfile::tempdir().unwrap().keep();
 
         let (mut circuit, (hinput_strings, hqueries, houtput_strings)) =
@@ -489,7 +539,6 @@ mod interned_string_test {
 
         let checkpoint = circuit.commit().unwrap();
         circuit.kill().unwrap();
-        super::INTERNED_STRING_CACHE.clear();
 
         let (mut circuit, (_hinput_strings, hqueries, houtput_strings)) =
             interner_test_circuit(path.as_path(), Some(checkpoint.uuid));
@@ -505,15 +554,30 @@ mod interned_string_test {
                 .map(|s| s.as_str()),
         );
 
-        assert_eq!(super::INTERNED_STRING_CACHE.len(), 1000);
-        assert!(super::INTERNED_STRING_CACHE.misses() - old_missed <= 10000);
+        assert!(
+            circuit
+                .runtime()
+                .local_store()
+                .get(&InterneStringCacheKey)
+                .unwrap()
+                .len()
+                < 1000
+        );
+        assert!(
+            circuit
+                .runtime()
+                .local_store()
+                .get(&InterneStringCacheKey)
+                .unwrap()
+                .misses()
+                <= 10000
+        );
         circuit.kill().unwrap();
     }
 
     /// Insert and then delete some strings.
     /// INTERNED_STRING_BY_ID should be empty in the end.
     #[test]
-    #[serial]
     fn test_interner_deletions() {
         let path = tempfile::tempdir().unwrap().keep();
 
@@ -540,7 +604,6 @@ mod interned_string_test {
 
         let checkpoint = circuit.commit().unwrap();
         circuit.kill().unwrap();
-        super::INTERNED_STRING_CACHE.clear();
 
         let (mut circuit, (hinput_strings, _hqueries, _houtput_strings)) =
             interner_test_circuit(path.as_path(), Some(checkpoint.uuid));
@@ -559,20 +622,21 @@ mod interned_string_test {
         circuit.step().unwrap();
         circuit.step().unwrap();
 
-        let mut cursor = super::INTERNED_STRING_BY_ID.read().unwrap().cursor();
-        while cursor.key_valid() {
-            while cursor.val_valid() {
-                assert_eq!(**cursor.weight(), 0);
-                //println!("weight: {}", **cursor.weight());
-                cursor.step_val();
+        super::INTERNED_STRING_BY_ID.with_borrow(|by_id| {
+            let mut cursor = by_id.read().unwrap().cursor();
+            while cursor.key_valid() {
+                while cursor.val_valid() {
+                    assert_eq!(**cursor.weight(), 0);
+                    //println!("weight: {}", **cursor.weight());
+                    cursor.step_val();
+                }
+                cursor.step_key();
             }
-            cursor.step_key();
-        }
-        circuit.kill().unwrap();
+            circuit.kill().unwrap();
+        })
     }
 
     #[test]
-    #[serial]
     fn test_interner_bulk() {
         let path = tempfile::tempdir().unwrap().keep();
 
@@ -599,7 +663,6 @@ mod interned_string_test {
 
         let checkpoint = circuit.commit().unwrap();
         circuit.kill().unwrap();
-        super::INTERNED_STRING_CACHE.clear();
 
         let (mut circuit, (_hinput_strings, hqueries, houtput_strings)) =
             interner_test_circuit(path.as_path(), Some(checkpoint.uuid));

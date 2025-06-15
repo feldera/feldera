@@ -121,6 +121,14 @@ pub trait Operator: 'static {
         false
     }
 
+    /// Returns `true` if `self` is an input operator.
+    ///
+    /// An input operator feeds new data into the circuit. Examples are
+    /// the `Input` and `Generator` operators.
+    fn is_input(&self) -> bool {
+        false
+    }
+
     /// Returns `true` if `self` has received all required external inputs and
     /// is ready to run.
     ///

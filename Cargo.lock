@@ -4804,11 +4804,11 @@ dependencies = [
  "ryu",
  "serde",
  "serde_json",
- "serial_test",
  "smallvec",
  "tempfile",
  "thiserror 2.0.12",
  "tracing",
+ "typedmap",
  "uuid",
 ]
 
