@@ -91,10 +91,10 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.2"
 
 # The download URL for mold uses x86_64/aarch64 whereas dpkg --print-architecture says amd64/arm64
 RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86_64/g"`; \
-    cd /home/ubuntu && curl -LO https://github.com/rui314/mold/releases/download/v2.32.1/mold-2.32.1-$arch-linux.tar.gz \
-    && tar -xzvf mold-2.32.1-$arch-linux.tar.gz \
-    && mv mold-2.32.1-$arch-linux /home/ubuntu/mold \
-    && rm mold-2.32.1-$arch-linux.tar.gz
+    cd /home/ubuntu && curl -LO https://github.com/rui314/mold/releases/download/v2.40.1/mold-2.40.1-$arch-linux.tar.gz \
+    && tar -xzvf mold-2.40.1-$arch-linux.tar.gz \
+    && mv mold-2.40.1-$arch-linux /home/ubuntu/mold \
+    && rm mold-2.40.1-$arch-linux.tar.gz
 
 # Install sccache
 RUN  arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86_64/g"`; \
