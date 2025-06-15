@@ -23,7 +23,7 @@ BIND_ADDRESS="${2:-$DEFAULT_BIND_ADDRESS}"
 set -ex
 
 # If $WITH_POSTGRES is defined, manager should use a real Postgres server
-# instead of pg-embed.
+# instead of embedded postgresql.
 if [ -z "$WITH_POSTGRES" ]; then
     DB_CONNECTION_STRING="--db-connection-string=postgres-embed"
 else

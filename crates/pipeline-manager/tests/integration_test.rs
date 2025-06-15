@@ -675,7 +675,7 @@ async fn bearer_token() -> Option<String> {
                 .expect("If TEST_CLIENT_ID is set, TEST_PASSWORD should be as well");
             let test_region = std::env::var("TEST_REGION")
                 .expect("If TEST_CLIENT_ID is set, TEST_REGION should be as well");
-            let config = aws_config::from_env()
+            let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
                 .region(Region::new(test_region))
                 .load()
                 .await;

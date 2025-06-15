@@ -6,7 +6,7 @@ use colored::Colorize;
 use log::info;
 use pipeline_manager::api::main::ApiDoc;
 use pipeline_manager::compiler::main::{compiler_main, compiler_precompile};
-#[cfg(feature = "pg-embed")]
+#[cfg(feature = "postgresql_embedded")]
 use pipeline_manager::config::PgEmbedConfig;
 use pipeline_manager::config::{
     ApiServerConfig, CommonConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig,
@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Command::new("Pipeline manager CLI");
     let cli = CommonConfig::augment_args(cli);
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     let cli = PgEmbedConfig::augment_args(cli);
     let cli = DatabaseConfig::augment_args(cli);
     let cli = ApiServerConfig::augment_args(cli);
@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
     let common_config = CommonConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     let pg_embed_config = PgEmbedConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
@@ -59,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|err| err.exit())
         .unwrap();
 
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     let pg_embed_config = pg_embed_config.canonicalize()?;
     // `api_config` currently does not have any paths
     let compiler_config = compiler_config.canonicalize()?;
@@ -76,17 +76,11 @@ async fn main() -> anyhow::Result<()> {
         .unwrap();
     let db: StoragePostgres = StoragePostgres::connect(
         &database_config,
-        #[cfg(feature = "pg-embed")]
+        #[cfg(feature = "postgresql_embedded")]
         pg_embed_config.clone(),
     )
     .await
     .expect("Could not open connection to database");
-    #[cfg(feature = "pg-embed")]
-    if pg_embed_config.preinstall_pg_embed {
-        // If the goal is to only preinstall pg-embed, we return immediately afterward
-        info!("Pg-embed pre-installation finished");
-        return Ok(());
-    }
 
     // Run migrations before starting any service
     db.run_migrations().await?;

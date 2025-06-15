@@ -23,7 +23,7 @@ pub(crate) struct CompilerTest {
     pub(crate) sql_workdir: PathBuf,
     pub(crate) rust_workdir: PathBuf,
     _compiler_tempdir: TempDir,
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     _db_tempdir: TempDir,
 }
 
@@ -68,7 +68,7 @@ impl CompilerTest {
             sql_workdir,
             rust_workdir,
             _compiler_tempdir: compiler_tempdir,
-            #[cfg(feature = "pg-embed")]
+            #[cfg(feature = "postgresql_embedded")]
             _db_tempdir,
         }
     }

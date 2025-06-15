@@ -24,7 +24,9 @@ RUN apt update --fix-missing && apt install \
   # To add the nodesource debian repository
   ca-certificates gnupg \
   # Required by the `metrics-exporter-tcp` crate
-  protobuf-compiler
+  protobuf-compiler \
+  # Otherwise, postgresql_embedded complains when it tries to set timezeone to UTC
+  tzdata
 
 # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -82,6 +84,5 @@ COPY --chown=ubuntu build/sql2dbsp-jar-with-dependencies.jar lib/sql-to-dbsp-com
 
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=$HOME/lib/sql-to-dbsp-compiler --compilation-cargo-lock-path=$HOME/Cargo.lock --dbsp-override-path=$HOME/lib --precompile
-RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=$HOME/lib/sql-to-dbsp-compiler --compilation-cargo-lock-path=$HOME/Cargo.lock --dbsp-override-path=$HOME/lib --preinstall-pg-embed
 ENV BANNER_ADDR=localhost
 ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/ubuntu/lib/sql-to-dbsp-compiler", "--compilation-cargo-lock-path=/home/ubuntu/Cargo.lock", "--dbsp-override-path=/home/ubuntu/lib", "--demos-dir", "/home/ubuntu/demos"]

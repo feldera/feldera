@@ -3,11 +3,13 @@
 //! It caches the downloaded binaries as well. Check the `pg_embed` crate for
 //! more details.
 
-use pg_embed::pg_enums::PgAuthMethod;
-use pg_embed::pg_errors::PgEmbedError;
-use pg_embed::pg_fetch::{PgFetchSettings, PG_V15};
-use pg_embed::postgres::{PgEmbed, PgSettings};
+use std::env;
 use std::path::PathBuf;
+use std::str::FromStr;
+
+use postgresql_embedded::{
+    Error as PostgreSQLError, PostgreSQL, Settings as PostgreSQLSettings, VersionReq,
+};
 
 /// Install and start an embedded postgres DB instance. This only runs if
 /// the manager is started with postgres-embedded.
@@ -22,28 +24,20 @@ pub(crate) async fn install(
     database_dir: PathBuf,
     persistent: bool,
     port: Option<u16>,
-) -> Result<PgEmbed, PgEmbedError> {
-    let pg_settings = PgSettings {
-        database_dir,
-        port: port.unwrap_or(5432),
-        user: "postgres".to_string(),
-        password: "postgres".to_string(),
-        auth_method: PgAuthMethod::Plain,
-        persistent,
-        timeout: None,
-        migration_dir: None,
-    };
+) -> Result<PostgreSQL, PostgreSQLError> {
+    let mut pg_settings = PostgreSQLSettings::default();
+    pg_settings.data_dir = database_dir;
+    pg_settings.username = "postgres".to_string();
+    pg_settings.password = "postgres".to_string();
+    // Set to v15 in build.rs, note that we can't change/upgrade this without making
+    // sure the database directories in ~/.feldera get upgraded too.
+    pg_settings.version = VersionReq::from_str(env!("POSTGRESQL_VERSION"))?;
+    pg_settings.temporary = !persistent;
+    pg_settings.port = port.unwrap_or(5432);
 
-    let fetch_settings = PgFetchSettings {
-        version: PG_V15,
-        ..Default::default()
-    };
+    let mut postgresql = PostgreSQL::new(pg_settings);
+    postgresql.setup().await?;
+    postgresql.start().await?;
 
-    let mut pg = PgEmbed::new(pg_settings, fetch_settings).await?;
-
-    // Download, unpack, create password file and database cluster
-    pg.setup().await?;
-    pg.start_db().await?;
-
-    Ok(pg)
+    Ok(postgresql)
 }

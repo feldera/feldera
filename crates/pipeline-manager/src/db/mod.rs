@@ -1,6 +1,6 @@
 pub mod error;
 pub mod operations;
-#[cfg(feature = "pg-embed")]
+#[cfg(feature = "postgresql_embedded")]
 mod pg_setup;
 pub(crate) mod storage;
 pub mod storage_postgres;

@@ -1,8 +1,8 @@
-#[cfg(feature = "pg-embed")]
+#[cfg(feature = "postgresql_embedded")]
 use crate::config::PgEmbedConfig;
 use crate::db::error::DBError;
 use crate::db::operations;
-#[cfg(feature = "pg-embed")]
+#[cfg(feature = "postgresql_embedded")]
 use crate::db::pg_setup;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
@@ -41,10 +41,10 @@ pub struct StoragePostgres {
     pub(crate) pool: Pool,
     /// Embedded Postgres instance which is used in development mode.
     /// It will not be persisted after termination.
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     #[allow(dead_code)]
     // It has to stay alive until StoragePostgres is dropped.
-    pub(crate) pg_inst: Option<pg_embed::postgres::PgEmbed>,
+    pub(crate) pg_inst: Option<postgresql_embedded::PostgreSQL>,
 }
 
 #[async_trait]
@@ -1126,20 +1126,25 @@ impl Storage for StoragePostgres {
 impl StoragePostgres {
     pub async fn connect(
         db_config: &DatabaseConfig,
-        #[cfg(feature = "pg-embed")] pg_embed_config: PgEmbedConfig,
+        #[cfg(feature = "postgresql_embedded")] pg_embed_config: PgEmbedConfig,
     ) -> Result<Self, DBError> {
-        #[cfg(feature = "pg-embed")]
+        #[cfg(feature = "postgresql_embedded")]
         if db_config.uses_postgres_embed() {
             let database_dir = pg_embed_config.pg_embed_data_dir();
             let pg_inst = pg_setup::install(database_dir, true, Some(8082)).await?;
-            let connection_string = pg_inst.db_uri.to_string();
+            let db_name = "postgres";
+            if !pg_inst.database_exists(db_name).await? {
+                pg_inst.create_database(db_name).await?;
+            }
+            let connection_string = pg_inst.settings().url(db_name);
+
             let db_config = DatabaseConfig::new(connection_string, None);
             return Self::initialize(&db_config, Some(pg_inst)).await;
         };
 
         Self::initialize(
             db_config,
-            #[cfg(feature = "pg-embed")]
+            #[cfg(feature = "postgresql_embedded")]
             None,
         )
         .await
@@ -1147,7 +1152,7 @@ impl StoragePostgres {
 
     pub(crate) async fn initialize(
         db_config: &DatabaseConfig,
-        #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
+        #[cfg(feature = "postgresql_embedded")] pg_inst: Option<postgresql_embedded::PostgreSQL>,
     ) -> Result<Self, DBError> {
         let config = db_config.tokio_postgres_config()?;
         debug!(
@@ -1160,14 +1165,14 @@ impl StoragePostgres {
         };
         let mgr = Manager::from_config(config.clone(), tls, mgr_config);
         let pool = Pool::builder(mgr).max_size(16).build().unwrap();
-        #[cfg(feature = "pg-embed")]
+        #[cfg(feature = "postgresql_embedded")]
         return Ok(Self {
             db_config: db_config.clone(),
             config,
             pool,
             pg_inst,
         });
-        #[cfg(not(feature = "pg-embed"))]
+        #[cfg(not(feature = "postgresql_embedded"))]
         return Ok(Self {
             db_config: db_config.clone(),
             config,

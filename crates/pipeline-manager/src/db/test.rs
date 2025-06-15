@@ -38,14 +38,14 @@ use uuid::Uuid;
 
 struct DbHandle {
     db: StoragePostgres,
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     _temp_dir: tempfile::TempDir,
-    #[cfg(not(feature = "pg-embed"))]
+    #[cfg(not(feature = "postgresql_embedded"))]
     config: tokio_postgres::Config,
 }
 
 impl Drop for DbHandle {
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     fn drop(&mut self) {
         // We drop `pg` before the temp dir gets deleted (which will
         // shut down postgres). Otherwise, postgres logs an error that the
@@ -53,12 +53,12 @@ impl Drop for DbHandle {
         // confusing for a developer.
         if let Some(pg) = self.db.pg_inst.as_mut() {
             let _r = async {
-                pg.stop_db().await.unwrap();
+                pg.stop().await.unwrap();
             };
         }
     }
 
-    #[cfg(not(feature = "pg-embed"))]
+    #[cfg(not(feature = "postgresql_embedded"))]
     fn drop(&mut self) {
         use postgres_openssl::TlsStream;
         use tokio_postgres::{tls::NoTlsStream, Connection, Socket};
@@ -107,7 +107,7 @@ impl Drop for DbHandle {
     }
 }
 
-#[cfg(feature = "pg-embed")]
+#[cfg(feature = "postgresql_embedded")]
 async fn test_setup() -> DbHandle {
     let (conn, _temp_dir) = setup_pg().await;
 
@@ -117,7 +117,7 @@ async fn test_setup() -> DbHandle {
     }
 }
 
-#[cfg(feature = "pg-embed")]
+#[cfg(feature = "postgresql_embedded")]
 pub(crate) async fn setup_pg() -> (StoragePostgres, tempfile::TempDir) {
     use crate::config::DatabaseConfig;
     use std::net::TcpListener;
@@ -142,7 +142,7 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tempfile::TempDir) {
     let pg = crate::db::pg_setup::install(temp_path.into(), false, Some(port))
         .await
         .unwrap();
-    let db_uri = pg.db_uri.clone();
+    let db_uri = pg.settings().url("postgres").clone();
     let db_config = DatabaseConfig::new(db_uri, None);
     let conn = StoragePostgres::initialize(&db_config, Some(pg))
         .await
@@ -151,13 +151,13 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tempfile::TempDir) {
     (conn, _temp_dir)
 }
 
-#[cfg(not(feature = "pg-embed"))]
+#[cfg(not(feature = "postgresql_embedded"))]
 async fn test_setup() -> DbHandle {
     let (conn, config) = setup_pg().await;
     DbHandle { db: conn, config }
 }
 
-#[cfg(not(feature = "pg-embed"))]
+#[cfg(not(feature = "postgresql_embedded"))]
 pub(crate) async fn setup_pg() -> (StoragePostgres, tokio_postgres::Config) {
     use crate::config::DatabaseConfig;
     let db_config = DatabaseConfig::new("postgres-pg-client-embed".to_string(), None);

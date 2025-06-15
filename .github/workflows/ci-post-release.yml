@@ -55,4 +55,3 @@ jobs:
         with:
           message: "ci: Prepare for v${{ env.NEXT_VERSION }}"
           push: origin main
-          default_author: user_info

@@ -89,4 +89,6 @@ fn main() {
     );
     println!("cargo:rerun-if-env-changed=FELDERA_ENTERPRISE_VERSION");
     println!("cargo:rustc-env=FELDERA_ENTERPRISE_VERSION={enterprise_version}");
+    // Bundle postgresql version 15 with the build
+    println!("cargo:rustc-env=POSTGRESQL_VERSION=15");
 }

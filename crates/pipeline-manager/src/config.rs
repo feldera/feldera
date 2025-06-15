@@ -77,12 +77,12 @@ fn default_local_runner_working_directory() -> String {
         .unwrap()
 }
 
-#[cfg(feature = "pg-embed")]
+#[cfg(feature = "postgresql_embedded")]
 fn default_db_connection_string() -> String {
     "postgres-embed".to_string()
 }
 
-#[cfg(not(feature = "pg-embed"))]
+#[cfg(not(feature = "postgresql_embedded"))]
 fn default_db_connection_string() -> String {
     "".to_string()
 }
@@ -177,12 +177,6 @@ pub struct PgEmbedConfig {
     #[serde(default = "default_pg_embed_working_directory")]
     #[arg(long, default_value_t = default_pg_embed_working_directory())]
     pub pg_embed_working_directory: String,
-
-    /// Whether to preinstall a Postgres embedded instance and immediately return.
-    /// The --precompile flag takes precedence over this flag and is checked before.
-    /// As such, if both are specified, pg-embed pre-installation will not occur.
-    #[arg(long)]
-    pub preinstall_pg_embed: bool,
 }
 
 impl PgEmbedConfig {
@@ -193,7 +187,7 @@ impl PgEmbedConfig {
         Ok(self)
     }
 
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     pub(crate) fn pg_embed_data_dir(&self) -> PathBuf {
         Path::new(&self.pg_embed_working_directory).to_path_buf()
     }
@@ -245,7 +239,7 @@ impl DatabaseConfig {
         connection_str.parse::<tokio_postgres::Config>()
     }
 
-    #[cfg(feature = "pg-embed")]
+    #[cfg(feature = "postgresql_embedded")]
     pub(crate) fn uses_postgres_embed(&self) -> bool {
         self.db_connection_string.starts_with("postgres-embed")
     }
