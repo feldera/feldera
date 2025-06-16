@@ -1,3 +1,10 @@
+/**
+ * Runs the function on initial call
+ * @param f
+ * @param durationMs
+ * @param offsetMs
+ * @returns
+ */
 export const useInterval = <T>(f: () => T, durationMs: number, offsetMs?: number) => {
   let state = $state(f())
   let interval: Timer

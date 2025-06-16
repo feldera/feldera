@@ -241,7 +241,7 @@ export type Configuration = {
    * Feldera edition: "Open source" or "Enterprise"
    */
   edition: string
-  license_info?: LicenseInformation | null
+  license_validity?: LicenseValidity | null
   /**
    * Specific revision corresponding to the edition `version` (e.g., git commit hash).
    * This is an empty string if it is unspecified.
@@ -1331,21 +1331,17 @@ export type KafkaStartFromConfig =
 
 export type LicenseInformation = {
   /**
+   * Timestamp when the server responded.
+   */
+  current: string
+  /**
    * Optional description of the advantages of extending the license / upgrading from a trial
    */
   description_html: string
   /**
-   * Timestamp at which the license expires
-   */
-  expires_at: string
-  /**
    * URL that navigates the user to extend / upgrade their license
    */
   extension_url?: string | null
-  /**
-   * Whether the license is expired
-   */
-  is_expired: boolean
   /**
    * Whether the license is a trial
    */
@@ -1354,8 +1350,24 @@ export type LicenseInformation = {
   /**
    * Timestamp from which the user should be reminded of the license expiring soon
    */
-  remind_starting_at: string
+  remind_starting_at?: string | null
+  /**
+   * Timestamp at which point the license expires
+   */
+  valid_until?: string | null
 }
+
+export type LicenseValidity =
+  | {
+      Exists: LicenseInformation
+    }
+  | {
+      /**
+       * Either the license key is invalid according to the server, or the request that checks with
+       * the server failed (e.g., if it could not reach the server).
+       */
+      DoesNotExistOrNotConfirmed: string
+    }
 
 /**
  * Circuit metrics output format.
@@ -1659,6 +1671,16 @@ export type PipelineConfig = {
    * The default value is `true`.
    */
   cpu_profiler?: boolean
+  /**
+   * Optional settings for tweaking Feldera internals.
+   *
+   * The available key-value pairs change from one version of Feldera to
+   * another, so users should not depend on particular settings being
+   * available, or on their behavior.
+   */
+  dev_tweaks?: {
+    [key: string]: unknown
+  }
   fault_tolerance?: FtConfig
   /**
    * Specification of additional (sidecar) containers.
@@ -2344,6 +2366,16 @@ export type RuntimeConfig = {
    * The default value is `true`.
    */
   cpu_profiler?: boolean
+  /**
+   * Optional settings for tweaking Feldera internals.
+   *
+   * The available key-value pairs change from one version of Feldera to
+   * another, so users should not depend on particular settings being
+   * available, or on their behavior.
+   */
+  dev_tweaks?: {
+    [key: string]: unknown
+  }
   fault_tolerance?: FtConfig
   /**
    * Specification of additional (sidecar) containers.
