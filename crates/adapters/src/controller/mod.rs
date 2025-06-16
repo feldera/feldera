@@ -1806,7 +1806,7 @@ impl ControllerInit {
         // Try to read a checkpoint.
         let checkpoint = match Checkpoint::read(&*storage.backend, &StoragePath::from(STATE_FILE)) {
             Err(error) if error.kind() == ErrorKind::NotFound => {
-                info!("no checkpoint found for resume ({error})",);
+                info!("starting fresh pipeline without resuming from checkpoint");
                 return Self::without_resume(config, Some(storage));
             }
             Err(error) => return Err(error),
