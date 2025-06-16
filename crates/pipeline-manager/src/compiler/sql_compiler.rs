@@ -493,12 +493,23 @@ pub(crate) async fn perform_sql_compilation(
     let messages: Vec<SqlCompilerMessage> = if stderr_str.is_empty() {
         vec![]
     } else {
-        match serde_json::from_str(&stderr_str) {
+        // TODO: the proper solution is to log this to a separate stream, this breaks in case
+        // JVM ever logs a line containing `[` to stderr
+        let find_json_start = stderr_str.find("[");
+        match serde_json::from_str(&stderr_str[find_json_start.unwrap_or(0)..]) {
             Ok(messages) => messages,
             Err(e) => {
-                return Err(SqlCompilationError::SystemError(
-                    format!("SQL compiler process returned with exit status code ({exit_code}) and stderr which cannot be deserialized due to {e}:\n{stderr_str}")
-                ));
+                if !exit_status.success() {
+                    return Err(SqlCompilationError::SystemError(
+                        format!("SQL compiler process returned with exit status code ({exit_code}) and stderr which cannot be deserialized due to {e}:\n{stderr_str}")
+                    ));
+                } else {
+                    error!(
+                        "Unable to parse SQL compiler response after successful compilation, warnings were not passed to client: {}",
+                        stderr_str
+                    );
+                    vec![]
+                }
             }
         }
     };
