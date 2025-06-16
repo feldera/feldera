@@ -149,8 +149,7 @@ To learn more about Feldera Platform, we recommend going through the
 ## 🤖 Benchmarks
 
 Feldera is generally [faster and uses less memory](https://www.feldera.com/blog/nexmark-vs-flink)
-than systems like stream processors. Our Benchmarks are performed by our CI on every commit that goes in
-`main`. If you want to see all the results, please visit [benchmarks.feldera.io](https://benchmarks.feldera.io/).
+than systems like stream processors.
 
 <p float="left" align="middle">
   <img src="https://www.feldera.com/_next/image?url=https://cdn.sanity.io/images/nlte859i/production/c80a9d592fb6f6e4cf2c7a665add24da65998123-1740x493.png?D75&fit=clip&auto=format&w=1920&q=100" width="100%">
