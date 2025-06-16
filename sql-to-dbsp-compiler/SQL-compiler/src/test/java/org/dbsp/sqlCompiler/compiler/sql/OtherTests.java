@@ -198,8 +198,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String[] lines = builder.toString().split("\n");
         Arrays.sort(lines);
         Assert.assertEquals(
-                "10,1.0,false,\"Hi\",1,0,\n" +
-                        "10,12.0,true,\"Hi\",,,",
+                "10,1.0,false,\"Hi\",1,0,10,\n" +
+                        "10,12.0,true,\"Hi\",,,,",
                 String.join("\n", lines));
     }
 

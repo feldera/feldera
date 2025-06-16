@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
@@ -504,6 +505,15 @@ public class ToJsonInnerVisitor extends InnerVisitor {
 
     @Override
     public void postorder(DBSPU128Literal node) {
+        if (node.value != null) {
+            this.property("value");
+            this.stream.append(node.value.toString());
+        }
+        super.postorder(node);
+    }
+
+    @Override
+    public void postorder(DBSPU8Literal node) {
         if (node.value != null) {
             this.property("value");
             this.stream.append(node.value.toString());

@@ -25,7 +25,7 @@ public class VarbinaryTests extends SqlIoTest {
     @Test
     public void testCastInt() {
         this.queryFailingInCompilation("select CAST(X'ffff' AS INT)",
-                "Cast function cannot convert value of type BINARY(2) to type INTEGER");
+                "Cast function cannot convert value of type BINARY(2) NOT NULL to type INTEGER");
     }
 
     @Test

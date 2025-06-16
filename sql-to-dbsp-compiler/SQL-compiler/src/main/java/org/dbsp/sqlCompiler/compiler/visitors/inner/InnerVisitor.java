@@ -69,6 +69,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
@@ -801,6 +802,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPIntLiteral) node);
     }
 
+    public VisitDecision preorder(DBSPU8Literal node) {
+        return this.preorder((DBSPIntLiteral) node);
+    }
+
     public VisitDecision preorder(DBSPU16Literal node) {
         return this.preorder((DBSPIntLiteral) node);
     }
@@ -1428,6 +1433,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPI32Literal node) {
+        this.postorder((DBSPIntLiteral) node);
+    }
+
+    public void postorder(DBSPU8Literal node) {
         this.postorder((DBSPIntLiteral) node);
     }
 

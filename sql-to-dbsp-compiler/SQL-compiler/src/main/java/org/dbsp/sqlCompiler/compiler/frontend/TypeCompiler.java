@@ -155,7 +155,14 @@ public class TypeCompiler implements ICompilerComponent {
             if (ri != null) {
                 // INT op INT, choose the wider int type
                 int width = Math.max(li.getWidth(), ri.getWidth());
-                return new DBSPTypeInteger(left.getNode(), width, true, anyNull);
+                boolean signed;
+                if (li.getWidth() > ri.getWidth())
+                    signed = li.signed;
+                else if (li.getWidth() == ri.getWidth())
+                    signed = li.signed && ri.signed; // signed if both signed
+                else
+                    signed = ri.signed;
+                return new DBSPTypeInteger(left.getNode(), width, signed, anyNull);
             }
             if (rf != null) {
                 // Calcite uses the float always
@@ -294,6 +301,14 @@ public class TypeCompiler implements ICompilerComponent {
                     return DBSPTypeInteger.getType(node, DBSPTypeCode.INT32, nullable);
                 case BIGINT:
                     return DBSPTypeInteger.getType(node, DBSPTypeCode.INT64, nullable);
+                case UTINYINT:
+                    return DBSPTypeInteger.getType(node, DBSPTypeCode.UINT8, nullable);
+                case USMALLINT:
+                    return DBSPTypeInteger.getType(node, DBSPTypeCode.UINT16, nullable);
+                case UINTEGER:
+                    return DBSPTypeInteger.getType(node, DBSPTypeCode.UINT32, nullable);
+                case UBIGINT:
+                    return DBSPTypeInteger.getType(node, DBSPTypeCode.UINT64, nullable);
                 case DECIMAL: {
                     int precision = dt.getPrecision();
                     int scale = dt.getScale();

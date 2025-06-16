@@ -43,6 +43,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
@@ -69,6 +70,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             }
         } else {
             switch (width) {
+                case 8: return UINT8;
                 case 16: return UINT16;
                 case 32: return UINT32;
                 case 64: return UINT64;
@@ -122,6 +124,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             }
         } else {
             switch (this.width) {
+                case 8: return new DBSPU8Literal(0, this.mayBeNull);
                 case 16: return new DBSPU16Literal(0, this.mayBeNull);
                 case 32: return new DBSPU32Literal(0L, this.mayBeNull);
                 case 64: return new DBSPU64Literal(BigInteger.ZERO, this.mayBeNull);
@@ -143,6 +146,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             }
         } else {
             switch (this.width) {
+                case 8: return new DBSPU8Literal(0, this.mayBeNull);
                 case 16: return new DBSPU16Literal(1, this.mayBeNull);
                 case 32: return new DBSPU32Literal(1L, this.mayBeNull);
                 case 64: return new DBSPU64Literal(BigInteger.ONE, this.mayBeNull);
@@ -165,6 +169,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             }
         } else {
             switch (this.width) {
+                case 8: return new DBSPU8Literal(0xFF, this.mayBeNull);
                 case 16: return new DBSPU16Literal(0xFFFF, this.mayBeNull);
                 case 32: return new DBSPU32Literal(Integer.toUnsignedLong(-1), this.mayBeNull);
                 case 64: return new DBSPU64Literal(
@@ -284,11 +289,23 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             case INT32 -> new DBSPTypeInteger(node, 32, true, mayBenull);
             case INT64 -> new DBSPTypeInteger(node, 64, true, mayBenull);
             case INT128 -> new DBSPTypeInteger(node, 128, true, mayBenull);
+            case UINT8 -> new DBSPTypeInteger(node, 8, false, mayBenull);
             case UINT16 -> new DBSPTypeInteger(node, 16, false, mayBenull);
             case UINT32 -> new DBSPTypeInteger(node, 32, false, mayBenull);
             case UINT64 -> new DBSPTypeInteger(node, 64, false, mayBenull);
             case UINT128 -> new DBSPTypeInteger(node, 128, false, mayBenull);
-            default -> throw new InternalCompilerError("Opcode does not represent an type");
+            default -> throw new InternalCompilerError("Opcode does not represent an integer type");
+        };
+    }
+
+    /** Given an integer type, return the signed integer type that is just one size larger if it exists. */
+    public static DBSPTypeCode largerSigned(DBSPTypeCode code) {
+        return switch (code) {
+            case INT8, UINT8 -> INT16;
+            case INT16, UINT16 -> INT32;
+            case INT32, UINT32 -> INT64;
+            case INT64, UINT64 -> INT128;
+            default -> code;
         };
     }
 

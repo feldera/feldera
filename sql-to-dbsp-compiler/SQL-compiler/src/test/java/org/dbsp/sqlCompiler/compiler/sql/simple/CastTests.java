@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
@@ -118,6 +119,8 @@ public class CastTests extends SqlIoTest {
     public void castNull() {
         String query = "SELECT CAST(NULL AS INTEGER)";
         this.testQuery(query, new DBSPZSetExpression(new DBSPTupleExpression(new DBSPI32Literal())));
+        query = "SELECT CAST(NULL AS UNSIGNED)";
+        this.testQuery(query, new DBSPZSetExpression(new DBSPTupleExpression(new DBSPU32Literal())));
     }
 
     @Test
@@ -136,6 +139,64 @@ public class CastTests extends SqlIoTest {
     @Test
     public void testFpCasts() {
         this.testQuery("SELECT CAST(T.COL2 AS BIGINT) FROM T", new DBSPZSetExpression(new DBSPTupleExpression(new DBSPI64Literal(12))));
+    }
+
+    @Test
+    public void runtimeOverflowsTests() {
+        this.runtimeConstantFail("SELECT CAST(1000 AS TINYINT)",
+                "Error converting 1000 to TINYINT");
+        this.runtimeConstantFail("SELECT CAST(1000 AS TINYINT UNSIGNED)",
+                "Error converting 1000 to TINYINT UNSIGNED");
+        this.runtimeConstantFail("SELECT CAST(256 AS TINYINT UNSIGNED)",
+                "Error converting 256 to TINYINT UNSIGNED");
+        this.runtimeConstantFail("SELECT CAST(-1 AS TINYINT UNSIGNED)",
+                "Error converting -1 to TINYINT UNSIGNED");
+    }
+
+    @Test
+    public void mixedTypesTest() {
+        this.qs("SELECT CAST(100 AS UNSIGNED) - 10;" +
+                """
+                 t
+                ---
+                 90
+                (1 row)
+                
+                SELECT CAST(100 AS BIGINT UNSIGNED) * 1000;
+                 t
+                ---
+                 100000
+                (1 row)
+                
+                SELECT CAST(100 AS UNSIGNED) * 1.0;
+                 t
+                ---
+                 100.0
+                (1 row)
+                
+                SELECT CAST(100 AS UNSIGNED) * -1.0;
+                 t
+                ---
+                 -100.0
+                (1 row)
+                
+                SELECT CAST(100 AS UNSIGNED) * -1.0e0;
+                 t
+                ---
+                 -100.0
+                (1 row)
+                
+                SELECT CAST(100 AS TINYINT UNSIGNED) + 300;
+                 t
+                ---
+                 400
+                (1 row)""");
+        this.runtimeConstantFail("SELECT CAST(10 AS UNSIGNED) - 100",
+                "'10 - 100' causes overflow");
+        this.runtimeConstantFail("SELECT CAST(10 AS UNSIGNED) / -1",
+                "Error converting -1 to INTEGER UNSIGNED");
+        this.runtimeConstantFail("SELECT CAST(10 AS TINYINT UNSIGNED) + CAST(250 AS TINYINT UNSIGNED)",
+                "'10 + 250' causes overflow");
     }
 
     @Test
@@ -411,20 +472,21 @@ public class CastTests extends SqlIoTest {
     @Test
     public void testFailingTimeCasts() {
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(1000 AS TIME)",
-                "Cast function cannot convert value of type INTEGER to type TIME");
+                "Cast function cannot convert value of type INTEGER NOT NULL to type TIME");
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(TIME '10:00:00' AS INTEGER)",
-                "Cast function cannot convert value of type TIME(0) to type INTEGER");
+                "Cast function cannot convert value of type TIME(0) NOT NULL to type INTEGER");
 
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(1000 AS DATE)",
-                "Cast function cannot convert value of type INTEGER to type DATE");
+                "Cast function cannot convert value of type INTEGER NOT NULL to type DATE");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(CAST(1000 AS UNSIGNED) AS DATE)",
+                "Cast function cannot convert value of type INTEGER UNSIGNED NOT NULL to type DATE");
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(DATE '2024-01-01' AS INTEGER)",
-                "Cast function cannot convert value of type DATE to type INTEGER");
+                "Cast function cannot convert value of type DATE NOT NULL to type INTEGER");
 
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(X'01' AS TIME)",
                 "Cast function cannot convert BINARY value to ");
     }
 
-    @SuppressWarnings("ConstantValue")
     @Test
     public void testAllCasts() {
         String[] types = new String[] {
@@ -434,6 +496,10 @@ public class CastTests extends SqlIoTest {
                 "SMALLINT",
                 "INTEGER",
                 "BIGINT",
+                "TINYINT UNSIGNED",
+                "SMALLINT UNSIGNED",
+                "INTEGER UNSIGNED",
+                "BIGINT UNSIGNED",
                 "DECIMAL(10, 2)",
                 "REAL",
                 "DOUBLE",
@@ -473,6 +539,10 @@ public class CastTests extends SqlIoTest {
                 "1",    // smallint
                 "1",    // integer
                 "1",    // bigint
+                "1",    // tinyint unsigned
+                "1",    // smallint unsigned
+                "1",    // integer unsigned
+                "1",    // bigint unsigned
                 "1.1",  // decimal
                 "1.1e0", // real
                 "1.1e0", // double
@@ -483,16 +553,16 @@ public class CastTests extends SqlIoTest {
                 "'1-2'",   // INTERVAL YEARS TO MONTHS
                 "'1'",     // INTERVAL YEARS
                 "'2'",     // INTERVAL MONTHS
-                "'1'",     // INTERVAL DAYS",
-                "'2'",     // INTERVAL HOURS",
-                "'1 2'",   // INTERVAL DAYS TO HOURS",
-                "'3'",     // INTERVAL MINUTES",
-                "'1 2:3'", // INTERVAL DAYS TO MINUTES",
-                "'2:3'",   // INTERVAL HOURS TO MINUTES",
-                "'4'",     // INTERVAL SECONDS",
-                "'1 2:3:4'", // INTERVAL DAYS TO SECONDS",
-                "'2:3:4'", // INTERVAL HOURS TO SECONDS",
-                "'3:4'",   // INTERVAL MINUTES TO SECONDS",
+                "'1'",     // INTERVAL DAYS
+                "'2'",     // INTERVAL HOURS
+                "'1 2'",   // INTERVAL DAYS TO HOURS
+                "'3'",     // INTERVAL MINUTES
+                "'1 2:3'", // INTERVAL DAYS TO MINUTES
+                "'2:3'",   // INTERVAL HOURS TO MINUTES
+                "'4'",     // INTERVAL SECONDS
+                "'1 2:3:4'", // INTERVAL DAYS TO SECONDS
+                "'2:3:4'", // INTERVAL HOURS TO SECONDS
+                "'3:4'",   // INTERVAL MINUTES TO SECONDS
                 "'10:00:00'",  // TIME
                 "'2000-01-01 10:00:00'", // TIMESTAMP
                 "'2000-01-01'", // DATE
@@ -516,42 +586,46 @@ public class CastTests extends SqlIoTest {
 
         // Rows and columns match the array of types above.
         final CanConvert[][] legal = {
-          // To: N, B, I8,16,32,64,De,r, d, c, v, b, vb,ym,y, m, d, h, dh,m,dm,hm, s, ds,hs,ms,t, ts,dt,ro,a, m, V, U
-        /*From*/
-        /* N */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F },
-        /* B */{ F, T, F, F, F, F, F, F, F, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F },
-        /* I8*/{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-        /*I16*/{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-        /*I32*/{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-        /*I64*/{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-        /*Dec*/{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-        /* r */{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, F, F, F, T, F },
-        /* d */{ F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, F, F, F, T, F },
-        /*chr*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T },
-        /* v */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T },
-        /* b */{ F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T },
-        /*vb */{ F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T },
-        /*ym */{ F, F, F, F, F, F, F, F, F, T, T, F, F, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F },
-        /* y */{ F, F, T, T, T, T, T, F, F, T, T, F, F, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F },
-        /* m */{ F, F, T, T, T, T, T, F, F, T, T, F, F, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F },
-        /* d */{ F, F, T, T, T, T, T, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
-        /* h*/ { F, F, T, T, T, T, T, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
-        /* dh*/{ F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
-        /* m */{ F, F, T, T, T, T, T, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
-        /* dm*/{ F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
-        /* hm*/{ F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
-        /* s */{ F, F, T, T, T, T, T, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
-        /* ds*/{ F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
-        /* hs*/{ F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
-        /* ms*/{ F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
-        /* t */{ F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, T, F },
-        /* ts*/{ F, F, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, F, F, F, T, F },
-        /* dt*/{ F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, T, F },
-        /*row*/{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, F, T, F },
-        /* a */{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, T, F },
-        /* m */{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F },
-        /* V */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T },
-        /* U */{ F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, N, N, N, F, F, F, T, T },
+// To:   N, B, I8,16,32,64,U8,U6,U3,U6,De,r, d, c, v, b, vb,ym,y, m, d, h, dh,m,dm,hm, s, ds,hs,ms,t, ts,dt,ro,a, m, V, U
+/*From                                                                                                                    */
+/* N */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F },
+/* B */{ F, T, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F },
+/* I8*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*I16*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*I32*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*I64*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/* U8*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*U16*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*U32*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*U64*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*Dec*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/* r */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, F, F, F, T, F },
+/* d */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, F, F, F, T, F },
+/*chr*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T },
+/* v */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T },
+/* b */{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T },
+/*vb */{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T },
+/*ym */{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F },
+/* y */{ F, F, T, T, T, T, T, T, T, T, T, F, F, T, T, F, F, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F },
+/* m */{ F, F, T, T, T, T, T, T, T, T, T, F, F, T, T, F, F, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F },
+/* d */{ F, F, T, T, T, T, T, T, T, T, T, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
+/* h*/ { F, F, T, T, T, T, T, T, T, T, T, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
+/* dh*/{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
+/* m */{ F, F, T, T, T, T, T, T, T, T, T, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
+/* dm*/{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
+/* hm*/{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
+/* s */{ F, F, T, T, T, T, T, T, T, T, T, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
+/* ds*/{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
+/* hs*/{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
+/* ms*/{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, T, F },
+/* t */{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, T, F },
+/* ts*/{ F, F, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, F, F, F, T, F },
+/* dt*/{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, T, F },
+/*row*/{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, F, T, F },
+/* a */{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, T, F },
+/* m */{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F },
+/* V */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T },
+/* U */{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, N, N, N, F, F, F, T, T },
         };
 
         Assert.assertEquals(types.length, legal.length);

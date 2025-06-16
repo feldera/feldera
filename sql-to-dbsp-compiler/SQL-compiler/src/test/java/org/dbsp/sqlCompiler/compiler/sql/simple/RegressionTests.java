@@ -818,7 +818,7 @@ public class RegressionTests extends SqlIoTest {
     public void vecStringCast() {
         String sql = "CREATE VIEW V AS SELECT CAST(ARRAY [1,2,3] AS VARCHAR)";
         this.statementsFailingInCompilation(sql,
-                "Cast function cannot convert value of type INTEGER ARRAY to type VARCHAR");
+                "Cast function cannot convert value of type INTEGER NOT NULL ARRAY NOT NULL to type VARCHAR");
     }
 
     @Test
@@ -874,7 +874,7 @@ public class RegressionTests extends SqlIoTest {
                 """;
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(sql);
-        CompilerCircuitStream ccs = this.getCCSFailing(compiler, "overflow");
+        CompilerCircuitStream ccs = this.getCCSFailing(compiler, "Error converting 128 to TINYINT");
         ccs.step("INSERT INTO sum VALUES (127), (1);",
                 " result" +
                         "---------");

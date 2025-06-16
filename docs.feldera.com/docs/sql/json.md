@@ -174,7 +174,9 @@ SELECT CAST(
 
 - the `VARIANT` `null` value is converted to the string `null`
 - a `VARIANT` wrapping a Boolean value is converted to the respective Boolean string `true` or `false`
-- a `VARIANT` wrapping any numeric value (`DECIMAL`, `TINYINT`, `SMALLINT`, `INTEGER`, `BIGINT`, `REAL`, `DOUBLE`, `DECIMAL`) is converted to the string representation of the value as produced using a `CAST(value AS VARCHAR)`
+- a `VARIANT` wrapping any numeric value (`DECIMAL`, `TINYINT`, `SMALLINT`, `INTEGER`, `BIGINT`, `TINYINT UNSIGNED`,
+  `SMALLINT UNSIGNED`, `INT UNSIGNED`, `BIGINT UNSIGNED`, `REAL`, `DOUBLE`, `DECIMAL`) is converted
+   to the string representation of the value as produced using a `CAST(value AS VARCHAR)`
 - a `VARIANT` wrapping a `VARCHAR` value is converted to a string with double quotes, and with escape sequences for special characters (e.g., quotes), as mandated by the JSON grammar
 - a `VARIANT` wrapping an `ARRAY` with elements of any type is converted to a JSON array, and the elements are recursively converted
 - a `VARIANT` wrapping a `MAP` whose keys have any SQL `CHAR` type, or `VARIANT` values wrapping `CHAR` values will generate a JSON object, by recursively converting each key-value pair.

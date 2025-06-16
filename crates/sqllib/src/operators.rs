@@ -157,10 +157,12 @@ for_all_compare!(gte, bool, T where Ord);
 #[inline(always)]
 fn plus<T>(left: T, right: T) -> T
 where
-    T: CheckedAdd,
+    T: CheckedAdd + std::fmt::Display,
 {
-    left.checked_add(&right)
-        .expect("attempt to add with overflow")
+    match left.checked_add(&right) {
+        Some(value) => value,
+        None => panic!("'{left} + {right}' causes overflow"),
+    }
 }
 
 for_all_int_operator!(plus);
@@ -181,10 +183,12 @@ some_operator!(fp_plus, plus, d, F64, F64);
 #[doc(hidden)]
 fn minus<T>(left: T, right: T) -> T
 where
-    T: CheckedSub,
+    T: CheckedSub + std::fmt::Display,
 {
-    left.checked_sub(&right)
-        .expect("attempt to subtract with overflow")
+    match left.checked_sub(&right) {
+        Some(result) => result,
+        None => panic!("'{left} - {right}' causes overflow"),
+    }
 }
 
 for_all_int_operator!(minus);
@@ -234,10 +238,12 @@ some_operator!(f64_modulo, modulo, d, F64, F64);
 #[doc(hidden)]
 fn times<T>(left: T, right: T) -> T
 where
-    T: CheckedMul,
+    T: CheckedMul + std::fmt::Display,
 {
-    left.checked_mul(&right)
-        .expect("attempt to multiply with overflow")
+    match left.checked_mul(&right) {
+        None => panic!("'{left} * {right}' causes overflow"),
+        Some(value) => value,
+    }
 }
 
 for_all_int_operator!(times);
@@ -291,15 +297,12 @@ for_all_int_operator!(bxor);
 #[doc(hidden)]
 fn div<T>(left: T, right: T) -> T
 where
-    T: CheckedDiv + Zero + Eq,
+    T: CheckedDiv + Zero + Eq + std::fmt::Display,
 {
-    let panic_message = if T::zero() == right {
-        "attempt to divide by zero"
-    } else {
-        "attempt to divide with overflow"
-    };
-
-    left.checked_div(&right).expect(panic_message)
+    match left.checked_div(&right) {
+        None => panic!("'{left} / {right}' causes overflow"),
+        Some(value) => value,
+    }
 }
 
 for_all_int_operator!(div);

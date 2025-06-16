@@ -24,6 +24,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -37,6 +41,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -264,6 +269,10 @@ public class TableParser {
                 case INT16 -> new DBSPI16Literal(CalciteObject.EMPTY, fieldType, Short.parseShort(trimmed));
                 case INT32 -> new DBSPI32Literal(CalciteObject.EMPTY, fieldType, Integer.parseInt(trimmed));
                 case INT64 -> new DBSPI64Literal(CalciteObject.EMPTY, fieldType, Long.parseLong(trimmed));
+                case UINT8 -> new DBSPU8Literal(CalciteObject.EMPTY, fieldType, Integer.parseInt(trimmed));
+                case UINT16 -> new DBSPU16Literal(CalciteObject.EMPTY, fieldType, Integer.parseInt(trimmed));
+                case UINT32 -> new DBSPU32Literal(CalciteObject.EMPTY, fieldType, Long.parseLong(trimmed));
+                case UINT64 -> new DBSPU64Literal(CalciteObject.EMPTY, fieldType, new BigInteger(trimmed));
                 case INTERVAL_SHORT -> {
                     long value = shortIntervalToMilliseconds(trimmed);
                     yield new DBSPIntervalMillisLiteral(CalciteObject.EMPTY, fieldType, value);

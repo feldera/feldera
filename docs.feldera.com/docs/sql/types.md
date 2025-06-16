@@ -9,6 +9,10 @@ The compiler supports the following SQL data types:
 | `SMALLINT`                  | 16-bit signed integer using two's complement.                                                                                                                      | `INT2`                     |
 | `INTEGER`                   | 32-bit signed integer using two's complement.                                                                                                                      | `INT`, `SIGNED`, `INT4`    |
 | `BIGINT`                    | 64-bit signed integer using two's complement.                                                                                                                      | `INT8`, `INT64`            |
+| `TINYINT UNSIGNED`          | 8-bit unsigned integer                     .                                                                                                                       |                            |
+| `SMALLINT UNSIGNED`         | 16-bit signed integer.                                                                                                                                             |                            |
+| `INTEGER UNSIGNED`          | 32-bit signed integer.                                                                                                                                             | `INT UNSIGNED`, `UNSIGNED` |
+| `BIGINT UNSIGNED`           | 64-bit signed integer.                                                                                                                                             |                            |
 | `DECIMAL(precision, scale)` | A high precision fixed-point type, with a precision (total number of decimal digits) and a scale (number of decimal digits after period).                          | `DEC`, `NUMERIC`, `NUMBER` |
 | `REAL`                      | IEEE 32-bit floating point number                                                                                                                                  | `FLOAT4`, `FLOAT32`        |
 | `DOUBLE`                    | IEEE 64-bit floating point number                                                                                                                                  | `FLOAT8`, `FLOAT64`        |
@@ -54,6 +58,10 @@ The compiler supports the following SQL data types:
   tuple syntax `(x, y, z)`, where `x`, `y`, and `z` are expressions.
   E.g. `SELECT x, (y, z+2) FROM T`, is equivalent to `SELECT x, ROW(y,
   z+2) FROM T`.
+
+- Arithmetic operations combining signed and unsigned values will
+  produce a result with the wider type; if both types have the same
+  width, the result is unsigned;
 
 ## Computations on nullable types
 

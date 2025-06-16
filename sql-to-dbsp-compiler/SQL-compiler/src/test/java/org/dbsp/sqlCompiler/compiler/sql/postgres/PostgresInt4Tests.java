@@ -302,8 +302,8 @@ public class PostgresInt4Tests extends SqlIoTest {
 
     @Test
     public void testINT4MINOverflowError() {
-        this.qf("SELECT (-2147483648)::int4 * (-1)::int2", "attempt to multiply with overflow");
-        this.qf("SELECT (-2147483648)::int4 / (-1)::int2", "attempt to divide with overflow");
+        this.qf("SELECT (-2147483648)::int4 * (-1)::int2", "causes overflow");
+        this.qf("SELECT (-2147483648)::int4 / (-1)::int2", "causes overflow");
     }
 
     @Test

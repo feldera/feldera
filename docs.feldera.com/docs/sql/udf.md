@@ -266,6 +266,10 @@ crate, which is part of the Feldera SQL runtime.
 | `SMALLINT`               | `i16`                                   |
 | `INT`                    | `i32`                                   |
 | `BIGINT`                 | `i64`                                   |
+| `TINYINT UNSIGNED`       | `u8`                                    |
+| `SMALLINT UNSIGNED`      | `u16`                                   |
+| `INT UNSIGNED`           | `u32`                                   |
+| `BIGINT UNSIGNED`        | `u64`                                   |
 | `DECIMAL(p, s)`          | `feldera_sqllib::SqlDecimal`            |
 | `REAL`                   | `feldera_sqllib::F32`                   |
 | `DOUBLE`                 | `feldera_sqllib::F64`                   |

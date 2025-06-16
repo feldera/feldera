@@ -48,6 +48,10 @@ public final class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLit
     @Nullable
     public final BigInteger value;
 
+    public DBSPU64Literal() {
+        this(null, true);
+    }
+
     public DBSPU64Literal(CalciteObject node, DBSPType type, @Nullable BigInteger value) {
         super(node, type, value == null);
         if (value != null && value.compareTo(BigInteger.ZERO) < 0)

@@ -45,6 +45,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -71,7 +72,8 @@ public class EndToEndTests extends BaseSQLTests {
             , COL3 BOOLEAN NOT NULL
             , COL4 VARCHAR NOT NULL
             , COL5 INT
-            , COL6 DECIMAL(6, 2))""";
+            , COL6 DECIMAL(6, 2)
+            , COL7 UNSIGNED)""";
 
     public static final DBSPTypeDecimal D62 = new DBSPTypeDecimal(CalciteObject.EMPTY, 6, 2, true);
     public static final DBSPTupleExpression E0 = new DBSPTupleExpression(
@@ -79,8 +81,9 @@ public class EndToEndTests extends BaseSQLTests {
             new DBSPDoubleLiteral(12.0),
             new DBSPBoolLiteral(true),
             new DBSPStringLiteral("Hi"),
-            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
-            DBSPLiteral.none(D62)
+            DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)),
+            DBSPLiteral.none(D62),
+            DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.UINT32, true))
     );
     public static final DBSPTupleExpression E1 = new DBSPTupleExpression(
             new DBSPI32Literal(10),
@@ -88,7 +91,8 @@ public class EndToEndTests extends BaseSQLTests {
             new DBSPBoolLiteral(false),
             new DBSPStringLiteral("Hi"),
             new DBSPI32Literal(1, true),
-            new DBSPDecimalLiteral(D62, BigDecimal.ZERO)
+            new DBSPDecimalLiteral(D62, BigDecimal.ZERO),
+            new DBSPU32Literal(10L, true)
     );
 
     /**
@@ -743,7 +747,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void divZeroTest() {
         String query = "SELECT 1 / 0";
-        this.runtimeConstantFail(query, "attempt to divide by zero");
+        this.runtimeConstantFail(query, "'1 / 0' causes overflow");
     }
 
     @Test
@@ -755,7 +759,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void nestedDivTest() {
         String query = "SELECT 2 / (1 / 0)";
-        this.runtimeConstantFail(query, "attempt to divide by zero");
+        this.runtimeConstantFail(query, "'1 / 0' causes overflow");
     }
 
     @Test
@@ -811,16 +815,18 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void aggregateDistinctTest() {
-        String query = "SELECT SUM(DISTINCT T.COL1), SUM(T.COL2) FROM T";
+        String query = "SELECT SUM(DISTINCT T.COL1), SUM(T.COL2), SUM(T.COL7) FROM T";
         this.testAggregate(query,
                 new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 new DBSPI32Literal(10, true),
-                                new DBSPDoubleLiteral(13.0, true))),
+                                new DBSPDoubleLiteral(13.0, true),
+                                new DBSPU32Literal(10L, true))),
                 new DBSPZSetExpression(
                         new DBSPTupleExpression(
-                                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
-                                DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true)))));
+                                DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)),
+                                DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true)),
+                                DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.UINT32, true)))));
     }
 
     @Test

@@ -9,20 +9,20 @@ set -e
 # Default is to use the next version
 NEXT='y'
 
-if true; then
+if false; then
     # This is the standard behavior
     CALCITE_REPO="https://github.com/apache/calcite.git"
     CALCITE_BRANCH="main"
     CALCITE_NEXT_COMMIT="4ee33c9488740e41311c51735538dbac9e5abc4d"
 else
-    # Switch to this script when testing a branch in mihaibudiu's fork that
+    # Switch to this script when using a branch in mihaibudiu's fork that
     # hasn't been merged yet
     CALCITE_REPO="https://github.com/mihaibudiu/calcite.git"
-    CALCITE_BRANCH="issue6939"
-    CALCITE_NEXT_COMMIT="45bb5d58ddc56a7b3b336679e96826123bd32e0d"
+    CALCITE_BRANCH="issue7052"
+    CALCITE_NEXT_COMMIT="eb0c60b6db35605f8a55d5f7619f3bf4f46aa28e"
 fi
-CALCITE_NEXT="1.40.0"
-CALCITE_CURRENT="1.39.0"
+CALCITE_NEXT="1.41.0"
+CALCITE_CURRENT="1.40.0"
 
 usage() {
     echo "This script builds the sql-to-dbsp compiler"

@@ -27,12 +27,7 @@ If `WITHIN DISTINCT` is present, argument values are made distinct
 within each value of specified keys before being passed to the
 aggregate function.
 
-*Important*: the aggregate result type is the same as the type of the
-value aggregated.  Since an aggregate combines multiple values, this
-can cause overflows in the computation, which can cause runtime
-exceptions.  We recommend to use explicit casts in SQL programs
-converting the aggregated values to a data type wide enough to store
-all intermediate aggregation results.  Example:
+Example:
 
 Instead of `SELECT SUM(col)`, you should write `SELECT SUM(CAST col AS
 DECIMAL(10, 4))` if you expect 10-digit results to be possible.

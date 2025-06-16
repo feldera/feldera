@@ -36,6 +36,7 @@ import org.dbsp.util.Utilities;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -56,36 +57,10 @@ public class ToCsvVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPI8Literal literal) {
-        if (literal.value != null)
-            this.appendable.append(literal.value);
-        else
-            this.appendable.append(this.nullRepresentation.get());
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPI16Literal literal) {
-        if (literal.value != null)
-            this.appendable.append(literal.value);
-        else
-            this.appendable.append(this.nullRepresentation.get());
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPI32Literal literal) {
-        if (literal.value != null)
-            this.appendable.append(literal.value);
-        else
-            this.appendable.append(this.nullRepresentation.get());
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPI64Literal literal) {
-        if (literal.value != null)
-            this.appendable.append(literal.value);
+    public VisitDecision preorder(DBSPIntLiteral literal) {
+        BigInteger value = literal.getValue();
+        if (value != null)
+            this.appendable.append(value);
         else
             this.appendable.append(this.nullRepresentation.get());
         return VisitDecision.STOP;
