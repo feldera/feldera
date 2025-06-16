@@ -1,11 +1,11 @@
 import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-import { nubLast } from '$lib/functions/common/array'
+import { findSplice, nubLast, singleton } from '$lib/functions/common/array'
 import { P, match } from 'ts-pattern'
 import { initSystemMessages, type SystemMessage } from '$lib/compositions/initSystemMessages'
 import { untrack } from 'svelte'
 
 type ShownSystemMessage = {
-  messageId: string
+  id: string
   timestamp: number
 }
 
@@ -14,8 +14,8 @@ let systemMessages: SystemMessage[] = $state([])
 const browserOpenedTimestamp = window.performance.timeOrigin
 
 export const useSystemMessages = () => {
-  const shownMessages = useLocalStorage<ShownSystemMessage[]>('shownSystemMessages', [])
-  const shownMessage = (id: string) => shownMessages.value.find((shown) => shown.messageId === id)
+  const shownMessages = useLocalStorage<ShownSystemMessage[]>('shownSystemMessages', []) // Contains info about dismissed messages (when they were last shown)
+  const shownMessage = (id: string) => shownMessages.value.find((message) => message.id === id)
   $effect.pre(() => {
     untrack(() => {
       if (!systemMessages.length) {
@@ -24,7 +24,6 @@ export const useSystemMessages = () => {
     })
   })
   const displayedMessages = $derived.by(() => {
-    // shownMessages.value
     return systemMessages.filter((message) => {
       return match(message.dismissable)
         .with('never', () => true)
@@ -38,7 +37,7 @@ export const useSystemMessages = () => {
             shownTimestamp < Math.max(browserOpenedTimestamp, startOfTheDayTimestamp)
           )
         })
-        .with({ milliseconds: P.select() }, (periodMs) => {
+        .with({ forMs: P.select() }, (periodMs) => {
           const shownTimestamp = shownMessage(message.id)?.timestamp
           return !shownTimestamp || shownTimestamp <= Date.now() - periodMs
         })
@@ -53,15 +52,42 @@ export const useSystemMessages = () => {
     push(message: SystemMessage) {
       systemMessages.push(message)
     },
-    dismiss(messageId: string) {
-      const dismissed = systemMessages.find((message) => message.id === messageId)
+    dismiss(id: string) {
+      const dismissed = systemMessages.find((message) => message.id === id)
       if (!dismissed) {
         return
       }
+      if (dismissed.dismissable === 'never') {
+        throw new Error('The message cannot be dismissed')
+      }
       shownMessages.value = nubLast(
-        [{ messageId, timestamp: Date.now() }, ...shownMessages.value],
-        (shown) => shown.messageId
+        [{ id, timestamp: Date.now() }, ...shownMessages.value],
+        (shown) => shown.id
       )
+    },
+    /**
+     * If the element to replace is found - remove it or replace with the newMessage
+     * If the element to replace is not found - push the newMessage
+     */
+    replace(id: string | RegExp, newMessage: SystemMessage | null) {
+      if (typeof id === 'string' && id === newMessage?.id) {
+        return
+      }
+      const matchesId = (message: { id: string }) =>
+        typeof id === 'string' ? message.id === id : id.test(message.id)
+      if (!findSplice(systemMessages, matchesId, ...singleton(newMessage))) {
+        if (newMessage) {
+          systemMessages.push(newMessage)
+        }
+        return
+      }
+      {
+        if (!findSplice(shownMessages.value, matchesId)) {
+          return
+        }
+        // Trigger reactive update
+        shownMessages.value = shownMessages.value
+      }
     }
   }
 }

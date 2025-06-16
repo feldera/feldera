@@ -299,3 +299,24 @@ export function binarySearchMax(arr: number[], target: number): number {
 }
 
 export const singleton = <T>(value: T | null | undefined) => (nonNull(value) ? [value] : [])
+
+/**
+ * Finds the first element matching the predicate in `arr`, removes it,
+ * and optionally inserts the provided items at that same index.
+ *
+ * @param arr          — The array to mutate.
+ * @param predicate    — Called with (element, index, array); return true to match.
+ * @param insertItems? — If provided, these items will be inserted at the removal index.
+ * @returns The removed element, or `undefined` if no match was found.
+ */
+export function findSplice<T>(
+  arr: T[],
+  predicate: (element: T, index: number, array: T[]) => boolean,
+  ...insertItems: T[]
+): [T] | undefined {
+  const idx = arr.findIndex(predicate)
+  if (idx === -1) return undefined
+
+  // splice: at idx, remove exactly 1 element, then insert any insertItems
+  return arr.splice(idx, 1, ...insertItems) as [T]
+}

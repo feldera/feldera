@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 use crate::api::error::ApiError;
 use crate::api::main::ServerState;
 use crate::error::ManagerError;
-use crate::license::{DisplaySchedule, LicenseInformation, LICENSE_INFO_READ_LOCK_TIMEOUT};
+use crate::license::{DisplaySchedule, LicenseValidity, LICENSE_INFO_READ_LOCK_TIMEOUT};
 
 #[derive(Serialize, ToSchema)]
 pub(crate) struct UpdateInformation {
@@ -34,8 +34,8 @@ pub(crate) struct Configuration {
     pub revision: String,
     /// URL that navigates to the changelog of the current version
     pub changelog_url: String,
-    /// Information about the current Enterprise license
-    pub license_info: Option<LicenseInformation>,
+    /// Information about the checked Enterprise license
+    pub license_validity: Option<LicenseValidity>,
     /// Information about whether a new version is available for the corresponding edition
     pub update_info: Option<UpdateInformation>,
 }
@@ -66,19 +66,27 @@ pub(crate) async fn get_config(
         env!("CARGO_PKG_VERSION")
     }
     .to_string();
-    // Acquire and read the license information. The timeout prevents it from becoming unresponsive
-    // if it cannot acquire the lock, which generally should not happen.
-    let license_info =
-        match tokio::time::timeout(LICENSE_INFO_READ_LOCK_TIMEOUT, state.license_info.read()).await
-        {
-            Ok(license_info) => license_info.clone(),
-            Err(_elapsed) => {
-                return Err(ManagerError::from(ApiError::LockTimeout {
-                    value: "license information".to_string(),
-                    timeout: LICENSE_INFO_READ_LOCK_TIMEOUT,
-                }));
-            }
-        };
+    // Acquire and read the license information check. The timeout prevents it from becoming
+    // unresponsive if it cannot acquire the lock, which generally should not happen.
+    let mut license_check = match tokio::time::timeout(
+        LICENSE_INFO_READ_LOCK_TIMEOUT,
+        state.license_check.read(),
+    )
+    .await
+    {
+        Ok(license_check) => license_check.clone(),
+        Err(_elapsed) => {
+            return Err(ManagerError::from(ApiError::LockTimeout {
+                value: "license validity".to_string(),
+                timeout: LICENSE_INFO_READ_LOCK_TIMEOUT,
+            }));
+        }
+    };
+    if let Some(license_check) = &mut license_check {
+        if let LicenseValidity::Exists(license_info) = &mut license_check.check_outcome {
+            license_info.current += license_check.checked_at.elapsed();
+        }
+    }
     Ok(HttpResponse::Ok().json(Configuration {
         telemetry: state._config.telemetry.clone(),
         edition: if cfg!(feature = "feldera-enterprise") {
@@ -94,7 +102,7 @@ pub(crate) async fn get_config(
         } else {
             format!("https://github.com/feldera/feldera/releases/tag/v{version}")
         },
-        license_info,
+        license_validity: license_check.map(|v| v.check_outcome),
         update_info: None,
     }))
 }

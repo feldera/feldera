@@ -358,10 +358,10 @@ export const $Configuration = {
       type: 'string',
       description: 'Feldera edition: "Open source" or "Enterprise"'
     },
-    license_info: {
+    license_validity: {
       allOf: [
         {
-          $ref: '#/components/schemas/LicenseInformation'
+          $ref: '#/components/schemas/LicenseValidity'
         }
       ],
       nullable: true
@@ -1764,33 +1764,22 @@ The number of offsets must match the number of partitions in the topic.`
 
 export const $LicenseInformation = {
   type: 'object',
-  required: [
-    'expires_at',
-    'is_expired',
-    'is_trial',
-    'description_html',
-    'remind_starting_at',
-    'remind_schedule'
-  ],
+  required: ['current', 'is_trial', 'description_html', 'remind_schedule'],
   properties: {
+    current: {
+      type: 'string',
+      format: 'date-time',
+      description: 'Timestamp when the server responded.'
+    },
     description_html: {
       type: 'string',
       description:
         'Optional description of the advantages of extending the license / upgrading from a trial'
     },
-    expires_at: {
-      type: 'string',
-      format: 'date-time',
-      description: 'Timestamp at which the license expires'
-    },
     extension_url: {
       type: 'string',
       description: 'URL that navigates the user to extend / upgrade their license',
       nullable: true
-    },
-    is_expired: {
-      type: 'boolean',
-      description: 'Whether the license is expired'
     },
     is_trial: {
       type: 'boolean',
@@ -1802,9 +1791,41 @@ export const $LicenseInformation = {
     remind_starting_at: {
       type: 'string',
       format: 'date-time',
-      description: 'Timestamp from which the user should be reminded of the license expiring soon'
+      description: 'Timestamp from which the user should be reminded of the license expiring soon',
+      nullable: true
+    },
+    valid_until: {
+      type: 'string',
+      format: 'date-time',
+      description: 'Timestamp at which point the license expires',
+      nullable: true
     }
   }
+} as const
+
+export const $LicenseValidity = {
+  oneOf: [
+    {
+      type: 'object',
+      required: ['Exists'],
+      properties: {
+        Exists: {
+          $ref: '#/components/schemas/LicenseInformation'
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['DoesNotExistOrNotConfirmed'],
+      properties: {
+        DoesNotExistOrNotConfirmed: {
+          type: 'string',
+          description: `Either the license key is invalid according to the server, or the request that checks with
+the server failed (e.g., if it could not reach the server).`
+        }
+      }
+    }
+  ]
 } as const
 
 export const $MetricsFormat = {
@@ -2208,6 +2229,16 @@ Set to \`null\` to disable periodic clock updates.`,
 
 The default value is \`true\`.`,
           default: true
+        },
+        dev_tweaks: {
+          type: 'object',
+          description: `Optional settings for tweaking Feldera internals.
+
+The available key-value pairs change from one version of Feldera to
+another, so users should not depend on particular settings being
+available, or on their behavior.`,
+          default: {},
+          additionalProperties: {}
         },
         fault_tolerance: {
           allOf: [
@@ -3394,6 +3425,16 @@ Set to \`null\` to disable periodic clock updates.`,
 
 The default value is \`true\`.`,
       default: true
+    },
+    dev_tweaks: {
+      type: 'object',
+      description: `Optional settings for tweaking Feldera internals.
+
+The available key-value pairs change from one version of Feldera to
+another, so users should not depend on particular settings being
+available, or on their behavior.`,
+      default: {},
+      additionalProperties: {}
     },
     fault_tolerance: {
       allOf: [
