@@ -346,7 +346,7 @@
       class="bg-white-dark z-20 rounded text-base text-surface-950-50"
       placement="bottom"
     >
-      Suspending pipelines is only available on Premium and Enterprise plans<br />
+      Suspending pipelines is only available in the Enterprise edition.<br />
       <a
         class="block pt-2 underline"
         href="https://calendly.com/d/cqnj-p63-mbq/feldera-demo"
