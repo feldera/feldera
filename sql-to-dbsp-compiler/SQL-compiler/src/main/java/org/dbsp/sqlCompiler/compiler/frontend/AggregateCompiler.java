@@ -62,6 +62,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
@@ -101,6 +102,10 @@ public class AggregateCompiler implements ICompilerComponent {
     // Deposit compilation result here
     @Nullable
     private IAggregate result;
+    /** The type used to accumulate partial results.
+     * For integers this is a wider type than nullableResultType, for other types
+     * it is nullableResultType. */
+    public final DBSPType partialResultType;
 
     /** Expression that stands for the whole input row in the input zset. */
     private final DBSPVariablePath v;
@@ -137,6 +142,7 @@ public class AggregateCompiler implements ICompilerComponent {
         Utilities.enforce(!call.isDistinct());
         this.aggFunction = call.getAggregation();
         this.filterArgument = call.filterArg;
+        this.partialResultType = computePartialResultType(this.nullableResultType);
         List<Integer> argList = call.getArgList();
         ExpressionCompiler eComp = new ExpressionCompiler(this.aggregateNode, this.v, constants, this.compiler);
         if (argList.isEmpty()) {
@@ -153,6 +159,14 @@ public class AggregateCompiler implements ICompilerComponent {
                     a -> eComp.inputIndex(this.node, a).applyCloneIfNeeded());
             this.aggArgument = new DBSPTupleExpression(fields, false);
         }
+    }
+
+    DBSPType computePartialResultType(DBSPType type) {
+        if (type.is(DBSPTypeInteger.class)) {
+            DBSPTypeCode code = DBSPTypeInteger.largerSigned(type.code);
+            return DBSPTypeInteger.getType(type.getNode(), code, type.mayBeNull);
+        }
+        return type;
     }
 
     boolean isWindowAggregate() {
@@ -467,12 +481,12 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPClosureExpression map;
             DBSPClosureExpression post;
             // map = |v| {
-            //     ( if filter(v) && !v.field.is_null() { cast_non_null(v.field) } else { 0 },
+            //     ( if filter(v) && !v.field.is_null() { cast(v.field, intermediate_type) } else { 0 },
             //       if filter(v) && !v.field.is_null() { 1 } else { 0 },
             //       1 )}
             DBSPExpression one = new DBSPI64Literal(1);
             DBSPExpression realZero = new DBSPI64Literal(0);
-            DBSPExpression typedZero = this.getAggregatedValueType()
+            DBSPExpression typedZero = this.partialResultType
                     .withMayBeNull(false).to(IsNumericType.class).getZero();
             DBSPExpression agg = this.getAggregatedValue().is_null().not();
 
@@ -490,7 +504,7 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression second = new DBSPIfExpression(node, condition, one, realZero);
             DBSPExpression mapBody = new DBSPTupleExpression(first, second, one);
             DBSPVariablePath postVar = mapBody.getType().var();
-            // post = |x| if (x.1 != 0) { Some(x.0) } else { None }
+            // post = |x| if (x.1 != 0) { cast(Some(x.0), result_type) } else { None }
             DBSPExpression postBody = new DBSPIfExpression(node,
                     ExpressionCompiler.makeBinaryExpression(node,
                             DBSPTypeBool.create(false), DBSPOpcode.NEQ, postVar.field(1), realZero),
@@ -522,9 +536,11 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         DBSPVariablePath accumulator = this.resultType.var();
         if (this.linearAllowed && !this.fp()) {
+            DBSPExpression typedZero = this.partialResultType
+                    .withMayBeNull(false).to(IsNumericType.class).getZero();
             DBSPClosureExpression map;
             DBSPClosureExpression post;
-            // map = |v| ( if filter(v) && !v.field.is_null() { v.field } else { 0 }, 1)
+            // map = |v| ( if filter(v) && !v.field.is_null() { cast(v.field, intermediate_type) } else { 0 }, 1)
             DBSPExpression one = new DBSPI64Literal(1);
             DBSPExpression agg = this.getAggregatedValue().is_null().not();
 
@@ -536,11 +552,12 @@ public class AggregateCompiler implements ICompilerComponent {
             else
                 condition = agg;
             DBSPExpression first = new DBSPIfExpression(
-                    this.node, condition, this.getAggregatedValue().cast(this.node, zero.getType(), false), zero);
+                    this.node, condition, this.getAggregatedValue().cast(this.node, typedZero.getType(), false),
+                    typedZero);
             DBSPExpression mapBody = new DBSPTupleExpression(first, one);
             DBSPVariablePath postVar = mapBody.getType().var();
-            // post = |x| x.0
-            post = postVar.field(0).closure(postVar);
+            // post = |x| cast(x.0, result_type)
+            post = postVar.field(0).cast(this.node, this.resultType, false).closure(postVar);
             map = mapBody.closure(this.v);
             this.setResult(new LinearAggregate(this.node, map, post, zero));
         } else {
@@ -586,10 +603,10 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPClosureExpression map;
             DBSPClosureExpression post;
             // map = |v| {
-            //     ( if filter(v) && !v.field.is_null() { cast_non_null(v.field) } else { 0 },
+            //     ( if filter(v) && !v.field.is_null() { cast(v.field, intermediate_type) } else { 0 },
             //       if filter(v) && !v.field.is_null() { 1 } else { 0 },
             //       1 )}
-            IsNumericType nonNullAggregateType = this.getAggregatedValueType()
+            IsNumericType nonNullAggregateType = this.partialResultType
                     .withMayBeNull(false)
                     .to(IsNumericType.class);
             DBSPExpression one = nonNullAggregateType.getOne();
@@ -610,9 +627,9 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression second = new DBSPIfExpression(node, condition, one, typedZero);
             DBSPExpression mapBody = new DBSPTupleExpression(first, second, one);
             DBSPVariablePath postVar = mapBody.getType().var();
-            // post = |x| if (x.1 != 0) { Some(x.0 / x.1) } else { None }
+            // post = |x| if (x.1 != 0) { cast(Some(x.0 / x.1), result_type) } else { None }
             DBSPExpression div = ExpressionCompiler.makeBinaryExpression(node,
-                    this.resultType, DBSPOpcode.DIV, postVar.field(0), postVar.field(1));
+                    this.partialResultType, DBSPOpcode.DIV, postVar.field(0), postVar.field(1));
             DBSPExpression postBody = new DBSPIfExpression(node,
                     ExpressionCompiler.makeBinaryExpression(node,
                             DBSPTypeBool.create(false), DBSPOpcode.NEQ, postVar.field(1), typedZero),

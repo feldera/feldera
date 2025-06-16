@@ -54,6 +54,10 @@ pub enum Variant {
     SmallInt(i16),
     Int(i32),
     BigInt(i64),
+    UTinyInt(u8),
+    USmallInt(u16),
+    UInt(u32),
+    UBigInt(u64),
     Real(F32),
     Double(F64),
     SqlDecimal(SqlDecimal),
@@ -374,6 +378,10 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
                 Variant::SmallInt(v) => v.serialize_with_context(serializer, context),
                 Variant::Int(v) => v.serialize_with_context(serializer, context),
                 Variant::BigInt(v) => v.serialize_with_context(serializer, context),
+                Variant::UTinyInt(v) => v.serialize_with_context(serializer, context),
+                Variant::USmallInt(v) => v.serialize_with_context(serializer, context),
+                Variant::UInt(v) => v.serialize_with_context(serializer, context),
+                Variant::UBigInt(v) => v.serialize_with_context(serializer, context),
                 Variant::Real(v) => v.serialize_with_context(serializer, context),
                 Variant::Double(v) => v.serialize_with_context(serializer, context),
                 Variant::SqlDecimal(v) => v.serialize_with_context(serializer, context),
@@ -404,6 +412,10 @@ impl Variant {
             Variant::SmallInt(_) => "SMALLINT",
             Variant::Int(_) => "INTEGER",
             Variant::BigInt(_) => "BIGINT",
+            Variant::UTinyInt(_) => "TINYINT UNSIGNED",
+            Variant::USmallInt(_) => "SMALLINT UNSIGNED",
+            Variant::UInt(_) => "INTEGER UNSIGNED",
+            Variant::UBigInt(_) => "BIGINT UNSIGNED",
             Variant::Real(_) => "REAL",
             Variant::Double(_) => "DOUBLE",
             Variant::SqlDecimal(_) => "DECIMAL",
@@ -443,6 +455,10 @@ impl Variant {
                     Variant::SmallInt(index) => index as isize,
                     Variant::Int(index) => index as isize,
                     Variant::BigInt(index) => index as isize,
+                    Variant::UTinyInt(index) => index as isize,
+                    Variant::USmallInt(index) => index as isize,
+                    Variant::UInt(index) => index as isize,
+                    Variant::UBigInt(index) => index as isize,
                     _ => 0, // out of bounds
                 } - 1; // Array indexes in SQL start from 1!
                 if (index < 0) || (index as usize >= value.len()) {
@@ -492,6 +508,10 @@ from!(TinyInt, i8);
 from!(SmallInt, i16);
 from!(Int, i32);
 from!(BigInt, i64);
+from!(UTinyInt, u8);
+from!(USmallInt, u16);
+from!(UInt, u32);
+from!(UBigInt, u64);
 from!(Real, F32);
 from!(Double, F64);
 from!(SqlDecimal, SqlDecimal);

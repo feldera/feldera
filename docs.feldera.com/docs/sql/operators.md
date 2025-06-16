@@ -69,3 +69,7 @@ This table shows the operators associativity, starting from highest to lowest:
     <td>Boolean</td>
   </tr>
 </table>
+
+Arithmetic operations combining signed and unsigned values will
+produce a result with the wider type; if both types have the same
+width, the result is unsigned;

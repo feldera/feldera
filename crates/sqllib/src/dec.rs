@@ -458,6 +458,24 @@ impl From<i64> for SqlDecimal {
     }
 }
 
+impl From<u8> for SqlDecimal {
+    fn from(n: u8) -> Self {
+        Self::new(LargeDecimal::from(n))
+    }
+}
+
+impl From<u16> for SqlDecimal {
+    fn from(n: u16) -> Self {
+        Self::new(LargeDecimal::from(n))
+    }
+}
+
+impl From<u32> for SqlDecimal {
+    fn from(n: u32) -> Self {
+        Self::new(LargeDecimal::from(n))
+    }
+}
+
 impl From<u64> for SqlDecimal {
     fn from(n: u64) -> Self {
         Self::new(LargeDecimal::from(n))

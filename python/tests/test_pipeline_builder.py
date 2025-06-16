@@ -1027,13 +1027,13 @@ Code snippet:
             pipeline.pause()
 
         got_err: str = err.exception.args[0].strip()
-        assert "attempt to add with overflow" in got_err
+        assert "causes overflow" in got_err
 
         with self.assertRaises(RuntimeError) as err:
             pipeline.start()
 
         got_err: str = err.exception.args[0].strip()
-        assert "attempt to add with overflow" in got_err
+        assert "causes overflow" in got_err
 
         pipeline.shutdown()
         pipeline.delete()

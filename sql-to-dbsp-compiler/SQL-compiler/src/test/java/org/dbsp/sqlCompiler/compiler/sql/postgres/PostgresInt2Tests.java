@@ -275,9 +275,9 @@ public class PostgresInt2Tests extends SqlIoTest {
 
     @Test
     public void testSelectOverflow() {
-        this.qf("SELECT i.f1, i.f1 * 2::INT2 AS x FROM INT2_TBL i", "attempt to multiply with overflow");
-        this.qf( "SELECT i.f1, i.f1 + '2'::INT2 AS x FROM INT2_TBL i", "attempt to add with overflow");
-        this.qf("SELECT i.f1, i.f1 - '2'::INT2 AS x FROM INT2_TBL i", "attempt to subtract with overflow");
+        this.qf("SELECT i.f1, i.f1 * 2::INT2 AS x FROM INT2_TBL i", "causes overflow");
+        this.qf( "SELECT i.f1, i.f1 + '2'::INT2 AS x FROM INT2_TBL i", "causes overflow");
+        this.qf("SELECT i.f1, i.f1 - '2'::INT2 AS x FROM INT2_TBL i", "causes overflow");
     }
 
     @Test
@@ -293,7 +293,7 @@ public class PostgresInt2Tests extends SqlIoTest {
 
     @Test
     public void testINT2MINOverflowError() {
-        this.runtimeConstantFail("SELECT (-32768)::int2 * (-1)::int2", "attempt to multiply with overflow");
-        this.runtimeConstantFail("SELECT (-32768)::int2 / (-1)::int2", "attempt to divide with overflow");
+        this.runtimeConstantFail("SELECT (-32768)::int2 * (-1)::int2", "causes overflow");
+        this.runtimeConstantFail("SELECT (-32768)::int2 / (-1)::int2", "causes overflow");
     }
 }

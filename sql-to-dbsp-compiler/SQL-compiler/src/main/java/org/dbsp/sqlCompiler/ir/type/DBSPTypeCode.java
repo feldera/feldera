@@ -27,6 +27,7 @@ public enum DBSPTypeCode {
     TIME("TIME", "Time", "Time"),
     TIMESTAMP("TIMESTAMP", "Timestamp", "Timestamp"),
     TIMESTAMP_TZ("TIMESTAMP WITH TIME ZONE", "", ""),
+    UINT8(null, "u8", "u8"),
     UINT16(null, "u16", "u16"),
     UINT32(null, "u32", "u32"),
     UINT64(null, "u64", "u64"),

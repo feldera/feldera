@@ -137,7 +137,7 @@ public class Regression1Tests extends SqlIoTest {
         return !v.equals("NULL");
     }
 
-    @Test @Ignore("Until bug is fixed")
+    @Test
     public void issue3972() {
         this.getCC("""
                 CREATE TABLE tbl(

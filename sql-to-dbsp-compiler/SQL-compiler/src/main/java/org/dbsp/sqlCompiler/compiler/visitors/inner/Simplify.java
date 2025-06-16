@@ -66,6 +66,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
@@ -305,8 +306,13 @@ public class Simplify extends ExpressionTranslator {
                             case INT128:
                                 result = new DBSPI128Literal(source.getNode(), type, BigInteger.valueOf(i.value));
                                 break;
+                            case UINT8:
+                                if (i.value >= 0 && i.value <= 255) {
+                                    result = new DBSPU8Literal(source.getNode(), type, i.value);
+                                }
+                                break;
                             case UINT16:
-                                if (i.value >= 0 && i.value <= 65536) {
+                                if (i.value >= 0 && i.value <= 65535) {
                                     result = new DBSPU16Literal(source.getNode(), type, i.value);
                                 }
                                 break;

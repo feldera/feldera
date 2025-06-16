@@ -114,6 +114,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
@@ -883,7 +884,20 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPU8Literal literal) {
+        if (literal.isNull())
+            return this.doNull(literal);
+        String val = Integer.toString(Objects.requireNonNull(literal.value));
+        this.push(literal);
+        this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        this.pop(literal);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPU16Literal literal) {
+        if (literal.isNull())
+            return this.doNull(literal);
         String val = Integer.toString(Objects.requireNonNull(literal.value));
         this.push(literal);
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
@@ -893,6 +907,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPU32Literal literal) {
+        if (literal.isNull())
+            return this.doNull(literal);
         String val = Long.toString(Objects.requireNonNull(literal.value));
         this.push(literal);
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
@@ -1162,6 +1178,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPU64Literal literal) {
+        if (literal.isNull())
+            return this.doNull(literal);
         String val = Objects.requireNonNull(literal.value).toString();
         this.push(literal);
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));

@@ -398,6 +398,15 @@ impl MulByRef<isize> for i64 {
     }
 }
 
+impl MulByRef<isize> for i128 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
+        (*self * (*w as i128)) as Self
+    }
+}
+
 impl MulByRef<isize> for f32 {
     type Output = Self;
 
@@ -472,6 +481,15 @@ impl MulByRef<i64> for isize {
     }
 }
 
+impl MulByRef<i64> for i128 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        (*self * (*w as i128)) as Self
+    }
+}
+
 impl MulByRef<i64> for f32 {
     type Output = Self;
 
@@ -533,7 +551,16 @@ impl MulByRef<i32> for i64 {
 
     #[inline]
     fn mul_by_ref(&self, w: &i32) -> Self::Output {
-        (*self as i32 * w) as Self
+        (*self * (*w as i64)) as Self
+    }
+}
+
+impl MulByRef<i32> for i128 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i32) -> Self::Output {
+        (*self * (*w as i128)) as Self
     }
 }
 

@@ -56,6 +56,10 @@ public final class DBSPU16Literal extends DBSPIntLiteral implements IsNumericLit
         return Objects.equals(value, that.value);
     }
 
+    public DBSPU16Literal() {
+        this(null, true);
+    }
+
     public DBSPU16Literal(CalciteObject node, DBSPType type, @Nullable Integer value) {
         super(node, type, value == null);
         if (value != null && value < 0)

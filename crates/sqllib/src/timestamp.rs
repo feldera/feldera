@@ -82,6 +82,12 @@ impl Debug for Timestamp {
     }
 }
 
+impl fmt::Display for Timestamp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        <Self as Debug>::fmt(self, f)
+    }
+}
+
 impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
     fn serialize_with_context<S>(
         &self,

@@ -76,6 +76,10 @@ public abstract class DBSPLiteral extends DBSPExpression
             case INT16 -> new DBSPI16Literal();
             case INT32 -> new DBSPI32Literal();
             case INT64 -> new DBSPI64Literal();
+            case UINT8 -> new DBSPU8Literal();
+            case UINT16 -> new DBSPU16Literal();
+            case UINT32 -> new DBSPU32Literal();
+            case UINT64 -> new DBSPU64Literal();
             case INT128 -> new DBSPI128Literal();
             case BOOL -> new DBSPBoolLiteral();
             case DATE -> new DBSPDateLiteral();
