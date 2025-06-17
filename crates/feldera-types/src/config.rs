@@ -272,6 +272,11 @@ pub struct SyncConfig {
     /// This may include a path to a folder inside the bucket (e.g., `my-bucket/data`).
     pub bucket: String,
 
+    /// The region that this bucket is in.
+    ///
+    /// Leave empty for Minio or the default region (`us-east-1` for AWS).
+    pub region: Option<String>,
+
     /// The name of the cloud storage provider (e.g., `"AWS"`, `"Minio"`).
     ///
     /// Used for provider-specific behavior in rclone.

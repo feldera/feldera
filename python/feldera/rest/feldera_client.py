@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Generator
 
 from feldera.rest.config import Config
+from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.errors import FelderaTimeoutError
 from feldera.rest.pipeline import Pipeline
 from feldera.rest._httprequests import HttpRequests
@@ -381,15 +382,51 @@ Reason: The pipeline is in a FAILED state due to the following error:
             f"timeout error: pipeline '{pipeline_name}' did not suspend in {timeout_s} seconds"
         )
 
-    def checkpoint_pipeline(self, pipeline_name: str):
+    def checkpoint_pipeline(self, pipeline_name: str) -> int:
         """
         Checkpoint a fault-tolerant pipeline
 
         :param pipeline_name: The name of the pipeline to checkpoint
         """
 
-        self.http.post(
+        resp = self.http.post(
             path=f"/pipelines/{pipeline_name}/checkpoint",
+        )
+
+        return int(resp.get("checkpoint_sequence_number"))
+
+    def checkpoint_pipeline_status(self, pipeline_name: str) -> dict:
+        """
+        Gets the checkpoint status
+
+        :param pipeline_name: The name of the pipeline to check the checkpoint status of.
+        """
+
+        return self.http.get(path=f"/pipelines/{pipeline_name}/checkpoint_status")
+
+    def sync_checkpoint(self, pipeline_name: str) -> str:
+        """
+        Triggers a checkpoint synchronization for the specified pipeline.
+        Check the status by calling `pipeline_sync_checkpoint_status`.
+
+        :param pipeline_name: Name of the pipeline whose checkpoint should be synchronized.
+        """
+
+        resp = self.http.post(
+            path=f"/pipelines/{pipeline_name}/checkpoint/sync",
+        )
+
+        return resp.get("checkpoint_uuid")
+
+    def sync_checkpoint_status(self, pipeline_name: str) -> dict:
+        """
+        Gets the checkpoint sync status of the pipeline
+
+        :param pipeline_name: The name of the pipeline to check the checkpoint synchronization status of.
+        """
+
+        return self.http.get(
+            path=f"/pipelines/{pipeline_name}/checkpoint/sync_status",
         )
 
     def push_to_pipeline(
@@ -674,3 +711,12 @@ Reason: The pipeline is in a FAILED state due to the following error:
         self.http.post(
             path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/start",
         )
+
+    def get_config(self) -> FelderaConfig:
+        """
+        Get general feldera configuration.
+        """
+
+        resp = self.http.get(path="/config")
+
+        return FelderaConfig(resp)

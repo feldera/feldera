@@ -63,7 +63,7 @@ class RuntimeConfig:
     def __init__(
         self,
         workers: Optional[int] = None,
-        storage: Optional[Storage] = None,
+        storage: Optional[Storage | bool] = None,
         tracing: Optional[bool] = False,
         tracing_endpoint_jaeger: Optional[str] = "",
         cpu_profiler: bool = True,
@@ -74,7 +74,6 @@ class RuntimeConfig:
         resources: Optional[Resources] = None,
     ):
         self.workers = workers
-        self.storage = storage
         self.tracing = tracing
         self.tracing_endpoint_jaeger = tracing_endpoint_jaeger
         self.cpu_profiler = cpu_profiler
@@ -84,6 +83,10 @@ class RuntimeConfig:
         self.provisioning_timeout_secs = provisioning_timeout_secs
         if resources is not None:
             self.resources = resources.__dict__
+        if isinstance(storage, bool):
+            self.storage = storage
+        if isinstance(storage, Storage):
+            self.storage = storage.__dict__
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):

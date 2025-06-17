@@ -105,6 +105,13 @@ impl Checkpointer {
         Ok(usage)
     }
 
+    pub(super) fn gather_batches_for_checkpoint(
+        &self,
+        cpm: &CheckpointMetadata,
+    ) -> Result<HashSet<StoragePath>, StorageError> {
+        self.backend.gather_batches_for_checkpoint(cpm)
+    }
+
     /// Remove unexpected/leftover files from a previous run in the storage
     /// directory.  Returns the amount of storage still in use.
     fn gc_startup(&self) -> Result<u64, Error> {
@@ -196,7 +203,7 @@ impl Checkpointer {
 
     /// Removes `file` and logs any error.
     fn remove_batch_file(&self, file: &StoragePath) {
-        match self.backend.delete(file) {
+        match self.backend.delete_if_exists(file) {
             Ok(_) => {
                 tracing::debug!("Removed file {file}");
             }
@@ -236,8 +243,8 @@ impl Checkpointer {
             // to remove the checkpoint files again (see also [`Self::gc_startup`]).
             self.update_checkpoint_file()?;
 
-            let potentially_remove = self.backend.gather_batches_for_checkpoint(&cp_to_remove)?;
-            let need_to_keep = self.backend.gather_batches_for_checkpoint(next_in_line)?;
+            let potentially_remove = self.gather_batches_for_checkpoint(&cp_to_remove)?;
+            let need_to_keep = self.gather_batches_for_checkpoint(next_in_line)?;
             for file in potentially_remove.difference(&need_to_keep) {
                 self.remove_batch_file(file);
             }

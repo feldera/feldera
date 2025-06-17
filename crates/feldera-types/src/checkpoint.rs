@@ -97,7 +97,7 @@ impl CheckpointMetadata {
 /// These files exist to be a simple format for higher-level code and outside
 /// tools to parse.  The spine itself writes them for that purpose, but it does
 /// not read them.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PSpineBatches {
     pub files: Vec<String>,
 }

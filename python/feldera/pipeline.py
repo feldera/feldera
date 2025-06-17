@@ -9,7 +9,7 @@ from collections import deque
 from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
-from feldera.enums import PipelineStatus, ProgramStatus
+from feldera.enums import PipelineStatus, ProgramStatus, CheckpointStatus
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.feldera_client import FelderaClient
 from feldera._callback_runner import _CallbackRunnerInstruction, CallbackRunner
@@ -104,7 +104,9 @@ class Pipeline:
             tbl.name.lower() for tbl in pipeline.tables
         ]:
             raise ValueError(
-                f"Cannot push to table '{table_name}': table with this name does not exist in the '{self.name}' pipeline"
+                f"Cannot push to table '{
+                    table_name
+                }': table with this name does not exist in the '{self.name}' pipeline"
             )
         else:
             # consider validating the schema here
@@ -297,10 +299,14 @@ class Pipeline:
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     raise TimeoutError(
-                        f"timeout ({timeout_s}s) reached while waiting for pipeline '{self.name}' to complete"
+                        f"timeout ({timeout_s}s) reached while waiting for pipeline '{
+                            self.name
+                        }' to complete"
                     )
                 logging.debug(
-                    f"waiting for pipeline {self.name} to complete: elapsed time {elapsed}s, timeout: {timeout_s}s"
+                    f"waiting for pipeline {self.name} to complete: elapsed time {
+                        elapsed
+                    }s, timeout: {timeout_s}s"
                 )
 
             metrics: dict = self.client.get_pipeline_stats(self.name).get(
@@ -407,11 +413,15 @@ resume a paused pipeline."""
         """
         if idle_interval_s > timeout_s:
             raise ValueError(
-                f"idle interval ({idle_interval_s}s) cannot be larger than timeout ({timeout_s}s)"
+                f"idle interval ({idle_interval_s}s) cannot be larger than timeout ({
+                    timeout_s
+                }s)"
             )
         if poll_interval_s > timeout_s:
             raise ValueError(
-                f"poll interval ({poll_interval_s}s) cannot be larger than timeout ({timeout_s}s)"
+                f"poll interval ({poll_interval_s}s) cannot be larger than timeout ({
+                    timeout_s
+                }s)"
             )
         if poll_interval_s > idle_interval_s:
             raise ValueError(
@@ -547,15 +557,121 @@ resume a paused pipeline."""
             if err.status_code == 404:
                 raise RuntimeError(f"Pipeline with name {name} not found")
 
-    def checkpoint(self):
+    def checkpoint(self, wait: bool = False, timeout_s=300) -> int:
         """
         Checkpoints this pipeline, if fault-tolerance is enabled.
         Fault Tolerance in Feldera: <https://docs.feldera.com/pipelines/fault-tolerance/>
 
+        :param wait: If true, will block until the checkpoint completes.
+        :param timeout_s: The maximum time (in seconds) to wait for the checkpoint to complete.
+
         :raises FelderaAPIError: If checkpointing is not enabled.
         """
 
-        self.client.checkpoint_pipeline(self.name)
+        seq = self.client.checkpoint_pipeline(self.name)
+
+        if not wait:
+            return seq
+
+        start = time.time()
+
+        while True:
+            elapsed = time.monotonic() - start
+            if elapsed > timeout_s:
+                raise TimeoutError(
+                    f"timeout ({timeout_s}s) reached while waiting for pipeline '{
+                        self.name
+                    }' to make checkpoint '{seq}'"
+                )
+            status = self.checkpoint_status(seq)
+            if status == CheckpointStatus.InProgress:
+                time.sleep(0.1)
+                continue
+
+            return status
+
+        return seq
+
+    def checkpoint_status(self, seq: int) -> CheckpointStatus:
+        """
+        Checks the status of the given checkpoint.
+
+        :param seq: The checkpoint sequence number.
+        """
+
+        resp = self.client.checkpoint_pipeline_status(self.name)
+        success = resp.get("success")
+        if seq == success:
+            return CheckpointStatus.Success
+
+        fail = resp.get("failure") or {}
+        if seq == fail.get("sequence_number"):
+            failure = CheckpointStatus.Failure
+            failure.error = fail.get("error", "")
+            return failure
+
+        if (success is None) or seq > success:
+            return CheckpointStatus.InProgress
+
+        if seq < success:
+            return CheckpointStatus.Unknown
+
+    def sync_checkpoint(self, wait: bool = False, timeout_s=300) -> str:
+        """
+        Syncs this checkpoint to object store.
+
+        :param wait: If true, will block until the checkpoint sync opeartion completes.
+        :param timeout_s: The maximum time (in seconds) to wait for the checkpoint to complete syncing.
+
+        :raises FelderaAPIError: If no checkpoints have been made.
+        """
+
+        uuid = self.client.sync_checkpoint(self.name)
+
+        if not wait:
+            return uuid
+
+        start = time.time()
+
+        while True:
+            elapsed = time.monotonic() - start
+            if elapsed > timeout_s:
+                raise TimeoutError(
+                    f"timeout ({timeout_s}s) reached while waiting for pipeline '{
+                        self.name
+                    }' to sync checkpoint '{uuid}'"
+                )
+            status = self.sync_checkpoint_status(uuid)
+            if status in [CheckpointStatus.InProgress, CheckpointStatus.Unknown]:
+                time.sleep(0.1)
+                continue
+
+            return status
+
+        return uuid
+
+    def sync_checkpoint_status(self, uuid: str) -> CheckpointStatus:
+        """
+        Checks the status of the given checkpoint sync operation.
+        If the checkpoint is currently being synchronized, returns
+        `CheckpointStatus.Unknown`.
+
+        :param uuid: The checkpoint uuid.
+        """
+
+        resp = self.client.sync_checkpoint_status(self.name)
+        success = resp.get("success")
+
+        if uuid == success:
+            return CheckpointStatus.Success
+
+        fail = resp.get("failure") or {}
+        if uuid == fail.get("uuid"):
+            failure = CheckpointStatus.Failure
+            failure.error = fail.get("error", "")
+            return failure
+
+        return CheckpointStatus.Unknown
 
     def query(self, query: str) -> Generator[Mapping[str, Any], None, None]:
         """

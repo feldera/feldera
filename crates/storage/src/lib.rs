@@ -205,10 +205,7 @@ impl dyn StorageBackend {
         for spine in spines {
             let pspine_batches = self.read_json::<PSpineBatches>(&spine)?;
             for file in pspine_batches.files {
-                let path = file.into();
-                if let Ok(true) = self.exists(&path) {
-                    batch_files_in_commit.insert(path);
-                }
+                batch_files_in_commit.insert(file.into());
             }
         }
 

@@ -6965,6 +6965,11 @@
             "description": "The name of the cloud storage provider (e.g., `\"AWS\"`, `\"Minio\"`).\n\nUsed for provider-specific behavior in rclone.\nIf omitted, defaults to `\"Other\"`.\n\nSee [rclone S3 provider documentation](https://rclone.org/s3/#s3-provider)",
             "nullable": true
           },
+          "region": {
+            "type": "string",
+            "description": "The region that this bucket is in.\n\nLeave empty for Minio or the default region (`us-east-1` for AWS).",
+            "nullable": true
+          },
           "secret_key": {
             "type": "string",
             "description": "The secret key used together with the access key for authentication.\n\nIf not provided, rclone will fall back to environment-based credentials, such as\n`RCLONE_S3_SECRET_ACCESS_KEY`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),\nthis can be left empty to allow automatic authentication via the pod's service account.",
