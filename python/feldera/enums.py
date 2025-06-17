@@ -237,3 +237,24 @@ class ProgramStatus(Enum):
         """
 
         return self.error
+
+
+class CheckpointStatus(Enum):
+    Success = 1
+    Failure = 2
+    InProgress = 3
+    Unknown = 4
+
+    def __init__(self, value):
+        self.error: Optional[str] = None
+        self._value_ = value
+
+    def __eq__(self, other):
+        return self.value == other.value
+
+    def get_error(self) -> Optional[str]:
+        """
+        Returns the error, if any.
+        """
+
+        return self.error

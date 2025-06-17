@@ -706,12 +706,8 @@ Code snippet:
 
         pipeline.delete()
 
-    # doesn't run in CI
     def test_suspend(self):
-        in_ci = os.environ.get("IN_CI")
-
-        if in_ci == "1":
-            # if running in CI, skip the test
+        if not TEST_CLIENT.get_config().edition.is_enterprise():
             return
 
         TBL_NAME = "items"

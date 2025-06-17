@@ -1028,9 +1028,11 @@ async fn checkpoint_sync(state: WebData<ServerState>) -> Result<impl Responder, 
                 let chk = state.lock().unwrap().last_checkpoint;
                 chk
             }) else {
-                return Ok(HttpResponse::BadRequest().json(
-                    serde_json::json!({"error": "no checkpoints found; make a POST request to /checkpoint to make a new checkpoint"}),
-                ));
+                return Ok(HttpResponse::BadRequest().json(ErrorResponse {
+                    message: "no checkpoints found; make a POST request to `/checkpoint` to make a new checkpoint".to_string(),
+                    error_code: "400".into(),
+                    details: serde_json::Value::Null,
+                }));
             };
 
             let state = state.sync_checkpoint_state.clone();

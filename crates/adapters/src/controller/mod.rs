@@ -669,41 +669,6 @@ impl CircuitThread {
             .as_ref()
             .map(|storage| storage.backend.clone());
 
-        #[cfg(feature = "feldera-enterprise")]
-        if let Some((_, options)) = config.storage() {
-            use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
-            use feldera_types::config::FileBackendConfig;
-
-            if let feldera_types::config::StorageBackendConfig::File(FileBackendConfig {
-                sync: Some(ref sync),
-                ..
-            }) = options.backend
-            {
-                if sync.start_from_checkpoint {
-                    let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
-                        .into_iter()
-                        .next()
-                    else {
-                        return Err(ControllerError::checkpoint_fetch_error(
-                            "no checkpoint synchronizer found; are enterprise features enabled?"
-                                .to_owned(),
-                        ));
-                    };
-
-                    let Some(storage) = storage.clone() else {
-                        return Err(ControllerError::checkpoint_fetch_error(
-                            "no checkpoint synchronizer found; are enterprise features enabled?"
-                                .to_owned(),
-                        ));
-                    };
-
-                    synchronizer
-                        .pull(storage, sync.to_owned())
-                        .map_err(|e| ControllerError::checkpoint_fetch_error(e.to_string()))?;
-                }
-            }
-        }
-
         let (mut circuit, catalog) = circuit_factory(circuit_config)?;
         let lir = circuit.lir()?;
         let (parker, backpressure_thread, command_receiver, controller) =
@@ -1951,6 +1916,36 @@ impl ControllerInit {
                 .map_err(|error| {
                     ControllerError::storage_error("failed to initialize storage", error)
                 })?;
+
+        #[cfg(feature = "feldera-enterprise")]
+        {
+            use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
+            use feldera_types::config::FileBackendConfig;
+
+            if let feldera_types::config::StorageBackendConfig::File(FileBackendConfig {
+                sync: Some(ref sync),
+                ..
+            }) = storage.options.backend
+            {
+                if sync.start_from_checkpoint {
+                    let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
+                        .into_iter()
+                        .next()
+                    else {
+                        return Err(ControllerError::checkpoint_fetch_error(
+                            "no checkpoint synchronizer found; are enterprise features enabled?"
+                                .to_owned(),
+                        ));
+                    };
+
+                    tracing::info!("pulling checkpoints from object store");
+
+                    synchronizer
+                        .pull(storage.backend.clone(), sync.to_owned())
+                        .map_err(|e| ControllerError::checkpoint_fetch_error(e.to_string()))?;
+                }
+            }
+        }
 
         // Try to read a checkpoint.
         let checkpoint = match Checkpoint::read(&*storage.backend, &StoragePath::from(STATE_FILE)) {
