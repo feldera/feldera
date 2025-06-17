@@ -75,17 +75,24 @@ def discover_sqlite_tests(class_name: str, dir_name: str, extra_register=bool):
     """Find all tests loaded by the current module and register them"""
     ta = discover_tests(class_name, dir_name)
 
+    # list of tables starting with `orderby_tbl_sqlite`
+    sqlite_tables = [t for t in ta.tables if t.name.startswith("orderby_tbl_sqlite")]
+
     if extra_register:
         # Dynamically add parameterized ORDER BY views for all existing tables
-        for table in (
-            ta.tables
-        ):  # iterate over the list of table objects registered in the Accumulator
+        for table in sqlite_tables:  # iterate only over the list of table objects starting with `orderby_tbl_sqlite` registered in the Accumulator
             AutomateOrderByTests(table.name).register(ta)
+
+    sqlite_table_names = {t.name for t in sqlite_tables}
+    # list of views that reference the tables starting with `orderby_tbl_sqlite`
+    sqlite_views = [
+        v for v in ta.views if any(tbl in v.sql for tbl in sqlite_table_names)
+    ]
 
     # Connect to SQLite to run tables/views
     con = sqlite3.connect(sqlite_db_path)
     runner = SQLiteRunner(con)
-    runner.evaluate_views(ta.tables, ta.views)
+    runner.evaluate_views(sqlite_tables, sqlite_views)
     con.close()  # Close the connection to SQLite and delete the database
 
     return ta

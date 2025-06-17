@@ -3,9 +3,11 @@
 
 from tests.aggregate_tests.aggtst_base import *  # noqa: F403
 from tests.orderby_tests.sqlite_runner import discover_sqlite_tests  # noqa: F403
-from tests.orderby_tests.orderby_tbl import *  # noqa: F403
+from tests.orderby_tests.orderby_tbl_sqlite import *  # noqa: F403
+from tests.orderby_tests.orderby_tbl_manual import *  # noqa: F403
 from tests.orderby_tests.orderby_int import *  # noqa: F403
 from tests.orderby_tests.orderby_varchar import *  # noqa: F403
+from tests.orderby_tests.orderby_binary_ts import *  # noqa: F403
 
 
 def main():
