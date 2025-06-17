@@ -4,6 +4,7 @@ import re
 from tests.aggregate_tests.aggtst_base import Table, View, DEBUG
 from tests.aggregate_tests.atest_run import discover_tests
 from tests.orderby_tests.automate_orderby_views import AutomateOrderByTests
+from decimal import Decimal
 
 
 sqlite_db_path = ":memory:"  # Create an in-memory database
@@ -100,4 +101,14 @@ def discover_sqlite_tests(class_name: str, dir_name: str, extra_register=bool):
 
 def normalize_sqlite_rows(columns, rows):
     """Convert result from SQLite to lists of dicts with column names"""
-    return [dict(zip(columns, row)) for row in rows]
+    result = []
+    for row in rows:
+        row_dict = {}
+        for col, value in zip(columns, row):
+            # If output contains Floating Point values for any column, convert them to Decimal values
+            if isinstance(value, float):
+                row_dict[col] = Decimal(str(value))
+            else:
+                row_dict[col] = value
+        result.append(row_dict)
+    return result

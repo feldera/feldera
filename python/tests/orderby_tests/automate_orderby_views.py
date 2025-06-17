@@ -2,14 +2,6 @@ from itertools import product
 from tests.aggregate_tests.aggtst_base import TstView
 
 
-# list of table names where column c1 gets cast to varchar
-convert_vchar_tbl = [
-    "orderby_tbl_sqlite_decimal_char",
-    "orderby_tbl_sqlite_real_date",
-    "orderby_tbl_sqlite_double_date",
-]
-
-
 def create_orderby_clause(col: str, direction: str, nulls: str):
     """Attach the ORDER BY fragment for each column in the view query"""
     clause = f"{col} {direction}"
@@ -45,13 +37,9 @@ class AutomateOrderByTests:
             )
             # Assign names to views based on the table name and the value of the counter
             view_name = f"view_{self.table_name}{count}"
-            if self.table_name in convert_vchar_tbl:
-                sql1 = "CAST(c1 AS VARCHAR) AS c1, c2"
-            else:
-                sql1 = "*"
             sql = f"""CREATE MATERIALIZED VIEW {view_name} AS
                           SELECT
-                          {sql1}
+                          *
                           FROM {self.table_name}
                           ORDER BY {order_clause}
                           LIMIT 3"""
