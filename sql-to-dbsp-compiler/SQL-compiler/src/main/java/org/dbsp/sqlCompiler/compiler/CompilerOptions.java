@@ -152,8 +152,10 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         public boolean noRust = false;
         @Parameter(names = "--enterprise", description = "Generate code supporting enterprise features")
         public boolean enterprise = false;
-        @Parameter(names="-o", description = "Output file; stdout if null")
+        @Parameter(names="-o", description = "Output file; stdout if not specified")
         public String outputFile = "";
+        @Parameter(names="--errors", description = "Error output file; stderr if not specified")
+        public String errorFile = "";
         @Parameter(names = {"--jpg", "-jpg"}, description = "Emit a jpg image of the circuit instead of Rust")
         public boolean emitJpeg = false;
         @Parameter(names = {"--png", "-png"}, description = "Emit a png image of the circuit instead of Rust")
@@ -162,7 +164,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         public String emitPlan = null;
         @Nullable @Parameter(names = "--dataflow", description = "Emit the Dataflow graph of the program in the specified JSON file")
         public String emitDataflow = null;
-        @Parameter(names = {"--je", "-je"}, description = "Emit error messages as a JSON array to stderr")
+        @Parameter(names = {"--je", "-je"}, description = "Emit error messages as a JSON array to the error output")
         public boolean emitJsonErrors = false;
         @Parameter(names = {"--js", "-js"},
                 description = "Emit a JSON file containing the schema of all views and tables in the specified file.")
@@ -231,6 +233,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
             return "IO{" +
                     "outputFile=" + Utilities.singleQuote(this.outputFile) +
                     ", metadataSource=" + this.metadataSource +
+                    ", errorFile=" + Utilities.singleQuote(this.errorFile) +
                     ", emitHandles=" + this.emitHandles +
                     ", emitJpeg=" + this.emitJpeg +
                     ", emitPng=" + this.emitPng +

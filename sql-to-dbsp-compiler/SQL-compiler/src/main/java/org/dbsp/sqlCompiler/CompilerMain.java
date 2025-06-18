@@ -29,7 +29,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
+import org.apache.calcite.util.Pair;
 import org.apache.commons.io.output.NullPrintStream;
+import org.codehaus.janino.Compiler;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -47,6 +49,8 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import javax.sql.DataSource;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
@@ -271,21 +275,41 @@ public class CompilerMain {
         return compiler.messages;
     }
 
-    public static CompilerMessages execute(String... argv) throws SQLException {
+    public static Pair<CompilerMessages, CompilerOptions> run(String... argv) throws SQLException {
         CompilerMain main = new CompilerMain();
         int exitCode = main.parseOptions(argv);
+        CompilerOptions options = main.options;
         if (exitCode != 0) {
             // return empty messages
             CompilerMessages result = new CompilerMessages(new DBSPCompiler(new CompilerOptions()));
             result.setExitCode(exitCode);
-            return result;
+            return new Pair<>(result, options);
         }
-        return main.run();
+        return new Pair<>(main.run(), options);
     }
 
-    public static void main(String[] argv) throws SQLException {
-        CompilerMessages messages = execute(argv);
-        messages.show(System.err);
+    public static CompilerMessages execute(String... argv) throws SQLException {
+        return run(argv).left;
+    }
+
+    public static CompilerMessages runAndReportErrors(String... argv) throws SQLException, IOException {
+        var result = run(argv);
+        PrintStream errorStream = System.err;
+        FileOutputStream errorFile = null;
+        if (!result.right.ioOptions.errorFile.isEmpty()) {
+            errorFile = new FileOutputStream(result.right.ioOptions.errorFile);
+            errorStream = new PrintStream(errorFile);
+        }
+        result.left.show(errorStream);
+        if (errorFile != null) {
+            errorFile.close();
+            errorStream.close();
+        }
+        return result.left;
+    }
+
+    public static void main(String[] argv) throws SQLException, IOException {
+        CompilerMessages messages = runAndReportErrors(argv);
         System.exit(messages.exitCode);
     }
 }

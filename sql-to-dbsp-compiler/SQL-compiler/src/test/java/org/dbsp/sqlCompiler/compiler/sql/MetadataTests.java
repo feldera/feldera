@@ -124,6 +124,17 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue4183() throws IOException, SQLException {
+        String sql = "WRONG";
+        File file = createInputScript(sql);
+        File errorFile = File.createTempFile("err", ".txt", new File("."));
+        errorFile.deleteOnExit();
+        CompilerMain.runAndReportErrors("--noRust", file.getPath(), "--errors", errorFile.getPath());
+        String str = Utilities.readFile(errorFile.getPath());
+        Assert.assertTrue(str.contains("Error parsing SQL"));
+    }
+
+    @Test
     public void lineageTest() throws SQLException, IOException {
         // Check that the calcite property in the dataflow graph is never "null" for this program
         final String file = "../../demo/packaged/sql/08-fine-grained-authorization.sql";
@@ -702,6 +713,9 @@ public class MetadataTests extends BaseSQLTests {
                     --enterprise
                       Generate code supporting enterprise features
                       Default: false
+                    --errors
+                      Error output file; stderr if not specified
+                      Default: <empty string>
                     --handles
                       Use handles (true) or Catalog (false) in the emitted Rust code
                       Default: false
@@ -714,7 +728,7 @@ public class MetadataTests extends BaseSQLTests {
                       Connection string to a database that contains table metadata
                       Default: <empty string>
                     --je, -je
-                      Emit error messages as a JSON array to stderr
+                      Emit error messages as a JSON array to the error output
                       Default: false
                     --jpg, -jpg
                       Emit a jpg image of the circuit instead of Rust
@@ -756,7 +770,7 @@ public class MetadataTests extends BaseSQLTests {
                       Generate an incremental circuit
                       Default: false
                     -o
-                      Output file; stdout if null
+                      Output file; stdout if not specified
                       Default: <empty string>
                     -q
                       Quiet: do not print warnings

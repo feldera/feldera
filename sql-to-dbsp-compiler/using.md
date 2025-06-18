@@ -50,6 +50,9 @@ Usage: sql-to-dbsp [options] Input file to compile
     --enterprise
       Generate code supporting enterprise features
       Default: false
+    --errors
+      Error output file; stderr if not specified
+      Default: <empty string>
     --crates
       Followed by a program name. Generates code using multiple crates;
       `outputFile` is interpreted as a directory.
@@ -66,7 +69,7 @@ Usage: sql-to-dbsp [options] Input file to compile
       Connection string to a database that contains table metadata
       Default: <empty string>
     --je, -je
-      Emit error messages as a JSON array to stderr
+      Emit error messages as a JSON array to the error output
       Default: false
     --jpg, -jpg
       Emit a jpg image of the circuit instead of Rust
@@ -108,7 +111,7 @@ Usage: sql-to-dbsp [options] Input file to compile
       Generate an incremental circuit
       Default: false
     -o
-      Output file; stdout if null
+      Output file; stdout if not specified
       Default: <empty string>
     -q
       Quiet: do not print warnings
