@@ -32,18 +32,24 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    kubectl get namespace
    ```
 
-2. **Installation:**
+2. **Version:** Visit https://gallery.ecr.aws/feldera/feldera-chart,
+   click on the "Image tags" tab for a list of versions, and choose a
+   version.  The most recent version should be at the top of the list
+   and is normally the right choice.
+
+3. **Installation:**
    we use our Helm chart, which internally refers to the other images, to
    perform the installation in namespace `feldera` with release name `feldera`.
 
    ```bash
    ACCOUNT_ID="00000000-0000-0000-0000-000000000000"  # Set to own
    LICENSE_KEY="00000000-0000-0000-0000-000000000000"  # Set to own
+   VERSION=0.88.0  # Replace with previously chosen version
 
    helm upgrade --install feldera \
-       oci://public.ecr.aws/feldera/feldera-chart --version 0.50.0 \
+       oci://public.ecr.aws/feldera/feldera-chart --version "${VERSION}" \
        --namespace feldera --create-namespace \
-       --set felderaVersion="0.64.0" \
+       --set felderaVersion="${VERSION}" \
        --set felderaAccountId="${ACCOUNT_ID}" \
        --set felderaLicenseKey="${LICENSE_KEY}" \
        --set felderaDatabaseSecretRef="feldera-db-insecure-secret"
@@ -54,7 +60,7 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    _Note:_ how to configure your own database credentials is explained in
    a further section.
 
-3. **Check:** check the status of the deployment.
+4. **Check:** check the status of the deployment.
    ```
    kubectl get pods -n feldera
    ```
@@ -68,7 +74,7 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    feldera-api-server-c546499bc-wdpkm           1/1     Running   0          3m9s
    ```
 
-4. **Usage:**
+5. **Usage:**
 
    Interaction with Feldera happens through the API server, which has an associated
    service named `<release name>-api-server.<namespace>.svc.cluster.local:8080`.
