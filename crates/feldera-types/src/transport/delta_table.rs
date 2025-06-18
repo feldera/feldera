@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use utoipa::ToSchema;
 
 /// Delta table write mode.
@@ -81,6 +82,17 @@ pub enum DeltaTableIngestMode {
     /// specified by the `version` or `datetime` property.
     #[serde(rename = "cdc")]
     Cdc,
+}
+
+impl Display for DeltaTableIngestMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            DeltaTableIngestMode::Snapshot => write!(f, "snapshot"),
+            DeltaTableIngestMode::Follow => write!(f, "follow"),
+            DeltaTableIngestMode::SnapshotAndFollow => write!(f, "shapshot_and_follow"),
+            DeltaTableIngestMode::Cdc => write!(f, "cdc"),
+        }
+    }
 }
 
 fn default_num_parsers() -> u32 {
@@ -169,12 +181,13 @@ pub struct DeltaTableReaderConfig {
     ///
     /// When this option is set, the connector finds and opens the specified version of the table.
     /// In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of
-    /// the table.  In `follow` and `snapshot_and_follow` modes, it follows transaction log records
+    /// the table.  In `follow`, `snapshot_and_follow`, and `cdc` modes, it follows transaction log records
     /// **after** this version.
     ///
     /// Note: at most one of `version` and `datetime` options can be specified.
     /// When neither of the two options is specified, the latest committed version of the table
     /// is used.
+    #[serde(alias = "start_version")]
     pub version: Option<i64>,
 
     /// Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,
@@ -183,17 +196,26 @@ pub struct DeltaTableReaderConfig {
     /// When this option is set, the connector finds and opens the version of the table as of the
     /// specified point in time (based on the server time recorded in the transaction log, not the
     /// event time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it
-    /// retrieves the snapshot of this version of the table.  In `follow` and `snapshot_and_follow`
-    /// modes, it follows transaction log records **after** this version.
+    /// retrieves the snapshot of this version of the table.  In `follow`, `snapshot_and_follow`, and
+    /// `cdc` modes, it follows transaction log records **after** this version.
     ///
     /// Note: at most one of `version` and `datetime` options can be specified.
     /// When neither of the two options is specified, the latest committed version of the table
     /// is used.
+    #[serde(alias = "start_datetime")]
     pub datetime: Option<String>,
+
+    /// Optional final table version.
+    ///
+    /// Valid only when the connector is configured in `follow`, `snapshot_and_follow`, or `cdc` mode.
+    ///
+    /// When set, the connector will stop scanning the table’s transaction log after reaching this version or any greater version.
+    /// This bound is inclusive: if the specified version appears in the log, it will be processed before signaling end-of-input.
+    pub end_version: Option<i64>,
 
     /// A predicate that determines whether the record represents a deletion.
     ///
-    /// This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+    /// This setting is only valid in the `cdc` mode. It specifies a predicate applied to
     /// each row in the Delta table to determine whether the row represents a deletion event.
     /// Its value must be a valid Boolean SQL expression that can be used in a query of the
     /// form `SELECT * from <table> WHERE <cdc_delete_filter>`.
@@ -201,7 +223,7 @@ pub struct DeltaTableReaderConfig {
 
     /// An expression that determines the ordering of updates in the Delta table.
     ///
-    /// This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+    /// This setting is only valid in the `cdc` mode. It specifies a predicate applied to
     /// each row in the Delta table to determine the order in which updates in the table should
     /// be applied. Its value must be a valid SQL expression that can be used in a query of the
     /// form `SELECT * from <table> ORDER BY <cdc_order_by>`.
@@ -256,7 +278,7 @@ fn test_delta_reader_config_serde() {
 
     let serialized_config = serde_json::to_string(&config).unwrap();
 
-    let expected = r#"{"uri":"protocol:/path/to/somewhere","timestamp_column":"ts","filter":null,"skip_unused_columns":false,"max_concurrent_readers":null,"mode":"follow","snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","customoption1":"val1","customoption2":"val2","cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4}"#;
+    let expected = r#"{"uri":"protocol:/path/to/somewhere","timestamp_column":"ts","filter":null,"skip_unused_columns":false,"max_concurrent_readers":null,"mode":"follow","snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","end_version":null,"customoption1":"val1","customoption2":"val2","cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4}"#;
 
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),

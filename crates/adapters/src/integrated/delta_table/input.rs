@@ -179,6 +179,20 @@ impl DeltaTableInputReader {
             bail!("invalid 'num_parsers' value: 'num_parsers' must be greater than 0");
         }
 
+        if config.end_version.is_some() && !config.follow() {
+            bail!(
+                "the 'end_version' property is not valid in '{}' mode; it can only be used when the DeltaLake connector is configured with 'follow', 'snapshot_and_follow', or 'cdc' mode",
+                config.mode
+            )
+        }
+
+        if config.version.is_some()
+            && config.end_version.is_some()
+            && config.version.unwrap() >= config.end_version.unwrap()
+        {
+            bail!("'end_version' must be greater than 'version'")
+        }
+
         // If the config specifies max_concurrent_connectors, adjust the number of tokens
         // in the semaphore.
         if let Some(max_concurrent_readers) = config.max_concurrent_readers {
@@ -725,7 +739,10 @@ impl DeltaTableInputEndpointInner {
                 wait_running(&mut receiver).await;
                 match table.log_store().peek_next_commit(version).await {
                     Ok(PeekCommit::UpToDate) => sleep(POLL_INTERVAL).await,
-                    Ok(PeekCommit::New(new_version, actions)) => {
+                    Ok(PeekCommit::New(new_version, actions))
+                        if self.config.end_version.is_none()
+                            || self.config.end_version.unwrap() >= new_version =>
+                    {
                         version = new_version;
                         self.process_log_entry(
                             new_version,
@@ -736,6 +753,15 @@ impl DeltaTableInputEndpointInner {
                             &mut receiver,
                         )
                         .await;
+                    }
+                    Ok(PeekCommit::New(new_version, actions)) => {
+                        info!(
+                            "delta_table {}: reached table version {new_version}, which is greater or equal than the 'end_version' {} specified in connector config: stopping the connector",
+                            &self.endpoint_name,
+                            self.config.end_version.unwrap()
+                        );
+                        self.consumer.eoi();
+                        break;
                     }
                     Err(e) => {
                         self.consumer.error(

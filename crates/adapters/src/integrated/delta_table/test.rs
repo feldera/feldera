@@ -42,9 +42,9 @@ use futures::io::repeat;
 use parquet::file::reader::Length;
 use proptest::collection::vec;
 use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
-use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
+use proptest::{proptest, test_runner};
 use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
 use std::collections::HashMap;
@@ -258,7 +258,7 @@ where
 
     let mut storage_options = String::new();
     for (key, val) in config.iter() {
-        storage_options += &format!("                {key}: \"{val}\"\n");
+        storage_options += &format!("                {key}: {val}\n");
     }
 
     // Create controller.
@@ -321,12 +321,12 @@ where
 
     let mut input_storage_options = String::new();
     for (key, val) in input_config.iter() {
-        input_storage_options += &format!("                {key}: \"{val}\"\n");
+        input_storage_options += &format!("                {key}: {val}\n");
     }
 
     let mut output_storage_options = String::new();
     for (key, val) in output_config.iter() {
-        output_storage_options += &format!("                {key}: \"{val}\"\n");
+        output_storage_options += &format!("                {key}: {val}\n");
     }
 
     // Create controller.
@@ -360,6 +360,7 @@ outputs:
         input_storage_options, output_storage_options,
     );
 
+    println!("config:\n{config_str}");
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     Controller::with_config(
@@ -392,7 +393,7 @@ where
 
     let mut input_storage_options = String::new();
     for (key, val) in input_config.iter() {
-        input_storage_options += &format!("                {key}: \"{val}\"\n");
+        input_storage_options += &format!("                {key}: {val}\n");
     }
 
     // Create controller.
@@ -446,7 +447,7 @@ where
 
     let mut storage_options = String::new();
     for (key, val) in config.iter() {
-        storage_options += &format!("                {key}: \"{val}\"\n");
+        storage_options += &format!("                {key}: {val}\n");
     }
 
     // Create controller.
@@ -479,6 +480,7 @@ outputs:
         storage_options,
     );
 
+    println!("config:\n{config_str}");
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     Controller::with_config(
@@ -649,6 +651,8 @@ fn init_logging() {
 ///     single snapshot and the second half is processed in follow mode.
 /// - `suspend` flags: when `true`, suspends and resumes the pipeline after
 ///   every input chunk.
+/// - `test_end_version`: when `true`, test that the connector respects the `end_version`
+///   config property.
 #[allow(clippy::too_many_arguments)]
 async fn test_follow(
     schema: &[Field],
@@ -658,6 +662,7 @@ async fn test_follow(
     data: Vec<DeltaTestStruct>,
     snapshot: bool,
     suspend: bool,
+    test_end_version: bool,
     buffer_size: u64,
     buffer_timeout_ms: u64,
 ) {
@@ -689,23 +694,35 @@ async fn test_follow(
         let median = data.len() / 2;
 
         input_table = write_data_to_table(input_table, &arrow_schema, &data[..median]).await;
-
         median
     } else {
         0
     };
 
+    println!("initial table version: {}", input_table.version());
+
+    let storage_options_quoted = storage_options
+        .iter()
+        .map(|(k, v)| (k.clone(), format!("\"{v}\"")))
+        .collect::<HashMap<_, _>>();
+
     // Start parquet-to-parquet pipeline.
-    let mut input_config = storage_options.clone();
+    let mut input_config = storage_options_quoted.clone();
 
     if snapshot {
-        input_config.insert("mode".to_string(), "snapshot_and_follow".to_string());
+        input_config.insert("mode".to_string(), "\"snapshot_and_follow\"".to_string());
     } else {
-        input_config.insert("mode".to_string(), "follow".to_string());
+        input_config.insert("mode".to_string(), "\"follow\"".to_string());
     }
-    input_config.insert("filter".to_string(), "bigint % 2 = 0".to_string());
 
-    let output_config = storage_options.clone();
+    let end_version = 5;
+    if test_end_version {
+        input_config.insert("end_version".to_string(), end_version.to_string());
+    }
+
+    input_config.insert("filter".to_string(), "\"bigint % 2 = 0\"".to_string());
+
+    let output_config = storage_options_quoted.clone();
 
     let input_table_uri_clone = input_table_uri.to_string();
     let output_table_uri_clone = output_table_uri.to_string();
@@ -741,7 +758,7 @@ async fn test_follow(
 
     let mut total_count = split_at;
 
-    let expected_output = data[0..total_count]
+    let mut expected_output = data[0..total_count]
         .iter()
         .filter_map(|x| {
             if x.bigint % 2 == 0 {
@@ -761,18 +778,21 @@ async fn test_follow(
     for chunk in data[split_at..].chunks(std::cmp::max(data[split_at..].len() / 10, 1)) {
         total_count += chunk.len();
         input_table = write_data_to_table(input_table, &arrow_schema, chunk).await;
-        let expected_output = data[0..total_count]
-            .iter()
-            .filter_map(|x| {
-                if x.bigint % 2 == 0 {
-                    let mut x = x.clone();
-                    x.unused = None;
-                    Some(x)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+
+        if !test_end_version || input_table.version() <= end_version {
+            expected_output = data[0..total_count]
+                .iter()
+                .filter_map(|x| {
+                    if x.bigint % 2 == 0 {
+                        let mut x = x.clone();
+                        x.unused = None;
+                        Some(x)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+        };
 
         if suspend {
             println!("start suspend");
@@ -810,6 +830,11 @@ async fn test_follow(
             .unwrap();
 
             pipeline.start();
+        }
+
+        // Wait a bit to make sure the pipeline doesn't process data beyond end_version.
+        if test_end_version && input_table.version() > end_version {
+            sleep(Duration::from_millis(1000)).await;
         }
 
         wait_for_output_records::<DeltaTestStruct>(
@@ -917,10 +942,15 @@ async fn test_cdc(
     let datafusion = SessionContext::new();
     let table_uri_clone = table_uri.to_string();
 
+    let storage_opions = storage_options
+        .iter()
+        .map(|(k, v)| (k.clone(), format!("\"{v}\"")))
+        .collect::<HashMap<_, _>>();
+
     // Build pipeline 1.
     let mut output_config = storage_options.clone();
 
-    output_config.insert("mode".to_string(), "truncate".to_string());
+    output_config.insert("mode".to_string(), "\"truncate\"".to_string());
 
     let write_pipeline = tokio::task::spawn_blocking(move || {
         delta_write_pipeline::<DeltaTestStruct>(&input_file_path, &table_uri_clone, &output_config)
@@ -933,13 +963,13 @@ async fn test_cdc(
     // Build pipeline 2.
     let mut input_config = storage_options.clone();
 
-    input_config.insert("mode".to_string(), "cdc".to_string());
-    input_config.insert("filter".to_string(), "bigint % 2 = 0".to_string());
+    input_config.insert("mode".to_string(), "\"cdc\"".to_string());
+    input_config.insert("filter".to_string(), "\"bigint % 2 = 0\"".to_string());
     input_config.insert(
         "cdc_delete_filter".to_string(),
-        "__feldera_op = 'd'".to_string(),
+        "\"__feldera_op = 'd'\"".to_string(),
     );
-    input_config.insert("cdc_order_by".to_string(), "__feldera_ts".to_string());
+    input_config.insert("cdc_order_by".to_string(), "\"__feldera_ts\"".to_string());
 
     let table_uri_clone = table_uri.to_string();
 
@@ -1039,7 +1069,7 @@ fn delta_data(max_records: usize) -> impl Strategy<Value = Vec<DeltaTestStruct>>
     })
 }
 
-async fn delta_table_follow_file_test_common(snapshot: bool, suspend: bool) {
+async fn delta_table_follow_file_test_common(snapshot: bool, suspend: bool, end_version: bool) {
     // We cannot use proptest macros in `async` context, so generate
     // some random data manually.
     let mut runner = TestRunner::default();
@@ -1061,6 +1091,7 @@ async fn delta_table_follow_file_test_common(snapshot: bool, suspend: bool) {
         data,
         snapshot,
         suspend,
+        end_version,
         1000,
         100,
     )
@@ -1093,7 +1124,6 @@ async fn delta_table_cdc_file_test() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[cfg_attr(target_arch = "aarch64", ignore = "flaky on aarch64")]
 async fn delta_table_cdc_file_suspend_test() {
     // We cannot use proptest macros in `async` context, so generate
     // some random data manually.
@@ -1164,17 +1194,27 @@ async fn delta_table_cdc_s3_test_suspend() {
 
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_test() {
-    delta_table_follow_file_test_common(true, false).await
+    delta_table_follow_file_test_common(true, false, false).await
 }
 
 #[tokio::test]
 async fn delta_table_follow_file_test() {
-    delta_table_follow_file_test_common(false, false).await
+    delta_table_follow_file_test_common(false, false, false).await
+}
+
+#[tokio::test]
+async fn delta_table_follow_file_test_end_version() {
+    delta_table_follow_file_test_common(false, false, true).await
 }
 
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_test_suspend() {
-    delta_table_follow_file_test_common(true, true).await
+    delta_table_follow_file_test_common(true, true, false).await
+}
+
+#[tokio::test]
+async fn delta_table_snapshot_and_follow_file_test_suspend_end_version() {
+    delta_table_follow_file_test_common(true, true, true).await
 }
 
 #[cfg(feature = "delta-s3-test")]
@@ -1218,6 +1258,7 @@ async fn delta_table_follow_s3_test_common(snapshot: bool, suspend: bool) {
         data,
         snapshot,
         suspend,
+        false,
         1000,
         100,
     )
