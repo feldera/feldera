@@ -19,6 +19,9 @@
   import { getDeploymentStatusLabel } from '$lib/functions/pipelines/status'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import type { PipelineChangesDiff } from '$lib/types/pipelineManager'
+  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
+  import ReviewPipelineChanges from '../editor/ReviewPipelineChanges.svelte'
 
   let {
     pipeline,
@@ -172,6 +175,40 @@
   }
 
   let isPremium = usePremiumFeatures()
+
+  let usePipelineChangesReview = () => {
+    let pipelineChanges:
+      | {
+          value: PipelineChangesDiff
+          resolve: () => void
+          reject: () => void
+        }
+      | undefined = $state(undefined)
+    let changesAccepted: Promise<void> | undefined = $state()
+
+    return {
+      onApply: () => pipelineChanges?.resolve(),
+      onCancel: () => pipelineChanges?.reject(),
+      get diff() {
+        return pipelineChanges!.value
+      },
+      inspectPipelineChanges: async () => {
+        const api = usePipelineManager()
+        const diff = await api.getSuspendDiff()
+        globalDialog.dialog = pipelineChangesDialog
+        globalDialog.onclose = () => pipelineChanges?.reject()
+        changesAccepted = new Promise((resolve, reject) => {
+          pipelineChanges = {
+            resolve,
+            reject,
+            value: diff
+          }
+        })
+        return changesAccepted
+      }
+    }
+  }
+  const pipelineChangesReview = usePipelineChangesReview()
 </script>
 
 {#snippet deleteDialog()}
@@ -230,6 +267,30 @@
   {@render _delete()} -->
 </div>
 
+{#snippet pipelineChangesDialog()}
+  <GenericDialog
+    onApply={() => {
+      pipelineChangesReview.onApply()
+      globalDialog.dialog = null
+    }}
+    onClose={() => {
+      globalDialog.onclose?.()
+      globalDialog.dialog = null
+    }}
+  >
+    {#snippet title()}
+      Review pipeline changes
+    {/snippet}
+    <ReviewPipelineChanges
+      changes={pipelineChangesReview.diff}
+      onskip={() => {
+        pipelineChangesReview.onApply()
+        globalDialog.dialog = null
+      }}
+    ></ReviewPipelineChanges>
+  </GenericDialog>
+{/snippet}
+
 {#snippet _delete()}
   <div>
     <button
@@ -251,7 +312,8 @@
 {#snippet start(
   text: string,
   getAction: (alt: boolean) => PipelineAction | 'start_paused_start',
-  status: PipelineStatus
+  status: PipelineStatus,
+  resolveBefore?: Promise<void>
 )}
   <div>
     <button
@@ -259,6 +321,11 @@
       class:disabled={unsavedChanges}
       class="{buttonClass} {longClass} {importantBtnColor}"
       onclick={async (e) => {
+        try {
+          await resolveBefore
+        } catch {
+          return
+        }
         const action = getAction(e.ctrlKey || e.shiftKey || e.metaKey)
         const pipelineName = pipeline.current.name
         performStartAction(action, pipelineName, status)
@@ -282,7 +349,10 @@
   {@render start(
     pipeline.current.status === 'Suspended' ? 'Resume' : 'Start',
     (alt) => (alt ? 'start_paused' : 'start_paused_start'),
-    'Preparing'
+    'Preparing',
+    pipeline.current.status === 'Suspended'
+      ? pipelineChangesReview.inspectPipelineChanges()
+      : undefined
   )}
   {#if unsavedChanges}
     <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
