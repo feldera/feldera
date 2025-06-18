@@ -8,6 +8,7 @@ from tests.orderby_tests.orderby_tbl_manual import *  # noqa: F403
 from tests.orderby_tests.orderby_int import *  # noqa: F403
 from tests.orderby_tests.orderby_varchar import *  # noqa: F403
 from tests.orderby_tests.orderby_binary_ts import *  # noqa: F403
+from tests.orderby_tests.orderby_arr_time import *  # noqa: F403
 
 
 def main():
