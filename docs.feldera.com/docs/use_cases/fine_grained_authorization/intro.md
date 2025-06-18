@@ -36,6 +36,10 @@ In this guide, we will:
 By the end of this guide, you will have a clear understanding of how to leverage Feldera to build scalable and
 efficient policy engines.
 
+You can watch the video accompanying this series on Youtube:
+
+<LiteYouTubeEmbed id="vpVAZbaZ2Hg" />
+
 ## FGA basics
 
 ### Object graph
