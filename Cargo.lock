@@ -3672,7 +3672,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rand_xoshiro",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "rkyv",
  "serde",
  "serde_json",
@@ -3781,7 +3781,7 @@ dependencies = [
  "rand 0.8.5",
  "rdkafka",
  "redis",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "rkyv",
  "rmp-serde",
  "rmpv",
@@ -3932,7 +3932,7 @@ dependencies = [
  "itertools 0.14.0",
  "object_store 0.12.2",
  "parquet",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "roaring",
  "rustc_version",
  "serde",
@@ -4625,7 +4625,7 @@ dependencies = [
  "json_to_table",
  "log",
  "progenitor-client 0.9.1",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "reqwest-websocket",
  "rmpv",
  "rustyline",
@@ -4751,7 +4751,7 @@ dependencies = [
  "prettyplease",
  "progenitor",
  "progenitor-client 0.9.1",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "serde",
  "serde_json",
  "syn 2.0.101",
@@ -4930,9 +4930,9 @@ dependencies = [
 
 [[package]]
 name = "flate2"
-version = "1.1.1"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ced92e76e966ca2fd84c8f7aa01a4aea65b0eb6648d72f7c8f3e2764a67fece"
+checksum = "4a3d7db9596fecd151c5f638c0ee5d5bd487b6e0ea232e5dc96d5250f6f94b1d"
 dependencies = [
  "crc32fast",
  "libz-rs-sys",
@@ -5251,7 +5251,7 @@ dependencies = [
  "google-cloud-token",
  "home",
  "jsonwebtoken 9.3.1",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -5294,7 +5294,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d901aeb453fd80e51d64df4ee005014f6cf39f2d736dd64f7239c132d9d39a6a"
 dependencies = [
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "thiserror 1.0.69",
  "tokio",
 ]
@@ -5815,7 +5815,7 @@ dependencies = [
  "ordered-float 4.6.0",
  "parquet",
  "rand 0.8.5",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "roaring",
  "rust_decimal",
  "serde",
@@ -5861,7 +5861,7 @@ dependencies = [
  "http 1.3.1",
  "iceberg",
  "itertools 0.13.0",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "serde",
  "serde_derive",
  "serde_json",
@@ -7145,7 +7145,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.37.5",
  "rand 0.8.5",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "ring 0.17.14",
  "rustls-pemfile 2.2.0",
  "serde",
@@ -7180,7 +7180,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.37.5",
  "rand 0.9.1",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "ring 0.17.14",
  "rustls-pemfile 2.2.0",
  "serde",
@@ -7246,7 +7246,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.37.5",
  "reqsign",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "serde",
  "serde_json",
  "tokio",
@@ -7804,7 +7804,7 @@ dependencies = [
  "rand 0.8.5",
  "refinery",
  "regex",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "rustls 0.23.27",
  "serde",
  "serde_json",
@@ -7987,8 +7987,9 @@ dependencies = [
 
 [[package]]
 name = "postgresql_archive"
-version = "0.18.5"
-source = "git+https://github.com/gz/postgresql-embedded.git?rev=f855644#f855644e28fa5de01f838ec8271c33c5a336acec"
+version = "0.18.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f52391b29972fbc9d9ff7b15df1e803d6e1ac20a6d1b08d8eaeb9f85fd65308"
 dependencies = [
  "async-trait",
  "flate2",
@@ -7996,7 +7997,7 @@ dependencies = [
  "hex",
  "num-format",
  "regex-lite",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "reqwest-middleware",
  "reqwest-retry",
  "reqwest-tracing",
@@ -8010,13 +8011,13 @@ dependencies = [
  "thiserror 2.0.12",
  "tracing",
  "url",
- "zip 4.0.0",
 ]
 
 [[package]]
 name = "postgresql_commands"
-version = "0.18.5"
-source = "git+https://github.com/gz/postgresql-embedded.git?rev=f855644#f855644e28fa5de01f838ec8271c33c5a336acec"
+version = "0.18.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7141623abcdd45c1e98d3574b34eb1353076d546106fa8ac499f81177c8411a"
 dependencies = [
  "thiserror 2.0.12",
  "tracing",
@@ -8024,8 +8025,9 @@ dependencies = [
 
 [[package]]
 name = "postgresql_embedded"
-version = "0.18.5"
-source = "git+https://github.com/gz/postgresql-embedded.git?rev=f855644#f855644e28fa5de01f838ec8271c33c5a336acec"
+version = "0.18.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b8d48913e1e34ab03f1a38f0a9271d61409fbcb0185fb934a29b1a54607e700"
 dependencies = [
  "anyhow",
  "postgresql_archive",
@@ -8260,7 +8262,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "percent-encoding",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -8972,7 +8974,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.37.5",
  "rand 0.8.5",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "rust-ini 0.21.1",
  "serde",
  "serde_json",
@@ -9020,9 +9022,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.18"
+version = "0.12.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e98ff6b0dbbe4d5a37318f433d4fc82babd21631f194d370409ceb2e40b2f0b5"
+checksum = "eabf4c97d9130e2bf606614eb937e86edac8292eaa6f422f995d7e8de1eb1813"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -9038,12 +9040,10 @@ dependencies = [
  "hyper-rustls 0.27.6",
  "hyper-tls",
  "hyper-util",
- "ipnet",
  "js-sys",
  "log",
  "mime",
  "native-tls",
- "once_cell",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -9078,7 +9078,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "http 1.3.1",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "serde",
  "thiserror 1.0.69",
  "tower-service",
@@ -9097,7 +9097,7 @@ dependencies = [
  "http 1.3.1",
  "hyper 1.6.0",
  "parking_lot 0.11.2",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "reqwest-middleware",
  "retry-policies",
  "thiserror 1.0.69",
@@ -9108,16 +9108,16 @@ dependencies = [
 
 [[package]]
 name = "reqwest-tracing"
-version = "0.5.7"
+version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d75b0eee96990cfb4c09545847385e89b2d2d2e571143d55264a05d77c713780"
+checksum = "d70ea85f131b2ee9874f0b160ac5976f8af75f3c9badfe0d955880257d10bd83"
 dependencies = [
  "anyhow",
  "async-trait",
  "getrandom 0.2.16",
  "http 1.3.1",
  "matchit 0.8.6",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "reqwest-middleware",
  "tracing",
 ]
@@ -9131,7 +9131,7 @@ dependencies = [
  "async-tungstenite",
  "bytes",
  "futures-util",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "thiserror 2.0.12",
  "tokio",
  "tokio-util",
@@ -9675,7 +9675,7 @@ dependencies = [
  "byteorder",
  "dashmap 6.1.0",
  "futures",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "serde",
  "serde_json",
 ]
@@ -10077,12 +10077,6 @@ dependencies = [
  "digest",
  "rand_core 0.6.4",
 ]
-
-[[package]]
-name = "simd-adler32"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 
 [[package]]
 name = "simdutf8"
@@ -11199,9 +11193,9 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.4"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fdb0c213ca27a9f57ab69ddb290fd80d970922355b83ae380b395d3986b8a2e"
+checksum = "adc82fd73de2a9722ac5da747f12383d2bfdb93591ee6c58486e0097890f05f2"
 dependencies = [
  "bitflags 2.9.1",
  "bytes",
@@ -11634,7 +11628,7 @@ dependencies = [
  "actix-web",
  "mime_guess",
  "regex",
- "reqwest 0.12.18",
+ "reqwest 0.12.20",
  "rust-embed",
  "serde",
  "serde_json",
@@ -12564,36 +12558,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "zip"
-version = "4.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "153a6fff49d264c4babdcfa6b4d534747f520e56e8f0f384f3b808c4b64cc1fd"
-dependencies = [
- "arbitrary",
- "crc32fast",
- "flate2",
- "indexmap 2.9.0",
- "memchr",
- "zopfli",
-]
-
-[[package]]
 name = "zlib-rs"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "626bd9fa9734751fc50d6060752170984d7053f5a39061f524cda68023d4db8a"
-
-[[package]]
-name = "zopfli"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edfc5ee405f504cd4984ecc6f14d02d55cfda60fa4b689434ef4102aae150cd7"
-dependencies = [
- "bumpalo",
- "crc32fast",
- "log",
- "simd-adler32",
-]
 
 [[package]]
 name = "zstd"
