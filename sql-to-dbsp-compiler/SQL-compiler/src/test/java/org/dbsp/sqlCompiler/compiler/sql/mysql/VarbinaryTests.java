@@ -116,11 +116,29 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testConcatBinary() {
-        this.q("""
+        this.qs("""
                 SELECT x'0a' || x'bc';
                 result
                 ------
-                 0abc""");
+                 0abc
+                (1 row)
+                
+                SELECT x'0A' || NULL;
+                result
+                ------
+                NULL
+                (1 row)
+                
+                SELECT b || c FROM t1;
+                result
+                ------
+                 3139383131303037
+                 3139383231303038
+                 3139383331303039
+                 3139383431393831
+                 3139383531393832
+                 3139383631303038
+                (6 rows)""");
     }
 
     // Tested on Postgres

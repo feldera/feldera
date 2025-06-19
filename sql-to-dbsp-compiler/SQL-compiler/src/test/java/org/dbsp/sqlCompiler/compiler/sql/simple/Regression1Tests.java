@@ -369,4 +369,13 @@ public class Regression1Tests extends SqlIoTest {
     public void testRuntimePanic() {
         this.runtimeConstantFail("SELECT 1.0 / 0", "Attempt to divide by zero: 1.0 / 0.0");
     }
+
+    @Test
+    public void issue4202() {
+        this.getCCS("""
+                CREATE TABLE tbl(bin BINARY);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CONCAT(bin, bin) AS bin
+                FROM tbl;""");
+    }
 }

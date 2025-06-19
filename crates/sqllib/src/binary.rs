@@ -2,7 +2,7 @@
 
 use crate::{
     some_function1, some_function2, some_function3, some_function4, some_polymorphic_function1,
-    SqlString,
+    some_polymorphic_function2, SqlString,
 };
 use base58::{FromBase58, ToBase58};
 use base64::prelude::*;
@@ -294,13 +294,15 @@ impl ByteArray {
 }
 
 #[doc(hidden)]
-pub fn to_hex_(value: ByteArray) -> SqlString {
-    SqlString::from(value.data.encode_hex::<String>())
-}
-
-#[doc(hidden)]
 pub fn concat_bytes_bytes(left: ByteArray, right: ByteArray) -> ByteArray {
     left.concat(&right)
+}
+
+some_polymorphic_function2!(concat, bytes, ByteArray, bytes, ByteArray, ByteArray);
+
+#[doc(hidden)]
+pub fn to_hex_(value: ByteArray) -> SqlString {
+    SqlString::from(value.data.encode_hex::<String>())
 }
 
 some_function1!(to_hex, ByteArray, SqlString);

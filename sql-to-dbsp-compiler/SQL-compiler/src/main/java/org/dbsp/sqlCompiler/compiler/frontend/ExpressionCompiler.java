@@ -1199,7 +1199,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         // Fall through
                     case "format_date":
                         return compileFunction(call, node, type, ops, 2);
-                    case "bround":
+                    case "bround": {
                         validateArgCount(node, opName, ops.size(), 2);
                         this.ensureInteger(node, ops, 1);
                         DBSPExpression op0 = ops.get(0);
@@ -1208,6 +1208,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             ops.set(0, op0);
                         }
                         return compileStrictFunction(call, node, type, ops, 2);
+                    }
                     case "replace":
                         validateArgCount(node, opName, ops.size(), 3);
                         for (int i = 0; i < ops.size(); i++)
@@ -1238,8 +1239,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "array":
                         return this.arrayConstructor(node, type, ops);
-                    case "concat":
+                    case "concat": {
+                        // This is the concat() function, and not the "||" operator.
+                        // Currently, we only support it for VARCHAR arguments.
+                        // See https://issues.apache.org/jira/browse/CALCITE-7063
+                        for (DBSPExpression e: ops) {
+                            if (e.getType().code != STRING) {
+                                throw new UnimplementedException(
+                                        "Support for CONCAT() with arguments of type " + e.getType().asSqlString(), node);
+                            }
+                        }
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
+                    }
                     case "concat_ws": {
                         this.ensureString(ops, 0);
                         DBSPExpression sep = ops.get(0);
