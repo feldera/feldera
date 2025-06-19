@@ -7,6 +7,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.ICollectionType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -14,10 +17,14 @@ import java.util.List;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.MAP;
 
-/** Represents the type of a Rust Map as a TypeUser. */
-public class DBSPTypeMap extends DBSPTypeUser {
+/** Represents the type of a Rust Map as a TypeUser.
+ * As collection, it contains key-value pair tuples. */
+public class DBSPTypeMap extends DBSPTypeUser implements ICollectionType {
+    public final DBSPTypeRawTuple collectionElementType;
+
     public DBSPTypeMap(DBSPType mapKeyType, DBSPType mapValueType, boolean mayBeNull) {
         super(mapKeyType.getNode(), MAP, "Map", mayBeNull, mapKeyType, mapValueType);
+        this.collectionElementType = new DBSPTypeRawTuple(this.getKeyType(), this.getValueType());
     }
 
     public DBSPType getKeyType() {
@@ -77,5 +84,10 @@ public class DBSPTypeMap extends DBSPTypeUser {
         Utilities.enforce(typeArgs.size() == 2);
         boolean mayBeNull = fromJsonMayBeNull(node);
         return new DBSPTypeMap(typeArgs.get(0), typeArgs.get(1), mayBeNull);
+    }
+
+    @Override
+    public DBSPType getElementType() {
+        return this.collectionElementType;
     }
 }

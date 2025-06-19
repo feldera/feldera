@@ -113,4 +113,54 @@ public class MapTests extends BaseSQLTests {
         this.testQuery(ddl, query,
                 new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
     }
+
+    @Test
+    public void testUnnestMap() {
+        String sql = "select * from UNNEST(map['a', 12])";
+        DBSPZSetExpression result = new DBSPZSetExpression(
+                new DBSPTupleExpression(
+                    new DBSPStringLiteral("a", false),
+                    new DBSPI32Literal(12, false)));
+        this.testQuery("", sql,
+                new InputOutputChangeStream().addPair(new Change(), new Change(result)));
+    }
+
+    @Test
+    public void testUnnestMap2() {
+        String sql = "select * from UNNEST(map['a', 12, 'b', 15, 'c', NULL])";
+        DBSPZSetExpression result = new DBSPZSetExpression(
+                new DBSPTupleExpression(
+                        new DBSPStringLiteral("a", false),
+                        new DBSPI32Literal(12, true)),
+                new DBSPTupleExpression(
+                        new DBSPStringLiteral("b", false),
+                        new DBSPI32Literal(15, true)),
+                new DBSPTupleExpression(
+                        new DBSPStringLiteral("c", false),
+                        new DBSPI32Literal()));
+        this.testQuery("", sql,
+                new InputOutputChangeStream().addPair(new Change(), new Change(result)));
+    }
+
+    @Test
+    public void testUnnestMapFields() {
+        String sql =
+                "WITH T(i, m) as (VALUES(1, MAP[1, 2, 3, 4]), (2, MAP[5, NULL])) " +
+                "SELECT T.i, k, v FROM T CROSS JOIN UNNEST(T.m) AS pair(k, v)";
+        DBSPZSetExpression result = new DBSPZSetExpression(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(1, false),
+                        new DBSPI32Literal(1, false),
+                        new DBSPI32Literal(2, true)),
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(1, false),
+                        new DBSPI32Literal(3, false),
+                        new DBSPI32Literal(4, true)),
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(2, false),
+                        new DBSPI32Literal(5, false),
+                        new DBSPI32Literal()));
+        this.testQuery("", sql, new InputOutputChangeStream()
+                .addPair(new Change(), new Change(result)));
+    }
 }

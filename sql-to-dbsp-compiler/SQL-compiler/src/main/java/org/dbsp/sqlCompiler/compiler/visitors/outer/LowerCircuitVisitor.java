@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
@@ -42,12 +43,14 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -72,8 +75,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         //   move |x: &Tuple2<Array<i32>, Option<i32>>, | -> _ {
         //     let x0: Array<i32> = (*x.0).clone();
         //     let x1: x.1.clone();
-        //     let array_clone = (*x).0.clone();
-        //     array_clone.into_iter().map({
+        //     let collection_clone = (*x).0.clone();
+        //     collection_clone.into_iter().map({
         //        move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
         //            Tuple3::new(x0.clone(), x1.clone(), e)
         //        }
@@ -159,30 +162,40 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         }
         resultColumns = flatmap.shuffle.shuffle(resultColumns);
 
-        // let array = if (*x).0.is_none() {
+        // let collection = if (*x).0.is_none() {
         //    vec!()
         // } else {
         //    (*x).0.clone().unwrap()
         // };
         // or
-        // let array = (*x).0.clone();
-        DBSPExpression extractArray = flatmap.collectionExpression.call(rowVar).applyClone();
+        // let collection = (*x).0.clone();
+        DBSPExpression extractCollection = flatmap.collectionExpression.call(rowVar).applyClone();
         if (compiler != null)
-            extractArray = extractArray.reduce(compiler);
-        DBSPLetStatement statement = new DBSPLetStatement("array", extractArray);
+            extractCollection = extractCollection.reduce(compiler);
+        DBSPLetStatement statement = new DBSPLetStatement("collection", extractCollection);
         statements.add(statement);
-        DBSPType arrayType = extractArray.getType();
+        DBSPType collectionType = extractCollection.getType();
 
-        DBSPExpression arrayExpression;
-        if (arrayType.mayBeNull) {
+        DBSPExpression collectionExpression;
+        if (collectionType.mayBeNull) {
             DBSPExpression condition = statement.getVarReference().is_null();
-            DBSPExpression empty = new DBSPTypeVec(collectionElementType, false).emptyVector();
+            DBSPExpression empty;
+            if (flatmap.collectionKind == DBSPTypeCode.ARRAY)
+                empty = new DBSPTypeVec(collectionElementType, false).emptyVector();
+            else if (flatmap.collectionKind == DBSPTypeCode.MAP) {
+                DBSPTypeTuple tup = collectionElementType.to(DBSPTypeTuple.class);
+                Utilities.enforce(tup.size() == 2);
+                empty = new DBSPTypeMap(tup.tupFields[0], tup.tupFields[1], false).defaultValue();
+            } else {
+                throw new InternalCompilerError("Unexpected collection type in flatmap " + flatmap.collectionKind);
+            }
+
             DBSPExpression contents = statement.getVarReference().unwrap().deref().applyClone();
-            arrayExpression = new DBSPIfExpression(flatmap.getNode(), condition, empty, contents);
+            collectionExpression = new DBSPIfExpression(flatmap.getNode(), condition, empty, contents);
         } else {
-            arrayExpression = statement.getVarReference().deref().applyClone();
+            collectionExpression = statement.getVarReference().deref().applyClone();
         }
-        statement = new DBSPLetStatement("array_clone", arrayExpression);
+        statement = new DBSPLetStatement("collection_clone", collectionExpression);
         statements.add(statement);
 
         // move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {

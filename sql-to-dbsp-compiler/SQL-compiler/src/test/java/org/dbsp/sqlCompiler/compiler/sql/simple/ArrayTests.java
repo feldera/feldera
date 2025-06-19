@@ -116,6 +116,38 @@ public class ArrayTests extends BaseSQLTests {
     }
 
     @Test
+    public void testUnnestRow() {
+        String query = "select * from UNNEST(array[ROW(3, 5), ROW(4, 6)]) as T2(y, z)";
+        DBSPTupleExpression tuple0 = new DBSPTupleExpression(
+                new DBSPI32Literal(3, false),
+                new DBSPI32Literal(5, false));
+        DBSPTupleExpression tuple1 = new DBSPTupleExpression(
+                new DBSPI32Literal(4, false),
+                new DBSPI32Literal(6, false));
+        DBSPZSetExpression result = new DBSPZSetExpression(tuple0, tuple1);
+        this.testQuery("", query, new InputOutputChange(
+                new Change(), new Change(result)).toStream());
+    }
+
+    @Test
+    public void testUnnestRowRow() {
+        String query = "select * from UNNEST(array[ROW(1, ROW(5, 10)), ROW(2, ROW(6, 12))]) as T2(y, z)";
+        DBSPTupleExpression tuple0 = new DBSPTupleExpression(
+                new DBSPI32Literal(1, false),
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(5, false),
+                        new DBSPI32Literal(10, false)));
+        DBSPTupleExpression tuple1 = new DBSPTupleExpression(
+                new DBSPI32Literal(2, false),
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(6, false),
+                        new DBSPI32Literal(12, false)));
+        DBSPZSetExpression result = new DBSPZSetExpression(tuple0, tuple1);
+        this.testQuery("", query, new InputOutputChange(
+                new Change(), new Change(result)).toStream());
+    }
+
+    @Test
     public void testUnnestDuplicate() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 1, 1])";
         DBSPZSetExpression result = null;

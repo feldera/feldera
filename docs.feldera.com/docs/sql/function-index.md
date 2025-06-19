@@ -222,7 +222,7 @@
 * `UNION`: [grammar](grammar.md#setop)
 * `UNION ALL`: [grammar](grammar.md#setop)
 * `UNIQUE`: [comparisons](comparisons.md#unique)
-* `UNNEST`: [array](array.md#the-unnest-sql-operator)
+* `UNNEST`: [array](array.md#the-unnest-sql-operator), [map](map.md#the-unnest-operator)
 * `UPPER`: [string](string.md#upper)
 * `VALUES`: [grammar](grammar.md#values)
 * `WEEK`: [datetime](datetime.md#week)

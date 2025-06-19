@@ -188,6 +188,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -501,8 +502,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         ExpressionCompiler eComp = new ExpressionCompiler(correlate, dataVar, this.compiler);
         DBSPClosureExpression arrayExpression = eComp.compile(projection).closure(dataVar);
         DBSPTypeTuple uncollectElementType = this.convertType(uncollect.getRowType(), false).to(DBSPTypeTuple.class);
-        DBSPType arrayElementType = arrayExpression.getResultType().to(DBSPTypeArray.class).getElementType();
-        if (arrayElementType.mayBeNull)
+        DBSPType collectionElementType = arrayExpression.getResultType().to(ICollectionType.class).getElementType();
+        if (collectionElementType.mayBeNull)
             // This seems to be a bug in Calcite, we should not need to do this adjustment
             uncollectElementType = uncollectElementType.withMayBeNull(true).to(DBSPTypeTuple.class);
 
@@ -529,8 +530,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             else
                 shuffleSize += 1;
         }
-        if (arrayElementType.is(DBSPTypeTupleBase.class))
-            shuffleSize += arrayElementType.to(DBSPTypeTupleBase.class).size();
+        if (collectionElementType.is(DBSPTypeTupleBase.class))
+            shuffleSize += collectionElementType.to(DBSPTypeTupleBase.class).size();
         else
             shuffleSize += 1;
         DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
@@ -706,7 +707,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             throw new UnimplementedException("UNNEST with multiple vectors", node);
         }
         DBSPVariablePath data = new DBSPVariablePath(inputRowType.ref());
-        DBSPType arrayElementType = data.deref().field(0).getType();
+        DBSPType arrayType = data.deref().field(0).getType();
+        DBSPType collectionElementType = arrayType.to(ICollectionType.class).getElementType();
         DBSPClosureExpression getField0 = data.deref().field(0).closure(data);
         DBSPTypeFunction functionType = new DBSPTypeFunction(type, inputRowType.ref());
 
@@ -717,10 +719,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
             else
                 shuffleSize += 1;
         }
-        if (arrayElementType.is(DBSPTypeTupleBase.class))
-            shuffleSize += arrayElementType.to(DBSPTypeTupleBase.class).size();
-        else
+        if (collectionElementType.is(DBSPTypeTupleBase.class)) {
+            shuffleSize += collectionElementType.to(DBSPTypeTupleBase.class).size();
+        } else {
             shuffleSize += 1;
+        }
 
         DBSPFlatmap function = new DBSPFlatmap(node, functionType, inputRowType, getField0,
                 Linq.list(), null, indexType, new IdShuffle(shuffleSize));

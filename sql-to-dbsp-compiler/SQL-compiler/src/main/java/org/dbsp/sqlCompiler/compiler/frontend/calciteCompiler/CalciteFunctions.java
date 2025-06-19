@@ -129,7 +129,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.IGNORE_NULLS, "IGNORE NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", false),
             new Func(SqlStdOperatorTable.RESPECT_NULLS, "RESPECT NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", false),
             new Func(SqlStdOperatorTable.MINUS_DATE, "-", SqlLibrary.STANDARD, "datetime", false),
-            new Func(SqlStdOperatorTable.UNNEST, "UNNEST", SqlLibrary.STANDARD, "array#the-unnest-sql-operator", false),
+            new Func(SqlStdOperatorTable.UNNEST, "UNNEST", SqlLibrary.STANDARD, "array#the-unnest-sql-operator,map#the-unnest-operator", false),
             new Func(SqlStdOperatorTable.UNNEST_WITH_ORDINALITY, "UNNEST WITH ORDINALITY", SqlLibrary.STANDARD, "", false),
             new Func(SqlStdOperatorTable.LATERAL, "LATERAL", SqlLibrary.STANDARD, "grammar#lateral", false),
             new Func(SqlStdOperatorTable.COLLECTION_TABLE, "TABLE", SqlLibrary.STANDARD, "grammar", false),
