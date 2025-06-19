@@ -6090,7 +6090,7 @@ where
     }
 
     fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
-        Box::pin(async { self.executor.run(&self.circuit).await })
+        Box::pin(async { self.executor.step(&self.circuit).await })
     }
 
     fn flush(&mut self) {}
@@ -6230,7 +6230,40 @@ impl CircuitHandle {
             .block_on(async {
                 let local_set = LocalSet::new();
                 local_set
-                    .run_until(async { self.executor.run(&self.circuit).await })
+                    .run_until(async { self.executor.step(&self.circuit).await })
+                    .await
+            })
+            .map_err(DbspError::Scheduler)
+    }
+
+    pub fn start_step(&self) -> Result<(), DbspError> {
+        self.tokio_runtime
+            .block_on(async {
+                let local_set = LocalSet::new();
+                local_set
+                    .run_until(async { self.executor.start_step(&self.circuit).await })
+                    .await
+            })
+            .map_err(DbspError::Scheduler)
+    }
+
+    pub fn microstep(&self) -> Result<(), DbspError> {
+        self.tokio_runtime
+            .block_on(async {
+                let local_set = LocalSet::new();
+                local_set
+                    .run_until(async { self.executor.microstep(&self.circuit).await })
+                    .await
+            })
+            .map_err(DbspError::Scheduler)
+    }
+
+    pub fn finish_step(&self) -> Result<(), DbspError> {
+        self.tokio_runtime
+            .block_on(async {
+                let local_set = LocalSet::new();
+                local_set
+                    .run_until(async { self.executor.finish_step(&self.circuit).await })
                     .await
             })
             .map_err(DbspError::Scheduler)
