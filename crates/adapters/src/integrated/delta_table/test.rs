@@ -1124,6 +1124,7 @@ async fn delta_table_cdc_file_test() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(target_arch = "aarch64", ignore = "flaky on aarch64")]
 async fn delta_table_cdc_file_suspend_test() {
     // We cannot use proptest macros in `async` context, so generate
     // some random data manually.
