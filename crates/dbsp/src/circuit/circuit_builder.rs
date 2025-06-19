@@ -2209,7 +2209,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     ///             let mul = countdown.apply2(&z1_output.local, |n1: &usize, n2: &usize| n1 * n2);
     ///             z1_feedback.connect(&mul);
     ///             // Stop iterating when the countdown reaches 0.
-    ///             Ok((move || Ok(*counter.borrow() == 0), z1_output.export))
+    ///             Ok((async move || Ok(*counter.borrow() == 0), z1_output.export))
     ///         })?;
     ///     Ok(fact.output())
     /// })?;
