@@ -14,6 +14,7 @@ pub mod apply_n;
 pub mod communication;
 pub(crate) mod inspect;
 
+mod accumulator;
 mod condition;
 mod count;
 mod csv;
