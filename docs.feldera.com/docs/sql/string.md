@@ -197,6 +197,11 @@ addition to the normal way of `''`.
     <td><code>replace('abcdefabcdef', 'cd', 'XX')</code> => <code>abXXefabXXef</code></td>
   </tr>
   <tr>
+    <td><a id="right"></a><code>RIGHT ( string, count )</code></td>
+    <td>Returns last <code>count</code> characters in the string.  If any argument is <code>NULL</code>, return <code>NULL</code>.</td>
+    <td><code>right('abcde', 2)</code> => <code>de</code></td>
+  </tr>
+  <tr>
     <td><code>RLIKE(string, pattern)</code></td>
     <td>A function equivalent to the <code>RLIKE</code> operator above.</td>
     <td><code>RLIKE('string', 's..i.*')</code> => <code>TRUE</code></td>

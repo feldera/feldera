@@ -174,28 +174,71 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testLeft() {
-        this.q("""
+        this.qs("""
                 SELECT LEFT('string', 1);
                 result
                 ---------
-                 s""");
-        this.q("""
+                 s
+                (1 row)
+
                 SELECT LEFT('string', 0);
                 result
                 ---------
-                \s""");
-        this.q("""
+                \s
+                (1 row)
+
                 SELECT LEFT('string', 100);
                 result
                 ---------
-                 string""");
-        this.q("""
+                 string
+                (1 row)
+                
                 SELECT LEFT('string', -2);
                 result
                 ---------
-                \s""");
+                \s
+                (1 row)
+                
+                SELECT LEFT('string', NULL);
+                result
+                ---------
+                NULL
+                (1 row)""");
     }
 
+    @Test
+    public void testRight() {
+        this.qs("""
+                SELECT RIGHT('string', 1);
+                result
+                ---------
+                 g
+                (1 row)
+
+                SELECT RIGHT('string', 0);
+                result
+                ---------
+                \s
+                (1 row)
+
+                SELECT RIGHT('string', 100);
+                result
+                ---------
+                 string
+                (1 row)
+                
+                SELECT RIGHT('string', -2);
+                result
+                ---------
+                \s
+                (1 row)
+                
+                SELECT RIGHT('string', NULL);
+                result
+                ---------
+                NULL
+                (1 row)""");
+    }
 
     @Test
     public void testBinaryCast() {

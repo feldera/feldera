@@ -54,6 +54,11 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td><code>SELECT gunzip(x'1f8b08000000000000ff4b4bcd49492d4a0400218115ac07000000')</code> => <code>feldera</code></td>
   </tr>
   <tr>
+    <td><a id="left"></a><code>LEFT ( binary, count )</code></td>
+    <td>Returns first <code>count</code> bytes in the byte array.  If any argument is <code>NULL</code>, return <code>NULL</code>.</td>
+    <td><code>left(x'abcdef', 2)</code> => <code>abcd</code></td>
+  </tr>
+  <tr>
     <td><a id="md5"></a><code>MD5</code>(binary)</td>
     <td>
         Calculates an MD5 128-bit checksum of the argument and returns it as a hex <code>VARCHAR</code> value.
@@ -82,13 +87,18 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td><code>POSITION(x'20' IN x'102023')</code> => <code>2</code></td>
   </tr>
   <tr>
+    <td><a id="right"></a><code>RIGHT ( binary, count )</code></td>
+    <td>Returns last <code>count</code> bytes in the byte array.  If any argument is <code>NULL</code>, return <code>NULL</code>.</td>
+    <td><code>right(x'abcdef', 2)</code> => <code>cdef</code></td>
+  </tr>
+  <tr>
     <td><a id="substring"></a><code>SUBSTRING</code>(binary FROM integer)</td>
     <td>Generate a substring of binary starting at the given offset in bytes. The first offset is 1. If the start position integer is less than 1, it is treated as 1</td>
     <td><code>SUBSTRING(x'123456', 3)</code> => <code>x'56'</code></td>
   </tr>
   <tr>
     <td><code>SUBSTRING</code>(binary FROM integer1 FOR integer2)</td>
-    <td>Generate a substring of binary starting at the given offset in bytes with the given length. The first offset is 1. If the start position integer is less than 1, it is treated as 1</td>
+    <td>Generate a substring of binary starting at the given offset in bytes with the given length. The first offset is 1. If the start position integer is less than 1, it is treated as 1. Negative lengths or offsets larger than length return an empty result.</td>
     <td><code>SUBSTRING(x'1234567890' FROM 3 FOR 2)</code> => <code>x'5678'</code></td>
   </tr>
   <tr>

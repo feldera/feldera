@@ -1193,10 +1193,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "writelog":
                         return new DBSPApplyExpression(node, opName, type, ops.get(0), ops.get(1));
-                    case "repeat":
-                    case "left":
+                    case "repeat": {
                         this.ensureInteger(node, ops, 1);
-                        // Fall through
+                        return compileFunction(call, node, type, ops, 2);
+                    }
+                    case "right":
+                    case "left": {
+                        this.ensureInteger(node, ops, 1);
+                        return compilePolymorphicFunction(false, call, node, type, ops, 2);
+                    }
                     case "format_date":
                         return compileFunction(call, node, type, ops, 2);
                     case "bround": {

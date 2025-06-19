@@ -206,6 +206,76 @@ public class VarbinaryTests extends SqlIoTest {
                 (1 row)""");
     }
 
+    @Test
+    public void testLeftAndRight() {
+        this.qs("""
+                SELECT right(x'ABCdef', 1);
+                result
+                -------
+                 ef
+                (1 row)
+                
+                SELECT right(x'ABCdef', 0);
+                result
+                -------
+                 \s
+                (1 row)
+                
+                SELECT right(x'ABCdef', 4);
+                result
+                -------
+                 abcdef
+                (1 row)
+                
+                SELECT right(x'ABCdef', -2);
+                result
+                -------
+                 \s
+                (1 row)
+                
+                SELECT right(cast(null as binary(1)), -2);
+                result
+                -------
+                NULL
+                (1 row)
+                
+                SELECT left(x'ABCdef', 1);
+                result
+                -------
+                 ab
+                (1 row)
+                
+                SELECT left(x'ABCdef', 0);
+                result
+                -------
+                 \s
+                (1 row)
+                
+                SELECT left(x'ABCdef', 4);
+                result
+                -------
+                 abcdef
+                (1 row)
+                
+                SELECT left(x'ABCdef', -2);
+                result
+                -------
+                 \s
+                (1 row)
+                
+                SELECT left(cast(null as binary(1)), -2);
+                result
+                -------
+                NULL
+                (1 row)
+                
+                SELECT left(x'ABCdef', cast(null as Integer));
+                result
+                -------
+                NULL
+                (1 row)""");
+    }
+
     // Tested on Postgres
     @Test
     public void testSubstring() {
@@ -249,7 +319,12 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testSubstringFail() {
-        this.qf("SELECT substring(x'123456', 3, -1)", "negative substring length not allowed");
+        this.qs("""
+                SELECT substring(x'123456', 3, -1);
+                result
+                ------
+                 \s
+                (1 row)""");
     }
 
     @Test
