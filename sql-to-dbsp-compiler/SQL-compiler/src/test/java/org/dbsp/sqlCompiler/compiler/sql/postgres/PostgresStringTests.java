@@ -277,22 +277,24 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void testSubstring() {
-        this.q("""
-                SELECT SUBSTRING('1234567890' FROM 3) = '34567890' AS "34567890";
-                 34567890
-                ----------
-                 t""");
-        this.q(
-                """
-                        SELECT SUBSTRING('1234567890' FROM 4 FOR 3) = '456' AS "456";
-                         456
-                        -----
-                         t""");
-        this.q("""
-                SELECT SUBSTRING('string' FROM -10 FOR 2147483646) AS "string";
-                 string
-                --------
-                 string""");
+        this.qs("""
+               SELECT SUBSTRING('1234567890' FROM 3) = '34567890' AS "34567890";
+                34567890
+               ----------
+                t
+               (1 row)
+
+               SELECT SUBSTRING('1234567890' FROM 4 FOR 3) = '456' AS "456";
+                456
+               -----
+                t
+               (1 row)
+        
+               SELECT SUBSTRING('string' FROM -10 FOR 2147483646) AS "string";
+                string
+               --------
+                string
+               (1 row)""");
     }
 
     @Test

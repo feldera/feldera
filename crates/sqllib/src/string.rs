@@ -380,11 +380,21 @@ pub fn replace___(haystack: SqlString, needle: SqlString, replacement: SqlString
 some_function3!(replace, SqlString, SqlString, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn left__(source: SqlString, size: i32) -> SqlString {
+pub fn left_s_i32(source: SqlString, size: i32) -> SqlString {
     substring3___(source, 1, size)
 }
 
-some_function2!(left, SqlString, i32, SqlString);
+some_polymorphic_function2!(left, s, SqlString, i32, i32, SqlString);
+
+#[doc(hidden)]
+pub fn right_s_i32(source: SqlString, size: i32) -> SqlString {
+    if size <= 0 { return SqlString::new(); }
+    let size = size as usize;
+    let start = if size >= source.len() { 1 } else { source.len() - size + 1 };
+    substring3___(source, start as i32, size as i32)
+}
+
+some_polymorphic_function2!(right, s, SqlString, i32, i32, SqlString);
 
 #[doc(hidden)]
 pub fn split2__(source: SqlString, separators: SqlString) -> Array<SqlString> {

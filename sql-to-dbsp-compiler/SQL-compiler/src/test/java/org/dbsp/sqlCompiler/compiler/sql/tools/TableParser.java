@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
@@ -237,7 +238,7 @@ public class TableParser {
     static DBSPExpression parseValue(DBSPType fieldType, String data) {
         String trimmed = data.trim();
         DBSPExpression result;
-        if (!fieldType.is(DBSPTypeString.class) &&
+        if ((fieldType.code != DBSPTypeCode.STRING && fieldType.code != DBSPTypeCode.BYTES) &&
                 (trimmed.isEmpty() ||
                         trimmed.equalsIgnoreCase("null"))) {
             if (!fieldType.mayBeNull)

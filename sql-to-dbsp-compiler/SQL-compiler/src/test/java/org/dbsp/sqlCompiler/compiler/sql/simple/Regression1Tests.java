@@ -378,4 +378,13 @@ public class Regression1Tests extends SqlIoTest {
                 CONCAT(bin, bin) AS bin
                 FROM tbl;""");
     }
+
+    @Test
+    public void issue4203() {
+        this.getCCS("""
+                CREATE TABLE tbl(bin BINARY);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                LEFT(bin, 2) AS bin
+                FROM tbl;""");
+    }
 }

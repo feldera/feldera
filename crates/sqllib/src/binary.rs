@@ -341,7 +341,8 @@ some_function2!(binary_substring2, ByteArray, i32, ByteArray);
 pub fn binary_substring3___(source: ByteArray, left: i32, count: i32) -> ByteArray {
     // SQL indexing starts at 1
     let start = if left < 1 { 0 } else { left - 1 };
-    let count = usize::try_from(count).expect("negative substring length not allowed");
+    if count < 0 { return ByteArray::default(); }
+    let count = count as usize;
 
     let data = source
         .data
@@ -354,6 +355,23 @@ pub fn binary_substring3___(source: ByteArray, left: i32, count: i32) -> ByteArr
 }
 
 some_function3!(binary_substring3, ByteArray, i32, i32, ByteArray);
+
+#[doc(hidden)]
+pub fn left_bytes_i32(source: ByteArray, size: i32) -> ByteArray {
+    binary_substring3___(source, 1, size)
+}
+
+some_polymorphic_function2!(left, bytes, ByteArray, i32, i32, ByteArray);
+
+#[doc(hidden)]
+pub fn right_bytes_i32(source: ByteArray, size: i32) -> ByteArray {
+    if size <= 0 { return ByteArray::default(); }
+    let size = size as usize;
+    let start = if size >= source.length() { 1 } else { source.length() - size + 1 };
+    binary_substring3___(source, start as i32, size as i32)
+}
+
+some_polymorphic_function2!(right, bytes, ByteArray, i32, i32, ByteArray);
 
 #[doc(hidden)]
 pub fn binary_overlay3___(source: ByteArray, replacement: ByteArray, position: i32) -> ByteArray {
