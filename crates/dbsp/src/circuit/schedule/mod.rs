@@ -122,6 +122,18 @@ where
     where
         C: Circuit;
 
+    async fn start_step<C>(&self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit;
+
+    async fn microstep<C>(&self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit;
+
+    async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit;
+
     /// Evaluate the circuit at runtime.
     ///
     /// Evaluates each node in the circuit exactly once in an order that
@@ -133,7 +145,7 @@ where
     ///
     /// * `circuit` - circuit to schedule, this must be the same circuit for
     ///   which the schedule was computed.
-    fn step<C>(&self, circuit: &C) -> impl Future<Output = Result<(), Error>>
+    async fn step<C>(&self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit;
 }
@@ -144,7 +156,22 @@ where
 pub trait Executor<C>: 'static {
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>;
 
-    fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+    fn start_step<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    fn microstep<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    fn finish_step<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 }
 
 /// An iterative executor evaluates the circuit until the `termination_check`
@@ -175,7 +202,46 @@ where
     C: Circuit,
     S: Scheduler + 'static,
 {
-    fn run<'a>(&'a self, circuit: &C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    fn start_step<'a>(
+        &'a self,
+        circuit: &C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        let circuit = circuit.clone();
+        Box::pin(async move {
+            circuit.log_scheduler_event(&SchedulerEvent::clock_start());
+            circuit.clock_start(0);
+
+            self.scheduler.start_step(&circuit).await
+        })
+    }
+
+    fn microstep<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        let circuit = circuit.clone();
+        Box::pin(async move { self.scheduler.microstep(&circuit).await })
+    }
+
+    fn finish_step<'a>(
+        &'a self,
+        circuit: &C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        let circuit = circuit.clone();
+        Box::pin(async move {
+            self.scheduler.finish_step(&circuit).await?;
+
+            while (self.termination_check)().await? {
+                self.scheduler.step(&circuit).await?;
+            }
+
+            circuit.log_scheduler_event(&SchedulerEvent::clock_end());
+            circuit.clock_end(0);
+            Ok(())
+        })
+    }
+
+    fn step<'a>(&'a self, circuit: &C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
         let circuit = circuit.clone();
         Box::pin(async move {
             circuit.log_scheduler_event(&SchedulerEvent::clock_start());
@@ -222,7 +288,28 @@ where
     C: Circuit,
     S: Scheduler + 'static,
 {
-    fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    fn start_step<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        Box::pin(async { self.scheduler.start_step(circuit).await })
+    }
+
+    fn microstep<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        Box::pin(async { self.scheduler.microstep(circuit).await })
+    }
+
+    fn finish_step<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        Box::pin(async { self.scheduler.finish_step(circuit).await })
+    }
+
+    fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
         Box::pin(async { self.scheduler.step(circuit).await })
     }
 
