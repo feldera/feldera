@@ -19,4 +19,6 @@ SELECT 95 / CASE + MIN ( DISTINCT - - 3 ) WHEN - 74 * + - 77 * + 71 * + 93 * + -
 SELECT ALL + CASE - 59 WHEN + 55 * - 56 + - - 95 THEN - 78 + 98 * CASE - COUNT ( * ) WHEN NULLIF ( - AVG ( DISTINCT - + NULLIF ( + - ( 11 ), 89 / ( 0 ) ) ), - COUNT ( * ) ) + 62 THEN 37 + + COUNT ( DISTINCT + 77 ) / 61 ELSE + 26 / 10 - + 14 * - 10 END / 79 END * 60 col2
 // test/random/expr/slt_good_71.test: test 2290, division by zero
 SELECT ALL - ( 27 ) * - 92 / + + 0 / CASE + ( + 27 ) WHEN - 36 THEN NULL WHEN - NULLIF ( - COUNT ( + 36 ), - 78 ) THEN + 46 ELSE NULL END * + 53 + - - 8
+// test/random/expr/slt_good_99.test: test 5803, division by 0
+SELECT + MIN ( 95 ) / - + 0 * + CASE - - COUNT ( + 54 ) WHEN + 27 * + ( - - 48 ) - - 45 THEN COUNT ( * ) * + 21 ELSE NULL END * 41
 
