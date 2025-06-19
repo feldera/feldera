@@ -148,6 +148,8 @@ struct Inner {
     /// True when the scheduler is waiting for at least one task to become ready.
     waiting: bool,
 
+    flush: bool,
+
     // Reset on each macrostep
     unflushed_operators: usize,
 }
@@ -310,6 +312,7 @@ impl Inner {
             notifications: Notifications::new(num_async_nodes),
             handles: JoinSet::new(),
             waiting: false,
+            flush: false,
             unflushed_operators: nodes.len(),
         };
 
@@ -352,7 +355,7 @@ impl Inner {
 
         let circuit = circuit.clone();
 
-        if task.flush_state == FlushState::UnflushedDependencies(0) {
+        if self.flush && task.flush_state == FlushState::UnflushedDependencies(0) {
             circuit.flush_node(node_id);
             task.flush_state = FlushState::Started;
         }
@@ -372,28 +375,47 @@ impl Inner {
         }
     }
 
-    async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
-    where
-        C: Circuit,
-    {
+    fn start_step(&mut self) {
         self.unflushed_operators = self.tasks.len();
 
         // Reset unsatisfied dependencies, initialize runnable queue.
         for task in self.tasks.values_mut() {
             task.flush_state = FlushState::UnflushedDependencies(task.num_predecessors);
         }
+        self.flush = false
+    }
 
+    async fn microstep<C>(&mut self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
+        let result = self.do_microstep(circuit).await;
+        circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id()));
+        result
+    }
+
+    async fn finish_step<C>(&mut self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        self.flush = true;
         while self.unflushed_operators > 0 {
-            circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
-            let result = self.microstep(circuit).await;
-            circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id()));
-            result?;
+            self.microstep(circuit).await?;
         }
 
         Ok(())
     }
 
-    async fn microstep<C>(&mut self, circuit: &C) -> Result<(), Error>
+    async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        self.start_step();
+        self.finish_step(circuit).await
+    }
+
+    async fn do_microstep<C>(&mut self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
@@ -513,6 +535,37 @@ impl Scheduler for DynamicScheduler {
     {
         self.0 = Some(RefCell::new(Inner::prepare(circuit, nodes)?));
         Ok(())
+    }
+
+    async fn start_step<C>(&self, _circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        let inner = &mut *self.inner_mut();
+
+        inner.start_step();
+
+        Ok(())
+    }
+
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn microstep<C>(&self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        let inner = &mut *self.inner_mut();
+
+        inner.microstep(circuit).await
+    }
+
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        let inner = &mut *self.inner_mut();
+
+        inner.finish_step(circuit).await
     }
 
     #[allow(clippy::await_holding_refcell_ref)]
