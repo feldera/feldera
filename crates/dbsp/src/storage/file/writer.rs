@@ -1235,10 +1235,9 @@ impl Writer {
 ///     path: tempdir.path().to_string_lossy().to_string(),
 ///    cache: Default::default(),
 /// }, &StorageOptions::default()).unwrap();
-/// let cache = Arc::new(BufferCache::new(1024 * 1024));
 /// let parameters = Parameters::default();
 /// let mut file =
-///     Writer1::new(&factories, cache, &*storage_backend, parameters, 1_000_000).unwrap();
+///     Writer1::new(&factories, || Arc::new(BufferCache::new(1024 * 1024)), &*storage_backend, parameters, 1_000_000).unwrap();
 /// for i in 0..1000_u32 {
 ///     file.write0((i.erase(), ().erase())).unwrap();
 /// }
@@ -1372,10 +1371,9 @@ where
 ///     path: tempdir.path().to_string_lossy().to_string(),
 ///    cache: Default::default(),
 /// }, &StorageOptions::default()).unwrap();
-/// let cache = Arc::new(BufferCache::new(1024 * 1024));
 /// let parameters = Parameters::default();
 /// let mut file =
-///     Writer2::new(&factories, &factories, cache, &*storage_backend, parameters, 1_000_000).unwrap();
+///     Writer2::new(&factories, &factories, || Arc::new(BufferCache::new(1024 * 1024)), &*storage_backend, parameters, 1_000_000).unwrap();
 /// for i in 0..1000_u32 {
 ///     for j in 0..10_u32 {
 ///         file.write1((&j, &())).unwrap();
