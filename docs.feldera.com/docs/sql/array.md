@@ -49,7 +49,7 @@ CREATE VIEW V AS SELECT city, data.country
 FROM data CROSS JOIN UNNEST(data.cities) AS city;
 ```
 
-`UNNEST` applied to a `NULL` value returns an empty array.
+`UNNEST` applied to a `NULL` value returns an empty table.
 
 Note that applying `UNNEST` to an `ARRAY` of structure-typed objects
 will produce a collection whose columns are the fields of the

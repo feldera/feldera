@@ -49,3 +49,21 @@ Comparison operations (`=`, `<>`, `!=`, `>`, `<`, `>=`, `<=`) can be applied to 
 | <a id="cardinality"></a>`CARDINALITY`(map)     | Returns the number of key-value pairs in the map.                                                      | `CARDINALITY(MAP['x', 4])` => 1 |
 | <a id="map_contains_key"></a>`MAP_CONTAINS_KEY`(map, key) | Returns true when the map has an item with the specified key; `NULL` if any argument is `NULL`.  | `MAP_CONTAINS_KEY(MAP['x', 4], 'x')` => `true` |
 
+## The `UNNEST` Operator
+
+The `UNNEST` operator takes a `MAP` and returns a table with a row for
+each key-value pair in the `MAP`.  If the input is a
+map with 5 key-value pairs, the output is a table with 5 rows, each
+row holding one key-value pair of the map.
+
+When `UNNEST` operator is used in self-joins as follows, an alias needs
+to be used to name the key and value fields (`zips(city, zip)` in the example):
+
+```sql
+CREATE TABLE data(zipcodes MAP<VARCHAR, INT>, COUNTRY VARCHAR);
+
+CREATE VIEW V AS SELECT data.country, city, zip
+FROM data CROSS JOIN UNNEST(data.zipcodes) AS zips(city, zip);
+```
+
+`UNNEST` applied to a `NULL` value returns an empty table.

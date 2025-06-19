@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -15,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
@@ -55,6 +57,12 @@ import java.util.stream.IntStream;
  * The result type is the output element type.
  */
 public final class DBSPFlatmap extends DBSPExpression {
+    // The kind of collection that we are iterating on
+    enum CollectionKind {
+        Array,
+        Map,
+    }
+
     /** Type of the input row. */
     public final DBSPTypeTuple inputElementType;
     /** A closure which, applied to 'data', produces the
@@ -77,6 +85,7 @@ public final class DBSPFlatmap extends DBSPExpression {
     public final DBSPType ordinalityIndexType;
     /** Shuffle to apply to elements in the produced tuple */
     public final Shuffle shuffle;
+    public final DBSPTypeCode collectionKind;
 
     public DBSPFlatmap(CalciteObject node,
                        DBSPTypeFunction resultElementType,
@@ -91,7 +100,13 @@ public final class DBSPFlatmap extends DBSPExpression {
         this.inputElementType = inputElementType;
         this.rightProjections = rightProjections;
         this.collectionExpression = collectionExpression;
+        this.collectionKind = collectionExpression.getResultType().code;
         this.leftInputIndexes = leftInputIndexes;
+        Utilities.enforce(this.collectionKind == DBSPTypeCode.ARRAY ||
+                this.collectionKind == DBSPTypeCode.MAP);
+        if (ordinalityIndexType != null && this.collectionKind == DBSPTypeCode.MAP) {
+            throw new UnimplementedException("UNNEST with ORDINALITY not supported for MAP values", node);
+        }
         Utilities.enforce(collectionExpression.parameters.length == 1);
         Utilities.enforce(collectionExpression.parameters[0].type.sameType(this.inputElementType.ref()),
                 "Collection expression expects " + collectionExpression.parameters[0].type

@@ -54,11 +54,17 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Base class for SQL-based tests. */
 public class BaseSQLTests {
+    // Debugging: set to true to only compile SQL
+    public static final boolean skipRust = false;
+    // Debugging: set to only accept some tests
+    public static Predicate<CompilerCircuitStream> acceptTest = x -> true;
+
     /** Override this method to prepare the tables on
      * which the tests are built. */
     public void prepareInputs(DBSPCompiler compiler) {}
@@ -258,14 +264,16 @@ public class BaseSQLTests {
                 List<DBSPFunction> testers = test.createTesterCode(testNumber, RUST_DIRECTORY, inputFunctions);
                 writer.add(test.ccs.circuit);
                 for (var tester: testers)
-                    writer.add(tester);
+                    if (acceptTest.test(test.ccs))
+                        writer.add(tester);
                 BaseSQLTests.testsExecuted++;
                 testNumber++;
             }
             Utilities.enforce(firstCompiler != null);
             writer.write(firstCompiler);
             outputStream.close();
-            Utilities.compileAndTestRust(RUST_DIRECTORY, true);
+            if (!skipRust)
+                Utilities.compileAndTestRust(RUST_DIRECTORY, true);
         }
 
         if (!toCheck.isEmpty()) {
@@ -286,14 +294,16 @@ public class BaseSQLTests {
                 List<DBSPFunction> testers = test.createTesterCode(testNumber, RUST_DIRECTORY, inputFunctions);
                 writer.add(test.ccs.circuit);
                 for (var tester: testers)
-                    writer.add(tester);
+                    if (acceptTest.test(test.ccs))
+                        writer.add(tester);
                 BaseSQLTests.testsChecked++;
                 testNumber++;
             }
             Utilities.enforce(firstCompiler != null);
             writer.write(firstCompiler);
             outputStream.close();
-            Utilities.compileAndCheckRust(RUST_DIRECTORY, true);
+            if (!skipRust)
+                Utilities.compileAndCheckRust(RUST_DIRECTORY, true);
         }
         testsToRun.clear();
     }

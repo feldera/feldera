@@ -29,7 +29,5 @@ public class TpcDsTest extends BaseSQLTests {
         compiler.submitStatementsForCompilation(tpcds);
         CompilerCircuit ccs = new CompilerCircuit(compiler);
         ccs.showErrors();
-        // This crashes the Rust compiler!
-        // this.addRustTestCase("tpcds", ccs);
     }
 }

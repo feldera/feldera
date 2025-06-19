@@ -29,7 +29,7 @@ public class MultiCrateTests extends BaseSQLTests {
             messages.print();
             throw new RuntimeException("Error during compilation");
         }
-        if (check)
+        if (check && !BaseSQLTests.skipRust)
             Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
     }
 
@@ -182,7 +182,8 @@ public class MultiCrateTests extends BaseSQLTests {
                     this.appendCargoDependencies(cargoContents);
                 }
             }
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
+            if (!BaseSQLTests.skipRust)
+                Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
             if (udf != null) {
                 //noinspection ResultOfMethodCallIgnored
                 udf.delete();

@@ -290,7 +290,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        if (!BaseSQLTests.skipRust)
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
     }
 
     void compileFile(String file, boolean run) throws SQLException, IOException, InterruptedException {
@@ -298,7 +299,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.TEST_FILE_PATH, file);
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        if (run)
+        if (run && !BaseSQLTests.skipRust)
             Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
         // cleanup after ourselves
         createEmptyStubs();
@@ -418,7 +419,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.exitCode);
-        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        if (!BaseSQLTests.skipRust)
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
     }
 
     @Test
@@ -501,7 +503,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         try (FileWriter fr = new FileWriter(rust, true)) { // append
             fr.write(rustHandlesTest);
         }
-        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        if (!BaseSQLTests.skipRust)
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
 
         // Second test
         message = CompilerMain.execute(
@@ -513,7 +516,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         try (FileWriter fr = new FileWriter(rust, true)) { // append
             fr.write(rustCatalogTest);
         }
-        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+        if (!BaseSQLTests.skipRust)
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
     }
 
     @Test
@@ -635,7 +639,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     public void generateFunctionIndex() throws IOException {
         // When invoked it generates documentation for the supported functions and operators
         // in the specified file.
-        String file = "../../docs/sql/function-index.md";
+        String file = "../../docs.feldera.com/docs/sql/function-index.md";
         FunctionDocumentation.generateIndex(file);
     }
 
