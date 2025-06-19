@@ -491,6 +491,36 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::StartStep(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span = LocalSpan::enter_with_local_parent("worker-start-step")
+                            .with_property(|| ("worker", worker_index_str));
+                        let status = circuit.start_step().map(|_| Response::Unit);
+                        // Send response.
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::Microstep(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span = LocalSpan::enter_with_local_parent("worker-microstep")
+                            .with_property(|| ("worker", worker_index_str));
+                        let status = circuit.microstep().map(|_| Response::Unit);
+                        // Send response.
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::FinishStep(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span = LocalSpan::enter_with_local_parent("worker-finish-step")
+                            .with_property(|| ("worker", worker_index_str));
+                        let status = circuit.finish_step().map(|_| Response::Unit);
+                        // Send response.
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
                     Ok(Command::BootstrapStep(span)) => {
                         let _guard = span.set_local_parent();
                         let _worker_span = LocalSpan::enter_with_local_parent("worker-step")
@@ -623,6 +653,9 @@ impl Runtime {
 
 #[derive(Clone)]
 enum Command {
+    StartStep(Arc<Span>),
+    Microstep(Arc<Span>),
+    FinishStep(Arc<Span>),
     Step(Arc<Span>),
     /// Execute a step in bootstrap mode.
     BootstrapStep(Arc<Span>),
@@ -796,6 +829,43 @@ impl DBSPHandle {
         } else {
             self.step_regular()
         }
+    }
+
+    pub fn start_step(&mut self) -> Result<(), DbspError> {
+        counter!("feldera.dbsp.step").increment(1);
+        let start = Instant::now();
+        let span = Arc::new(Span::root("start_step", SpanContext::random()));
+        let _guard = span.set_local_parent();
+        let result = self.broadcast_command(Command::StartStep(span), |_, _| {});
+        if let Some(handle) = self.runtime.as_ref() {
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+        result
+    }
+
+    pub fn microstep(&mut self) -> Result<(), DbspError> {
+        let start = Instant::now();
+        let span = Arc::new(Span::root("microstep", SpanContext::random()));
+        let _guard = span.set_local_parent();
+        let result = self.broadcast_command(Command::Microstep(span), |_, _| {});
+        if let Some(handle) = self.runtime.as_ref() {
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+        result
+    }
+
+    pub fn finish_step(&mut self) -> Result<(), DbspError> {
+        let start = Instant::now();
+        let span = Arc::new(Span::root("finish_step", SpanContext::random()));
+        let _guard = span.set_local_parent();
+        let result = self.broadcast_command(Command::FinishStep(span), |_, _| {});
+        if let Some(handle) = self.runtime.as_ref() {
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+        result
     }
 
     pub fn set_replay_step_size(&mut self, step_size: usize) {
