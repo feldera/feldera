@@ -635,7 +635,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     public void generateFunctionIndex() throws IOException {
         // When invoked it generates documentation for the supported functions and operators
         // in the specified file.
-        String file = "../../docs/sql/function-index.md";
+        String file = "../../docs.feldera.com/docs/sql/function-index.md";
         FunctionDocumentation.generateIndex(file);
     }
 
