@@ -3,6 +3,7 @@ use crate::{
     dynamic::DynData,
 };
 
+mod accumulate_trace;
 pub mod accumulator;
 pub mod aggregate;
 pub mod asof_join;
