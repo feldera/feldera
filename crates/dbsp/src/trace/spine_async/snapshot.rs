@@ -46,6 +46,10 @@ where
     pub fn extend(&mut self, other: Self) {
         self.batches.extend(other.batches.iter().cloned())
     }
+
+    pub fn batches(&self) -> &[Arc<B>] {
+        &self.batches
+    }
 }
 
 impl<B> From<&Spine<B>> for SpineSnapshot<B>
