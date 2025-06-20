@@ -2,7 +2,8 @@ use crate::circuit::circuit_builder::{register_replay_stream, StreamId};
 use crate::circuit::metadata::NUM_INPUTS;
 use crate::circuit::metrics::Gauge;
 use crate::dynamic::{Weight, WeightTrait};
-use crate::operator::require_persistent_id;
+use crate::operator::dynamic::trace::TraceBounds;
+use crate::operator::{require_persistent_id, TraceBound};
 use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
 use crate::Runtime;
 use crate::{
@@ -20,264 +21,15 @@ use crate::{
     trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace},
     Error, Timestamp,
 };
-use dyn_clone::clone_box;
 use feldera_storage::StoragePath;
 use minitrace::trace;
 use ouroboros::self_referencing;
 use size_of::SizeOf;
-use std::any::TypeId;
-use std::mem::transmute;
-use std::{
-    borrow::Cow,
-    cell::{Ref, RefCell},
-    cmp::Ordering,
-    fmt::Debug,
-    marker::PhantomData,
-    ops::Deref,
-    rc::Rc,
-    sync::Arc,
-};
+use std::{borrow::Cow, marker::PhantomData, ops::Deref};
 
-circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
-circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
-circuit_cache_key!(DelayedTraceId<C, D>(StreamId => Stream<C, D>));
-circuit_cache_key!(SpillId<C, D>(StreamId => Stream<C, D>));
-
-/// Lower bound on keys or values in a trace.
-///
-/// Setting the bound to `None` is equivalent to setting it to
-/// `T::min_value()`, i.e., the contents of the trace will never
-/// get truncated.
-///
-/// The writer can update the value of the bound at each clock
-/// cycle.  The bound can only increase monotonically.
-#[repr(transparent)]
-pub struct TraceBound<T: ?Sized>(Rc<RefCell<Option<Box<T>>>>);
-
-impl<T: DataTrait + ?Sized> Clone for TraceBound<T> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<T: Debug + ?Sized> Debug for TraceBound<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.borrow().fmt(f)
-    }
-}
-
-impl<T: DataTrait + ?Sized> PartialEq for TraceBound<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T: DataTrait + ?Sized> Eq for TraceBound<T> {}
-
-impl<T: DataTrait + ?Sized> PartialOrd for TraceBound<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T: DataTrait + ?Sized> Ord for TraceBound<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-impl<K: DataTrait + ?Sized> Default for TraceBound<K> {
-    fn default() -> Self {
-        Self(Rc::new(RefCell::new(None)))
-    }
-}
-
-impl<K: DataTrait + ?Sized> TraceBound<K> {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    /// Set the new value of the bound.
-    pub fn set(&self, bound: Box<K>) {
-        //debug_assert!(self.0.borrow().as_ref() <= Some(&bound));
-        *self.0.borrow_mut() = Some(bound);
-    }
-
-    /// Get the current value of the bound.
-    pub fn get(&self) -> Ref<'_, Option<Box<K>>> {
-        (*self.0).borrow()
-    }
-}
-
-/// Data structure that tracks key and value retainment policies for a
-/// trace.
-pub struct TraceBounds<K: ?Sized + 'static, V: ?Sized + 'static>(
-    Rc<RefCell<TraceBoundsInner<K, V>>>,
-);
-
-impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> Clone for TraceBounds<K, V> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
-    /// Instantiate `TraceBounds` with empty sets of key and value bounds.
-    ///
-    /// The caller must add at least one key and one value bound before
-    /// running the circuit.
-    pub(crate) fn new() -> Self {
-        Self(Rc::new(RefCell::new(TraceBoundsInner {
-            key_predicate: Predicate::Bounds(Vec::new()),
-            unique_key_name: None,
-            val_predicate: Predicate::Bounds(Vec::new()),
-            unique_val_name: None,
-        })))
-    }
-
-    /// Returns `TraceBounds` that prevent any values in the trace from
-    /// being truncated.
-    pub(crate) fn unbounded() -> Self {
-        Self(Rc::new(RefCell::new(TraceBoundsInner {
-            key_predicate: Predicate::Bounds(vec![TraceBound::new()]),
-            unique_key_name: None,
-            val_predicate: Predicate::Bounds(vec![TraceBound::new()]),
-            unique_val_name: None,
-        })))
-    }
-
-    pub(crate) fn add_key_bound(&self, bound: TraceBound<K>) {
-        match &mut self.0.borrow_mut().key_predicate {
-            Predicate::Bounds(bounds) => bounds.push(bound),
-            Predicate::Filter(_) => {}
-        };
-    }
-
-    /// Set key retainment condition.  Disables any key bounds
-    /// set using [`Self::add_key_bound`].
-    pub(crate) fn set_key_filter(&self, filter: Filter<K>) {
-        self.0.borrow_mut().key_predicate = Predicate::Filter(filter);
-    }
-
-    pub(crate) fn set_unique_key_bound_name(&self, unique_name: Option<&str>) {
-        self.0.borrow_mut().unique_key_name = unique_name.map(str::to_string);
-    }
-
-    pub(crate) fn add_val_bound(&self, bound: TraceBound<V>) {
-        match &mut self.0.borrow_mut().val_predicate {
-            Predicate::Bounds(bounds) => bounds.push(bound),
-            Predicate::Filter(_) => {}
-        };
-    }
-
-    /// Set value retainment condition.  Disables any value bounds
-    /// set using [`Self::add_val_bound`].
-    pub(crate) fn set_val_filter(&self, filter: Filter<V>) {
-        self.0.borrow_mut().val_predicate = Predicate::Filter(filter);
-    }
-
-    pub(crate) fn set_unique_val_bound_name(&self, unique_name: Option<&str>) {
-        self.0.borrow_mut().unique_val_name = unique_name.map(str::to_string);
-    }
-
-    /// Returns effective key retention condition, computed as the
-    /// minimum bound installed using [`Self::add_val_bound`] or as the
-    /// condition installed using [`Self::set_val_filter`] (the latter
-    /// takes precedence).
-    pub(crate) fn effective_key_filter(&self) -> Option<Filter<K>> {
-        match &(*self.0).borrow().key_predicate {
-            Predicate::Bounds(bounds) => bounds
-                .iter()
-                .min()
-                .expect("At least one trace bound must be set")
-                .get()
-                .deref()
-                .as_ref()
-                .map(|bx| Arc::from(clone_box(bx.as_ref())))
-                .map(|bound: Arc<K>| {
-                    let metadata = MetaItem::String(format!("{bound:?}"));
-                    Filter::new(Box::new(move |k: &K| {
-                        bound.as_ref().cmp(k) != Ordering::Greater
-                    }))
-                    .with_metadata(metadata)
-                }),
-            Predicate::Filter(filter) => Some(filter.clone()),
-        }
-    }
-
-    /// Returns effective value retention condition, computed as the
-    /// minimum bound installed using [`Self::add_val_bound`] or as the
-    /// condition installed using [`Self::set_val_filter`] (the latter
-    /// takes precedence).
-    pub(crate) fn effective_val_filter(&self) -> Option<Filter<V>> {
-        match &(*self.0).borrow().val_predicate {
-            Predicate::Bounds(bounds) => bounds
-                .iter()
-                .min()
-                .expect("At least one trace bound must be set")
-                .get()
-                .deref()
-                .as_ref()
-                .map(|bx| Arc::from(clone_box(bx.as_ref())))
-                .map(|bound: Arc<V>| {
-                    let metadata = MetaItem::String(format!("{bound:?}"));
-                    Filter::new(Box::new(move |v: &V| {
-                        bound.as_ref().cmp(v) != Ordering::Greater
-                    }))
-                    .with_metadata(metadata)
-                }),
-            Predicate::Filter(filter) => Some(filter.clone()),
-        }
-    }
-
-    pub(crate) fn metadata(&self) -> MetaItem {
-        self.0.borrow().metadata()
-    }
-}
-
-/// Value retainment predicate defined as either a set of bounds
-/// or a filter condition.
-///
-/// See [`Stream::dyn_integrate_trace_retain_keys`] for details.
-enum Predicate<V: ?Sized> {
-    Bounds(Vec<TraceBound<V>>),
-    Filter(Filter<V>),
-}
-
-impl<V: Debug + ?Sized> Predicate<V> {
-    pub fn metadata(&self) -> MetaItem {
-        match self {
-            Self::Bounds(bounds) => MetaItem::Array(
-                bounds
-                    .iter()
-                    .map(|b| MetaItem::String(format!("{b:?}")))
-                    .collect(),
-            ),
-            Self::Filter(filter) => filter.metadata().clone(),
-        }
-    }
-}
-
-struct TraceBoundsInner<K: ?Sized + 'static, V: ?Sized + 'static> {
-    /// Key bounds _or_ retainment condition.
-    key_predicate: Predicate<K>,
-    unique_key_name: Option<String>,
-    /// Value bounds _or_ retainment condition.
-    val_predicate: Predicate<V>,
-    unique_val_name: Option<String>,
-}
-
-impl<K: Debug + ?Sized + 'static, V: Debug + ?Sized + 'static> TraceBoundsInner<K, V> {
-    pub fn metadata(&self) -> MetaItem {
-        MetaItem::Map(
-            metadata! {
-                "key" => self.key_predicate.metadata(),
-                "value" => self.val_predicate.metadata()
-            }
-            .into(),
-        )
-    }
-}
+circuit_cache_key!(AccumulateTraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
+circuit_cache_key!(AccumulateBoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
+circuit_cache_key!(AccumulateDelayedTraceId<C, D>(StreamId => Stream<C, D>));
 
 /// An on-storage, key-only [`Spine`] of `C`'s default batch type, with key and
 /// weight types taken from `B`.
@@ -301,7 +53,7 @@ where
     B: Clone + Send + Sync + 'static,
 {
     /// See [`Stream::trace`].
-    pub fn dyn_trace(
+    pub fn dyn_accumulate_trace(
         &self,
         output_factories: &<ValSpine<B, C> as BatchReader>::Factories,
         batch_factories: &B::Factories,
@@ -309,7 +61,7 @@ where
     where
         B: Batch<Time = ()>,
     {
-        self.dyn_trace_with_bound(
+        self.dyn_accumulate_trace_with_bound(
             output_factories,
             batch_factories,
             TraceBound::new(),
@@ -318,7 +70,7 @@ where
     }
 
     /// See [`Stream::trace_with_bound`].
-    pub fn dyn_trace_with_bound(
+    pub fn dyn_accumulate_trace_with_bound(
         &self,
         output_factories: &<ValSpine<B, C> as BatchReader>::Factories,
         batch_factories: &B::Factories,
@@ -328,15 +80,17 @@ where
     where
         B: Batch<Time = ()>,
     {
-        let bounds = self.trace_bounds_with_bound(lower_key_bound, lower_val_bound);
+        let bounds = self.accumulate_trace_bounds_with_bound(lower_key_bound, lower_val_bound);
 
         self.circuit()
-            .cache_get_or_insert_with(TraceId::new(self.stream_id()), || {
+            .cache_get_or_insert_with(AccumulateTraceId::new(self.stream_id()), || {
                 let circuit = self.circuit();
 
-                circuit.region("trace", || {
+                let accumulated = self.dyn_accumulate(batch_factories);
+
+                circuit.region("accumulate_trace", || {
                     let persistent_id = self.get_persistent_id();
-                    let z1 = Z1Trace::new(
+                    let z1 = AccumulateZ1Trace::new(
                         output_factories,
                         batch_factories,
                         false,
@@ -353,9 +107,12 @@ where
                     let replay_stream = z1feedback.operator_mut().prepare_replay_stream(self);
 
                     let trace = circuit.add_binary_operator_with_preference(
-                        <TraceAppend<ValSpine<B, C>, B, C>>::new(output_factories, circuit.clone()),
+                        <AccumulateTraceAppend<ValSpine<B, C>, B, C>>::new(
+                            output_factories,
+                            circuit.clone(),
+                        ),
                         (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                        (self, OwnershipPreference::PREFER_OWNED),
+                        (&accumulated, OwnershipPreference::PREFER_OWNED),
                     );
                     if self.is_sharded() {
                         delayed_trace.mark_sharded();
@@ -369,7 +126,10 @@ where
 
                     register_replay_stream(circuit, self, &replay_stream);
 
-                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
+                    circuit.cache_insert(
+                        AccumulateDelayedTraceId::new(trace.stream_id()),
+                        delayed_trace,
+                    );
                     trace
                 })
             })
@@ -378,7 +138,7 @@ where
 
     /// See [`Stream::integrate_trace_retain_keys`].
     #[track_caller]
-    pub fn dyn_integrate_trace_retain_keys<TS>(
+    pub fn dyn_accumulate_integrate_trace_retain_keys<TS>(
         &self,
         bounds_stream: &Stream<C, Box<TS>>,
         retain_key_func: Box<dyn Fn(&TS) -> Filter<B::Key>>,
@@ -387,7 +147,7 @@ where
         TS: DataTrait + ?Sized,
         Box<TS>: Clone,
     {
-        let bounds = self.trace_bounds();
+        let bounds = self.accumulate_trace_bounds();
         bounds.set_unique_key_bound_name(bounds_stream.get_persistent_id().as_deref());
         bounds_stream.inspect(move |ts| {
             let filter = retain_key_func(ts.as_ref());
@@ -397,7 +157,7 @@ where
 
     /// See [`Stream::integrate_trace_retain_values`].
     #[track_caller]
-    pub fn dyn_integrate_trace_retain_values<TS>(
+    pub fn dyn_accumulate_integrate_trace_retain_values<TS>(
         &self,
         bounds_stream: &Stream<C, Box<TS>>,
         retain_val_func: Box<dyn Fn(&TS) -> Filter<B::Val>>,
@@ -406,7 +166,7 @@ where
         TS: DataTrait + ?Sized,
         Box<TS>: Clone,
     {
-        let bounds = self.trace_bounds();
+        let bounds = self.accumulate_trace_bounds();
         bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
 
         bounds_stream.inspect(move |ts| {
@@ -430,7 +190,7 @@ where
     /// spilled) version, because it always exists, whereas the sharded version
     /// might be created only *after* we get the trace bounds for the source
     /// stream.
-    fn trace_bounds(&self) -> TraceBounds<B::Key, B::Val>
+    fn accumulate_trace_bounds(&self) -> TraceBounds<B::Key, B::Val>
     where
         B: BatchReader,
     {
@@ -439,14 +199,14 @@ where
         let stream_id = self.try_unsharded_version().stream_id();
 
         self.circuit()
-            .cache_get_or_insert_with(BoundsId::<B>::new(stream_id), TraceBounds::new)
+            .cache_get_or_insert_with(AccumulateBoundsId::<B>::new(stream_id), TraceBounds::new)
             .clone()
     }
 
     /// Retrieves trace bounds for `self`, or a sharded version of `self` if it
     /// exists, creating them if necessary, and adds bounds for
     /// `lower_key_bound` and `lower_val_bound`.
-    fn trace_bounds_with_bound(
+    fn accumulate_trace_bounds_with_bound(
         &self,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
@@ -454,7 +214,7 @@ where
     where
         B: BatchReader,
     {
-        let bounds = self.trace_bounds();
+        let bounds = self.accumulate_trace_bounds();
         bounds.add_key_bound(lower_key_bound);
         bounds.add_val_bound(lower_val_bound);
         bounds
@@ -462,15 +222,19 @@ where
 
     // TODO: this method should replace `Stream::integrate()`.
     #[track_caller]
-    pub fn dyn_integrate_trace(&self, factories: &B::Factories) -> Stream<C, Spine<B>>
+    pub fn dyn_accumulate_integrate_trace(&self, factories: &B::Factories) -> Stream<C, Spine<B>>
     where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
-        self.dyn_integrate_trace_with_bound(factories, TraceBound::new(), TraceBound::new())
+        self.dyn_accumulate_integrate_trace_with_bound(
+            factories,
+            TraceBound::new(),
+            TraceBound::new(),
+        )
     }
 
-    pub fn dyn_integrate_trace_with_bound(
+    pub fn dyn_accumulate_integrate_trace_with_bound(
         &self,
         factories: &B::Factories,
         lower_key_bound: TraceBound<B::Key>,
@@ -480,14 +244,14 @@ where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
-        self.integrate_trace_inner(
+        self.accumulate_integrate_trace_inner(
             factories,
-            self.trace_bounds_with_bound(lower_key_bound, lower_val_bound),
+            self.accumulate_trace_bounds_with_bound(lower_key_bound, lower_val_bound),
         )
     }
 
     #[allow(clippy::type_complexity)]
-    fn integrate_trace_inner(
+    fn accumulate_integrate_trace_inner(
         &self,
         input_factories: &B::Factories,
         bounds: TraceBounds<B::Key, B::Val>,
@@ -497,20 +261,22 @@ where
         Spine<B>: SizeOf,
     {
         self.circuit()
-            .cache_get_or_insert_with(TraceId::new(self.stream_id()), || {
+            .cache_get_or_insert_with(AccumulateTraceId::new(self.stream_id()), || {
                 let circuit = self.circuit();
                 let bounds = bounds.clone();
 
                 let persistent_id = self.get_persistent_id();
 
-                circuit.region("integrate_trace", || {
-                    let z1 = Z1Trace::new(
+                circuit.region("accumulate_integrate_trace", || {
+                    let z1 = AccumulateZ1Trace::new(
                         input_factories,
                         input_factories,
                         true,
                         circuit.root_scope(),
                         bounds,
                     );
+
+                    let accumulated = self.dyn_accumulate(input_factories);
 
                     let (
                         ExportStream {
@@ -528,9 +294,9 @@ where
                     let replay_stream = z1feedback.operator_mut().prepare_replay_stream(self);
 
                     let trace = circuit.add_binary_operator_with_preference(
-                        UntimedTraceAppend::<Spine<B>>::new(),
+                        AccumulateUntimedTraceAppend::<Spine<B>>::new(),
                         (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                        (self, OwnershipPreference::PREFER_OWNED),
+                        (&accumulated, OwnershipPreference::PREFER_OWNED),
                     );
 
                     if self.is_sharded() {
@@ -545,7 +311,10 @@ where
 
                     register_replay_stream(circuit, self, &replay_stream);
 
-                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
+                    circuit.cache_insert(
+                        AccumulateDelayedTraceId::new(trace.stream_id()),
+                        delayed_trace,
+                    );
                     circuit.cache_insert(ExportId::new(trace.stream_id()), export);
 
                     trace
@@ -555,37 +324,42 @@ where
     }
 }
 
-/// See [`trait TraceFeedback`] documentation.
-pub struct TraceFeedbackConnector<C, T>
+/// See [`trait AccumulateTraceFeedback`] documentation.
+pub struct AccumulateTraceFeedbackConnector<C, T>
 where
     C: Circuit,
     T: Trace,
 {
-    feedback: FeedbackConnector<C, T, T, Z1Trace<C, T::Batch, T>>,
+    feedback: FeedbackConnector<C, T, T, AccumulateZ1Trace<C, T::Batch, T>>,
     /// `delayed_trace` stream in the diagram in
-    /// [`trait TraceFeedback`] documentation.
+    /// [`trait AccumulateTraceFeedback`] documentation.
     pub delayed_trace: Stream<C, T>,
     export_trace: Stream<C::Parent, T>,
     bounds: TraceBounds<T::Key, T::Val>,
 }
 
-impl<C, T> TraceFeedbackConnector<C, T>
+impl<C, T> AccumulateTraceFeedbackConnector<C, T>
 where
     T: Trace<Time = ()> + Clone,
     C: Circuit,
 {
-    pub fn connect(self, stream: &Stream<C, T::Batch>) {
+    pub fn connect(
+        self,
+        stream: &Stream<C, T::Batch>,
+        factories: &<T::Batch as BatchReader>::Factories,
+    ) {
         let circuit = self.delayed_trace.circuit();
+        let accumulated = stream.dyn_accumulate(factories);
 
         let replay_stream = self.feedback.operator_mut().prepare_replay_stream(stream);
 
         let trace = circuit.add_binary_operator_with_preference(
-            <UntimedTraceAppend<T>>::new(),
+            <AccumulateUntimedTraceAppend<T>>::new(),
             (
                 &self.delayed_trace,
                 OwnershipPreference::STRONGLY_PREFER_OWNED,
             ),
-            (stream, OwnershipPreference::PREFER_OWNED),
+            (&accumulated, OwnershipPreference::PREFER_OWNED),
         );
 
         if stream.is_sharded() {
@@ -599,13 +373,13 @@ where
         register_replay_stream(circuit, stream, &replay_stream);
 
         circuit.cache_insert(
-            DelayedTraceId::new(trace.stream_id()),
+            AccumulateDelayedTraceId::new(trace.stream_id()),
             self.delayed_trace.clone(),
         );
 
-        circuit.cache_insert(TraceId::new(stream.stream_id()), trace.clone());
+        circuit.cache_insert(AccumulateTraceId::new(stream.stream_id()), trace.clone());
         circuit.cache_insert(
-            BoundsId::<T::Batch>::new(stream.stream_id()),
+            AccumulateBoundsId::<T::Batch>::new(stream.stream_id()),
             self.bounds.clone(),
         );
         circuit.cache_insert(ExportId::new(trace.stream_id()), self.export_trace);
@@ -629,26 +403,26 @@ where
 /// stream.
 ///
 /// Use this method to create a
-/// [`TraceFeedbackConnector`] struct.  The struct contains the `delayed_trace`
+/// [`AccumulateTraceFeedbackConnector`] struct.  The struct contains the `delayed_trace`
 /// stream, which can be used as input to instantiate `F` and the `output`
 /// stream.  Close the loop by calling
-/// `TraceFeedbackConnector::connect(output)`.
-pub trait TraceFeedback: Circuit {
-    fn add_integrate_trace_feedback<T>(
+/// `AccumulateTraceFeedbackConnector::connect(output)`.
+pub trait AccumulateTraceFeedback: Circuit {
+    fn add_accumulate_integrate_trace_feedback<T>(
         &self,
         persistent_id: Option<&str>,
         factories: &T::Factories,
         bounds: TraceBounds<T::Key, T::Val>,
-    ) -> TraceFeedbackConnector<Self, T>
+    ) -> AccumulateTraceFeedbackConnector<Self, T>
     where
         T: Trace<Time = ()> + Clone,
     {
-        // We'll give `Z1Trace` a real name inside `TraceFeedbackConnector::connect`, where we have the name of the input stream.
+        // We'll give `AccumulateZ1Trace` a real name inside `AccumulateTraceFeedbackConnector::connect`, where we have the name of the input stream.
         let (ExportStream { local, export }, feedback) = self.add_feedback_with_export_persistent(
             persistent_id
                 .map(|name| format!("{name}.integral"))
                 .as_deref(),
-            Z1Trace::new(
+            AccumulateZ1Trace::new(
                 factories,
                 factories,
                 true,
@@ -657,7 +431,7 @@ pub trait TraceFeedback: Circuit {
             ),
         );
 
-        TraceFeedbackConnector {
+        AccumulateTraceFeedbackConnector {
             feedback,
             delayed_trace: local,
             export_trace: export,
@@ -666,21 +440,21 @@ pub trait TraceFeedback: Circuit {
     }
 }
 
-impl<C: Circuit> TraceFeedback for C {}
+impl<C: Circuit> AccumulateTraceFeedback for C {}
 
 impl<C, B> Stream<C, Spine<B>>
 where
     C: Circuit,
     B: Batch,
 {
-    pub fn delay_trace(&self) -> Stream<C, SpineSnapshot<B>> {
+    pub fn accumulate_delay_trace(&self) -> Stream<C, SpineSnapshot<B>> {
         // The delayed trace should be automatically created while the real trace is
         // created via `.trace()` or a similar function
         // FIXME: Create a trace if it doesn't exist
         let delayed_trace = self
             .circuit()
-            .cache_get_or_insert_with(DelayedTraceId::new(self.stream_id()), || {
-                panic!("called `.delay_trace()` on a stream without a previously created trace")
+            .cache_get_or_insert_with(AccumulateDelayedTraceId::new(self.stream_id()), || {
+                panic!("called `.accumulate_delay_trace()` on a stream without a previously created trace")
             })
             .deref()
             .clone();
@@ -688,7 +462,7 @@ where
     }
 }
 
-pub struct UntimedTraceAppend<T>
+pub struct AccumulateUntimedTraceAppend<T>
 where
     T: Trace,
 {
@@ -699,7 +473,7 @@ where
     _phantom: PhantomData<T>,
 }
 
-impl<T> Default for UntimedTraceAppend<T>
+impl<T> Default for AccumulateUntimedTraceAppend<T>
 where
     T: Trace,
 {
@@ -708,7 +482,7 @@ where
     }
 }
 
-impl<T> UntimedTraceAppend<T>
+impl<T> AccumulateUntimedTraceAppend<T>
 where
     T: Trace,
 {
@@ -721,12 +495,12 @@ where
     }
 }
 
-impl<T> Operator for UntimedTraceAppend<T>
+impl<T> Operator for AccumulateUntimedTraceAppend<T>
 where
     T: Trace + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("UntimedTraceAppend")
+        Cow::from("AccumulateUntimedTraceAppend")
     }
 
     fn init(&mut self, global_id: &GlobalNodeId) {
@@ -757,35 +531,38 @@ where
     }
 }
 
-impl<T> BinaryOperator<T, T::Batch, T> for UntimedTraceAppend<T>
+impl<T> BinaryOperator<T, Option<Spine<T::Batch>>, T> for AccumulateUntimedTraceAppend<T>
 where
     T: Trace + 'static,
 {
-    async fn eval(&mut self, _trace: &T, _batch: &T::Batch) -> T {
+    async fn eval(&mut self, _trace: &T, _delta: &Option<Spine<T::Batch>>) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
-        panic!("UntimedTraceAppend::eval(): cannot accept trace by reference")
+        panic!("AccumulateUntimedTraceAppend::eval(): cannot accept trace by reference")
     }
 
     #[trace]
-    async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &T::Batch) -> T {
-        self.num_inputs += batch.len();
-        trace.insert(batch.clone());
+    async fn eval_owned_and_ref(&mut self, mut trace: T, delta: &Option<Spine<T::Batch>>) -> T {
+        if let Some(delta) = delta {
+            self.num_inputs += delta.len();
+            for batch in delta.ro_snapshot().batches() {
+                trace.insert(batch.as_ref().clone());
+            }
+        }
         trace
     }
 
-    async fn eval_ref_and_owned(&mut self, _trace: &T, _batch: T::Batch) -> T {
+    async fn eval_ref_and_owned(&mut self, _trace: &T, _delta: Option<Spine<T::Batch>>) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
-        panic!("UntimedTraceAppend::eval_ref_and_owned(): cannot accept trace by reference")
+        panic!(
+            "AccumulateUntimedTraceAppend::eval_ref_and_owned(): cannot accept trace by reference"
+        )
     }
 
     #[trace]
-    async fn eval_owned(&mut self, mut trace: T, batch: T::Batch) -> T {
-        self.num_inputs += batch.len();
-
-        trace.insert(batch);
-        trace
+    async fn eval_owned(&mut self, trace: T, delta: Option<Spine<T::Batch>>) -> T {
+        self.eval_owned_and_ref(trace, &delta).await
     }
 
     fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
@@ -796,7 +573,7 @@ where
     }
 }
 
-pub struct TraceAppend<T: Trace, B: BatchReader, C> {
+pub struct AccumulateTraceAppend<T: Trace, B: BatchReader, C> {
     clock: C,
     output_factories: T::Factories,
 
@@ -807,7 +584,7 @@ pub struct TraceAppend<T: Trace, B: BatchReader, C> {
     _phantom: PhantomData<(T, B)>,
 }
 
-impl<T: Trace, B: BatchReader, C> TraceAppend<T, B, C> {
+impl<T: Trace, B: BatchReader, C> AccumulateTraceAppend<T, B, C> {
     pub fn new(output_factories: &T::Factories, clock: C) -> Self {
         Self {
             clock,
@@ -819,14 +596,14 @@ impl<T: Trace, B: BatchReader, C> TraceAppend<T, B, C> {
     }
 }
 
-impl<T, B, Clk> Operator for TraceAppend<T, B, Clk>
+impl<T, B, Clk> Operator for AccumulateTraceAppend<T, B, Clk>
 where
     T: Trace,
     B: BatchReader,
     Clk: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("TraceAppend")
+        Cow::from("AccumulateTraceAppend")
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
@@ -856,54 +633,45 @@ where
     }
 }
 
-impl<T, B, Clk> BinaryOperator<T, B, T> for TraceAppend<T, B, Clk>
+impl<T, B, Clk> BinaryOperator<T, Option<Spine<B>>, T> for AccumulateTraceAppend<T, B, Clk>
 where
-    B: BatchReader<Time = ()>,
+    B: Batch<Time = ()>,
     Clk: WithClock + 'static,
     T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = Clk::Time>,
 {
     #[trace]
-    async fn eval(&mut self, _trace: &T, _batch: &B) -> T {
+    async fn eval(&mut self, _trace: &T, _delta: &Option<Spine<B>>) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
         unimplemented!()
     }
 
     #[trace]
-    async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
-        // TODO: extend `trace` type to feed untimed batches directly
-        // (adding fixed timestamp on the fly).
-        self.num_inputs += batch.len();
-        trace.insert(T::Batch::from_batch(
-            batch,
-            &self.clock.time(),
-            &self.output_factories,
-        ));
-        trace
-    }
-
-    async fn eval_ref_and_owned(&mut self, _trace: &T, _batch: B) -> T {
-        // Refuse to accept trace by reference.  This should not happen in a correctly
-        // constructed circuit.
-        unimplemented!()
-    }
-
-    #[trace]
-    async fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
-        self.num_inputs += batch.len();
-
-        if TypeId::of::<B>() == TypeId::of::<T::Batch>() {
-            let mut batch = Some(batch);
-            let batch = unsafe { transmute::<&mut Option<B>, &mut Option<T::Batch>>(&mut batch) };
-            trace.insert(batch.take().unwrap());
-        } else {
-            trace.insert(T::Batch::from_batch(
-                &batch,
-                &self.clock.time(),
-                &self.output_factories,
-            ));
+    async fn eval_owned_and_ref(&mut self, mut trace: T, delta: &Option<Spine<B>>) -> T {
+        if let Some(delta) = delta {
+            // TODO: extend `trace` type to feed untimed batches directly
+            // (adding fixed timestamp on the fly).
+            self.num_inputs += delta.len();
+            for batch in delta.ro_snapshot().batches() {
+                trace.insert(T::Batch::from_batch(
+                    batch,
+                    &self.clock.time(),
+                    &self.output_factories,
+                ));
+            }
         }
         trace
+    }
+
+    async fn eval_ref_and_owned(&mut self, _trace: &T, _delta: Option<Spine<B>>) -> T {
+        // Refuse to accept trace by reference.  This should not happen in a correctly
+        // constructed circuit.
+        unimplemented!()
+    }
+
+    #[trace]
+    async fn eval_owned(&mut self, trace: T, delta: Option<Spine<B>>) -> T {
+        self.eval_owned_and_ref(trace, &delta).await
     }
 
     fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
@@ -932,7 +700,7 @@ impl<T: Trace> ReplayState<T> {
     }
 }
 
-pub struct Z1Trace<C: Circuit, B: Batch, T: Trace> {
+pub struct AccumulateZ1Trace<C: Circuit, B: Batch, T: Trace> {
     // For error reporting.
     global_id: GlobalNodeId,
     time: T::Time,
@@ -955,7 +723,7 @@ pub struct Z1Trace<C: Circuit, B: Batch, T: Trace> {
     delta_stream: Option<Stream<C, B>>,
 }
 
-impl<C, B, T> Z1Trace<C, B, T>
+impl<C, B, T> AccumulateZ1Trace<C, B, T>
 where
     C: Circuit,
     B: Batch,
@@ -1022,7 +790,7 @@ where
     }
 }
 
-impl<C, B, T> Operator for Z1Trace<C, B, T>
+impl<C, B, T> Operator for AccumulateZ1Trace<C, B, T>
 where
     C: Circuit,
     B: Batch,
@@ -1127,7 +895,7 @@ where
     }
 
     fn clear_state(&mut self) -> Result<(), Error> {
-        // println!("Z1Trace-{}::clear_state", &self.global_id);
+        // println!("AccumulateZ1Trace-{}::clear_state", &self.global_id);
         self.trace = Some(T::new(&self.trace_factories));
         self.replay_state = None;
         self.dirty = vec![false; self.root_scope as usize + 1];
@@ -1142,15 +910,18 @@ where
         // The second condition is necessary if `start_replay` is called twice, for the input
         // and output halves of Z1.
         // println!(
-        //     "Z1Trace-{}::start_replay delta_stream: {:?}",
+        //     "AccumulateZ1Trace-{}::start_replay delta_stream: {:?}",
         //     &self.global_id,
         //     self.delta_stream.is_some()
         // );
         if self.delta_stream.is_some() && self.replay_state.is_none() {
-            let trace = self.trace.take().expect("Z1Trace::start_replay: no trace");
+            let trace = self
+                .trace
+                .take()
+                .expect("AccumulateZ1Trace::start_replay: no trace");
             self.trace = Some(T::new(&self.trace_factories));
 
-            //println!("Z1Trace-{}::initializing replay_state", &self.global_id);
+            //println!("AccumulateZ1Trace-{}::initializing replay_state", &self.global_id);
 
             self.replay_state = Some(ReplayState::create(trace));
         }
@@ -1163,7 +934,7 @@ where
     }
 
     fn end_replay(&mut self) -> Result<(), Error> {
-        //println!("Z1Trace-{}::end_replay", &self.global_id);
+        //println!("AccumulateZ1Trace-{}::end_replay", &self.global_id);
 
         self.replay_state = None;
 
@@ -1171,7 +942,7 @@ where
     }
 }
 
-impl<C, B, T> StrictOperator<T> for Z1Trace<C, B, T>
+impl<C, B, T> StrictOperator<T> for AccumulateZ1Trace<C, B, T>
 where
     C: Circuit,
     B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R>,
@@ -1233,7 +1004,7 @@ where
     }
 }
 
-impl<C, B, T> StrictUnaryOperator<T, T> for Z1Trace<C, B, T>
+impl<C, B, T> StrictUnaryOperator<T, T> for AccumulateZ1Trace<C, B, T>
 where
     C: Circuit,
     B: Batch<Key = T::Key, Val = T::Val, Time = (), R = T::R>,
@@ -1272,83 +1043,83 @@ where
     }
 }
 
-#[cfg(test)]
-mod test {
-    use std::cmp::max;
+// #[cfg(test)]
+// mod test {
+//     use std::cmp::max;
 
-    use crate::{dynamic::DynData, utils::Tup2, Runtime, Stream, TypedBox, ZWeight};
-    use proptest::{collection::vec, prelude::*};
-    use size_of::SizeOf;
+//     use crate::{dynamic::DynData, utils::Tup2, Runtime, Stream, TypedBox, ZWeight};
+//     use proptest::{collection::vec, prelude::*};
+//     use size_of::SizeOf;
 
-    fn quasi_monotone_batches(
-        key_window_size: i32,
-        key_window_step: i32,
-        val_window_size: i32,
-        val_window_step: i32,
-        max_tuples: usize,
-        batches: usize,
-    ) -> impl Strategy<Value = Vec<Vec<((i32, i32), ZWeight)>>> {
-        (0..batches)
-            .map(|i| {
-                vec(
-                    (
-                        (
-                            i as i32 * key_window_step
-                                ..i as i32 * key_window_step + key_window_size,
-                            i as i32 * val_window_step
-                                ..i as i32 * val_window_step + val_window_size,
-                        ),
-                        1..2i64,
-                    ),
-                    0..max_tuples,
-                )
-            })
-            .collect::<Vec<_>>()
-    }
+//     fn quasi_monotone_batches(
+//         key_window_size: i32,
+//         key_window_step: i32,
+//         val_window_size: i32,
+//         val_window_step: i32,
+//         max_tuples: usize,
+//         batches: usize,
+//     ) -> impl Strategy<Value = Vec<Vec<((i32, i32), ZWeight)>>> {
+//         (0..batches)
+//             .map(|i| {
+//                 vec(
+//                     (
+//                         (
+//                             i as i32 * key_window_step
+//                                 ..i as i32 * key_window_step + key_window_size,
+//                             i as i32 * val_window_step
+//                                 ..i as i32 * val_window_step + val_window_size,
+//                         ),
+//                         1..2i64,
+//                     ),
+//                     0..max_tuples,
+//                 )
+//             })
+//             .collect::<Vec<_>>()
+//     }
 
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(16))]
-        #[test]
-        #[ignore = "this test can be flaky especially on aarch64"]
-        fn test_integrate_trace_retain(batches in quasi_monotone_batches(100, 20, 1000, 200, 100, 200)) {
-            let (mut dbsp, input_handle) = Runtime::init_circuit(4, move |circuit| {
-                let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
-                let stream = stream.shard();
-                let watermark: Stream<_, TypedBox<(i32, i32), DynData>> = stream
-                    .waterline(
-                        || (i32::MIN, i32::MIN),
-                        |k, v| (*k, *v),
-                        |(ts1_left, ts2_left), (ts1_right, ts2_right)| {
-                            (max(*ts1_left, *ts1_right), max(*ts2_left, *ts2_right))
-                        },
-                    );
+//     proptest! {
+//         #![proptest_config(ProptestConfig::with_cases(16))]
+//         #[test]
+//         #[ignore = "this test can be flaky especially on aarch64"]
+//         fn test_integrate_trace_retain(batches in quasi_monotone_batches(100, 20, 1000, 200, 100, 200)) {
+//             let (mut dbsp, input_handle) = Runtime::init_circuit(4, move |circuit| {
+//                 let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
+//                 let stream = stream.shard();
+//                 let watermark: Stream<_, TypedBox<(i32, i32), DynData>> = stream
+//                     .waterline(
+//                         || (i32::MIN, i32::MIN),
+//                         |k, v| (*k, *v),
+//                         |(ts1_left, ts2_left), (ts1_right, ts2_right)| {
+//                             (max(*ts1_left, *ts1_right), max(*ts2_left, *ts2_right))
+//                         },
+//                     );
 
-                let trace = stream.integrate_trace();
-                stream.integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0.saturating_sub(100));
-                trace.apply(|trace| {
-                    // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
-                    assert!(trace.size_of().total_bytes() < 100_000);
-                });
+//                 let trace = stream.integrate_trace();
+//                 stream.integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0.saturating_sub(100));
+//                 trace.apply(|trace| {
+//                     // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
+//                     assert!(trace.size_of().total_bytes() < 100_000);
+//                 });
 
-                let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
+//                 let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
 
-                let trace2 = stream2.integrate_trace();
-                stream2.integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1.saturating_sub(1000));
+//                 let trace2 = stream2.integrate_trace();
+//                 stream2.integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1.saturating_sub(1000));
 
-                trace2.apply(|trace| {
-                    // println!("retain_vals: {}bytes", trace.size_of().total_bytes());
-                    assert!(trace.size_of().total_bytes() < 100_000);
-                });
+//                 trace2.apply(|trace| {
+//                     // println!("retain_vals: {}bytes", trace.size_of().total_bytes());
+//                     assert!(trace.size_of().total_bytes() < 100_000);
+//                 });
 
-                Ok(handle)
-            })
-            .unwrap();
+//                 Ok(handle)
+//             })
+//             .unwrap();
 
-            for batch in batches {
-                let mut tuples = batch.into_iter().map(|((k, v), r)| Tup2(k, Tup2(v, r))).collect::<Vec<_>>();
-                input_handle.append(&mut tuples);
-                dbsp.step().unwrap();
-            }
-        }
-    }
-}
+//             for batch in batches {
+//                 let mut tuples = batch.into_iter().map(|((k, v), r)| Tup2(k, Tup2(v, r))).collect::<Vec<_>>();
+//                 input_handle.append(&mut tuples);
+//                 dbsp.step().unwrap();
+//             }
+//         }
+//     }
+// }
