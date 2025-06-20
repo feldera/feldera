@@ -372,11 +372,12 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void issue4202() {
-        this.getCCS("""
+        this.statementsFailingInCompilation("""
                 CREATE TABLE tbl(bin BINARY);
                 CREATE MATERIALIZED VIEW v AS SELECT
                 CONCAT(bin, bin) AS bin
-                FROM tbl;""");
+                FROM tbl;""",
+                "Support for CONCAT() with arguments of type BINARY");
     }
 
     @Test
