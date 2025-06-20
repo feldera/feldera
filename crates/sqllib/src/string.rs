@@ -388,9 +388,15 @@ some_polymorphic_function2!(left, s, SqlString, i32, i32, SqlString);
 
 #[doc(hidden)]
 pub fn right_s_i32(source: SqlString, size: i32) -> SqlString {
-    if size <= 0 { return SqlString::new(); }
+    if size <= 0 {
+        return SqlString::new();
+    }
     let size = size as usize;
-    let start = if size >= source.len() { 1 } else { source.len() - size + 1 };
+    let start = if size >= source.len() {
+        1
+    } else {
+        source.len() - size + 1
+    };
     substring3___(source, start as i32, size as i32)
 }
 
