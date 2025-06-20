@@ -1,5 +1,6 @@
 use crate::circuit::circuit_builder::{register_replay_stream, StreamId};
 use crate::circuit::metadata::NUM_INPUTS;
+use crate::circuit::metrics::Gauge;
 use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::require_persistent_id;
 use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
@@ -40,6 +41,7 @@ use std::{
 circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
 circuit_cache_key!(DelayedTraceId<C, D>(StreamId => Stream<C, D>));
+circuit_cache_key!(SpillId<C, D>(StreamId => Stream<C, D>));
 
 /// Lower bound on keys or values in a trace.
 ///
@@ -692,6 +694,7 @@ where
 {
     // Total number of input tuples processed by the operator.
     num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
 
     _phantom: PhantomData<T>,
 }
@@ -712,6 +715,7 @@ where
     pub fn new() -> Self {
         Self {
             num_inputs: 0,
+            num_inputs_metric: None,
             _phantom: PhantomData,
         }
     }
@@ -723,6 +727,23 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("UntimedTraceAppend")
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -781,6 +802,7 @@ pub struct TraceAppend<T: Trace, B: BatchReader, C> {
 
     // Total number of input tuples processed by the operator.
     num_inputs: usize,
+    num_inputs_metric: Option<Gauge>,
 
     _phantom: PhantomData<(T, B)>,
 }
@@ -791,6 +813,7 @@ impl<T: Trace, B: BatchReader, C> TraceAppend<T, B, C> {
             clock,
             output_factories: output_factories.clone(),
             num_inputs: 0,
+            num_inputs_metric: None,
             _phantom: PhantomData,
         }
     }
@@ -807,6 +830,23 @@ where
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.num_inputs_metric = Some(Gauge::new(
+            NUM_INPUTS,
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
+        self.num_inputs_metric
+            .as_ref()
+            .unwrap()
+            .set(self.num_inputs as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -898,7 +938,6 @@ pub struct Z1Trace<C: Circuit, B: Batch, T: Trace> {
     time: T::Time,
     trace: Option<T>,
     replay_state: Option<ReplayState<T>>,
-    replay_mode: bool,
     trace_factories: T::Factories,
     // `dirty[scope]` is `true` iff at least one non-empty update was added to the trace
     // since the previous clock cycle at level `scope`.
@@ -906,8 +945,11 @@ pub struct Z1Trace<C: Circuit, B: Batch, T: Trace> {
     root_scope: Scope,
     reset_on_clock_start: bool,
     bounds: TraceBounds<T::Key, T::Val>,
+    // Handle to update the metric `total_size`.
+    total_size_metric: Option<Gauge>,
 
     // Metrics maintained by the trace.
+    trace_metrics: Option<T::Metrics>,
     batch_factories: B::Factories,
     // Stream whose integral this Z1 operator stores, if any.
     delta_stream: Option<Stream<C, B>>,
@@ -931,13 +973,14 @@ where
             time: <T::Time as Timestamp>::clock_start(),
             trace: None,
             replay_state: None,
-            replay_mode: false,
             trace_factories: trace_factories.clone(),
             batch_factories: batch_factories.clone(),
             dirty: vec![false; root_scope as usize + 1],
             root_scope,
             reset_on_clock_start,
             bounds,
+            total_size_metric: None,
+            trace_metrics: None,
             delta_stream: None,
         }
     }
@@ -1008,6 +1051,31 @@ where
 
     fn init(&mut self, global_id: &GlobalNodeId) {
         self.global_id = global_id.clone();
+        self.total_size_metric = Some(Gauge::new(
+            "total_size",
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+
+        self.trace_metrics = Some(T::init_operator_metrics(global_id));
+    }
+
+    fn metrics(&self) {
+        let total_size = self
+            .trace
+            .as_ref()
+            .map(|trace| trace.num_entries_deep())
+            .unwrap_or(0);
+
+        self.total_size_metric
+            .as_ref()
+            .unwrap()
+            .set(total_size as f64);
+        if let Some(trace) = self.trace.as_ref() {
+            trace.metrics(self.trace_metrics.as_ref().unwrap());
+        }
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -1063,6 +1131,9 @@ where
         self.trace = Some(T::new(&self.trace_factories));
         self.replay_state = None;
         self.dirty = vec![false; self.root_scope as usize + 1];
+        if let Some(metric) = self.total_size_metric.as_ref() {
+            metric.set(0.0)
+        }
 
         Ok(())
     }
@@ -1075,7 +1146,6 @@ where
         //     &self.global_id,
         //     self.delta_stream.is_some()
         // );
-        self.replay_mode = true;
         if self.delta_stream.is_some() && self.replay_state.is_none() {
             let trace = self.trace.take().expect("Z1Trace::start_replay: no trace");
             self.trace = Some(T::new(&self.trace_factories));
@@ -1094,7 +1164,7 @@ where
 
     fn end_replay(&mut self) -> Result<(), Error> {
         //println!("Z1Trace-{}::end_replay", &self.global_id);
-        self.replay_mode = false;
+
         self.replay_state = None;
 
         Ok(())
@@ -1111,52 +1181,41 @@ where
         //println!("Z1-{}::get_output", &self.global_id);
         let replay_step_size = Runtime::replay_step_size();
 
-        if self.replay_mode {
-            if let Some(replay) = &mut self.replay_state {
-                //println!("Z1-{}::get_output: replaying", &self.global_id);
-                let mut builder = <B::Builder as Builder<B>>::with_capacity(
-                    &self.batch_factories,
-                    replay_step_size,
-                );
+        if let Some(replay) = &mut self.replay_state {
+            //println!("Z1-{}::get_output: replaying", &self.global_id);
+            let mut builder =
+                <B::Builder as Builder<B>>::with_capacity(&self.batch_factories, replay_step_size);
 
-                let mut num_values = 0;
-                let mut weight = self.batch_factories.weight_factory().default_box();
+            let mut num_values = 0;
+            let mut weight = self.batch_factories.weight_factory().default_box();
 
-                while replay.borrow_cursor().key_valid() && num_values < replay_step_size {
-                    let mut values_added = false;
-                    while replay.borrow_cursor().val_valid() && num_values < replay_step_size {
-                        weight.set_zero();
-                        replay.with_cursor_mut(|cursor| {
-                            cursor.map_times(&mut |_t, w| weight.add_assign(w))
-                        });
+            while replay.borrow_cursor().key_valid() && num_values < replay_step_size {
+                let mut values_added = false;
+                while replay.borrow_cursor().val_valid() && num_values < replay_step_size {
+                    weight.set_zero();
+                    replay.with_cursor_mut(|cursor| {
+                        cursor.map_times(&mut |_t, w| weight.add_assign(w))
+                    });
 
-                        if !weight.is_zero() {
-                            builder.push_val_diff(replay.borrow_cursor().val(), weight.as_ref());
-                            values_added = true;
-                            num_values += 1;
-                        }
-                        replay.with_cursor_mut(|cursor| cursor.step_val());
+                    if !weight.is_zero() {
+                        builder.push_val_diff(replay.borrow_cursor().val(), weight.as_ref());
+                        values_added = true;
+                        num_values += 1;
                     }
-                    if values_added {
-                        builder.push_key(replay.borrow_cursor().key());
-                    }
-                    if !replay.borrow_cursor().val_valid() {
-                        replay.with_cursor_mut(|cursor| cursor.step_key());
-                    }
+                    replay.with_cursor_mut(|cursor| cursor.step_val());
                 }
-
-                let batch = builder.done();
-                self.delta_stream.as_ref().unwrap().value().put(batch);
-                if !replay.borrow_cursor().key_valid() {
-                    self.replay_state = None;
+                if values_added {
+                    builder.push_key(replay.borrow_cursor().key());
                 }
-            } else {
-                // Continue producing empty outputs as long as the circuit is in the replay mode.
-                self.delta_stream
-                    .as_ref()
-                    .unwrap()
-                    .value()
-                    .put(B::dyn_empty(&self.batch_factories));
+                if !replay.borrow_cursor().val_valid() {
+                    replay.with_cursor_mut(|cursor| cursor.step_key());
+                }
+            }
+
+            let batch = builder.done();
+            self.delta_stream.as_ref().unwrap().value().put(batch);
+            if !replay.borrow_cursor().key_valid() {
+                self.replay_state = None;
             }
         }
 
