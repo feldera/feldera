@@ -41,6 +41,7 @@ use std::{
 circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
 circuit_cache_key!(DelayedTraceId<C, D>(StreamId => Stream<C, D>));
+circuit_cache_key!(SpillId<C, D>(StreamId => Stream<C, D>));
 
 /// Lower bound on keys or values in a trace.
 ///
