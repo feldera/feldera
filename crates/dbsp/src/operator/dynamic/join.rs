@@ -591,10 +591,10 @@ where
             let left = self.dyn_shard(&factories.left_factories);
             let right = other.dyn_shard(&factories.right_factories);
 
-            let left_trace =
-                left.dyn_trace(&factories.left_trace_factories, &factories.left_factories);
-            let right_trace =
-                right.dyn_trace(&factories.right_trace_factories, &factories.right_factories);
+            let left_trace = left
+                .dyn_accumulate_trace(&factories.left_trace_factories, &factories.left_factories);
+            let right_trace = right
+                .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
                 JoinTrace::new(
@@ -606,7 +606,7 @@ where
                     Location::caller(),
                     self.circuit().clone(),
                 ),
-                &left,
+                &left.dyn_accumulate(&factories.left_factories),
                 &right_trace,
             );
 
@@ -620,8 +620,8 @@ where
                     Location::caller(),
                     self.circuit().clone(),
                 ),
-                &right,
-                &left_trace.delay_trace(),
+                &right.dyn_accumulate(&factories.right_factories),
+                &left_trace.accumulate_delay_trace(),
             );
 
             left.plus(&right)
@@ -1042,7 +1042,7 @@ impl JoinStats {
 
 pub struct JoinTrace<I, T, Z, Clk>
 where
-    I: IndexedZSet,
+    I: BatchReader,
     T: BatchReader,
     Z: IndexedZSet,
 {
@@ -1068,7 +1068,7 @@ where
 
 impl<I, T, Z, Clk> JoinTrace<I, T, Z, Clk>
 where
-    I: IndexedZSet,
+    I: BatchReader,
     T: ZBatchReader,
     Z: IndexedZSet,
 {
@@ -1104,7 +1104,7 @@ where
 
 impl<I, T, Z, Clk> Operator for JoinTrace<I, T, Z, Clk>
 where
-    I: IndexedZSet,
+    I: BatchReader,
     T: ZBatchReader,
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
@@ -1198,15 +1198,19 @@ where
     }
 }
 
-impl<I, T, Z, Clk> BinaryOperator<I, T, Z> for JoinTrace<I, T, Z, Clk>
+impl<I, T, Z, Clk> BinaryOperator<Option<I>, T, Z> for JoinTrace<I, T, Z, Clk>
 where
-    I: IndexedZSet,
+    I: ZBatchReader<Time = ()>,
     T: ZBatchReader<Key = I::Key>,
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
 {
     #[trace]
-    async fn eval(&mut self, index: &I, trace: &T) -> Z {
+    async fn eval(&mut self, index: &Option<I>, trace: &T) -> Z {
+        let Some(index) = index else {
+            return Z::dyn_empty(&self.output_factories);
+        };
+
         self.stats.lhs_tuples += index.len();
         self.stats.rhs_tuples = trace.len();
 
