@@ -27,7 +27,7 @@ public abstract class DBSPApplyBaseExpression extends DBSPExpression {
         int index = 0;
         for (DBSPExpression arg: this.arguments) {
             if (arg == null) {
-                throw new InternalCompilerError("Null arg", this);
+                throw new InternalCompilerError("Null argument for apply expression", this);
             }
             if (parameterTypes != null && !parameterTypes[index].sameType(arg.getType()))
                     throw new InternalCompilerError("Argument " + arg + " type " +

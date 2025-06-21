@@ -948,3 +948,52 @@ where
     let pos = pos?;
     Some(array_insert__NN(array, pos, value))
 }
+
+#[doc(hidden)]
+pub fn array_exists__<T, F>(array: Array<T>, f: F) -> bool
+where
+    F: Fn(&T) -> bool,
+{
+    array.iter().any(f)
+}
+
+#[doc(hidden)]
+pub fn array_existsN_<T, F>(array: Option<Array<T>>, f: F) -> Option<bool>
+where
+    F: Fn(&T) -> bool,
+{
+    let array = array?;
+    Some(array_exists__(array, f))
+}
+
+#[doc(hidden)]
+pub fn array_exists_N<T, F>(array: Array<T>, f: F) -> Option<bool>
+where
+    F: Fn(&T) -> Option<bool>,
+{
+    let mut found_null = false;
+    for item in array.iter() {
+        match f(item) {
+            None => {
+                found_null = true;
+                continue;
+            }
+            Some(false) => continue,
+            Some(true) => return Some(true),
+        }
+    }
+    if found_null {
+        None
+    } else {
+        Some(false)
+    }
+}
+
+#[doc(hidden)]
+pub fn array_existsNN<T, F>(array: Option<Array<T>>, f: F) -> Option<bool>
+where
+    F: Fn(&T) -> Option<bool>,
+{
+    let array = array?;
+    array_exists_N(array, f)
+}
