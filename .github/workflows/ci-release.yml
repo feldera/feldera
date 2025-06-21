@@ -1,12 +1,8 @@
 name: Create a new release
 
 on:
-  workflow_dispatch:
-    inputs:
-      sha:
-        description: "SHA to release (a recent commit from main that hasn't been released yet)"
-  schedule:
-    - cron: "11 7 * * *" # Runs at 07:11 UTC daily
+  repository_dispatch:
+    types: [trigger-oss-release]
 
 env:
   REGISTRY: ghcr.io
@@ -15,11 +11,16 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Set SHA_TO_RELEASE
+      - name: Set SHA_TO_RELEASE and CURRENT_VERSION
         run: |
-          echo "SHA_TO_RELEASE=${{ github.event.inputs.sha || '' }}" >> $GITHUB_ENV
-          if [ -z "${{ github.event.inputs.sha }}" ]; then
-            echo "SHA_TO_RELEASE=${{ github.sha }}" >> $GITHUB_ENV
+          echo "CURRENT_VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
+          echo "SHA_TO_RELEASE=${{ github.event.client_payload.sha_to_release }}" >> $GITHUB_ENV
+
+      - name: Check SHA and version inputs
+        run: |
+          if [ -z "${SHA_TO_RELEASE}" ] || [ -z "${CURRENT_VERSION}" ]; then
+            echo "Missing required release parameters"
+            exit 1
           fi
 
       - name: Checkout
@@ -28,24 +29,9 @@ jobs:
           fetch-tags: true
           ref: ${{ env.SHA_TO_RELEASE }}
 
-      - name: Determine version to release based on pipeline-manager
-        run: |
-          echo "CURRENT_VERSION=$(cargo metadata --format-version=1 --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version')" >> $GITHUB_ENV
-
-      - name: Check if version is already released (do we have git tag for this version?)
-        run: |
-          if git tag -l | grep -q "^v${{ env.CURRENT_VERSION }}$"; then
-            echo "Version ${CURRENT_VERSION} is already released"
-            echo "version_exists=true" >> $GITHUB_ENV
-          else
-            echo "Version ${CURRENT_VERSION} is not released yet"
-            echo "version_exists=false" >> $GITHUB_ENV
-          fi
-
       - name: Download artifact
-        if: env.version_exists == 'false'
         id: download-artifact
-        uses: dawidd6/action-download-artifact@v9
+        uses: dawidd6/action-download-artifact@ac66b43f0e6a346234dd65d4d0c8fbb31cb316e5
         with:
           workflow: ci.yml
           workflow_conclusion: success
@@ -56,7 +42,6 @@ jobs:
           if_no_artifact_found: fail
 
       - name: Attach version to binaries
-        if: env.version_exists == 'false'
         run: |
           mv feldera-binaries-aarch64-unknown-linux-gnu.zip feldera-binaries-v${{ env.CURRENT_VERSION }}-aarch64-unknown-linux-gnu.zip
           mv feldera-binaries-x86_64-unknown-linux-gnu.zip feldera-binaries-v${{ env.CURRENT_VERSION }}-x86_64-unknown-linux-gnu.zip
@@ -64,10 +49,10 @@ jobs:
           mv feldera-docs.zip feldera-docs-v${{ env.CURRENT_VERSION }}.zip
 
       - name: Release on GitHub
-        if: env.version_exists == 'false'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8
         with:
           tag_name: v${{ env.CURRENT_VERSION }}
+          draft: ${{ vars.RELEASE_DRY_RUN }}
           generate_release_notes: true
           make_latest: true
           files: |
@@ -83,6 +68,7 @@ jobs:
         run: unzip feldera-docs-v${{ env.CURRENT_VERSION }}.zip -d docs
 
       - name: Deploy docs.feldera.com
+        if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: docs
@@ -107,6 +93,7 @@ jobs:
           version: latest
 
       - name: Tag docker image with version and latest
+        if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
         run: |
           docker buildx imagetools create -t ${{ vars.FELDERA_IMAGE_NAME }}:${{ env.CURRENT_VERSION }} ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ env.SHA_TO_RELEASE }}
           docker buildx imagetools create -t ${{ vars.FELDERA_IMAGE_NAME }}:latest ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ env.SHA_TO_RELEASE }}
