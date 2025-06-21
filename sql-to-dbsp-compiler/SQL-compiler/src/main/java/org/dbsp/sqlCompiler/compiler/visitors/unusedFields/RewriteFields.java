@@ -110,6 +110,15 @@ public class RewriteFields extends InnerRewriteVisitor {
         return VisitDecision.STOP;
     }
 
+    public VisitDecision preorder(DBSPClosureExpression expression) {
+        if (!this.context.isEmpty()) {
+            // Nested closure
+            this.map(expression, expression);
+            return VisitDecision.STOP;
+        }
+        return super.preorder(expression);
+    }
+
     public DBSPClosureExpression rewriteClosure(DBSPClosureExpression closure) {
         IDBSPInnerNode result = this.apply(closure);
         return result.to(DBSPClosureExpression.class);
