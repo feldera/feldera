@@ -404,6 +404,13 @@ const operations = {
     ]
 };
 
+// Changelog
+const changelog = {
+    type: "doc",
+    label: "Changelog",
+    id: "changelog",
+};
+
 // Combine all sections
 const sidebars = {
     docsSidebar: [
@@ -414,7 +421,8 @@ const sidebars = {
         interface,
         pipelines,
         operations,
-        literature
+        literature,
+        changelog
     ]
 };
 
