@@ -578,3 +578,7 @@ table th {
 .theme-doc-breadcrumbs {
   display: none;
 }
+
+.changelogItem {
+  padding-left: 2rem;
+}
