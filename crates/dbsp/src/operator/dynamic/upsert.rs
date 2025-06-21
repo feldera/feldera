@@ -6,8 +6,11 @@ use crate::{
         OwnershipPreference, Scope, WithClock,
     },
     dynamic::{ClonableTrait, DataTrait, DynOpt, DynPairs, DynUnit, Erase},
-    operator::dynamic::trace::{
-        DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace,
+    operator::dynamic::{
+        accumulate_trace::{
+            AccumulateBoundsId, AccumulateDelayedTraceId, AccumulateTraceAppend, AccumulateTraceId,
+        },
+        trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace},
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, TupleBuilder,
@@ -263,12 +266,15 @@ where
             let replay_stream = z1feedback.operator_mut().prepare_replay_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<ValSpine<B, C>, B, C>>::new(
+                <AccumulateTraceAppend<ValSpine<B, C>, B, C>>::new(
                     &factories.trace_factories,
                     circuit.clone(),
                 ),
                 (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                (&delta, OwnershipPreference::PREFER_OWNED),
+                (
+                    &delta.dyn_accumulate(&factories.batch_factories),
+                    OwnershipPreference::PREFER_OWNED,
+                ),
             );
             trace.mark_sharded();
 
@@ -276,9 +282,12 @@ where
 
             register_replay_stream(circuit, &delta, &replay_stream);
 
-            circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
-            circuit.cache_insert(TraceId::new(delta.stream_id()), trace);
-            circuit.cache_insert(BoundsId::<B>::new(delta.stream_id()), bounds);
+            circuit.cache_insert(
+                AccumulateDelayedTraceId::new(trace.stream_id()),
+                delayed_trace,
+            );
+            circuit.cache_insert(AccumulateTraceId::new(delta.stream_id()), trace);
+            circuit.cache_insert(AccumulateBoundsId::<B>::new(delta.stream_id()), bounds);
             delta
         })
     }
