@@ -6,8 +6,12 @@ use crate::{
         OwnershipPreference, Scope, WithClock,
     },
     dynamic::{ClonableTrait, DataTrait, DynOpt, DynPairs, DynUnit, Erase},
-    operator::dynamic::trace::{
-        DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace,
+    operator::dynamic::{
+        accumulate_trace::{
+            AccumulateBoundsId, AccumulateDelayedTraceId, AccumulateTraceAppend, AccumulateTraceId,
+            AccumulateZ1Trace,
+        },
+        trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace},
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, TupleBuilder,
@@ -151,7 +155,11 @@ where
 
             let delta = circuit
                 .add_binary_operator(
-                    <Upsert<KeySpine<B, C>, B>>::new(&factories.batch_factories, bounds.clone()),
+                    <Upsert<KeySpine<B, C>, B, _>>::new(
+                        &factories.batch_factories,
+                        bounds.clone(),
+                        circuit.clone(),
+                    ),
                     &delayed_trace,
                     self,
                 )
@@ -242,7 +250,7 @@ where
                 persistent_id
                     .map(|name| format!("{name}.integral"))
                     .as_deref(),
-                Z1Trace::new(
+                AccumulateZ1Trace::new(
                     &factories.trace_factories,
                     &factories.batch_factories,
                     false,
@@ -254,7 +262,11 @@ where
 
             let delta = circuit
                 .add_binary_operator(
-                    <Upsert<ValSpine<B, C>, B>>::new(&factories.batch_factories, bounds.clone()),
+                    <Upsert<ValSpine<B, C>, B, _>>::new(
+                        &factories.batch_factories,
+                        bounds.clone(),
+                        circuit.clone(),
+                    ),
                     &delayed_trace,
                     self,
                 )
@@ -263,12 +275,15 @@ where
             let replay_stream = z1feedback.operator_mut().prepare_replay_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<ValSpine<B, C>, B, C>>::new(
+                <AccumulateTraceAppend<ValSpine<B, C>, B, C>>::new(
                     &factories.trace_factories,
                     circuit.clone(),
                 ),
                 (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                (&delta, OwnershipPreference::PREFER_OWNED),
+                (
+                    &delta.dyn_accumulate(&factories.batch_factories),
+                    OwnershipPreference::PREFER_OWNED,
+                ),
             );
             trace.mark_sharded();
 
@@ -276,60 +291,66 @@ where
 
             register_replay_stream(circuit, &delta, &replay_stream);
 
-            circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
-            circuit.cache_insert(TraceId::new(delta.stream_id()), trace);
-            circuit.cache_insert(BoundsId::<B>::new(delta.stream_id()), bounds);
+            circuit.cache_insert(
+                AccumulateDelayedTraceId::new(trace.stream_id()),
+                delayed_trace,
+            );
+            circuit.cache_insert(AccumulateTraceId::new(delta.stream_id()), trace);
+            circuit.cache_insert(AccumulateBoundsId::<B>::new(delta.stream_id()), bounds);
             delta
         })
     }
 }
 
-pub struct Upsert<T, B>
+pub struct Upsert<T, B, C>
 where
     B: Batch,
     T: BatchReader,
 {
     batch_factories: B::Factories,
-    time: T::Time,
+    clock: C,
     bounds: TraceBounds<T::Key, T::Val>,
     phantom: PhantomData<B>,
 }
 
-impl<T, B> Upsert<T, B>
+impl<T, B, C> Upsert<T, B, C>
 where
     B: Batch,
     T: BatchReader,
 {
-    pub fn new(batch_factories: &B::Factories, bounds: TraceBounds<T::Key, T::Val>) -> Self {
+    pub fn new(
+        batch_factories: &B::Factories,
+        bounds: TraceBounds<T::Key, T::Val>,
+        clock: C,
+    ) -> Self {
         Self {
             batch_factories: batch_factories.clone(),
-            time: <T::Time as Timestamp>::clock_start(),
+            clock,
             bounds,
             phantom: PhantomData,
         }
     }
 }
 
-impl<T, B> Operator for Upsert<T, B>
+impl<T, B, C> Operator for Upsert<T, B, C>
 where
     T: BatchReader,
     B: Batch,
+    C: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Upsert")
-    }
-    fn clock_end(&mut self, scope: Scope) {
-        self.time = self.time.advance(scope + 1);
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
 }
 
-impl<T, B> BinaryOperator<T, Box<DynPairs<T::Key, DynOpt<T::Val>>>, B> for Upsert<T, B>
+impl<T, B, C> BinaryOperator<T, Box<DynPairs<T::Key, DynOpt<T::Val>>>, B> for Upsert<T, B, C>
 where
     T: ZTrace,
     B: IndexedZSet<Key = T::Key, Val = T::Val>,
+    C: WithClock<Time = T::Time> + 'static,
 {
     #[trace]
     async fn eval(&mut self, trace: &T, updates: &Box<DynPairs<T::Key, DynOpt<T::Val>>>) -> B {
@@ -384,7 +405,7 @@ where
                 while trace_cursor.val_valid() {
                     let mut weight = ZWeight::zero();
                     trace_cursor.map_times(&mut |t, w| {
-                        if t.less_equal(&self.time) {
+                        if t.less_equal(&self.clock.time()) {
                             weight.add_assign_by_ref(w);
                         };
                     });
@@ -409,7 +430,6 @@ where
             key_updates.clear();
         }
 
-        self.time = self.time.advance(0);
         builder.done()
     }
 
