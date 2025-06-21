@@ -25,7 +25,6 @@ jobs:
       options: --user=ubuntu
       volumes:
         - /sccache:/sccache
-    needs: [publish-crates, publish-python]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,7 +50,8 @@ jobs:
       - name: List changes
         run: |
           git diff
-      - uses: EndBug/add-and-commit@v9
+      - uses: EndBug/add-and-commit@a94899bca583c204427a224a7af87c02f9b325d5
+        if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
         with:
           message: "ci: Prepare for v${{ env.NEXT_VERSION }}"
           push: origin main
