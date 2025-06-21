@@ -493,8 +493,9 @@ where
                     aggregator,
                     circuit.clone(),
                 ),
-                &stream,
-                &stream.dyn_trace(&factories.trace_factories, &factories.input_factories),
+                &stream.dyn_accumulate(&factories.input_factories),
+                &stream
+                    .dyn_accumulate_trace(&factories.trace_factories, &factories.input_factories),
             )
             .mark_sharded()
             .upsert::<O>(persistent_id, &factories.upsert_factories)
@@ -808,7 +809,7 @@ where
 impl<Z, IT, Acc, Out, Clk> AggregateIncremental<Z, IT, Acc, Out, Clk>
 where
     Clk: WithClock<Time = IT::Time>,
-    Z: Batch<Time = ()>,
+    Z: BatchReader<Time = ()>,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -983,17 +984,25 @@ where
     }
 }
 
-impl<Z, IT, Acc, Out, Clk> BinaryOperator<Z, IT, Box<DynPairs<Z::Key, DynOpt<Out>>>>
+impl<Z, IT, Acc, Out, Clk> BinaryOperator<Option<Z>, IT, Box<DynPairs<Z::Key, DynOpt<Out>>>>
     for AggregateIncremental<Z, IT, Acc, Out, Clk>
 where
     Clk: WithClock<Time = IT::Time> + 'static,
-    Z: Batch<Time = ()>,
+    Z: BatchReader<Time = ()>,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R> + Clone,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
 {
     #[trace]
-    async fn eval(&mut self, delta: &Z, input_trace: &IT) -> Box<DynPairs<Z::Key, DynOpt<Out>>> {
+    async fn eval(
+        &mut self,
+        delta: &Option<Z>,
+        input_trace: &IT,
+    ) -> Box<DynPairs<Z::Key, DynOpt<Out>>> {
+        let Some(delta) = delta else {
+            return self.output_pairs_factory.default_box();
+        };
+
         // println!(
         //     "{}: AggregateIncremental::eval @{:?}\ndelta:{delta}",
         //     Runtime::worker_index(),
