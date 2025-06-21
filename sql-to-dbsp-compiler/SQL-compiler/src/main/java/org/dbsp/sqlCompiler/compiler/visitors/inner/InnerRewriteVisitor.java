@@ -120,6 +120,7 @@ public abstract class InnerRewriteVisitor
      * Replace the 'old' IR node with the 'newOp' IR node if
      * any of its fields differs. */
     protected void map(IDBSPInnerNode old, IDBSPInnerNode newOp) {
+        Utilities.enforce(newOp != null);
         if ((old == newOp) || (!this.force && old.sameFields(newOp))) {
             // Ignore new op.
             this.lastResult = old;

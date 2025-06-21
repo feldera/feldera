@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
@@ -80,7 +79,8 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
             DBSPType newType = Objects.requireNonNull(map.compressedType(depth));
             newParam.substitute(param, newType.var().asParameter());
         }
-        return new RewriteFields(this.compiler, newParam, this.parameterFieldMap, depth);
+        return new RewriteFields(
+                this.compiler, newParam, this.parameterFieldMap, depth);
     }
 
     /** Set or change the map for a parameter */
@@ -102,9 +102,12 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     @Override
     public VisitDecision preorder(DBSPClosureExpression expression) {
         super.preorder(expression);
-        if (!this.context.isEmpty())
-            // This means that we are analyzing a closure within another closure.
-            throw new InternalCompilerError("Didn't expect nested closures", expression);
+        if (!this.context.isEmpty()) {
+            // This means that we are analyzing a closure within another closure; ignore, since
+            // nested closures must currently be pure functions
+            this.currentValue.popContext();
+            return VisitDecision.STOP;
+        }
         this.resolver.apply(expression);
         return VisitDecision.CONTINUE;
     }

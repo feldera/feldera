@@ -18,8 +18,8 @@ else
     # Switch to this script when using a branch in mihaibudiu's fork that
     # hasn't been merged yet
     CALCITE_REPO="https://github.com/mihaibudiu/calcite.git"
-    CALCITE_BRANCH="issue7052"
-    CALCITE_NEXT_COMMIT="eb0c60b6db35605f8a55d5f7619f3bf4f46aa28e"
+    CALCITE_BRANCH="save-branch"
+    CALCITE_NEXT_COMMIT="225933d485130a65f1846f0d0c69b048195bbb56"
 fi
 CALCITE_NEXT="1.41.0"
 CALCITE_CURRENT="1.40.0"

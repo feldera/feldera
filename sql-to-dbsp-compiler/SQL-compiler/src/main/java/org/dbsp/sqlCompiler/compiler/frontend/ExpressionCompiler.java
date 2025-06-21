@@ -31,6 +31,8 @@ import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexCorrelVariable;
 import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLambda;
+import org.apache.calcite.rex.RexLambdaRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
@@ -51,9 +53,11 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -200,7 +204,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     @Override
     public DBSPExpression visitInputRef(RexInputRef inputRef) {
         CalciteObject node = CalciteObject.create(this.context, inputRef);
-        return this.inputIndex(node, inputRef.getIndex());
+        DBSPExpression result = this.inputIndex(node, inputRef.getIndex());
+        // DBSPType type = this.typeCompiler.convertType(inputRef.getType(), false);
+        // Utilities.enforce(type.sameType(result.getType()));
+        return result;
     }
 
     @Override
@@ -1330,8 +1337,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 .cast(node, type, false);
                     }
                     case "arrays_overlap": {
-                        if (ops.size() != 2)
-                            throw operandCountError(node, operationName, call.operandCount());
+                        validateArgCount(node, operationName, ops.size(), 2);
                         DBSPExpression arg0 = ops.get(0);
                         DBSPExpression arg1 = ops.get(1);
                         if (arg0.getType().is(DBSPTypeNull.class) || arg1.getType().is(DBSPTypeNull.class))
@@ -1356,6 +1362,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 ops.get(0).getType().nullableUnderlineSuffix() +
                                 ops.get(1).getType().nullableUnderlineSuffix();
                         return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1));
+                    }
+                    case "array_exists": {
+                        validateArgCount(node, operationName, ops.size(), 2);
+                        DBSPClosureExpression closure = ops.get(1).to(DBSPClosureExpression.class);
+                        String method = "array_exists" +
+                                ops.get(0).getType().nullableUnderlineSuffix() +
+                                closure.getResultType().nullableUnderlineSuffix();
+                        boolean nullable = ops.get(0).getType().mayBeNull || closure.getResultType().mayBeNull;
+                        return new DBSPApplyExpression(
+                                node, method, type.withMayBeNull(nullable), ops.get(0), ops.get(1))
+                                .cast(node, type, false);
                     }
                 }
                 return this.compileUdfOrConstructor(node, call, type, ops);
@@ -1739,6 +1756,26 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
                         + " not yet implemented", 1265, node);
         }
+    }
+
+    @Override
+    public DBSPExpression visitLambdaRef(RexLambdaRef variable) {
+        DBSPType type = this.typeCompiler.convertType(variable.getType(), false);
+        return new DBSPVariablePath(variable.getName(), type.ref()).deref().applyCloneIfNeeded();
+    }
+
+    @Override
+    public DBSPExpression visitLambda(RexLambda lambda) {
+        var params = lambda.getParameters();
+        DBSPParameter[] converted = new DBSPParameter[params.size()];
+        int index = 0;
+        for (var param: params) {
+            DBSPType type = this.typeCompiler.convertType(param.getType(), false);
+            DBSPParameter var = new DBSPParameter(param.getName(), type.ref());
+            converted[index++] = var;
+        }
+        DBSPExpression body = lambda.getExpression().accept(this);
+        return body.closure(converted);
     }
 
     DBSPExpression handleExtract(RexCall call, DBSPType type, String keyword, List<DBSPExpression> args) {

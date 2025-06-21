@@ -498,3 +498,24 @@ FROM left_table LEFT ASOF JOIN right_table
 MATCH_CONDITION ( left_table.timecol >= right_table.timecol )
 ON left_table.col = right_table.col
 ```
+
+## Lambda expressions
+
+Lambda expressions are a class of expressions that represent functions.
+The grammar for lambda expressions is given by:
+
+```
+lambdaExpression:
+      parameters '->' expression
+
+parameters:
+      '(' [ identifier [, identifier ] ] ')'
+  |   identifier
+```
+
+Lambda expressions can be used as arguments for higher-order function.
+Here is an example:
+
+```sql
+SELECT EXISTS(ARRAY[1, -12, 3], x -> x > 0)
+```

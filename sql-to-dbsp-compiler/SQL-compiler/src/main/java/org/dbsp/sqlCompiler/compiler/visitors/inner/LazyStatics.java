@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -10,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -98,6 +100,10 @@ public class LazyStatics extends InnerRewriteVisitor {
         DBSPStaticExpression stat = new DBSPStaticExpression(expression.getNode(), expression);
         DBSPExpression result;
         if (this.declare) {
+            if (expression.getElementType().code == DBSPTypeCode.ANY) {
+                throw new CompilationError("Could not infer a type for array elements; " +
+                        "please specify it using CAST(array AS X ARRAY)", expression.getNode());
+            }
             DBSPStaticItem item = new DBSPStaticItem(stat);
             this.newDeclarations.add(item);
             result = item.getReference();
