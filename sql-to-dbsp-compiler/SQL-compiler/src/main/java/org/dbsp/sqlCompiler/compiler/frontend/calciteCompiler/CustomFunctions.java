@@ -69,6 +69,7 @@ public class CustomFunctions {
         this.functions.add(new ArraysOverlapFunction());
         this.functions.add(new ArrayRemoveFunction());
         this.functions.add(new ArrayContainsFunction());
+        this.functions.add(new ArrayExistsFunction());
         this.functions.add(new ArrayPositionFunction());
         this.functions.add(new BroundFunction());
         this.udf = new HashMap<>();
@@ -135,16 +136,28 @@ public class CustomFunctions {
 
     /** A clone of a Calcite SqlLibraryOperator function, but which is non-optimized */
     static abstract class CalciteFunctionClone extends NonOptimizedFunction {
-        public CalciteFunctionClone(SqlFunction calciteFunction, String documentationFile) {
-            super(calciteFunction.getName(), calciteFunction.kind,
+        public CalciteFunctionClone(String name, SqlFunction calciteFunction, String documentationFile) {
+            super(name, calciteFunction.kind,
                     calciteFunction.getReturnTypeInference(), calciteFunction.getOperandTypeChecker(),
                     calciteFunction.getFunctionType(), documentationFile);
+        }
+
+        public CalciteFunctionClone(SqlFunction calciteFunction, String documentationFile) {
+            this(calciteFunction.getName(), calciteFunction, documentationFile);
         }
     }
 
     static class FormatDateFunction extends CalciteFunctionClone {
         private FormatDateFunction() {
             super(SqlLibraryOperators.FORMAT_DATE, "datetime#date-parsing-and-formatting");
+        }
+    }
+
+    // The existing EXISTS Calcite function clashes with the SQL keyword EXISTS, so it's difficult to use
+    // correctly; we rename the function to ARRAY_EXISTS
+    static class ArrayExistsFunction extends CalciteFunctionClone {
+        private ArrayExistsFunction() {
+            super("ARRAY_EXISTS", SqlLibraryOperators.EXISTS, "array#array_exists");
         }
     }
 

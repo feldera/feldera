@@ -105,7 +105,7 @@ public class UnusedFieldsTest {
         CanonicalForm cf = new CanonicalForm(compiler);
 
         FindUnusedFields fu = new FindUnusedFields(compiler);
-        fu.findUnusedFields(closure);
+        closure = fu.findUnusedFields(closure);
         Assert.assertTrue(fu.foundUnusedFields(2));
 
         RewriteFields rw = fu.getFieldRewriter(1);

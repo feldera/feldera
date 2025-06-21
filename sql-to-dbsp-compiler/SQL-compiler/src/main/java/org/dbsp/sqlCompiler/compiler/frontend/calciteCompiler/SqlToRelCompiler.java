@@ -131,6 +131,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateIndex;
@@ -714,6 +715,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .append("After optimizer ")
                 .increase()
                 .appendSupplier(() -> getPlan(finalRel1))
+                .appendSupplier(() -> CalciteRelNode.toSqlString(finalRel1))
                 .decrease()
                 .newline();
         return rel;

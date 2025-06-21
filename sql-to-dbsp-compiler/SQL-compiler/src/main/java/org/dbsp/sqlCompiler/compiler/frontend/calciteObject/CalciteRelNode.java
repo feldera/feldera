@@ -7,7 +7,9 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.parser.SqlParserPos;
+import org.apache.calcite.sql.pretty.SqlPrettyWriter;
 import org.dbsp.util.IIndentStream;
 
 import java.util.Map;
@@ -32,6 +34,13 @@ public abstract class CalciteRelNode extends CalciteObject {
                 x -> new SqlIdentifier("", SqlParserPos.ZERO));
         SqlNode sql = context.toSql(null, node);
         return sql.toString();
+    }
+
+    public static String toSqlString(RelNode node) {
+        SqlNode sql = CONVERTER.visitRoot(node).asStatement();
+        final SqlWriter sqlWriter = new SqlPrettyWriter();
+        sql.unparse(sqlWriter, 0, 0);
+        return sqlWriter.toSqlString().toString();
     }
 
     @Override

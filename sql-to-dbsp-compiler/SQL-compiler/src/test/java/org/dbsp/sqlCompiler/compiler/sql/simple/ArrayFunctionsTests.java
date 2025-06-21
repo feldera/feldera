@@ -1135,4 +1135,116 @@ public class ArrayFunctionsTests extends SqlIoTest {
         // ---
         //     "(INTEGER NOT NULL, CHAR(1) NOT NULL) MAP NOT NULL ARRAY NOT NULL");
     }
+
+    @Test
+    public void testExists() {
+        this.qs("""
+                SELECT array_EXISTS(array[1, 2, 3], x -> x > 2);
+                result
+                ------
+                 true
+                (1 row)
+
+                SELECT array_exists(array[1, 2, 3], x -> x > 3);
+                result
+                ------
+                 false
+                (1 row)
+
+                SELECT array_exists(array[1, 2, 3], x -> false);
+                result
+                ------
+                 false
+                (1 row)
+
+                SELECT array_exists(array[1, 2, 3], x -> true);
+                result
+                ------
+                 true
+                (1 row)
+
+                SELECT array_exists(CAST(array() AS INT ARRAY), x -> true);
+                result
+                ------
+                 false
+                (1 row)
+
+                SELECT array_exists(CAST(array() AS INT ARRAY), x -> false);
+                result
+                ------
+                 false
+                (1 row)
+
+                SELECT array_exists(CAST(array() AS INT ARRAY), x -> cast(x as int) = 1);
+                result
+                ------
+                 false
+                (1 row)
+
+                SELECT array_exists(array[-1, 2, 3], y -> abs(y) = 1);
+                result
+                ------
+                 true
+                (1 row)
+
+                SELECT array_exists(array[-1, 2, 3], y -> abs(y) = 4);
+                result
+                ------
+                 false
+                (1 row)
+
+                SELECT array_exists(array[1, 2, 3], x -> x > 2 and x < 4);
+                result
+                ------
+                 true
+                (1 row)
+
+                SELECT array_exists(array[array[1, 2], array[3, 4]], x -> x[1] = 1);
+                result
+                ------
+                 true
+                (1 row)
+
+                SELECT array_exists(array[array[1, 2], array[3, 4]], x -> x[1] = 5);
+                result
+                ------
+                 false
+                (1 row)
+
+                SELECT array_exists(array[null, 3], x -> x > 2 or x < 4);
+                result
+                ------
+                 true
+                (1 row)
+
+                SELECT array_exists(array[null, 3], x -> x is null);
+                result
+                ------
+                 true
+                (1 row)
+
+                SELECT array_exists(array[null, 3], x -> cast(null as boolean));
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT array_exists(array[null, 3], x -> x = null);
+                result
+                ------
+                NULL
+                (1 row)
+                
+                SELECT array_exists(cast(null as integer array), x -> x > 2);
+                result
+                ------
+                NULL
+                (1 row)""");
+    }
+
+    @Test
+    public void testAmbiguousArray() {
+        this.queryFailingInCompilation("SELECT \"array_exists\"(array(), x -> true)",
+                "Could not infer a type for array elements");
+    }
 }

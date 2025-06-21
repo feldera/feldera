@@ -955,6 +955,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * described by a set of groups.  The aggregate is computed for each group,
      * and the results are combined. */
     void visitAggregate(LogicalAggregate aggregate) {
+        DBSPType type = this.convertType(aggregate.getRowType(), false);
         IntermediateRel node = CalciteObject.create(aggregate);
         List<ImmutableBitSet> plan = this.planGroups(
                 aggregate.getGroupSet(), aggregate.getGroupSets());
@@ -967,14 +968,26 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // No aggregates, this is how DISTINCT is represented.
             RelNode input = aggregate.getInput();
             DBSPSimpleOperator opInput = this.getInputAs(input, true);
+            DBSPVariablePath var = opInput.getOutputZSetElementType().ref().var();
+            DBSPExpression[] fields = new DBSPExpression[aggregate.getGroupCount()];
+            int index = 0;
+            for (int i: aggregate.getGroupSet()) {
+                fields[index++] = var.deref().field(i).applyCloneIfNeeded();
+            }
+            DBSPTupleExpression tup = new DBSPTupleExpression(fields);
+            DBSPMapOperator map = new DBSPMapOperator(node.intermediate(), tup.closure(var), opInput.outputPort());
+            this.addOperator(map);
+
             DBSPSimpleOperator result = new DBSPStreamDistinctOperator(
-                    node.getFinal(), opInput.outputPort());
+                    node.getFinal(), map.outputPort());
+            Utilities.enforce(result.getOutputZSetElementType().sameType(type));
             this.assignOperator(aggregate, result);
         } else {
             // One aggregate for each group
             List<OutputPort> aggregates = Linq.map(plan, b -> this.implementOneAggregate(aggregate, b));
             // The result is the sum of all aggregates
             DBSPSimpleOperator sum = new DBSPSumOperator(node.getFinal(), aggregates);
+            Utilities.enforce(sum.getOutputZSetElementType().sameType(type));
             this.assignOperator(aggregate, sum);
         }
     }
@@ -1163,11 +1176,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<OutputPort> ports = Linq.map(inputs, o -> this.castOutput(node, o, outputType).outputPort());
         if (union.all) {
             DBSPSumOperator sum = new DBSPSumOperator(node.getFinal(), ports);
+            Utilities.enforce(sum.getOutputZSetElementType().sameType(outputType));
             this.assignOperator(union, sum);
         } else {
             DBSPSumOperator sum = new DBSPSumOperator(node, ports);
             this.addOperator(sum);
             DBSPStreamDistinctOperator d = new DBSPStreamDistinctOperator(node.getFinal(), sum.outputPort());
+            Utilities.enforce(sum.getOutputZSetElementType().sameType(outputType));
             this.assignOperator(union, d);
         }
     }
@@ -1225,6 +1240,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 CalciteObject.create(filter, filter.getCondition()), condition, t.asParameter());
         DBSPSimpleOperator input = this.getOperator(filter.getInput());
         DBSPFilterOperator fop = new DBSPFilterOperator(node.getFinal(), condition, input.outputPort());
+        Utilities.enforce(type.sameType(fop.getOutputZSetElementType()));
         this.assignOperator(filter, fop);
     }
 
@@ -1904,6 +1920,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
         DBSPSumOperator result = new DBSPSumOperator(node.getFinal(), sumInputs);
+        Utilities.enforce(resultType.sameType(result.getOutputZSetElementType()));
         this.assignOperator(join, result);
     }
 
@@ -2109,6 +2126,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.addOperator(result);
 
         result = new DBSPIntegrateOperator(node.getFinal(), result.outputPort());
+        Utilities.enforce(resultType.sameType(result.getOutputZSetElementType()));
         this.assignOperator(join, Objects.requireNonNull(result));
     }
 
@@ -2209,6 +2227,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.addOperator(aggregateOperator);
 
         DBSPSimpleOperator deindex = new DBSPDeindexOperator(node.getFinal(), aggregateOperator.outputPort());
+        Utilities.enforce(type.sameType(deindex.getOutputZSetElementType()));
         this.assignOperator(collect, deindex);
     }
 
@@ -2315,6 +2334,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     closure, false, previousIndex.outputPort(), index.outputPort());
             this.addOperator(previous);
         }
+        Utilities.enforce(resultType.sameType(previous.getOutputZSetElementType()));
         Utilities.putNew(this.nodeOperator, intersect, previous);
     }
 
