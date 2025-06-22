@@ -2,7 +2,7 @@
 
 use crate::circuit::circuit_builder::StreamId;
 use crate::dynamic::{ClonableTrait, Data, DynData};
-use crate::trace::TupleBuilder;
+use crate::trace::{Spine, TupleBuilder};
 use crate::{
     algebra::{
         AddByRef, HasOne, HasZero, IndexedZSet, IndexedZSetReader, Lattice, OrdIndexedZSet,
@@ -309,10 +309,10 @@ where
             // Use an implementation optimized to work in the root scope.
             circuit.add_binary_operator(
                 DistinctIncrementalTotal::new(Location::caller(), &factories.input_factories),
-                self,
+                &self.dyn_accumulate(&factories.input_factories),
                 &self
-                    .dyn_integrate_trace(&factories.input_factories)
-                    .delay_trace(),
+                    .dyn_accumulate_integrate_trace(&factories.input_factories)
+                    .accumulate_delay_trace(),
             )
         } else {
             // ```
@@ -330,9 +330,9 @@ where
                     &factories.aux_factories,
                     circuit.clone(),
                 ),
-                self,
+                &self.dyn_accumulate(&factories.input_factories),
                 // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
-                &self.dyn_trace(&factories.trace_factories, &factories.input_factories),
+                &self.dyn_accumulate_trace(&factories.trace_factories, &factories.input_factories),
             )
         }
         .mark_sharded()
@@ -442,13 +442,17 @@ where
     }
 }
 
-impl<Z, I> BinaryOperator<Z, I, Z> for DistinctIncrementalTotal<Z, I>
+impl<Z, I> BinaryOperator<Option<Spine<Z>>, I, Z> for DistinctIncrementalTotal<Z, I>
 where
     Z: IndexedZSet,
     I: IndexedZSetReader<Key = Z::Key, Val = Z::Val>,
 {
     #[trace]
-    async fn eval(&mut self, delta: &Z, delayed_integral: &I) -> Z {
+    async fn eval(&mut self, delta: &Option<Spine<Z>>, delayed_integral: &I) -> Z {
+        let Some(delta) = delta else {
+            return Z::dyn_empty(&self.input_factories);
+        };
+
         self.num_inputs += delta.len();
 
         let mut builder = Z::Builder::with_capacity(&self.input_factories, delta.len());
@@ -519,11 +523,11 @@ where
     }
 
     // TODO: owned implementation.
-    async fn eval_owned_and_ref(&mut self, delta: Z, delayed_integral: &I) -> Z {
+    async fn eval_owned_and_ref(&mut self, delta: Option<Spine<Z>>, delayed_integral: &I) -> Z {
         self.eval(&delta, delayed_integral).await
     }
 
-    async fn eval_owned(&mut self, delta: Z, delayed_integral: I) -> Z {
+    async fn eval_owned(&mut self, delta: Option<Spine<Z>>, delayed_integral: I) -> Z {
         self.eval_owned_and_ref(delta, &delayed_integral).await
     }
 }
@@ -843,7 +847,7 @@ where
     }
 }
 
-impl<Z, T, Clk> BinaryOperator<Z, T, Z> for DistinctIncremental<Z, T, Clk>
+impl<Z, T, Clk> BinaryOperator<Option<Spine<Z>>, T, Z> for DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
     T: ZTrace<Key = Z::Key, Val = Z::Val>,
@@ -852,7 +856,11 @@ where
     // TODO: add eval_owned, so we can use keys and values from `delta` without
     // cloning.
     #[trace]
-    async fn eval(&mut self, delta: &Z, trace: &T) -> Z {
+    async fn eval(&mut self, delta: &Option<Spine<Z>>, trace: &T) -> Z {
+        let Some(delta) = delta else {
+            return Z::dyn_empty(&self.input_factories);
+        };
+
         let time = self.clock.time();
         self.num_inputs += delta.len();
 
