@@ -6154,9 +6154,10 @@ impl CircuitHandle {
         //     self.circuit.to_dot_file(
         //         |node| {
         //             Some(crate::utils::DotNodeAttributes::new().with_label(&format!(
-        //                 "{}-{}",
+        //                 "{}-{}-{}",
         //                 node.local_id(),
-        //                 node.name()
+        //                 node.name(),
+        //                 node.persistent_id().unwrap_or_default()
         //             )))
         //         },
         //         |edge| {
