@@ -7,7 +7,10 @@ use crate::{
     },
     declare_trait_object,
     dynamic::{ClonableTrait, Data, DataTrait, DynOpt, DynPairs, Erase, Factory, WithFactory},
-    operator::dynamic::trace::{DelayedTraceId, TraceBounds, TraceId, UntimedTraceAppend, Z1Trace},
+    operator::dynamic::{
+        accumulate_trace::{AccumulateUntimedTraceAppend, AccumulateZ1Trace},
+        trace::{DelayedTraceId, TraceBounds, TraceId},
+    },
     trace::{
         cursor::Cursor, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Filter,
         Spine,
@@ -215,7 +218,7 @@ where
         circuit.region("input_upsert", || {
             let bounds = <TraceBounds<K, V>>::unbounded();
 
-            let z1 = Z1Trace::new(
+            let z1 = AccumulateZ1Trace::new(
                 &factories.batch_factories,
                 &factories.batch_factories,
                 false,
@@ -249,9 +252,12 @@ where
             let replay_stream = z1feedback.operator_mut().prepare_replay_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
-                UntimedTraceAppend::<Spine<B>>::new(),
+                AccumulateUntimedTraceAppend::<Spine<B>>::new(),
                 (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                (&delta, OwnershipPreference::PREFER_OWNED),
+                (
+                    &delta.dyn_accumulate(&factories.batch_factories),
+                    OwnershipPreference::PREFER_OWNED,
+                ),
             );
             trace.mark_sharded();
 
