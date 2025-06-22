@@ -10,6 +10,7 @@ use crate::{
     },
     operator::{
         dynamic::{
+            accumulate_trace::AccumulateTraceFeedback,
             aggregate::{AggCombineFunc, AggOutputFunc, DynAggregator, DynAverage},
             filter_map::DynFilterMap,
             time_series::{
@@ -21,7 +22,7 @@ use crate::{
                 OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatchReader,
                 PartitionedIndexedZSet, RelOffset,
             },
-            trace::{TraceBound, TraceBounds, TraceFeedback},
+            trace::{TraceBound, TraceBounds},
         },
         Avg,
     },
@@ -667,15 +668,16 @@ impl<B> Stream<RootCircuit, B> {
                 &factories.partitioned_tree_aggregate_factories,
                 aggregator,
             )
-            .dyn_integrate_trace(&factories.radix_tree_factories);
-        let input_trace = stream_window.dyn_integrate_trace(&factories.input_factories);
+            .set_persistent_id(partitioned_tree_aggregate_name.as_deref())
+            .dyn_accumulate_integrate_trace(&factories.radix_tree_factories);
+        let input_trace = stream_window.dyn_accumulate_integrate_trace(&factories.input_factories);
 
         // Truncate timestamps `< bound` in the output trace.
         let bounds = TraceBounds::new();
         bounds.add_key_bound(TraceBound::new());
         bounds.add_val_bound(bound);
 
-        let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(
+        let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<O>>(
             partition_id,
             &factories.output_factories,
             bounds,
@@ -688,7 +690,7 @@ impl<B> Stream<RootCircuit, B> {
                     range,
                     aggregator,
                 ),
-                &stream,
+                &stream.dyn_accumulate(&factories.input_factories),
                 &input_trace,
                 &tree,
                 &feedback.delayed_trace,
@@ -696,7 +698,7 @@ impl<B> Stream<RootCircuit, B> {
             .mark_distinct()
             .mark_sharded();
 
-        feedback.connect(&output);
+        feedback.connect(&output, &factories.output_factories);
 
         output
     }
@@ -786,7 +788,7 @@ where
     }
 }
 
-impl<TS, V, Acc, Out, B, T, RT, OT, O> QuaternaryOperator<B, T, RT, OT, O>
+impl<TS, V, Acc, Out, B, T, RT, OT, O> QuaternaryOperator<Option<B>, T, RT, OT, O>
     for PartitionedRollingAggregate<TS, V, Acc, Out, O>
 where
     TS: DBData + UnsignedPrimInt,
@@ -802,11 +804,15 @@ where
     #[trace]
     async fn eval(
         &mut self,
-        input_delta: Cow<'_, B>,
+        input_delta: Cow<'_, Option<B>>,
         input_trace: Cow<'_, T>,
         radix_tree: Cow<'_, RT>,
         output_trace: Cow<'_, OT>,
     ) -> O {
+        let Some(input_delta) = input_delta.as_ref() else {
+            return O::dyn_empty(&self.output_factories);
+        };
+
         let mut delta_cursor = input_delta.cursor();
         let mut output_trace_cursor = output_trace.cursor();
         let mut input_trace_cursor = input_trace.cursor();
