@@ -8,11 +8,11 @@ use crate::{
         Scope,
     },
     dynamic::{DataTrait, DynPair, DynUnit, DynWeightedPairs, Factory},
-    operator::dynamic::trace::{TraceBounds, TraceFeedback},
+    operator::dynamic::{accumulate_trace::AccumulateTraceFeedback, trace::TraceBounds},
     trace::{
         cursor::{CursorEmpty, CursorGroup, CursorPair},
-        BatchFactories, BatchReaderFactories, Builder, Cursor, OrdIndexedWSetFactories, Spine,
-        TupleBuilder,
+        BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor,
+        OrdIndexedWSetFactories, Spine, TupleBuilder,
     },
     Circuit, DynZWeight, RootCircuit, Stream,
 };
@@ -329,7 +329,7 @@ where
         //                                                                             └────┘
         // ```
         let bounds = TraceBounds::unbounded();
-        let feedback = circuit.add_integrate_trace_feedback::<Spine<OB>>(
+        let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<OB>>(
             persistent_id,
             output_factories,
             bounds,
@@ -338,13 +338,15 @@ where
         let output = circuit
             .add_ternary_operator(
                 GroupTransform::new(output_factories, transform),
-                &stream,
-                &stream.dyn_integrate_trace(input_factories).delay_trace(),
+                &stream.dyn_accumulate(input_factories),
+                &stream
+                    .dyn_accumulate_integrate_trace(input_factories)
+                    .accumulate_delay_trace(),
                 &feedback.delayed_trace,
             )
             .mark_sharded();
 
-        feedback.connect(&output);
+        feedback.connect(&output, output_factories);
 
         output
     }
@@ -394,7 +396,7 @@ where
     }
 }
 
-impl<B, OB, T, OT> TernaryOperator<B, T, OT, OB> for GroupTransform<B, OB, T, OT>
+impl<B, OB, T, OT> TernaryOperator<Option<Spine<B>>, T, OT, OB> for GroupTransform<B, OB, T, OT>
 where
     B: IndexedZSet,
     T: ZBatchReader<Key = B::Key, Val = B::Val, Time = ()> + Clone,
@@ -404,10 +406,14 @@ where
     #[trace]
     async fn eval(
         &mut self,
-        delta: Cow<'_, B>,
+        delta: Cow<'_, Option<Spine<B>>>,
         input_trace: Cow<'_, T>,
         output_trace: Cow<'_, OT>,
     ) -> OB {
+        let Some(delta) = delta.as_ref() else {
+            return OB::dyn_empty(&self.output_factories);
+        };
+
         let mut delta_cursor = delta.cursor();
         let mut input_trace_cursor = input_trace.cursor();
         let mut output_trace_cursor = output_trace.cursor();
