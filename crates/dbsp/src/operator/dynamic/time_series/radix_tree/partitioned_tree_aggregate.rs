@@ -10,11 +10,12 @@ use crate::{
     },
     dynamic::{ClonableTrait, DataTrait, DynDataTyped, DynPair, Erase},
     operator::dynamic::{
+        accumulate_trace::AccumulateTraceFeedback,
         aggregate::DynAggregator,
         time_series::{
             PartitionCursor, PartitionedBatch, PartitionedBatchReader, PartitionedIndexedZSet,
         },
-        trace::{TraceBounds, TraceFeedback},
+        trace::TraceBounds,
     },
     trace::{
         cursor::CursorEmpty, ord::fallback::indexed_wset::FallbackIndexedWSet, BatchReader,
@@ -269,7 +270,7 @@ where
                 // over a bounded range of keys.
                 let bounds = <TraceBounds<O::Key, O::Val>>::unbounded();
 
-                let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(
+                let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<O>>(
                     persistent_id,
                     &factories.output_factories,
                     bounds,
@@ -278,13 +279,13 @@ where
                 let output = circuit
                     .add_ternary_operator(
                         PartitionedRadixTreeAggregate::new(factories, aggregator),
-                        &stream,
-                        &stream.dyn_integrate_trace(&factories.stored_factories),
+                        &stream.dyn_accumulate(&factories.input_factories),
+                        &stream.dyn_accumulate_integrate_trace(&factories.stored_factories),
                         &feedback.delayed_trace,
                     )
                     .mark_sharded();
 
-                feedback.connect(&output);
+                feedback.connect(&output, &factories.output_factories);
 
                 output
             })
@@ -356,7 +357,7 @@ where
     }
 }
 
-impl<TS, V, Z, IT, OT, Acc, Out, O> TernaryOperator<Z, IT, OT, O>
+impl<TS, V, Z, IT, OT, Acc, Out, O> TernaryOperator<Option<Spine<Z>>, IT, OT, O>
     for PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Acc, Out, O>
 where
     Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
@@ -371,10 +372,14 @@ where
     #[trace]
     async fn eval(
         &mut self,
-        delta: Cow<'_, Z>,
+        delta: Cow<'_, Option<Spine<Z>>>,
         input_trace: Cow<'_, IT>,
         output_trace: Cow<'_, OT>,
     ) -> O {
+        let Some(delta) = delta.as_ref() else {
+            return O::dyn_empty(&self.factories.output_factories);
+        };
+
         let mut builder =
             O::Builder::with_capacity(&self.factories.output_factories, delta.len() * 2);
 
