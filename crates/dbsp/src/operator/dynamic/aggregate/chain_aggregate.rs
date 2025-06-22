@@ -4,12 +4,11 @@ use dyn_clone::clone_box;
 use minitrace::trace;
 
 use crate::{
-    algebra::IndexedZSet,
+    algebra::{IndexedZSet, ZBatchReader},
     circuit::operator_traits::{BinaryOperator, Operator},
     dynamic::{ClonableTrait, DynData, Erase},
     operator::dynamic::{
-        trace::{TraceBounds, TraceFeedback},
-        MonoIndexedZSet,
+        accumulate_trace::AccumulateTraceFeedback, trace::TraceBounds, MonoIndexedZSet,
     },
     trace::{BatchReader, BatchReaderFactories, Builder, Cursor, Spine},
     Circuit, RootCircuit, Scope, Stream, ZWeight,
@@ -65,7 +64,7 @@ where
 
         let bounds = TraceBounds::unbounded();
 
-        let feedback = circuit.add_integrate_trace_feedback::<Spine<OZ>>(
+        let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<OZ>>(
             persistent_id,
             output_factories,
             bounds,
@@ -74,12 +73,12 @@ where
         let output = circuit
             .add_binary_operator(
                 ChainAggregate::new(output_factories, finit, fupdate),
-                &stream,
+                &stream.dyn_accumulate(input_factories),
                 &feedback.delayed_trace,
             )
             .mark_sharded();
 
-        feedback.connect(&output);
+        feedback.connect(&output, output_factories);
 
         output
     }
@@ -87,7 +86,7 @@ where
 
 struct ChainAggregate<Z, OZ>
 where
-    Z: IndexedZSet,
+    Z: ZBatchReader<Time = ()>,
     OZ: IndexedZSet,
 {
     output_factories: OZ::Factories,
@@ -98,7 +97,7 @@ where
 
 impl<Z, OZ> ChainAggregate<Z, OZ>
 where
-    Z: IndexedZSet,
+    Z: ZBatchReader<Time = ()>,
     OZ: IndexedZSet,
 {
     fn new(
@@ -117,7 +116,7 @@ where
 
 impl<Z, OZ> Operator for ChainAggregate<Z, OZ>
 where
-    Z: IndexedZSet,
+    Z: ZBatchReader<Time = ()>,
     OZ: IndexedZSet,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -128,13 +127,17 @@ where
     }
 }
 
-impl<Z, OZ> BinaryOperator<Z, Spine<OZ>, OZ> for ChainAggregate<Z, OZ>
+impl<Z, OZ> BinaryOperator<Option<Z>, Spine<OZ>, OZ> for ChainAggregate<Z, OZ>
 where
-    Z: IndexedZSet,
+    Z: ZBatchReader<Time = ()>,
     OZ: IndexedZSet<Key = Z::Key>,
 {
     #[trace]
-    async fn eval(&mut self, delta: &Z, output_trace: &Spine<OZ>) -> OZ {
+    async fn eval(&mut self, delta: &Option<Z>, output_trace: &Spine<OZ>) -> OZ {
+        let Some(delta) = delta else {
+            return OZ::dyn_empty(&self.output_factories);
+        };
+
         let mut delta_cursor = delta.cursor();
         let mut output_trace_cursor = output_trace.cursor();
 
