@@ -1,6 +1,7 @@
 use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
 use crate::dynamic::DynData;
+use crate::trace::{Spine, Trace};
 use crate::{
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
@@ -21,9 +22,7 @@ use crate::{
     },
     operator::dynamic::{distinct::DistinctFactories, filter_map::DynFilterMap},
     time::Timestamp,
-    trace::{
-        BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, WeightedItem,
-    },
+    trace::{BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, WeightedItem},
     utils::Tup2,
     DBData, ZWeight,
 };
@@ -1055,9 +1054,9 @@ where
         &'static dyn Factory<DynPairs<DynDataTyped<T::Time>, WeightedItem<Z::Key, Z::Val, Z::R>>>,
     join_func: TraceJoinFunc<I::Key, I::Val, T::Val, Z::Key, Z::Val>,
     location: &'static Location<'static>,
-    // Future update batches computed ahead of time, indexed by time
-    // when each batch should be output.
-    output_batchers: HashMap<T::Time, Z::Batcher>,
+    // Future updates computed ahead of time, indexed by time
+    // when each set of updates should be output.
+    future_outputs: HashMap<T::Time, Spine<Z>>,
     // True if empty input batch was received at the current clock cycle.
     empty_input: bool,
     // True if empty output was produced at the current clock cycle.
@@ -1093,7 +1092,7 @@ where
             clock,
             join_func,
             location,
-            output_batchers: HashMap::new(),
+            future_outputs: HashMap::new(),
             empty_input: false,
             empty_output: false,
             stats: JoinStats::new(),
@@ -1126,20 +1125,16 @@ where
 
     fn clock_end(&mut self, _scope: Scope) {
         debug_assert!(self
-            .output_batchers
+            .future_outputs
             .keys()
             .all(|time| !time.less_equal(&self.clock.time())));
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
-        let total_size: usize = self
-            .output_batchers
-            .values()
-            .map(|batcher| batcher.tuples())
-            .sum();
+        let total_size: usize = self.future_outputs.values().map(|spine| spine.len()).sum();
 
         let batch_sizes = MetaItem::Array(
-            self.output_batchers
+            self.future_outputs
                 .values()
                 .map(|batcher| {
                     let size = batcher.size_of();
@@ -1157,7 +1152,7 @@ where
 
         let bytes = {
             let mut context = Context::new();
-            for batcher in self.output_batchers.values() {
+            for batcher in self.future_outputs.values() {
                 batcher.size_of_with_context(&mut context);
             }
 
@@ -1192,7 +1187,7 @@ where
         self.empty_input
             && self.empty_output
             && self
-                .output_batchers
+                .future_outputs
                 .keys()
                 .all(|time| !time.less_equal(&epoch_end))
     }
@@ -1305,24 +1300,26 @@ where
 
             start += run_length;
 
-            self.output_batchers
-                .entry(batch_time)
-                .or_insert_with(|| Z::Batcher::new_batcher(&self.output_factories, ()))
-                .push_batch(&mut batch);
+            self.future_outputs.entry(batch_time).or_insert_with(|| {
+                let mut spine = <Spine<Z> as Trace>::new(&self.output_factories);
+                spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch));
+                spine
+            });
             batch.clear();
         }
 
-        // Finalize the batch for the current timestamp and return it.
-        let batcher = self
-            .output_batchers
+        // Consolidate the spine for the current timestamp and return it.
+        let batch = self
+            .future_outputs
             .remove(&time)
-            .unwrap_or_else(|| Z::Batcher::new_batcher(&self.output_factories, ()));
+            .map(|spine| spine.consolidate())
+            .flatten()
+            .unwrap_or_else(|| Z::dyn_empty(&self.output_factories));
 
-        let result = batcher.seal();
-        self.stats.produced_tuples += result.len();
-        self.empty_output = result.is_empty();
+        self.stats.produced_tuples += batch.len();
+        self.empty_output = batch.is_empty();
 
-        result
+        batch
     }
 }
 
