@@ -4721,6 +4721,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "feldera-fxp"
+version = "0.96.0"
+dependencies = [
+ "bytecheck",
+ "dbsp",
+ "feldera-size-of",
+ "feldera-types",
+ "itertools 0.14.0",
+ "num-bigint",
+ "num-traits",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "smallstr",
+ "smallvec",
+]
+
+[[package]]
 name = "feldera-iceberg"
 version = "0.96.0"
 dependencies = [
@@ -10157,6 +10175,15 @@ version = "0.96.0"
 dependencies = [
  "dbsp",
  "feldera-sqllib",
+]
+
+[[package]]
+name = "smallstr"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63b1aefdf380735ff8ded0b15f31aab05daf1f70216c01c02a12926badd1df9d"
+dependencies = [
+ "smallvec",
 ]
 
 [[package]]

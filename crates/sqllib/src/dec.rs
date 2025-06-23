@@ -353,7 +353,7 @@ impl SerializeWithContext<SqlSerdeConfig> for SqlDecimal {
         S: Serializer,
     {
         match context.decimal_format {
-            DecimalFormat::Numeric => Serialize::serialize(&self, serializer),
+            DecimalFormat::Numeric => self.serialize(serializer),
             DecimalFormat::String => {
                 // serde_arrow doesn't support scientific notation.
                 serializer.serialize_str(&self.value.to_standard_notation_string())

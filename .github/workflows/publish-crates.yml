@@ -27,6 +27,7 @@ jobs:
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-ir
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package dbsp
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package fda
+          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-fxp
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-sqllib
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
