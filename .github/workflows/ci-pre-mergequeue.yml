@@ -3,32 +3,42 @@ name: Pre Merge Queue Tasks
 on:
   pull_request:
     types: [opened, synchronize]
+
+env:
+  RUSTC_WRAPPER: sccache
+  SCCACHE_DIR: /sccache
+  SCCACHE_CACHE_SIZE: 512G
+
+permissions:
+  contents: write
+
 jobs:
   # This job needs to be called main (the same as the ci.yml workflow)
   # because of how merge queues work: https://stackoverflow.com/a/78030618
   main:
-    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/feldera/feldera-dev:sha-80e0a01ee5dc094fd8693d29338d2836852dff1d
+      options: --user=ubuntu
+      volumes:
+        - /sccache:/sccache
+    runs-on: [self-hosted]
     steps:
-      # Required by librdkafka.
-      - name: Install libsasl2-dev
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsasl2-dev
-      - uses: actions/checkout@v3
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v4
         with:
-          toolchain: 1.87.0
-          components: rustfmt clippy
-      - uses: actions/setup-python@v4
+          token: ${{ secrets.CI_RELEASE }}
+      - uses: actions/cache@v4
         with:
-          python-version: 3.x
-      - name: Install cargo-machete
-        uses: clechasseur/rs-cargo@v2
-        with:
-          command: install
-          args: cargo-machete@0.7.0
-      - uses: Swatinem/rust-cache@v2
-      - uses: pre-commit/action@v3.0.1
-      - uses: pre-commit-ci/lite-action@v1.1.0
+          path: ~/.cache/pre-commit
+          key: pre-commit-3|${{ hashFiles('.pre-commit-config.yaml') }}
+      - run: pre-commit run --show-diff-on-failure --color=always --all-files
+        shell: bash
+      - name: Print sccache stats
+        run: sccache --show-stats
+      - uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403
         if: always()
+        with:
+          commit_message: "[ci] apply automatic fixes"
+          commit_user_name: feldera-bot
+          commit_user_email: feldera-bot@feldera.com
+          commit_author: feldera-bot <feldera-bot@feldera.com>
+          commit_options: "--no-verify --signoff"

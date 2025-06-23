@@ -27,7 +27,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-16392983db90d797040b46489b56399895516720
+      image: ghcr.io/feldera/feldera-dev:sha-80e0a01ee5dc094fd8693d29338d2836852dff1d
       options: --user=ubuntu
       volumes:
         - /sccache:/sccache
@@ -39,6 +39,10 @@ jobs:
       - name: Build Rust binaries
         run: |
           cargo build ${{ env.CARGO_FLAGS }} --target=${{ matrix.target }}
+
+      # Thanks to rust cargo non-sense it's too hard to split this into separate build and test jobs
+      - name: Run Rust doc tests
+        run: cargo test --locked --doc --workspace
 
       - name: Print sccache stats
         run: |
