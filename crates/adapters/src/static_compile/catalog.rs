@@ -5,6 +5,7 @@ use crate::{
     Catalog, ControllerError,
 };
 use dbsp::circuit::circuit_builder::CircuitBase;
+use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup1;
 use dbsp::OrdZSet;

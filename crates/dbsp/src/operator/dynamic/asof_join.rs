@@ -12,6 +12,7 @@ use crate::{
     },
     trace::{
         cursor::{CursorEmpty, CursorPair},
+        spine_async::WithSnapshot,
         BatchFactories, BatchReader, BatchReaderFactories, Cursor, Spine, SpineSnapshot,
     },
     Circuit, DBData, DynZWeight, RootCircuit, Scope, Stream, ZWeight,
