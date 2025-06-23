@@ -3,6 +3,7 @@ use crate::circuit::metadata::NUM_INPUTS;
 use crate::circuit::metrics::Gauge;
 use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::require_persistent_id;
+use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
 use crate::Runtime;
 use crate::{
