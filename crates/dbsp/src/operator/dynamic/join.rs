@@ -1211,14 +1211,6 @@ where
 
         self.empty_input = index.is_empty();
 
-        // Buffer to collect output tuples.
-        // One allocation per clock tick is acceptable; however the actual output can be
-        // larger than `index.len()`.  If re-allocations becomes a problem, we
-        // may need to do something smarter, like a chain of buffers.
-        // TODO: Sub-scopes can cause a lot of inner clock cycles to be set off, so this
-        //       actually could be significant
-        let mut output_tuples = self.timed_items_factory.default_box();
-
         let mut index_cursor = index.cursor();
 
         let fetched = if Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.fetch_join) {
@@ -1236,85 +1228,134 @@ where
 
         let mut val = self.right_factories.val_factory().default_box();
 
-        let mut timed_item = self.timed_item_factory.default_box();
+        let batch = if size_of::<T::Time>() != 0 {
+            // Buffer to collect output tuples.
+            // One allocation per clock tick is acceptable; however the actual output can be
+            // larger than `index.len()`.  If re-allocations becomes a problem, we
+            // may need to do something smarter, like a chain of buffers.
+            // TODO: Sub-scopes can cause a lot of inner clock cycles to be set off, so this
+            //       actually could be significant
+            let mut output_tuples = self.timed_items_factory.default_box();
 
-        while index_cursor.key_valid() {
-            if trace_cursor.seek_key_exact(index_cursor.key()) {
-                //println!("key: {}", index_cursor.key(index));
+            let mut timed_item = self.timed_item_factory.default_box();
 
-                while index_cursor.val_valid() {
-                    let w1 = **index_cursor.weight();
-                    let v1 = index_cursor.val();
-                    //println!("v1: {}, w1: {}", v1, w1);
+            while index_cursor.key_valid() {
+                if trace_cursor.seek_key_exact(index_cursor.key()) {
+                    //println!("key: {}", index_cursor.key(index));
 
-                    while trace_cursor.val_valid() {
-                        // FIXME: this clone is only needed to avoid borrow checker error due to
-                        // borrowing `trace_cursor` below.
-                        trace_cursor.val().clone_to(val.as_mut());
+                    while index_cursor.val_valid() {
+                        let w1 = **index_cursor.weight();
+                        let v1 = index_cursor.val();
+                        //println!("v1: {}, w1: {}", v1, w1);
 
-                        (self.join_func)(index_cursor.key(), v1, &val, &mut |k, v| {
-                            trace_cursor.map_times(&mut |ts: &T::Time, w2: &T::R| {
-                                let (time_ref, item) = timed_item.split_mut();
-                                let (kv, w) = item.split_mut();
-                                let (key, val) = kv.split_mut();
+                        while trace_cursor.val_valid() {
+                            // FIXME: this clone is only needed to avoid borrow checker error due to
+                            // borrowing `trace_cursor` below.
+                            trace_cursor.val().clone_to(val.as_mut());
 
-                                **w = w1.mul_by_ref(&**w2);
-                                k.clone_to(key);
-                                v.clone_to(val);
-                                **time_ref = ts.join(&time);
-                                output_tuples.push_val(timed_item.as_mut());
+                            (self.join_func)(index_cursor.key(), v1, &val, &mut |k, v| {
+                                trace_cursor.map_times(&mut |ts: &T::Time, w2: &T::R| {
+                                    let (time_ref, item) = timed_item.split_mut();
+                                    let (kv, w) = item.split_mut();
+                                    let (key, val) = kv.split_mut();
+
+                                    **w = w1.mul_by_ref(&**w2);
+                                    k.clone_to(key);
+                                    v.clone_to(val);
+                                    **time_ref = ts.join(&time);
+                                    output_tuples.push_val(timed_item.as_mut());
+                                });
                             });
-                        });
-                        trace_cursor.step_val();
+                            trace_cursor.step_val();
+                        }
+                        trace_cursor.rewind_vals();
+                        index_cursor.step_val();
                     }
-                    trace_cursor.rewind_vals();
-                    index_cursor.step_val();
                 }
+                index_cursor.step_key();
             }
-            index_cursor.step_key();
-        }
 
-        self.stats.output_tuples += output_tuples.len();
+            self.stats.output_tuples += output_tuples.len();
 
-        // Sort `output_tuples` by timestamp and push all tuples for each unique
-        // timestamp to the appropriate batcher.
-        // Skip this step when using unit timestamps.
-        if size_of::<T::Time>() != 0 {
+            // Sort `output_tuples` by timestamp and push all tuples for each unique
+            // timestamp to the appropriate spine.
             output_tuples.sort_by_key();
-        }
 
-        let mut batch = self.output_factories.weighted_items_factory().default_box();
-        let mut start: usize = 0;
+            let mut batch = self.output_factories.weighted_items_factory().default_box();
+            let mut start: usize = 0;
 
-        while start < output_tuples.len() {
-            let batch_time = output_tuples[start].fst().deref().clone();
+            while start < output_tuples.len() {
+                let batch_time = output_tuples[start].fst().deref().clone();
 
-            let run_length = output_tuples.advance_while(start, output_tuples.len(), &|tuple| {
-                tuple.fst().deref() == &batch_time
-            });
-            batch.reserve(run_length);
+                let run_length =
+                    output_tuples.advance_while(start, output_tuples.len(), &|tuple| {
+                        tuple.fst().deref() == &batch_time
+                    });
+                batch.reserve(run_length);
 
-            for i in start..start + run_length {
-                batch.push_val(unsafe { output_tuples.index_mut_unchecked(i) }.snd_mut());
+                for i in start..start + run_length {
+                    batch.push_val(unsafe { output_tuples.index_mut_unchecked(i) }.snd_mut());
+                }
+
+                start += run_length;
+
+                self.future_outputs.entry(batch_time).or_insert_with(|| {
+                    let mut spine = <Spine<Z> as Trace>::new(&self.output_factories);
+                    spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch));
+                    spine
+                });
+                batch.clear();
             }
 
-            start += run_length;
+            // Consolidate the spine for the current timestamp and return it.
+            self.future_outputs
+                .remove(&time)
+                .map(|spine| spine.consolidate())
+                .flatten()
+                .unwrap_or_else(|| Z::dyn_empty(&self.output_factories))
+        } else {
+            let mut output_tuples = self.output_factories.weighted_items_factory().default_box();
+            // TODO. output_tuples.reserve
 
-            self.future_outputs.entry(batch_time).or_insert_with(|| {
-                let mut spine = <Spine<Z> as Trace>::new(&self.output_factories);
-                spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch));
-                spine
-            });
-            batch.clear();
-        }
+            let mut output_tuple = self.output_factories.weighted_item_factory().default_box();
 
-        // Consolidate the spine for the current timestamp and return it.
-        let batch = self
-            .future_outputs
-            .remove(&time)
-            .map(|spine| spine.consolidate())
-            .flatten()
-            .unwrap_or_else(|| Z::dyn_empty(&self.output_factories));
+            while index_cursor.key_valid() {
+                if trace_cursor.seek_key_exact(index_cursor.key()) {
+                    //println!("key: {}", index_cursor.key(index));
+
+                    while index_cursor.val_valid() {
+                        let w1 = **index_cursor.weight();
+                        let v1 = index_cursor.val();
+                        //println!("v1: {}, w1: {}", v1, w1);
+
+                        while trace_cursor.val_valid() {
+                            // FIXME: this clone is only needed to avoid borrow checker error due to
+                            // borrowing `trace_cursor` below.
+                            trace_cursor.val().clone_to(val.as_mut());
+
+                            (self.join_func)(index_cursor.key(), v1, &val, &mut |k, v| {
+                                trace_cursor.map_times(&mut |_ts: &T::Time, w2: &T::R| {
+                                    let (kv, w) = output_tuple.split_mut();
+                                    let (key, val) = kv.split_mut();
+
+                                    **w = w1.mul_by_ref(&**w2);
+                                    k.clone_to(key);
+                                    v.clone_to(val);
+                                    output_tuples.push_val(output_tuple.as_mut());
+                                });
+                            });
+                            trace_cursor.step_val();
+                        }
+                        trace_cursor.rewind_vals();
+                        index_cursor.step_val();
+                    }
+                }
+                index_cursor.step_key();
+            }
+
+            self.stats.output_tuples += output_tuples.len();
+            Z::dyn_from_tuples(&self.output_factories, (), &mut output_tuples)
+        };
 
         self.stats.produced_tuples += batch.len();
         self.empty_output = batch.is_empty();
