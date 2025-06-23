@@ -548,11 +548,8 @@ pub(crate) struct BenchmarkArgs {
 
     /// Slug or UUID of the project to add results to when uploading
     /// (requires: `--upload`).
-    ///
-    /// It not specified is set to either `feldera` or `feldera-oss`,
-    /// depending on the testbed edition.
-    #[arg(long, short = 'p')]
-    pub project: Option<String>,
+    #[arg(long, short = 'p', env = "BENCHER_PROJECT")]
+    pub project: String,
 
     /// Branch name, slug, or UUID. By default it will be set to `main`
     /// (requires: `--upload`).

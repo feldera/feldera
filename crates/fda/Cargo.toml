@@ -2,7 +2,7 @@
 name = "fda"
 description = "A CLI tool for interacting with Feldera"
 readme = "README.md"
-include = ["openapi.json", "/src", "build.rs", "COPYRIGHT", "README.md"]
+include = ["bench_openapi.json", "/src", "build.rs", "COPYRIGHT", "README.md"]
 edition = { workspace = true }
 version = { workspace = true }
 homepage = { workspace = true }
