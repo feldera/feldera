@@ -609,15 +609,12 @@ async fn upload_result(
     //"bencher.dev/v0/branch/ref": "refs/heads/benchmarks",
     //"bencher.dev/v0/testbed/fingerprint": "rkn4va8erzzh3",
 
-    let git_hash: GitHash = GitHash(feldera_instance_config.revision.clone());
-    let project = ResourceId(args.project.unwrap_or_else(|| {
-        match feldera_instance_config.edition.as_str() {
-            "Enterprise" => "feldera",
-            "Open source" => "feldera-oss",
-            _ => "feldera-unknown",
-        }
-        .to_string()
-    }));
+    let git_hash: Option<GitHash> = if feldera_instance_config.revision.is_empty() {
+        None
+    } else {
+        Some(GitHash(feldera_instance_config.revision.clone()))
+    };
+    let project = ResourceId(args.project);
     let testbed = NameId(feldera_testbed);
     let result = benchmark_data.format(OutputFormat::Json);
     let settings: JsonReportSettings = JsonReportSettings::builder()
