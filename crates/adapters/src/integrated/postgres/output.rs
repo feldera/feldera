@@ -5,7 +5,7 @@ use std::{
     pin::{pin, Pin},
     str::FromStr,
     sync::Weak,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -26,15 +26,82 @@ use feldera_types::{
 use postgres::{Client, NoTls, Statement};
 use tracing::{info_span, span::EnteredSpan};
 
+#[derive(Debug, Default)]
+struct RawQueries {
+    insert: String,
+    upsert: String,
+    delete: String,
+}
+
+#[derive(Debug)]
+struct PreparedStatements {
+    insert: Statement,
+    upsert: Statement,
+    delete: Statement,
+}
+
+impl PreparedStatements {
+    fn new(
+        raw_queries: &RawQueries,
+        client: &mut postgres::Client,
+        endpoint_name: &str,
+    ) -> Result<Self, ControllerError> {
+        let err_msg = "\nPlease ensure all field names that are quoted in PostgreSQL are quoted correctly in Feldera as well";
+
+        let insert = client
+            .prepare_typed(&raw_queries.insert, &[postgres::types::Type::VARCHAR])
+            .map_err(|e| {
+                ControllerError::output_transport_error(
+                    endpoint_name,
+                    true,
+                    anyhow!(
+                        "failed to prepare insert statement: `{}`: {e} {err_msg}",
+                        &raw_queries.insert
+                    ),
+                )
+            })?;
+        let upsert = client
+            .prepare_typed(&raw_queries.upsert, &[postgres::types::Type::VARCHAR])
+            .map_err(|e| {
+                ControllerError::output_transport_error(
+                    endpoint_name,
+                    true,
+                    anyhow!(
+                        "failed to prepare update statement: `{}`: {e} {err_msg}",
+                        &raw_queries.upsert
+                    ),
+                )
+            })?;
+        let delete = client
+            .prepare_typed(&raw_queries.delete, &[postgres::types::Type::VARCHAR])
+            .map_err(|e| {
+                ControllerError::output_transport_error(
+                    endpoint_name,
+                    true,
+                    anyhow!(
+                        "failed to prepare delete statement: `{}`: {e} {err_msg}",
+                        raw_queries.delete
+                    ),
+                )
+            })?;
+
+        Ok(PreparedStatements {
+            insert,
+            upsert,
+            delete,
+        })
+    }
+}
+
 pub struct PostgresOutputEndpoint {
     endpoint_id: EndpointId,
     endpoint_name: String,
     table: String,
     client: postgres::Client,
+    config: postgres::Config,
     transaction: Option<postgres::Transaction<'static>>,
-    insert: Statement,
-    upsert: Statement,
-    delete: Statement,
+    raw_queries: RawQueries,
+    prepared_statements: PreparedStatements,
     key_schema: Relation,
     value_schema: Relation,
     controller: Weak<ControllerInner>,
@@ -48,6 +115,8 @@ impl Drop for PostgresOutputEndpoint {
         self.transaction = None;
     }
 }
+
+const PG_CONNECTION_VALIDITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 impl PostgresOutputEndpoint {
     pub fn new(
@@ -86,30 +155,21 @@ impl PostgresOutputEndpoint {
             .map(|f| f.name.sql_name())
             .collect();
 
-        let err_msg = "\nPlease ensure all field names that are quoted in PostgreSQL are quoted correctly in Feldera as well";
+        let mut raw_queries = RawQueries::default();
 
-        let insert = {
-            let insert = format!(
+        {
+            raw_queries.insert = format!(
                 r#"INSERT INTO "{table}" SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)"#
             );
-            client
-                .prepare_typed(&insert, &[postgres::types::Type::VARCHAR])
-                .map_err(|e| {
-                    ControllerError::output_transport_error(
-                        endpoint_name,
-                        true,
-                        anyhow!("failed to prepare insert statement: `{insert}`: {e} {err_msg}"),
-                    )
-                })?
-        };
+        }
 
-        let delete = {
+        {
             let (table_keys, d_keys): (Vec<_>, Vec<_>) = keys
                 .iter()
                 .map(|k| (format!(r#" "{table}".{k} "#), format!("d.{k}")))
                 .unzip();
 
-            let delete = format!(
+            raw_queries.delete = format!(
                 r#"DELETE FROM "{table}" USING (SELECT {} FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) as d where ({}) = ({})"#,
                 keys.iter()
                     .map(|k| k.as_str())
@@ -118,18 +178,9 @@ impl PostgresOutputEndpoint {
                 table_keys.join(", "),
                 d_keys.join(", "),
             );
-            client
-                .prepare_typed(&delete, &[postgres::types::Type::VARCHAR])
-                .map_err(|e| {
-                    ControllerError::output_transport_error(
-                        endpoint_name,
-                        true,
-                        anyhow!("failed to prepare delete statement: `{delete}`: {e} {err_msg}"),
-                    )
-                })?
-        };
+        }
 
-        let upsert = {
+        {
             let table_alias = "t";
             let new_alias = "n";
             let columns = value_schema
@@ -147,33 +198,25 @@ impl PostgresOutputEndpoint {
                 .map(|f| (format!("{table_alias}.{f}"), format!("{new_alias}.{f}")))
                 .unzip();
 
-            let upsert = format!(
+            raw_queries.upsert = format!(
                 r#"UPDATE "{table}" AS {table_alias} SET {columns} FROM (SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) AS {new_alias} WHERE ({}) = ({})"#,
                 table_fields.join(", "),
                 new_fields.join(", ")
             );
-
-            client
-                .prepare_typed(&upsert, &[postgres::types::Type::VARCHAR])
-                .map_err(|e| {
-                    ControllerError::output_transport_error(
-                        endpoint_name,
-                        true,
-                        anyhow!("failed to prepare update statement: `{upsert}`: {e} {err_msg}"),
-                    )
-                })?
-        };
+        }
+        let prepared_statements =
+            PreparedStatements::new(&raw_queries, &mut client, endpoint_name)?;
 
         let out = Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             controller,
             table,
+            config,
             client,
             transaction: None,
-            insert,
-            delete,
-            upsert,
+            raw_queries,
+            prepared_statements,
             key_schema,
             num_rows: 0,
             num_bytes: 0,
@@ -195,7 +238,9 @@ impl PostgresOutputEndpoint {
     }
 
     fn transaction(&mut self) -> AnyResult<&mut postgres::Transaction<'static>> {
-        self.transaction.as_mut().ok_or(anyhow!("postgres: unreachable: attempting to perform a transaction that hasn't been created yet"))
+        self.transaction.as_mut().ok_or(anyhow!(
+            "postgres: attempting to perform a transaction that hasn't been created yet"
+        ))
     }
 
     fn exec_statement(
@@ -204,6 +249,8 @@ impl PostgresOutputEndpoint {
         value: &mut Vec<u8>,
         name: &str,
     ) -> AnyResult<()> {
+        self.retry_connecting_with_backoff();
+
         if value.last() != Some(&b']') {
             value.push(b']');
         }
@@ -229,23 +276,23 @@ impl PostgresOutputEndpoint {
 
     /// Executes the insert statement within the transaction and resets the
     /// buffer back to `[`.
-    pub fn insert(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
-        self.exec_statement(self.insert.clone(), value, "insert")
+    fn insert(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
+        self.exec_statement(self.prepared_statements.insert.clone(), value, "insert")
     }
 
     /// Executes the upsert statement within the transaction and resets the
     /// buffer back to `[`.
-    pub fn upsert(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
-        self.exec_statement(self.upsert.clone(), value, "upsert")
+    fn upsert(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
+        self.exec_statement(self.prepared_statements.upsert.clone(), value, "upsert")
     }
 
     /// Executes the delete statement within the transaction and resets the
     /// buffer back to `[`.
-    pub fn delete(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
-        self.exec_statement(self.delete.clone(), value, "delete")
+    fn delete(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
+        self.exec_statement(self.prepared_statements.delete.clone(), value, "delete")
     }
 
-    pub fn span(&self) -> EnteredSpan {
+    fn span(&self) -> EnteredSpan {
         info_span!(
             "postgres_output",
             ft = false,
@@ -254,6 +301,62 @@ impl PostgresOutputEndpoint {
             pg_table = self.table,
         )
         .entered()
+    }
+
+    fn retry_connecting(&mut self) -> bool {
+        let valid = self.client.is_valid(PG_CONNECTION_VALIDITY_TIMEOUT);
+        let controller = self
+            .controller
+            .upgrade()
+            .expect("unreachable: failed to upgrade the controller");
+
+        let Err(e) = valid else {
+            return true;
+        };
+
+        self.transaction = None;
+        self.client = match self.config.connect(NoTls) {
+            Ok(c) => c,
+            Err(e) => {
+                controller.output_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    true,
+                    anyhow!("error connecting to postgres: {e}"),
+                );
+
+                return false;
+            }
+        };
+
+        match PreparedStatements::new(&self.raw_queries, &mut self.client, &self.endpoint_name) {
+            Ok(x) => self.prepared_statements = x,
+            Err(e) => {
+                tracing::error!(
+                    "postgres: error preparing statements: {e}\nThese statements were prepared fine before reconnecting. Does the table {} still exist?",
+                    self.table
+                );
+                return false;
+            }
+        };
+
+        tracing::info!("postgres: successfully reconnected to postgres");
+
+        true
+    }
+
+    fn retry_connecting_with_backoff(&mut self) {
+        let backoff = 1000;
+        let mut n_retries = 1;
+
+        loop {
+            if self.retry_connecting() {
+                return;
+            }
+
+            std::thread::sleep(Duration::from_millis(backoff * n_retries));
+            n_retries += 1;
+        }
     }
 }
 
@@ -264,6 +367,24 @@ impl OutputConsumer for PostgresOutputEndpoint {
     }
 
     fn batch_start(&mut self, _: Step) {
+        let Some(controller) = self.controller.upgrade() else {
+            return;
+        };
+
+        self.retry_connecting_with_backoff();
+
+        let txn = match self.client.transaction() {
+            Ok(txn) => txn,
+            Err(e) => {
+                controller.output_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    true,
+                    anyhow!("postgres: failed to start transaction: {e}"),
+                );
+                return;
+            }
+        };
         // Safety
         //
         // A transaction is a reference to the `client`. The `client`'s lifetime
@@ -276,15 +397,8 @@ impl OutputConsumer for PostgresOutputEndpoint {
         // has been started, will result in `transaction` being a
         // dangling pointer.
         //
-        // TODO: Consider [`std::pin::Pin`]ing the integrated conenctor.
-        let transaction: postgres::Transaction<'static> = unsafe {
-            std::mem::transmute(
-                self.client
-                    .transaction()
-                    .expect("postgres: failed to start transaction"),
-            )
-        };
-
+        // TODO: Consider [`std::pin::Pin`]ing the integrated connector.
+        let transaction: postgres::Transaction<'static> = unsafe { std::mem::transmute(txn) };
         self.transaction = Some(transaction);
     }
 
@@ -303,20 +417,39 @@ impl OutputConsumer for PostgresOutputEndpoint {
     }
 
     fn batch_end(&mut self) {
-        let transaction: postgres::Transaction<'static> = self.transaction.take().expect(
-            "postgres: unreachable: attempted to commit a transaction that hasn't been started",
-        );
-        transaction
-            .commit()
-            .expect("postgres: failed to commit transaction");
+        self.retry_connecting_with_backoff();
 
-        if let Some(controller) = self.controller.upgrade() {
-            controller.status.output_buffer(
+        let controller = self
+            .controller
+            .upgrade()
+            .expect("unreachable: failed to upgrade the controller");
+
+        let Some(transaction) = self.transaction.take() else {
+            controller.output_transport_error(
                 self.endpoint_id,
-                std::mem::take(&mut self.num_bytes),
-                std::mem::take(&mut self.num_rows),
-            )
+                &self.endpoint_name,
+                true,
+                anyhow::anyhow!(
+                    "postgres: attempted to commit a transaction that hasn't been started"
+                ),
+            );
+            return;
+        };
+
+        if let Err(err) = transaction.commit() {
+            controller.output_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                true,
+                anyhow!("postgres: transaction: {err}"),
+            );
         }
+
+        controller.status.output_buffer(
+            self.endpoint_id,
+            std::mem::take(&mut self.num_bytes),
+            std::mem::take(&mut self.num_rows),
+        )
     }
 }
 
