@@ -6,9 +6,16 @@ repos:
   - repo: local
     hooks:
       - id: cargo-clippy
-        name: Clippy Fixes
+        name: Clippy Automatic Fixes
         description: Run the Clippy linter on the package.
         entry: cargo clippy --fix
+        language: rust
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-clippy-check
+        name: Clippy Check
+        description: Run the Clippy linter on the package.
+        entry: cargo clippy --locked --no-deps -- -D warnings
         language: rust
         files: \.rs$
         pass_filenames: false
