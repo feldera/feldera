@@ -27,7 +27,6 @@ use crate::{
 };
 
 use crate::storage::file::to_bytes;
-pub use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::CommittedSpine;
 use enum_map::EnumMap;
 use feldera_storage::StoragePath;
@@ -55,6 +54,7 @@ mod list_merger;
 mod push_merger;
 mod snapshot;
 use self::thread::{BackgroundThread, WorkerStatus};
+pub use snapshot::{SpineSnapshot, WithSnapshot};
 
 use super::{cursor::CursorFactory, BatchLocation};
 
@@ -1512,10 +1512,13 @@ where
         );
         self.merger.resume(vec![Arc::new(batch)]);
     }
+}
 
-    /// Returns a read-only, non-merging snapshot of the current trace
-    /// state.
-    pub fn ro_snapshot(&self) -> SpineSnapshot<B> {
+impl<B: Batch> WithSnapshot<B> for Spine<B>
+where
+    B: Batch,
+{
+    fn ro_snapshot(&self) -> SpineSnapshot<B> {
         self.into()
     }
 }
