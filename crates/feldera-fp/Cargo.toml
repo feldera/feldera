@@ -1,0 +1,22 @@
+[package]
+name = "feldera-fp"
+authors.workspace = true
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+[dependencies]
+num-traits.workspace = true
+serde.workspace = true
+smallstr = "0.3.0"
+smallvec.workspace = true
+size-of.workspace = true
+rkyv = { workspace = true, features = ["size_64"] }
+
+[dev-dependencies]
+serde_json.workspace = true
