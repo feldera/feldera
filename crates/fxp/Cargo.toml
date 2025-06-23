@@ -1,0 +1,34 @@
+[package]
+name = "feldera-fxp"
+authors = { workspace = true }
+version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+keywords = { workspace = true }
+readme = { workspace = true }
+rust-version = { workspace = true }
+edition = { workspace = true }
+
+[features]
+dbsp = ["serde", "rkyv", "dep:dbsp", "dep:feldera-types"]
+serde = ["dep:serde"]
+rkyv = ["dep:rkyv"]
+validation = ["rkyv", "dep:bytecheck", "rkyv/validation"]
+size_of = ["dep:size-of"]
+
+[dependencies]
+num-traits = { workspace = true }
+serde = { workspace = true, optional = true }
+smallstr = "0.3.0"
+smallvec = { workspace = true }
+size-of = { workspace = true, optional = true }
+rkyv = { workspace = true, features = ["size_64"], optional = true }
+bytecheck = { version = "0.6.12", optional = true }
+dbsp = { workspace = true, optional = true }
+feldera-types = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+num-bigint = { workspace = true }
+itertools.workspace = true

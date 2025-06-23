@@ -26,6 +26,7 @@ members = [
   "crates/storage",
   "crates/rest-api",
   "crates/ir",
+  "crates/fxp",
 ]
 exclude = [
   "sql-to-dbsp-compiler/temp",
@@ -105,6 +106,7 @@ fastbloom = "0.8.0"
 fdlimit = "0.3.0"
 feldera-adapterlib = { path = "crates/adapterlib" }
 feldera-datagen = { path = "crates/datagen" }
+feldera-fxp = { path = "crates/fxp", features = ["dbsp", "serde", "rkyv"] }
 feldera-iceberg = { path = "crates/iceberg" }
 feldera-sqllib = { path = "crates/sqllib" }
 feldera-storage = { version = "0.96.0", path = "crates/storage" }
@@ -129,7 +131,6 @@ iceberg = "0.5.1"
 iceberg-catalog-glue = "0.5.1"
 iceberg-catalog-rest = "0.5.1"
 iceberg-datafusion = "0.5.1"
-ijson = "0.1.4"
 impl-trait-for-tuples = "0.2"
 indexmap = "2.7.1"
 indicatif = "0.17.0-rc.11"
@@ -214,7 +215,7 @@ serial_test = "3"
 sha2 = "0.10.8"
 size-of = { version = "0.1.6", features = ["time-std", "ordered-float"], package = "feldera-size-of" }
 sltsqlvalue = { path = "sql-to-dbsp-compiler/lib/sltsqlvalue" }
-smallvec = { version = "1.15.0", features = ["serde"] }
+smallvec = { version = "1.15.0", features = ["serde", "write"] }
 snap = "1.1.1"
 static-files = "0.2.3"
 static_assertions = "1.1.0"

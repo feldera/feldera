@@ -45,6 +45,9 @@ jobs:
       - name: dbsp
         run: ./build/dbsp-*
 
+      - name: feldera-fxp
+        run: ./build/feldera_fxp-*
+
       - name: feldera-sqllib
         run: ./build/feldera_sqllib-*
 
