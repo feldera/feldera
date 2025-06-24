@@ -533,6 +533,11 @@ impl S3InputReader {
                             splitter.seek(start_offset);
                             let mut eoi = false;
                             while !eoi {
+                                if wait_running(&mut status_receiver).await.is_err() {
+                                    // channel closed
+                                    return;
+                                }
+
                                 match object.body.next().await {
                                     Some(Err(e)) => consumer.error(
                                         false,
