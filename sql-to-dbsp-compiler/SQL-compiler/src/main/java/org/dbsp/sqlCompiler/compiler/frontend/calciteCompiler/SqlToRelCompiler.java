@@ -669,22 +669,52 @@ public class SqlToRelCompiler implements IWritesLogs {
     public SqlNode parse(String sql, boolean saveLines) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(sql, saveLines);
         SqlNode result = sqlParser.parseStmt();
-        result.accept(this.getExtraValidator());
-        return result;
+        return this.postParsingProcess(result);
+    }
+
+    static class RemoveUnaryNoop extends SqlShuttle {
+        @Override
+        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
+            SqlCall newCall = Objects.requireNonNull((SqlCall) super.visit(call));
+            if (newCall.getOperator().kind == SqlKind.PLUS_PREFIX) {
+                Utilities.enforce(newCall.getOperandList().size() == 1,
+                        "Expected unary plus to have exactly 1 operand");
+                return newCall.getOperandList().get(0);
+            } else if (newCall.getOperator().kind == SqlKind.CREATE_VIEW) {
+                // The shuttle does not correctly create a view by replacing operands.
+                SqlCreateView view = (SqlCreateView) call;
+                List<SqlNode> operands = newCall.getOperandList();
+                newCall = new SqlCreateView(call.getParserPosition(), false, view.viewKind,
+                        view.name, view.columnList, view.viewProperties, operands.get(3));
+            }
+            return newCall;
+        }
+    }
+
+    SqlNode postParsingProcess(SqlNode node) {
+        node.accept(this.getExtraValidator());
+        if (this.options.languageOptions.unaryPlusNoop) {
+            RemoveUnaryNoop remove = new RemoveUnaryNoop();
+            node = Objects.requireNonNull(remove.visitNode(node));
+        }
+        return node;
     }
 
     public SqlNode parse(String sql) throws SqlParseException {
-        return this.parse(sql, true);
+        SqlNode result = this.parse(sql, true);
+        return this.postParsingProcess(result);
     }
 
     /** Given a list of statements separated by semicolons, parse all of them. */
     public List<ParsedStatement> parseStatements(String statements, boolean saveLines) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(statements, saveLines);
+        List<ParsedStatement> result = new ArrayList<>();
         SqlNodeList sqlNodes = sqlParser.parseStmtList();
         for (SqlNode node: sqlNodes) {
-            node.accept(this.getExtraValidator());
+            ParsedStatement stat = new ParsedStatement(this.postParsingProcess(node), saveLines);
+            result.add(stat);
         }
-        return Linq.map(sqlNodes, n -> new ParsedStatement(n, saveLines));
+        return result;
     }
 
     public List<ParsedStatement> parseStatements(String statements) throws SqlParseException {

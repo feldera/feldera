@@ -66,12 +66,16 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--no-restrict-io",
                 description = "Do not restrict the types of columns allowed in tables and views")
         public boolean unrestrictedIOTypes = false;
+        @Parameter(names = "--unaryPlusNoop",
+                description = "Compile unary plus into a no-operation; similar to sqlite")
+        public boolean unaryPlusNoop = false;
 
         public boolean same(Language language) {
             // Only compare fields that matter.
             return this.incrementalize == language.incrementalize &&
                     this.ignoreOrderBy == language.ignoreOrderBy &&
-                    this.outputsAreSets == language.outputsAreSets;
+                    this.outputsAreSets == language.outputsAreSets &&
+                    this.unaryPlusNoop == language.unaryPlusNoop;
         }
 
         @Override
@@ -84,6 +88,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ", throwOnError=" + this.throwOnError +
                     ", generateInputForEveryTable=" + this.generateInputForEveryTable +
                     ", unrestrictedIOTypes=" + this.unrestrictedIOTypes +
+                    ", unaryPlusNoop=" + this.unaryPlusNoop +
                     ", lenient=" + this.lenient +
                     '}';
         }
@@ -116,6 +121,12 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                         .append(this.outputsAreSets)
                         .append("!=")
                         .append(other.outputsAreSets)
+                        .append(System.lineSeparator());
+            if (this.unaryPlusNoop != other.unaryPlusNoop)
+                result.append(", unaryPlusNoop=")
+                        .append(this.unaryPlusNoop)
+                        .append("!=")
+                        .append(other.unaryPlusNoop)
                         .append(System.lineSeparator());
             result.append("}")
                     .append(System.lineSeparator());

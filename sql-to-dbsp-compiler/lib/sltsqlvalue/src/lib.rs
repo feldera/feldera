@@ -7,7 +7,7 @@
 #![allow(non_snake_case)]
 
 use dbsp::algebra::{F32, F64};
-use feldera_sqllib::{casts::*, SqlDecimal, SqlString};
+use feldera_sqllib::{SqlDecimal, SqlString};
 
 #[derive(Debug)]
 pub enum SltSqlValue {
@@ -243,7 +243,11 @@ impl SqlLogicTestFormat for SltSqlValue {
             (SltSqlValue::OptStr(Some(x)), 'T') => slt_translate_string(x.str()),
             (SltSqlValue::OptStr(None), 'I') => String::from("NULL"),
             (SltSqlValue::OptStr(Some(x)), 'I') => {
-                format!("{}", unwrap_cast(cast_to_i32_s(x.clone())))
+                match x.str().parse::<i32>() {
+                    // SLT behavior
+                    Err(_) => String::from("0"),
+                    Ok(n) => format!("{}", n),
+                }
             }
 
             (SltSqlValue::OptBool(None), _) => String::from("NULL"),

@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateIndex;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
@@ -111,6 +112,21 @@ public class ParserTests {
         Assert.assertTrue(node.get(0).statement() instanceof SqlCreateTable);
         Assert.assertTrue(node.get(1).statement() instanceof SqlCreateView);
         Assert.assertTrue(node.get(2).statement() instanceof SqlCreateIndex);
+    }
+
+    @Test
+    public void testPlusNoop() throws SqlParseException {
+        CompilerOptions options = new CompilerOptions();
+        options.languageOptions.unaryPlusNoop = true;
+        var compiler = new SqlToRelCompiler(options, new StderrErrorReporter());
+        String sql = "SELECT +'blah'";
+        SqlNode node = compiler.parse(sql);
+        Assert.assertEquals("SELECT 'blah'", node.toSqlString(CalciteRelNode.DIALECT).toString());
+
+        options = new CompilerOptions();
+        compiler = new SqlToRelCompiler(options, new StderrErrorReporter());
+        node = compiler.parse(sql);
+        Assert.assertEquals("SELECT + 'blah'", node.toSqlString(CalciteRelNode.DIALECT).toString());
     }
 
     @Test
