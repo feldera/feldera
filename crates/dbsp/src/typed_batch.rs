@@ -374,7 +374,7 @@ where
     }
 }
 
-impl<K, V, B: DynIndexedZSet> TypedBatch<K, V, ZWeight, B>
+impl<K, V, B: DynIndexedZSetReader> TypedBatch<K, V, ZWeight, B>
 where
     K: DBData + Erase<B::Key>,
     V: DBData + Erase<B::Val>,
