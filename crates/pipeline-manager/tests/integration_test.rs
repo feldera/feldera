@@ -3697,7 +3697,7 @@ async fn pipeline_stats() {
             "end_of_input": true,
             "num_parse_errors": 0,
             "num_transport_errors": 0,
-            "total_bytes": 0,
+            "total_bytes": 46,
             "total_records": 5
         })
     );

@@ -573,7 +573,7 @@ impl InputGenerator {
             while let Ok(completion) = completion_receiver.try_recv() {
                 let batch = &completion.batch;
                 in_flight[batch.plan_idx].remove_range(batch.rows.start..=batch.rows.end - 1);
-                consumer.buffered(completion.buffer.len(), 0);
+                consumer.buffered(completion.buffer.len(), completion.num_bytes);
                 completed.push_back(completion);
             }
 
