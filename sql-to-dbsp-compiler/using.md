@@ -104,6 +104,9 @@ Usage: sql-to-dbsp [options] Input file to compile
     --trimInputs
       Do not ingest unused fields of input tables
       Default: false
+    --unaryPlusNoop
+      Compile unary plus into a no-operation; similar to sqlite
+      Default: false
     -O
       Optimization level (0, 1, or 2)
       Default: 2

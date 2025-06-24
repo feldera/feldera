@@ -388,4 +388,13 @@ public class Regression1Tests extends SqlIoTest {
                 LEFT(bin, 2) AS bin
                 FROM tbl;""");
     }
+
+    @Test
+    public void calciteIssue7070() {
+        String sql = """
+                CREATE TABLE tab0(pk INTEGER, col0 INTEGER, col1 DOUBLE, col2 TEXT, col3 INTEGER, col4 DOUBLE, col5 TEXT);
+                CREATE VIEW V215 AS (SELECT + 54 FROM tab0 AS cor0
+                WHERE NOT CAST ( + col4 AS INTEGER ) NOT BETWEEN ( NULL ) AND 89);""";
+        this.getCC(sql);
+    }
 }
