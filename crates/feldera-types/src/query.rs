@@ -12,6 +12,11 @@ pub enum AdHocResultFormat {
     /// Serialize results as a human-readable text table.
     Text,
     /// Serialize results as new-line delimited JSON records.
+    ///
+    /// # Deprecation Notice
+    /// This format is deprecated and will be removed in the future.
+    /// Users are encouraged to use the `arrow_ipc` format instead,
+    /// See <https://github.com/feldera/feldera/issues/4219> for more details.
     Json,
     /// Download results in a parquet file.
     Parquet,

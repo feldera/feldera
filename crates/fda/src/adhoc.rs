@@ -147,7 +147,10 @@ pub(crate) async fn handle_adhoc_query(
 
     let format = match format {
         OutputFormat::Text => AdHocResultFormat::Text,
-        OutputFormat::Json => AdHocResultFormat::Json,
+        OutputFormat::Json => {
+            warn!("The JSON format is deprecated for ad-hoc queries, see https://github.com/feldera/feldera/issues/4219 for the tracking issue.");
+            AdHocResultFormat::Json
+        }
         OutputFormat::ArrowIpc => AdHocResultFormat::ArrowIpc,
         OutputFormat::Parquet => AdHocResultFormat::Parquet,
     };
