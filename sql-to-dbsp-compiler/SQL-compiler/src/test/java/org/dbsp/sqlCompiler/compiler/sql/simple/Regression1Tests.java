@@ -7,10 +7,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.sql.SQLException;
@@ -396,5 +398,24 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE VIEW V215 AS (SELECT + 54 FROM tab0 AS cor0
                 WHERE NOT CAST ( + col4 AS INTEGER ) NOT BETWEEN ( NULL ) AND 89);""";
         this.getCC(sql);
+    }
+
+    @Test
+    public void constantFunctionCall() {
+        var ccs = this.getCCS("CREATE FUNCTION F(A INT ARRAY) RETURNS INT ARRAY AS A;" +
+                "CREATE VIEW V AS SELECT ARRAY_REVERSE(F(ARRAY[2, 3, 4]));");
+        final boolean[] staticFound = new boolean[1];
+        ccs.getCircuit().accept(new InnerVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPStaticItem item) {
+                staticFound[0] = true;
+                // The whole tuple is a static
+                Assert.assertTrue(item.expression.is(DBSPTupleExpression.class));
+            }
+
+            public void endVisit() {
+                Assert.assertTrue(staticFound[0]);
+            }
+        });
     }
 }

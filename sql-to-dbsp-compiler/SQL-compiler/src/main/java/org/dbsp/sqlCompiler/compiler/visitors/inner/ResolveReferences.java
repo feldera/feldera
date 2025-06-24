@@ -20,22 +20,26 @@ public class ResolveReferences extends InnerVisitor {
     public final ReferenceMap reference;
     /** If true allow "free variables" that have no declarations */
     public final boolean allowFreeVariables;
+    boolean freeVariablesFound;
 
     public ResolveReferences(DBSPCompiler compiler, boolean allowFreeVariables) {
         super(compiler);
         this.substitutionContext = new Scopes<>();
         this.reference = new ReferenceMap();
         this.allowFreeVariables = allowFreeVariables;
+        this.freeVariablesFound = false;
     }
 
     @Override
     public VisitDecision preorder(DBSPVariablePath variable) {
         IDBSPDeclaration declaration = this.substitutionContext.get(variable.variable);
         if (declaration == null) {
-            if (!this.allowFreeVariables)
+            if (!this.allowFreeVariables) {
                 throw new InternalCompilerError("Could not resolve " + variable);
-            else
+            } else {
+                this.freeVariablesFound = true;
                 return VisitDecision.STOP;
+            }
         }
         this.reference.declare(variable, declaration);
         return VisitDecision.STOP;
