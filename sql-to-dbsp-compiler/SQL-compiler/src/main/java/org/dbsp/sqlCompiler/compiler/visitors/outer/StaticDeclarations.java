@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.LazyStatics;
 
-/** Create LazyStatic expressions, and insert declarations in the circuit */
+/** Create LazyLock expressions, and insert declarations in the circuit */
 public class StaticDeclarations extends CircuitRewriter {
     final LazyStatics lazyStatics;
 

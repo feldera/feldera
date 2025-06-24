@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -8,7 +10,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-/* An item that hold a declaration of a constant value that will be implemented as a LazyStatic value in Rust. */
+/* An item that hold a declaration of a constant value that will be implemented as a LazyLock value in Rust. */
 public class DBSPStaticItem extends DBSPItem {
     public final DBSPStaticExpression expression;
 
@@ -59,5 +61,11 @@ public class DBSPStaticItem extends DBSPItem {
     @Override
     public DBSPType getType() {
         return this.expression.getType();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPStaticItem fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPStaticExpression expression = fromJsonInner(node, "expression", decoder, DBSPStaticExpression.class);
+        return new DBSPStaticItem(expression);
     }
 }
