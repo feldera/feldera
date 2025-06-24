@@ -806,11 +806,13 @@ where
     location: OperatorLocation,
     partition: L,
     outputs: Vec<T>,
-    exchange: Arc<Exchange<T>>,
+    exchange: Arc<Exchange<(T, bool)>>,
 
     // Total number of input tuples processed by the operator.
     num_inputs: usize,
     num_inputs_metric: Option<Gauge>,
+
+    flushed: bool,
 
     phantom: PhantomData<D>,
 }
@@ -835,6 +837,7 @@ where
             exchange: Exchange::with_runtime(runtime, exchange_id),
             num_inputs: 0,
             num_inputs_metric: None,
+            flushed: false,
             phantom: PhantomData,
         }
     }
@@ -899,6 +902,10 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
+
+    fn flush(&mut self) {
+        self.flushed = true;
+    }
 }
 
 impl<D, T, L> SinkOperator<D> for ExchangeSender<D, T, L>
@@ -917,9 +924,11 @@ where
         debug_assert!(self.ready());
         self.outputs.clear();
         (self.partition)(input, &mut self.outputs);
-        let res = self
-            .exchange
-            .try_send_all(self.worker_index, &mut self.outputs.drain(..));
+        let res = self.exchange.try_send_all(
+            self.worker_index,
+            &mut self.outputs.drain(..).map(|x| (x, self.flushed)),
+        );
+        self.flushed = false;
         debug_assert!(res);
     }
 
@@ -951,7 +960,9 @@ where
     location: OperatorLocation,
     init: IF,
     combine: L,
-    exchange: Arc<Exchange<T>>,
+    exchange: Arc<Exchange<(T, bool)>>,
+    flush_count: usize,
+    flush_complete: bool,
 
     // Total number of input tuples processed by the operator.
     num_outputs: usize,
@@ -978,6 +989,8 @@ where
             init,
             combine,
             exchange: Exchange::with_runtime(runtime, exchange_id),
+            flush_count: 0,
+            flush_complete: false,
             num_outputs: 0,
             num_outputs_metric: None,
         }
@@ -1040,6 +1053,20 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
+
+    fn flush(&mut self) {
+        // println!("{} exchange_receiver::flush", Runtime::worker_index());
+        self.flush_complete = false;
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        // println!(
+        //     "{} exchange_receiver::is_flush_complete (flush_complete = {})",
+        //     Runtime::worker_index(),
+        //     self.flush_complete
+        // );
+        self.flush_complete
+    }
 }
 
 impl<D, IF, T, L> SourceOperator<D> for ExchangeReceiver<IF, T, L>
@@ -1054,7 +1081,21 @@ where
         let mut combined = (self.init)();
         let res = self
             .exchange
-            .try_receive_all(self.worker_index, |x| (self.combine)(&mut combined, x));
+            .try_receive_all(self.worker_index, |(x, flushed)| {
+                // println!(
+                //     "{} exchange_receiver::eval received input with flushed={:?}",
+                //     Runtime::worker_index(),
+                //     flushed
+                // );
+                if flushed {
+                    self.flush_count += 1;
+                }
+                (self.combine)(&mut combined, x)
+            });
+        if self.flush_count == Runtime::runtime().unwrap().num_workers() {
+            self.flush_complete = true;
+            self.flush_count = 0;
+        }
 
         debug_assert!(res);
 
