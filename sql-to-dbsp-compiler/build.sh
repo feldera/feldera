@@ -69,7 +69,7 @@ if [ ${NEXT} = 'y' ]; then
     VERSION=${CALCITE_NEXT}
 
     ./gradlew build -x test -x checkStyleMain -x autoStyleJavaCheck build --console=plain -Dorg.gradle.logging.level=quiet
-    for DIR in core babel server linq4j
+    for DIR in core server linq4j
     do
         ARTIFACT=calcite-${DIR}
         mvn install:install-file -Dfile=${DIR}/build/libs/${ARTIFACT}-${VERSION}-SNAPSHOT.jar -DgroupId=${GROUP} -DartifactId=${ARTIFACT} -Dversion=${VERSION} -Dpackaging=jar -DgeneratePom=true -q -B

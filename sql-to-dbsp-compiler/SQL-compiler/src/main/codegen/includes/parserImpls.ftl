@@ -62,17 +62,6 @@ boolean IfNotExistsOpt() :
     { return false; }
 }
 
-TableCollectionType TableCollectionTypeOpt() :
-{
-}
-{
-    <MULTISET> { return TableCollectionType.MULTISET; }
-|
-    <SET> { return TableCollectionType.SET; }
-|
-    { return TableCollectionType.UNSPECIFIED; }
-}
-
 /* Extra operators */
 
 <DEFAULT, DQID, BTID> TOKEN :
