@@ -42,6 +42,8 @@ use std::{
 
 use super::{MonoIndexedZSet, MonoZSet};
 
+const JOIN_OUTPUT_CHUNK_SIZE: usize = 10_000;
+
 circuit_cache_key!(AntijoinId<C, D>((StreamId, StreamId) => Stream<C, D>));
 
 pub trait TraceJoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized>:
@@ -1049,6 +1051,7 @@ where
     _index: I,
     _fetched: Option<Box<dyn CursorFactory<T::Key, T::Val, T::Time, T::R>>>,
     _trace: Option<T>,
+    key_found: bool,
     index_cursor: I::Cursor<'static>,
     trace_cursor: Box<dyn Cursor<T::Key, T::Val, T::Time, T::R>>,
 }
@@ -1070,6 +1073,7 @@ where
             _index: index,
             _fetched: None,
             _trace: Some(trace),
+            key_found: false,
             index_cursor,
             trace_cursor: Box::new(trace_cursor),
         }
@@ -1095,6 +1099,7 @@ where
             _index: index,
             _fetched: Some(fetched),
             _trace: None,
+            key_found: false,
             index_cursor,
             trace_cursor,
         }
@@ -1268,6 +1273,15 @@ where
                 .keys()
                 .all(|time| !time.less_equal(&epoch_end))
     }
+
+    fn is_flush_complete(&self) -> bool {
+        // println!(
+        //     "{}: join::is_flush_complete = {:?}",
+        //     Runtime::worker_index(),
+        //     self.state.is_none()
+        // );
+        self.state.is_none()
+    }
 }
 
 impl<I, B, T, Z, Clk> BinaryOperator<Option<Spine<I>>, T, Z> for JoinTrace<I, B, T, Z, Clk>
@@ -1286,6 +1300,7 @@ where
 
         if let Some(index) = index {
             self.empty_input = index.is_empty();
+            self.empty_output = true;
             self.stats.lhs_tuples += index.len();
             self.stats.rhs_tuples = trace.len();
 
@@ -1321,8 +1336,7 @@ where
             // TODO: Sub-scopes can cause a lot of inner clock cycles to be set off, so this
             //       actually could be significant
             let mut output_tuples = self.timed_items_factory.default_box();
-
-            // TODO: output_tuples.reserve
+            output_tuples.reserve(JOIN_OUTPUT_CHUNK_SIZE);
 
             let mut timed_item = self.timed_item_factory.default_box();
 
@@ -1399,17 +1413,17 @@ where
             // Consolidate the spine for the current timestamp and return it.
             self.future_outputs
                 .remove(&time)
-                .map(|spine| spine.consolidate())
-                .flatten()
+                .and_then(|spine| spine.consolidate())
                 .unwrap_or_else(|| Z::dyn_empty(&self.output_factories))
         } else {
             let mut output_tuples = self.output_factories.weighted_items_factory().default_box();
-            // TODO. output_tuples.reserve
+            output_tuples.reserve(JOIN_OUTPUT_CHUNK_SIZE);
 
             let mut output_tuple = self.output_factories.weighted_item_factory().default_box();
 
             while state.index_cursor.key_valid() {
-                if state.trace_cursor.seek_key_exact(state.index_cursor.key()) {
+                if state.key_found || state.trace_cursor.seek_key_exact(state.index_cursor.key()) {
+                    state.key_found = true;
                     //println!("key: {}", index_cursor.key(index));
 
                     while state.index_cursor.val_valid() {
@@ -1417,7 +1431,9 @@ where
                         let v1 = state.index_cursor.val();
                         //println!("v1: {}, w1: {}", v1, w1);
 
-                        while state.trace_cursor.val_valid() {
+                        while state.trace_cursor.val_valid()
+                            && output_tuples.len() <= JOIN_OUTPUT_CHUNK_SIZE
+                        {
                             // FIXME: this clone is only needed to avoid borrow checker error due to
                             // borrowing `trace_cursor` below.
                             state.trace_cursor.val().clone_to(val.as_mut());
@@ -1437,10 +1453,18 @@ where
                             });
                             state.trace_cursor.step_val();
                         }
+
+                        if output_tuples.len() >= JOIN_OUTPUT_CHUNK_SIZE {
+                            break;
+                        }
                         state.trace_cursor.rewind_vals();
                         state.index_cursor.step_val();
                     }
                 }
+                if output_tuples.len() >= JOIN_OUTPUT_CHUNK_SIZE {
+                    break;
+                }
+                state.key_found = false;
                 state.index_cursor.step_key();
             }
 
@@ -1448,10 +1472,22 @@ where
             Z::dyn_from_tuples(&self.output_factories, (), &mut output_tuples)
         };
 
-        self.state = None;
+        if !state.index_cursor.key_valid() {
+            self.state = None;
+        }
+
+        // println!(
+        //     "{}: join produces {} outputs (final = {:?}):{:?}",
+        //     Runtime::worker_index(),
+        //     batch.len(),
+        //     self.state.is_none(),
+        //     batch
+        // );
 
         self.stats.produced_tuples += batch.len();
-        self.empty_output = batch.is_empty();
+        if !batch.is_empty() {
+            self.empty_output = false;
+        }
 
         batch
     }
@@ -1460,9 +1496,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        indexed_zset,
         operator::Generator,
-        typed_batch::{OrdIndexedZSet, OrdZSet},
+        typed_batch::{OrdIndexedZSet, OrdZSet, Spine},
         utils::Tup2,
         zset, Circuit, RootCircuit, Runtime, Stream,
     };
@@ -1473,37 +1508,38 @@ mod test {
 
     #[test]
     fn join_test() {
-        let circuit = RootCircuit::build(move |circuit| {
-            let mut input1 = vec![
-                zset! {
-                    Tup2(1, "a".to_string()) => 1i64,
-                    Tup2(1, "b".to_string()) => 2,
-                    Tup2(2, "c".to_string()) => 3,
-                    Tup2(2, "d".to_string()) => 4,
-                    Tup2(3, "e".to_string()) => 5,
-                    Tup2(3, "f".to_string()) => -2,
-                },
-                zset! {Tup2(1, "a".to_string()) => 1},
-                zset! {Tup2(1, "a".to_string()) => 1},
-                zset! {Tup2(4, "n".to_string()) => 2},
-                zset! {Tup2(1, "a".to_string()) => 0},
-            ]
-            .into_iter();
-            let mut input2 = vec![
-                zset! {
-                    Tup2(2, "g".to_string()) => 3i64,
-                    Tup2(2, "h".to_string()) => 4,
-                    Tup2(3, "i".to_string()) => 5,
-                    Tup2(3, "j".to_string()) => -2,
-                    Tup2(4, "k".to_string()) => 5,
-                    Tup2(4, "l".to_string()) => -2,
-                },
-                zset! {Tup2(1, "b".to_string()) => 1},
-                zset! {Tup2(4, "m".to_string()) => 1},
-                zset! {},
-                zset! {},
-            ]
-            .into_iter();
+        let mut input1 = vec![
+            vec![
+                Tup2(Tup2(1, "a".to_string()), 1i64),
+                Tup2(Tup2(1, "b".to_string()), 2),
+                Tup2(Tup2(2, "c".to_string()), 3),
+                Tup2(Tup2(2, "d".to_string()), 4),
+                Tup2(Tup2(3, "e".to_string()), 5),
+                Tup2(Tup2(3, "f".to_string()), -2),
+            ],
+            vec![Tup2(Tup2(1, "a".to_string()), 1)],
+            vec![Tup2(Tup2(1, "a".to_string()), 1)],
+            vec![Tup2(Tup2(4, "n".to_string()), 2)],
+            vec![Tup2(Tup2(1, "a".to_string()), 0)],
+        ]
+        .into_iter();
+        let mut input2 = vec![
+            vec![
+                Tup2(Tup2(2, "g".to_string()), 3i64),
+                Tup2(Tup2(2, "h".to_string()), 4),
+                Tup2(Tup2(3, "i".to_string()), 5),
+                Tup2(Tup2(3, "j".to_string()), -2),
+                Tup2(Tup2(4, "k".to_string()), 5),
+                Tup2(Tup2(4, "l".to_string()), -2),
+            ],
+            vec![Tup2(Tup2(1, "b".to_string()), 1)],
+            vec![Tup2(Tup2(4, "m".to_string()), 1)],
+            vec![],
+            vec![],
+        ]
+        .into_iter();
+
+        let (circuit, (input_handle1, input_handle2)) = RootCircuit::build(move |circuit| {
             let mut outputs = vec![
                 zset! {
                     Tup2(2, "c g".to_string()) => 9i64,
@@ -1575,32 +1611,24 @@ mod test {
             let mut inc_outputs2 = inc_outputs_vec.into_iter();
             let mut inc_filtered_outputs = inc_filtered_outputs_vec.into_iter();
 
-            let index1: Stream<_, OrdIndexedZSet<u64, String>> = circuit
-                .add_source(Generator::new(move || {
-                    if Runtime::worker_index() == 0 {
-                        input1.next().unwrap()
-                    } else {
-                        <OrdZSet<_>>::empty()
-                    }
-                }))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
-            let index2: Stream<_, OrdIndexedZSet<u64, String>> = circuit
-                .add_source(Generator::new(move || {
-                    if Runtime::worker_index() == 0 {
-                        input2.next().unwrap()
-                    } else {
-                        <OrdZSet<_>>::empty()
-                    }
-                }))
-                .map_index(|Tup2(k, v)| (*k, v.clone()));
+            let (input1, input_handle1) = circuit.add_input_zset::<Tup2<u64, String>>();
+            let index1 = input1.map_index(|Tup2(k, v)| (*k, v.clone()));
+
+            let (input2, input_handle2) = circuit.add_input_zset::<Tup2<u64, String>>();
+            let index2 = input2.map_index(|Tup2(k, v)| (*k, v.clone()));
+
             index1
                 .stream_join(&index2, |&k: &u64, s1, s2| {
                     Tup2(k, format!("{} {}", s1, s2))
                 })
                 .gather(0)
-                .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
-                    if Runtime::worker_index() == 0 {
-                        assert_eq!(fm, &outputs.next().unwrap())
+                .accumulate()
+                .inspect(move |fm: &Option<Spine<OrdZSet<Tup2<u64, String>>>>| {
+                    if Runtime::worker_index() == 0 && fm.is_some() {
+                        assert_eq!(
+                            fm.as_ref().unwrap().iter().collect::<Vec<_>>(),
+                            outputs.next().unwrap().iter().collect::<Vec<_>>()
+                        )
                     }
                 });
             /*index1
@@ -1617,9 +1645,13 @@ mod test {
                     Tup2(k, format!("{} {}", s1, s2))
                 })
                 .gather(0)
-                .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
-                    if Runtime::worker_index() == 0 {
-                        assert_eq!(fm, &inc_outputs2.next().unwrap())
+                .accumulate()
+                .inspect(move |fm: &Option<Spine<OrdZSet<Tup2<u64, String>>>>| {
+                    if Runtime::worker_index() == 0 && fm.is_some() {
+                        assert_eq!(
+                            fm.as_ref().unwrap().iter().collect::<Vec<_>>(),
+                            inc_outputs2.next().unwrap().iter().collect::<Vec<_>>()
+                        )
                     }
                 });
 
@@ -1632,18 +1664,29 @@ mod test {
                     }
                 })
                 .gather(0)
-                .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
-                    if Runtime::worker_index() == 0 {
-                        assert_eq!(fm, &inc_filtered_outputs.next().unwrap())
+                .accumulate()
+                .inspect(move |fm: &Option<Spine<OrdZSet<Tup2<u64, String>>>>| {
+                    if Runtime::worker_index() == 0 && fm.is_some() {
+                        assert_eq!(
+                            fm.as_ref().unwrap().iter().collect::<Vec<_>>(),
+                            inc_filtered_outputs
+                                .next()
+                                .unwrap()
+                                .iter()
+                                .collect::<Vec<_>>()
+                        )
                     }
                 });
 
-            Ok(())
+            Ok((input_handle1, input_handle2))
         })
-        .unwrap()
-        .0;
+        .unwrap();
 
         for _ in 0..5 {
+            if Runtime::worker_index() == 0 {
+                input_handle1.append(&mut input1.next().unwrap());
+                input_handle2.append(&mut input2.next().unwrap());
+            }
             circuit.step().unwrap();
         }
     }
@@ -1747,18 +1790,21 @@ mod test {
     }
     #[test]
     fn antijoin_test() {
-        let output = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
+        let output = Arc::new(Mutex::new(Vec::new()));
         let output_clone = output.clone();
 
         let (mut circuit, (input1, input2)) = Runtime::init_circuit(4, move |circuit| {
             let (input1, input_handle1) = circuit.add_input_indexed_zset::<u64, u64>();
             let (input2, input_handle2) = circuit.add_input_indexed_zset::<u64, u64>();
 
-            input1.antijoin(&input2).gather(0).inspect(move |batch| {
-                if Runtime::worker_index() == 0 {
-                    *output_clone.lock().unwrap() = batch.clone();
-                }
-            });
+            input1.antijoin(&input2).gather(0).accumulate().inspect(
+                move |fm: &Option<Spine<OrdIndexedZSet<_, _>>>| {
+                    if Runtime::worker_index() == 0 && fm.is_some() {
+                        *output_clone.lock().unwrap() =
+                            fm.as_ref().unwrap().iter().collect::<Vec<_>>();
+                    }
+                },
+            );
 
             Ok((input_handle1, input_handle2))
         })
@@ -1773,33 +1819,30 @@ mod test {
         circuit.step().unwrap();
         assert_eq!(
             &*output.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => 1, 1 => 2}, 2 => { 0 => 1, 1 => 1 } }
+            &vec![(1, 0, 1), (1, 1, 2), (2, 0, 1), (2, 1, 1)]
         );
 
         input1.append(&mut vec![Tup2(3, Tup2(1, 1))]);
         circuit.step().unwrap();
-        assert_eq!(&*output.lock().unwrap(), &indexed_zset! { 3 => { 1 => 1 } });
+        assert_eq!(&*output.lock().unwrap(), &vec![(3, 1, 1)]);
 
         input2.append(&mut vec![Tup2(1, Tup2(1, 3))]);
         circuit.step().unwrap();
-        assert_eq!(
-            &*output.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => -1, 1 => -2 } }
-        );
+        assert_eq!(&*output.lock().unwrap(), &vec![(1, 0, -1), (1, 1, -2)]);
 
         input2.append(&mut vec![Tup2(2, Tup2(5, 1))]);
         input1.append(&mut vec![Tup2(2, Tup2(2, 1)), Tup2(4, Tup2(1, 1))]);
         circuit.step().unwrap();
         assert_eq!(
             &*output.lock().unwrap(),
-            &indexed_zset! { 2 => { 0 => -1, 1 => -1 }, 4 => { 1 => 1 } }
+            &vec![(2, 0, -1), (2, 1, -1), (4, 1, 1)]
         );
 
         // Issue https://github.com/feldera/feldera/issues/3365. Multiple values per key in the right-hand input shouldn't
         // produce outputs with negative weights.
         input2.append(&mut vec![Tup2(2, Tup2(6, 1))]);
         circuit.step().unwrap();
-        assert_eq!(&*output.lock().unwrap(), &indexed_zset! {});
+        assert_eq!(&*output.lock().unwrap(), &vec![]);
 
         circuit.kill().unwrap();
     }
