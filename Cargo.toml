@@ -15,7 +15,7 @@ members = [
   "crates/adapterlib",
   "crates/adapters",
   "crates/dbsp",
-  "crates/fda",
+  # TODO: add back once changes are made: "crates/fda",
   "crates/nexmark",
   "crates/feldera-types",
   "crates/pipeline-manager",

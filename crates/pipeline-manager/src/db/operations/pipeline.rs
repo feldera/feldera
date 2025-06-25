@@ -11,6 +11,7 @@ use crate::db::types::program::{
     validate_program_status_transition, ProgramError, ProgramStatus, RustCompilationInfo,
     SqlCompilationInfo,
 };
+use crate::db::types::storage::{validate_storage_status_transition, StorageStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_deployment_config, validate_name, validate_program_config, validate_program_info,
@@ -87,7 +88,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
      p.program_status_since, p.program_error, p.program_info,
      p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_binary_url,
      p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
-     p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version, p.suspend_info";
+     p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version, p.suspend_info, p.storage_status";
 
 /// Converts a pipeline table row to its extended descriptor with all fields.
 ///
@@ -100,7 +101,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
 ///   Backwards incompatible changes therein will prevent retrieval of pipelines
 ///   because an error will be returned instead.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
-    assert_eq!(row.len(), 28);
+    assert_eq!(row.len(), 29);
 
     // Runtime configuration: RuntimeConfig
     let runtime_config = deserialize_json_value(row.get(7))?;
@@ -172,6 +173,7 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         deployment_location: row.get(25),
         refresh_version: Version(row.get(26)),
         suspend_info,
+        storage_status: row.get::<_, String>(28).try_into()?,
     })
 }
 
@@ -180,13 +182,13 @@ const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
     "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version,
      p.program_version, p.program_status, p.program_status_since,
      p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
-     p.deployment_error, p.deployment_location, p.refresh_version";
+     p.deployment_error, p.deployment_location, p.refresh_version, p.storage_status";
 
 /// Converts a pipeline table row to its extended descriptor with only fields relevant to monitoring.
 fn row_to_extended_pipeline_descriptor_monitoring(
     row: &Row,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    assert_eq!(row.len(), 16);
+    assert_eq!(row.len(), 17);
     // Deployment error: ErrorResponse
     let deployment_error = match row.get::<_, Option<String>>(13) {
         None => None,
@@ -209,6 +211,7 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         deployment_error,
         deployment_location: row.get(14),
         refresh_version: Version(row.get(15)),
+        storage_status: row.get::<_, String>(16).try_into()?,
     })
 }
 
@@ -380,13 +383,13 @@ pub(crate) async fn new_pipeline(
                                    program_status_since, program_error, program_info,
                                    program_binary_source_checksum, program_binary_integrity_checksum, program_binary_url,
                                    deployment_status, deployment_status_since, deployment_desired_status,
-                                   deployment_error, deployment_config, deployment_location, uses_json, refresh_version, suspend_info)
+                                   deployment_error, deployment_config, deployment_location, uses_json, refresh_version, suspend_info, storage_status)
             VALUES ($1, $2, $3, $4, now(), $5, $6, $7,
                     $8, $9, $10, $11, $12, $13,
                     now(), $14, NULL,
                     NULL, NULL, NULL,
                     $15, now(), $16,
-                    NULL, NULL, NULL, TRUE, $17, NULL)",
+                    NULL, NULL, NULL, TRUE, $17, NULL, $18)",
         )
         .await?;
     txn.execute(
@@ -411,9 +414,10 @@ pub(crate) async fn new_pipeline(
                 rust_compilation: None,
                 system_error: None,
             })?,
-            &PipelineStatus::Shutdown.to_string(), // $15: deployment_status
-            &PipelineStatus::Shutdown.to_string(), // $16: deployment_desired_status
-            &Version(1).0,                         // $17: refresh_version
+            &PipelineStatus::Stopped.to_string(), // $15: deployment_status
+            &PipelineStatus::Stopped.to_string(), // $16: deployment_desired_status
+            &Version(1).0,                        // $17: refresh_version
+            &StorageStatus::Unbound.to_string(),  // $18: storage_status
         ],
     )
     .await
@@ -485,16 +489,24 @@ pub(crate) async fn update_pipeline(
     // This will also return an error if the pipeline does not exist.
     let current = get_pipeline(txn, tenant_id, original_name).await?;
 
-    // Pipeline update is only possible if it is shutdown or suspended.
-    // The user cannot edit a pipeline with a desired status which is not shutdown or suspended,
-    // but the compiler can still in order to bump the `platform_version`.
-    if (current.deployment_status != PipelineStatus::Shutdown
-        && current.deployment_status != PipelineStatus::Suspended)
-        || (!is_compiler_update
-            && (current.deployment_desired_status != PipelineDesiredStatus::Shutdown
-                && current.deployment_desired_status != PipelineDesiredStatus::Suspended))
-    {
-        return Err(DBError::CannotUpdateNonShutdownPipeline);
+    // Pipeline update is allowed if either:
+    // - Current status is `Stopped` AND desired status is `Stopped`
+    // - Current status is `Stopped` AND desired status is `Paused` or `Running` AND it is the
+    //   compiler doing the update to bump platform version (the early start mechanism)
+    if !matches!(
+        (
+            is_compiler_update,
+            current.deployment_status,
+            current.deployment_desired_status
+        ),
+        (_, PipelineStatus::Stopped, PipelineDesiredStatus::Stopped)
+            | (
+                true,
+                PipelineStatus::Stopped,
+                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running
+            ),
+    ) {
+        return Err(DBError::CannotUpdateNotStoppedPipeline);
     }
 
     // If it is a compiler update, then the only thing it must change is the platform_version
@@ -535,8 +547,10 @@ pub(crate) async fn update_pipeline(
         return Ok(current.version);
     }
 
-    // While suspended, some fields are not allowed to be edited
-    if current.deployment_status == PipelineStatus::Suspended {
+    // Certain edits are restricted to only `Unbound` storage
+    if current.storage_status == StorageStatus::Bound
+        || current.storage_status == StorageStatus::Unbinding
+    {
         let mut not_allowed = vec![];
         if name.as_ref().is_some_and(|v| *v != current.name) {
             not_allowed.push("`name`")
@@ -581,7 +595,7 @@ pub(crate) async fn update_pipeline(
             not_allowed.push("`program_config`")
         }
         if !not_allowed.is_empty() {
-            return Err(DBError::EditNotAllowedWhileSuspendedError {
+            return Err(DBError::EditRestrictedToUnboundStorage {
                 not_allowed: not_allowed.iter_mut().map(|s| s.to_string()).collect(),
             });
         }
@@ -677,10 +691,13 @@ pub(crate) async fn delete_pipeline(
     let current = get_pipeline(txn, tenant_id, name).await?;
 
     // Pipeline deletion is only possible if it is fully shutdown
-    if current.deployment_status != PipelineStatus::Shutdown
-        || current.deployment_desired_status != PipelineDesiredStatus::Shutdown
+    if current.deployment_status != PipelineStatus::Stopped
+        || current.deployment_desired_status != PipelineDesiredStatus::Stopped
     {
-        return Err(DBError::CannotDeleteNonShutdownPipeline);
+        return Err(DBError::DeleteRestrictedToFullyStopped);
+    }
+    if current.storage_status != StorageStatus::Unbound {
+        return Err(DBError::DeleteRestrictedToUnboundStorage);
     }
 
     let stmt = txn
@@ -722,12 +739,10 @@ pub(crate) async fn set_program_status(
         });
     }
 
-    // Pipeline program status update is only possible if it is shutdown.
-    // The desired status does not necessarily have to be shutdown,
+    // Pipeline program status update is only possible if it is stopped.
+    // The desired status does not necessarily have to be stopped,
     // in order to accommodate the compilation during early start.
-    if current.deployment_status != PipelineStatus::Shutdown
-        && current.deployment_status != PipelineStatus::Suspended
-    {
+    if current.deployment_status != PipelineStatus::Stopped {
         return Err(DBError::CannotUpdateProgramStatusOfNonShutdownPipeline);
     }
 
@@ -970,9 +985,9 @@ pub(crate) async fn set_deployment_desired_status(
 
     // Check that the desired status can be set
     validate_deployment_desired_status_transition(
-        &current.deployment_status,
-        &current.deployment_desired_status,
-        &new_desired_status,
+        current.deployment_status,
+        current.deployment_desired_status,
+        new_desired_status,
     )?;
 
     let stmt = txn
@@ -1021,20 +1036,16 @@ pub(crate) async fn set_deployment_status(
     }
 
     // Due to early start, the following do not require a successfully compiled program:
-    // (1) Shutdown -> Failed
-    // (2) Suspended -> Failed
-    // (3) Failed -> ShuttingDown
-    // (4) ShuttingDown -> Shutdown
+    // (1) Stopped -> Stopping
+    // (2) Stopping -> Stopped
     // The above occurs because in early start, the program is not (yet) successfully
     // compiled and the runner is awaiting it to transition to Provisioning.
     //
     // All other deployment status transitions require a successfully compiled program.
     if !matches!(
         (current.deployment_status, new_deployment_status),
-        (PipelineStatus::Shutdown, PipelineStatus::Failed)
-            | (PipelineStatus::Suspended, PipelineStatus::Failed)
-            | (PipelineStatus::Failed, PipelineStatus::ShuttingDown)
-            | (PipelineStatus::ShuttingDown, PipelineStatus::Shutdown)
+        (PipelineStatus::Stopped, PipelineStatus::Stopping)
+            | (PipelineStatus::Stopping, PipelineStatus::Stopped)
     ) && current.program_status != ProgramStatus::Success
     {
         return Err(DBError::TransitionRequiresCompiledProgram {
@@ -1044,19 +1055,25 @@ pub(crate) async fn set_deployment_status(
     }
 
     // Check that the transition from the current status to the new status is permitted
-    validate_deployment_status_transition(&current.deployment_status, &new_deployment_status)?;
+    validate_deployment_status_transition(
+        current.storage_status,
+        current.deployment_status,
+        new_deployment_status,
+    )?;
 
     // Determine the final values of the additional fields using the current default.
     // Note that None becomes NULL as there is no coalescing in the query.
 
     // Deployment error is set when becoming...
-    // - Failed: a value
-    // - ShuttingDown: NULL
+    // - Stopping: maybe a value
+    // - Stopped: existing value
     // - Otherwise: NULL
-    let final_deployment_error = if new_deployment_status == PipelineStatus::Failed {
-        assert!(new_deployment_error.is_some());
+    let final_deployment_error = if new_deployment_status == PipelineStatus::Stopping {
         new_deployment_error
-    } else if new_deployment_status == PipelineStatus::ShuttingDown {
+    } else if new_deployment_status == PipelineStatus::Stopped {
+        assert!(new_deployment_error.is_none());
+        current.deployment_error
+    } else if new_deployment_status == PipelineStatus::Provisioning {
         assert!(new_deployment_error.is_none());
         None
     } else {
@@ -1067,15 +1084,16 @@ pub(crate) async fn set_deployment_status(
 
     // Deployment configuration is set when becoming...
     // - Provisioning: a value
-    // - SuspendingCompute or ShuttingDown: NULL
+    // - Stopping: NULL
     // - Otherwise: current value
     let final_deployment_config = if new_deployment_status == PipelineStatus::Provisioning {
+        assert!(new_deployment_config.is_some());
         new_deployment_config
-    } else if new_deployment_status == PipelineStatus::SuspendingCompute
-        || new_deployment_status == PipelineStatus::ShuttingDown
-    {
+    } else if new_deployment_status == PipelineStatus::Stopping {
+        assert!(new_deployment_config.is_none());
         None
     } else {
+        assert!(new_deployment_config.is_none());
         current.deployment_config
     };
 
@@ -1091,14 +1109,12 @@ pub(crate) async fn set_deployment_status(
 
     // Deployment location is set when becoming...
     // - Initializing: a value
-    // - SuspendingCompute or ShuttingDown: NULL
+    // - Stopping: NULL
     // - Otherwise: current value
     let final_deployment_location = if new_deployment_status == PipelineStatus::Initializing {
         assert!(new_deployment_location.is_some());
         new_deployment_location
-    } else if new_deployment_status == PipelineStatus::SuspendingCompute
-        || new_deployment_status == PipelineStatus::ShuttingDown
-    {
+    } else if new_deployment_status == PipelineStatus::Stopping {
         assert!(new_deployment_location.is_none());
         None
     } else {
@@ -1107,15 +1123,12 @@ pub(crate) async fn set_deployment_status(
     };
 
     // Suspend information is set when becoming...
-    // - SuspendingCompute: a value
-    // - Suspended or Provisioning: current value
+    // - Stopping: maybe a value
+    // - Stopped: current value
     // - Otherwise: NULL
-    let final_suspend_info = if new_deployment_status == PipelineStatus::SuspendingCompute {
-        assert!(new_suspend_info.is_some());
+    let final_suspend_info = if new_deployment_status == PipelineStatus::Stopping {
         new_suspend_info
-    } else if new_deployment_status == PipelineStatus::Suspended
-        || new_deployment_status == PipelineStatus::Provisioning
-    {
+    } else if new_deployment_status == PipelineStatus::Stopped {
         assert!(new_suspend_info.is_none());
         current.suspend_info
     } else {
@@ -1148,6 +1161,47 @@ pub(crate) async fn set_deployment_status(
                 &final_deployment_config.map(|v| v.to_string()),
                 &final_deployment_location,
                 &final_suspend_info.map(|v| v.to_string()),
+                &tenant_id.0,
+                &pipeline_id.0,
+            ],
+        )
+        .await?;
+    if rows_affected > 0 {
+        Ok(())
+    } else {
+        Err(DBError::UnknownPipeline { pipeline_id })
+    }
+}
+
+/// Sets pipeline storage status.
+pub(crate) async fn set_storage_status(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    new_storage_status: StorageStatus,
+) -> Result<(), DBError> {
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+
+    // Check that the transition is permitted
+    validate_storage_status_transition(
+        current.deployment_status,
+        current.storage_status,
+        new_storage_status,
+    )?;
+
+    // Execute query
+    let stmt = txn
+        .prepare_cached(
+            "UPDATE pipeline
+                 SET storage_status = $1
+                 WHERE tenant_id = $2 AND id = $3",
+        )
+        .await?;
+    let rows_affected = txn
+        .execute(
+            &stmt,
+            &[
+                &new_storage_status.to_string(),
                 &tenant_id.0,
                 &pipeline_id.0,
             ],
@@ -1216,7 +1270,7 @@ pub(crate) async fn get_next_sql_compilation(
         .prepare_cached(&format!(
             "SELECT {RETRIEVE_PIPELINE_COLUMNS}
              FROM pipeline AS p
-             WHERE (p.deployment_status = 'shutdown' or p.deployment_status = 'suspended')
+             WHERE p.deployment_status = 'stopped'
                    AND p.program_status = 'pending'
                    AND p.platform_version = $1
              ORDER BY p.program_status_since ASC, p.id ASC
@@ -1251,7 +1305,7 @@ pub(crate) async fn get_next_rust_compilation(
         .prepare_cached(&format!(
             "SELECT {RETRIEVE_PIPELINE_COLUMNS}
              FROM pipeline AS p
-             WHERE (p.deployment_status = 'shutdown' or p.deployment_status = 'suspended')
+             WHERE p.deployment_status = 'stopped'
                    AND p.program_status = 'sql_compiled'
                    AND p.platform_version = $1
              ORDER BY p.program_status_since ASC, p.id ASC
