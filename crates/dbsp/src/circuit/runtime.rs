@@ -4,9 +4,11 @@
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::DevTweaks;
 use crate::error::Error as DbspError;
+use crate::operator::communication::Exchange;
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
+use crate::SchedulerError;
 use crate::{
     storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
     DetailedError,
@@ -18,6 +20,7 @@ use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
+use std::iter::repeat;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{LazyLock, Mutex};
@@ -37,6 +40,7 @@ use std::{
     },
     thread::{Builder, JoinHandle, Result as ThreadResult},
 };
+use tokio::sync::Notify;
 use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
 
@@ -851,6 +855,77 @@ impl Runtime {
                 .push(join_handle);
         }
         (thread, unparker)
+    }
+}
+
+pub(crate) enum Consensus {
+    SingleThreaded,
+    MultiThreaded {
+        notify_sender: Arc<Notify>,
+        notify_receiver: Arc<Notify>,
+        exchange: Arc<Exchange<bool>>,
+    },
+}
+
+impl Consensus {
+    pub fn new() -> Self {
+        match Runtime::runtime() {
+            Some(runtime) if runtime.num_workers() > 1 => {
+                let worker_index = Runtime::worker_index();
+                let exchange_id = runtime.sequence_next();
+                let exchange = Exchange::with_runtime(&runtime, exchange_id);
+
+                let notify_sender = Arc::new(Notify::new());
+                let notify_sender_clone = notify_sender.clone();
+                let notify_receiver = Arc::new(Notify::new());
+                let notify_receiver_clone = notify_receiver.clone();
+
+                exchange.register_sender_callback(worker_index, move || {
+                    notify_sender_clone.notify_one()
+                });
+
+                exchange.register_receiver_callback(worker_index, move || {
+                    notify_receiver_clone.notify_one()
+                });
+
+                Self::MultiThreaded {
+                    notify_sender,
+                    notify_receiver,
+                    exchange,
+                }
+            }
+            _ => Self::SingleThreaded,
+        }
+    }
+
+    pub async fn check(&self, local: bool) -> Result<bool, SchedulerError> {
+        match self {
+            Self::SingleThreaded => Ok(local),
+            Self::MultiThreaded {
+                notify_sender,
+                notify_receiver,
+                exchange,
+            } => {
+                while !exchange.try_send_all(Runtime::worker_index(), &mut repeat(local)) {
+                    if Runtime::kill_in_progress() {
+                        return Err(SchedulerError::Killed);
+                    }
+                    notify_sender.notified().await;
+                }
+                // Receive the status of each peer, compute global result
+                // as a logical and of all peer statuses.
+                let mut global = true;
+                while !exchange.try_receive_all(Runtime::worker_index(), |status| global &= status)
+                {
+                    if Runtime::kill_in_progress() {
+                        return Err(SchedulerError::Killed);
+                    }
+                    // Sleep if other threads are still working.
+                    notify_receiver.notified().await;
+                }
+                Ok(global)
+            }
+        }
     }
 }
 
