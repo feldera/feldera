@@ -515,18 +515,20 @@ public class AggregateCompiler implements ICompilerComponent {
         } else {
             DBSPExpression increment;
             DBSPExpression aggregatedValue = this.getAggregatedValue();
-            DBSPVariablePath accumulator = this.nullableResultType.var();
+            DBSPVariablePath accumulator = this.partialResultType.var();
 
             DBSPExpression weighted = new DBSPBinaryExpression(node,
-                    aggregatedValue.getType(), DBSPOpcode.MUL_WEIGHT,
-                    aggregatedValue, this.compiler.weightVar);
+                    this.partialResultType, DBSPOpcode.MUL_WEIGHT,
+                    aggregatedValue.cast(this.node, this.partialResultType, false), this.compiler.weightVar);
             increment = this.aggregateOperation(
-                    node, DBSPOpcode.AGG_ADD, this.nullableResultType,
+                    node, DBSPOpcode.AGG_ADD, this.partialResultType,
                     accumulator, weighted, this.filterArgument());
             DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "DefaultOptSemigroup",
-                    false, accumulator.getType().withMayBeNull(false));
+                    false, this.partialResultType.withMayBeNull(false));
+            DBSPVariablePath postVar = this.partialResultType.var();
+            DBSPClosureExpression postProcess = postVar.cast(this.node, this.nullableResultType, false).closure(postVar);
             this.setResult(new NonLinearAggregate(
-                    node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
+                    node, this.partialResultType.to(IsNumericType.class).getZero(), this.makeRowClosure(increment, accumulator), postProcess, zero, semigroup));
         }
     }
 
@@ -534,7 +536,6 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression zero = this.resultType.to(IsNumericType.class).getZero();
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
-        DBSPVariablePath accumulator = this.resultType.var();
         if (this.linearAllowed && !this.fp()) {
             DBSPExpression typedZero = this.partialResultType
                     .withMayBeNull(false).to(IsNumericType.class).getZero();
@@ -561,19 +562,26 @@ public class AggregateCompiler implements ICompilerComponent {
             map = mapBody.closure(this.v);
             this.setResult(new LinearAggregate(this.node, map, post, zero));
         } else {
+            DBSPExpression typedZero = this.partialResultType
+                    .withMayBeNull(false).to(IsNumericType.class).getZero();
+            DBSPVariablePath accumulator = this.partialResultType.withMayBeNull(false).var();
             DBSPExpression weighted = new DBSPBinaryExpression(
-                    this.node, aggregatedValue.getType(),
-                    DBSPOpcode.MUL_WEIGHT, aggregatedValue, this.compiler.weightVar);
+                    this.node, this.partialResultType,
+                    DBSPOpcode.MUL_WEIGHT, aggregatedValue.cast(this.node, this.partialResultType, false),
+                    this.compiler.weightVar);
             increment = this.aggregateOperation(
-                    this.node, DBSPOpcode.AGG_ADD_NON_NULL, this.resultType,
+                    this.node, DBSPOpcode.AGG_ADD_NON_NULL, accumulator.getType(),
                     accumulator, weighted, this.filterArgument());
             String semigroupName = "DefaultSemigroup";
             if (accumulator.getType().mayBeNull)
                 semigroupName = "DefaultOptSemigroup";
             DBSPTypeUser semigroup = new DBSPTypeUser(this.node, SEMIGROUP, semigroupName, false,
                     accumulator.getType().withMayBeNull(false));
+            DBSPVariablePath postVar = accumulator.getType().var();
+            // post = |x| cast(accumulator, result_type)
+            DBSPClosureExpression post = postVar.cast(this.node, this.resultType, false).closure(postVar);
             this.setResult(new NonLinearAggregate(
-                    this.node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
+                    this.node, typedZero, this.makeRowClosure(increment, accumulator), post, zero, semigroup));
         }
     }
 
@@ -638,7 +646,7 @@ public class AggregateCompiler implements ICompilerComponent {
             map = mapBody.closure(this.v);
             return new LinearAggregate(node, map, post, postZero);
         } else {
-            DBSPType aggregatedValueType = this.getAggregatedValueType();
+            DBSPType aggregatedValueType = this.partialResultType;
             DBSPType intermediateResultType = aggregatedValueType.withMayBeNull(true);
             DBSPExpression zero = new DBSPTupleExpression(
                     DBSPLiteral.none(intermediateResultType), DBSPLiteral.none(intermediateResultType));
@@ -692,7 +700,7 @@ public class AggregateCompiler implements ICompilerComponent {
         boolean isSamp = function.getKind() == SqlKind.STDDEV_SAMP;
         DBSPType aggregatedValueType = this.getAggregatedValueType();
         // TODO: linear implementation
-        DBSPType intermediateResultType = aggregatedValueType.withMayBeNull(true);
+        DBSPType intermediateResultType = this.partialResultType.withMayBeNull(true);
 
         if (intermediateResultType.is(DBSPTypeDecimal.class)) {
             intermediateResultType = new DBSPTypeRuntimeDecimal(
