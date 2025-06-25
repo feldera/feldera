@@ -735,6 +735,9 @@ resume a paused pipeline."""
         Executes an ad-hoc SQL query on this pipeline and returns a python
         dictionary containing all the results.
 
+        Prefer using :meth:`.Pipeline.query_pyarrow` if you have column aliases
+        with the same name.
+
         Note:
             You can only ``SELECT`` from materialized tables and views.
 
