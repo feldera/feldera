@@ -496,12 +496,7 @@ pub struct RuntimeConfig {
     /// Specification of additional (sidecar) containers.
     pub init_containers: Option<serde_yaml::Value>,
 
-    /// * If `true`, the suspend operation will first atomically checkpoint the pipeline before
-    ///   deprovisioning the compute resources. When resuming, the pipeline will start from this
-    ///   checkpoint.
-    /// * If `false`, then the pipeline will be suspended without creating an additional checkpoint.
-    ///   When resuming, it will pick up the latest checkpoint made by the periodic checkpointer or
-    ///   by invoking the `/checkpoint` API.
+    /// Deprecated: setting this true or false does not have an effect anymore.
     pub checkpoint_during_suspend: bool,
 
     /// Optional settings for tweaking Feldera internals.

@@ -11,6 +11,7 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramError, ProgramStatus};
+use crate::db::types::storage::StorageStatus;
 use crate::db::types::utils::{
     validate_program_config, validate_program_info, validate_runtime_config,
 };
@@ -63,12 +64,13 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         program_binary_url: None,
         deployment_config: None,
         deployment_location: None,
-        deployment_status: PipelineStatus::Shutdown,
+        deployment_status: PipelineStatus::Stopped,
         deployment_status_since: Default::default(),
-        deployment_desired_status: PipelineDesiredStatus::Shutdown,
+        deployment_desired_status: PipelineDesiredStatus::Stopped,
         deployment_error: None,
         refresh_version: Version(4),
         suspend_info: None,
+        storage_status: StorageStatus::Unbound,
     }
 }
 
@@ -129,12 +131,13 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         program_binary_url: None,
         deployment_config: None,
         deployment_location: None,
-        deployment_status: PipelineStatus::Shutdown,
+        deployment_status: PipelineStatus::Stopped,
         deployment_status_since: Default::default(),
-        deployment_desired_status: PipelineDesiredStatus::Shutdown,
+        deployment_desired_status: PipelineDesiredStatus::Stopped,
         deployment_error: None,
         refresh_version: Version(1),
         suspend_info: None,
+        storage_status: StorageStatus::Unbound,
     }
 }
 
@@ -175,6 +178,7 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
         deployment_desired_status: pipeline.deployment_desired_status,
         deployment_error: pipeline.deployment_error,
         refresh_version: pipeline.refresh_version,
+        storage_status: pipeline.storage_status,
     }
 }
 
@@ -221,6 +225,7 @@ fn pipeline_selected_info_internal_to_external(
         deployment_desired_status: pipeline.deployment_desired_status,
         deployment_error: pipeline.deployment_error,
         refresh_version: pipeline.refresh_version,
+        storage_status: pipeline.storage_status,
     }
 }
 
@@ -313,17 +318,11 @@ pub(crate) fn error_unknown_pipeline_name() -> ErrorResponse {
 }
 
 pub(crate) fn error_cannot_update_non_shutdown_pipeline() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&DBError::CannotUpdateNonShutdownPipeline)
+    ErrorResponse::from_error_nolog(&DBError::CannotUpdateNotStoppedPipeline)
 }
 
 pub(crate) fn error_cannot_delete_non_shutdown_pipeline() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&DBError::CannotDeleteNonShutdownPipeline)
-}
-
-pub(crate) fn error_invalid_pipeline_action() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ApiError::InvalidPipelineAction {
-        action: "dance".to_string(),
-    })
+    ErrorResponse::from_error_nolog(&DBError::DeleteRestrictedToFullyStopped)
 }
 
 pub(crate) fn error_unsupported_pipeline_action() -> ErrorResponse {
@@ -335,10 +334,17 @@ pub(crate) fn error_unsupported_pipeline_action() -> ErrorResponse {
 
 pub(crate) fn error_illegal_pipeline_action() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::IllegalPipelineAction {
-            hint: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.".to_string(),
-            status: PipelineStatus::ShuttingDown,
-            desired_status: PipelineDesiredStatus::Shutdown,
-            requested_desired_status: PipelineDesiredStatus::Running,
+            pipeline_status: PipelineStatus::Stopping,
+            current_desired_status: PipelineDesiredStatus::Stopped,
+            new_desired_status: PipelineDesiredStatus::Running,
+            hint: "Cannot restart the pipeline while it is stopping. Wait for it to stop before starting a new instance of the pipeline.".to_string(),
+    })
+}
+
+pub(crate) fn error_illegal_pipeline_storage_action() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::InvalidStorageStatusTransition {
+        current_status: StorageStatus::Unbound,
+        new_status: StorageStatus::Unbinding,
     })
 }
 
@@ -347,7 +353,7 @@ pub(crate) fn error_illegal_pipeline_action() -> ErrorResponse {
 
 pub(crate) fn error_pipeline_interaction_not_deployed() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionNotDeployed {
-        status: PipelineStatus::Shutdown,
+        status: PipelineStatus::Stopped,
         desired_status: PipelineDesiredStatus::Running,
     })
 }

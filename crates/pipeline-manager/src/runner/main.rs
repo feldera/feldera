@@ -8,7 +8,8 @@ use crate::error::ManagerError;
 use crate::probe::Probe;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_automata::PipelineAutomaton;
-use crate::runner::pipeline_executor::{LogMessage, PipelineExecutor};
+use crate::runner::pipeline_executor::PipelineExecutor;
+use crate::runner::pipeline_logs::LogMessage;
 use actix_web::HttpResponse;
 use actix_web::Responder;
 use actix_web::{get, web, HttpRequest, HttpServer};
@@ -48,7 +49,7 @@ pub const READY_CHECK_POLL_PERIOD: Duration = Duration::from_millis(2_000);
 pub const READY_CHECK_HTTP_RETRIES: u64 = 8;
 
 /// Type alias shorthand for the pipelines state the runner manager maintains and interacts with.
-type PipelinesState = BTreeMap<PipelineId, (Arc<Notify>, Sender<Sender<LogMessage>>)>;
+type PipelinesState = BTreeMap<PipelineId, (Arc<Notify>, Sender<Sender<String>>)>;
 
 /// Returns whether the runner is healthy.
 /// The health check consults the continuous probe of database reachability.
@@ -57,41 +58,24 @@ async fn get_healthz(data: web::Data<Arc<Mutex<Probe>>>) -> Result<impl Responde
     data.lock().await.status_as_http_response()
 }
 
-/// Produces a stream of logs which it fetches from the receiver.
-/// If the channel is closed, the receiver will return and the stream will end.
+/// Produces a continuous stream of logs which are received from the pipeline runner.
 async fn logs_stream(
-    mut receiver: Receiver<LogMessage>,
+    mut receiver: Receiver<String>,
 ) -> impl Stream<Item = Result<web::Bytes, actix_web::Error>> {
     try_stream! {
-        let mut has_ending = false;
         loop {
             match receiver.recv().await {
                 None => {
-                    // The corresponding sender was dropped or the channel was closed,
-                    // as such there will be no more log lines being sent over
+                    // The corresponding sender was dropped or the channel was closed.
+                    // This can occur when the pipeline is deleted or the runner restarts.
                     break;
                 }
-                Some(message) => {
-                    match message {
-                        LogMessage::Line(line) => {
-                            yield actix_web::web::Bytes::from(format!("{line}\n"));
-                        }
-                        LogMessage::End(ending_line) => {
-                            has_ending = true;
-                            yield actix_web::web::Bytes::from(format!("{ending_line}\n"));
-                            // If an ending log message is received, the loop is ended
-                            // and the receiver will be dropped at the end of the function.
-                            // This will cause the channel to end as it is the only receiver.
-                            break;
-                        }
-                    }
+                Some(line) => {
+                    yield actix_web::web::Bytes::from(format!("{line}\n"));
                 }
             }
         }
-        // Unexpected ending of logs stream generally indicates a panic occurred in the logging thread
-        if !has_ending {
-            yield actix_web::web::Bytes::from("LOG STREAM ENDED UNEXPECTEDLY\n")
-        }
+        yield actix_web::web::Bytes::from("Logs have ended\n")
     }
 }
 
@@ -114,7 +98,7 @@ async fn get_logs(
     match data.lock().await.get(&pipeline_id) {
         None => Ok(HttpResponse::NotFound().finish()),
         Some((_, follow_request_sender)) => {
-            let (sender, receiver) = channel::<LogMessage>(MAXIMUM_BUFFERED_LINES_PER_FOLLOWER);
+            let (sender, receiver) = channel::<String>(MAXIMUM_BUFFERED_LINES_PER_FOLLOWER);
             match follow_request_sender.try_send(sender) {
                 Ok(()) => {
                     // Streaming response with explicit content type of text/plain with UTF-8,
@@ -126,24 +110,22 @@ async fn get_logs(
                         .append_header(("X-Content-Type-Options", "nosniff"))
                         .streaming(logs_stream(receiver).await))
                 }
-                Err(e) => match e {
-                    TrySendError::Full(_) => {
-                        error!(
-                                "Unable to send the log follow sender to the runner receiver because the channel is full"
-                            );
-                        Err(ManagerError::from(
-                            RunnerError::RunnerInteractionLogFollowRequestChannelFull,
-                        ))
+                Err(e) => {
+                    match e {
+                        TrySendError::Full(_) => {
+                            error!("Unable to follow pipeline logs because the request channel is full");
+                            Err(ManagerError::from(
+                                RunnerError::RunnerInteractionLogFollowRequestChannelFull,
+                            ))
+                        }
+                        TrySendError::Closed(_) => {
+                            error!("Unable to follow pipeline logs because the request channel is closed");
+                            Err(ManagerError::from(
+                                RunnerError::RunnerInteractionLogFollowRequestChannelClosed,
+                            ))
+                        }
                     }
-                    TrySendError::Closed(_) => {
-                        error!(
-                                "Unable to send the log follow sender to the runner receiver because the channel is closed"
-                            );
-                        Err(ManagerError::from(
-                            RunnerError::RunnerInteractionLogFollowRequestChannelClosed,
-                        ))
-                    }
-                },
+                }
             }
         }
     }
@@ -247,14 +229,14 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                         .or_insert_with(|| {
                             let notifier = Arc::new(Notify::new());
                             let (follow_request_sender, follow_request_receiver) =
-                                channel::<Sender<LogMessage>>(
-                                    MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS,
-                                );
+                                channel::<Sender<String>>(MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS);
+                            let (logs_sender, logs_receiver) =
+                                channel::<LogMessage>(MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS);
                             let pipeline_handle = E::new(
                                 pipeline_id,
                                 config.clone(),
                                 client.clone(),
-                                follow_request_receiver,
+                                logs_sender.clone(),
                             );
                             spawn(
                                 PipelineAutomaton::new(
@@ -266,6 +248,9 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                                     client.clone(),
                                     pipeline_handle,
                                     E::DEFAULT_PROVISIONING_TIMEOUT,
+                                    follow_request_receiver,
+                                    logs_sender,
+                                    logs_receiver,
                                 )
                                 .run(),
                             );

@@ -425,11 +425,12 @@
                       "system_error": null
                     },
                     "program_info": null,
-                    "deployment_status": "Shutdown",
+                    "deployment_status": "Stopped",
                     "deployment_status_since": "1970-01-01T00:00:00Z",
-                    "deployment_desired_status": "Shutdown",
+                    "deployment_desired_status": "Stopped",
                     "deployment_error": null,
-                    "refresh_version": 4
+                    "refresh_version": 4,
+                    "storage_status": "Unbound"
                   },
                   {
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c9",
@@ -490,11 +491,12 @@
                       "system_error": null
                     },
                     "program_info": null,
-                    "deployment_status": "Shutdown",
+                    "deployment_status": "Stopped",
                     "deployment_status_since": "1970-01-01T00:00:00Z",
-                    "deployment_desired_status": "Shutdown",
+                    "deployment_desired_status": "Stopped",
                     "deployment_error": null,
-                    "refresh_version": 1
+                    "refresh_version": 1,
+                    "storage_status": "Unbound"
                   }
                 ]
               }
@@ -647,11 +649,12 @@
                     "system_error": null
                   },
                   "program_info": null,
-                  "deployment_status": "Shutdown",
+                  "deployment_status": "Stopped",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
+                  "deployment_desired_status": "Stopped",
                   "deployment_error": null,
-                  "refresh_version": 4
+                  "refresh_version": 4,
+                  "storage_status": "Unbound"
                 }
               }
             }
@@ -805,11 +808,12 @@
                     "system_error": null
                   },
                   "program_info": null,
-                  "deployment_status": "Shutdown",
+                  "deployment_status": "Stopped",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
+                  "deployment_desired_status": "Stopped",
                   "deployment_error": null,
-                  "refresh_version": 4
+                  "refresh_version": 4,
+                  "storage_status": "Unbound"
                 }
               }
             }
@@ -989,11 +993,12 @@
                     "system_error": null
                   },
                   "program_info": null,
-                  "deployment_status": "Shutdown",
+                  "deployment_status": "Stopped",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
+                  "deployment_desired_status": "Stopped",
                   "deployment_error": null,
-                  "refresh_version": 4
+                  "refresh_version": 4,
+                  "storage_status": "Unbound"
                 }
               }
             }
@@ -1064,11 +1069,12 @@
                     "system_error": null
                   },
                   "program_info": null,
-                  "deployment_status": "Shutdown",
+                  "deployment_status": "Stopped",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
+                  "deployment_desired_status": "Stopped",
                   "deployment_error": null,
-                  "refresh_version": 4
+                  "refresh_version": 4,
+                  "storage_status": "Unbound"
                 }
               }
             }
@@ -1083,8 +1089,8 @@
                 "examples": {
                   "Cannot update non-shutdown pipeline": {
                     "value": {
-                      "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
-                      "error_code": "CannotUpdateNonShutdownPipeline",
+                      "message": "Cannot update a pipeline which is not stopped. Stop the pipeline first by invoking the '/stop' endpoint.",
+                      "error_code": "CannotUpdateNotStoppedPipeline",
                       "details": null
                     }
                   },
@@ -1162,7 +1168,7 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "message": "Cannot delete a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
+                  "message": "Cannot delete a pipeline which is not stopped. Stop the pipeline first by invoking the '/stop' endpoint.",
                   "error_code": "CannotDeleteNonShutdownPipeline",
                   "details": null
                 }
@@ -1306,11 +1312,12 @@
                     "system_error": null
                   },
                   "program_info": null,
-                  "deployment_status": "Shutdown",
+                  "deployment_status": "Stopped",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
+                  "deployment_desired_status": "Stopped",
                   "deployment_error": null,
-                  "refresh_version": 4
+                  "refresh_version": 4,
+                  "storage_status": "Unbound"
                 }
               }
             }
@@ -1325,8 +1332,8 @@
                 "examples": {
                   "Cannot update non-shutdown pipeline": {
                     "value": {
-                      "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
-                      "error_code": "CannotUpdateNonShutdownPipeline",
+                      "message": "Cannot update a pipeline which is not stopped. Stop the pipeline first by invoking the '/stop' endpoint.",
+                      "error_code": "CannotUpdateNotStoppedPipeline",
                       "details": null
                     }
                   },
@@ -1478,10 +1485,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -1591,10 +1598,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -1704,10 +1711,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -1857,10 +1864,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -2023,10 +2030,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -2147,10 +2154,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -2337,10 +2344,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -2371,8 +2378,8 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "Retrieve logs of a (non-shutdown) pipeline as a stream.",
-        "description": "The logs stream catches up to the extent of the internally configured per-pipeline\ncircular logs buffer (limited to a certain byte size and number of lines, whichever\nis reached first). After the catch-up, new lines are pushed whenever they become\navailable.\n\nThe logs stream will end when the pipeline is shut down. It is also possible for the\nlogs stream to end prematurely due to the runner back-end (temporarily) losing\nconnectivity to the pipeline instance (e.g., process). In this case, it is needed\nto issue again a new request to this endpoint.",
+        "summary": "Retrieve logs of a pipeline as a stream.",
+        "description": "The logs stream catches up to the extent of the internally configured per-pipeline\ncircular logs buffer (limited to a certain byte size and number of lines, whichever\nis reached first). After the catch-up, new lines are pushed whenever they become\navailable.\n\nIt is possible for the logs stream to end prematurely due to the API server temporarily losing\nconnection to the runner. In this case, it is needed to issue again a new request to this\nendpoint.\n\nThe logs stream will end when the pipeline is deleted, or if the runner restarts. Note that in\nboth cases the logs will be cleared.",
         "operationId": "get_pipeline_logs",
         "parameters": [
           {
@@ -2552,10 +2559,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -2569,6 +2576,84 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/pause": {
+      "post": {
+        "tags": [
+          "Pipeline management"
+        ],
+        "summary": "Pause the pipeline asynchronously by updating the desired state.",
+        "description": "The endpoint returns immediately after setting the desired state to `Paused`.\nThe procedure to get to the desired state is performed asynchronously.\nProgress should be monitored by polling the pipeline `GET` endpoints.\n\nNote the following:\n- A stopped pipeline can be started through calling either `/start` or `/pause`\n- Both starting as paused and pausing a pipeline is done by calling `/pause`\n- A pipeline which is in the process of suspending or stopping cannot be paused",
+        "operationId": "post_pipeline_pause",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Action is accepted and is being performed"
+          },
+          "400": {
+            "description": "Action could not be performed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Deployment status (current: 'Stopping', desired: 'Stopped') cannot have desired changed to 'Running'. Cannot restart the pipeline while it is stopping. Wait for it to stop before starting a new instance of the pipeline.",
+                  "error_code": "IllegalPipelineAction",
+                  "details": {
+                    "pipeline_status": "Stopping",
+                    "current_desired_status": "Stopped",
+                    "new_desired_status": "Running",
+                    "hint": "Cannot restart the pipeline while it is stopping. Wait for it to stop before starting a new instance of the pipeline."
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2666,11 +2751,12 @@
                     "system_error": null
                   },
                   "program_info": null,
-                  "deployment_status": "Shutdown",
+                  "deployment_status": "Stopped",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Shutdown",
+                  "deployment_desired_status": "Stopped",
                   "deployment_error": null,
-                  "refresh_version": 4
+                  "refresh_version": 4,
+                  "storage_status": "Unbound"
                 }
               }
             }
@@ -2824,10 +2910,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -2841,6 +2927,84 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/start": {
+      "post": {
+        "tags": [
+          "Pipeline management"
+        ],
+        "summary": "Start the pipeline asynchronously by updating the desired state.",
+        "description": "The endpoint returns immediately after setting the desired state to `Running`.\nThe procedure to get to the desired state is performed asynchronously.\nProgress should be monitored by polling the pipeline `GET` endpoints.\n\nNote the following:\n- A stopped pipeline can be started through calling either `/start` or `/pause`\n- Both starting as running and resuming a pipeline is done by calling `/start`\n- A pipeline which is in the process of suspending or stopping cannot be started",
+        "operationId": "post_pipeline_start",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Action is accepted and is being performed"
+          },
+          "400": {
+            "description": "Action could not be performed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Deployment status (current: 'Stopping', desired: 'Stopped') cannot have desired changed to 'Running'. Cannot restart the pipeline while it is stopping. Wait for it to stop before starting a new instance of the pipeline.",
+                  "error_code": "IllegalPipelineAction",
+                  "details": {
+                    "pipeline_status": "Stopping",
+                    "current_desired_status": "Stopped",
+                    "new_desired_status": "Running",
+                    "hint": "Cannot restart the pipeline while it is stopping. Wait for it to stop before starting a new instance of the pipeline."
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2937,10 +3101,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -2954,6 +3118,135 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/stop": {
+      "post": {
+        "tags": [
+          "Pipeline management"
+        ],
+        "summary": "Stop the pipeline asynchronously by updating the desired state.",
+        "description": "There are two variants:\n- `/stop?force=false` (default): the pipeline will first atomically checkpoint before\ndeprovisioning the compute resources. When resuming, the pipeline will start from this\n- `/stop?force=true`: the compute resources will be immediately deprovisioned. When resuming,\nit will pick up the latest checkpoint made by the periodic checkpointer or by a prior\n`/checkpoint` call.\n\nThe endpoint returns immediately after setting the desired state to `Suspended` for\n`?force=false` or `Stopped` for `?force=true`. In the former case, once the pipeline has\nsuccessfully passes the `Suspending` state, the desired state will become `Stopped` as well.\nThe procedure to get to the desired state is performed asynchronously. Progress should be\nmonitored by polling the pipeline `GET` endpoints.\n\nNote the following:\n- The suspending that is done with `/stop?force=false` is not guaranteed to succeed:\n- If an error is returned during the suspension, the pipeline will be forcefully stopped with\nthat error set\n- Otherwise, it will keep trying to suspend, in which case it is possible to cancel suspending\nby calling `/stop?force=true`\n- `/stop?force=true` cannot be cancelled: the pipeline must first reach `Stopped` before another\naction can be done\n- A pipeline which is in the process of suspending or stopping can only be forcefully stopped",
+        "operationId": "post_pipeline_stop",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "description": "The `force` parameter determines whether to immediately deprovision the pipeline compute\nresources (`force=true`) or first attempt to atomically checkpoint before doing so\n(`force=false`, which is the default).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Action is accepted and is being performed"
+          },
+          "400": {
+            "description": "Action could not be performed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Deployment status (current: 'Stopping', desired: 'Stopped') cannot have desired changed to 'Running'. Cannot restart the pipeline while it is stopping. Wait for it to stop before starting a new instance of the pipeline.",
+                  "error_code": "IllegalPipelineAction",
+                  "details": {
+                    "pipeline_status": "Stopping",
+                    "current_desired_status": "Stopped",
+                    "new_desired_status": "Running",
+                    "hint": "Cannot restart the pipeline while it is stopping. Wait for it to stop before starting a new instance of the pipeline."
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Action is not supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Unsupported action": {
+                    "value": {
+                      "message": "Unsupported pipeline action 'suspend': this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured",
+                      "error_code": "UnsupportedPipelineAction",
+                      "details": {
+                        "action": "suspend",
+                        "reason": "this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Action is not implemented because it is only available in the Enterprise edition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Action can not be performed (maybe because the pipeline is already suspended)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -3069,10 +3362,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -3204,10 +3497,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -3342,10 +3635,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -3359,6 +3652,86 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/unbind": {
+      "post": {
+        "tags": [
+          "Pipeline management"
+        ],
+        "summary": "Unbind the pipeline storage asynchronously.",
+        "description": "IMPORTANT: Unbinding means disassociating the storage from the pipeline.\nDepending on the storage type this can include its deletion.\n\nIt sets the storage state to `Unbinding`, after which the unbinding process is\nperformed asynchronously. Progress should be monitored by polling the pipeline\nusing the `GET` endpoints. An `/unbind` cannot be cancelled.",
+        "operationId": "post_pipeline_unbind",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Action is accepted and is being performed"
+          },
+          "400": {
+            "description": "Action could not be performed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Illegal action": {
+                    "value": {
+                      "message": "Cannot transition from storage status 'unbound' to 'unbinding'",
+                      "error_code": "InvalidStorageStatusTransition",
+                      "details": {
+                        "current_status": "Unbound",
+                        "new_status": "Unbinding"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -3477,10 +3850,10 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('shutdown') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
-                        "status": "Shutdown",
+                        "status": "Stopped",
                         "desired_status": "Running"
                       }
                     }
@@ -3494,148 +3867,6 @@
                       }
                     }
                   }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/pipelines/{pipeline_name}/{action}": {
-      "post": {
-        "tags": [
-          "Pipeline management"
-        ],
-        "summary": "Sets the desired deployment state of a pipeline.",
-        "description": "The desired state is set based on the `action` path parameter:\n- `/start` sets desired state to `Running`\n- `/pause` sets desired state to `Paused`\n- `/suspend` sets desired state to `Suspended`\n- `/shutdown` sets desired state to `Shutdown`\n\nThe endpoint returns immediately after setting the desired state.\nThe relevant procedure to get to the desired state is performed asynchronously,\nand, as such, progress should be monitored by polling the pipeline using the\n`GET` endpoints.\n\nNote the following:\n- A shutdown pipeline can be started through calling either `/start` or `/pause`\n- Both starting as running and resuming a pipeline is done by calling `/start`\n- Both starting as paused and pausing a pipeline is done by calling `/pause`\n- `/shutdown` cannot be cancelled: the pipeline must reach `Shutdown` before another action\n- `/suspend` can only be cancelled using `/shutdown`: otherwise, the pipeline must reach\n`Suspended` first",
-        "operationId": "post_pipeline_action",
-        "parameters": [
-          {
-            "name": "pipeline_name",
-            "in": "path",
-            "description": "Unique pipeline name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "action",
-            "in": "path",
-            "description": "Pipeline action (one of: start, pause, suspend, shutdown)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "Action is accepted and is being performed"
-          },
-          "400": {
-            "description": "Action could not be performed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Illegal action": {
-                    "value": {
-                      "message": "Deployment status (current: 'ShuttingDown', desired: 'Shutdown') cannot have desired changed to 'Running'. Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
-                      "error_code": "IllegalPipelineAction",
-                      "details": {
-                        "hint": "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
-                        "status": "ShuttingDown",
-                        "desired_status": "Shutdown",
-                        "requested_desired_status": "Running"
-                      }
-                    }
-                  },
-                  "Invalid action": {
-                    "value": {
-                      "message": "Invalid pipeline action 'dance'; valid actions are: 'start', 'pause', or 'shutdown'",
-                      "error_code": "InvalidPipelineAction",
-                      "details": {
-                        "action": "dance"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Pipeline with that name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "message": "Unknown pipeline name 'non-existent-pipeline'",
-                  "error_code": "UnknownPipelineName",
-                  "details": {
-                    "pipeline_name": "non-existent-pipeline"
-                  }
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Action is not supported",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Unsupported action": {
-                    "value": {
-                      "message": "Unsupported pipeline action 'suspend': this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured",
-                      "error_code": "UnsupportedPipelineAction",
-                      "details": {
-                        "action": "suspend",
-                        "reason": "this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "501": {
-            "description": "Action is not implemented because it is only available in the Enterprise edition",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Action can not be performed (maybe because the pipeline is already suspended)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -5346,7 +5577,7 @@
             "properties": {
               "checkpoint_during_suspend": {
                 "type": "boolean",
-                "description": "* If `true`, the suspend operation will first atomically checkpoint the pipeline before\ndeprovisioning the compute resources. When resuming, the pipeline will start from this\ncheckpoint.\n* If `false`, then the pipeline will be suspended without creating an additional checkpoint.\nWhen resuming, it will pick up the latest checkpoint made by the periodic checkpointer or\nby invoking the `/checkpoint` API.",
+                "description": "Deprecated: setting this true or false does not have an effect anymore.",
                 "default": true
               },
               "clock_resolution_usecs": {
@@ -5514,7 +5745,7 @@
       "PipelineDesiredStatus": {
         "type": "string",
         "enum": [
-          "Shutdown",
+          "Stopped",
           "Paused",
           "Running",
           "Suspended"
@@ -5554,7 +5785,8 @@
           "deployment_status",
           "deployment_status_since",
           "deployment_desired_status",
-          "refresh_version"
+          "refresh_version",
+          "storage_status"
         ],
         "properties": {
           "created_at": {
@@ -5624,6 +5856,9 @@
           "runtime_config": {
             "$ref": "#/components/schemas/RuntimeConfig"
           },
+          "storage_status": {
+            "$ref": "#/components/schemas/StorageStatus"
+          },
           "udf_rust": {
             "type": "string"
           },
@@ -5651,7 +5886,8 @@
           "deployment_status",
           "deployment_status_since",
           "deployment_desired_status",
-          "refresh_version"
+          "refresh_version",
+          "storage_status"
         ],
         "properties": {
           "created_at": {
@@ -5737,6 +5973,9 @@
             ],
             "nullable": true
           },
+          "storage_status": {
+            "$ref": "#/components/schemas/StorageStatus"
+          },
           "udf_rust": {
             "type": "string",
             "nullable": true
@@ -5752,19 +5991,16 @@
       },
       "PipelineStatus": {
         "type": "string",
-        "description": "Pipeline status.\n\nThis type represents the state of the pipeline tracked by the pipeline\nrunner and observed by the API client via the `GET /v0/pipelines/{name}` endpoint.\n\n### The lifecycle of a pipeline\n\nThe following automaton captures the lifecycle of the pipeline.\nIndividual states and transitions of the automaton are described below.\n\n* States labeled with the hourglass symbol (⌛) are **timed** states. The\nautomaton stays in timed state until the corresponding operation completes\nor until it transitions to become failed after the pre-defined timeout\nperiod expires.\n\n* State transitions labeled with API endpoint names (`/start`, `/pause`,\n`/suspend`, `/shutdown`) are triggered by invoking corresponding endpoint,\ne.g., `POST /v0/pipelines/{name}/start`. Note that these only express\ndesired state, and are applied asynchronously by the automata.\n\n```text\nShutdown◄────────────────────┐\n│                        │\n/start or /pause │                   ShuttingDown ◄─────── Failed\n│                        ▲                  ▲\n▼              /shutdown │                  │\n⌛Provisioning ──────────────────┤     All states except ShuttingDown\n│                        │        can transition to Failed\n│                        │\n▼                        │\n⌛Initializing ──────────────────┤\n│                        │────────────────────────────────────────────────────────────────┐\n┌─────────┼────────────────────────┴─┐                  │                         │                 │\n│         ▼                          │                  │                         │                 │\n│       Paused  ◄──────► Unavailable │                  │                         │                 │\n│       │    ▲                ▲      │                  │                         │                 │\n│ /start│    │/pause          │      │──────────> SuspendingCircuit ───> SuspendingCompute ───> Suspended\n│       ▼    │                │      │ /suspend                            ▲                        │ /start or /pause\n│      Running ◄──────────────┘      │─────────────────────────────────────┘                        ▼\n└────────────────────────────────────┘ (if runtime_config.checkpoint_during_suspend=false)    ⌛Provisioning\n```\n\n### Desired and actual status\n\nWe use the desired state model to manage the lifecycle of a pipeline.\nIn this model, the pipeline has two status attributes associated with\nit at runtime: the **desired** status, which represents what the user\nwould like the pipeline to do, and the **current** status, which\nrepresents the actual state of the pipeline.  The pipeline runner\nservice continuously monitors both fields and steers the pipeline\ntowards the desired state specified by the user.\n\nOnly four of the states in the pipeline automaton above can be\nused as desired statuses: `Paused`, `Running`, `Suspended` and\n`Shutdown`. These statuses are selected by invoking REST endpoints\nshown in the diagram (respectively, `/pause`, `/start`, `/suspend`\nand `/shutdown`).\n\nThe user can monitor the current state of the pipeline via the\n`GET /v0/pipelines/{name}` endpoint. In a typical scenario,\nthe user first sets the desired state, e.g., by invoking the\n`/start` endpoint, and then polls the `GET /v0/pipelines/{name}`\nendpoint to monitor the actual status of the pipeline until its\n`deployment_status` attribute changes to `Running` indicating\nthat the pipeline has been successfully initialized and is\nprocessing data, or `Failed`, indicating an error.",
+        "description": "Pipeline status.\n\nThis type represents the state of the pipeline tracked by the pipeline\nrunner and observed by the API client via the `GET /v0/pipelines/{name}` endpoint.\n\n### The lifecycle of a pipeline\n\nThe following automaton captures the lifecycle of the pipeline.\nIndividual states and transitions of the automaton are described below.\n\n* States labeled with the hourglass symbol (⌛) are **timed** states. The\nautomaton stays in timed state until the corresponding operation completes\nor until it transitions to become failed after the pre-defined timeout\nperiod expires.\n\n* State transitions labeled with API endpoint names (`/start`, `/pause`,\n`/suspend`, `/stop`) are triggered by invoking corresponding endpoint,\ne.g., `POST /v0/pipelines/{name}/start`. Note that these only express\ndesired state, and are applied asynchronously by the automata.\n\n```text\nStopped ◄─────────── Stopping ◄───── All states can transition\n│                    ▲            to Stopping by either:\n/start or /pause │                    │            (1) user calling /stop, or;\n▼                    │            (2) pipeline encountering a fatal\n⌛Provisioning          Suspending            resource or runtime error,\n│                    ▲                having the system call /stop\n▼                    │ /suspend       effectively\n⌛Initializing ──────────────┤\n│                    │\n┌─────────┼────────────────────┴─────┐\n│         ▼                          │\n│       Paused  ◄──────► Unavailable │\n│        │   ▲                ▲      │\n│ /start │   │  /pause        │      │\n│        ▼   │                │      │\n│       Running ◄─────────────┘      │\n└────────────────────────────────────┘\n```\n\n### Desired and actual status\n\nWe use the desired state model to manage the lifecycle of a pipeline.\nIn this model, the pipeline has two status attributes associated with\nit at runtime: the **desired** status, which represents what the user\nwould like the pipeline to do, and the **current** status, which\nrepresents the actual state of the pipeline.  The pipeline runner\nservice continuously monitors both fields and steers the pipeline\ntowards the desired state specified by the user.\n\nOnly four of the states in the pipeline automaton above can be\nused as desired statuses: `Paused`, `Running`, `Suspended` and\n`Stopped`. These statuses are selected by invoking REST endpoints\nshown in the diagram (respectively, `/pause`, `/start`, `/suspend`\nand `/stop`).\n\nThe user can monitor the current state of the pipeline via the\n`GET /v0/pipelines/{name}` endpoint. In a typical scenario,\nthe user first sets the desired state, e.g., by invoking the\n`/start` endpoint, and then polls the `GET /v0/pipelines/{name}`\nendpoint to monitor the actual status of the pipeline until its\n`deployment_status` attribute changes to `Running` indicating\nthat the pipeline has been successfully initialized and is\nprocessing data, or `Stopped` with `stop_by_error` being set.",
         "enum": [
-          "Shutdown",
+          "Stopped",
           "Provisioning",
           "Initializing",
           "Paused",
           "Running",
           "Unavailable",
-          "SuspendingCircuit",
-          "SuspendingCompute",
-          "Suspended",
-          "Failed",
-          "ShuttingDown"
+          "Suspending",
+          "Stopping"
         ]
       },
       "PostPutPipeline": {
@@ -5808,6 +6044,16 @@
           "udf_toml": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "PostStopPipelineParameters": {
+        "type": "object",
+        "description": "Query parameters to POST a pipeline stop.",
+        "properties": {
+          "force": {
+            "type": "boolean",
+            "description": "The `force` parameter determines whether to immediately deprovision the pipeline compute\nresources (`force=true`) or first attempt to atomically checkpoint before doing so\n(`force=false`, which is the default)."
           }
         }
       },
@@ -6333,7 +6579,7 @@
         "properties": {
           "checkpoint_during_suspend": {
             "type": "boolean",
-            "description": "* If `true`, the suspend operation will first atomically checkpoint the pipeline before\ndeprovisioning the compute resources. When resuming, the pipeline will start from this\ncheckpoint.\n* If `false`, then the pipeline will be suspended without creating an additional checkpoint.\nWhen resuming, it will pick up the latest checkpoint made by the periodic checkpointer or\nby invoking the `/checkpoint` API.",
+            "description": "Deprecated: setting this true or false does not have an effect anymore.",
             "default": true
           },
           "clock_resolution_usecs": {
@@ -6944,6 +7190,15 @@
             "minimum": 0
           }
         }
+      },
+      "StorageStatus": {
+        "type": "string",
+        "description": "Storage status.\n\nThe storage status can only transition when the pipeline status is `Stopped`.\n\n```text\nUnbound ───┐\n▲       │\n/unbind │       │\n│       │\nUnbinding   │\n▲       │\n│       │\nBound ◄───┘\n```",
+        "enum": [
+          "Unbound",
+          "Bound",
+          "Unbinding"
+        ]
       },
       "SyncConfig": {
         "type": "object",

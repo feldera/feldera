@@ -2581,7 +2581,7 @@ impl ModelHelpers for Mutex<DbModel> {
                 not_allowed.push("`program_config`")
             }
             if !not_allowed.is_empty() {
-                return Err(DBError::EditNotAllowedWhileSuspendedError {
+                return Err(DBError::EditRestrictedToUnboundStorage {
                     not_allowed: not_allowed.iter_mut().map(|s| s.to_string()).collect(),
                 });
             }
@@ -3188,7 +3188,7 @@ impl Storage for Mutex<DbModel> {
         if pipeline.deployment_status != PipelineStatus::Shutdown
             || pipeline.deployment_desired_status != PipelineDesiredStatus::Shutdown
         {
-            return Err(DBError::CannotDeleteNonShutdownPipeline);
+            return Err(DBError::DeleteRestrictedToFullyStopped);
         }
 
         // Delete from state

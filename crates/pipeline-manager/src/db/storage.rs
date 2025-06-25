@@ -39,6 +39,7 @@ impl ExtendedPipelineDescrRunner {
                 deployment_error: pipeline.deployment_error.clone(),
                 deployment_location: pipeline.deployment_location.clone(),
                 refresh_version: pipeline.refresh_version,
+                storage_status: pipeline.storage_status,
             },
         }
     }
@@ -271,15 +272,15 @@ pub(crate) trait Storage {
     ) -> Result<PipelineId, DBError>;
 
     /// Sets deployment desired status to `Suspended`.
-    #[allow(dead_code)] // This will only be called in the Enterprise edition
+    #[allow(dead_code)]
     async fn set_deployment_desired_status_suspended(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<PipelineId, DBError>;
 
-    /// Sets deployment desired status to `Shutdown`.
-    async fn set_deployment_desired_status_shutdown(
+    /// Sets deployment desired status to `Stopped`.
+    async fn set_deployment_desired_status_stopped(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
@@ -327,54 +328,44 @@ pub(crate) trait Storage {
         version_guard: Version,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `SuspendingCircuit`.
-    async fn transit_deployment_status_to_suspending_circuit(
+    /// Transitions deployment status to `Suspending`.
+    async fn transit_deployment_status_to_suspending(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `SuspendingCompute`.
-    async fn transit_deployment_status_to_suspending_compute(
+    /// Transitions deployment status to `Stopping`.
+    async fn transit_deployment_status_to_stopping(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
-        suspend_info: serde_json::Value,
+        deployment_error: Option<ErrorResponse>,
+        suspend_info: Option<serde_json::Value>,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `Suspended`.
-    async fn transit_deployment_status_to_suspended(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError>;
-
-    /// Transitions deployment status to `ShuttingDown`.
-    async fn transit_deployment_status_to_shutting_down(
+    /// Transitions deployment status to `Stopped`.
+    async fn transit_deployment_status_to_stopped(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `Shutdown`.
-    async fn transit_deployment_status_to_shutdown(
+    /// Transitions storage status to `Unbinding`.
+    async fn transit_storage_status_to_unbinding(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError>;
+        pipeline_name: &str,
+    ) -> Result<PipelineId, DBError>;
 
-    /// Transitions deployment status to `Failed`.
-    async fn transit_deployment_status_to_failed(
+    /// Transitions storage status to `Unbound`.
+    async fn transit_storage_status_to_unbound(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        version_guard: Version,
-        deployment_error: &ErrorResponse,
     ) -> Result<(), DBError>;
 
     /// Retrieves a list of all pipeline ids across all tenants.

@@ -323,21 +323,17 @@ impl Display for RunnerError {
                 desired_status,
             } => {
                 let resolution = match (status, desired_status) {
-                    (PipelineStatus::Shutdown, PipelineDesiredStatus::Shutdown) => {
+                    (PipelineStatus::Stopped, PipelineDesiredStatus::Stopped) => {
                         "start the pipeline"
                     }
-                    (PipelineStatus::Failed, PipelineDesiredStatus::Running | PipelineDesiredStatus::Paused | PipelineDesiredStatus::Suspended) => {
-                        "investigate the reason why the pipeline failed by looking at the error and logs, \
-                        shut down the pipeline to clear the 'failed' state, fix any issues, and start again afterwards"
-                    }
                     (_, PipelineDesiredStatus::Suspended) => {
-                        "wait for the pipeline to become suspended and then start again"
+                        "wait for the pipeline to suspend and stop, and then start again"
                     }
                     (_, PipelineDesiredStatus::Running | PipelineDesiredStatus::Paused) => {
                         "wait for the pipeline to become running or paused"
                     }
-                    (_, PipelineDesiredStatus::Shutdown) => {
-                        "wait for the pipeline to become shutdown and start again afterwards"
+                    (_, PipelineDesiredStatus::Stopped) => {
+                        "wait for the pipeline to stop and start again afterwards"
                     }
                 };
                 write!(
