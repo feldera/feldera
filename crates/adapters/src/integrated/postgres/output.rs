@@ -26,6 +26,63 @@ use feldera_types::{
 use postgres::{Client, NoTls, Statement};
 use tracing::{info_span, span::EnteredSpan};
 
+enum BackoffError {
+    Temporary(anyhow::Error),
+    Permanent(anyhow::Error),
+}
+
+impl BackoffError {
+    fn should_retry(&self) -> bool {
+        match self {
+            BackoffError::Temporary(_) => true,
+            BackoffError::Permanent(_) => false,
+        }
+    }
+
+    fn inner(self) -> anyhow::Error {
+        match self {
+            BackoffError::Permanent(error) | BackoffError::Temporary(error) => {
+                anyhow!(error.to_string())
+            }
+        }
+    }
+
+    fn context(self, context: String) -> Self {
+        match self {
+            BackoffError::Temporary(error) => BackoffError::Temporary(error.context(context)),
+            BackoffError::Permanent(error) => BackoffError::Permanent(error.context(context)),
+        }
+    }
+}
+
+impl From<postgres::Error> for BackoffError {
+    fn from(value: postgres::Error) -> Self {
+        use postgres::error::SqlState;
+
+        if value.is_closed()
+            || value.code().is_some_and(|c| {
+                [
+                    SqlState::CONNECTION_FAILURE,
+                    SqlState::CONNECTION_DOES_NOT_EXIST,
+                    SqlState::CONNECTION_EXCEPTION,
+                    SqlState::SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION,
+                    SqlState::ADMIN_SHUTDOWN,
+                ]
+                .contains(c)
+            })
+            // value.code() is none when connection is refused by the OS
+            || value.code().is_none()
+        {
+            Self::Temporary(anyhow!("failed to connect to postgres: {value}"))
+        } else {
+            Self::Permanent(anyhow!(
+                "postgres error: permanent: SqlState: {:?}: {value}",
+                value.code()
+            ))
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct RawQueries {
     insert: String,
@@ -45,44 +102,32 @@ impl PreparedStatements {
         raw_queries: &RawQueries,
         client: &mut postgres::Client,
         endpoint_name: &str,
-    ) -> Result<Self, ControllerError> {
+    ) -> Result<Self, BackoffError> {
         let err_msg = "\nPlease ensure all field names that are quoted in PostgreSQL are quoted correctly in Feldera as well";
 
         let insert = client
             .prepare_typed(&raw_queries.insert, &[postgres::types::Type::VARCHAR])
             .map_err(|e| {
-                ControllerError::output_transport_error(
-                    endpoint_name,
-                    true,
-                    anyhow!(
-                        "failed to prepare insert statement: `{}`: {e} {err_msg}",
-                        &raw_queries.insert
-                    ),
-                )
+                BackoffError::from(e).context(format!(
+                    "failed to prepare insert statement: `{}`: {err_msg}",
+                    &raw_queries.insert
+                ))
             })?;
         let upsert = client
             .prepare_typed(&raw_queries.upsert, &[postgres::types::Type::VARCHAR])
             .map_err(|e| {
-                ControllerError::output_transport_error(
-                    endpoint_name,
-                    true,
-                    anyhow!(
-                        "failed to prepare update statement: `{}`: {e} {err_msg}",
-                        &raw_queries.upsert
-                    ),
-                )
+                BackoffError::from(e).context(format!(
+                    "failed to prepare update statement: `{}`: {err_msg}",
+                    &raw_queries.upsert
+                ))
             })?;
         let delete = client
             .prepare_typed(&raw_queries.delete, &[postgres::types::Type::VARCHAR])
             .map_err(|e| {
-                ControllerError::output_transport_error(
-                    endpoint_name,
-                    true,
-                    anyhow!(
-                        "failed to prepare delete statement: `{}`: {e} {err_msg}",
-                        raw_queries.delete
-                    ),
-                )
+                BackoffError::from(e).context(format!(
+                    "failed to prepare delete statement: `{}`: {err_msg}",
+                    raw_queries.delete
+                ))
             })?;
 
         Ok(PreparedStatements {
@@ -204,8 +249,8 @@ impl PostgresOutputEndpoint {
                 new_fields.join(", ")
             );
         }
-        let prepared_statements =
-            PreparedStatements::new(&raw_queries, &mut client, endpoint_name)?;
+        let prepared_statements = PreparedStatements::new(&raw_queries, &mut client, endpoint_name)
+            .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e.inner()))?;
 
         let out = Self {
             endpoint_id,
@@ -243,14 +288,36 @@ impl PostgresOutputEndpoint {
         ))
     }
 
-    fn exec_statement(
+    fn exec_statement(&mut self, stmt: Statement, value: &mut Vec<u8>, name: &str) {
+        if let Err(e) = self.exec_statement_inner(stmt.clone(), value, name) {
+            let retry = e.should_retry();
+            let Some(controller) = self.controller.upgrade() else {
+                tracing::warn!("failed to upgrade the controller");
+                return;
+            };
+
+            controller.output_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                true,
+                e.inner(),
+            );
+
+            if !retry {
+                return;
+            }
+
+            self.retry_connecting_with_backoff();
+            self.exec_statement(stmt, value, name)
+        }
+    }
+
+    fn exec_statement_inner(
         &mut self,
         stmt: Statement,
         value: &mut Vec<u8>,
         name: &str,
-    ) -> AnyResult<()> {
-        self.retry_connecting_with_backoff();
-
+    ) -> Result<(), BackoffError> {
         if value.last() != Some(&b']') {
             value.push(b']');
         }
@@ -261,12 +328,16 @@ impl PostgresOutputEndpoint {
 
         self.num_bytes += value.len();
 
-        let v: &str = std::str::from_utf8(value.as_slice())
-            .map_err(|e| anyhow!("postgres: record contains non utf-8 characters: {e}"))?;
+        let v: &str = std::str::from_utf8(value.as_slice()).map_err(|e| {
+            BackoffError::Permanent(anyhow!("record contains non utf-8 characters: {e}"))
+        })?;
 
-        self.transaction()?
+        self.transaction()
+            .map_err(BackoffError::Permanent)?
             .execute(&stmt, &[&v])
-            .map_err(|e| anyhow!("postgres: failed to execute {name} statement: {v}: {e}"))?;
+            .map_err(|e| {
+                BackoffError::from(e).context(format!("while executing {name} statement: {v}"))
+            })?;
 
         value.clear();
         value.push(b'[');
@@ -276,19 +347,19 @@ impl PostgresOutputEndpoint {
 
     /// Executes the insert statement within the transaction and resets the
     /// buffer back to `[`.
-    fn insert(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
+    fn insert(&mut self, value: &mut Vec<u8>) {
         self.exec_statement(self.prepared_statements.insert.clone(), value, "insert")
     }
 
     /// Executes the upsert statement within the transaction and resets the
     /// buffer back to `[`.
-    fn upsert(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
+    fn upsert(&mut self, value: &mut Vec<u8>) {
         self.exec_statement(self.prepared_statements.upsert.clone(), value, "upsert")
     }
 
     /// Executes the delete statement within the transaction and resets the
     /// buffer back to `[`.
-    fn delete(&mut self, value: &mut Vec<u8>) -> AnyResult<()> {
+    fn delete(&mut self, value: &mut Vec<u8>) {
         self.exec_statement(self.prepared_statements.delete.clone(), value, "delete")
     }
 
@@ -303,88 +374,77 @@ impl PostgresOutputEndpoint {
         .entered()
     }
 
-    fn retry_connecting(&mut self) -> bool {
+    fn retry_connecting(&mut self) -> Result<(), BackoffError> {
         let valid = self.client.is_valid(PG_CONNECTION_VALIDITY_TIMEOUT);
-        let controller = self
-            .controller
-            .upgrade()
-            .expect("unreachable: failed to upgrade the controller");
+        let Some(controller) = self.controller.upgrade() else {
+            tracing::warn!("failed to upgrade the controller");
+            return Ok(());
+        };
 
         let Err(e) = valid else {
-            return true;
+            return Ok(());
         };
 
         self.transaction = None;
-        self.client = match self.config.connect(NoTls) {
-            Ok(c) => c,
-            Err(e) => {
-                controller.output_transport_error(
-                    self.endpoint_id,
-                    &self.endpoint_name,
-                    true,
-                    anyhow!("error connecting to postgres: {e}"),
-                );
+        self.client = self.config.connect(NoTls)?;
 
-                return false;
-            }
-        };
-
-        match PreparedStatements::new(&self.raw_queries, &mut self.client, &self.endpoint_name) {
-            Ok(x) => self.prepared_statements = x,
-            Err(e) => {
-                tracing::error!(
-                    "postgres: error preparing statements: {e}\nThese statements were prepared fine before reconnecting. Does the table {} still exist?",
-                    self.table
-                );
-                return false;
-            }
-        };
+        self.prepared_statements =
+            PreparedStatements::new(&self.raw_queries, &mut self.client, &self.endpoint_name)
+                .map_err(|e| {
+                    e.context(format!(
+                        "postgres: error preparing statements after reconnecting to postgres
+These statements were successfully prepared before reconnecting. Does the table {} still exist?",
+                        self.table
+                    ))
+                })?;
 
         tracing::info!("postgres: successfully reconnected to postgres");
 
-        true
+        Ok(())
     }
 
     fn retry_connecting_with_backoff(&mut self) {
         let backoff = 1000;
         let mut n_retries = 1;
 
-        loop {
-            if self.retry_connecting() {
-                return;
-            }
-
-            std::thread::sleep(Duration::from_millis(backoff * n_retries));
-            n_retries += 1;
-        }
-    }
-}
-
-impl OutputConsumer for PostgresOutputEndpoint {
-    /// 1 MiB
-    fn max_buffer_size_bytes(&self) -> usize {
-        usize::pow(2, 20)
-    }
-
-    fn batch_start(&mut self, _: Step) {
         let Some(controller) = self.controller.upgrade() else {
+            tracing::warn!("failed to upgrade the controller");
             return;
         };
 
-        self.retry_connecting_with_backoff();
-
-        let txn = match self.client.transaction() {
-            Ok(txn) => txn,
-            Err(e) => {
-                controller.output_transport_error(
-                    self.endpoint_id,
-                    &self.endpoint_name,
-                    true,
-                    anyhow!("postgres: failed to start transaction: {e}"),
-                );
-                return;
+        loop {
+            tracing::info!("retrying to connect to postgres");
+            match self.retry_connecting() {
+                Ok(_) => return,
+                Err(e) => {
+                    let retry = e.should_retry();
+                    controller.output_transport_error(
+                        self.endpoint_id,
+                        &self.endpoint_name,
+                        true,
+                        e.inner(),
+                    );
+                    if !retry {
+                        return;
+                    }
+                }
             }
+
+            std::thread::sleep(
+                Duration::from_millis(backoff * n_retries).min(Duration::from_secs(60)),
+            );
+            n_retries += 1;
+        }
+    }
+
+    fn batch_start_inner(&mut self) -> Result<(), BackoffError> {
+        let Some(controller) = self.controller.upgrade() else {
+            tracing::warn!("failed to upgrade the controller");
+            return Ok(());
         };
+
+        let txn = self.client.transaction()?;
+
         // Safety
         //
         // A transaction is a reference to the `client`. The `client`'s lifetime
@@ -400,6 +460,61 @@ impl OutputConsumer for PostgresOutputEndpoint {
         // TODO: Consider [`std::pin::Pin`]ing the integrated connector.
         let transaction: postgres::Transaction<'static> = unsafe { std::mem::transmute(txn) };
         self.transaction = Some(transaction);
+
+        Ok(())
+    }
+
+    fn batch_end_inner(&mut self) -> Result<(), BackoffError> {
+        let transaction = self
+            .transaction
+            .take()
+            .ok_or(BackoffError::Permanent(anyhow!(
+                "postgres: attempted to commit a transaction that hasn't been started"
+            )))?;
+
+        transaction.commit()?;
+
+        if let Some(controller) = self.controller.upgrade() {
+            controller.status.output_buffer(
+                self.endpoint_id,
+                std::mem::take(&mut self.num_bytes),
+                std::mem::take(&mut self.num_rows),
+            );
+        };
+
+        Ok(())
+    }
+}
+
+impl OutputConsumer for PostgresOutputEndpoint {
+    /// 1 MiB
+    fn max_buffer_size_bytes(&self) -> usize {
+        usize::pow(2, 20)
+    }
+
+    fn batch_start(&mut self, _step: Step) {
+        if let Err(err) = self.batch_start_inner() {
+            let Some(controller) = self.controller.upgrade() else {
+                tracing::warn!("failed to upgrade the controller");
+                return;
+            };
+
+            let retry = err.should_retry();
+
+            controller.output_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                true,
+                anyhow!("postgres: failed to start transaction: {}", err.inner()),
+            );
+
+            if !retry {
+                return;
+            }
+
+            self.retry_connecting_with_backoff();
+            OutputConsumer::batch_start(self, _step)
+        }
     }
 
     fn push_buffer(&mut self, _: &[u8], _: usize) {
@@ -417,39 +532,28 @@ impl OutputConsumer for PostgresOutputEndpoint {
     }
 
     fn batch_end(&mut self) {
-        self.retry_connecting_with_backoff();
+        if let Err(err) = self.batch_end_inner() {
+            let Some(controller) = self.controller.upgrade() else {
+                tracing::warn!("failed to upgrade the controller");
+                return;
+            };
 
-        let controller = self
-            .controller
-            .upgrade()
-            .expect("unreachable: failed to upgrade the controller");
+            let retry = err.should_retry();
 
-        let Some(transaction) = self.transaction.take() else {
             controller.output_transport_error(
                 self.endpoint_id,
                 &self.endpoint_name,
                 true,
-                anyhow::anyhow!(
-                    "postgres: attempted to commit a transaction that hasn't been started"
-                ),
+                err.inner(),
             );
-            return;
-        };
 
-        if let Err(err) = transaction.commit() {
-            controller.output_transport_error(
-                self.endpoint_id,
-                &self.endpoint_name,
-                true,
-                anyhow!("postgres: transaction: {err}"),
-            );
+            if !retry {
+                return;
+            }
+
+            self.retry_connecting_with_backoff();
+            OutputConsumer::batch_end(self)
         }
-
-        controller.status.output_buffer(
-            self.endpoint_id,
-            std::mem::take(&mut self.num_bytes),
-            std::mem::take(&mut self.num_rows),
-        )
     }
 }
 
@@ -481,7 +585,7 @@ impl Encoder for PostgresOutputEndpoint {
                         }
                         cursor.serialize_val(&mut new_buf)?;
                         if new_buf.len() + buf.len() > max_buffer_size {
-                            self.insert(buf)?;
+                            self.insert(buf);
                         }
                         buf.append(&mut new_buf);
                     }
@@ -493,7 +597,7 @@ impl Encoder for PostgresOutputEndpoint {
                         }
                         cursor.serialize_key(&mut new_buf)?;
                         if new_buf.len() + buf.len() > max_buffer_size {
-                            self.delete(buf)?;
+                            self.delete(buf);
                         }
                         buf.append(&mut new_buf);
                     }
@@ -509,7 +613,7 @@ impl Encoder for PostgresOutputEndpoint {
                         }
                         cursor.serialize_val(&mut new_buf)?;
                         if new_buf.len() + buf.len() > max_buffer_size {
-                            self.upsert(buf)?;
+                            self.upsert(buf);
                         }
                         buf.append(&mut new_buf);
                     }
@@ -521,9 +625,9 @@ impl Encoder for PostgresOutputEndpoint {
             cursor.step_key();
         }
 
-        self.delete(&mut delete_buffer)?;
-        self.insert(&mut insert_buffer)?;
-        self.upsert(&mut upsert_buffer)?;
+        self.delete(&mut delete_buffer);
+        self.insert(&mut insert_buffer);
+        self.upsert(&mut upsert_buffer);
 
         Ok(())
     }
